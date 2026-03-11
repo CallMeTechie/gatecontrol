@@ -347,6 +347,22 @@
     return div.innerHTML;
   }
 
+  // ─── Close modals on overlay click, close button, or Escape ─
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.style.display = 'none';
+    }
+    if (e.target.closest('[data-close-modal]')) {
+      const overlay = e.target.closest('.modal-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+    }
+  });
+
   // ─── Basic auth field visibility toggles ─────────────────
   function setupAuthToggle(toggleSel, fieldsSel) {
     const toggle = document.querySelector(toggleSel);
