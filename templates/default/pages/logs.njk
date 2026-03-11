@@ -1,0 +1,35 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.system') }}</div>
+    <div class="page-title">{{ t('nav.logs') }}</div>
+    <div class="page-sub" id="logs-subtitle">{{ t('dashboard.recent_events') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+    <div class="tabs" id="log-severity-filter">
+      <div class="tab active" data-severity="all">{{ t('logs.all') }}</div>
+      <div class="tab" data-severity="success">{{ t('logs.success') }}</div>
+      <div class="tab" data-severity="info">Info</div>
+      <div class="tab" data-severity="warning">{{ t('logs.warning') }}</div>
+      <div class="tab" data-severity="error">{{ t('logs.error') }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span class="card-title">{{ t('dashboard.recent_events') }}</span>
+    <span class="card-sub" id="logs-count">{{ t('dashboard.realtime') }}</span>
+  </div>
+  <div class="card-body" id="full-activity-log">
+    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/logs.js"></script>
+{% endblock %}

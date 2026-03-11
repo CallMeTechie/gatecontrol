@@ -1,0 +1,19 @@
+<div class="modal-overlay" id="modal-qr-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="qr-peer-title">QR Code</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <img id="qr-peer-img" src="" alt="QR Code" style="max-width:280px;margin:0 auto 16px">
+      <div class="wg-config" id="qr-peer-config" style="text-align:left;max-height:200px;overflow-y:auto;font-size:11px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <a class="btn btn-primary" id="qr-peer-download" href="#" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download .conf
+      </a>
+    </div>
+  </div>
+</div>

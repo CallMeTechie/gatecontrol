@@ -1,0 +1,23 @@
+<div class="modal-overlay" id="modal-add-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">{{ t('peers.add') }}</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">{{ t('peers.add_name') }}</label>
+        <input type="text" id="add-peer-name" placeholder="{{ t('peers.add_name_placeholder') }}" autocomplete="off" maxlength="63">
+      </div>
+      <div class="form-group">
+        <label class="form-label">{{ t('peers.add_description') }}</label>
+        <input type="text" id="add-peer-desc" placeholder="{{ t('peers.add_description_placeholder') }}" autocomplete="off" maxlength="255">
+      </div>
+      <div id="add-peer-error" class="form-error" style="display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button class="btn btn-primary" id="btn-add-peer-submit">{{ t('common.save') }}</button>
+    </div>
+  </div>
+</div>

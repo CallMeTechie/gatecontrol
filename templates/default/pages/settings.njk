@@ -1,0 +1,149 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.system') }}</div>
+    <div class="page-title">{{ t('nav.settings') }}</div>
+    <div class="page-sub">{{ t('settings.subtitle') }}</div>
+  </div>
+</div>
+
+<div class="two-col">
+  {# ─── Profile ──────────────────────────────────────── #}
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span class="card-title">{{ t('settings.profile') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.username') }}</label>
+          <input type="text" id="settings-username" disabled style="width:100%;opacity:0.6">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.display_name') }}</label>
+          <input type="text" id="settings-display-name" placeholder="Administrator" style="width:100%" maxlength="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.email') }}</label>
+          <input type="text" id="settings-email" placeholder="admin@example.com" style="width:100%" maxlength="255">
+        </div>
+        <div id="profile-message" style="display:none"></div>
+        <button class="btn btn-primary" id="btn-save-profile" style="align-self:flex-start">
+          {{ t('common.save') }}
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        <span class="card-title">{{ t('settings.change_password') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.current_password') }}</label>
+          <input type="password" id="settings-current-pw" style="width:100%" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.new_password') }}</label>
+          <input type="password" id="settings-new-pw" style="width:100%" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.confirm_password') }}</label>
+          <input type="password" id="settings-confirm-pw" style="width:100%" autocomplete="new-password">
+        </div>
+        <div id="password-message" style="display:none"></div>
+        <button class="btn btn-primary" id="btn-change-password" style="align-self:flex-start">
+          {{ t('settings.change_password') }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Language & App Info ──────────────────────────── #}
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">{{ t('settings.language') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:8px" id="language-buttons">
+          {% for lang in availableLanguages %}
+          <button class="btn {{ 'btn-primary' if lang == language else 'btn-ghost' }}" data-lang="{{ lang }}" style="flex:1;justify-content:center">
+            {% if lang == 'de' %}Deutsch{% elif lang == 'en' %}English{% else %}{{ lang }}{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+        <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ t('settings.language_hint') }}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="card-title">{{ t('settings.app_info') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.app_name') }}</span>
+          <code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ appName }}</code>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.version') }}</span>
+          <code style="font-family:var(--font-mono);font-size:12px">v{{ appVersion }}</code>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.wg_host') }}</span>
+          <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">{{ wgHost }}:{{ wgPort }}</code>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.subnet') }}</span>
+          <code style="font-family:var(--font-mono);font-size:12px">{{ wgSubnet }}</code>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.default_language') }}</span>
+          <code style="font-family:var(--font-mono);font-size:12px">{{ language }}</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span class="card-title">{{ t('webhooks.title') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('webhooks.subtitle') }}</div>
+        <div id="webhooks-list"></div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <input type="text" id="webhook-url" placeholder="{{ t('webhooks.url_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="500">
+          <input type="text" id="webhook-desc" placeholder="{{ t('webhooks.description_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="255">
+          <button class="btn btn-primary" id="btn-add-webhook" style="align-self:flex-start">
+            {{ t('webhooks.add') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span class="card-title">{{ t('settings.danger_zone') }}</span>
+      </div>
+      <div class="card-body">
+        <button class="btn btn-ghost" style="color:var(--red);border-color:var(--red-bd);width:100%;justify-content:center" id="btn-clear-logs">
+          {{ t('settings.clear_logs') }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/settings.js"></script>
+{% endblock %}

@@ -1,0 +1,296 @@
+'use strict';
+
+(function () {
+  const tbody = document.getElementById('peers-tbody');
+  const searchInput = document.getElementById('peer-search');
+  const statusTags = document.getElementById('peer-status-tags');
+  let allPeers = [];
+
+  // ─── Load peers ──────────────────────────────────────────
+  async function loadPeers() {
+    try {
+      const data = await api.get('/api/peers');
+      if (data.ok) {
+        allPeers = data.peers;
+        renderPeers(allPeers);
+        renderStatusTags(allPeers);
+      }
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:40px">' +
+        escapeHtml(err.message) + '</td></tr>';
+    }
+  }
+
+  // ─── Render peers table ──────────────────────────────────
+  function renderPeers(peers) {
+    if (!peers.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:40px">No peers configured</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = peers.map(p => {
+      const ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '—';
+      const pubKey = p.public_key ? p.public_key.substring(0, 12) + '…' : '—';
+      const lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
+      const rx = formatBytes(p.transferRx || p.transfer_rx || 0);
+      const tx = formatBytes(p.transferTx || p.transfer_tx || 0);
+      const statusTag = getStatusTag(p);
+
+      return `<tr data-peer-id="${p.id}">
+        <td>
+          <div class="peer-name">${escapeHtml(p.name)}</div>
+          <div class="peer-meta">${escapeHtml(p.description || '')}</div>
+        </td>
+        <td><span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(ip)}</span></td>
+        <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${escapeHtml(pubKey)}</span></td>
+        <td><span style="font-size:12px;color:var(--text-2)">${lastContact}</span></td>
+        <td><span style="font-family:var(--font-mono);font-size:11px">↓${rx} ↑${tx}</span></td>
+        <td>${statusTag}</td>
+        <td>
+          <div class="peer-actions">
+            <button class="icon-btn" title="QR Code" data-action="qr" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            </button>
+            <button class="icon-btn" title="Edit" data-action="edit" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="icon-btn" title="Toggle" data-action="toggle" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+            </button>
+            <button class="icon-btn" title="Delete" data-action="delete" data-id="${p.id}" data-name="${escapeHtml(p.name)}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ─── Status tags summary ─────────────────────────────────
+  function renderStatusTags(peers) {
+    const online = peers.filter(p => p.isOnline).length;
+    const offline = peers.filter(p => !p.isOnline && p.enabled).length;
+    const disabled = peers.filter(p => !p.enabled).length;
+
+    let html = '';
+    if (online > 0) html += `<span class="tag tag-green"><span class="tag-dot"></span>${online} Online</span>`;
+    if (offline > 0) html += `<span class="tag tag-grey"><span class="tag-dot"></span>${offline} Offline</span>`;
+    if (disabled > 0) html += `<span class="tag tag-amber"><span class="tag-dot"></span>${disabled} Disabled</span>`;
+    statusTags.innerHTML = html;
+  }
+
+  function getStatusTag(peer) {
+    if (!peer.enabled) return '<span class="tag tag-amber"><span class="tag-dot"></span>Disabled</span>';
+    if (peer.isOnline) return '<span class="tag tag-green"><span class="tag-dot"></span>Online</span>';
+    return '<span class="tag tag-grey"><span class="tag-dot"></span>Offline</span>';
+  }
+
+  function formatLastContact(timestamp) {
+    if (!timestamp) return '—';
+    const ts = typeof timestamp === 'number' ? timestamp * 1000 : new Date(timestamp).getTime();
+    if (isNaN(ts) || ts === 0) return '—';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ─── Search ──────────────────────────────────────────────
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    if (!q) return renderPeers(allPeers);
+    const filtered = allPeers.filter(p =>
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
+      (p.allowed_ips && p.allowed_ips.includes(q)) ||
+      (p.public_key && p.public_key.toLowerCase().includes(q))
+    );
+    renderPeers(filtered);
+  });
+
+  // ─── Table action delegation ─────────────────────────────
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+
+    switch (action) {
+      case 'qr': showQrModal(id); break;
+      case 'edit': showEditModal(id); break;
+      case 'toggle': togglePeer(id); break;
+      case 'delete': showConfirmDelete(id, btn.dataset.name); break;
+    }
+  });
+
+  // ─── Add peer ────────────────────────────────────────────
+  document.getElementById('btn-add-peer').addEventListener('click', () => {
+    document.getElementById('add-peer-name').value = '';
+    document.getElementById('add-peer-desc').value = '';
+    hideError('add-peer-error');
+    openModal('modal-add-peer');
+    document.getElementById('add-peer-name').focus();
+  });
+
+  document.getElementById('btn-add-peer-submit').addEventListener('click', async () => {
+    const name = document.getElementById('add-peer-name').value.trim();
+    const description = document.getElementById('add-peer-desc').value.trim();
+
+    if (!name) {
+      showError('add-peer-error', 'Name is required');
+      return;
+    }
+
+    try {
+      const data = await api.post('/api/peers', { name, description });
+      if (data.ok) {
+        closeModal('modal-add-peer');
+        // Show QR code for the newly created peer
+        showQrModal(data.peer.id);
+        loadPeers();
+      } else {
+        showError('add-peer-error', data.error);
+      }
+    } catch (err) {
+      showError('add-peer-error', err.message);
+    }
+  });
+
+  // ─── Edit peer ───────────────────────────────────────────
+  async function showEditModal(id) {
+    const peer = allPeers.find(p => String(p.id) === String(id));
+    if (!peer) return;
+
+    document.getElementById('edit-peer-id').value = id;
+    document.getElementById('edit-peer-name').value = peer.name || '';
+    document.getElementById('edit-peer-desc').value = peer.description || '';
+    hideError('edit-peer-error');
+    openModal('modal-edit-peer');
+    document.getElementById('edit-peer-name').focus();
+  }
+
+  document.getElementById('btn-edit-peer-submit').addEventListener('click', async () => {
+    const id = document.getElementById('edit-peer-id').value;
+    const name = document.getElementById('edit-peer-name').value.trim();
+    const description = document.getElementById('edit-peer-desc').value.trim();
+
+    if (!name) {
+      showError('edit-peer-error', 'Name is required');
+      return;
+    }
+
+    try {
+      const data = await api.put('/api/peers/' + id, { name, description });
+      if (data.ok) {
+        closeModal('modal-edit-peer');
+        loadPeers();
+      } else {
+        showError('edit-peer-error', data.error);
+      }
+    } catch (err) {
+      showError('edit-peer-error', err.message);
+    }
+  });
+
+  // ─── QR modal ────────────────────────────────────────────
+  async function showQrModal(id) {
+    try {
+      const data = await api.get('/api/peers/' + id + '/qr');
+      if (data.ok) {
+        document.getElementById('qr-peer-title').textContent = data.name + ' — QR Code';
+        document.getElementById('qr-peer-img').src = data.qr;
+        document.getElementById('qr-peer-config').textContent = data.config;
+        document.getElementById('qr-peer-download').href = '/api/peers/' + id + '/config?download=1';
+        document.getElementById('qr-peer-download').download = data.name + '.conf';
+        openModal('modal-qr-peer');
+      }
+    } catch (err) {
+      console.error('QR error:', err);
+    }
+  }
+
+  // ─── Toggle ──────────────────────────────────────────────
+  async function togglePeer(id) {
+    try {
+      await api.post('/api/peers/' + id + '/toggle');
+      loadPeers();
+    } catch (err) {
+      console.error('Toggle error:', err);
+    }
+  }
+
+  // ─── Delete ──────────────────────────────────────────────
+  let pendingDeleteId = null;
+
+  function showConfirmDelete(id, name) {
+    pendingDeleteId = id;
+    document.getElementById('confirm-message').textContent =
+      'Are you sure you want to delete peer "' + (name || id) + '"? This action cannot be undone.';
+    openModal('modal-confirm');
+  }
+
+  document.getElementById('btn-confirm-yes').addEventListener('click', async () => {
+    if (!pendingDeleteId) return;
+    try {
+      await api.del('/api/peers/' + pendingDeleteId);
+      closeModal('modal-confirm');
+      pendingDeleteId = null;
+      loadPeers();
+    } catch (err) {
+      console.error('Delete error:', err);
+    }
+  });
+
+  // ─── Modal helpers ───────────────────────────────────────
+  function openModal(id) {
+    document.getElementById(id).style.display = 'flex';
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  // Close modals on overlay click or close button
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.style.display = 'none';
+    }
+    if (e.target.closest('[data-close-modal]')) {
+      const overlay = e.target.closest('.modal-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+  });
+
+  // Close modal on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+    }
+  });
+
+  // ─── Error helpers ───────────────────────────────────────
+  function showError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function hideError(id) {
+    const el = document.getElementById(id);
+    el.style.display = 'none';
+    el.textContent = '';
+  }
+
+  // ─── Auto-refresh ────────────────────────────────────────
+  loadPeers();
+  setInterval(loadPeers, 15000);
+})();

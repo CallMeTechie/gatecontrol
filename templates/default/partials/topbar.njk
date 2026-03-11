@@ -1,0 +1,41 @@
+<header class="topbar">
+  <a href="/dashboard" class="topbar-logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-wordmark">{{ appName }}</div>
+    </div>
+  </a>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-status" id="wg-status">
+    <div class="pulse-dot"></div>
+    <span>{{ t('status.wg_active') }}</span>
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">
+    {{ wgHost }}
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-lang" id="lang-switcher" style="display:flex;gap:2px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px">
+    {% for lang in availableLanguages %}
+    <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}" style="padding:3px 8px;border:none;background:{{ 'var(--bg-panel)' if lang == language else 'transparent' }};border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:{{ 'var(--text-1)' if lang == language else 'var(--text-3)' }};text-transform:uppercase;{{ 'box-shadow:var(--shadow)' if lang == language else '' }}">{{ lang }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <a href="/settings" class="topbar-avatar" title="{{ user.username if user else 'Admin' }}" style="text-decoration:none">
+    {{ (user.display_name[0] if user and user.display_name else 'A') | upper }}
+  </a>
+</header>
+

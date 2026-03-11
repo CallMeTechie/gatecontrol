@@ -1,0 +1,145 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('dashboard.eyebrow') }}</div>
+    <div class="page-title">{{ t('dashboard.title') }}</div>
+    <div class="page-sub">{{ t('dashboard.subtitle') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+    <button class="btn btn-ghost" id="btn-reload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      {{ t('dashboard.reload') }}
+    </button>
+    <a href="/peers" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{ t('dashboard.add_peer') }}
+    </a>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-card-stripe" style="background:var(--green)"></div>
+    <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    </div>
+    <div class="stat-value" style="color:var(--green)" id="stat-peers">0</div>
+    <div class="stat-label">{{ t('dashboard.peers_connected') }}</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-card-stripe" style="background:var(--accent)"></div>
+    <div class="stat-icon" style="background:var(--accent-lt);color:var(--accent)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+    </div>
+    <div class="stat-value" style="color:var(--accent)" id="stat-routes">0</div>
+    <div class="stat-label">{{ t('dashboard.active_subdomains') }}</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-card-stripe" style="background:var(--blue)"></div>
+    <div class="stat-icon" style="background:var(--blue-lt);color:var(--blue)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </div>
+    <div class="stat-value" style="color:var(--blue)" id="stat-traffic">0 <span style="font-size:14px;font-weight:400">B</span></div>
+    <div class="stat-label">{{ t('dashboard.traffic_today') }}</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-card-stripe" style="background:var(--amber)"></div>
+    <div class="stat-icon" style="background:var(--amber-lt);color:var(--amber)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </div>
+    <div class="stat-value" style="color:var(--amber)" id="stat-latency">—</div>
+    <div class="stat-label">{{ t('dashboard.avg_latency') }}</div>
+  </div>
+</div>
+
+<!-- Traffic + Activity -->
+<div class="two-col">
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span class="card-title">{{ t('dashboard.network_traffic') }}</span>
+      <div class="tabs" style="margin-left:auto">
+        <div class="tab active" data-period="1h">1h</div>
+        <div class="tab" data-period="24h">24h</div>
+        <div class="tab" data-period="7d">7d</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;gap:20px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div>
+          <div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">{{ t('dashboard.upload') | upper }}</div>
+            <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--accent)" id="stat-upload-rate">0 B/s</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue)"></div>
+          <div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">{{ t('dashboard.download') | upper }}</div>
+            <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--blue)" id="stat-download-rate">0 B/s</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap" id="traffic-chart">
+        <svg class="chart-svg" viewBox="0 0 560 120" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="card-title">{{ t('dashboard.recent_events') }}</span>
+      <span class="card-sub">{{ t('dashboard.realtime') }}</span>
+    </div>
+    <div class="card-body" id="activity-feed">
+      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- System Resources -->
+<div class="three-col">
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('dashboard.cpu_usage') }}</span>
+      <span class="card-sub" style="color:var(--green)" id="cpu-pct">—</span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px" id="cpu-info">—</div>
+      <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--green)" id="cpu-bar"></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('dashboard.ram_usage') }}</span>
+      <span class="card-sub" style="color:var(--blue)" id="ram-pct">—</span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px" id="ram-info">—</div>
+      <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--blue)" id="ram-bar"></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('dashboard.uptime') }}</span>
+      <span class="card-sub" style="color:var(--accent)" id="uptime-pct">—</span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)" id="uptime-value">—</div>
+      <div class="meter-bar" style="margin-top:8px"><div class="meter-fill" style="width:99.9%;background:linear-gradient(90deg,var(--accent),#22c55e)"></div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/dashboard.js"></script>
+{% endblock %}

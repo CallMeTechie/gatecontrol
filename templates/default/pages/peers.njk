@@ -1,0 +1,56 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('peers.eyebrow') }}</div>
+    <div class="page-title">{{ t('peers.title') }}</div>
+    <div class="page-sub">{{ t('peers.subtitle') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+    <div class="input-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="peer-search" placeholder="{{ t('peers.search') }}">
+    </div>
+    <button class="btn btn-primary" id="btn-add-peer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{ t('peers.add') }}
+    </button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">{{ t('peers.all_peers') }}</span>
+    <div style="display:flex;gap:6px;margin-left:auto" id="peer-status-tags">
+    </div>
+  </div>
+  <div class="table-wrap">
+  <table class="peer-table">
+    <thead>
+      <tr>
+        <th>{{ t('peers.name_device') }}</th>
+        <th>{{ t('peers.wg_ip') }}</th>
+        <th>{{ t('peers.pub_key') }}</th>
+        <th>{{ t('peers.last_contact') }}</th>
+        <th>{{ t('peers.traffic') }}</th>
+        <th>{{ t('peers.status') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="peers-tbody">
+      <tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:40px">{{ t('common.loading') }}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% include theme + "/partials/modals/peer-add.njk" %}
+{% include theme + "/partials/modals/peer-edit.njk" %}
+{% include theme + "/partials/modals/peer-qr.njk" %}
+{% include theme + "/partials/modals/confirm.njk" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/peers.js"></script>
+{% endblock %}
