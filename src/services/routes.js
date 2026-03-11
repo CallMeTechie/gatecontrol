@@ -105,6 +105,20 @@ function buildCaddyConfig() {
     admin: {
       listen: '127.0.0.1:2019',
     },
+    logging: {
+      logs: {
+        access: {
+          writer: {
+            output: 'file',
+            filename: '/data/caddy/access.log',
+            roll_size_mb: 10,
+            roll_keep: 3,
+          },
+          encoder: { format: 'json' },
+          include: ['http.log.access'],
+        },
+      },
+    },
     apps: {
       http: {
         servers: {},
@@ -164,6 +178,9 @@ function buildCaddyConfig() {
     caddyConfig.apps.http.servers.srv0 = {
       listen: [':443', ':80'],
       routes: serverRoutes,
+      logs: {
+        default_logger_name: 'access',
+      },
     };
   }
 

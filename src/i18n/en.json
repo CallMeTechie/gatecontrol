@@ -118,6 +118,9 @@
   "logs.warning": "Warning",
   "logs.error": "Error",
   "logs.no_entries": "No log entries",
+  "logs.activity": "Activity",
+  "logs.access": "Access Log",
+  "logs.access_title": "Reverse Proxy Access Log",
 
   "certs.title": "SSL / Certificates",
   "certs.auto_tls": "Auto-TLS",

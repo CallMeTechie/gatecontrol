@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const activity = require('../../services/activity');
+const accessLog = require('../../services/accessLog');
 
 const router = Router();
 
@@ -32,6 +33,27 @@ router.get('/recent', (req, res) => {
     res.json({ entries });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch recent activity' });
+  }
+});
+
+/**
+ * GET /api/logs/access?page=1&limit=50&domain=&status=&method=
+ * Returns paginated Caddy access log entries
+ */
+router.get('/access', async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const filters = {
+      page: req.query.page || 1,
+      domain: req.query.domain || '',
+      status: req.query.status || '',
+      method: req.query.method || '',
+    };
+
+    const result = await accessLog.getRecent(limit, filters);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch access logs' });
   }
 });
 
