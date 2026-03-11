@@ -3,6 +3,21 @@
 const { getDb } = require('../db/connection');
 const webhook = require('./webhook');
 
+const IP_V4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
+const IP_V6_REGEX = /^[0-9a-fA-F:]+$/;
+
+function sanitizeIp(ip) {
+  if (!ip || typeof ip !== 'string') return null;
+  const trimmed = ip.trim();
+  if (IP_V4_REGEX.test(trimmed) || IP_V6_REGEX.test(trimmed)) return trimmed;
+  // Strip IPv6-mapped IPv4 prefix
+  if (trimmed.startsWith('::ffff:')) {
+    const v4 = trimmed.slice(7);
+    if (IP_V4_REGEX.test(v4)) return v4;
+  }
+  return null;
+}
+
 const SEVERITY_COLORS = {
   info: 'blue',
   success: 'green',
@@ -31,7 +46,7 @@ function log(eventType, message, options = {}) {
     message,
     details ? JSON.stringify(details) : null,
     source,
-    ipAddress,
+    sanitizeIp(ipAddress),
     severity
   );
 

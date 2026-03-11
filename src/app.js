@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const path = require('node:path');
 const helmet = require('helmet');
@@ -18,6 +19,12 @@ function createApp() {
   // ─── Trust proxy (behind Caddy) ───────────────────
   app.set('trust proxy', 1);
 
+  // ─── CSP nonce generation ───────────────────────
+  app.use((req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+
   // ─── Security headers ────────────────────────────
   app.use(helmet({
     contentSecurityPolicy: {
@@ -25,7 +32,7 @@ function createApp() {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
       },
