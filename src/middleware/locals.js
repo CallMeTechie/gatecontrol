@@ -30,6 +30,20 @@ function injectLocals(req, res, next) {
     }
   }
 
+  // Sidebar badge counts
+  if (req.session && req.session.userId) {
+    try {
+      const db = getDb();
+      const peerRow = db.prepare('SELECT COUNT(*) as c FROM peers WHERE enabled = 1').get();
+      const routeRow = db.prepare('SELECT COUNT(*) as c FROM routes WHERE enabled = 1').get();
+      res.locals.peerCount = peerRow ? peerRow.c : 0;
+      res.locals.routeCount = routeRow ? routeRow.c : 0;
+    } catch {
+      res.locals.peerCount = 0;
+      res.locals.routeCount = 0;
+    }
+  }
+
   // Flash messages
   if (req.session) {
     res.locals.flash = req.session.flash || {};

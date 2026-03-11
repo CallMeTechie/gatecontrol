@@ -9,7 +9,7 @@
   <a href="/peers" class="nav-item {{ 'active' if activeNav == 'peers' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
     {{ t('nav.peers') }}
-    <span class="nav-badge green" id="peer-count-badge">0</span>
+    <span class="nav-badge green" id="peer-count-badge">{{ peerCount or 0 }}</span>
   </a>
   <a href="/config" class="nav-item {{ 'active' if activeNav == 'config' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -20,7 +20,7 @@
   <a href="/routes" class="nav-item {{ 'active' if activeNav == 'routes' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
     {{ t('nav.routes') }}
-    <span class="nav-badge" id="route-count-badge">0</span>
+    <span class="nav-badge" id="route-count-badge">{{ routeCount or 0 }}</span>
   </a>
   <a href="/certificates" class="nav-item {{ 'active' if activeNav == 'certificates' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
