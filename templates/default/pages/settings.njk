@@ -131,6 +131,38 @@
 
     <div class="card">
       <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span class="card-title">{{ t('settings.backup') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:12px;color:var(--text-3)">{{ t('settings.backup_subtitle') }}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:500">{{ t('settings.backup_download') }}</div>
+          <div style="font-size:11px;color:var(--text-3)">{{ t('settings.backup_download_desc') }}</div>
+          <button class="btn btn-primary" id="btn-backup-download" style="align-self:flex-start">
+            {{ t('settings.backup_download') }}
+          </button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:13px;font-weight:500">{{ t('settings.restore') }}</div>
+          <div style="font-size:11px;color:var(--text-3)">{{ t('settings.restore_desc') }}</div>
+          <input type="file" id="backup-file-input" accept=".json" style="display:none">
+          <div id="backup-preview" style="display:none;padding:10px;border-radius:6px;background:var(--bg-2);font-size:12px;font-family:var(--font-mono)"></div>
+          <div id="restore-message" style="display:none"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" id="btn-backup-select" style="flex:0 0 auto">
+              {{ t('settings.restore_select') }}
+            </button>
+            <button class="btn btn-primary" id="btn-backup-restore" style="flex:0 0 auto;display:none">
+              {{ t('settings.restore_confirm') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span class="card-title">{{ t('settings.danger_zone') }}</span>
       </div>

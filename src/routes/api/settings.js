@@ -2,11 +2,15 @@
 
 const { Router } = require('express');
 const argon2 = require('argon2');
+const multer = require('multer');
 const { getDb } = require('../../db/connection');
 const settings = require('../../services/settings');
 const activity = require('../../services/activity');
+const backup = require('../../services/backup');
 const config = require('../../../config/default');
 const logger = require('../../utils/logger');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -175,6 +179,89 @@ router.post('/clear-logs', async (req, res) => {
     res.json({ ok: true, deleted });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to clear logs');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/settings/backup — Download backup as JSON
+ */
+router.get('/backup', (req, res) => {
+  try {
+    const data = backup.createBackup();
+    const filename = `gatecontrol-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+    activity.log('backup_created', 'Backup downloaded', {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(data);
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to create backup');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/settings/restore/preview — Validate and preview backup
+ */
+router.post('/restore/preview', upload.single('backup'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'No file uploaded' });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(req.file.buffer.toString('utf-8'));
+    } catch {
+      return res.status(400).json({ ok: false, error: 'Invalid JSON file' });
+    }
+
+    const errors = backup.validateBackup(data);
+    if (errors.length > 0) {
+      return res.status(400).json({ ok: false, error: 'Invalid backup', errors });
+    }
+
+    const summary = backup.getBackupSummary(data);
+    res.json({ ok: true, summary });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to preview backup');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/settings/restore — Restore from backup file
+ */
+router.post('/restore', upload.single('backup'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'No file uploaded' });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(req.file.buffer.toString('utf-8'));
+    } catch {
+      return res.status(400).json({ ok: false, error: 'Invalid JSON file' });
+    }
+
+    const result = await backup.restoreBackup(data);
+
+    activity.log('backup_restored', `Backup restored: ${result.peers} peers, ${result.routes} routes`, {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'warning',
+    });
+
+    res.json({ ok: true, restored: result });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to restore backup');
     res.status(500).json({ ok: false, error: err.message });
   }
 });

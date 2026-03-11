@@ -232,6 +232,103 @@
     });
   }
 
+  // ─── Backup & Restore ───────────────────────────────────
+  let pendingBackupFile = null;
+
+  document.getElementById('btn-backup-download').addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/settings/backup', {
+        credentials: 'same-origin',
+      });
+      if (!resp.ok) throw new Error('Download failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = resp.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'gatecontrol-backup.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Backup failed: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-backup-select').addEventListener('click', () => {
+    document.getElementById('backup-file-input').click();
+  });
+
+  document.getElementById('backup-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const preview = document.getElementById('backup-preview');
+    const restoreBtn = document.getElementById('btn-backup-restore');
+    const msgEl = document.getElementById('restore-message');
+    msgEl.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('backup', file);
+
+    try {
+      const resp = await fetch('/api/settings/restore/preview', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': api.csrfToken },
+        body: formData,
+      });
+      const data = await resp.json();
+
+      if (!data.ok) {
+        preview.style.display = 'none';
+        restoreBtn.style.display = 'none';
+        pendingBackupFile = null;
+        showMessage('restore-message', data.error + (data.errors ? ': ' + data.errors.join(', ') : ''), 'error');
+        return;
+      }
+
+      const s = data.summary;
+      preview.textContent = `${s.peers} Peers, ${s.routes} Routes, ${s.settings} Settings, ${s.webhooks} Webhooks (${s.created_at})`;
+      preview.style.display = 'block';
+      restoreBtn.style.display = 'inline-flex';
+      pendingBackupFile = file;
+    } catch (err) {
+      preview.style.display = 'none';
+      restoreBtn.style.display = 'none';
+      pendingBackupFile = null;
+      showMessage('restore-message', err.message, 'error');
+    }
+  });
+
+  document.getElementById('btn-backup-restore').addEventListener('click', async () => {
+    if (!pendingBackupFile) return;
+    if (!confirm('This will replace ALL existing peers, routes, settings and webhooks. Continue?')) return;
+
+    const formData = new FormData();
+    formData.append('backup', pendingBackupFile);
+
+    try {
+      const resp = await fetch('/api/settings/restore', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': api.csrfToken },
+        body: formData,
+      });
+      const data = await resp.json();
+
+      if (data.ok) {
+        const r = data.restored;
+        alert(`Restore complete: ${r.peers} peers, ${r.routes} routes, ${r.settings} settings, ${r.webhooks} webhooks`);
+        window.location.reload();
+      } else {
+        showMessage('restore-message', data.error || 'Restore failed', 'error');
+      }
+    } catch (err) {
+      showMessage('restore-message', err.message, 'error');
+    }
+  });
+
   // ─── Init ───────────────────────────────────────────────
   loadProfile();
   loadWebhooks();
