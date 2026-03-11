@@ -1,6 +1,7 @@
 'use strict';
 
 const config = require('../config/default');
+const { validateConfig } = require('../config/validate');
 const logger = require('./utils/logger');
 const { runMigrations } = require('./db/migrations');
 const { seedAdminUser } = require('./db/seed');
@@ -10,6 +11,9 @@ const { startPoller, stopPoller } = require('./services/peerStatus');
 const activity = require('./services/activity');
 
 async function start() {
+  // Validate configuration
+  validateConfig();
+
   logger.info({ name: config.app.name, version: require('../package.json').version }, 'Starting application');
 
   // Initialize database
