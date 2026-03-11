@@ -4,6 +4,41 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
 /**
+ * Validate webhook URL: must be http(s) and not target private/internal networks
+ */
+function validateWebhookUrl(urlStr) {
+  let parsed;
+  try { parsed = new URL(urlStr); } catch { throw new Error('Invalid webhook URL'); }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Webhook URL must use http or https');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block loopback
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') {
+    throw new Error('Webhook URL must not target localhost');
+  }
+
+  // Block private/reserved IPv4 ranges
+  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const [, a, b] = ipv4Match.map(Number);
+    if (a === 10 ||                          // 10.0.0.0/8
+        (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+        (a === 192 && b === 168) ||           // 192.168.0.0/16
+        (a === 169 && b === 254) ||           // 169.254.0.0/16 (link-local, cloud metadata)
+        a === 127 ||                          // 127.0.0.0/8
+        a === 0) {                            // 0.0.0.0/8
+      throw new Error('Webhook URL must not target private or reserved IP addresses');
+    }
+  }
+
+  return parsed;
+}
+
+/**
  * Get all configured webhooks
  */
 function getAll() {
@@ -26,7 +61,7 @@ function create({ url, events, description }) {
   const db = getDb();
 
   if (!url || typeof url !== 'string') throw new Error('Webhook URL is required');
-  try { new URL(url); } catch { throw new Error('Invalid webhook URL'); }
+  validateWebhookUrl(url);
 
   const eventsStr = Array.isArray(events) ? events.join(',') : (events || '*');
   const desc = description || null;
@@ -49,7 +84,7 @@ function update(id, data) {
 
   if (data.url !== undefined) {
     if (!data.url) throw new Error('Webhook URL is required');
-    try { new URL(data.url); } catch { throw new Error('Invalid webhook URL'); }
+    validateWebhookUrl(data.url);
   }
 
   db.prepare(`
@@ -121,6 +156,9 @@ async function notify(eventType, message, details = null) {
       if (!subscribed.includes(eventType)) continue;
     }
 
+    // Validate URL before making request (guards against pre-existing unsafe URLs)
+    try { validateWebhookUrl(wh.url); } catch { continue; }
+
     // Fire-and-forget — don't block the caller
     fetch(wh.url, {
       method: 'POST',
@@ -145,4 +183,5 @@ module.exports = {
   remove,
   toggle,
   notify,
+  validateWebhookUrl,
 };

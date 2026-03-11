@@ -127,7 +127,7 @@
             <div class="activity-dot" style="background:${dotColor}"></div>
             <div>
               <div class="activity-text">${escapeHtml(entry.message)}</div>
-              <div class="activity-time">${time}${entry.ip_address ? ' · ' + entry.ip_address : ''}</div>
+              <div class="activity-time">${time}${entry.ip_address ? ' · ' + escapeHtml(entry.ip_address) : ''}</div>
             </div>
           </div>`;
       }).join('');

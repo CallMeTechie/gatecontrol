@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const webhooks = require('../../services/webhook');
+const { validateWebhookUrl } = webhooks;
 const logger = require('../../utils/logger');
 
 const router = Router();
@@ -84,6 +85,9 @@ router.post('/:id/test', async (req, res) => {
   try {
     const wh = webhooks.getById(req.params.id);
     if (!wh) return res.status(404).json({ ok: false, error: 'Webhook not found' });
+
+    // Re-validate URL before making request (guards against pre-existing unsafe URLs)
+    validateWebhookUrl(wh.url);
 
     const payload = JSON.stringify({
       event: 'webhook_test',
