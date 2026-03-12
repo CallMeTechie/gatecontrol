@@ -76,8 +76,8 @@ async function create(data) {
   // Store peer in DB
   const result = db.prepare(`
     INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                       allowed_ips, dns, persistent_keepalive, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                       allowed_ips, dns, persistent_keepalive, enabled, tags)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(
     sanitize(data.name),
     sanitize(data.description) || null,
@@ -86,7 +86,8 @@ async function create(data) {
     encrypt(presharedKey),
     allowedIps,
     dns,
-    keepalive
+    keepalive,
+    sanitize(data.tags) || ''
   );
 
   const peerId = result.lastInsertRowid;

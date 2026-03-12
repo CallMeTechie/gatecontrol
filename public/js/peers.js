@@ -183,6 +183,7 @@
   document.getElementById('btn-add-peer').addEventListener('click', () => {
     document.getElementById('add-peer-name').value = '';
     document.getElementById('add-peer-desc').value = '';
+    document.getElementById('add-peer-tags').value = '';
     hideError('add-peer-error');
     openModal('modal-add-peer');
     document.getElementById('add-peer-name').focus();
@@ -191,6 +192,7 @@
   document.getElementById('btn-add-peer-submit').addEventListener('click', async () => {
     const name = document.getElementById('add-peer-name').value.trim();
     const description = document.getElementById('add-peer-desc').value.trim();
+    const tags = document.getElementById('add-peer-tags').value.trim();
 
     if (!name) {
       showError('add-peer-error', 'Name is required');
@@ -198,7 +200,7 @@
     }
 
     try {
-      const data = await api.post('/api/peers', { name, description });
+      const data = await api.post('/api/peers', { name, description, tags });
       if (data.ok) {
         closeModal('modal-add-peer');
         // Show QR code for the newly created peer

@@ -41,8 +41,8 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, description } = req.body;
-    const peer = await peers.create({ name, description });
+    const { name, description, tags } = req.body;
+    const peer = await peers.create({ name, description, tags });
     res.status(201).json({ ok: true, peer });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
