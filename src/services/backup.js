@@ -26,6 +26,7 @@ function createBackup() {
     dns: p.dns,
     persistent_keepalive: p.persistent_keepalive,
     enabled: p.enabled,
+    tags: p.tags || '',
     created_at: p.created_at,
     updated_at: p.updated_at,
   }));
@@ -153,8 +154,8 @@ async function restoreBackup(backup) {
     // Restore peers
     const insertPeer = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const peerIdMap = new Map(); // name → new id
@@ -169,6 +170,7 @@ async function restoreBackup(backup) {
         p.dns || null,
         p.persistent_keepalive || 25,
         p.enabled !== undefined ? (p.enabled ? 1 : 0) : 1,
+        p.tags || '',
         p.created_at || null,
         p.updated_at || null,
       );

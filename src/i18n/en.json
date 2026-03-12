@@ -67,6 +67,9 @@
   "peers.download_config": "Download Config",
   "peers.no_peers": "No peers configured",
   "peers.disabled": "Disabled",
+  "peers.tags": "Tags",
+  "peers.tags_placeholder": "e.g. server, production",
+  "peers.tags_hint": "Comma-separated tags for grouping",
 
   "routes.eyebrow": "Caddy Reverse Proxy",
   "routes.title": "Subdomains & Routes",
@@ -95,6 +98,7 @@
   "routes.direct_ip": "Direct IP",
   "routes.no_routes": "No routes configured",
   "routes.disabled": "Disabled",
+  "routes.search": "Search routes...",
 
   "config.eyebrow": "WireGuard Interface",
   "config.title": "Configuration",

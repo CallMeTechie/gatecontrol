@@ -56,8 +56,8 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled } = req.body;
-    const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled });
+    const { name, description, dns, persistentKeepalive, enabled, tags } = req.body;
+    const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled, tags });
     res.json({ ok: true, peer });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');

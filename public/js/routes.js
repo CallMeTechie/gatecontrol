@@ -6,6 +6,7 @@
   const routesSubtitle = document.getElementById('routes-subtitle');
   const peerSelect = document.getElementById('route-peer-select');
   const routeForm = document.getElementById('route-form');
+  const routeSearch = document.getElementById('route-search');
   let allRoutes = [];
   let allPeers = [];
 
@@ -15,7 +16,7 @@
       const data = await api.get('/api/routes');
       if (data.ok) {
         allRoutes = data.routes;
-        renderRoutes(allRoutes);
+        applyRouteFilter();
         const enabledCount = allRoutes.filter(r => r.enabled).length;
         routesCount.textContent = enabledCount + ' entries';
         routesSubtitle.textContent = enabledCount + ' active entries';
@@ -92,6 +93,7 @@
         <div style="flex:1;min-width:0">
           <div class="route-domain">${escapeHtml(r.domain)}</div>
           <div class="route-target">→ ${escapeHtml(peerLabel)} (${escapeHtml(target)})</div>
+          ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           ${statusTag}${httpsTag}${backendHttpsTag}${authTag}
@@ -109,6 +111,23 @@
         </div>
       </div>`;
     }).join('');
+  }
+
+  // ─── Search routes ──────────────────────────────────────
+  function applyRouteFilter() {
+    const q = routeSearch ? routeSearch.value.toLowerCase().trim() : '';
+    if (!q) return renderRoutes(allRoutes);
+    const filtered = allRoutes.filter(r =>
+      (r.domain && r.domain.toLowerCase().includes(q)) ||
+      (r.description && r.description.toLowerCase().includes(q)) ||
+      (r.peer_name && r.peer_name.toLowerCase().includes(q)) ||
+      (r.target_ip && r.target_ip.includes(q))
+    );
+    renderRoutes(filtered);
+  }
+
+  if (routeSearch) {
+    routeSearch.addEventListener('input', () => applyRouteFilter());
   }
 
   // ─── Route list action delegation ────────────────────────

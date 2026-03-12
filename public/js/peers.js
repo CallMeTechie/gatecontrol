@@ -4,7 +4,9 @@
   const tbody = document.getElementById('peers-tbody');
   const searchInput = document.getElementById('peer-search');
   const statusTags = document.getElementById('peer-status-tags');
+  const tagFilters = document.getElementById('peer-tag-filters');
   let allPeers = [];
+  let activeTagFilter = null;
 
   // ─── Load peers ──────────────────────────────────────────
   async function loadPeers() {
@@ -12,8 +14,9 @@
       const data = await api.get('/api/peers');
       if (data.ok) {
         allPeers = data.peers;
-        renderPeers(allPeers);
+        applyFilters();
         renderStatusTags(allPeers);
+        renderTagFilters(allPeers);
       }
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:40px">' +
@@ -28,6 +31,7 @@
       return;
     }
 
+    // All user-controlled values passed through escapeHtml() for XSS safety
     tbody.innerHTML = peers.map(p => {
       const ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '—';
       const pubKey = p.public_key ? p.public_key.substring(0, 12) + '…' : '—';
@@ -35,11 +39,14 @@
       const rx = formatBytes(p.transferRx || p.transfer_rx || 0);
       const tx = formatBytes(p.transferTx || p.transfer_tx || 0);
       const statusTag = getStatusTag(p);
+      const peerTags = parseTags(p.tags);
+      const tagsHtml = peerTags.map(t => `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${escapeHtml(t)}</span>`).join('');
 
       return `<tr data-peer-id="${p.id}">
         <td>
           <div class="peer-name">${escapeHtml(p.name)}</div>
           <div class="peer-meta">${escapeHtml(p.description || '')}</div>
+          ${tagsHtml ? `<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">${tagsHtml}</div>` : ''}
         </td>
         <td><span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(ip)}</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${escapeHtml(pubKey)}</span></td>
@@ -103,18 +110,58 @@
     return div.innerHTML;
   }
 
-  // ─── Search ──────────────────────────────────────────────
-  searchInput.addEventListener('input', () => {
+  // ─── Tag helpers ────────────────────────────────────────
+  function parseTags(tags) {
+    if (!tags) return [];
+    return tags.split(',').map(t => t.trim()).filter(Boolean);
+  }
+
+  function renderTagFilters(peers) {
+    if (!tagFilters) return;
+    const tagSet = new Set();
+    peers.forEach(p => parseTags(p.tags).forEach(t => tagSet.add(t)));
+    const tags = Array.from(tagSet).sort();
+
+    tagFilters.textContent = '';
+    if (tags.length === 0) return;
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'tag ' + (!activeTagFilter ? 'tag-blue' : 'tag-grey');
+    allBtn.style.cssText = 'cursor:pointer;font-size:11px';
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => { activeTagFilter = null; applyFilters(); renderTagFilters(allPeers); });
+    tagFilters.appendChild(allBtn);
+
+    tags.forEach(tag => {
+      const btn = document.createElement('button');
+      btn.className = 'tag ' + (activeTagFilter === tag ? 'tag-blue' : 'tag-grey');
+      btn.style.cssText = 'cursor:pointer;font-size:11px';
+      btn.textContent = tag;
+      btn.addEventListener('click', () => { activeTagFilter = tag; applyFilters(); renderTagFilters(allPeers); });
+      tagFilters.appendChild(btn);
+    });
+  }
+
+  function applyFilters() {
+    let filtered = allPeers;
+    if (activeTagFilter) {
+      filtered = filtered.filter(p => parseTags(p.tags).includes(activeTagFilter));
+    }
     const q = searchInput.value.toLowerCase().trim();
-    if (!q) return renderPeers(allPeers);
-    const filtered = allPeers.filter(p =>
-      (p.name && p.name.toLowerCase().includes(q)) ||
-      (p.description && p.description.toLowerCase().includes(q)) ||
-      (p.allowed_ips && p.allowed_ips.includes(q)) ||
-      (p.public_key && p.public_key.toLowerCase().includes(q))
-    );
+    if (q) {
+      filtered = filtered.filter(p =>
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.description && p.description.toLowerCase().includes(q)) ||
+        (p.allowed_ips && p.allowed_ips.includes(q)) ||
+        (p.public_key && p.public_key.toLowerCase().includes(q)) ||
+        (p.tags && p.tags.toLowerCase().includes(q))
+      );
+    }
     renderPeers(filtered);
-  });
+  }
+
+  // ─── Search ──────────────────────────────────────────────
+  searchInput.addEventListener('input', () => applyFilters());
 
   // ─── Table action delegation ─────────────────────────────
   tbody.addEventListener('click', (e) => {
@@ -173,6 +220,7 @@
     document.getElementById('edit-peer-id').value = id;
     document.getElementById('edit-peer-name').value = peer.name || '';
     document.getElementById('edit-peer-desc').value = peer.description || '';
+    document.getElementById('edit-peer-tags').value = peer.tags || '';
     hideError('edit-peer-error');
     openModal('modal-edit-peer');
     document.getElementById('edit-peer-name').focus();
@@ -182,6 +230,7 @@
     const id = document.getElementById('edit-peer-id').value;
     const name = document.getElementById('edit-peer-name').value.trim();
     const description = document.getElementById('edit-peer-desc').value.trim();
+    const tags = document.getElementById('edit-peer-tags').value.trim();
 
     if (!name) {
       showError('edit-peer-error', 'Name is required');
@@ -189,7 +238,7 @@
     }
 
     try {
-      const data = await api.put('/api/peers/' + id, { name, description });
+      const data = await api.put('/api/peers/' + id, { name, description, tags });
       if (data.ok) {
         closeModal('modal-edit-peer');
         loadPeers();

@@ -142,6 +142,7 @@ async function update(id, data) {
       dns = COALESCE(?, dns),
       persistent_keepalive = COALESCE(?, persistent_keepalive),
       enabled = COALESCE(?, enabled),
+      tags = COALESCE(?, tags),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -150,6 +151,7 @@ async function update(id, data) {
     data.dns || null,
     data.persistentKeepalive || null,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
+    data.tags !== undefined ? sanitize(data.tags) : null,
     id
   );
 

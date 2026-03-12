@@ -115,6 +115,14 @@ function runMigrations() {
     );
   `);
 
+  // Add tags column to peers if missing
+  try {
+    db.exec(`ALTER TABLE peers ADD COLUMN tags TEXT DEFAULT ''`);
+    logger.info('Added tags column to peers');
+  } catch (e) {
+    // Column already exists
+  }
+
   // Add performance indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_peers_name ON peers(name);
