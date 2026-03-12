@@ -1,7 +1,6 @@
 services:
   gatecontrol:
-    image: gatecontrol:latest
-    build: .
+    image: ghcr.io/callmetechie/gatecontrol:latest
     container_name: gatecontrol
     cap_add:
       - NET_ADMIN
