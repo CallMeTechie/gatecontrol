@@ -78,6 +78,12 @@
       const httpsTag = r.https_enabled
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
+      const backendHttpsTag = r.backend_https
+        ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Backend HTTPS</span>'
+        : '';
+      const authTag = r.basic_auth_enabled
+        ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Auth</span>'
+        : '';
 
       return `<div class="route-item" data-route-id="${r.id}">
         <div class="route-icon">
@@ -87,8 +93,8 @@
           <div class="route-domain">${escapeHtml(r.domain)}</div>
           <div class="route-target">→ ${escapeHtml(peerLabel)} (${escapeHtml(target)})</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          ${statusTag}${httpsTag}
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
