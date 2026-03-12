@@ -81,6 +81,8 @@
   "routes.new_route": "Create New Route",
   "routes.domain": "Subdomain",
   "routes.domain_placeholder": "service.example.com",
+  "routes.description": "Description",
+  "routes.description_placeholder": "Optional description",
   "routes.target_peer": "Target Peer",
   "routes.target_port": "Target Port",
   "routes.target_port_placeholder": "e.g. 8080",

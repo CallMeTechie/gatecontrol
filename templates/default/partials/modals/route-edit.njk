@@ -11,6 +11,10 @@
         <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253">
       </div>
       <div class="form-group">
+        <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
+        <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
+      </div>
+      <div class="form-group">
         <label class="form-label">{{ t('routes.target_peer') }}</label>
         <select id="edit-route-peer" style="width:100%">
           <option value="">— {{ t('routes.direct_ip') }} —</option>

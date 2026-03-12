@@ -151,6 +151,7 @@
 
     const fd = new FormData(routeForm);
     const domain = fd.get('domain').trim();
+    const description = fd.get('description') ? fd.get('description').trim() : '';
     const peer_id = fd.get('peer_id') || null;
     const target_port = fd.get('target_port').trim();
 
@@ -173,7 +174,7 @@
     }
 
     try {
-      const payload = { domain, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled };
+      const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled };
       if (basic_auth_enabled) {
         payload.basic_auth_user = basic_auth_user;
         payload.basic_auth_password = basic_auth_password;
@@ -215,6 +216,7 @@
 
     document.getElementById('edit-route-id').value = id;
     document.getElementById('edit-route-domain').value = route.domain || '';
+    document.getElementById('edit-route-desc').value = route.description || '';
     document.getElementById('edit-route-port').value = route.target_port || '';
 
     const ipInput = document.getElementById('edit-route-ip');
@@ -267,6 +269,7 @@
     btnEditSubmit.addEventListener('click', async () => {
       const id = document.getElementById('edit-route-id').value;
       const domain = document.getElementById('edit-route-domain').value.trim();
+      const description = document.getElementById('edit-route-desc').value.trim();
       const target_port = document.getElementById('edit-route-port').value.trim();
       const editPeerSelect = document.getElementById('edit-route-peer');
       const peer_id = editPeerSelect ? editPeerSelect.value || null : null;
@@ -291,7 +294,7 @@
       }
 
       try {
-        const payload = { domain, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled };
+        const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled };
         if (basic_auth_enabled) {
           payload.basic_auth_user = basic_auth_user.trim();
           if (basic_auth_password.trim()) {

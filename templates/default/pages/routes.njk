@@ -44,6 +44,10 @@
           <input type="text" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253">
         </div>
         <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.description') or 'Description' }}</label>
+          <input type="text" name="description" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" style="width:100%;padding:8px 12px" maxlength="255">
+        </div>
+        <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_peer') }}</label>
           <select name="peer_id" style="width:100%" id="route-peer-select">
             <option value="">—</option>
