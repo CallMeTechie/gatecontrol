@@ -30,6 +30,9 @@ router.get('/stats', async (req, res) => {
     // Current rates
     const rates = await traffic.getCurrentRates();
 
+    // Average latency (ping online peers)
+    const avgLatency = await wireguard.getAverageLatency();
+
     res.json({
       peers: {
         total: totalPeers,
@@ -48,6 +51,7 @@ router.get('/stats', async (req, res) => {
       wireguard: {
         running: wgStatus.running,
       },
+      latency: avgLatency,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });

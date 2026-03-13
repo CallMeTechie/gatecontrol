@@ -28,6 +28,12 @@
       const dnRateEl = document.getElementById('stat-download-rate');
       if (dnRateEl) dnRateEl.textContent = formatBytes(data.traffic.downloadRate) + '/s';
 
+      // Avg latency
+      const latencyEl = document.getElementById('stat-latency');
+      if (latencyEl) {
+        latencyEl.textContent = data.latency != null ? data.latency + ' ms' : '—';
+      }
+
       // WireGuard status in topbar
       const wgStatusEl = document.getElementById('wg-status');
       if (wgStatusEl) {

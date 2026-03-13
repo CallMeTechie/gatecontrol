@@ -186,6 +186,45 @@ async function syncConfig() {
   }
 }
 
+/**
+ * Ping a single IP and return latency in ms (or null on failure).
+ * Uses execFile (not shell exec) — IPs come from WireGuard, not user input.
+ */
+async function pingHost(ip) {
+  try {
+    const { stdout } = await exec('ping', ['-c', '1', '-W', '2', ip], { timeout: 5000 });
+    const match = stdout.match(/time[=<]([\d.]+)\s*ms/);
+    return match ? parseFloat(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Measure average latency across all online peers (via ping to their WireGuard IPs)
+ */
+async function getAverageLatency() {
+  const status = await getStatus();
+  if (!status.running) return null;
+
+  const onlinePeers = status.peers.filter(p => p.isOnline && p.allowedIps);
+
+  if (onlinePeers.length === 0) return null;
+
+  // Extract the first IP from allowedIps for each peer
+  const ips = onlinePeers.map(p => p.allowedIps.split(',')[0].split('/')[0]).filter(Boolean);
+
+  if (ips.length === 0) return null;
+
+  const results = await Promise.all(ips.map(ip => pingHost(ip)));
+  const valid = results.filter(r => r !== null);
+
+  if (valid.length === 0) return null;
+
+  const avg = valid.reduce((sum, v) => sum + v, 0) / valid.length;
+  return Math.round(avg * 10) / 10;
+}
+
 module.exports = {
   getStatus,
   getTransferTotals,
@@ -194,4 +233,5 @@ module.exports = {
   stop,
   getConfig,
   syncConfig,
+  getAverageLatency,
 };
