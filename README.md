@@ -1,5 +1,7 @@
 # GateControl
 
+🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
+
 **Unified WireGuard VPN + Caddy Reverse Proxy Management**
 
 GateControl is a self-hosted, containerized management platform that combines WireGuard VPN peer management with Caddy reverse proxy routing in a single, security-focused web interface. It is designed for self-hosters and small teams who want full control over their VPN infrastructure and reverse proxy configuration without juggling multiple tools or editing config files manually.
