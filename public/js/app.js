@@ -130,13 +130,8 @@ document.querySelectorAll('.flash').forEach(el => {
     }
   };
 
-  // Close on overlay click or close button
+  // Close on close button only (not overlay click)
   document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('modal-overlay')) {
-      e.target.style.display = 'none';
-      document.body.style.overflow = '';
-      if (previousFocus) { previousFocus.focus(); previousFocus = null; }
-    }
     if (e.target.closest('[data-close-modal]')) {
       var overlay = e.target.closest('.modal-overlay');
       if (overlay) {
