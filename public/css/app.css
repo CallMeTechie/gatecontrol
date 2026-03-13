@@ -129,6 +129,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--border);
 }
 
+.topbar-profile { position: relative; }
 .topbar-avatar {
   width: 32px; height: 32px;
   background: var(--accent);
@@ -141,7 +142,45 @@ a { color: inherit; text-decoration: none; }
   color: #fff;
   font-family: var(--font-mono);
   letter-spacing: 0;
+  border: none;
 }
+.topbar-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 300;
+  animation: fadeIn 0.12s;
+}
+.topbar-dropdown.open { display: block; }
+.topbar-dropdown-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  font-family: var(--font-ui);
+}
+.topbar-dropdown-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.topbar-dropdown-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.topbar-dropdown-logout { color: var(--red); }
+.topbar-dropdown-logout:hover { background: var(--red-lt); color: var(--red); }
+.topbar-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
 
 /* ─── Shell ─────────────────────────────────────────────── */
 .shell {

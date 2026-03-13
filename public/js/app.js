@@ -100,6 +100,26 @@ document.querySelectorAll('.flash').forEach(el => {
   }
 })();
 
+// ─── Profile dropdown ───────────────────────────────────
+(function() {
+  var profile = document.getElementById('topbar-profile');
+  var dropdown = document.getElementById('topbar-dropdown');
+  if (!profile || !dropdown) return;
+
+  profile.querySelector('.topbar-avatar').addEventListener('click', function(e) {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!profile.contains(e.target)) dropdown.classList.remove('open');
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') dropdown.classList.remove('open');
+  });
+})();
+
 // ─── Button loading states ──────────────────────────────
 window.btnLoading = function(btn) {
   if (!btn) return;

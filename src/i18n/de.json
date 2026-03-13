@@ -10,6 +10,9 @@
   "nav.system": "System",
   "nav.logs": "Logs & Monitoring",
   "nav.settings": "Einstellungen",
+  "nav.profile": "Profil",
+  "nav.account": "Konto",
+  "nav.logout": "Abmelden",
 
   "auth.login": "Anmelden",
   "auth.username": "Benutzername",
@@ -133,7 +136,10 @@
   "certs.managed_by_caddy": "Automatisch verwaltet von Caddy",
   "certs.no_certs": "Keine HTTPS-Routen konfiguriert",
 
-  "settings.subtitle": "Konto und Einstellungen verwalten",
+  "settings.subtitle": "Anwendungskonfiguration",
+
+  "profile.title": "Benutzerprofil",
+  "profile.subtitle": "Konto und Einstellungen verwalten",
   "settings.profile": "Profil",
   "settings.username": "Benutzername",
   "settings.display_name": "Anzeigename",

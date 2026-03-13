@@ -59,6 +59,13 @@ router.get('/logs', requireAuth, (req, res) => {
   });
 });
 
+router.get('/profile', requireAuth, (req, res) => {
+  res.render(`${config.theme.defaultTheme}/pages/profile.njk`, {
+    title: res.locals.t('profile.title'),
+    activeNav: 'profile',
+  });
+});
+
 router.get('/settings', requireAuth, (req, res) => {
   res.render(`${config.theme.defaultTheme}/pages/settings.njk`, {
     title: res.locals.t('nav.settings'),
