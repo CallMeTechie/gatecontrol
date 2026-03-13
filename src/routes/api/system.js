@@ -14,7 +14,7 @@ router.get('/resources', async (req, res) => {
     const resources = await system.getResources();
     res.json(resources);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch system resources' });
+    res.status(500).json({ error: req.t('error.system.resources') });
   }
 });
 

@@ -54,7 +54,7 @@ router.get('/stats', async (req, res) => {
       latency: avgLatency,
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    res.status(500).json({ error: req.t('error.dashboard.stats') });
   }
 });
 
@@ -71,7 +71,7 @@ router.get('/traffic', (req, res) => {
     const data = traffic.getChartData(period);
     res.json({ period, data });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch traffic data' });
+    res.status(500).json({ error: req.t('error.dashboard.traffic') });
   }
 });
 

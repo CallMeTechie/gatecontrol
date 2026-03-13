@@ -18,7 +18,7 @@ router.get('/activity', (req, res) => {
     const result = activity.getPaginated(page, limit);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch activity log' });
+    res.status(500).json({ error: req.t('error.logs.activity') });
   }
 });
 
@@ -32,7 +32,7 @@ router.get('/recent', (req, res) => {
     const entries = activity.getRecent(limit);
     res.json({ entries });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch recent activity' });
+    res.status(500).json({ error: req.t('error.logs.recent') });
   }
 });
 
@@ -53,7 +53,7 @@ router.get('/access', async (req, res) => {
     const result = await accessLog.getRecent(limit, filters);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch access logs' });
+    res.status(500).json({ error: req.t('error.logs.access') });
   }
 });
 

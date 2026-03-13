@@ -14,7 +14,7 @@ router.get('/status', async (req, res) => {
     const status = await wg.getStatus();
     res.json(status);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to get WireGuard status' });
+    res.status(500).json({ error: req.t('error.wireguard.status') });
   }
 });
 
@@ -25,10 +25,10 @@ router.get('/status', async (req, res) => {
 router.get('/config', async (req, res) => {
   try {
     const config = await wg.getConfig();
-    if (!config) return res.status(404).json({ error: 'Config not found' });
+    if (!config) return res.status(404).json({ error: req.t('error.wireguard.config_not_found') });
     res.json({ config });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to read WG config' });
+    res.status(500).json({ error: req.t('error.wireguard.config_read') });
   }
 });
 
@@ -45,7 +45,7 @@ router.post('/restart', async (req, res) => {
     });
     res.json({ success });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to restart WireGuard' });
+    res.status(500).json({ error: req.t('error.wireguard.restart') });
   }
 });
 
@@ -62,7 +62,7 @@ router.post('/stop', async (req, res) => {
     });
     res.json({ success });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to stop WireGuard' });
+    res.status(500).json({ error: req.t('error.wireguard.stop') });
   }
 });
 

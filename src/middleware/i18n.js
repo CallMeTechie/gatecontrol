@@ -73,7 +73,8 @@ function i18nMiddleware(req, res, next) {
   req.language = lang;
   res.locals.language = lang;
   res.locals.availableLanguages = config.i18n.availableLanguages;
-  res.locals.t = (key, params) => translate(lang, key, params);
+  req.t = (key, params) => translate(lang, key, params);
+  res.locals.t = req.t;
   next();
 }
 

@@ -14,13 +14,28 @@ function stripHash(route) {
   return safe;
 }
 
-/** Map error message to HTTP status code */
-function errorStatus(err) {
+/** Map service-layer error messages to i18n keys */
+const VALIDATION_ERROR_MAP = {
+  'not found': 'error.routes.not_found',
+  'already exists': 'error.routes.domain_exists',
+  'peer not found': 'error.routes.peer_not_found',
+  'peer is disabled': 'error.routes.peer_disabled',
+  'required': 'error.routes.basic_auth_required',
+  'Invalid': 'error.routes.create',
+  'must be': 'error.routes.create',
+  'characters': 'error.routes.create',
+};
+
+function resolveError(req, err, fallbackKey) {
   const msg = err.message || '';
-  if (msg.includes('not found')) return 404;
-  if (msg.includes('already exists') || msg.includes('required') || msg.includes('Invalid') || msg.includes('must be') || msg.includes('characters')) return 400;
-  if (msg.includes('Caddy admin API')) return 502;
-  return 500;
+  if (msg.includes('Caddy')) return { status: 502, error: req.t('error.routes.caddy_unreachable') };
+  for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
+    if (msg.toLowerCase().includes(pattern.toLowerCase())) {
+      const status = pattern === 'not found' ? 404 : 400;
+      return { status, error: req.t(key) };
+    }
+  }
+  return { status: 500, error: req.t(fallbackKey) };
 }
 
 /**
@@ -34,7 +49,7 @@ router.get('/', async (req, res) => {
     res.json({ ok: true, routes: list, limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list routes');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.routes.list') });
   }
 });
 
@@ -54,7 +69,7 @@ router.get('/peers', async (req, res) => {
     res.json({ ok: true, peers: simplified });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list peers for routes');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.peers.list') });
   }
 });
 
@@ -64,11 +79,11 @@ router.get('/peers', async (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const route = routes.getById(req.params.id);
-    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+    if (!route) return res.status(404).json({ ok: false, error: req.t('error.routes.not_found') });
     res.json({ ok: true, route: stripHash(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get route');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.routes.get') });
   }
 });
 
@@ -86,7 +101,8 @@ router.post('/', async (req, res) => {
     res.status(201).json({ ok: true, route: stripHash(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
-    res.status(errorStatus(err)).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.routes.create');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -104,7 +120,8 @@ router.put('/:id', async (req, res) => {
     res.json({ ok: true, route: stripHash(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update route');
-    res.status(errorStatus(err)).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.routes.update');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -117,7 +134,8 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete route');
-    res.status(errorStatus(err)).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.routes.delete');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -130,7 +148,8 @@ router.post('/:id/toggle', async (req, res) => {
     res.json({ ok: true, route: stripHash(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle route');
-    res.status(errorStatus(err)).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.routes.toggle');
+    res.status(status).json({ ok: false, error });
   }
 });
 

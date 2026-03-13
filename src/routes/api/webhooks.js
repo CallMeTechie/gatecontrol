@@ -7,6 +7,27 @@ const logger = require('../../utils/logger');
 
 const router = Router();
 
+/** Map service-layer error messages to i18n keys */
+const VALIDATION_ERROR_MAP = {
+  'not found': 'error.webhooks.not_found',
+  'URL is required': 'error.webhooks.url_required',
+  'Invalid webhook URL': 'error.webhooks.url_invalid',
+  'must use http': 'error.webhooks.url_protocol',
+  'must not target localhost': 'error.webhooks.url_localhost',
+  'must not target private': 'error.webhooks.url_private',
+};
+
+function resolveError(req, err, fallbackKey) {
+  const msg = err.message || '';
+  for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
+    if (msg.includes(pattern)) {
+      const status = pattern === 'not found' ? 404 : 400;
+      return { status, error: req.t(key) };
+    }
+  }
+  return { status: 500, error: req.t(fallbackKey) };
+}
+
 /**
  * GET /api/webhooks — List all webhooks
  */
@@ -16,7 +37,7 @@ router.get('/', (req, res) => {
     res.json({ ok: true, webhooks: list });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list webhooks');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.webhooks.list') });
   }
 });
 
@@ -30,8 +51,8 @@ router.post('/', (req, res) => {
     res.status(201).json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create webhook');
-    const status = err.message.includes('required') || err.message.includes('Invalid') ? 400 : 500;
-    res.status(status).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.webhooks.create');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -45,8 +66,8 @@ router.put('/:id', (req, res) => {
     res.json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update webhook');
-    const status = err.message.includes('not found') ? 404 : err.message.includes('required') || err.message.includes('Invalid') ? 400 : 500;
-    res.status(status).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.webhooks.update');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -59,8 +80,8 @@ router.delete('/:id', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete webhook');
-    const status = err.message.includes('not found') ? 404 : 500;
-    res.status(status).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.webhooks.delete');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -73,8 +94,8 @@ router.post('/:id/toggle', (req, res) => {
     res.json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle webhook');
-    const status = err.message.includes('not found') ? 404 : 500;
-    res.status(status).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.webhooks.toggle');
+    res.status(status).json({ ok: false, error });
   }
 });
 
@@ -84,9 +105,8 @@ router.post('/:id/toggle', (req, res) => {
 router.post('/:id/test', async (req, res) => {
   try {
     const wh = webhooks.getById(req.params.id);
-    if (!wh) return res.status(404).json({ ok: false, error: 'Webhook not found' });
+    if (!wh) return res.status(404).json({ ok: false, error: req.t('error.webhooks.not_found') });
 
-    // Re-validate URL before making request (guards against pre-existing unsafe URLs)
     validateWebhookUrl(wh.url);
 
     const payload = JSON.stringify({
@@ -106,7 +126,8 @@ router.post('/:id/test', async (req, res) => {
     res.json({ ok: true, status: response.status, statusText: response.statusText });
   } catch (err) {
     logger.error({ error: err.message }, 'Webhook test failed');
-    res.status(502).json({ ok: false, error: err.message });
+    const { status, error } = resolveError(req, err, 'error.webhooks.test');
+    res.status(status).json({ ok: false, error });
   }
 });
 

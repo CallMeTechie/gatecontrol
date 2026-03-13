@@ -53,7 +53,7 @@ router.post('/reload', async (req, res) => {
     });
     res.json({ success: result !== null });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to reload Caddy' });
+    res.status(500).json({ error: req.t('error.caddy.reload') });
   }
 });
 

@@ -20,11 +20,11 @@ const router = Router();
 router.get('/profile', (req, res) => {
   try {
     const profile = settings.getUserProfile(req.session.userId);
-    if (!profile) return res.status(404).json({ ok: false, error: 'User not found' });
+    if (!profile) return res.status(404).json({ ok: false, error: req.t('error.settings.user_not_found') });
     res.json({ ok: true, profile });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get profile');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.profile_get') });
   }
 });
 
@@ -35,16 +35,14 @@ router.put('/profile', async (req, res) => {
   try {
     const { display_name, email, language } = req.body;
 
-    // Validate language
     if (language && !config.i18n.availableLanguages.includes(language)) {
-      return res.status(400).json({ ok: false, error: 'Unsupported language' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.language_unsupported') });
     }
 
     const profile = settings.updateUserProfile(req.session.userId, {
       display_name, email, language,
     });
 
-    // Update session language immediately
     if (language) {
       req.session.language = language;
     }
@@ -58,7 +56,7 @@ router.put('/profile', async (req, res) => {
     res.json({ ok: true, profile });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update profile');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.profile_update') });
   }
 });
 
@@ -70,24 +68,22 @@ router.put('/password', async (req, res) => {
     const { current_password, new_password } = req.body;
 
     if (!current_password || !new_password) {
-      return res.status(400).json({ ok: false, error: 'Current and new password are required' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.password_required') });
     }
 
     if (new_password.length < 8) {
-      return res.status(400).json({ ok: false, error: 'New password must be at least 8 characters' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.password_min_length') });
     }
 
     const db = getDb();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
-    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+    if (!user) return res.status(404).json({ ok: false, error: req.t('error.settings.user_not_found') });
 
-    // Verify current password
     const valid = await argon2.verify(user.password_hash, current_password);
     if (!valid) {
-      return res.status(400).json({ ok: false, error: 'Current password is incorrect' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.password_incorrect') });
     }
 
-    // Hash new password
     const hash = await argon2.hash(new_password, {
       type: argon2.argon2id,
       memoryCost: 65536,
@@ -109,7 +105,7 @@ router.put('/password', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to change password');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.password_change') });
   }
 });
 
@@ -120,13 +116,11 @@ router.post('/language', (req, res) => {
   try {
     const { language } = req.body;
     if (!language || !config.i18n.availableLanguages.includes(language)) {
-      return res.status(400).json({ ok: false, error: 'Unsupported language' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.language_unsupported') });
     }
 
-    // Update session
     req.session.language = language;
 
-    // Update user record if logged in
     if (req.session.userId) {
       const db = getDb();
       db.prepare("UPDATE users SET language = ?, updated_at = datetime('now') WHERE id = ?")
@@ -136,7 +130,7 @@ router.post('/language', (req, res) => {
     res.json({ ok: true, language });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to switch language');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.language_switch') });
   }
 });
 
@@ -161,7 +155,7 @@ router.get('/app', (req, res) => {
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get app settings');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.app_get') });
   }
 });
 
@@ -170,7 +164,7 @@ router.get('/app', (req, res) => {
  */
 router.post('/clear-logs', async (req, res) => {
   try {
-    const deleted = activity.cleanup(0); // Delete all
+    const deleted = activity.cleanup(0);
     activity.log('logs_cleared', 'Activity log cleared', {
       source: 'admin',
       ipAddress: req.ip,
@@ -179,7 +173,7 @@ router.post('/clear-logs', async (req, res) => {
     res.json({ ok: true, deleted });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to clear logs');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.settings.logs_clear') });
   }
 });
 
@@ -202,7 +196,7 @@ router.get('/backup', (req, res) => {
     res.json(data);
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create backup');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.backup.create') });
   }
 });
 
@@ -212,26 +206,26 @@ router.get('/backup', (req, res) => {
 router.post('/restore/preview', upload.single('backup'), (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ ok: false, error: 'No file uploaded' });
+      return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
     }
 
     let data;
     try {
       data = JSON.parse(req.file.buffer.toString('utf-8'));
     } catch {
-      return res.status(400).json({ ok: false, error: 'Invalid JSON file' });
+      return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
     }
 
     const errors = backup.validateBackup(data);
     if (errors.length > 0) {
-      return res.status(400).json({ ok: false, error: 'Invalid backup', errors });
+      return res.status(400).json({ ok: false, error: req.t('error.backup.invalid'), errors });
     }
 
     const summary = backup.getBackupSummary(data);
     res.json({ ok: true, summary });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to preview backup');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.backup.preview') });
   }
 });
 
@@ -241,14 +235,14 @@ router.post('/restore/preview', upload.single('backup'), (req, res) => {
 router.post('/restore', upload.single('backup'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ ok: false, error: 'No file uploaded' });
+      return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
     }
 
     let data;
     try {
       data = JSON.parse(req.file.buffer.toString('utf-8'));
     } catch {
-      return res.status(400).json({ ok: false, error: 'Invalid JSON file' });
+      return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
     }
 
     const result = await backup.restoreBackup(data);
@@ -262,7 +256,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
     res.json({ ok: true, restored: result });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to restore backup');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('error.backup.restore') });
   }
 });
 
