@@ -72,7 +72,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 GateControl runs as a single Docker container that orchestrates three services via Supervisord:
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="GateControl Architecture Diagram" width="720">
+  <img src="docs/architecture.svg" alt="GateControl Architecture Diagram" width="100%">
 </p>
 
 ### Startup Sequence
