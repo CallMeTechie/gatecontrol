@@ -65,8 +65,10 @@
   }
 
   // ─── WG Restart / Stop ──────────────────────────────────
-  document.getElementById('btn-wg-restart').addEventListener('click', async () => {
+  document.getElementById('btn-wg-restart').addEventListener('click', async function() {
     if (!confirm('Restart WireGuard interface?')) return;
+    const btn = this;
+    btnLoading(btn);
     try {
       const data = await api.post('/api/wg/restart');
       if (data.success) {
@@ -76,20 +78,28 @@
       }
     } catch (err) {
       alert('Error: ' + err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 
-  document.getElementById('btn-wg-stop').addEventListener('click', async () => {
+  document.getElementById('btn-wg-stop').addEventListener('click', async function() {
     if (!confirm('Stop WireGuard interface? All peers will disconnect.')) return;
+    const btn = this;
+    btnLoading(btn);
     try {
       await api.post('/api/wg/stop');
     } catch (err) {
       alert('Error: ' + err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 
   // ─── Caddy Reload ───────────────────────────────────────
-  document.getElementById('btn-caddy-reload').addEventListener('click', async () => {
+  document.getElementById('btn-caddy-reload').addEventListener('click', async function() {
+    const btn = this;
+    btnLoading(btn);
     try {
       const data = await api.post('/api/caddy/reload');
       if (data.success) {
@@ -99,11 +109,15 @@
       }
     } catch (err) {
       alert('Error: ' + err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 
   // ─── Export config ──────────────────────────────────────
-  document.getElementById('btn-export-config').addEventListener('click', async () => {
+  document.getElementById('btn-export-config').addEventListener('click', async function() {
+    const btn = this;
+    btnLoading(btn);
     try {
       const data = await api.get('/api/wg/config');
       if (!data.config) return alert('No config to export');
@@ -116,6 +130,8 @@
       URL.revokeObjectURL(a.href);
     } catch (err) {
       alert('Export failed: ' + err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 

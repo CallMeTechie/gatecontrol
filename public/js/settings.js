@@ -16,10 +16,12 @@
   }
 
   // ─── Save profile ───────────────────────────────────────
-  document.getElementById('btn-save-profile').addEventListener('click', async () => {
+  document.getElementById('btn-save-profile').addEventListener('click', async function() {
+    const btn = this;
     const display_name = document.getElementById('settings-display-name').value.trim();
     const email = document.getElementById('settings-email').value.trim();
 
+    btnLoading(btn);
     try {
       const data = await api.put('/api/settings/profile', { display_name, email });
       if (data.ok) {
@@ -29,11 +31,14 @@
       }
     } catch (err) {
       showMessage('profile-message', err.message, 'error');
+    } finally {
+      btnReset(btn);
     }
   });
 
   // ─── Change password ────────────────────────────────────
-  document.getElementById('btn-change-password').addEventListener('click', async () => {
+  document.getElementById('btn-change-password').addEventListener('click', async function() {
+    const btn = this;
     const current_password = document.getElementById('settings-current-pw').value;
     const new_password = document.getElementById('settings-new-pw').value;
     const confirm_pw = document.getElementById('settings-confirm-pw').value;
@@ -53,6 +58,7 @@
       return;
     }
 
+    btnLoading(btn);
     try {
       const data = await api.put('/api/settings/password', { current_password, new_password });
       if (data.ok) {
@@ -65,6 +71,8 @@
       }
     } catch (err) {
       showMessage('password-message', err.message, 'error');
+    } finally {
+      btnReset(btn);
     }
   });
 
@@ -89,9 +97,11 @@
   }
 
   // ─── Clear logs ──────────────────────────────────────────
-  document.getElementById('btn-clear-logs').addEventListener('click', async () => {
+  document.getElementById('btn-clear-logs').addEventListener('click', async function() {
     if (!confirm('Clear all activity logs? This action cannot be undone.')) return;
+    const btn = this;
 
+    btnLoading(btn);
     try {
       const data = await api.post('/api/settings/clear-logs');
       if (data.ok) {
@@ -99,6 +109,8 @@
       }
     } catch (err) {
       alert('Error: ' + err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 

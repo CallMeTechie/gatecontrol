@@ -189,7 +189,8 @@
     document.getElementById('add-peer-name').focus();
   });
 
-  document.getElementById('btn-add-peer-submit').addEventListener('click', async () => {
+  document.getElementById('btn-add-peer-submit').addEventListener('click', async function() {
+    const btn = this;
     const name = document.getElementById('add-peer-name').value.trim();
     const description = document.getElementById('add-peer-desc').value.trim();
     const tags = document.getElementById('add-peer-tags').value.trim();
@@ -199,11 +200,11 @@
       return;
     }
 
+    btnLoading(btn);
     try {
       const data = await api.post('/api/peers', { name, description, tags });
       if (data.ok) {
         closeModal('modal-add-peer');
-        // Show QR code for the newly created peer
         showQrModal(data.peer.id);
         loadPeers();
       } else {
@@ -211,6 +212,8 @@
       }
     } catch (err) {
       showError('add-peer-error', err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 
@@ -228,7 +231,8 @@
     document.getElementById('edit-peer-name').focus();
   }
 
-  document.getElementById('btn-edit-peer-submit').addEventListener('click', async () => {
+  document.getElementById('btn-edit-peer-submit').addEventListener('click', async function() {
+    const btn = this;
     const id = document.getElementById('edit-peer-id').value;
     const name = document.getElementById('edit-peer-name').value.trim();
     const description = document.getElementById('edit-peer-desc').value.trim();
@@ -239,6 +243,7 @@
       return;
     }
 
+    btnLoading(btn);
     try {
       const data = await api.put('/api/peers/' + id, { name, description, tags });
       if (data.ok) {
@@ -249,6 +254,8 @@
       }
     } catch (err) {
       showError('edit-peer-error', err.message);
+    } finally {
+      btnReset(btn);
     }
   });
 
@@ -289,8 +296,10 @@
     openModal('modal-confirm');
   }
 
-  document.getElementById('btn-confirm-yes').addEventListener('click', async () => {
+  document.getElementById('btn-confirm-yes').addEventListener('click', async function() {
     if (!pendingDeleteId) return;
+    const btn = this;
+    btnLoading(btn);
     try {
       await api.del('/api/peers/' + pendingDeleteId);
       closeModal('modal-confirm');
@@ -298,6 +307,8 @@
       loadPeers();
     } catch (err) {
       console.error('Delete error:', err);
+    } finally {
+      btnReset(btn);
     }
   });
 

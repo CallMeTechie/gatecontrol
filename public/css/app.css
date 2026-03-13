@@ -290,6 +290,21 @@ a { color: inherit; text-decoration: none; }
 }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
 .btn svg { width: 14px; height: 14px; }
+.btn.is-loading {
+  pointer-events: none;
+  opacity: 0.65;
+  position: relative;
+}
+.btn.is-loading::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.5s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 
 /* ─── Stats Grid ────────────────────────────────────────── */
 .stats-grid {

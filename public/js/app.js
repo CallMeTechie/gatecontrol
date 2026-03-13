@@ -100,6 +100,20 @@ document.querySelectorAll('.flash').forEach(el => {
   }
 })();
 
+// ─── Button loading states ──────────────────────────────
+window.btnLoading = function(btn) {
+  if (!btn) return;
+  btn._origText = btn.textContent;
+  btn.classList.add('is-loading');
+  btn.disabled = true;
+};
+window.btnReset = function(btn) {
+  if (!btn) return;
+  btn.classList.remove('is-loading');
+  btn.disabled = false;
+  if (btn._origText) btn.textContent = btn._origText;
+};
+
 // ─── Modal system (global) ──────────────────────────────
 (function() {
   var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

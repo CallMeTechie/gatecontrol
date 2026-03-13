@@ -173,6 +173,8 @@
       return;
     }
 
+    const submitBtn = routeForm.querySelector('button[type="submit"]');
+    btnLoading(submitBtn);
     try {
       const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled };
       if (basic_auth_enabled) {
@@ -192,6 +194,8 @@
       }
     } catch (err) {
       alert(err.message);
+    } finally {
+      btnReset(submitBtn);
     }
   });
 
@@ -266,7 +270,8 @@
 
   const btnEditSubmit = document.getElementById('btn-edit-route-submit');
   if (btnEditSubmit) {
-    btnEditSubmit.addEventListener('click', async () => {
+    btnEditSubmit.addEventListener('click', async function() {
+      const btn = this;
       const id = document.getElementById('edit-route-id').value;
       const domain = document.getElementById('edit-route-domain').value.trim();
       const description = document.getElementById('edit-route-desc').value.trim();
@@ -293,6 +298,7 @@
         return;
       }
 
+      btnLoading(btn);
       try {
         const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled };
         if (basic_auth_enabled) {
@@ -310,6 +316,8 @@
         }
       } catch (err) {
         showError('edit-route-error', err.message);
+      } finally {
+        btnReset(btn);
       }
     });
   }
@@ -340,8 +348,10 @@
     const newBtn = btnConfirm.cloneNode(true);
     btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
 
-    newBtn.addEventListener('click', async () => {
+    newBtn.addEventListener('click', async function() {
       if (!pendingDeleteId) return;
+      const btn = this;
+      btnLoading(btn);
       try {
         await api.del('/api/routes/' + pendingDeleteId);
         closeModal('modal-confirm');
@@ -349,6 +359,8 @@
         loadRoutes();
       } catch (err) {
         console.error('Delete error:', err);
+      } finally {
+        btnReset(btn);
       }
     });
   }
