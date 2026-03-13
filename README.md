@@ -71,33 +71,9 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 
 GateControl runs as a single Docker container that orchestrates three services via Supervisord:
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  Docker Container                    │
-│                                                      │
-│  ┌──────────┐   ┌────────────┐   ┌───────────────┐  │
-│  │  Caddy    │   │ WireGuard  │   │   Node.js     │  │
-│  │  :80/:443 │   │  :51820    │   │   :3000       │  │
-│  │           │   │  (UDP)     │   │   (Express)   │  │
-│  │  HTTPS    │   │            │   │               │  │
-│  │  Reverse  │◄──┤  VPN       │◄──┤  Web UI       │  │
-│  │  Proxy    │   │  Tunnel    │   │  REST API     │  │
-│  │  Let's    │   │            │   │  Background   │  │
-│  │  Encrypt  │   │            │   │  Tasks        │  │
-│  └──────────┘   └────────────┘   └───────┬───────┘  │
-│                                          │           │
-│                                   ┌──────┴──────┐    │
-│                                   │   SQLite    │    │
-│                                   │   (WAL)     │    │
-│                                   └─────────────┘    │
-│                                                      │
-│  Volume: /data                                       │
-│  ├── gatecontrol.db    (database)                    │
-│  ├── wireguard/        (WireGuard configs & keys)    │
-│  ├── caddy/            (certificates & cache)        │
-│  └── .encryption_key   (AES-256 key)                 │
-└─────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="GateControl Architecture Diagram" width="720">
+</p>
 
 ### Startup Sequence
 
