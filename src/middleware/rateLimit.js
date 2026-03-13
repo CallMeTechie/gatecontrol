@@ -18,6 +18,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.session && req.session.authenticated,
 });
 
 module.exports = { loginLimiter, apiLimiter };
