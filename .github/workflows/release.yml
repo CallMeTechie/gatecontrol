@@ -62,19 +62,19 @@ jobs:
       - name: Export image
         run: docker save gatecontrol:latest | gzip > gatecontrol-image.tar.gz
 
-      - name: Delete existing release assets if present
+      - name: Delete all existing release assets
         run: |
           TAG="${GITHUB_REF_NAME}"
-          for ASSET in gatecontrol-image.tar.gz docker-compose.yml setup.sh .env.example; do
-            ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq ".assets[] | select(.name==\"$ASSET\") | .id" 2>/dev/null || true)
-            if [ -n "$ASSET_ID" ]; then
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
-            fi
-          done
+          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id' 2>/dev/null || true)
+          if [ -n "$RELEASE_ID" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --jq '.[].id' | while read -r AID; do
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"
+            done
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Release
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
