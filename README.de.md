@@ -74,7 +74,68 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 GateControl läuft als einzelner Docker-Container, der drei Dienste über Supervisord orchestriert:
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="GateControl Architektur-Diagramm" width="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" font-family="Segoe UI, system-ui, sans-serif">
+  <rect x="10" y="14" width="960" height="496" rx="12" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="8,4"/>
+  <rect x="34" y="2" width="180" height="26" rx="6" fill="#2563eb"/>
+  <text x="124" y="20" text-anchor="middle" fill="#fff" font-size="12" font-weight="700" letter-spacing="0.5">DOCKER CONTAINER</text>
+  <rect x="30" y="44" width="280" height="210" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+  <rect x="137" y="56" width="40" height="40" rx="9" fill="#dcfce7"/>
+  <polygon points="157,63 145,70 145,84 157,91 169,84 169,70" fill="none" stroke="#16a34a" stroke-width="1.3"/>
+  <line x1="157" y1="91" x2="157" y2="77" stroke="#16a34a" stroke-width="1.3"/>
+  <line x1="145" y1="70" x2="157" y2="77" stroke="#16a34a" stroke-width="1.3"/>
+  <line x1="169" y1="70" x2="157" y2="77" stroke="#16a34a" stroke-width="1.3"/>
+  <text x="157" y="116" text-anchor="middle" fill="#16a34a" font-size="16" font-weight="700">Caddy</text>
+  <text x="157" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:80 / :443</text>
+  <text x="70" y="164" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>HTTPS</text>
+  <text x="70" y="186" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Reverse Proxy</text>
+  <text x="70" y="208" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Let's Encrypt</text>
+  <text x="70" y="230" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Auto Certificates</text>
+  <rect x="350" y="44" width="280" height="210" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <rect x="462" y="56" width="40" height="40" rx="9" fill="#f3e8ff"/>
+  <circle cx="482" cy="76" r="12" fill="none" stroke="#9333ea" stroke-width="1.3"/>
+  <polyline points="476,76 480,80 488,70" fill="none" stroke="#9333ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="482" y="116" text-anchor="middle" fill="#9333ea" font-size="16" font-weight="700">WireGuard</text>
+  <text x="482" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:51820 (UDP)</text>
+  <text x="390" y="164" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>VPN Tunnel</text>
+  <text x="390" y="186" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Peer Management</text>
+  <text x="390" y="208" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Key Exchange</text>
+  <text x="390" y="230" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Hot Reload</text>
+  <rect x="670" y="44" width="280" height="210" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="782" y="56" width="40" height="40" rx="9" fill="#dbeafe"/>
+  <rect x="790" y="64" width="24" height="24" rx="4" fill="none" stroke="#2563eb" stroke-width="1.3"/>
+  <line x1="796" y1="76" x2="808" y2="76" stroke="#2563eb" stroke-width="1.3" stroke-linecap="round"/>
+  <line x1="802" y1="70" x2="802" y2="82" stroke="#2563eb" stroke-width="1.3" stroke-linecap="round"/>
+  <text x="802" y="116" text-anchor="middle" fill="#2563eb" font-size="16" font-weight="700">Node.js</text>
+  <text x="802" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:3000 (Express)</text>
+  <text x="710" y="164" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Web UI</text>
+  <text x="710" y="186" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>REST API</text>
+  <text x="710" y="208" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Background Tasks</text>
+  <text x="710" y="230" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Auth &amp; Security</text>
+  <line x1="310" y1="149" x2="345" y2="149" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="315,145 307,149 315,153" fill="#9ca3af"/>
+  <line x1="630" y1="149" x2="665" y2="149" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="635,145 627,149 635,153" fill="#9ca3af"/>
+  <line x1="802" y1="254" x2="802" y2="286" stroke="#9ca3af" stroke-width="2" stroke-dasharray="4,3"/>
+  <polygon points="798,284 802,294 806,284" fill="#d97706"/>
+  <rect x="690" y="296" width="240" height="68" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+  <rect x="714" y="308" width="36" height="36" rx="8" fill="#fef3c7"/>
+  <ellipse cx="732" cy="318" rx="10" ry="4" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <path d="M722,318 v14 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4 v-14" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <path d="M722,326 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <text x="810" y="326" text-anchor="middle" fill="#d97706" font-size="16" font-weight="700">SQLite</text>
+  <text x="810" y="346" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">(WAL Mode)</text>
+  <rect x="30" y="390" width="930" height="108" rx="9" fill="#f9fafb" stroke="#d1d5db" stroke-width="1" stroke-dasharray="5,3"/>
+  <path d="M48,408 h8 l2,-3 h10 a2,2 0 0 1 2,2 v12 a2,2 0 0 1 -2,2 h-20 a2,2 0 0 1 -2,-2 v-9 a2,2 0 0 1 2,-2z" fill="none" stroke="#6b7280" stroke-width="1.2"/>
+  <text x="76" y="419" fill="#6b7280" font-size="12" font-weight="700" letter-spacing="0.5">VOLUME: /data</text>
+  <text x="50" y="448" fill="#d97706" font-size="13" font-family="monospace">gatecontrol.db</text>
+  <text x="195" y="448" fill="#6b7280" font-size="12">── database</text>
+  <text x="50" y="472" fill="#d97706" font-size="13" font-family="monospace">wireguard/</text>
+  <text x="195" y="472" fill="#6b7280" font-size="12">── WireGuard configs &amp; keys</text>
+  <text x="500" y="448" fill="#d97706" font-size="13" font-family="monospace">caddy/</text>
+  <text x="645" y="448" fill="#6b7280" font-size="12">── certificates &amp; cache</text>
+  <text x="500" y="472" fill="#d97706" font-size="13" font-family="monospace">.encryption_key</text>
+  <text x="645" y="472" fill="#6b7280" font-size="12">── AES-256 key</text>
+</svg>
 </p>
 
 ### Startsequenz
