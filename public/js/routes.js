@@ -353,13 +353,7 @@
     });
   }
 
-  // ─── Modal helpers ───────────────────────────────────────
-  function openModal(id) {
-    document.getElementById(id).style.display = 'flex';
-  }
-  function closeModal(id) {
-    document.getElementById(id).style.display = 'none';
-  }
+  // Modal helpers use global openModal/closeModal from app.js
   function showError(id, msg) {
     const el = document.getElementById(id);
     if (el) { el.textContent = msg; el.style.display = 'block'; }
@@ -375,21 +369,7 @@
     return div.innerHTML;
   }
 
-  // ─── Close modals on overlay click, close button, or Escape ─
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-overlay')) {
-      e.target.style.display = 'none';
-    }
-    if (e.target.closest('[data-close-modal]')) {
-      const overlay = e.target.closest('.modal-overlay');
-      if (overlay) overlay.style.display = 'none';
-    }
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
-    }
-  });
+  // Modal close/escape/focus-trap handled globally in app.js
 
   // ─── Basic auth field visibility toggles ─────────────────
   function setupAuthToggle(toggleSel, fieldsSel) {

@@ -301,32 +301,7 @@
     }
   });
 
-  // ─── Modal helpers ───────────────────────────────────────
-  function openModal(id) {
-    document.getElementById(id).style.display = 'flex';
-  }
-
-  function closeModal(id) {
-    document.getElementById(id).style.display = 'none';
-  }
-
-  // Close modals on overlay click or close button
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-overlay')) {
-      e.target.style.display = 'none';
-    }
-    if (e.target.closest('[data-close-modal]')) {
-      const overlay = e.target.closest('.modal-overlay');
-      if (overlay) overlay.style.display = 'none';
-    }
-  });
-
-  // Close modal on Escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
-    }
-  });
+  // Modal helpers use global openModal/closeModal from app.js
 
   // ─── Error helpers ───────────────────────────────────────
   function showError(id, msg) {

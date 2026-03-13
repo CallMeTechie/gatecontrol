@@ -100,4 +100,92 @@ document.querySelectorAll('.flash').forEach(el => {
   }
 })();
 
+// ─── Modal system (global) ──────────────────────────────
+(function() {
+  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  var previousFocus = null;
+
+  window.openModal = function(id) {
+    var overlay = document.getElementById(id);
+    if (!overlay) return;
+    previousFocus = document.activeElement;
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    // Focus first focusable element inside modal
+    var modal = overlay.querySelector('.modal');
+    if (modal) {
+      var first = modal.querySelector(FOCUSABLE);
+      if (first) first.focus();
+    }
+  };
+
+  window.closeModal = function(id) {
+    var overlay = document.getElementById(id);
+    if (!overlay) return;
+    overlay.style.display = 'none';
+    document.body.style.overflow = '';
+    if (previousFocus) {
+      previousFocus.focus();
+      previousFocus = null;
+    }
+  };
+
+  // Close on overlay click or close button
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.style.display = 'none';
+      document.body.style.overflow = '';
+      if (previousFocus) { previousFocus.focus(); previousFocus = null; }
+    }
+    if (e.target.closest('[data-close-modal]')) {
+      var overlay = e.target.closest('.modal-overlay');
+      if (overlay) {
+        overlay.style.display = 'none';
+        document.body.style.overflow = '';
+        if (previousFocus) { previousFocus.focus(); previousFocus = null; }
+      }
+    }
+  });
+
+  // Escape key + focus trap (Tab/Shift+Tab)
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay').forEach(function(m) { m.style.display = 'none'; });
+      document.body.style.overflow = '';
+      if (previousFocus) { previousFocus.focus(); previousFocus = null; }
+      return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    // Find the currently visible modal
+    var active = null;
+    document.querySelectorAll('.modal-overlay').forEach(function(m) {
+      if (m.style.display === 'flex') active = m;
+    });
+    if (!active) return;
+
+    var modal = active.querySelector('.modal');
+    if (!modal) return;
+
+    var focusable = Array.from(modal.querySelectorAll(FOCUSABLE));
+    if (focusable.length === 0) return;
+
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+})();
+
 console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');
