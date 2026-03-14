@@ -19,7 +19,7 @@ const apiLimiter = rateLimit({
   max: config.auth.rateLimitApi,
   standardHeaders: true,
   legacyHeaders: true,
-  skip: (req) => req.session && req.session.authenticated,
+  skip: (req) => req.session && req.session.userId,
   handler: (req, res) => {
     res.status(429).json({ error: req.t('error.rate_limit.api') });
   },
