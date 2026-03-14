@@ -101,6 +101,12 @@ if [ ! -f "$CADDYFILE" ]; then
 EOF
 fi
 
+# ─── Validate Caddy config ────────────────────────────
+echo "» Validating Caddy config..."
+if ! caddy validate --config "$CADDYFILE" --adapter caddyfile > /dev/null 2>&1; then
+  echo "WARNING: Caddy config validation failed — check your Caddyfile"
+fi
+
 # ─── Generate encryption key if not set ──────────────
 KEY_FILE="/data/.encryption_key"
 if [ -z "$GC_ENCRYPTION_KEY" ]; then
