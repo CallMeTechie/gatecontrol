@@ -250,6 +250,9 @@
   "error.webhooks.url_localhost": "Webhook URL must not target localhost",
   "error.webhooks.url_private": "Webhook URL must not target private or reserved IP addresses",
 
+  "error.rate_limit.login": "Too many login attempts, please try again later",
+  "error.rate_limit.api": "Too many requests, please try again later",
+
   "error.dashboard.stats": "Failed to fetch dashboard stats",
   "error.dashboard.traffic": "Failed to fetch traffic data",
   "error.wireguard.status": "Failed to get WireGuard status",

@@ -6,19 +6,23 @@ const config = require('../../config/default');
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: config.auth.rateLimitLogin,
-  message: { error: 'Too many login attempts, please try again later' },
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: true,
   keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: req.t('error.rate_limit.login') });
+  },
 });
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: config.auth.rateLimitApi,
-  message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: true,
   skip: (req) => req.session && req.session.authenticated,
+  handler: (req, res) => {
+    res.status(429).json({ error: req.t('error.rate_limit.api') });
+  },
 });
 
 module.exports = { loginLimiter, apiLimiter };

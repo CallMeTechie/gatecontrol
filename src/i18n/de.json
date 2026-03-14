@@ -250,6 +250,9 @@
   "error.webhooks.url_localhost": "Webhook-URL darf nicht auf localhost zeigen",
   "error.webhooks.url_private": "Webhook-URL darf nicht auf private oder reservierte IP-Adressen zeigen",
 
+  "error.rate_limit.login": "Zu viele Anmeldeversuche, bitte versuchen Sie es später erneut",
+  "error.rate_limit.api": "Zu viele Anfragen, bitte versuchen Sie es später erneut",
+
   "error.dashboard.stats": "Dashboard-Statistiken konnten nicht geladen werden",
   "error.dashboard.traffic": "Traffic-Daten konnten nicht geladen werden",
   "error.wireguard.status": "WireGuard-Status konnte nicht abgerufen werden",
