@@ -179,6 +179,8 @@
   "common.no_data": "Keine Daten verfügbar",
   "common.error": "Fehler",
   "common.success": "Erfolg",
+  "common.copy": "Kopieren",
+  "common.copied": "Kopiert!",
   "common.gateway_host": "Gateway Host",
 
   "status.wg_active": "WireGuard aktiv",

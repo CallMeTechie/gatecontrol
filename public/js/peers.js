@@ -276,6 +276,21 @@
     }
   }
 
+  // ─── Copy config to clipboard ───────────────────────────
+  document.getElementById('qr-peer-copy').addEventListener('click', async function() {
+    const config = document.getElementById('qr-peer-config').textContent;
+    const btn = document.getElementById('qr-peer-copy');
+    const label = document.getElementById('qr-peer-copy-label');
+    try {
+      await navigator.clipboard.writeText(config);
+      const original = label.textContent;
+      label.textContent = btn.dataset.copiedText || 'Copied!';
+      setTimeout(() => { label.textContent = original; }, 2000);
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  });
+
   // ─── Toggle ──────────────────────────────────────────────
   async function togglePeer(id) {
     try {
