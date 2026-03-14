@@ -1,3 +1,13 @@
+# ─── Stage 1: Build native dependencies ──────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci --production --ignore-scripts && \
+    npm rebuild argon2 better-sqlite3
+
+# ─── Stage 2: Runtime ─────────────────────────────────
 FROM node:20-alpine
 
 RUN apk add --no-cache \
@@ -12,10 +22,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci --production --ignore-scripts && \
-    npm rebuild argon2 better-sqlite3
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY . .
 
 RUN mkdir -p /data/caddy /data/wireguard /etc/wireguard && \
