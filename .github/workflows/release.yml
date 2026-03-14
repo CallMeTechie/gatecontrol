@@ -41,7 +41,7 @@ jobs:
           node-version: 20
 
       - name: Set package.json version from tag
-        run: npm version "$VERSION" --no-git-tag-version
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       # ─── GHCR: Build & Push ───────────────────────────
       - uses: docker/login-action@v4
