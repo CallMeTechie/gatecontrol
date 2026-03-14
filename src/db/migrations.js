@@ -132,6 +132,14 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_routes_enabled ON routes(enabled);
   `);
 
+  // Composite indexes for common query patterns
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_activity_created_desc ON activity_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activity_type_created ON activity_log(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_peers_enabled_created ON peers(enabled, created_at);
+    CREATE INDEX IF NOT EXISTS idx_routes_enabled_domain ON routes(enabled, domain);
+  `);
+
   logger.info('Database migrations completed');
 }
 
