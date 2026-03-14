@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const argon2 = require('argon2');
 const multer = require('multer');
+const { rotateCsrfToken } = require('../../middleware/csrf');
 const { getDb } = require('../../db/connection');
 const settings = require('../../services/settings');
 const activity = require('../../services/activity');
@@ -102,7 +103,8 @@ router.put('/password', async (req, res) => {
 
     logger.info({ userId: req.session.userId }, 'Password changed');
 
-    res.json({ ok: true });
+    const newToken = rotateCsrfToken(req);
+    res.json({ ok: true, csrfToken: newToken });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to change password');
     res.status(500).json({ ok: false, error: req.t('error.settings.password_change') });
@@ -253,7 +255,8 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
       severity: 'warning',
     });
 
-    res.json({ ok: true, restored: result });
+    const newToken = rotateCsrfToken(req);
+    res.json({ ok: true, restored: result, csrfToken: newToken });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to restore backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.restore') });

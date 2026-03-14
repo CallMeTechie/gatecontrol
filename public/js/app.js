@@ -16,6 +16,13 @@ document.querySelectorAll('.tabs').forEach(tabs => {
 });
 
 // ─── API helper ─────────────────────────────────────────
+function handleCsrfRotation(data) {
+  if (data && data.csrfToken) {
+    window.GC.csrfToken = data.csrfToken;
+  }
+  return data;
+}
+
 window.api = {
   async get(url) {
     const res = await fetch(url, {
@@ -36,7 +43,7 @@ window.api = {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
+    return res.json().then(handleCsrfRotation);
   },
 
   async put(url, data) {
@@ -50,7 +57,7 @@ window.api = {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
+    return res.json().then(handleCsrfRotation);
   },
 
   async del(url) {
@@ -62,7 +69,7 @@ window.api = {
       },
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
+    return res.json().then(handleCsrfRotation);
   },
 };
 

@@ -31,7 +31,18 @@ function injectCsrfToken(req, res, next) {
   next();
 }
 
+/**
+ * Rotate the CSRF token (invalidates old token, generates new one).
+ * Call after sensitive actions like password change or backup restore.
+ * Returns the new token so the client can update its stored copy.
+ */
+function rotateCsrfToken(req) {
+  if (!req.session) return '';
+  return generateToken(req, true);
+}
+
 module.exports = {
   csrfProtection: csrfSynchronisedProtection,
   injectCsrfToken,
+  rotateCsrfToken,
 };
