@@ -10,6 +10,8 @@ const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
 const activity = require('./services/activity');
 
+let server;
+
 async function start() {
   // Validate configuration
   validateConfig();
@@ -23,7 +25,7 @@ async function start() {
   // Create and start Express app
   const app = createApp();
 
-  app.listen(config.app.port, config.app.host, () => {
+  server = app.listen(config.app.port, config.app.host, () => {
     logger.info({
       host: config.app.host,
       port: config.app.port,
@@ -74,12 +76,27 @@ start().catch((err) => {
 
 // Graceful shutdown
 function shutdown(signal) {
-  logger.info(`${signal} received, shutting down`);
+  logger.info(`${signal} received, shutting down gracefully`);
   stopCollector();
   stopPoller();
-  const { closeDb } = require('./db/connection');
-  closeDb();
-  process.exit(0);
+
+  const closeAndExit = () => {
+    const { closeDb } = require('./db/connection');
+    closeDb();
+    logger.info('Shutdown complete');
+    process.exit(0);
+  };
+
+  if (server) {
+    server.close(closeAndExit);
+    // Force exit after 10s if connections don't close
+    setTimeout(() => {
+      logger.warn('Forcing shutdown after timeout');
+      closeAndExit();
+    }, 10000);
+  } else {
+    closeAndExit();
+  }
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
