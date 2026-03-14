@@ -21,13 +21,6 @@
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  function formatBytes(bytes) {
-    if (!bytes) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0, v = Number(bytes);
-    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-    return (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ' + units[i];
-  }
 
   // Note: All user-controlled values are escaped with esc() before being
   // inserted into HTML strings. Static structural markup (CSS classes,
