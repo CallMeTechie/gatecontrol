@@ -16,9 +16,9 @@ router.get('/activity', (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
     const result = activity.getPaginated(page, limit);
-    res.json(result);
+    res.json({ ok: true, ...result });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.logs.activity') });
+    res.status(500).json({ ok: false, error: req.t('error.logs.activity') });
   }
 });
 
@@ -30,9 +30,9 @@ router.get('/recent', (req, res) => {
   try {
     const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 6));
     const entries = activity.getRecent(limit);
-    res.json({ entries });
+    res.json({ ok: true, entries });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.logs.recent') });
+    res.status(500).json({ ok: false, error: req.t('error.logs.recent') });
   }
 });
 
@@ -51,9 +51,9 @@ router.get('/access', async (req, res) => {
     };
 
     const result = await accessLog.getRecent(limit, filters);
-    res.json(result);
+    res.json({ ok: true, ...result });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.logs.access') });
+    res.status(500).json({ ok: false, error: req.t('error.logs.access') });
   }
 });
 

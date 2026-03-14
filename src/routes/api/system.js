@@ -12,9 +12,9 @@ const router = Router();
 router.get('/resources', async (req, res) => {
   try {
     const resources = await system.getResources();
-    res.json(resources);
+    res.json({ ok: true, ...resources });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.system.resources') });
+    res.status(500).json({ ok: false, error: req.t('error.system.resources') });
   }
 });
 

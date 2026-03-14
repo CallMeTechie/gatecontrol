@@ -30,11 +30,12 @@ router.get('/status', async (req, res) => {
   try {
     const caddyConfig = await caddyRequest('/config/');
     res.json({
+      ok: true,
       running: caddyConfig !== null,
       config: caddyConfig,
     });
   } catch (err) {
-    res.json({ running: false, config: null });
+    res.json({ ok: true, running: false, config: null });
   }
 });
 
@@ -51,9 +52,9 @@ router.post('/reload', async (req, res) => {
       ipAddress: req.ip,
       severity: 'info',
     });
-    res.json({ success: result !== null });
+    res.json({ ok: true, success: result !== null });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.caddy.reload') });
+    res.status(500).json({ ok: false, error: req.t('error.caddy.reload') });
   }
 });
 

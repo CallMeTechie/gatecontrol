@@ -12,9 +12,9 @@ const router = Router();
 router.get('/status', async (req, res) => {
   try {
     const status = await wg.getStatus();
-    res.json(status);
+    res.json({ ok: true, ...status });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.wireguard.status') });
+    res.status(500).json({ ok: false, error: req.t('error.wireguard.status') });
   }
 });
 
@@ -25,10 +25,10 @@ router.get('/status', async (req, res) => {
 router.get('/config', async (req, res) => {
   try {
     const config = await wg.getConfig();
-    if (!config) return res.status(404).json({ error: req.t('error.wireguard.config_not_found') });
-    res.json({ config });
+    if (!config) return res.status(404).json({ ok: false, error: req.t('error.wireguard.config_not_found') });
+    res.json({ ok: true, config });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.wireguard.config_read') });
+    res.status(500).json({ ok: false, error: req.t('error.wireguard.config_read') });
   }
 });
 
@@ -43,9 +43,9 @@ router.post('/restart', async (req, res) => {
       ipAddress: req.ip,
       severity: success ? 'info' : 'error',
     });
-    res.json({ success });
+    res.json({ ok: true, success });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.wireguard.restart') });
+    res.status(500).json({ ok: false, error: req.t('error.wireguard.restart') });
   }
 });
 
@@ -60,9 +60,9 @@ router.post('/stop', async (req, res) => {
       ipAddress: req.ip,
       severity: 'warning',
     });
-    res.json({ success });
+    res.json({ ok: true, success });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.wireguard.stop') });
+    res.status(500).json({ ok: false, error: req.t('error.wireguard.stop') });
   }
 });
 

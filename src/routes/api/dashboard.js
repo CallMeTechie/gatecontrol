@@ -34,6 +34,7 @@ router.get('/stats', async (req, res) => {
     const avgLatency = await wireguard.getAverageLatency();
 
     res.json({
+      ok: true,
       peers: {
         total: totalPeers,
         online: onlinePeers,
@@ -54,7 +55,7 @@ router.get('/stats', async (req, res) => {
       latency: avgLatency,
     });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.dashboard.stats') });
+    res.status(500).json({ ok: false, error: req.t('error.dashboard.stats') });
   }
 });
 
@@ -69,9 +70,9 @@ router.get('/traffic', (req, res) => {
       : '1h';
 
     const data = traffic.getChartData(period);
-    res.json({ period, data });
+    res.json({ ok: true, period, data });
   } catch (err) {
-    res.status(500).json({ error: req.t('error.dashboard.traffic') });
+    res.status(500).json({ ok: false, error: req.t('error.dashboard.traffic') });
   }
 });
 
