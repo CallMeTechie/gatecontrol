@@ -50,3 +50,115 @@ describe('L4 Validation', () => {
     it('returns null for invalid', () => { assert.equal(validate.parsePortRange('abc'), null); });
   });
 });
+
+describe('L4 Config Generation', () => {
+  let l4;
+  before(() => {
+    l4 = require('../src/services/l4');
+  });
+
+  describe('buildL4Servers', () => {
+    it('generates single TCP server for one route', () => {
+      const routes = [{
+        id: 1, domain: null, target_ip: '10.8.0.5', target_port: 3389,
+        l4_protocol: 'tcp', l4_listen_port: '3389', l4_tls_mode: 'none',
+      }];
+      const servers = l4.buildL4Servers(routes);
+      assert.ok(servers['l4-tcp-3389']);
+      assert.deepEqual(servers['l4-tcp-3389'].listen, ['tcp/:3389']);
+      assert.equal(servers['l4-tcp-3389'].routes.length, 1);
+      assert.equal(servers['l4-tcp-3389'].routes[0].handle[0].handler, 'proxy');
+      assert.deepEqual(servers['l4-tcp-3389'].routes[0].handle[0].upstreams, [{ dial: '10.8.0.5:3389' }]);
+    });
+
+    it('generates UDP server', () => {
+      const routes = [{
+        id: 2, domain: null, target_ip: '10.8.0.4', target_port: 27015,
+        l4_protocol: 'udp', l4_listen_port: '27015', l4_tls_mode: 'none',
+      }];
+      const servers = l4.buildL4Servers(routes);
+      assert.ok(servers['l4-udp-27015']);
+      assert.deepEqual(servers['l4-udp-27015'].listen, ['udp/:27015']);
+    });
+
+    it('groups TLS-SNI routes on same port into one server', () => {
+      const routes = [
+        { id: 3, domain: 'ssh.example.com', target_ip: '10.8.0.2', target_port: 22, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough' },
+        { id: 4, domain: 'db.example.com', target_ip: '10.8.0.3', target_port: 5432, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough' },
+      ];
+      const servers = l4.buildL4Servers(routes);
+      assert.ok(servers['l4-tls-8443']);
+      assert.equal(servers['l4-tls-8443'].routes.length, 2);
+      assert.deepEqual(servers['l4-tls-8443'].routes[0].match, [{ tls: { sni: ['ssh.example.com'] } }]);
+      assert.deepEqual(servers['l4-tls-8443'].routes[1].match, [{ tls: { sni: ['db.example.com'] } }]);
+    });
+
+    it('generates TLS terminate handler chain', () => {
+      const routes = [{
+        id: 5, domain: 'rdp.example.com', target_ip: '10.8.0.5', target_port: 3389,
+        l4_protocol: 'tcp', l4_listen_port: '9443', l4_tls_mode: 'terminate',
+      }];
+      const servers = l4.buildL4Servers(routes);
+      const srv = servers['l4-tls-9443'];
+      assert.ok(srv);
+      const route = srv.routes[0];
+      assert.deepEqual(route.match, [{ tls: { sni: ['rdp.example.com'] } }]);
+      assert.equal(route.handle[0].handler, 'tls');
+      assert.equal(route.handle[1].handler, 'proxy');
+    });
+
+    it('handles port ranges in listen address', () => {
+      const routes = [{
+        id: 6, domain: null, target_ip: '10.8.0.6', target_port: 5000,
+        l4_protocol: 'tcp', l4_listen_port: '5000-5010', l4_tls_mode: 'none',
+      }];
+      const servers = l4.buildL4Servers(routes);
+      assert.ok(servers['l4-tcp-5000-5010']);
+      assert.deepEqual(servers['l4-tcp-5000-5010'].listen, ['tcp/:5000-5010']);
+    });
+
+    it('returns empty object for no routes', () => {
+      const servers = l4.buildL4Servers([]);
+      assert.deepEqual(servers, {});
+    });
+  });
+
+  describe('validatePortConflicts', () => {
+    it('detects duplicate no-TLS routes on same port and protocol', () => {
+      const routes = [
+        { id: 1, l4_protocol: 'tcp', l4_listen_port: '3389', l4_tls_mode: 'none' },
+        { id: 2, l4_protocol: 'tcp', l4_listen_port: '3389', l4_tls_mode: 'none' },
+      ];
+      assert.ok(l4.validatePortConflicts(routes).length > 0);
+    });
+
+    it('allows multiple TLS routes on same port', () => {
+      const routes = [
+        { id: 1, domain: 'a.com', l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough' },
+        { id: 2, domain: 'b.com', l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough' },
+      ];
+      assert.equal(l4.validatePortConflicts(routes).length, 0);
+    });
+
+    it('detects blocked ports', () => {
+      const routes = [{ id: 1, l4_protocol: 'tcp', l4_listen_port: '80', l4_tls_mode: 'none' }];
+      assert.ok(l4.validatePortConflicts(routes).length > 0);
+    });
+
+    it('detects overlapping port ranges', () => {
+      const routes = [
+        { id: 1, l4_protocol: 'tcp', l4_listen_port: '5000-5010', l4_tls_mode: 'none' },
+        { id: 2, l4_protocol: 'tcp', l4_listen_port: '5005-5015', l4_tls_mode: 'none' },
+      ];
+      assert.ok(l4.validatePortConflicts(routes).length > 0);
+    });
+
+    it('allows non-overlapping ranges on same protocol', () => {
+      const routes = [
+        { id: 1, l4_protocol: 'tcp', l4_listen_port: '5000-5010', l4_tls_mode: 'none' },
+        { id: 2, l4_protocol: 'tcp', l4_listen_port: '6000-6010', l4_tls_mode: 'none' },
+      ];
+      assert.equal(l4.validatePortConflicts(routes).length, 0);
+    });
+  });
+});
