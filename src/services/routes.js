@@ -4,6 +4,7 @@ const { getDb } = require('../db/connection');
 const config = require('../../config/default');
 const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, sanitize } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
+const { buildL4Servers, validatePortConflicts } = require('./l4');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
@@ -42,9 +43,12 @@ function buildCaddyConfig() {
     WHERE r.enabled = 1
   `).all();
 
+  const httpRoutes = routes.filter(r => r.route_type !== 'l4');
+  const l4Routes = routes.filter(r => r.route_type === 'l4');
+
   const caddyRoutes = {};
 
-  for (const route of routes) {
+  for (const route of httpRoutes) {
     // Determine target IP: if linked to a peer, use peer's WG IP; otherwise use target_ip
     let targetIp = route.target_ip;
     if (route.peer_id && route.allowed_ips) {
@@ -181,6 +185,24 @@ function buildCaddyConfig() {
       logs: {
         default_logger_name: 'access',
       },
+    };
+  }
+
+  // L4 config generation
+  if (l4Routes.length > 0) {
+    for (const route of l4Routes) {
+      if (route.peer_id && route.allowed_ips) {
+        route.target_ip = route.allowed_ips.split('/')[0];
+      }
+    }
+
+    const conflicts = validatePortConflicts(l4Routes);
+    if (conflicts.length > 0) {
+      throw new Error('L4 port conflicts: ' + conflicts.join('; '));
+    }
+
+    caddyConfig.apps.layer4 = {
+      servers: buildL4Servers(l4Routes),
     };
   }
 
