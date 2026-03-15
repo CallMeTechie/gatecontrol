@@ -123,6 +123,60 @@ function runMigrations() {
     // Column already exists
   }
 
+  // Migration: Add Layer 4 routing support
+  try {
+    db.exec(`ALTER TABLE routes ADD COLUMN route_type TEXT NOT NULL DEFAULT 'http'`);
+    db.exec(`ALTER TABLE routes ADD COLUMN l4_protocol TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN l4_listen_port TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN l4_tls_mode TEXT`);
+    logger.info('Migration: Added L4 routing columns');
+  } catch (e) {
+    // Columns already exist
+  }
+
+  // Migration: Relax domain UNIQUE NOT NULL constraint for L4 routes without domain
+  try {
+    const hasNullableDomain = db.prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='routes'`
+    ).get();
+    if (hasNullableDomain.sql.includes('domain TEXT NOT NULL UNIQUE')) {
+      db.exec(`
+        CREATE TABLE routes_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          domain TEXT,
+          target_ip TEXT NOT NULL,
+          target_port INTEGER NOT NULL,
+          description TEXT,
+          peer_id INTEGER,
+          https_enabled INTEGER NOT NULL DEFAULT 1,
+          basic_auth_enabled INTEGER NOT NULL DEFAULT 0,
+          basic_auth_user TEXT,
+          basic_auth_password_hash TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          backend_https INTEGER NOT NULL DEFAULT 0,
+          route_type TEXT NOT NULL DEFAULT 'http',
+          l4_protocol TEXT,
+          l4_listen_port TEXT,
+          l4_tls_mode TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE SET NULL
+        );
+        INSERT INTO routes_new SELECT
+          id, domain, target_ip, target_port, description, peer_id,
+          https_enabled, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
+          enabled, backend_https, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+          created_at, updated_at
+        FROM routes;
+        DROP TABLE routes;
+        ALTER TABLE routes_new RENAME TO routes;
+      `);
+      logger.info('Migration: Relaxed domain constraint for L4 routes');
+    }
+  } catch (e) {
+    logger.warn('Migration: Domain constraint change skipped', e.message);
+  }
+
   // Add performance indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_peers_name ON peers(name);
@@ -130,6 +184,8 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_routes_peer_id ON routes(peer_id);
     CREATE INDEX IF NOT EXISTS idx_peers_enabled ON peers(enabled);
     CREATE INDEX IF NOT EXISTS idx_routes_enabled ON routes(enabled);
+    CREATE INDEX IF NOT EXISTS idx_routes_route_type ON routes(route_type);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_domain_unique ON routes(domain) WHERE domain IS NOT NULL AND domain != '';
   `);
 
   // Composite indexes for common query patterns
