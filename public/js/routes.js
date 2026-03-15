@@ -85,6 +85,19 @@
       const authTag = r.basic_auth_enabled
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Auth</span>'
         : '';
+      let l4Tags = '';
+      if (r.route_type === 'l4') {
+        const protoTag = r.l4_protocol === 'udp' ? 'UDP' : 'TCP';
+        l4Tags += '<span class="tag tag-info">' + protoTag + '</span>';
+        if (r.l4_tls_mode && r.l4_tls_mode !== 'none') {
+          l4Tags += '<span class="tag tag-info">TLS-SNI</span>';
+        } else {
+          l4Tags += '<span class="tag tag-info">L4</span>';
+        }
+      }
+      const targetDisplay = r.route_type === 'l4'
+        ? ':' + (r.l4_listen_port || '') + ' → ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')'
+        : '→ ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')';
 
       return `<div class="route-item" data-route-id="${r.id}">
         <div class="route-icon">
@@ -92,11 +105,11 @@
         </div>
         <div style="flex:1;min-width:0">
           <div class="route-domain">${escapeHtml(r.domain)}</div>
-          <div class="route-target">→ ${escapeHtml(peerLabel)} (${escapeHtml(target)})</div>
+          <div class="route-target">${targetDisplay}</div>
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}
+          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -177,6 +190,13 @@
     btnLoading(submitBtn);
     try {
       const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled };
+      const routeType = document.getElementById('route-type').value;
+      payload.route_type = routeType;
+      if (routeType === 'l4') {
+        payload.l4_protocol = document.getElementById('l4-protocol').value;
+        payload.l4_listen_port = document.getElementById('l4-listen-port').value;
+        payload.l4_tls_mode = document.getElementById('l4-tls-mode').value;
+      }
       if (basic_auth_enabled) {
         payload.basic_auth_user = basic_auth_user;
         payload.basic_auth_password = basic_auth_password;
@@ -263,6 +283,14 @@
     const authFields = document.getElementById('edit-auth-fields');
     if (authFields) authFields.style.display = route.basic_auth_enabled ? 'block' : 'none';
 
+    setToggleGroup('edit-route-type-group', 'edit-route-type', route.route_type || 'http');
+    if (route.route_type === 'l4') {
+      setToggleGroup('edit-l4-protocol-group', 'edit-l4-protocol', route.l4_protocol || 'tcp');
+      document.getElementById('edit-l4-listen-port').value = route.l4_listen_port || '';
+      document.getElementById('edit-l4-tls-mode').value = route.l4_tls_mode || 'none';
+    }
+    updateEditFieldVisibility();
+
     hideError('edit-route-error');
     openModal('modal-edit-route');
     document.getElementById('edit-route-domain').focus();
@@ -301,6 +329,13 @@
       btnLoading(btn);
       try {
         const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled };
+        const editRouteType = document.getElementById('edit-route-type').value;
+        payload.route_type = editRouteType;
+        if (editRouteType === 'l4') {
+          payload.l4_protocol = document.getElementById('edit-l4-protocol').value;
+          payload.l4_listen_port = document.getElementById('edit-l4-listen-port').value;
+          payload.l4_tls_mode = document.getElementById('edit-l4-tls-mode').value;
+        }
         if (basic_auth_enabled) {
           payload.basic_auth_user = basic_auth_user.trim();
           if (basic_auth_password.trim()) {
@@ -383,6 +418,70 @@
 
   // Modal close/escape/focus-trap handled globally in app.js
 
+  // ─── L4 toggle group helpers ────────────────────────────
+  function setupToggleGroup(groupId, hiddenId) {
+    const group = document.getElementById(groupId);
+    const hidden = document.getElementById(hiddenId);
+    if (!group || !hidden) return;
+    group.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        hidden.value = btn.dataset.value;
+        if (groupId.startsWith('edit-')) {
+          updateEditFieldVisibility();
+        } else {
+          updateFieldVisibility();
+        }
+      });
+    });
+  }
+
+  function setToggleGroup(groupId, hiddenId, value) {
+    const group = document.getElementById(groupId);
+    const hidden = document.getElementById(hiddenId);
+    if (!group || !hidden) return;
+    hidden.value = value;
+    group.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.classList.toggle('on', btn.dataset.value === value);
+    });
+  }
+
+  function updateFieldVisibility() {
+    const routeType = document.getElementById('route-type')?.value || 'http';
+    const l4Fields = document.getElementById('l4-fields');
+    const httpFields = document.getElementById('http-fields');
+    if (l4Fields) l4Fields.style.display = routeType === 'l4' ? 'block' : 'none';
+    if (httpFields) httpFields.style.display = routeType === 'http' ? 'block' : 'none';
+
+    const domainInput = document.getElementById('route-domain');
+    const tlsMode = document.getElementById('l4-tls-mode')?.value;
+    if (routeType === 'l4' && tlsMode === 'none' && domainInput) {
+      domainInput.required = false;
+    } else if (domainInput) {
+      domainInput.required = true;
+    }
+
+    updateTlsHint('l4-tls-mode', 'l4-tls-hint');
+  }
+
+  function updateEditFieldVisibility() {
+    const routeType = document.getElementById('edit-route-type')?.value || 'http';
+    const l4Fields = document.getElementById('edit-l4-fields');
+    const httpFields = document.getElementById('edit-http-fields');
+    if (l4Fields) l4Fields.style.display = routeType === 'l4' ? 'block' : 'none';
+    if (httpFields) httpFields.style.display = routeType === 'http' ? 'block' : 'none';
+
+    updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
+  }
+
+  function updateTlsHint(selectId, hintId) {
+    const select = document.getElementById(selectId);
+    const hint = document.getElementById(hintId);
+    if (!select || !hint) return;
+    hint.textContent = hint.dataset['hint' + select.value.charAt(0).toUpperCase() + select.value.slice(1)] || '';
+  }
+
   // ─── Basic auth field visibility toggles ─────────────────
   function setupAuthToggle(toggleSel, fieldsSel) {
     const toggle = document.querySelector(toggleSel);
@@ -397,6 +496,28 @@
 
   setupAuthToggle('[data-field="basic_auth_enabled"]', '#basic-auth-fields');
   setupAuthToggle('#edit-route-auth', '#edit-auth-fields');
+
+  // ─── L4 listen port auto-fill ───────────────────────────
+  document.getElementById('route-port')?.addEventListener('input', function(e) {
+    const listenPort = document.getElementById('l4-listen-port');
+    if (listenPort && !listenPort.dataset.userModified) {
+      listenPort.value = e.target.value;
+    }
+  });
+  document.getElementById('l4-listen-port')?.addEventListener('input', function() {
+    this.dataset.userModified = 'true';
+  });
+
+  // ─── Initialize toggle groups ─────────────────────────
+  setupToggleGroup('route-type-group', 'route-type');
+  setupToggleGroup('l4-protocol-group', 'l4-protocol');
+  setupToggleGroup('edit-route-type-group', 'edit-route-type');
+  setupToggleGroup('edit-l4-protocol-group', 'edit-l4-protocol');
+
+  document.getElementById('l4-tls-mode')?.addEventListener('change', updateFieldVisibility);
+  document.getElementById('edit-l4-tls-mode')?.addEventListener('change', function() {
+    updateEditFieldVisibility();
+  });
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();
