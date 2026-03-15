@@ -61,7 +61,7 @@ function getRecent(limit = 20, offset = 0) {
   const db = getDb();
   const rows = db.prepare(`
     SELECT * FROM activity_log
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ? OFFSET ?
   `).all(limit, offset);
 
