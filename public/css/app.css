@@ -588,6 +588,59 @@ a { color: inherit; text-decoration: none; }
 }
 .toggle.on::after { transform: translateX(16px); }
 
+/* ─── Toggle Button Group ──────────────────────────────── */
+.toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.toggle-btn {
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  outline: none;
+}
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.toggle-btn:hover {
+  background: var(--bg-hi);
+}
+.toggle-btn.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Form Select & Hint ───────────────────────────────── */
+.form-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-select:focus {
+  border-color: var(--accent);
+}
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 /* ─── Tabs ──────────────────────────────────────────────── */
 .tabs {
   display: flex;
