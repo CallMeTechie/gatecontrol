@@ -60,6 +60,54 @@ function validateBasicAuthPassword(password) {
   return null;
 }
 
+function validateL4Protocol(protocol) {
+  if (!protocol || !['tcp', 'udp'].includes(protocol)) {
+    return 'L4 protocol must be tcp or udp';
+  }
+  return null;
+}
+
+function parsePortRange(portStr) {
+  if (!portStr || typeof portStr !== 'string') return null;
+  const trimmed = portStr.trim();
+  const rangeMatch = trimmed.match(/^(\d+)-(\d+)$/);
+  if (rangeMatch) {
+    const start = parseInt(rangeMatch[1], 10);
+    const end = parseInt(rangeMatch[2], 10);
+    if (start >= 1 && end <= 65535 && start <= end) return { start, end };
+    return null;
+  }
+  const single = parseInt(trimmed, 10);
+  if (!isNaN(single) && single >= 1 && single <= 65535 && String(single) === trimmed) {
+    return { start: single, end: single };
+  }
+  return null;
+}
+
+function validateL4ListenPort(portStr) {
+  const range = parsePortRange(portStr);
+  if (!range) return 'Invalid port or port range';
+  const config = require('../../config/default');
+  const maxRange = (config.l4 && config.l4.maxPortRange) || 100;
+  if (range.end - range.start + 1 > maxRange) {
+    return 'Port range exceeds maximum of ' + maxRange + ' ports';
+  }
+  return null;
+}
+
+function validateL4TlsMode(mode) {
+  if (!mode || !['none', 'passthrough', 'terminate'].includes(mode)) {
+    return 'TLS mode must be none, passthrough, or terminate';
+  }
+  return null;
+}
+
+function isPortBlocked(port) {
+  const config = require('../../config/default');
+  const blocked = (config.l4 && config.l4.blockedPorts) || [80, 443, 2019, 3000, 51820];
+  return blocked.includes(port);
+}
+
 function sanitize(str) {
   if (!str) return '';
   return String(str).trim();
@@ -74,4 +122,9 @@ module.exports = {
   validateBasicAuthUser,
   validateBasicAuthPassword,
   sanitize,
+  validateL4Protocol,
+  validateL4ListenPort,
+  validateL4TlsMode,
+  isPortBlocked,
+  parsePortRange,
 };
