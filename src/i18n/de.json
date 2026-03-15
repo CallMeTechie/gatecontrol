@@ -82,6 +82,7 @@
   "routes.active_routes": "Aktive Routen",
   "routes.entries": "{{count}} Einträge",
   "routes.new_route": "Neue Route anlegen",
+  "routes.edit_title": "Route bearbeiten",
   "routes.domain": "Subdomain",
   "routes.domain_placeholder": "service.example.com",
   "routes.description": "Beschreibung",

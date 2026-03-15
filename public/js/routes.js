@@ -498,15 +498,19 @@
   setupAuthToggle('#edit-route-auth', '#edit-auth-fields');
 
   // ─── L4 listen port auto-fill ───────────────────────────
-  document.getElementById('route-port')?.addEventListener('input', function(e) {
-    const listenPort = document.getElementById('l4-listen-port');
-    if (listenPort && !listenPort.dataset.userModified) {
-      listenPort.value = e.target.value;
-    }
-  });
-  document.getElementById('l4-listen-port')?.addEventListener('input', function() {
-    this.dataset.userModified = 'true';
-  });
+  function setupPortAutofill(portId, listenPortId) {
+    document.getElementById(portId)?.addEventListener('input', function() {
+      const listenPort = document.getElementById(listenPortId);
+      if (listenPort && !listenPort.dataset.userModified) {
+        listenPort.value = this.value;
+      }
+    });
+    document.getElementById(listenPortId)?.addEventListener('input', function() {
+      this.dataset.userModified = 'true';
+    });
+  }
+  setupPortAutofill('route-port', 'l4-listen-port');
+  setupPortAutofill('edit-route-port', 'edit-l4-listen-port');
 
   // ─── Initialize toggle groups ─────────────────────────
   setupToggleGroup('route-type-group', 'route-type');
