@@ -63,6 +63,12 @@ const config = {
     acmeCa: env('GC_CADDY_ACME_CA', ''),
   },
 
+  l4: {
+    blockedPorts: (process.env.GC_L4_BLOCKED_PORTS || '80,443,2019,3000,51820')
+      .split(',').map(p => parseInt(p.trim(), 10)).filter(Boolean),
+    maxPortRange: parseInt(process.env.GC_L4_MAX_PORT_RANGE, 10) || 100,
+  },
+
   i18n: {
     defaultLanguage: env('GC_DEFAULT_LANGUAGE', 'en'),
     availableLanguages: envList('GC_AVAILABLE_LANGUAGES', ['en', 'de']),
