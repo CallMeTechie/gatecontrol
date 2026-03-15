@@ -16,7 +16,7 @@ async function caddyApi(path, options = {}) {
   try {
     const res = await fetch(url, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...options.headers },
+      headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
     });
     if (!res.ok) {
       const text = await res.text();
