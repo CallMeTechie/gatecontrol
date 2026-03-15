@@ -24,6 +24,14 @@ const VALIDATION_ERROR_MAP = {
   'Invalid': 'error.routes.create',
   'must be': 'error.routes.create',
   'characters': 'error.routes.create',
+  'L4 protocol must be': 'error.routes.l4_invalid_protocol',
+  'Invalid port or port range': 'error.routes.l4_invalid_port',
+  'TLS mode must be': 'error.routes.l4_invalid_tls_mode',
+  'TLS mode requires a domain': 'error.routes.l4_tls_requires_domain',
+  'TLS requires TCP': 'error.routes.l4_tls_requires_tcp',
+  'is reserved': 'error.routes.l4_port_blocked',
+  'port conflicts': 'error.routes.l4_port_conflict',
+  'Port range exceeds': 'error.routes.l4_port_range_too_large',
 };
 
 function resolveError(req, err, fallbackKey) {
@@ -45,7 +53,8 @@ router.get('/', async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const list = routes.getAll({ limit, offset }).map(stripHash);
+    const { type } = req.query;
+    const list = routes.getAll({ limit, offset, type: type || null }).map(stripHash);
     res.json({ ok: true, routes: list, limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list routes');
@@ -92,11 +101,14 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { domain, target_ip, target_port, description, peer_id, https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password } = req.body;
+    const { domain, target_ip, target_port, description, peer_id,
+      https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode } = req.body;
     const route = await routes.create({
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password,
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode,
     });
     res.status(201).json({ ok: true, route: stripHash(route) });
   } catch (err) {
@@ -111,11 +123,14 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { domain, target_ip, target_port, description, peer_id, https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled } = req.body;
+    const { domain, target_ip, target_port, description, peer_id,
+      https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode } = req.body;
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password, enabled,
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode,
     });
     res.json({ ok: true, route: stripHash(route) });
   } catch (err) {
