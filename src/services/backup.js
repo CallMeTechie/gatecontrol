@@ -6,7 +6,7 @@ const peersService = require('./peers');
 const routesService = require('./routes');
 const logger = require('../utils/logger');
 
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 
 /**
  * Create a full backup as JSON object
@@ -45,6 +45,10 @@ function createBackup() {
     basic_auth_user: r.basic_auth_user,
     basic_auth_password_hash: r.basic_auth_password_hash,
     enabled: r.enabled,
+    route_type: r.route_type || 'http',
+    l4_protocol: r.l4_protocol,
+    l4_listen_port: r.l4_listen_port,
+    l4_tls_mode: r.l4_tls_mode,
     created_at: r.created_at,
     updated_at: r.updated_at,
   }));
@@ -110,7 +114,7 @@ function validateBackup(backup) {
   // Validate route entries
   for (let i = 0; i < routes.length; i++) {
     const r = routes[i];
-    if (!r.domain) errors.push(`Route #${i + 1}: missing domain`);
+    if (!r.domain && r.route_type !== 'l4') errors.push(`Route #${i + 1}: missing domain`);
   }
 
   return errors;
@@ -182,8 +186,9 @@ async function restoreBackup(backup) {
       INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                           https_enabled, backend_https, basic_auth_enabled,
                           basic_auth_user, basic_auth_password_hash, enabled,
+                          route_type, l4_protocol, l4_listen_port, l4_tls_mode,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     for (const r of routes) {
@@ -200,6 +205,10 @@ async function restoreBackup(backup) {
         r.basic_auth_user || null,
         r.basic_auth_password_hash || null,
         r.enabled !== undefined ? (r.enabled ? 1 : 0) : 1,
+        r.route_type || 'http',
+        r.l4_protocol || null,
+        r.l4_listen_port || null,
+        r.l4_tls_mode || null,
         r.created_at || null,
         r.updated_at || null,
       );
