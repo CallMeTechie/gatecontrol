@@ -462,6 +462,7 @@ a { color: inherit; text-decoration: none; }
 .tag-red   { background: var(--red-lt);   color: var(--red);   border: 1px solid var(--red-bd); }
 .tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
 .tag-blue  { background: var(--blue-lt);  color: var(--blue);  border: 1px solid var(--blue-bd); }
+.tag-info  { background: var(--bg-hi);    color: var(--text-2); border: 1px solid var(--border); margin-left: 4px; }
 .tag-grey  { background: var(--bg-base);  color: var(--text-2);border: 1px solid var(--border); }
 .tag-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 

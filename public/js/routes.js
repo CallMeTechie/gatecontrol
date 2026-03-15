@@ -76,13 +76,13 @@
         : peerOnline
           ? '<span class="tag tag-green"><span class="tag-dot"></span>Active</span>'
           : '<span class="tag tag-red"><span class="tag-dot"></span>Peer offline</span>';
-      const httpsTag = r.https_enabled
+      const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
-      const backendHttpsTag = r.backend_https
+      const backendHttpsTag = r.backend_https && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Backend HTTPS</span>'
         : '';
-      const authTag = r.basic_auth_enabled
+      const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Auth</span>'
         : '';
       let l4Tags = '';
