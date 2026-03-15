@@ -39,6 +39,14 @@
     <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
       <form id="route-form">
         <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <div class="form-group">
+          <label>{{ t('routes.type_http') }} / {{ t('routes.type_l4') }}</label>
+          <div class="toggle-group" id="route-type-group">
+            <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
+            <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
+          </div>
+          <input type="hidden" name="route_type" id="route-type" value="http">
+        </div>
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.domain') }}</label>
           <input type="text" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253">
@@ -57,35 +65,60 @@
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_port') }}</label>
           <input type="text" name="target_port" placeholder="{{ t('routes.target_port_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="5">
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+        <div id="l4-fields" style="display:none">
+          <div class="form-group">
+            <label>{{ t('routes.l4_protocol') }}</label>
+            <div class="toggle-group" id="l4-protocol-group">
+              <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
+              <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
+            </div>
+            <input type="hidden" name="l4_protocol" id="l4-protocol" value="tcp">
           </div>
-          <div class="toggle on" data-field="https_enabled"></div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_listen_port') }}</label>
+            <input type="text" id="l4-listen-port" name="l4_listen_port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+          </div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_tls_mode') }}</label>
+            <select id="l4-tls-mode" name="l4_tls_mode" class="form-select">
+              <option value="none">{{ t('routes.tls_none') }}</option>
+              <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
+              <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+            </select>
+            <small id="l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
+        <div id="http-fields">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+            </div>
+            <div class="toggle on" data-field="https_enabled"></div>
           </div>
-          <div class="toggle" data-field="backend_https"></div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.basic_auth') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.basic_auth_desc') }}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
+            </div>
+            <div class="toggle" data-field="backend_https"></div>
           </div>
-          <div class="toggle" data-field="basic_auth_enabled"></div>
-        </div>
-        <div id="basic-auth-fields" style="display:none;margin-bottom:14px">
-          <div style="margin-bottom:10px">
-            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_user') or 'Username' }}</label>
-            <input type="text" name="basic_auth_user" placeholder="admin" autocomplete="off" style="width:100%;padding:8px 12px" maxlength="64">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.basic_auth') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.basic_auth_desc') }}</div>
+            </div>
+            <div class="toggle" data-field="basic_auth_enabled"></div>
           </div>
-          <div>
-            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_password') or 'Password' }}</label>
-            <input type="password" name="basic_auth_password" placeholder="••••••••" autocomplete="new-password" style="width:100%;padding:8px 12px" maxlength="128">
+          <div id="basic-auth-fields" style="display:none;margin-bottom:14px">
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_user') or 'Username' }}</label>
+              <input type="text" name="basic_auth_user" placeholder="admin" autocomplete="off" style="width:100%;padding:8px 12px" maxlength="64">
+            </div>
+            <div>
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_password') or 'Password' }}</label>
+              <input type="password" name="basic_auth_password" placeholder="••••••••" autocomplete="new-password" style="width:100%;padding:8px 12px" maxlength="128">
+            </div>
           </div>
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
