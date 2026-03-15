@@ -231,15 +231,17 @@ async function syncToCaddy() {
 /**
  * Get all routes with peer info
  */
-function getAll({ limit = 250, offset = 0 } = {}) {
+function getAll({ limit = 250, offset = 0, type = null } = {}) {
   const db = getDb();
-  return db.prepare(`
-    SELECT r.*, p.name AS peer_name, p.allowed_ips AS peer_ip, p.enabled AS peer_enabled
-    FROM routes r
-    LEFT JOIN peers p ON r.peer_id = p.id
-    ORDER BY r.domain ASC
-    LIMIT ? OFFSET ?
-  `).all(limit, offset);
+  let query = 'SELECT r.*, p.name as peer_name, p.enabled as peer_enabled FROM routes r LEFT JOIN peers p ON r.peer_id = p.id';
+  const params = [];
+  if (type) {
+    query += ' WHERE r.route_type = ?';
+    params.push(type);
+  }
+  query += ' ORDER BY r.route_type, r.domain ASC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+  return db.prepare(query).all(...params);
 }
 
 /**
@@ -259,8 +261,30 @@ function getById(id) {
  * Create a new route
  */
 async function create(data) {
-  const domainErr = validateDomain(data.domain);
-  if (domainErr) throw new Error(domainErr);
+  const routeType = data.route_type || 'http';
+
+  if (routeType === 'l4') {
+    const { validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
+    const protoErr = validateL4Protocol(data.l4_protocol);
+    if (protoErr) throw new Error(protoErr);
+    const portErr = validateL4ListenPort(data.l4_listen_port);
+    if (portErr) throw new Error(portErr);
+    const tlsErr = validateL4TlsMode(data.l4_tls_mode);
+    if (tlsErr) throw new Error(tlsErr);
+    if (data.l4_tls_mode !== 'none') {
+      if (!data.domain) throw new Error('TLS mode requires a domain for SNI');
+      if (data.l4_protocol !== 'tcp') throw new Error('TLS requires TCP protocol');
+    }
+    const range = parsePortRange(data.l4_listen_port);
+    for (let p = range.start; p <= range.end; p++) {
+      if (isPortBlocked(p)) throw new Error('Port ' + p + ' is reserved');
+    }
+  }
+
+  if (routeType === 'http' || data.domain) {
+    const domainErr = validateDomain(data.domain);
+    if (domainErr) throw new Error(domainErr);
+  }
 
   const portErr = validatePort(data.target_port);
   if (portErr) throw new Error(portErr);
@@ -271,11 +295,13 @@ async function create(data) {
   }
 
   const db = getDb();
-  const domain = sanitize(data.domain).toLowerCase();
+  const domain = data.domain ? sanitize(data.domain).toLowerCase() : null;
 
   // Check for duplicate domain
-  const existing = db.prepare('SELECT id FROM routes WHERE domain = ?').get(domain);
-  if (existing) throw new Error('A route with this domain already exists');
+  if (domain) {
+    const existing = db.prepare('SELECT id FROM routes WHERE domain = ?').get(domain);
+    if (existing) throw new Error('A route with this domain already exists');
+  }
 
   // Validate basic auth credentials when enabled
   let basicAuthUser = null;
@@ -303,8 +329,9 @@ async function create(data) {
 
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
-                        https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
+                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -315,7 +342,11 @@ async function create(data) {
     data.backend_https ? 1 : 0,
     data.basic_auth_enabled ? 1 : 0,
     basicAuthUser,
-    basicAuthPasswordHash
+    basicAuthPasswordHash,
+    routeType,
+    data.l4_protocol || null,
+    data.l4_listen_port || null,
+    data.l4_tls_mode || null
   );
 
   const routeId = result.lastInsertRowid;
@@ -350,7 +381,41 @@ async function update(id, data) {
   // Snapshot for rollback
   const snapshot = { ...route };
 
-  if (data.domain !== undefined) {
+  const routeType = data.route_type || route.route_type || 'http';
+
+  if (routeType === 'l4') {
+    const { validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
+    if (data.l4_protocol !== undefined) {
+      const protoErr = validateL4Protocol(data.l4_protocol);
+      if (protoErr) throw new Error(protoErr);
+    }
+    if (data.l4_listen_port !== undefined) {
+      const portErr = validateL4ListenPort(data.l4_listen_port);
+      if (portErr) throw new Error(portErr);
+    }
+    const tlsMode = data.l4_tls_mode !== undefined ? data.l4_tls_mode : route.l4_tls_mode;
+    if (data.l4_tls_mode !== undefined) {
+      const tlsErr = validateL4TlsMode(data.l4_tls_mode);
+      if (tlsErr) throw new Error(tlsErr);
+    }
+    if (tlsMode && tlsMode !== 'none') {
+      const domain = data.domain !== undefined ? data.domain : route.domain;
+      if (!domain) throw new Error('TLS mode requires a domain for SNI');
+      const proto = data.l4_protocol !== undefined ? data.l4_protocol : route.l4_protocol;
+      if (proto !== 'tcp') throw new Error('TLS requires TCP protocol');
+    }
+    const listenPort = data.l4_listen_port !== undefined ? data.l4_listen_port : route.l4_listen_port;
+    if (listenPort) {
+      const range = parsePortRange(listenPort);
+      if (range) {
+        for (let p = range.start; p <= range.end; p++) {
+          if (isPortBlocked(p)) throw new Error('Port ' + p + ' is reserved');
+        }
+      }
+    }
+  }
+
+  if (data.domain !== undefined && (routeType === 'http' || data.domain)) {
     const domainErr = validateDomain(data.domain);
     if (domainErr) throw new Error(domainErr);
 
@@ -428,6 +493,10 @@ async function update(id, data) {
       basic_auth_enabled = ?,
       basic_auth_user = ?,
       basic_auth_password_hash = ?,
+      route_type = COALESCE(?, route_type),
+      l4_protocol = ?,
+      l4_listen_port = ?,
+      l4_tls_mode = ?,
       enabled = COALESCE(?, enabled),
       updated_at = datetime('now')
     WHERE id = ?
@@ -442,6 +511,10 @@ async function update(id, data) {
     authEnabled ? 1 : 0,
     basicAuthUser,
     basicAuthPasswordHash,
+    data.route_type || null,
+    data.l4_protocol !== undefined ? (data.l4_protocol || null) : route.l4_protocol,
+    data.l4_listen_port !== undefined ? (data.l4_listen_port || null) : route.l4_listen_port,
+    data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     id
   );
@@ -454,13 +527,17 @@ async function update(id, data) {
       UPDATE routes SET
         domain = ?, target_ip = ?, target_port = ?, description = ?, peer_id = ?,
         https_enabled = ?, backend_https = ?, basic_auth_enabled = ?,
-        basic_auth_user = ?, basic_auth_password_hash = ?, enabled = ?, updated_at = ?
+        basic_auth_user = ?, basic_auth_password_hash = ?,
+        route_type = ?, l4_protocol = ?, l4_listen_port = ?, l4_tls_mode = ?,
+        enabled = ?, updated_at = ?
       WHERE id = ?
     `).run(
       snapshot.domain, snapshot.target_ip, snapshot.target_port, snapshot.description,
       snapshot.peer_id, snapshot.https_enabled, snapshot.backend_https,
       snapshot.basic_auth_enabled, snapshot.basic_auth_user,
-      snapshot.basic_auth_password_hash, snapshot.enabled, snapshot.updated_at, id
+      snapshot.basic_auth_password_hash,
+      snapshot.route_type, snapshot.l4_protocol, snapshot.l4_listen_port, snapshot.l4_tls_mode,
+      snapshot.enabled, snapshot.updated_at, id
     );
     throw err;
   }
@@ -491,13 +568,15 @@ async function remove(id) {
     db.prepare(`
       INSERT INTO routes (id, domain, target_ip, target_port, description, peer_id,
         https_enabled, backend_https, basic_auth_enabled, basic_auth_user,
-        basic_auth_password_hash, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        basic_auth_password_hash, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+        enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       route.id, route.domain, route.target_ip, route.target_port, route.description,
       route.peer_id, route.https_enabled, route.backend_https, route.basic_auth_enabled,
-      route.basic_auth_user, route.basic_auth_password_hash, route.enabled,
-      route.created_at, route.updated_at
+      route.basic_auth_user, route.basic_auth_password_hash,
+      route.route_type, route.l4_protocol, route.l4_listen_port, route.l4_tls_mode,
+      route.enabled, route.created_at, route.updated_at
     );
     throw err;
   }
