@@ -95,7 +95,7 @@ if [ ! -f "$CADDYFILE" ]; then
   cat > "$CADDYFILE" <<EOF
 {
   admin 127.0.0.1:2019 {
-    origins 127.0.0.1
+    origins 127.0.0.1 127.0.0.1:2019
   }
   ${GC_CADDY_EMAIL:+email $GC_CADDY_EMAIL}
   ${GC_CADDY_ACME_CA:+acme_ca $GC_CADDY_ACME_CA}
@@ -106,7 +106,7 @@ fi
 # ─── Ensure Caddy admin allows local origin (v2.11+) ──
 if ! grep -q "origins" "$CADDYFILE" 2>/dev/null; then
   echo "» Updating Caddyfile: adding admin origins for Caddy v2.11+..."
-  sed -i 's|admin 127.0.0.1:2019|admin 127.0.0.1:2019 {\n    origins 127.0.0.1\n  }|' "$CADDYFILE"
+  sed -i 's|admin 127.0.0.1:2019|admin 127.0.0.1:2019 {\n    origins 127.0.0.1 127.0.0.1:2019\n  }|' "$CADDYFILE"
 fi
 
 # ─── Validate Caddy config ────────────────────────────
