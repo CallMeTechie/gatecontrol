@@ -37,7 +37,7 @@ function buildL4Route(route, tlsMode) {
   const target = route.target_ip + ':' + route.target_port;
   const proxyHandler = {
     handler: 'proxy',
-    upstreams: [{ dial: target }],
+    upstreams: [{ dial: [target] }],
   };
 
   const caddyRoute = {};

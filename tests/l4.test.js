@@ -68,7 +68,7 @@ describe('L4 Config Generation', () => {
       assert.deepEqual(servers['l4-tcp-3389'].listen, ['tcp/:3389']);
       assert.equal(servers['l4-tcp-3389'].routes.length, 1);
       assert.equal(servers['l4-tcp-3389'].routes[0].handle[0].handler, 'proxy');
-      assert.deepEqual(servers['l4-tcp-3389'].routes[0].handle[0].upstreams, [{ dial: '10.8.0.5:3389' }]);
+      assert.deepEqual(servers['l4-tcp-3389'].routes[0].handle[0].upstreams, [{ dial: ['10.8.0.5:3389'] }]);
     });
 
     it('generates UDP server', () => {
