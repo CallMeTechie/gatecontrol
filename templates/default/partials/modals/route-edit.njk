@@ -28,35 +28,70 @@
         <label class="form-label">{{ t('routes.target_port') }}</label>
         <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-        <div>
-          <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+      <div class="form-group">
+        <label>{{ t('routes.type_http') }} / {{ t('routes.type_l4') }}</label>
+        <div class="toggle-group" id="edit-route-type-group">
+          <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
+          <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
         </div>
-        <div class="toggle on" id="edit-route-https"></div>
+        <input type="hidden" id="edit-route-type" value="http">
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-        <div>
-          <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
-        </div>
-        <div class="toggle" id="edit-route-backend-https"></div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-        <div>
-          <div style="font-size:13px;font-weight:600">{{ t('routes.basic_auth') }}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.basic_auth_desc') }}</div>
-        </div>
-        <div class="toggle" id="edit-route-auth"></div>
-      </div>
-      <div id="edit-auth-fields" style="display:none;margin-bottom:14px">
+
+      <div id="edit-l4-fields" style="display:none">
         <div class="form-group">
-          <label class="form-label">{{ t('routes.basic_auth_user') or 'Username' }}</label>
-          <input type="text" id="edit-route-auth-user" placeholder="admin" autocomplete="off" maxlength="64">
+          <label>{{ t('routes.l4_protocol') }}</label>
+          <div class="toggle-group" id="edit-l4-protocol-group">
+            <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
+            <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
+          </div>
+          <input type="hidden" id="edit-l4-protocol" value="tcp">
         </div>
         <div class="form-group">
-          <label class="form-label">{{ t('routes.basic_auth_password') or 'Password' }}</label>
-          <input type="password" id="edit-route-auth-pass" placeholder="{{ t('routes.basic_auth_password_hint') or 'Leave empty to keep current' }}" autocomplete="new-password" maxlength="128">
+          <label>{{ t('routes.l4_listen_port') }}</label>
+          <input type="text" id="edit-l4-listen-port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+        </div>
+        <div class="form-group">
+          <label>{{ t('routes.l4_tls_mode') }}</label>
+          <select id="edit-l4-tls-mode" class="form-select">
+            <option value="none">{{ t('routes.tls_none') }}</option>
+            <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
+            <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+          </select>
+          <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+        </div>
+      </div>
+
+      <div id="edit-http-fields">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+          </div>
+          <div class="toggle on" id="edit-route-https"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
+          </div>
+          <div class="toggle" id="edit-route-backend-https"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.basic_auth') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.basic_auth_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-auth"></div>
+        </div>
+        <div id="edit-auth-fields" style="display:none;margin-bottom:14px">
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.basic_auth_user') or 'Username' }}</label>
+            <input type="text" id="edit-route-auth-user" placeholder="admin" autocomplete="off" maxlength="64">
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.basic_auth_password') or 'Password' }}</label>
+            <input type="password" id="edit-route-auth-pass" placeholder="{{ t('routes.basic_auth_password_hint') or 'Leave empty to keep current' }}" autocomplete="new-password" maxlength="128">
+          </div>
         </div>
       </div>
       <div id="edit-route-error" class="form-error" style="display:none"></div>
