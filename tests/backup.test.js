@@ -51,7 +51,7 @@ describe('backup service', () => {
 
     const result = backup.createBackup();
 
-    assert.equal(result.version, 1);
+    assert.equal(result.version, 2);
     assert.ok(result.created_at);
     assert.equal(result.data.peers.length, 1);
     assert.equal(result.data.peers[0].name, 'test-peer');
@@ -67,7 +67,7 @@ describe('backup service', () => {
     assert.ok(backup.validateBackup({ version: 999, data: {} }).length > 0);
 
     const valid = {
-      version: 1,
+      version: 2,
       created_at: new Date().toISOString(),
       data: { peers: [], routes: [], settings: [], webhooks: [] },
     };
@@ -76,7 +76,7 @@ describe('backup service', () => {
 
   it('rejects peers without required fields', () => {
     const bad = {
-      version: 1,
+      version: 2,
       data: {
         peers: [{ name: null }],
         routes: [],
@@ -90,7 +90,7 @@ describe('backup service', () => {
 
   it('returns backup summary', () => {
     const data = {
-      version: 1,
+      version: 2,
       created_at: '2026-01-01T00:00:00.000Z',
       data: {
         peers: [{ name: 'a' }, { name: 'b' }],
