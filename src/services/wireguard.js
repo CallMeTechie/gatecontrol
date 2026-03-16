@@ -38,7 +38,6 @@ async function getStatus() {
 
   const ifaceParts = lines[0].split('\t');
   const ifaceData = {
-    privateKey: ifaceParts[0] || '',
     publicKey: ifaceParts[1] || '',
     listenPort: parseInt(ifaceParts[2], 10) || 0,
     fwmark: ifaceParts[3] || 'off',
@@ -58,7 +57,7 @@ async function getStatus() {
 
     peers.push({
       publicKey: parts[0],
-      presharedKey: parts[1] !== '(none)' ? parts[1] : null,
+      hasPresharedKey: parts[1] !== '(none)',
       endpoint: parts[2] !== '(none)' ? parts[2] : null,
       allowedIps: parts[3],
       latestHandshake,

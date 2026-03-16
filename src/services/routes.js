@@ -2,7 +2,7 @@
 
 const { getDb } = require('../db/connection');
 const config = require('../../config/default');
-const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, sanitize } = require('../utils/validate');
+const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
 const activity = require('./activity');
@@ -63,7 +63,9 @@ function buildCaddyConfig() {
     };
 
     // If backend uses HTTPS (e.g. Synology DSM on port 5001)
+    // WARNING: insecure_skip_verify disables TLS cert validation for the upstream
     if (route.backend_https) {
+      logger.warn({ domain: route.domain, upstream }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
       reverseProxy.transport = {
         protocol: 'http',
         tls: {
@@ -325,6 +327,8 @@ async function create(data) {
     if (!peer) throw new Error('Selected peer not found');
     targetIp = peer.allowed_ips.split('/')[0];
   } else if (data.target_ip) {
+    const ipErr = validateIp(data.target_ip);
+    if (ipErr) throw new Error(ipErr);
     targetIp = sanitize(data.target_ip);
   }
 
@@ -471,6 +475,8 @@ async function update(id, data) {
       if (!peer.enabled) throw new Error('Selected peer is disabled');
       targetIp = peer.allowed_ips.split('/')[0];
     } else if (data.target_ip) {
+      const ipErr = validateIp(data.target_ip);
+      if (ipErr) throw new Error(ipErr);
       targetIp = sanitize(data.target_ip);
     }
   } else if (route.peer_id) {

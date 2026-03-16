@@ -7,6 +7,13 @@ const logger = require('../../utils/logger');
 
 const router = Router();
 
+/** Strip sensitive fields from peer objects before sending to client */
+function stripSensitive(peer) {
+  if (!peer) return peer;
+  const { private_key_encrypted, preshared_key_encrypted, ...safe } = peer;
+  return safe;
+}
+
 /** Map service-layer error messages to i18n keys */
 const VALIDATION_ERROR_MAP = {
   'already exists': 'error.peers.name_exists',
@@ -30,7 +37,7 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const list = await peers.getAll({ limit, offset });
-    res.json({ ok: true, peers: list, limit, offset });
+    res.json({ ok: true, peers: list.map(stripSensitive), limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list peers');
     res.status(500).json({ ok: false, error: req.t('error.peers.list') });
@@ -44,7 +51,7 @@ router.get('/:id', (req, res) => {
   try {
     const peer = peers.getById(req.params.id);
     if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
-    res.json({ ok: true, peer });
+    res.json({ ok: true, peer: stripSensitive(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get peer');
     res.status(500).json({ ok: false, error: req.t('error.peers.get') });
@@ -58,7 +65,7 @@ router.post('/', async (req, res) => {
   try {
     const { name, description, tags } = req.body;
     const peer = await peers.create({ name, description, tags });
-    res.status(201).json({ ok: true, peer });
+    res.status(201).json({ ok: true, peer: stripSensitive(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
     const { status, error } = resolveError(req, err, 'error.peers.create');
@@ -73,7 +80,7 @@ router.put('/:id', async (req, res) => {
   try {
     const { name, description, dns, persistentKeepalive, enabled, tags } = req.body;
     const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled, tags });
-    res.json({ ok: true, peer });
+    res.json({ ok: true, peer: stripSensitive(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');
     const { status, error } = resolveError(req, err, 'error.peers.update');
@@ -101,7 +108,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/toggle', async (req, res) => {
   try {
     const peer = await peers.toggle(req.params.id);
-    res.json({ ok: true, peer });
+    res.json({ ok: true, peer: stripSensitive(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle peer');
     const { status, error } = resolveError(req, err, 'error.peers.toggle');
@@ -121,7 +128,8 @@ router.get('/:id/config', async (req, res) => {
 
     if (req.query.download === '1') {
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${peer.name}.conf"`);
+      const safeName = peer.name.replace(/[^\w.\-]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.conf"`);
       return res.send(conf);
     }
 

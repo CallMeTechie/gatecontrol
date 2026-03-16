@@ -48,13 +48,20 @@ const authRoutes = {
         VALUES ('login', ?, 'system', ?, 'info')
       `).run(`User ${username} logged in`, req.ip);
 
-      // Set session
-      req.session.userId = user.id;
-      req.session.language = user.language || config.i18n.defaultLanguage;
+      // Regenerate session to prevent session fixation
+      const language = user.language || config.i18n.defaultLanguage;
+      req.session.regenerate((err) => {
+        if (err) {
+          logger.error({ err }, 'Session regeneration failed');
+          setFlash(req, 'error', res.locals.t('auth.error_generic'));
+          return res.redirect('/login');
+        }
+        req.session.userId = user.id;
+        req.session.language = language;
 
-      logger.info({ username, ip: req.ip }, 'Successful login');
-
-      return res.redirect('/dashboard');
+        logger.info({ username, ip: req.ip }, 'Successful login');
+        return res.redirect('/dashboard');
+      });
     } catch (err) {
       logger.error({ err }, 'Login error');
       setFlash(req, 'error', res.locals.t('auth.error_generic'));

@@ -55,8 +55,10 @@ describe('backup service', () => {
     assert.ok(result.created_at);
     assert.equal(result.data.peers.length, 1);
     assert.equal(result.data.peers[0].name, 'test-peer');
-    assert.equal(result.data.peers[0].private_key, 'privkey');
-    assert.equal(result.data.peers[0].preshared_key, 'psk');
+    assert.ok(result.data.peers[0].private_key_encrypted, 'should have encrypted private key');
+    assert.ok(result.data.peers[0].preshared_key_encrypted, 'should have encrypted preshared key');
+    assert.equal(result.data.peers[0].private_key, undefined, 'should not have plaintext private key');
+    assert.equal(result.data.peers[0].preshared_key, undefined, 'should not have plaintext preshared key');
     assert.equal(result.data.settings.length, 1);
     assert.equal(result.data.webhooks.length, 1);
   });

@@ -21,6 +21,14 @@ function validateWebhookUrl(urlStr) {
     throw new Error('Webhook URL must not target localhost');
   }
 
+  // Block private/reserved IPv6 ranges
+  const bare = hostname.replace(/^\[|\]$/g, '');
+  if (bare.startsWith('fc') || bare.startsWith('fd') ||    // fc00::/7 ULA
+      bare.startsWith('fe80') ||                            // fe80::/10 link-local
+      bare.startsWith('::ffff:')) {                         // IPv4-mapped IPv6
+    throw new Error('Webhook URL must not target private or reserved IP addresses');
+  }
+
   // Block private/reserved IPv4 ranges
   const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4Match) {

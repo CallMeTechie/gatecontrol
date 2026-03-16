@@ -58,10 +58,10 @@ if [ ! -f "$WG_DATA_CONF" ]; then
   POST_DOWN="${GC_WG_POST_DOWN}"
 
   if [ -z "$POST_UP" ]; then
-    POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
   fi
   if [ -z "$POST_DOWN" ]; then
-    POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
   fi
 
   echo "» Writing WireGuard config to ${WG_DATA_CONF}..."
@@ -114,6 +114,26 @@ echo "» Validating Caddy config..."
 if ! caddy validate --config "$CADDYFILE" --adapter caddyfile > /dev/null 2>&1; then
   echo "WARNING: Caddy config validation failed — check your Caddyfile"
 fi
+
+# ─── Generate session secret if not set ──────────────
+SECRET_FILE="/data/.session_secret"
+if [ -z "$GC_SECRET" ]; then
+  if [ -f "$SECRET_FILE" ]; then
+    export GC_SECRET=$(cat "$SECRET_FILE")
+    echo "» Session secret loaded from $SECRET_FILE"
+  else
+    export GC_SECRET=$(openssl rand -hex 48)
+    echo "$GC_SECRET" > "$SECRET_FILE"
+    echo "» Session secret generated and saved to $SECRET_FILE"
+  fi
+else
+  if [ ! -f "$SECRET_FILE" ] || [ "$(cat "$SECRET_FILE")" != "$GC_SECRET" ]; then
+    echo "$GC_SECRET" > "$SECRET_FILE"
+    echo "» Session secret persisted to $SECRET_FILE"
+  fi
+fi
+chmod 600 "$SECRET_FILE"
+chown root:root "$SECRET_FILE"
 
 # ─── Generate encryption key if not set ──────────────
 KEY_FILE="/data/.encryption_key"

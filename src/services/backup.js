@@ -4,6 +4,8 @@ const { getDb } = require('../db/connection');
 const { decrypt, encrypt } = require('../utils/crypto');
 const peersService = require('./peers');
 const routesService = require('./routes');
+const { validatePeerName, validateDomain, validatePort, validateIp } = require('../utils/validate');
+const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
 
 const BACKUP_VERSION = 2;
@@ -14,14 +16,14 @@ const BACKUP_VERSION = 2;
 function createBackup() {
   const db = getDb();
 
-  // Peers — decrypt keys for portability
+  // Peers — export encrypted keys (never plaintext)
   const rawPeers = db.prepare('SELECT * FROM peers').all();
   const peers = rawPeers.map(p => ({
     name: p.name,
     description: p.description,
     public_key: p.public_key,
-    private_key: p.private_key_encrypted ? decrypt(p.private_key_encrypted) : null,
-    preshared_key: p.preshared_key_encrypted ? decrypt(p.preshared_key_encrypted) : null,
+    private_key_encrypted: p.private_key_encrypted || null,
+    preshared_key_encrypted: p.preshared_key_encrypted || null,
     allowed_ips: p.allowed_ips,
     dns: p.dns,
     persistent_keepalive: p.persistent_keepalive,
@@ -107,6 +109,10 @@ function validateBackup(backup) {
   for (let i = 0; i < peers.length; i++) {
     const p = peers[i];
     if (!p.name) errors.push(`Peer #${i + 1}: missing name`);
+    else {
+      const nameErr = validatePeerName(p.name);
+      if (nameErr) errors.push(`Peer #${i + 1}: ${nameErr}`);
+    }
     if (!p.public_key) errors.push(`Peer #${i + 1}: missing public_key`);
     if (!p.allowed_ips) errors.push(`Peer #${i + 1}: missing allowed_ips`);
   }
@@ -114,7 +120,32 @@ function validateBackup(backup) {
   // Validate route entries
   for (let i = 0; i < routes.length; i++) {
     const r = routes[i];
-    if (!r.domain && r.route_type !== 'l4') errors.push(`Route #${i + 1}: missing domain`);
+    if (!r.domain && r.route_type !== 'l4') {
+      errors.push(`Route #${i + 1}: missing domain`);
+    } else if (r.domain) {
+      const domErr = validateDomain(r.domain);
+      if (domErr) errors.push(`Route #${i + 1}: ${domErr}`);
+    }
+    if (r.target_port) {
+      const portErr = validatePort(r.target_port);
+      if (portErr) errors.push(`Route #${i + 1}: ${portErr}`);
+    }
+    if (r.target_ip) {
+      const ipErr = validateIp(r.target_ip);
+      if (ipErr) errors.push(`Route #${i + 1}: ${ipErr}`);
+    }
+  }
+
+  // Validate webhook entries
+  if (webhooks) {
+    for (let i = 0; i < webhooks.length; i++) {
+      const w = webhooks[i];
+      if (w.url) {
+        try { validateWebhookUrl(w.url); } catch (e) {
+          errors.push(`Webhook #${i + 1}: ${e.message}`);
+        }
+      }
+    }
   }
 
   return errors;
@@ -164,12 +195,15 @@ async function restoreBackup(backup) {
 
     const peerIdMap = new Map(); // name → new id
     for (const p of peers) {
+      // Support both encrypted (v2+) and legacy plaintext backups
+      const privKeyEnc = p.private_key_encrypted || (p.private_key ? encrypt(p.private_key) : null);
+      const pskEnc = p.preshared_key_encrypted || (p.preshared_key ? encrypt(p.preshared_key) : null);
       const result = insertPeer.run(
         p.name,
         p.description || null,
         p.public_key,
-        p.private_key ? encrypt(p.private_key) : null,
-        p.preshared_key ? encrypt(p.preshared_key) : null,
+        privKeyEnc,
+        pskEnc,
         p.allowed_ips,
         p.dns || null,
         p.persistent_keepalive || 25,

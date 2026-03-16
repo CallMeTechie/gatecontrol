@@ -16,10 +16,9 @@ const loginLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: config.auth.rateLimitApi,
+  max: (req) => (req.session && req.session.userId) ? config.auth.rateLimitApi * 10 : config.auth.rateLimitApi,
   standardHeaders: true,
   legacyHeaders: true,
-  skip: (req) => req.session && req.session.userId,
   handler: (req, res) => {
     res.status(429).json({ error: req.t('error.rate_limit.api') });
   },
