@@ -58,7 +58,7 @@ if [ ! -f "$WG_DATA_CONF" ]; then
   POST_DOWN="${GC_WG_POST_DOWN}"
 
   if [ -z "$POST_UP" ]; then
-    POST_UP="iptables -A FORWARD -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -A FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
   fi
   if [ -z "$POST_DOWN" ]; then
     POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
