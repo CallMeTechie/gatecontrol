@@ -185,6 +185,7 @@ function buildCaddyConfig() {
       logs: {
         default_logger_name: 'access',
       },
+      protocols: ['h1', 'h2'],
     };
   }
 
