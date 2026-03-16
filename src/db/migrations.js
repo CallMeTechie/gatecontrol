@@ -162,7 +162,12 @@ function runMigrations() {
           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
           FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE SET NULL
         );
-        INSERT INTO routes_new SELECT
+        INSERT INTO routes_new (
+          id, domain, target_ip, target_port, description, peer_id,
+          https_enabled, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
+          enabled, backend_https, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+          created_at, updated_at
+        ) SELECT
           id, domain, target_ip, target_port, description, peer_id,
           https_enabled, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
           enabled, backend_https, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
