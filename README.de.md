@@ -36,13 +36,23 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Peer-Tagging zur Organisation
 - Hot-Reload von Konfigurationsänderungen über `wg syncconf` — kein VPN-Neustart erforderlich
 
-### Reverse-Proxy-Routing
+### Reverse-Proxy-Routing (Layer 7)
 - Domain-basiertes Reverse-Proxy-Routing mit Caddy
 - Automatisches HTTPS mit Let's-Encrypt-Zertifikaten — Zero-Configuration TLS
 - Optionale Basic-Authentifizierung pro Route
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
+
+### Layer 4 TCP/UDP Proxy
+- Raw TCP- und UDP-Port-Forwarding via [caddy-l4](https://github.com/mholt/caddy-l4) Plugin
+- Dienste wie RDP, SSH, Datenbanken oder Game-Server über GateControl erreichbar — ohne dass der Client im VPN sein muss
+- Drei TLS-Modi pro Route: **Keiner** (direktes Port-Forwarding), **Durchleitung** (TLS-SNI-Routing ohne Terminierung), **Terminieren** (Caddy verwaltet TLS mit Let's Encrypt)
+- Mehrere Dienste auf demselben Port via TLS-SNI-Routing — z.B. `ssh.beispiel.de:8443` und `db.beispiel.de:8443`
+- Port-Ranges unterstützt (z.B. `5000-5010` für Multi-Port-Dienste)
+- Blockierte-Port-Schutz verhindert versehentliches Binden an System-Ports (80, 443, 2019, 3000, 51820)
+- L4-Routen mit WireGuard-Peers verknüpfbar — gleiche Peer-Auswahl wie bei HTTP-Routen
+- Host-Networking (`network_mode: host`) für dynamische Port-Bindung ohne Container-Neustart
 
 ### Monitoring & Logging
 - Echtzeit-Traffic-Monitoring mit Upload-/Download-Statistiken pro Peer
@@ -96,12 +106,17 @@ GateControl läuft als einzelner Docker-Container, der drei Dienste über Superv
 Client-Gerät → WireGuard-Tunnel (verschlüsselt) → GateControl-Container → iptables NAT → Internet
 ```
 
-**Externer Request → Interner Dienst (über Reverse Proxy):**
+**Externer Request → Interner Dienst (über HTTP Reverse Proxy):**
 ```
 Browser → Caddy (HTTPS/Let's Encrypt) → WireGuard Peer-IP:Port → Interner Dienst
 ```
 
-Das bedeutet, dass interne Dienste (hinter deinem VPN) mit automatischem HTTPS im Internet erreichbar gemacht werden können — ohne Ports im internen Netzwerk zu öffnen. Caddy leitet den Traffic durch den WireGuard-Tunnel zu Diensten auf Peer-Geräten weiter.
+**Externer Request → Interner Dienst (über Layer 4 Proxy, z.B. RDP):**
+```
+RDP-Client → Caddy L4 (TCP/:3389) → WireGuard Peer-IP:3389 → Windows VM
+```
+
+Interne Dienste (hinter deinem VPN) können im Internet erreichbar gemacht werden — HTTP-Dienste mit automatischem HTTPS, oder Raw-TCP/UDP-Dienste (RDP, SSH, Datenbanken) via Layer 4 Proxying. Caddy leitet den Traffic durch den WireGuard-Tunnel zu Diensten auf Peer-Geräten weiter, ohne Ports im internen Netzwerk zu öffnen.
 
 ---
 
@@ -119,6 +134,7 @@ src/
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync
 │   ├── wireguard.js       # WireGuard CLI-Wrapper (wg, wg-quick, wg syncconf)
 │   ├── routes.js          # Route CRUD, Caddy JSON-Config-Builder, Admin-API-Sync
+│   ├── l4.js              # Layer 4 Server-Gruppierung, Config-Generierung, Konflikterkennung
 │   ├── traffic.js         # Periodische Traffic-Snapshots, Chart-Daten-Aggregation
 │   ├── peerStatus.js      # Hintergrund-Peer-Online/Offline-Abfrage
 │   ├── activity.js        # Aktivitäts-Event-Logging mit Schweregrad-Stufen
@@ -371,6 +387,13 @@ Alle Konfiguration erfolgt über Umgebungsvariablen in der `.env`-Datei.
 | `GC_NET_INTERFACE` | `eth0` | Host-Netzwerk-Interface für NAT-Regeln |
 | `GC_ENCRYPTION_KEY` | auto-generiert | AES-256-Schlüssel für Datenbankverschlüsselung |
 
+### Layer 4 Proxy
+
+| Variable | Standard | Beschreibung |
+|----------|---------|-------------|
+| `GC_L4_BLOCKED_PORTS` | `80,443,2019,3000,51820` | Für L4-Routen gesperrte Ports (System-Ports) |
+| `GC_L4_MAX_PORT_RANGE` | `100` | Maximale Anzahl Ports in einem Port-Range |
+
 ---
 
 ## Nutzung
@@ -383,7 +406,7 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 **Peers** — WireGuard VPN-Peers erstellen und verwalten. Jeder Peer erhält eine automatisch zugewiesene IP, generierte Schlüssel und eine herunterladbare Konfigurationsdatei mit QR-Code.
 
-**Routen** — Reverse-Proxy-Routen konfigurieren. Externe Domains auf interne Dienste über deine VPN-Peers abbilden. Caddy verwaltet HTTPS-Zertifikate automatisch.
+**Routen** — Reverse-Proxy-Routen (HTTP) und Layer 4 Proxy-Routen (TCP/UDP) konfigurieren. Externe Domains auf interne Dienste über deine VPN-Peers abbilden. HTTP-Routen erhalten automatisches HTTPS via Caddy. L4-Routen leiten Raw-TCP/UDP-Traffic für Dienste wie RDP, SSH oder Datenbanken weiter.
 
 **Config** — Aktuelle WireGuard-Konfiguration anzeigen (privater Schlüssel maskiert).
 
@@ -408,13 +431,16 @@ curl -b cookies.txt -X POST https://gate.beispiel.de/api/peers \
   -d '{"name": "mein-laptop", "description": "Arbeitslaptop"}'
 ```
 
-### Ports
+### Netzwerk
+
+GateControl nutzt **Host-Networking** (`network_mode: host`), damit Layer-4-Routen dynamisch neue Ports binden können, ohne den Container neu zu starten.
 
 | Port | Protokoll | Dienst |
 |------|-----------|--------|
 | 80 | TCP | HTTP (automatische Weiterleitung zu HTTPS) |
 | 443 | TCP/UDP | HTTPS (Caddy Reverse Proxy) |
 | 51820 | UDP | WireGuard VPN |
+| *dynamisch* | TCP/UDP | Layer 4 Routen (konfigurierbar über Weboberfläche) |
 
 ---
 
@@ -442,7 +468,7 @@ Aktiviere **Backend-HTTPS** auf der Route für Dienste, die selbstsignierte Zert
 | **Framework** | Express.js 4.21 |
 | **Datenbank** | SQLite (better-sqlite3, WAL-Modus) |
 | **VPN** | WireGuard (wireguard-tools) |
-| **Reverse Proxy** | Caddy (automatisches HTTPS) |
+| **Reverse Proxy** | Caddy (automatisches HTTPS) + caddy-l4 (TCP/UDP Proxy) |
 | **Template-Engine** | Nunjucks |
 | **Passwort-Hashing** | Argon2 (Admin), bcrypt (Route Basic Auth) |
 | **Verschlüsselung** | AES-256-GCM (Node.js crypto) |
