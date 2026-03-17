@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ t('route_auth.verify_access') }} — {{ domain }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/route-auth.css">
+</head>
+<body>
+
+  <div class="login-card">
+
+    {# Logo #}
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div class="logo-wordmark">GateControl</div>
+    </div>
+
+    {# Error card (non-JS / server-side errors) #}
+    {% if error %}
+    <div class="error-card">{{ errorMessage }}</div>
+    {% endif %}
+
+    {# ── STEP 2: Email Code ─────────────────────────────── #}
+    {% if is2faStep2 and twoFactorMethod == 'email_code' %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.step_2_email_code') }}</div>
+      </div>
+
+      <div class="step-indicator">
+        <div class="step-dot done"></div>
+        <div class="step-line"></div>
+        <div class="step-dot active"></div>
+      </div>
+
+      <div class="info-text">{{ t('route_auth.code_sent_to') }} <strong>{{ maskedEmail }}</strong></div>
+
+      <div class="form-error" id="form-error"></div>
+
+      <form id="verify-form" method="POST" action="/route-auth/verify-code">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="route" value="{{ domain }}">
+        <input type="hidden" name="redirect" value="{{ redirect }}">
+
+        <div class="code-inputs" id="code-inputs">
+          <input type="number" maxlength="1" inputmode="numeric" autocomplete="one-time-code" autofocus>
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+        </div>
+        <input type="hidden" name="code" id="code-value">
+
+        <button type="submit" class="btn-primary" id="verify-btn">{{ t('route_auth.verify') }}</button>
+      </form>
+
+      <div class="link-row">
+        <button type="button" class="text-link" id="resend-btn">{{ t('route_auth.resend_code') }}</button>
+        <div class="link-sep"></div>
+        <a href="/route-auth/login?route={{ domain }}&redirect={{ redirect | urlencode }}" class="text-link">{{ t('route_auth.back') }}</a>
+      </div>
+
+    {# ── STEP 2: TOTP ───────────────────────────────────── #}
+    {% elif is2faStep2 and twoFactorMethod == 'totp' %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.step_2_authenticator') }}</div>
+      </div>
+
+      <div class="step-indicator">
+        <div class="step-dot done"></div>
+        <div class="step-line"></div>
+        <div class="step-dot active"></div>
+      </div>
+
+      <div class="lock-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+
+      <div class="info-text">{{ t('route_auth.enter_authenticator_code') }}</div>
+
+      <div class="form-error" id="form-error"></div>
+
+      <form id="verify-form" method="POST" action="/route-auth/verify-code">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="route" value="{{ domain }}">
+        <input type="hidden" name="redirect" value="{{ redirect }}">
+
+        <div class="code-inputs" id="code-inputs">
+          <input type="number" maxlength="1" inputmode="numeric" autocomplete="one-time-code" autofocus>
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+        </div>
+        <input type="hidden" name="code" id="code-value">
+
+        <button type="submit" class="btn-primary" id="verify-btn">{{ t('route_auth.verify') }}</button>
+      </form>
+
+      <div class="link-row">
+        <a href="/route-auth/login?route={{ domain }}&redirect={{ redirect | urlencode }}" class="text-link">{{ t('route_auth.back') }}</a>
+      </div>
+
+    {# ── email_password + 2FA: Step 1 ───────────────────── #}
+    {% elif twoFactorEnabled and not is2faStep2 %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.step_1_sign_in') }}</div>
+      </div>
+
+      <div class="step-indicator">
+        <div class="step-dot active"></div>
+        <div class="step-line"></div>
+        <div class="step-dot"></div>
+      </div>
+
+      <div class="form-error" id="form-error"></div>
+
+      <form id="login-form" method="POST" action="/route-auth/login">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="route" value="{{ domain }}">
+        <input type="hidden" name="redirect" value="{{ redirect }}">
+
+        <div class="form-group">
+          <label class="form-label" for="email">{{ t('route_auth.email') }}</label>
+          <input class="form-input" type="email" id="email" name="email" autocomplete="email" autofocus required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">{{ t('route_auth.password') }}</label>
+          <input class="form-input" type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
+
+        <button type="submit" class="btn-primary" id="login-btn">{{ t('route_auth.continue') }}</button>
+      </form>
+
+    {# ── email_password (no 2FA) ────────────────────────── #}
+    {% elif authType == 'email_password' %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.verify_access') }}</div>
+      </div>
+
+      <div class="form-error" id="form-error"></div>
+
+      <form id="login-form" method="POST" action="/route-auth/login">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="route" value="{{ domain }}">
+        <input type="hidden" name="redirect" value="{{ redirect }}">
+
+        <div class="form-group">
+          <label class="form-label" for="email">{{ t('route_auth.email') }}</label>
+          <input class="form-input" type="email" id="email" name="email" autocomplete="email" autofocus required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">{{ t('route_auth.password') }}</label>
+          <input class="form-input" type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
+
+        <button type="submit" class="btn-primary" id="login-btn">{{ t('route_auth.sign_in') }}</button>
+      </form>
+
+    {# ── email_code ────────────────────────────────────── #}
+    {% elif authType == 'email_code' %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.verify_access') }}</div>
+      </div>
+
+      <div class="form-error" id="form-error"></div>
+
+      {# Email section — visible initially #}
+      <div id="email-section">
+        <form id="send-code-form" method="POST" action="/route-auth/send-code">
+          <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+          <input type="hidden" name="route" value="{{ domain }}">
+          <input type="hidden" name="redirect" value="{{ redirect }}">
+
+          <div class="form-group">
+            <label class="form-label" for="email">{{ t('route_auth.email') }}</label>
+            <input class="form-input" type="email" id="email" name="email" autocomplete="email" autofocus required>
+          </div>
+
+          <button type="submit" class="btn-primary" id="send-code-btn">{{ t('route_auth.send_code') }}</button>
+        </form>
+      </div>
+
+      {# Code section — hidden until code sent #}
+      <div id="code-section" style="display:none;">
+        <div class="info-text" id="code-info-text"></div>
+
+        <form id="verify-form" method="POST" action="/route-auth/verify-code">
+          <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+          <input type="hidden" name="route" value="{{ domain }}">
+          <input type="hidden" name="redirect" value="{{ redirect }}">
+
+          <div class="code-inputs" id="code-inputs">
+            <input type="number" maxlength="1" inputmode="numeric" autocomplete="one-time-code">
+            <input type="number" maxlength="1" inputmode="numeric">
+            <input type="number" maxlength="1" inputmode="numeric">
+            <input type="number" maxlength="1" inputmode="numeric">
+            <input type="number" maxlength="1" inputmode="numeric">
+            <input type="number" maxlength="1" inputmode="numeric">
+          </div>
+          <input type="hidden" name="code" id="code-value">
+
+          <button type="submit" class="btn-primary" id="verify-btn">{{ t('route_auth.verify') }}</button>
+        </form>
+
+        <div class="link-row">
+          <button type="button" class="text-link" id="resend-btn">{{ t('route_auth.resend_code') }}</button>
+        </div>
+      </div>
+
+    {# ── totp ──────────────────────────────────────────── #}
+    {% elif authType == 'totp' %}
+
+      <div class="domain-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4M12 16h.01"/>
+        </svg>
+        {{ domain }}
+      </div>
+
+      <div class="card-header">
+        <div class="card-eyebrow">{{ t('route_auth.access_to') }}</div>
+        <div class="card-title">{{ t('route_auth.verify_access') }}</div>
+      </div>
+
+      <div class="lock-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+
+      <div class="info-text">{{ t('route_auth.enter_authenticator_code') }}</div>
+
+      <div class="form-error" id="form-error"></div>
+
+      <form id="verify-form" method="POST" action="/route-auth/verify-code">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="route" value="{{ domain }}">
+        <input type="hidden" name="redirect" value="{{ redirect }}">
+
+        <div class="code-inputs" id="code-inputs">
+          <input type="number" maxlength="1" inputmode="numeric" autocomplete="one-time-code" autofocus>
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+          <input type="number" maxlength="1" inputmode="numeric">
+        </div>
+        <input type="hidden" name="code" id="code-value">
+
+        <button type="submit" class="btn-primary" id="verify-btn">{{ t('route_auth.verify') }}</button>
+      </form>
+
+    {% endif %}
+
+  </div>
+
+  <div class="page-footer">{{ t('route_auth.protected_by') }}</div>
+
+  <script src="/js/route-auth-login.js" nonce="{{ cspNonce }}"></script>
+</body>
+</html>
