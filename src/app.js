@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const path = require('node:path');
 const helmet = require('helmet');
 const session = require('express-session');
@@ -43,6 +44,7 @@ function createApp() {
   // ─── Body parsing ────────────────────────────────
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+  app.use(cookieParser());
 
   // ─── Static files (webroot) ──────────────────────
   const publicDir = path.join(__dirname, '..', 'public');
