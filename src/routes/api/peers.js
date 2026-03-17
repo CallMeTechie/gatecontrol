@@ -4,15 +4,12 @@ const { Router } = require('express');
 const peers = require('../../services/peers');
 const qrcode = require('../../services/qrcode');
 const logger = require('../../utils/logger');
+const resolveError = require('../../utils/resolveError');
+const stripFields = require('../../utils/stripFields');
 
 const router = Router();
 
-/** Strip sensitive fields from peer objects before sending to client */
-function stripSensitive(peer) {
-  if (!peer) return peer;
-  const { private_key_encrypted, preshared_key_encrypted, ...safe } = peer;
-  return safe;
-}
+const stripPeer = (p) => stripFields(p, ['private_key_encrypted', 'preshared_key_encrypted']);
 
 /** Map service-layer error messages to i18n keys */
 const VALIDATION_ERROR_MAP = {
@@ -20,14 +17,6 @@ const VALIDATION_ERROR_MAP = {
   'No available': 'error.peers.no_ips',
   'not found': 'error.peers.not_found',
 };
-
-function resolveError(req, err, fallbackKey) {
-  const msg = err.message || '';
-  for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
-    if (msg.includes(pattern)) return { status: pattern === 'not found' ? 404 : 400, error: req.t(key) };
-  }
-  return { status: 500, error: req.t(fallbackKey) };
-}
 
 /**
  * GET /api/peers — List all peers with live status
@@ -37,7 +26,7 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const list = await peers.getAll({ limit, offset });
-    res.json({ ok: true, peers: list.map(stripSensitive), limit, offset });
+    res.json({ ok: true, peers: list.map(stripPeer), limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list peers');
     res.status(500).json({ ok: false, error: req.t('error.peers.list') });
@@ -51,7 +40,7 @@ router.get('/:id', (req, res) => {
   try {
     const peer = peers.getById(req.params.id);
     if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
-    res.json({ ok: true, peer: stripSensitive(peer) });
+    res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get peer');
     res.status(500).json({ ok: false, error: req.t('error.peers.get') });
@@ -65,10 +54,10 @@ router.post('/', async (req, res) => {
   try {
     const { name, description, tags } = req.body;
     const peer = await peers.create({ name, description, tags });
-    res.status(201).json({ ok: true, peer: stripSensitive(peer) });
+    res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
-    const { status, error } = resolveError(req, err, 'error.peers.create');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.create');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -80,10 +69,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { name, description, dns, persistentKeepalive, enabled, tags } = req.body;
     const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled, tags });
-    res.json({ ok: true, peer: stripSensitive(peer) });
+    res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');
-    const { status, error } = resolveError(req, err, 'error.peers.update');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.update');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -97,7 +86,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete peer');
-    const { status, error } = resolveError(req, err, 'error.peers.delete');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.delete');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -108,10 +97,10 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/toggle', async (req, res) => {
   try {
     const peer = await peers.toggle(req.params.id);
-    res.json({ ok: true, peer: stripSensitive(peer) });
+    res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle peer');
-    const { status, error } = resolveError(req, err, 'error.peers.toggle');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.toggle');
     res.status(status).json({ ok: false, error });
   }
 });

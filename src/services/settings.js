@@ -38,14 +38,6 @@ function getAll() {
 }
 
 /**
- * Delete a setting
- */
-function remove(key) {
-  const db = getDb();
-  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
-}
-
-/**
  * Update user profile (display name, email, language)
  */
 function updateUserProfile(userId, data) {
@@ -83,7 +75,6 @@ module.exports = {
   get,
   set,
   getAll,
-  remove,
   updateUserProfile,
   getUserProfile,
 };

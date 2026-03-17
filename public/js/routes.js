@@ -400,21 +400,7 @@
     });
   }
 
-  // Modal helpers use global openModal/closeModal from app.js
-  function showError(id, msg) {
-    const el = document.getElementById(id);
-    if (el) { el.textContent = msg; el.style.display = 'block'; }
-  }
-  function hideError(id) {
-    const el = document.getElementById(id);
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  }
-  function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
+  // Modal helpers use global openModal/closeModal/showError/hideError/escapeHtml from app.js
 
   // Modal close/escape/focus-trap handled globally in app.js
 

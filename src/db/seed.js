@@ -4,6 +4,7 @@ const argon2 = require('argon2');
 const { getDb } = require('./connection');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const argon2Options = require('../utils/argon2Options');
 
 async function seedAdminUser() {
   const db = getDb();
@@ -19,12 +20,7 @@ async function seedAdminUser() {
     process.exit(1);
   }
 
-  const hash = await argon2.hash(config.auth.adminPassword, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 4,
-  });
+  const hash = await argon2.hash(config.auth.adminPassword, argon2Options);
 
   db.prepare(`
     INSERT INTO users (username, password_hash, display_name, role, language, theme)

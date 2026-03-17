@@ -103,13 +103,6 @@
     return Math.floor(diff / 86400) + 'd ago';
   }
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
   // ─── Tag helpers ────────────────────────────────────────
   function parseTags(tags) {
     if (!tags) return [];
@@ -328,19 +321,6 @@
   });
 
   // Modal helpers use global openModal/closeModal from app.js
-
-  // ─── Error helpers ───────────────────────────────────────
-  function showError(id, msg) {
-    const el = document.getElementById(id);
-    el.textContent = msg;
-    el.style.display = 'block';
-  }
-
-  function hideError(id) {
-    const el = document.getElementById(id);
-    el.style.display = 'none';
-    el.textContent = '';
-  }
 
   // ─── Auto-refresh ────────────────────────────────────────
   loadPeers();

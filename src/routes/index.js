@@ -17,59 +17,23 @@ router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
-router.get('/dashboard', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/dashboard.njk`, {
-    title: res.locals.t('nav.dashboard'),
-    activeNav: 'dashboard',
-  });
-});
+const pages = [
+  { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
+  { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
+  { path: '/routes', template: 'routes', titleKey: 'nav.routes' },
+  { path: '/config', template: 'config', titleKey: 'nav.wg_config' },
+  { path: '/certificates', template: 'certificates', titleKey: 'nav.certificates' },
+  { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
+  { path: '/profile', template: 'profile', titleKey: 'profile.title' },
+  { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
+];
 
-router.get('/peers', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/peers.njk`, {
-    title: res.locals.t('nav.peers'),
-    activeNav: 'peers',
-  });
-});
-
-router.get('/routes', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/routes.njk`, {
-    title: res.locals.t('nav.routes'),
-    activeNav: 'routes',
-  });
-});
-
-router.get('/config', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/config.njk`, {
-    title: res.locals.t('nav.wg_config'),
-    activeNav: 'config',
-  });
-});
-
-router.get('/certificates', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/certificates.njk`, {
-    title: res.locals.t('nav.certificates'),
-    activeNav: 'certificates',
-  });
-});
-
-router.get('/logs', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/logs.njk`, {
-    title: res.locals.t('nav.logs'),
-    activeNav: 'logs',
-  });
-});
-
-router.get('/profile', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/profile.njk`, {
-    title: res.locals.t('profile.title'),
-    activeNav: 'profile',
-  });
-});
-
-router.get('/settings', requireAuth, (req, res) => {
-  res.render(`${config.theme.defaultTheme}/pages/settings.njk`, {
-    title: res.locals.t('nav.settings'),
-    activeNav: 'settings',
+pages.forEach(({ path, template, titleKey }) => {
+  router.get(path, requireAuth, (req, res) => {
+    res.render(`${config.theme.defaultTheme}/pages/${template}.njk`, {
+      title: res.locals.t(titleKey),
+      activeNav: template,
+    });
   });
 });
 

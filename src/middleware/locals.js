@@ -16,7 +16,7 @@ function injectLocals(req, res, next) {
   res.locals.currentPath = req.path;
   res.locals.theme = config.theme.defaultTheme;
 
-  // User info if authenticated
+  // User info and sidebar badge counts if authenticated
   if (req.session && req.session.userId) {
     const db = getDb();
     const user = db.prepare('SELECT id, username, display_name, role, language, theme FROM users WHERE id = ?')
@@ -28,12 +28,8 @@ function injectLocals(req, res, next) {
         req.session.language = user.language;
       }
     }
-  }
 
-  // Sidebar badge counts
-  if (req.session && req.session.userId) {
     try {
-      const db = getDb();
       const peerRow = db.prepare('SELECT COUNT(*) as c FROM peers WHERE enabled = 1').get();
       const routeRow = db.prepare('SELECT COUNT(*) as c FROM routes WHERE enabled = 1').get();
       res.locals.peerCount = peerRow ? peerRow.c : 0;

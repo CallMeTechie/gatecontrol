@@ -2,7 +2,7 @@
 
 const { getDb } = require('../db/connection');
 const config = require('../../config/default');
-const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize } = require('../utils/validate');
+const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
 const activity = require('./activity');
@@ -100,10 +100,6 @@ function buildCaddyConfig() {
       routes: [routeConfig],
     };
 
-    // If HTTPS, also auto-redirect HTTP to HTTPS
-    if (route.https_enabled) {
-      // Caddy handles this automatically when listening on :443
-    }
   }
 
   // Build full Caddy config
@@ -267,7 +263,6 @@ async function create(data) {
   const routeType = data.route_type || 'http';
 
   if (routeType === 'l4') {
-    const { validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
     const protoErr = validateL4Protocol(data.l4_protocol);
     if (protoErr) throw new Error(protoErr);
     const portErr = validateL4ListenPort(data.l4_listen_port);
@@ -389,7 +384,6 @@ async function update(id, data) {
   const routeType = data.route_type || route.route_type || 'http';
 
   if (routeType === 'l4') {
-    const { validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
     if (data.l4_protocol !== undefined) {
       const protoErr = validateL4Protocol(data.l4_protocol);
       if (protoErr) throw new Error(protoErr);
@@ -643,4 +637,5 @@ module.exports = {
   getCount,
   syncToCaddy,
   buildCaddyConfig,
+  caddyApi,
 };

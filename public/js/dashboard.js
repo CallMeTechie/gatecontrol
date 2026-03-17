@@ -209,12 +209,6 @@
     return Math.floor(diff / 86400) + 'd ago';
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
   // ─── Tab switching for chart ────────────────────────
   document.querySelectorAll('.tabs .tab[data-period]').forEach(tab => {
     tab.addEventListener('click', () => {

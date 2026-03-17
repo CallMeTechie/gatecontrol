@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const argon2 = require('argon2');
+const argon2Options = require('../../utils/argon2Options');
 const multer = require('multer');
 const { rotateCsrfToken } = require('../../middleware/csrf');
 const { getDb } = require('../../db/connection');
@@ -85,12 +86,7 @@ router.put('/password', async (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('error.settings.password_incorrect') });
     }
 
-    const hash = await argon2.hash(new_password, {
-      type: argon2.argon2id,
-      memoryCost: 65536,
-      timeCost: 3,
-      parallelism: 4,
-    });
+    const hash = await argon2.hash(new_password, argon2Options);
 
     db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
       .run(hash, req.session.userId);

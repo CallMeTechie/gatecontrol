@@ -28,7 +28,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </div>
           <div style="flex:1;min-width:0">
-            <div class="route-domain">${esc(r.domain)}</div>
+            <div class="route-domain">${escapeHtml(r.domain)}</div>
             <div class="route-target" style="font-size:11px;color:var(--text-3)">Let's Encrypt · Auto-managed by Caddy</div>
           </div>
           ${statusTag}
@@ -36,15 +36,8 @@
       }).join('');
 
     } catch (err) {
-      certsList.innerHTML = '<div style="color:var(--red);padding:20px;text-align:center">' + esc(err.message) + '</div>';
+      certsList.innerHTML = '<div style="color:var(--red);padding:20px;text-align:center">' + escapeHtml(err.message) + '</div>';
     }
-  }
-
-  function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
   }
 
   loadCertificates();

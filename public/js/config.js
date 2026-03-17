@@ -24,18 +24,18 @@
       .split('\n')
       .map(line => {
         if (line.startsWith('#')) {
-          return '<span class="wg-comment">' + esc(line) + '</span>';
+          return '<span class="wg-comment">' + escapeHtml(line) + '</span>';
         }
         if (line.startsWith('[')) {
-          return '<span class="wg-section">' + esc(line) + '</span>';
+          return '<span class="wg-section">' + escapeHtml(line) + '</span>';
         }
         const eq = line.indexOf('=');
         if (eq > 0) {
           const key = line.substring(0, eq).trim();
           const val = line.substring(eq + 1).trim();
-          return '<span class="wg-key">' + esc(key) + '</span> = <span class="wg-val">' + esc(val) + '</span>';
+          return '<span class="wg-key">' + escapeHtml(key) + '</span> = <span class="wg-val">' + escapeHtml(val) + '</span>';
         }
-        return esc(line);
+        return escapeHtml(line);
       })
       .join('\n');
   }
@@ -134,12 +134,6 @@
       btnReset(btn);
     }
   });
-
-  function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-  }
 
   // ─── Init ───────────────────────────────────────────────
   loadWgConfig();

@@ -6,3 +6,4 @@ docs/
 !.env.example
 *.log
 .DS_Store
+gatecontrol-image.tar.gz

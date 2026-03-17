@@ -4,15 +4,11 @@ const { Router } = require('express');
 const routes = require('../../services/routes');
 const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
+const stripFields = require('../../utils/stripFields');
 
 const router = Router();
 
-/** Strip password hash from API responses */
-function stripHash(route) {
-  if (!route) return route;
-  const { basic_auth_password_hash, ...safe } = route;
-  return safe;
-}
+const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash']);
 
 /** Map service-layer error messages to i18n keys */
 const VALIDATION_ERROR_MAP = {
@@ -54,7 +50,7 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const { type } = req.query;
-    const list = routes.getAll({ limit, offset, type: type || null }).map(stripHash);
+    const list = routes.getAll({ limit, offset, type: type || null }).map(stripRoute);
     res.json({ ok: true, routes: list, limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list routes');
@@ -89,7 +85,7 @@ router.get('/:id', (req, res) => {
   try {
     const route = routes.getById(req.params.id);
     if (!route) return res.status(404).json({ ok: false, error: req.t('error.routes.not_found') });
-    res.json({ ok: true, route: stripHash(route) });
+    res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get route');
     res.status(500).json({ ok: false, error: req.t('error.routes.get') });
@@ -110,7 +106,7 @@ router.post('/', async (req, res) => {
       basic_auth_user, basic_auth_password,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
     });
-    res.status(201).json({ ok: true, route: stripHash(route) });
+    res.status(201).json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
     const { status, error } = resolveError(req, err, 'error.routes.create');
@@ -132,7 +128,7 @@ router.put('/:id', async (req, res) => {
       basic_auth_user, basic_auth_password, enabled,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
     });
-    res.json({ ok: true, route: stripHash(route) });
+    res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update route');
     const { status, error } = resolveError(req, err, 'error.routes.update');
@@ -160,7 +156,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/toggle', async (req, res) => {
   try {
     const route = await routes.toggle(req.params.id);
-    res.json({ ok: true, route: stripHash(route) });
+    res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle route');
     const { status, error } = resolveError(req, err, 'error.routes.toggle');

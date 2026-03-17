@@ -10,6 +10,13 @@ class SQLiteStore extends session.Store {
     this._cleanupInterval = setInterval(() => this._cleanup(), 300000);
   }
 
+  _expiresAt(sessionData) {
+    const maxAge = sessionData.cookie && sessionData.cookie.maxAge
+      ? sessionData.cookie.maxAge
+      : 86400000;
+    return Date.now() + maxAge;
+  }
+
   get(sid, callback) {
     try {
       const db = getDb();
@@ -29,10 +36,7 @@ class SQLiteStore extends session.Store {
   set(sid, sessionData, callback) {
     try {
       const db = getDb();
-      const maxAge = sessionData.cookie && sessionData.cookie.maxAge
-        ? sessionData.cookie.maxAge
-        : 86400000;
-      const expiresAt = Date.now() + maxAge;
+      const expiresAt = this._expiresAt(sessionData);
       const data = JSON.stringify(sessionData);
 
       db.prepare(`
@@ -60,10 +64,7 @@ class SQLiteStore extends session.Store {
   touch(sid, sessionData, callback) {
     try {
       const db = getDb();
-      const maxAge = sessionData.cookie && sessionData.cookie.maxAge
-        ? sessionData.cookie.maxAge
-        : 86400000;
-      const expiresAt = Date.now() + maxAge;
+      const expiresAt = this._expiresAt(sessionData);
 
       db.prepare('UPDATE sessions SET expires_at = ? WHERE sid = ?').run(expiresAt, sid);
       callback(null);

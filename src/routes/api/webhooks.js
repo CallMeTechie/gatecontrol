@@ -4,6 +4,7 @@ const { Router } = require('express');
 const webhooks = require('../../services/webhook');
 const { validateWebhookUrl } = webhooks;
 const logger = require('../../utils/logger');
+const resolveError = require('../../utils/resolveError');
 
 const router = Router();
 
@@ -16,17 +17,6 @@ const VALIDATION_ERROR_MAP = {
   'must not target localhost': 'error.webhooks.url_localhost',
   'must not target private': 'error.webhooks.url_private',
 };
-
-function resolveError(req, err, fallbackKey) {
-  const msg = err.message || '';
-  for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
-    if (msg.includes(pattern)) {
-      const status = pattern === 'not found' ? 404 : 400;
-      return { status, error: req.t(key) };
-    }
-  }
-  return { status: 500, error: req.t(fallbackKey) };
-}
 
 /**
  * GET /api/webhooks — List all webhooks
@@ -51,7 +41,7 @@ router.post('/', (req, res) => {
     res.status(201).json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create webhook');
-    const { status, error } = resolveError(req, err, 'error.webhooks.create');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.webhooks.create');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -66,7 +56,7 @@ router.put('/:id', (req, res) => {
     res.json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update webhook');
-    const { status, error } = resolveError(req, err, 'error.webhooks.update');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.webhooks.update');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -80,7 +70,7 @@ router.delete('/:id', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete webhook');
-    const { status, error } = resolveError(req, err, 'error.webhooks.delete');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.webhooks.delete');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -94,7 +84,7 @@ router.post('/:id/toggle', (req, res) => {
     res.json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle webhook');
-    const { status, error } = resolveError(req, err, 'error.webhooks.toggle');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.webhooks.toggle');
     res.status(status).json({ ok: false, error });
   }
 });
@@ -126,7 +116,7 @@ router.post('/:id/test', async (req, res) => {
     res.json({ ok: true, status: response.status, statusText: response.statusText });
   } catch (err) {
     logger.error({ error: err.message }, 'Webhook test failed');
-    const { status, error } = resolveError(req, err, 'error.webhooks.test');
+    const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.webhooks.test');
     res.status(status).json({ ok: false, error });
   }
 });

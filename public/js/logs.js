@@ -1,14 +1,6 @@
 'use strict';
 
 (function () {
-  // ─── Shared helpers ───────────────────────────────
-  function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-  }
-
   function formatTime(ts) {
     if (!ts) return '';
     const d = new Date(ts + (ts.includes('Z') ? '' : 'Z'));
@@ -22,7 +14,7 @@
   }
 
 
-  // Note: All user-controlled values are escaped with esc() before being
+  // Note: All user-controlled values are escaped with escapeHtml() before being
   // inserted into HTML strings. Static structural markup (CSS classes,
   // layout divs, SVG icons) is safe and does not need escaping.
 
@@ -84,14 +76,14 @@
 
     let html = entries.map(e => {
       const color = SEVERITY_COLORS[e.severity] || SEVERITY_COLORS.info;
-      const time = esc(formatTime(e.created_at));
-      const typeTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${esc(e.event_type)}</span>`;
+      const time = escapeHtml(formatTime(e.created_at));
+      const typeTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${escapeHtml(e.event_type)}</span>`;
 
-      return `<div class="activity-item" data-severity="${esc(e.severity)}">
+      return `<div class="activity-item" data-severity="${escapeHtml(e.severity)}">
         <div class="activity-dot" style="background:${color}"></div>
         <div style="flex:1;min-width:0">
-          <div class="activity-text">${esc(e.message)} ${typeTag}</div>
-          <div class="activity-time">${time}${e.source ? ' · ' + esc(e.source) : ''}${e.ip_address ? ' · ' + esc(e.ip_address) : ''}</div>
+          <div class="activity-text">${escapeHtml(e.message)} ${typeTag}</div>
+          <div class="activity-time">${time}${e.source ? ' · ' + escapeHtml(e.source) : ''}${e.ip_address ? ' · ' + escapeHtml(e.ip_address) : ''}</div>
         </div>
       </div>`;
     }).join('');
@@ -170,8 +162,8 @@
     let html = entries.map(e => {
       const statusClass = Math.floor(e.status / 100);
       const dotColor = STATUS_COLORS[statusClass] || 'var(--text-3)';
-      const time = esc(formatTime(e.timestamp));
-      const methodTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px;font-family:var(--font-mono)">${esc(e.method)}</span>`;
+      const time = escapeHtml(formatTime(e.timestamp));
+      const methodTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px;font-family:var(--font-mono)">${escapeHtml(e.method)}</span>`;
       const statusCode = parseInt(e.status, 10) || 0;
       const statusTag = `<span style="font-family:var(--font-mono);font-weight:600;color:${dotColor}">${statusCode}</span>`;
       const duration = parseInt(e.duration, 10) || 0;
@@ -180,8 +172,8 @@
       return `<div class="activity-item">
         <div class="activity-dot" style="background:${dotColor}"></div>
         <div style="flex:1;min-width:0">
-          <div class="activity-text">${methodTag} ${statusTag} <span style="font-family:var(--font-mono);font-size:12px">${esc(e.host)}${esc(e.uri)}</span></div>
-          <div class="activity-time">${time} · ${esc(e.remote_ip)} · ${duration}ms · ${formatBytes(size)}</div>
+          <div class="activity-text">${methodTag} ${statusTag} <span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(e.host)}${escapeHtml(e.uri)}</span></div>
+          <div class="activity-time">${time} · ${escapeHtml(e.remote_ip)} · ${duration}ms · ${formatBytes(size)}</div>
         </div>
       </div>`;
     }).join('');

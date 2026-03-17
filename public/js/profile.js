@@ -17,13 +17,13 @@
 
   // ─── Save profile ───────────────────────────────────────
   document.getElementById('btn-save-profile').addEventListener('click', async function() {
-    var btn = this;
-    var display_name = document.getElementById('settings-display-name').value.trim();
-    var email = document.getElementById('settings-email').value.trim();
+    const btn = this;
+    const display_name = document.getElementById('settings-display-name').value.trim();
+    const email = document.getElementById('settings-email').value.trim();
 
     btnLoading(btn);
     try {
-      var data = await api.put('/api/settings/profile', { display_name: display_name, email: email });
+      const data = await api.put('/api/settings/profile', { display_name: display_name, email: email });
       if (data.ok) {
         showMessage('profile-message', 'Profile saved', 'success');
       } else {
@@ -38,10 +38,10 @@
 
   // ─── Change password ────────────────────────────────────
   document.getElementById('btn-change-password').addEventListener('click', async function() {
-    var btn = this;
-    var current_password = document.getElementById('settings-current-pw').value;
-    var new_password = document.getElementById('settings-new-pw').value;
-    var confirm_pw = document.getElementById('settings-confirm-pw').value;
+    const btn = this;
+    const current_password = document.getElementById('settings-current-pw').value;
+    const new_password = document.getElementById('settings-new-pw').value;
+    const confirm_pw = document.getElementById('settings-confirm-pw').value;
 
     if (!current_password || !new_password) {
       showMessage('password-message', 'All fields are required', 'error');
@@ -60,7 +60,7 @@
 
     btnLoading(btn);
     try {
-      var data = await api.put('/api/settings/password', { current_password: current_password, new_password: new_password });
+      const data = await api.put('/api/settings/password', { current_password: current_password, new_password: new_password });
       if (data.ok) {
         showMessage('password-message', 'Password changed successfully', 'success');
         document.getElementById('settings-current-pw').value = '';
@@ -77,29 +77,19 @@
   });
 
   // ─── Language switch ─────────────────────────────────────
-  var langButtons = document.getElementById('language-buttons');
+  const langButtons = document.getElementById('language-buttons');
   if (langButtons) {
     langButtons.addEventListener('click', async function(e) {
-      var btn = e.target.closest('[data-lang]');
+      const btn = e.target.closest('[data-lang]');
       if (!btn) return;
-      var lang = btn.dataset.lang;
+      const lang = btn.dataset.lang;
       try {
-        var data = await api.post('/api/settings/language', { language: lang });
+        const data = await api.post('/api/settings/language', { language: lang });
         if (data.ok) window.location.reload();
       } catch (err) {
         console.error('Language switch error:', err);
       }
     });
-  }
-
-  // ─── Message helper ─────────────────────────────────────
-  function showMessage(id, text, type) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = text;
-    el.className = type === 'success' ? 'flash flash-success' : 'form-error';
-    el.style.display = 'block';
-    setTimeout(function() { el.style.display = 'none'; }, 4000);
   }
 
   // ─── Init ───────────────────────────────────────────────

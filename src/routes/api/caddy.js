@@ -1,34 +1,17 @@
 'use strict';
 
 const { Router } = require('express');
-const config = require('../../../config/default');
 const activity = require('../../services/activity');
-const logger = require('../../utils/logger');
+const { caddyApi } = require('../../services/routes');
 
 const router = Router();
-
-async function caddyRequest(path, options = {}) {
-  const url = `${config.caddy.adminUrl}${path}`;
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
-    });
-    if (!res.ok) throw new Error(`Caddy API ${res.status}`);
-    const text = await res.text();
-    return text ? JSON.parse(text) : {};
-  } catch (err) {
-    logger.error({ url, error: err.message }, 'Caddy API request failed');
-    return null;
-  }
-}
 
 /**
  * GET /api/caddy/status
  */
 router.get('/status', async (req, res) => {
   try {
-    const caddyConfig = await caddyRequest('/config/');
+    const caddyConfig = await caddyApi('/config/');
     res.json({
       ok: true,
       running: caddyConfig !== null,
@@ -44,7 +27,7 @@ router.get('/status', async (req, res) => {
  */
 router.post('/reload', async (req, res) => {
   try {
-    const result = await caddyRequest('/load', {
+    const result = await caddyApi('/load', {
       method: 'POST',
     });
     activity.log('caddy_reload', 'Caddy configuration reloaded', {
