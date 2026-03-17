@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const { getDb } = require('../../db/connection');
+const { syncToCaddy } = require('../../services/routes');
 const {
   getAuthForRoute,
   createOrUpdateAuth,
@@ -110,6 +111,14 @@ router.post('/', (req, res) => {
       req.ip
     );
 
+    // Sync Caddy config to apply forward auth
+    try {
+      await syncToCaddy();
+    } catch (syncErr) {
+      // Auth config saved but Caddy sync failed — log but don't fail
+      require('../../utils/logger').warn({ err: syncErr }, 'Caddy sync failed after route auth update');
+    }
+
     const { password_hash, totp_secret_encrypted, ...rest } = result;
     res.json({
       ok: true,
@@ -127,6 +136,11 @@ router.delete('/', (req, res) => {
   (async () => {
     const routeId = req.params.id;
     deleteAuth(routeId, req.ip);
+    try {
+      await syncToCaddy();
+    } catch (syncErr) {
+      require('../../utils/logger').warn({ err: syncErr }, 'Caddy sync failed after route auth delete');
+    }
     res.json({ ok: true });
   })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
 });
