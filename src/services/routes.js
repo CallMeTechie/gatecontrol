@@ -100,8 +100,9 @@ function buildCaddyConfig() {
     const routeAuthConfig = !route.basic_auth_enabled ? getAuthForRoute(route.id) : null;
 
     if (routeAuthConfig) {
+      // Static assets + route-auth endpoints bypass forward auth
       const routeAuthProxy = {
-        match: [{ path: ['/route-auth/*'] }],
+        match: [{ path: ['/route-auth/*', '/css/*', '/js/*'] }],
         handle: [{
           handler: 'reverse_proxy',
           upstreams: [{ dial: '127.0.0.1:3000' }],
