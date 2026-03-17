@@ -85,6 +85,9 @@
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Auth</span>'
         : '';
+      const routeAuthTag = r.route_auth_enabled && r.route_type !== 'l4'
+        ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Route Auth</span>'
+        : '';
       let l4Tags = '';
       if (r.route_type === 'l4') {
         const protoTag = r.l4_protocol === 'udp' ? 'UDP' : 'TCP';
@@ -109,7 +112,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${l4Tags}
+          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -233,6 +236,184 @@
     });
   }
 
+  // ─── Route Auth UI helpers ────────────────────────────────
+
+  // Stored TOTP secret for confirm flow
+  let pendingTotpSecret = null;
+
+  function updateRouteAuthMethodUI() {
+    const method = document.getElementById('edit-ra-method')?.value || 'email_password';
+    const is2fa = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
+
+    const emailGroup = document.getElementById('edit-ra-email-group');
+    const passwordGroup = document.getElementById('edit-ra-password-group');
+    const totpGroup = document.getElementById('edit-ra-totp-group');
+    const methodHint = document.getElementById('edit-ra-method-hint');
+    const emailPwBtn = document.querySelector('#edit-ra-method-group [data-value="email_password"]');
+
+    if (is2fa) {
+      if (emailPwBtn) {
+        emailPwBtn.style.opacity = '0.4';
+        emailPwBtn.style.pointerEvents = 'none';
+      }
+      if (methodHint) methodHint.style.display = '';
+    } else {
+      if (emailPwBtn) {
+        emailPwBtn.style.opacity = '';
+        emailPwBtn.style.pointerEvents = '';
+      }
+      if (methodHint) methodHint.style.display = 'none';
+    }
+
+    if (method === 'totp') {
+      if (emailGroup) emailGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = '';
+    } else {
+      if (emailGroup) emailGroup.style.display = '';
+      if (passwordGroup) passwordGroup.style.display = method === 'email_password' ? '' : 'none';
+      if (totpGroup) totpGroup.style.display = 'none';
+    }
+  }
+
+  function updateEditAuthTypeUI() {
+    const authType = document.getElementById('edit-auth-type')?.value || 'none';
+    const basicFields = document.getElementById('edit-basic-auth-fields');
+    const routeAuthFields = document.getElementById('edit-route-auth-fields');
+
+    if (basicFields) basicFields.style.display = authType === 'basic' ? 'block' : 'none';
+    if (routeAuthFields) routeAuthFields.style.display = authType === 'route' ? 'block' : 'none';
+
+    if (authType === 'route') {
+      updateRouteAuthMethodUI();
+    }
+  }
+
+  // Setup auth type toggle group
+  const authTypeGroup = document.getElementById('edit-auth-type-group');
+  if (authTypeGroup) {
+    authTypeGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        authTypeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        document.getElementById('edit-auth-type').value = btn.dataset.value;
+        updateEditAuthTypeUI();
+      });
+    });
+  }
+
+  // Setup route auth method toggle group
+  const raMethodGroup = document.getElementById('edit-ra-method-group');
+  if (raMethodGroup) {
+    raMethodGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        raMethodGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        document.getElementById('edit-ra-method').value = btn.dataset.value;
+        updateRouteAuthMethodUI();
+      });
+    });
+  }
+
+  // Setup 2FA toggle
+  const ra2faToggle = document.getElementById('edit-ra-2fa');
+  if (ra2faToggle) {
+    ra2faToggle.addEventListener('click', () => {
+      ra2faToggle.classList.toggle('on');
+      const is2fa = ra2faToggle.classList.contains('on');
+      const currentMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
+
+      // When 2FA is enabled and method is email_password, switch to email_code
+      if (is2fa && currentMethod === 'email_password') {
+        setToggleGroup('edit-ra-method-group', 'edit-ra-method', 'email_code');
+      }
+      updateRouteAuthMethodUI();
+    });
+  }
+
+  // TOTP generate button
+  const btnTotpGenerate = document.getElementById('btn-ra-totp-generate');
+  if (btnTotpGenerate) {
+    btnTotpGenerate.addEventListener('click', async () => {
+      const routeId = document.getElementById('edit-route-id')?.value;
+      if (!routeId) return;
+
+      btnLoading(btnTotpGenerate);
+      try {
+        const data = await api.post('/api/routes/' + routeId + '/auth/totp-setup', {});
+        if (data.ok) {
+          pendingTotpSecret = data.secret;
+
+          // Show secret text
+          const secretEl = document.getElementById('edit-ra-totp-secret');
+          if (secretEl) {
+            secretEl.textContent = data.secret;
+            secretEl.style.display = '';
+          }
+
+          // Show OTP URI for manual entry
+          const qrEl = document.getElementById('edit-ra-totp-qr');
+          if (qrEl && data.uri) {
+            const uriDiv = document.createElement('div');
+            uriDiv.style.cssText = 'font-size:11px;color:var(--text-3);word-break:break-all;padding:6px';
+            uriDiv.textContent = data.uri;
+            qrEl.textContent = '';
+            qrEl.appendChild(uriDiv);
+            qrEl.style.display = '';
+          }
+
+          // Show verify section
+          const verifyEl = document.getElementById('edit-ra-totp-verify');
+          if (verifyEl) verifyEl.style.display = '';
+        } else {
+          alert(data.error || 'Failed to generate TOTP setup');
+        }
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btnReset(btnTotpGenerate);
+      }
+    });
+  }
+
+  // TOTP confirm button
+  const btnTotpConfirm = document.getElementById('btn-ra-totp-confirm');
+  if (btnTotpConfirm) {
+    btnTotpConfirm.addEventListener('click', async () => {
+      const routeId = document.getElementById('edit-route-id')?.value;
+      const code = document.getElementById('edit-ra-totp-code')?.value?.trim();
+      const statusEl = document.getElementById('edit-ra-totp-status');
+
+      if (!routeId || !pendingTotpSecret || !code) return;
+
+      btnLoading(btnTotpConfirm);
+      try {
+        const data = await api.post('/api/routes/' + routeId + '/auth/totp-verify', {
+          secret: pendingTotpSecret,
+          token: code
+        });
+        if (statusEl) {
+          statusEl.style.display = '';
+          if (data.ok) {
+            statusEl.style.color = 'var(--green)';
+            statusEl.textContent = 'TOTP verified successfully';
+          } else {
+            statusEl.style.color = 'var(--red)';
+            statusEl.textContent = data.error || 'Invalid code';
+          }
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.style.display = '';
+          statusEl.style.color = 'var(--red)';
+          statusEl.textContent = err.message;
+        }
+      } finally {
+        btnReset(btnTotpConfirm);
+      }
+    });
+  }
+
   // ─── Edit route modal ───────────────────────────────────
   async function showEditModal(id) {
     const route = allRoutes.find(r => String(r.id) === String(id));
@@ -271,17 +452,64 @@
       else backendHttpsToggle.classList.remove('on');
     }
 
-    const authToggleEdit = document.getElementById('edit-route-auth');
-    if (authToggleEdit) {
-      if (route.basic_auth_enabled) authToggleEdit.classList.add('on');
-      else authToggleEdit.classList.remove('on');
-    }
+    // Reset auth type to none first
+    setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'none');
+
+    // Reset route auth fields
+    const ra2fa = document.getElementById('edit-ra-2fa');
+    if (ra2fa) ra2fa.classList.remove('on');
+    setToggleGroup('edit-ra-method-group', 'edit-ra-method', 'email_password');
+    const raEmail = document.getElementById('edit-ra-email');
+    if (raEmail) raEmail.value = '';
+    const raPass = document.getElementById('edit-ra-password');
+    if (raPass) raPass.value = '';
+    const raDuration = document.getElementById('edit-ra-session-duration');
+    if (raDuration) raDuration.value = '86400000';
+    // Reset TOTP state
+    pendingTotpSecret = null;
+    const totpSecret = document.getElementById('edit-ra-totp-secret');
+    if (totpSecret) { totpSecret.textContent = ''; totpSecret.style.display = 'none'; }
+    const totpQr = document.getElementById('edit-ra-totp-qr');
+    if (totpQr) { totpQr.textContent = ''; totpQr.style.display = 'none'; }
+    const totpVerify = document.getElementById('edit-ra-totp-verify');
+    if (totpVerify) totpVerify.style.display = 'none';
+    const totpCode = document.getElementById('edit-ra-totp-code');
+    if (totpCode) totpCode.value = '';
+    const totpStatus = document.getElementById('edit-ra-totp-status');
+    if (totpStatus) { totpStatus.textContent = ''; totpStatus.style.display = 'none'; }
+
+    // Reset basic auth fields
     const authUser = document.getElementById('edit-route-auth-user');
     if (authUser) authUser.value = route.basic_auth_user || '';
     const authPass = document.getElementById('edit-route-auth-pass');
     if (authPass) authPass.value = '';
-    const authFields = document.getElementById('edit-auth-fields');
-    if (authFields) authFields.style.display = route.basic_auth_enabled ? 'block' : 'none';
+
+    // Load route auth config from API
+    try {
+      const authData = await api.get('/api/routes/' + id + '/auth');
+      if (authData.ok && authData.auth) {
+        // Route Auth is configured
+        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'route');
+        const auth = authData.auth;
+        if (auth.two_factor_enabled) {
+          if (ra2fa) ra2fa.classList.add('on');
+        }
+        const method = auth.two_factor_method || auth.auth_type || 'email_password';
+        setToggleGroup('edit-ra-method-group', 'edit-ra-method', method);
+        if (raEmail) raEmail.value = auth.email || '';
+        if (raDuration) raDuration.value = String(auth.session_max_age || 86400000);
+      } else if (route.basic_auth_enabled) {
+        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
+      }
+      // else: stays 'none'
+    } catch (err) {
+      // If auth endpoint fails, fall back to basic auth state from route
+      if (route.basic_auth_enabled) {
+        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
+      }
+    }
+
+    updateEditAuthTypeUI();
 
     setToggleGroup('edit-route-type-group', 'edit-route-type', route.route_type || 'http');
     if (route.route_type === 'l4') {
@@ -311,8 +539,8 @@
       const https_enabled = httpsToggle ? httpsToggle.classList.contains('on') : true;
       const backendHttpsToggle = document.getElementById('edit-route-backend-https');
       const backend_https = backendHttpsToggle ? backendHttpsToggle.classList.contains('on') : false;
-      const authToggle = document.getElementById('edit-route-auth');
-      const basic_auth_enabled = authToggle ? authToggle.classList.contains('on') : false;
+      const authType = document.getElementById('edit-auth-type')?.value || 'none';
+      const basic_auth_enabled = authType === 'basic';
       const basic_auth_user = (document.getElementById('edit-route-auth-user') || {}).value || '';
       const basic_auth_password = (document.getElementById('edit-route-auth-pass') || {}).value || '';
 
@@ -343,12 +571,46 @@
           }
         }
         const data = await api.put('/api/routes/' + id, payload);
-        if (data.ok) {
-          closeModal('modal-edit-route');
-          loadRoutes();
-        } else {
+        if (!data.ok) {
           showError('edit-route-error', data.error);
+          return;
         }
+
+        // Handle auth type side effects
+        if (authType === 'none') {
+          // Delete route auth if it existed (ignore errors)
+          try { await api.del('/api/routes/' + id + '/auth'); } catch (e) { /* ignore */ }
+        } else if (authType === 'route') {
+          const raMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
+          const ra2faActive = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
+          const raEmailVal = (document.getElementById('edit-ra-email') || {}).value || '';
+          const raPasswordVal = (document.getElementById('edit-ra-password') || {}).value || '';
+          const raSessionDuration = document.getElementById('edit-ra-session-duration')?.value || '86400000';
+
+          const raPayload = {
+            auth_type: raMethod,
+            two_factor_enabled: ra2faActive,
+            two_factor_method: ra2faActive ? raMethod : null,
+            email: raEmailVal,
+            session_max_age: parseInt(raSessionDuration, 10)
+          };
+          if (raPasswordVal) raPayload.password = raPasswordVal;
+          if (pendingTotpSecret) raPayload.totp_secret = pendingTotpSecret;
+
+          try {
+            const raData = await api.post('/api/routes/' + id + '/auth', raPayload);
+            if (!raData.ok) {
+              showError('edit-route-error', raData.error || 'Failed to save route auth');
+              return;
+            }
+          } catch (err) {
+            showError('edit-route-error', err.message);
+            return;
+          }
+        }
+
+        closeModal('modal-edit-route');
+        loadRoutes();
       } catch (err) {
         showError('edit-route-error', err.message);
       } finally {
@@ -481,7 +743,6 @@
   }
 
   setupAuthToggle('[data-field="basic_auth_enabled"]', '#basic-auth-fields');
-  setupAuthToggle('#edit-route-auth', '#edit-auth-fields');
 
   // ─── L4 listen port auto-fill ───────────────────────────
   function setupPortAutofill(portId, listenPortId) {
