@@ -173,12 +173,12 @@
 
     const httpsToggle = routeForm.querySelector('[data-field="https_enabled"]');
     const backendHttpsToggle = routeForm.querySelector('[data-field="backend_https"]');
-    const authToggle = routeForm.querySelector('[data-field="basic_auth_enabled"]');
 
     const https_enabled = httpsToggle ? httpsToggle.classList.contains('on') : true;
     const backend_https = backendHttpsToggle ? backendHttpsToggle.classList.contains('on') : false;
-    const basic_auth_enabled = authToggle ? authToggle.classList.contains('on') : false;
 
+    const authType = document.getElementById('create-auth-type')?.value || 'none';
+    const basic_auth_enabled = authType === 'basic';
     const basic_auth_user = fd.get('basic_auth_user') ? fd.get('basic_auth_user').trim() : '';
     const basic_auth_password = fd.get('basic_auth_password') ? fd.get('basic_auth_password').trim() : '';
 
@@ -206,11 +206,30 @@
       }
       const data = await api.post('/api/routes', payload);
       if (data.ok) {
+        // If Route Auth selected, configure it on the new route
+        if (authType === 'route' && data.route && data.route.id) {
+          const raMethod = document.getElementById('create-ra-method')?.value || 'email_password';
+          const is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on') || false;
+          const raPayload = {
+            auth_type: is2fa ? (raMethod === 'email_password' ? 'email_code' : raMethod) : raMethod,
+            two_factor_enabled: is2fa,
+            two_factor_method: is2fa ? raMethod : null,
+            email: document.getElementById('create-ra-email')?.value || null,
+            password: document.getElementById('create-ra-password')?.value || null,
+            session_max_age: parseInt(document.getElementById('create-ra-session-duration')?.value || '86400000', 10),
+          };
+          try {
+            await api.post('/api/routes/' + data.route.id + '/auth', raPayload);
+          } catch (raErr) {
+            console.error('Route auth config failed:', raErr);
+          }
+        }
         routeForm.reset();
         // Reset toggles
         if (httpsToggle) httpsToggle.classList.add('on');
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
-        if (authToggle) authToggle.classList.remove('on');
+        setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
+        updateCreateAuthTypeUI();
         loadRoutes();
       } else {
         alert(data.error || 'Failed to create route');
@@ -742,7 +761,79 @@
     update();
   }
 
-  setupAuthToggle('[data-field="basic_auth_enabled"]', '#basic-auth-fields');
+  // ─── Create form: Auth type toggle ──────────────────────
+  function updateCreateAuthTypeUI() {
+    const authType = document.getElementById('create-auth-type')?.value || 'none';
+    const basicFields = document.getElementById('create-basic-auth-fields');
+    const routeAuthFields = document.getElementById('create-route-auth-fields');
+    if (basicFields) basicFields.style.display = authType === 'basic' ? 'block' : 'none';
+    if (routeAuthFields) routeAuthFields.style.display = authType === 'route' ? 'block' : 'none';
+    if (authType === 'route') updateCreateRouteAuthMethodUI();
+  }
+
+  function updateCreateRouteAuthMethodUI() {
+    const method = document.getElementById('create-ra-method')?.value || 'email_password';
+    const is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on');
+    const emailGroup = document.getElementById('create-ra-email-group');
+    const passwordGroup = document.getElementById('create-ra-password-group');
+    const totpGroup = document.getElementById('create-ra-totp-group');
+    const methodHint = document.getElementById('create-ra-method-hint');
+
+    if (is2fa) {
+      if (emailGroup) emailGroup.style.display = 'block';
+      if (passwordGroup) passwordGroup.style.display = 'block';
+      if (totpGroup) totpGroup.style.display = method === 'totp' ? 'block' : 'none';
+      if (methodHint) methodHint.style.display = 'block';
+    } else {
+      const needsEmail = method === 'email_password' || method === 'email_code';
+      const needsPassword = method === 'email_password';
+      if (emailGroup) emailGroup.style.display = needsEmail ? 'block' : 'none';
+      if (passwordGroup) passwordGroup.style.display = needsPassword ? 'block' : 'none';
+      if (totpGroup) totpGroup.style.display = method === 'totp' ? 'block' : 'none';
+      if (methodHint) methodHint.style.display = 'none';
+    }
+  }
+
+  const createAuthTypeGroup = document.getElementById('create-auth-type-group');
+  if (createAuthTypeGroup) {
+    createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        document.getElementById('create-auth-type').value = btn.dataset.value;
+        updateCreateAuthTypeUI();
+      });
+    });
+  }
+
+  const createMethodGroup = document.getElementById('create-ra-method-group');
+  if (createMethodGroup) {
+    createMethodGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        createMethodGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        document.getElementById('create-ra-method').value = btn.dataset.value;
+        updateCreateRouteAuthMethodUI();
+      });
+    });
+  }
+
+  document.getElementById('create-ra-2fa')?.addEventListener('click', function () {
+    this.classList.toggle('on');
+    const is2fa = this.classList.contains('on');
+    const methodGroup = document.getElementById('create-ra-method-group');
+    if (is2fa && document.getElementById('create-ra-method').value === 'email_password') {
+      setToggleGroup('create-ra-method-group', 'create-ra-method', 'email_code');
+    }
+    if (methodGroup) {
+      const epBtn = methodGroup.querySelector('[data-value="email_password"]');
+      if (epBtn) {
+        epBtn.style.opacity = is2fa ? '0.4' : '1';
+        epBtn.style.pointerEvents = is2fa ? 'none' : 'auto';
+      }
+    }
+    updateCreateRouteAuthMethodUI();
+  });
 
   // ─── L4 listen port auto-fill ───────────────────────────
   function setupPortAutofill(portId, listenPortId) {
