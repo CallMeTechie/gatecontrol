@@ -844,7 +844,7 @@ input[type=search] { padding-left: 32px; width: 200px; }
   color: var(--text-2);
   margin-bottom: 5px;
 }
-.form-group input[type=text] { width: 100%; }
+.form-group input[type=text], .form-group input[type=email], .form-group input[type=password] { width: 100%; }
 .form-error {
   font-size: 12px;
   color: var(--red);

@@ -360,24 +360,36 @@
       btnLoading(btnTotpGenerate);
       try {
         const data = await api.post('/api/routes/' + routeId + '/auth/totp-setup', {});
-        if (data.ok) {
-          pendingTotpSecret = data.secret;
+        if (data.ok && data.data) {
+          pendingTotpSecret = data.data.secret;
 
           // Show secret text
           const secretEl = document.getElementById('edit-ra-totp-secret');
           if (secretEl) {
-            secretEl.textContent = data.secret;
+            secretEl.textContent = data.data.secret;
             secretEl.style.display = '';
           }
 
-          // Show OTP URI for manual entry
+          // Show QR code
           const qrEl = document.getElementById('edit-ra-totp-qr');
-          if (qrEl && data.uri) {
-            const uriDiv = document.createElement('div');
-            uriDiv.style.cssText = 'font-size:11px;color:var(--text-3);word-break:break-all;padding:6px';
-            uriDiv.textContent = data.uri;
+          if (qrEl && data.data.uri) {
             qrEl.textContent = '';
-            qrEl.appendChild(uriDiv);
+            try {
+              var qr = qrcode(0, 'M');
+              qr.addData(data.data.uri);
+              qr.make();
+              var img = document.createElement('img');
+              img.src = qr.createDataURL(4, 4);
+              img.alt = 'TOTP QR Code';
+              img.style.cssText = 'display:block;margin:0 auto;border-radius:var(--radius-sm);';
+              qrEl.appendChild(img);
+            } catch (e) {
+              // Fallback: show URI text
+              var uriDiv = document.createElement('div');
+              uriDiv.style.cssText = 'font-size:11px;color:var(--text-3);word-break:break-all;padding:6px';
+              uriDiv.textContent = data.data.uri;
+              qrEl.appendChild(uriDiv);
+            }
             qrEl.style.display = '';
           }
 
