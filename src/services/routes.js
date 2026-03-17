@@ -5,6 +5,7 @@ const config = require('../../config/default');
 const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
+const { getAuthForRoute } = require('./routeAuth');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
@@ -95,10 +96,61 @@ function buildCaddyConfig() {
       });
     }
 
-    caddyRoutes[route.domain] = {
-      listen: route.https_enabled ? [':443'] : [':80'],
-      routes: [routeConfig],
-    };
+    // Route Auth (forward auth) — mutually exclusive with basic auth
+    const routeAuthConfig = !route.basic_auth_enabled ? getAuthForRoute(route.id) : null;
+
+    if (routeAuthConfig) {
+      const routeAuthProxy = {
+        match: [{ path: ['/route-auth/*'] }],
+        handle: [{
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: '127.0.0.1:3000' }],
+        }],
+      };
+
+      const forwardAuthHandler = {
+        handler: 'reverse_proxy',
+        upstreams: [{ dial: '127.0.0.1:3000' }],
+        rewrite: { uri: '/route-auth/verify' },
+        headers: {
+          request: {
+            set: {
+              'X-Route-Domain': [route.domain],
+              'X-Forwarded-Host': ['{http.request.host}'],
+              'X-Forwarded-Uri': ['{http.request.uri}'],
+            },
+          },
+        },
+        handle_response: [{
+          match: { status_code: [401] },
+          routes: [{
+            handle: [
+              {
+                handler: 'headers',
+                response: {
+                  set: {
+                    'Location': [`/route-auth/login?route=${route.domain}&redirect={http.request.uri}`],
+                  },
+                },
+              },
+              { handler: 'static_response', status_code: 302 },
+            ],
+          }],
+        }],
+      };
+
+      routeConfig.handle.unshift(forwardAuthHandler);
+
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [routeAuthProxy, routeConfig],
+      };
+    } else {
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [routeConfig],
+      };
+    }
 
   }
 
@@ -169,11 +221,24 @@ function buildCaddyConfig() {
   // Group routes into a single server
   const serverRoutes = [];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
-    serverRoutes.push({
-      match: [{ host: [domain] }],
-      handle: srvConfig.routes[0].handle,
-      terminal: true,
-    });
+    if (srvConfig.routes.length === 1) {
+      // Simple case: single route — inline handles directly
+      serverRoutes.push({
+        match: [{ host: [domain] }],
+        handle: srvConfig.routes[0].handle,
+        terminal: true,
+      });
+    } else {
+      // Multiple sub-routes (e.g. forward auth): wrap in a subroute handler
+      serverRoutes.push({
+        match: [{ host: [domain] }],
+        handle: [{
+          handler: 'subroute',
+          routes: srvConfig.routes,
+        }],
+        terminal: true,
+      });
+    }
   }
 
   if (serverRoutes.length > 0) {
