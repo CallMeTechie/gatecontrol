@@ -100,53 +100,55 @@ function buildCaddyConfig() {
     const routeAuthConfig = !route.basic_auth_enabled ? getAuthForRoute(route.id) : null;
 
     if (routeAuthConfig) {
-      // Static assets + route-auth endpoints bypass forward auth
+      // Route 1: /route-auth/* and static assets → proxy to GateControl (no auth check)
       const routeAuthProxy = {
-        match: [{ path: ['/route-auth/*', '/css/*', '/js/*'] }],
+        match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*'] }],
         handle: [{
           handler: 'reverse_proxy',
           upstreams: [{ dial: '127.0.0.1:3000' }],
         }],
       };
 
-      // Forward auth: subrequest to /route-auth/verify.
-      // On 2xx → proxy to backend. On 401 → redirect to login.
-      // We save the original URI in a variable before rewrite.
-      const forwardAuthHandler = {
+      // Route 2: Everything else → auth check via cookie, then proxy to backend
+      // Uses Caddy's authentication handler pattern:
+      // 1. Check session cookie via a subrequest
+      // 2. If valid → strip Auth header + proxy to backend
+      // 3. If invalid → redirect to login page
+      //
+      // Since Caddy's reverse_proxy handle_response consumes the body,
+      // we use a different approach: check the cookie directly in an
+      // intercept handler, and only proxy if authenticated.
+      //
+      // Actually, we use Caddy's forward_auth which is a reverse_proxy
+      // that buffers the request body and replays it to the upstream.
+      // The key is setting `buffer_requests: true`.
+      const forwardAuthSubrequest = {
         handler: 'reverse_proxy',
         upstreams: [{ dial: '127.0.0.1:3000' }],
         rewrite: { uri: '/route-auth/verify' },
+        buffer_requests: true,
         headers: {
           request: {
             set: {
               'X-Route-Domain': [route.domain],
               'X-Forwarded-Host': ['{http.request.host}'],
-              'X-Forwarded-Uri': ['{http.vars.original_uri}'],
+              'X-Forwarded-Uri': ['{http.request.uri}'],
             },
           },
         },
         handle_response: [
           {
             match: { status_code: [2] },
-            routes: [{
-              handle: [
-                { handler: 'rewrite', uri: '{http.vars.original_uri}' },
-                // Strip Authorization header to prevent cached Basic Auth from interfering with backend
-                {
-                  handler: 'headers',
-                  request: { delete: ['Authorization'] },
-                },
-                reverseProxy,
-              ],
-            }],
+            routes: [],  // Empty routes = Caddy continues to next handler
           },
           {
+            // Non-2xx → redirect to login
             routes: [{
               handle: [{
                 handler: 'static_response',
                 status_code: 302,
                 headers: {
-                  'Location': [`/route-auth/login?route=${route.domain}&redirect={http.vars.original_uri}`],
+                  'Location': [`/route-auth/login?route=${route.domain}&redirect={http.request.uri}`],
                 },
               }],
             }],
@@ -154,14 +156,14 @@ function buildCaddyConfig() {
         ],
       };
 
-      // Save original URI before forward auth rewrites it
-      const saveOrigUri = {
-        handler: 'vars',
-        original_uri: '{http.request.uri}',
+      // Strip Authorization header + proxy to backend
+      const stripAuthAndProxy = {
+        handler: 'headers',
+        request: { delete: ['Authorization'] },
       };
 
-      // Forward auth replaces the normal handlers
-      routeConfig.handle = [saveOrigUri, forwardAuthHandler];
+      // The main route: auth subrequest → strip header → proxy to backend
+      routeConfig.handle = [forwardAuthSubrequest, stripAuthAndProxy, reverseProxy];
 
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
