@@ -16,7 +16,7 @@ const {
   verifyOtp,
   verifyTotp,
   generateCsrfToken,
-  verifyCsrfToken,
+  // verifyCsrfToken not needed - using HMAC-signed tokens
   maskEmail,
 } = require('../services/routeAuth');
 const { isSmtpConfigured } = require('../services/email');
@@ -27,16 +27,32 @@ const router = Router();
 // Apply i18n middleware to all route auth public routes
 router.use(i18nMiddleware);
 
-const COOKIE_SID = 'gc.route.sid';
-const COOKIE_CSRF = 'gc.route.csrf';
+const crypto = require('crypto');
 
-function setCsrfCookie(res, token) {
-  res.cookie(COOKIE_CSRF, token, {
-    httpOnly: false, // Must be readable by JS for double-submit pattern
-    secure: config.app.baseUrl.startsWith('https'),
-    sameSite: 'strict',
-    maxAge: 15 * 60 * 1000,
-  });
+const COOKIE_SID = 'gc.route.sid';
+const CSRF_SECRET = config.app.secret; // reuse app secret for HMAC
+const CSRF_MAX_AGE = 15 * 60 * 1000; // 15 min
+
+function generateSignedCsrf() {
+  const timestamp = Date.now().toString(36);
+  const random = crypto.randomBytes(16).toString('hex');
+  const payload = `${timestamp}.${random}`;
+  const sig = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifySignedCsrf(token) {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [timestamp, random, sig] = parts;
+  // Check signature (compare hex strings directly for exact match)
+  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(`${timestamp}.${random}`).digest('hex');
+  if (sig.length !== expected.length || sig !== expected) return false;
+  // Check expiry
+  const ts = parseInt(timestamp, 36);
+  if (isNaN(ts) || Date.now() - ts > CSRF_MAX_AGE) return false;
+  return true;
 }
 
 function setSessionCookie(res, sessionId, maxAge) {
@@ -50,7 +66,6 @@ function setSessionCookie(res, sessionId, maxAge) {
 
 function clearSessionCookie(res) {
   res.clearCookie(COOKIE_SID);
-  res.clearCookie(COOKIE_CSRF);
 }
 
 // GET /route-auth/verify — Caddy forward_auth endpoint
@@ -99,8 +114,7 @@ router.get('/login', (req, res) => {
     }
 
     // Set CSRF double-submit cookie
-    const csrfToken = generateCsrfToken();
-    setCsrfCookie(res, csrfToken);
+    const csrfToken = generateSignedCsrf();
 
     res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
       domain,
@@ -122,9 +136,8 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     const redirectTo = redirect || '/';
 
     // CSRF double-submit check: body _csrf or X-CSRF-Token header vs cookie
-    const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    const bodyCsrf = _csrf || req.headers['x-csrf-token'];
-    if (!verifyCsrfToken(cookieCsrf, bodyCsrf)) {
+    const csrfToken = _csrf || req.headers['x-csrf-token'];
+    if (!verifySignedCsrf(csrfToken)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
@@ -176,9 +189,8 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
     const { email, domain: bodyDomain, _csrf } = req.body;
 
     // CSRF check
-    const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    const csrfBody = _csrf || req.headers['x-csrf-token'];
-    if (!verifyCsrfToken(cookieCsrf, csrfBody)) {
+    const csrfToken = _csrf || req.headers['x-csrf-token'];
+    if (!verifySignedCsrf(csrfToken)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
@@ -206,9 +218,8 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
     const redirectTo = redirect || '/';
 
     // CSRF check
-    const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    const csrfBody = _csrf || req.headers['x-csrf-token'];
-    if (!verifyCsrfToken(cookieCsrf, csrfBody)) {
+    const csrfToken = _csrf || req.headers['x-csrf-token'];
+    if (!verifySignedCsrf(csrfToken)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
