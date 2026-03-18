@@ -282,53 +282,80 @@
   let pendingTotpSecret = null;
 
   function updateRouteAuthMethodUI() {
-    const method = document.getElementById('edit-ra-method')?.value || 'email_password';
-    const is2fa = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
-
-    const emailGroup = document.getElementById('edit-ra-email-group');
-    const passwordGroup = document.getElementById('edit-ra-password-group');
-    const totpGroup = document.getElementById('edit-ra-totp-group');
-    const methodHint = document.getElementById('edit-ra-method-hint');
-    const emailPwBtn = document.querySelector('#edit-ra-method-group [data-value="email_password"]');
+    var method = document.getElementById('edit-ra-method')?.value || 'email_password';
+    var is2fa = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
+    var singleView = document.getElementById('edit-ra-single-factor');
+    var tfaView = document.getElementById('edit-ra-2fa-view');
 
     if (is2fa) {
-      if (emailPwBtn) {
-        emailPwBtn.style.opacity = '0.4';
-        emailPwBtn.style.pointerEvents = 'none';
-      }
-      if (methodHint) methodHint.style.display = '';
+      // Show 2FA view, hide single factor view
+      if (singleView) singleView.style.display = 'none';
+      if (tfaView) tfaView.style.display = '';
+      // Sync email/password from single-factor fields to 2FA fields if empty
+      var sfEmail = document.getElementById('edit-ra-email');
+      var tfaEmail = document.getElementById('edit-ra-2fa-email');
+      if (sfEmail && tfaEmail && !tfaEmail.value && sfEmail.value) tfaEmail.value = sfEmail.value;
+      var sfPass = document.getElementById('edit-ra-password');
+      var tfaPass = document.getElementById('edit-ra-2fa-password');
+      if (sfPass && tfaPass && !tfaPass.value && sfPass.value) tfaPass.value = sfPass.value;
+      // Update Factor 2 method UI
+      update2faMethodUI();
     } else {
-      if (emailPwBtn) {
-        emailPwBtn.style.opacity = '';
-        emailPwBtn.style.pointerEvents = '';
-      }
-      if (methodHint) methodHint.style.display = 'none';
+      // Show single factor view, hide 2FA view
+      if (singleView) singleView.style.display = '';
+      if (tfaView) tfaView.style.display = 'none';
+      // Sync back from 2FA fields
+      var tfaEmail2 = document.getElementById('edit-ra-2fa-email');
+      var sfEmail2 = document.getElementById('edit-ra-email');
+      if (tfaEmail2 && sfEmail2 && !sfEmail2.value && tfaEmail2.value) sfEmail2.value = tfaEmail2.value;
+      var tfaPass2 = document.getElementById('edit-ra-2fa-password');
+      var sfPass2 = document.getElementById('edit-ra-password');
+      if (tfaPass2 && sfPass2 && !sfPass2.value && tfaPass2.value) sfPass2.value = tfaPass2.value;
+      // Update single factor field visibility
+      updateSingleFactorUI(method);
     }
+  }
 
-    if (is2fa) {
-      // 2FA: Email + Password are always visible (Factor 1)
-      // Method selection determines Factor 2
+  function updateSingleFactorUI(method) {
+    var emailGroup = document.getElementById('edit-ra-sf-email-group');
+    var passwordGroup = document.getElementById('edit-ra-sf-password-group');
+    var totpGroup = document.getElementById('edit-ra-sf-totp-group');
+    if (method === 'totp') {
+      if (emailGroup) emailGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = '';
+    } else if (method === 'email_code') {
+      if (emailGroup) emailGroup.style.display = '';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = 'none';
+    } else {
+      // email_password
       if (emailGroup) emailGroup.style.display = '';
       if (passwordGroup) passwordGroup.style.display = '';
-      if (totpGroup) totpGroup.style.display = method === 'totp' ? '' : 'none';
+      if (totpGroup) totpGroup.style.display = 'none';
+    }
+  }
+
+  function update2faMethodUI() {
+    var method = document.getElementById('edit-ra-method')?.value || 'email_code';
+    var emailHint = document.getElementById('edit-ra-2fa-email-hint');
+    var totpGroup = document.getElementById('edit-ra-2fa-totp-group');
+    var label = document.getElementById('edit-ra-2fa-factor2-label');
+    if (method === 'totp') {
+      if (emailHint) emailHint.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = '';
+      if (label) label.textContent = label.dataset.totp || 'Factor 2 — TOTP (Authenticator)';
     } else {
-      // Single factor: show fields based on selected method
-      if (method === 'totp') {
-        if (emailGroup) emailGroup.style.display = 'none';
-        if (passwordGroup) passwordGroup.style.display = 'none';
-        if (totpGroup) totpGroup.style.display = '';
-      } else {
-        if (emailGroup) emailGroup.style.display = '';
-        if (passwordGroup) passwordGroup.style.display = method === 'email_password' ? '' : 'none';
-        if (totpGroup) totpGroup.style.display = 'none';
-      }
+      if (emailHint) emailHint.style.display = '';
+      if (totpGroup) totpGroup.style.display = 'none';
+      if (label) label.textContent = label.dataset.email || 'Factor 2 — Email Code';
     }
   }
 
   function updateEditAuthTypeUI() {
-    const authType = document.getElementById('edit-auth-type')?.value || 'none';
-    const basicFields = document.getElementById('edit-basic-auth-fields');
-    const routeAuthFields = document.getElementById('edit-route-auth-fields');
+    var authType = document.getElementById('edit-auth-type')?.value || 'none';
+    var basicFields = document.getElementById('edit-basic-auth-fields');
+    var routeAuthFields = document.getElementById('edit-route-auth-fields');
 
     if (basicFields) basicFields.style.display = authType === 'basic' ? 'block' : 'none';
     if (routeAuthFields) routeAuthFields.style.display = authType === 'route' ? 'block' : 'none';
@@ -339,11 +366,11 @@
   }
 
   // Setup auth type toggle group
-  const authTypeGroup = document.getElementById('edit-auth-type-group');
+  var authTypeGroup = document.getElementById('edit-auth-type-group');
   if (authTypeGroup) {
-    authTypeGroup.querySelectorAll('.toggle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        authTypeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+    authTypeGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        authTypeGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
         btn.classList.add('on');
         document.getElementById('edit-auth-type').value = btn.dataset.value;
         updateEditAuthTypeUI();
@@ -351,129 +378,115 @@
     });
   }
 
-  // Setup route auth method toggle group
-  const raMethodGroup = document.getElementById('edit-ra-method-group');
+  // Setup single-factor method toggle group
+  var raMethodGroup = document.getElementById('edit-ra-method-group');
   if (raMethodGroup) {
-    raMethodGroup.querySelectorAll('.toggle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        raMethodGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+    raMethodGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        raMethodGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
         btn.classList.add('on');
         document.getElementById('edit-ra-method').value = btn.dataset.value;
-        updateRouteAuthMethodUI();
+        updateSingleFactorUI(btn.dataset.value);
+      });
+    });
+  }
+
+  // Setup 2FA Factor 2 method toggle group
+  var ra2faMethodGroup = document.getElementById('edit-ra-2fa-method-group');
+  if (ra2faMethodGroup) {
+    ra2faMethodGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        ra2faMethodGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
+        btn.classList.add('on');
+        document.getElementById('edit-ra-method').value = btn.dataset.value;
+        update2faMethodUI();
       });
     });
   }
 
   // Setup 2FA toggle
-  const ra2faToggle = document.getElementById('edit-ra-2fa');
+  var ra2faToggle = document.getElementById('edit-ra-2fa');
   if (ra2faToggle) {
-    ra2faToggle.addEventListener('click', () => {
+    ra2faToggle.addEventListener('click', function () {
       ra2faToggle.classList.toggle('on');
-      const is2fa = ra2faToggle.classList.contains('on');
-      const currentMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
-
-      // When 2FA is enabled and method is email_password, switch to email_code
-      if (is2fa && currentMethod === 'email_password') {
-        setToggleGroup('edit-ra-method-group', 'edit-ra-method', 'email_code');
+      var is2fa = ra2faToggle.classList.contains('on');
+      // When enabling 2FA, default Factor 2 to email_code
+      if (is2fa) {
+        var currentMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
+        if (currentMethod === 'email_password') {
+          document.getElementById('edit-ra-method').value = 'email_code';
+          setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', 'email_code');
+        } else {
+          setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', currentMethod);
+        }
       }
       updateRouteAuthMethodUI();
     });
   }
 
-  // TOTP generate button
-  const btnTotpGenerate = document.getElementById('btn-ra-totp-generate');
-  if (btnTotpGenerate) {
-    btnTotpGenerate.addEventListener('click', async () => {
-      const routeId = document.getElementById('edit-route-id')?.value;
+  // ─── Reusable TOTP setup handler ──────────────────────
+  function setupTotpGenerate(btnId, secretElId, qrElId, verifyElId) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var routeId = document.getElementById('edit-route-id')?.value;
       if (!routeId) return;
-
-      btnLoading(btnTotpGenerate);
+      btnLoading(btn);
       try {
-        const data = await api.post('/api/routes/' + routeId + '/auth/totp-setup', {});
+        var data = await api.post('/api/routes/' + routeId + '/auth/totp-setup', {});
         if (data.ok && data.data) {
           pendingTotpSecret = data.data.secret;
-
-          // Show secret text
-          const secretEl = document.getElementById('edit-ra-totp-secret');
-          if (secretEl) {
-            secretEl.textContent = data.data.secret;
-            secretEl.style.display = '';
-          }
-
-          // Show QR code
-          const qrEl = document.getElementById('edit-ra-totp-qr');
+          var secretEl = document.getElementById(secretElId);
+          if (secretEl) { secretEl.textContent = data.data.secret; secretEl.style.display = ''; }
+          var qrEl = document.getElementById(qrElId);
           if (qrEl && data.data.uri) {
             qrEl.textContent = '';
             try {
-              var qr = qrcode(0, 'M');
-              qr.addData(data.data.uri);
-              qr.make();
+              var qr = qrcode(0, 'M'); qr.addData(data.data.uri); qr.make();
               var img = document.createElement('img');
-              img.src = qr.createDataURL(4, 4);
-              img.alt = 'TOTP QR Code';
+              img.src = qr.createDataURL(4, 4); img.alt = 'TOTP QR Code';
               img.style.cssText = 'display:block;margin:0 auto;border-radius:var(--radius-sm);';
               qrEl.appendChild(img);
             } catch (e) {
-              // Fallback: show URI text
-              var uriDiv = document.createElement('div');
-              uriDiv.style.cssText = 'font-size:11px;color:var(--text-3);word-break:break-all;padding:6px';
-              uriDiv.textContent = data.data.uri;
-              qrEl.appendChild(uriDiv);
+              var d = document.createElement('div');
+              d.style.cssText = 'font-size:11px;color:var(--text-3);word-break:break-all;padding:6px';
+              d.textContent = data.data.uri; qrEl.appendChild(d);
             }
             qrEl.style.display = '';
           }
-
-          // Show verify section
-          const verifyEl = document.getElementById('edit-ra-totp-verify');
+          var verifyEl = document.getElementById(verifyElId);
           if (verifyEl) verifyEl.style.display = '';
-        } else {
-          alert(data.error || 'Failed to generate TOTP setup');
-        }
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        btnReset(btnTotpGenerate);
-      }
+        } else { alert(data.error || 'Failed to generate TOTP setup'); }
+      } catch (err) { alert(err.message); } finally { btnReset(btn); }
     });
   }
 
-  // TOTP confirm button
-  const btnTotpConfirm = document.getElementById('btn-ra-totp-confirm');
-  if (btnTotpConfirm) {
-    btnTotpConfirm.addEventListener('click', async () => {
-      const routeId = document.getElementById('edit-route-id')?.value;
-      const code = document.getElementById('edit-ra-totp-code')?.value?.trim();
-      const statusEl = document.getElementById('edit-ra-totp-status');
-
+  function setupTotpConfirm(btnId, codeElId, statusElId) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var routeId = document.getElementById('edit-route-id')?.value;
+      var code = document.getElementById(codeElId)?.value?.trim();
+      var statusEl = document.getElementById(statusElId);
       if (!routeId || !pendingTotpSecret || !code) return;
-
-      btnLoading(btnTotpConfirm);
+      btnLoading(btn);
       try {
-        const data = await api.post('/api/routes/' + routeId + '/auth/totp-verify', {
-          secret: pendingTotpSecret,
-          token: code
-        });
+        var data = await api.post('/api/routes/' + routeId + '/auth/totp-verify', { secret: pendingTotpSecret, token: code });
         if (statusEl) {
           statusEl.style.display = '';
-          if (data.ok) {
-            statusEl.style.color = 'var(--green)';
-            statusEl.textContent = 'TOTP verified successfully';
-          } else {
-            statusEl.style.color = 'var(--red)';
-            statusEl.textContent = data.error || 'Invalid code';
-          }
+          statusEl.style.color = data.ok ? 'var(--green)' : 'var(--red)';
+          statusEl.textContent = data.ok ? 'TOTP verified successfully' : 'Invalid code. Try again.';
         }
-      } catch (err) {
-        if (statusEl) {
-          statusEl.style.display = '';
-          statusEl.style.color = 'var(--red)';
-          statusEl.textContent = err.message;
-        }
-      } finally {
-        btnReset(btnTotpConfirm);
-      }
+      } catch (err) { alert(err.message); } finally { btnReset(btn); }
     });
   }
+
+  // Single factor TOTP
+  setupTotpGenerate('btn-ra-totp-generate', 'edit-ra-totp-secret', 'edit-ra-totp-qr', 'edit-ra-totp-verify');
+  setupTotpConfirm('btn-ra-totp-confirm', 'edit-ra-totp-code', 'edit-ra-totp-status');
+  // 2FA TOTP
+  setupTotpGenerate('btn-ra-2fa-totp-generate', 'edit-ra-2fa-totp-secret', 'edit-ra-2fa-totp-qr', 'edit-ra-2fa-totp-verify');
+  setupTotpConfirm('btn-ra-2fa-totp-confirm', 'edit-ra-2fa-totp-code', 'edit-ra-2fa-totp-status');
 
   // ─── Edit route modal ───────────────────────────────────
   async function showEditModal(id) {
@@ -517,54 +530,70 @@
     setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'none');
 
     // Reset route auth fields
-    const ra2fa = document.getElementById('edit-ra-2fa');
+    var ra2fa = document.getElementById('edit-ra-2fa');
     if (ra2fa) ra2fa.classList.remove('on');
     setToggleGroup('edit-ra-method-group', 'edit-ra-method', 'email_password');
-    const raEmail = document.getElementById('edit-ra-email');
-    if (raEmail) raEmail.value = '';
-    const raPass = document.getElementById('edit-ra-password');
-    if (raPass) raPass.value = '';
-    const raDuration = document.getElementById('edit-ra-session-duration');
+    setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', 'email_code');
+    // Reset all text fields
+    ['edit-ra-email', 'edit-ra-password', 'edit-ra-2fa-email', 'edit-ra-2fa-password'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) el.value = '';
+    });
+    var raDuration = document.getElementById('edit-ra-session-duration');
     if (raDuration) raDuration.value = '86400000';
     // Reset TOTP state
     pendingTotpSecret = null;
-    const totpSecret = document.getElementById('edit-ra-totp-secret');
-    if (totpSecret) { totpSecret.textContent = ''; totpSecret.style.display = 'none'; }
-    const totpQr = document.getElementById('edit-ra-totp-qr');
-    if (totpQr) { totpQr.textContent = ''; totpQr.style.display = 'none'; }
-    const totpVerify = document.getElementById('edit-ra-totp-verify');
-    if (totpVerify) totpVerify.style.display = 'none';
-    const totpCode = document.getElementById('edit-ra-totp-code');
-    if (totpCode) totpCode.value = '';
-    const totpStatus = document.getElementById('edit-ra-totp-status');
-    if (totpStatus) { totpStatus.textContent = ''; totpStatus.style.display = 'none'; }
+    ['edit-ra-totp-secret', 'edit-ra-2fa-totp-secret'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) { el.textContent = ''; el.style.display = 'none'; }
+    });
+    ['edit-ra-totp-qr', 'edit-ra-2fa-totp-qr'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) { el.textContent = ''; el.style.display = 'none'; }
+    });
+    ['edit-ra-totp-verify', 'edit-ra-2fa-totp-verify'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) el.style.display = 'none';
+    });
+    ['edit-ra-totp-code', 'edit-ra-2fa-totp-code'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) el.value = '';
+    });
+    ['edit-ra-totp-status', 'edit-ra-2fa-totp-status'].forEach(function (fid) {
+      var el = document.getElementById(fid); if (el) { el.textContent = ''; el.style.display = 'none'; }
+    });
 
     // Reset basic auth fields
-    const authUser = document.getElementById('edit-route-auth-user');
+    var authUser = document.getElementById('edit-route-auth-user');
     if (authUser) authUser.value = route.basic_auth_user || '';
-    const authPass = document.getElementById('edit-route-auth-pass');
+    var authPass = document.getElementById('edit-route-auth-pass');
     if (authPass) authPass.value = '';
 
     // Load route auth config from API
     try {
-      const authData = await api.get('/api/routes/' + id + '/auth');
+      var authData = await api.get('/api/routes/' + id + '/auth');
       if (authData.ok && authData.data) {
-        // Route Auth is configured
         setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'route');
-        const auth = authData.data;
+        var auth = authData.data;
+        var email = auth.email || '';
+        var sessionAge = String(auth.session_max_age || 86400000);
+
         if (auth.two_factor_enabled) {
           if (ra2fa) ra2fa.classList.add('on');
+          // Populate 2FA fields
+          var tfaEmail = document.getElementById('edit-ra-2fa-email');
+          if (tfaEmail) tfaEmail.value = email;
+          // Set Factor 2 method
+          var f2method = auth.two_factor_method || 'email_code';
+          document.getElementById('edit-ra-method').value = f2method;
+          setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', f2method);
+        } else {
+          // Single factor — populate single factor fields
+          var method = auth.auth_type || 'email_password';
+          setToggleGroup('edit-ra-method-group', 'edit-ra-method', method);
+          var sfEmail = document.getElementById('edit-ra-email');
+          if (sfEmail) sfEmail.value = email;
         }
-        const method = auth.two_factor_method || auth.auth_type || 'email_password';
-        setToggleGroup('edit-ra-method-group', 'edit-ra-method', method);
-        if (raEmail) raEmail.value = auth.email || '';
-        if (raDuration) raDuration.value = String(auth.session_max_age || 86400000);
+        if (raDuration) raDuration.value = sessionAge;
       } else if (route.basic_auth_enabled) {
         setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
       }
-      // else: stays 'none'
     } catch (err) {
-      // If auth endpoint fails, fall back to basic auth state from route
       if (route.basic_auth_enabled) {
         setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
       }
@@ -642,14 +671,22 @@
           // Delete route auth if it existed (ignore errors)
           try { await api.del('/api/routes/' + id + '/auth'); } catch (e) { /* ignore */ }
         } else if (authType === 'route') {
-          const raMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
-          const ra2faActive = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
-          const raEmailVal = (document.getElementById('edit-ra-email') || {}).value || '';
-          const raPasswordVal = (document.getElementById('edit-ra-password') || {}).value || '';
-          const raSessionDuration = document.getElementById('edit-ra-session-duration')?.value || '86400000';
+          var raMethod = document.getElementById('edit-ra-method')?.value || 'email_password';
+          var ra2faActive = document.getElementById('edit-ra-2fa')?.classList.contains('on') || false;
+          var raSessionDuration = document.getElementById('edit-ra-session-duration')?.value || '86400000';
 
-          const raPayload = {
-            auth_type: raMethod,
+          // Read from correct fields depending on 2FA mode
+          var raEmailVal, raPasswordVal;
+          if (ra2faActive) {
+            raEmailVal = (document.getElementById('edit-ra-2fa-email') || {}).value || '';
+            raPasswordVal = (document.getElementById('edit-ra-2fa-password') || {}).value || '';
+          } else {
+            raEmailVal = (document.getElementById('edit-ra-email') || {}).value || '';
+            raPasswordVal = (document.getElementById('edit-ra-password') || {}).value || '';
+          }
+
+          var raPayload = {
+            auth_type: ra2faActive ? 'email_password' : raMethod,
             two_factor_enabled: ra2faActive,
             two_factor_method: ra2faActive ? raMethod : null,
             email: raEmailVal,
