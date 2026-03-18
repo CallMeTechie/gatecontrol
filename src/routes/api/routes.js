@@ -6,7 +6,7 @@ const routes = require('../../services/routes');
 const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
-const config = require('../../config/default');
+const config = require('../../../config/default');
 
 const router = Router();
 
