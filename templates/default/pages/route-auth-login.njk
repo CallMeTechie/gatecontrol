@@ -55,7 +55,7 @@
       <div class="form-error" id="form-error"></div>
 
       <form id="verify-form" method="POST" action="/route-auth/verify-code">
-        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
         <input type="hidden" name="route" value="{{ domain }}">
         <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -112,7 +112,7 @@
       <div class="form-error" id="form-error"></div>
 
       <form id="verify-form" method="POST" action="/route-auth/verify-code">
-        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
         <input type="hidden" name="route" value="{{ domain }}">
         <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -158,7 +158,7 @@
       <div class="form-error" id="form-error"></div>
 
       <form id="login-form" method="POST" action="/route-auth/login">
-        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
         <input type="hidden" name="route" value="{{ domain }}">
         <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -193,7 +193,7 @@
       <div class="form-error" id="form-error"></div>
 
       <form id="login-form" method="POST" action="/route-auth/login">
-        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
         <input type="hidden" name="route" value="{{ domain }}">
         <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -230,7 +230,7 @@
       {# Email section — visible initially #}
       <div id="email-section">
         <form id="send-code-form" method="POST" action="/route-auth/send-code">
-          <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+          <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
           <input type="hidden" name="route" value="{{ domain }}">
           <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -248,7 +248,7 @@
         <div class="info-text" id="code-info-text"></div>
 
         <form id="verify-form" method="POST" action="/route-auth/verify-code">
-          <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+          <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
           <input type="hidden" name="route" value="{{ domain }}">
           <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -298,7 +298,7 @@
       <div class="form-error" id="form-error"></div>
 
       <form id="verify-form" method="POST" action="/route-auth/verify-code">
-        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <input type="hidden" name="_csrf" value="{{ routeCsrfToken }}">
         <input type="hidden" name="route" value="{{ domain }}">
         <input type="hidden" name="redirect" value="{{ redirect }}">
 

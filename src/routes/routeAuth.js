@@ -110,7 +110,7 @@ router.get('/login', (req, res) => {
       twoFactorMethod: authConfig?.two_factor_method || null,
       is2faStep2: twoFactorPending,
       maskedEmail: authConfig ? maskEmail(authConfig.email) : '',
-      csrfToken,
+      routeCsrfToken: csrfToken,
     });
   })().catch((err) => res.status(500).send(err.message));
 });
