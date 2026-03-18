@@ -312,7 +312,7 @@
       btnLoading(btnSmtpTest);
       resultEl.style.display = 'none';
       try {
-        var data = await api.post('/api/smtp/test', { to: email });
+        var data = await api.post('/api/smtp/test', { email: email });
         if (data.ok) {
           resultEl.textContent = 'Test email sent to ' + email;
           resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--green-bg);color:var(--green)';
