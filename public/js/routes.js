@@ -83,11 +83,32 @@
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Backend HTTPS</span>'
         : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
-        ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Auth</span>'
+        ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
         : '';
-      const routeAuthTag = r.route_auth_enabled && r.route_type !== 'l4'
-        ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Route Auth</span>'
-        : '';
+      let routeAuthTags = '';
+      if (r.route_auth_enabled && r.route_type !== 'l4') {
+        // Auth method badge
+        const methodLabels = { email_password: 'Email & Passwort', email_code: 'Email & Code', totp: 'TOTP' };
+        const methodLabel = methodLabels[r.route_auth_type] || r.route_auth_type;
+        routeAuthTags += '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> ' + escapeHtml(methodLabel) + '</span>';
+        // 2FA badge
+        if (r.route_auth_2fa) {
+          const tfaMethodLabels = { email_code: 'Email Code', totp: 'TOTP' };
+          const tfaLabel = tfaMethodLabels[r.route_auth_2fa_method] || '';
+          routeAuthTags += '<span class="tag tag-amber" style="margin-left:4px">2FA' + (tfaLabel ? ': ' + escapeHtml(tfaLabel) : '') + '</span>';
+        }
+        // Session duration badge
+        if (r.route_auth_session_max_age) {
+          const ms = r.route_auth_session_max_age;
+          let durLabel;
+          if (ms <= 3600000) durLabel = '1h';
+          else if (ms <= 43200000) durLabel = '12h';
+          else if (ms <= 86400000) durLabel = '24h';
+          else if (ms <= 604800000) durLabel = '7d';
+          else durLabel = '30d';
+          routeAuthTags += '<span class="tag tag-grey" style="margin-left:4px">Session: ' + durLabel + '</span>';
+        }
+      }
       let l4Tags = '';
       if (r.route_type === 'l4') {
         const protoTag = r.l4_protocol === 'udp' ? 'UDP' : 'TCP';
@@ -112,7 +133,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTag}${l4Tags}
+          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
