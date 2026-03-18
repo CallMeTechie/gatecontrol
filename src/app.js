@@ -53,6 +53,12 @@ function createApp() {
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   }));
 
+  // ─── Route Auth (public, before session/csrf) ──────
+  // Must be mounted before session middleware to avoid
+  // admin CSRF token conflicts with route-auth CSRF
+  const routeAuthRoutes = require('./routes/routeAuth');
+  app.use('/route-auth', routeAuthRoutes);
+
   // ─── Sessions ────────────────────────────────────
   const store = new SQLiteStore();
   app.use(session({

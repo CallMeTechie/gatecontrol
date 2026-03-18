@@ -8,9 +8,6 @@ const config = require('../../config/default');
 
 const router = Router();
 
-// ─── Route auth (public, before admin auth) ────────
-router.use('/route-auth', require('./routeAuth'));
-
 // ─── Auth routes (public) ──────────────────────────
 const authRoutes = require('./auth');
 router.get('/login', guestOnly, authRoutes.loginPage);
