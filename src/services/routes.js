@@ -5,6 +5,7 @@ const config = require('../../config/default');
 const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
+const { getAuthForRoute } = require('./routeAuth');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
@@ -95,10 +96,81 @@ function buildCaddyConfig() {
       });
     }
 
-    caddyRoutes[route.domain] = {
-      listen: route.https_enabled ? [':443'] : [':80'],
-      routes: [routeConfig],
-    };
+    // Route Auth (forward auth) — mutually exclusive with basic auth
+    const routeAuthConfig = !route.basic_auth_enabled ? getAuthForRoute(route.id) : null;
+
+    if (routeAuthConfig) {
+      // Route 1: /route-auth/* and static assets → proxy to GateControl (no auth check)
+      const routeAuthProxy = {
+        match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*'] }],
+        handle: [{
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: '127.0.0.1:3000' }],
+        }],
+      };
+
+      // Route 2: Everything else → auth check via cookie, then proxy to backend
+      // Uses Caddy's authentication handler pattern:
+      // 1. Check session cookie via a subrequest
+      // 2. If valid → strip Auth header + proxy to backend
+      // 3. If invalid → redirect to login page
+      //
+      // Since Caddy's reverse_proxy handle_response consumes the body,
+      // we use a different approach: check the cookie directly in an
+      // intercept handler, and only proxy if authenticated.
+      //
+      // Actually, we use Caddy's forward_auth which is a reverse_proxy
+      // that buffers the request body and replays it to the upstream.
+      // The key is setting `buffer_requests: true`.
+      // Forward auth subrequest — mirrors Caddy's forward_auth directive output:
+      // - Rewrites to GET (preserves original request body for backend)
+      // - On 2xx: sets vars and continues to next handler (backend proxy)
+      // - On non-2xx: redirects to login page
+      const forwardAuthSubrequest = {
+        handler: 'reverse_proxy',
+        upstreams: [{ dial: '127.0.0.1:3000' }],
+        rewrite: { method: 'GET', uri: '/route-auth/verify' },
+        headers: {
+          request: {
+            set: {
+              'X-Route-Domain': [route.domain],
+              'X-Forwarded-Method': ['{http.request.method}'],
+              'X-Forwarded-Uri': ['{http.request.uri}'],
+            },
+          },
+        },
+        handle_response: [
+          {
+            match: { status_code: [2] },
+            routes: [{ handle: [{ handler: 'vars' }] }],
+          },
+          {
+            routes: [{
+              handle: [{
+                handler: 'static_response',
+                status_code: 302,
+                headers: {
+                  'Location': [`/route-auth/login?route=${route.domain}&redirect={http.request.uri}`],
+                },
+              }],
+            }],
+          },
+        ],
+      };
+
+      // The main route: auth subrequest → proxy to backend
+      routeConfig.handle = [forwardAuthSubrequest, reverseProxy];
+
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [routeAuthProxy, routeConfig],
+      };
+    } else {
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [routeConfig],
+      };
+    }
 
   }
 
@@ -169,11 +241,24 @@ function buildCaddyConfig() {
   // Group routes into a single server
   const serverRoutes = [];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
-    serverRoutes.push({
-      match: [{ host: [domain] }],
-      handle: srvConfig.routes[0].handle,
-      terminal: true,
-    });
+    if (srvConfig.routes.length === 1) {
+      // Simple case: single route — inline handles directly
+      serverRoutes.push({
+        match: [{ host: [domain] }],
+        handle: srvConfig.routes[0].handle,
+        terminal: true,
+      });
+    } else {
+      // Multiple sub-routes (e.g. forward auth): wrap in a subroute handler
+      serverRoutes.push({
+        match: [{ host: [domain] }],
+        handle: [{
+          handler: 'subroute',
+          routes: srvConfig.routes,
+        }],
+        terminal: true,
+      });
+    }
   }
 
   if (serverRoutes.length > 0) {
@@ -232,7 +317,13 @@ async function syncToCaddy() {
  */
 function getAll({ limit = 250, offset = 0, type = null } = {}) {
   const db = getDb();
-  let query = 'SELECT r.*, p.name as peer_name, p.enabled as peer_enabled FROM routes r LEFT JOIN peers p ON r.peer_id = p.id';
+  let query = `SELECT r.*, p.name as peer_name, p.enabled as peer_enabled,
+    ra.auth_type as route_auth_type, ra.two_factor_enabled as route_auth_2fa,
+    ra.two_factor_method as route_auth_2fa_method, ra.session_max_age as route_auth_session_max_age,
+    CASE WHEN ra.id IS NOT NULL THEN 1 ELSE 0 END as route_auth_enabled
+    FROM routes r
+    LEFT JOIN peers p ON r.peer_id = p.id
+    LEFT JOIN route_auth ra ON ra.route_id = r.id`;
   const params = [];
   if (type) {
     query += ' WHERE r.route_type = ?';

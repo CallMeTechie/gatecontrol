@@ -8,6 +8,7 @@ const { seedAdminUser } = require('./db/seed');
 const { createApp } = require('./app');
 const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
+const { startSessionCleanup } = require('./services/routeAuth');
 const activity = require('./services/activity');
 
 let server;
@@ -49,6 +50,7 @@ async function start() {
     // Start background tasks
     startCollector(60000);  // Traffic snapshots every 60s
     startPoller(30000);     // Peer status every 30s
+    startSessionCleanup();  // Route auth session cleanup every 15 min
 
     // Periodic cleanup (every 6 hours)
     setInterval(() => {

@@ -24,4 +24,26 @@ const apiLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter };
+const routeAuthLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many login attempts. Try again later.' });
+  },
+});
+
+const routeAuthCodeLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => req.body?.email || req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many code requests. Try again later.' });
+  },
+});
+
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter };

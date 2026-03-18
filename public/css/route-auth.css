@@ -1,0 +1,380 @@
+/* ─── Variables ─────────────────────────────────────────── */
+:root {
+  --bg-base:    #f2f0eb;
+  --bg-panel:   #ffffff;
+  --bg-input:   #f8f7f3;
+  --border:     #e4e0d6;
+  --border-hi:  #c8c3b5;
+  --shadow:     0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --text-1:     #1c1917;
+  --text-2:     #6b6460;
+  --text-3:     #a8a099;
+  --accent:     #0a6e4f;
+  --accent-lt:  #0a6e4f12;
+  --red:        #dc2626;
+  --red-lt:     #dc262614;
+  --red-bd:     #dc262630;
+  --font-ui:    'Outfit', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --radius:     10px;
+  --radius-sm:  6px;
+}
+
+/* ─── Reset & Base ──────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; -webkit-font-smoothing: antialiased; }
+body {
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ─── Login Card ────────────────────────────────────────── */
+.login-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* ─── Logo ──────────────────────────────────────────────── */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.logo-icon {
+  width: 30px;
+  height: 30px;
+  background: var(--accent);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.logo-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.logo-wordmark {
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--text-1);
+  line-height: 1;
+}
+
+/* ─── Header ────────────────────────────────────────────── */
+.card-header {
+  margin-bottom: 24px;
+}
+.card-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+}
+.card-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--text-1);
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+.card-subtitle {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+/* ─── Domain Badge ──────────────────────────────────────── */
+.domain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-lt);
+  border: 1px solid rgba(10,110,79,0.15);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+.domain-badge svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+/* ─── Form Groups ───────────────────────────────────────── */
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+.form-input {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text-1);
+  outline: none;
+  transition: border-color 0.13s, box-shadow 0.13s;
+  -webkit-appearance: none;
+}
+.form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(10,110,79,0.1);
+  background: var(--bg-panel);
+}
+.form-input::placeholder {
+  color: var(--text-3);
+}
+
+/* ─── Error ─────────────────────────────────────────────── */
+.form-error {
+  display: none;
+  background: var(--red-lt);
+  border: 1px solid var(--red-bd);
+  color: var(--red);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+.form-error.visible {
+  display: block;
+}
+.error-card {
+  background: var(--red-lt);
+  border: 1px solid var(--red-bd);
+  color: var(--red);
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
+/* ─── Buttons ───────────────────────────────────────────── */
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 11px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.13s;
+  box-shadow: 0 1px 3px rgba(10,110,79,0.3), 0 1px 1px rgba(10,110,79,0.2);
+  margin-top: 4px;
+}
+.btn-primary:hover {
+  background: #085f43;
+  box-shadow: 0 3px 10px rgba(10,110,79,0.3);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.btn-primary.is-loading {
+  pointer-events: none;
+  opacity: 0.65;
+}
+.btn-primary.is-loading::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin 0.5s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* ─── Step Indicator ────────────────────────────────────── */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-hi);
+  transition: all 0.2s;
+}
+.step-dot.done {
+  background: var(--accent);
+  opacity: 0.4;
+}
+.step-dot.active {
+  background: var(--accent);
+  width: 20px;
+  border-radius: 4px;
+}
+.step-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  max-width: 20px;
+}
+
+/* ─── Code Inputs ───────────────────────────────────────── */
+.code-inputs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.code-inputs input {
+  flex: 1;
+  width: 44px;
+  height: 52px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-1);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.13s, box-shadow 0.13s;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  padding: 0;
+}
+.code-inputs input::-webkit-outer-spin-button,
+.code-inputs input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.code-inputs input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(10,110,79,0.1);
+  background: var(--bg-panel);
+}
+.code-inputs input.filled {
+  border-color: var(--accent);
+}
+
+/* ─── Info Text ─────────────────────────────────────────── */
+.info-text {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.info-text strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* ─── Lock Icon ─────────────────────────────────────────── */
+.lock-icon {
+  width: 44px;
+  height: 44px;
+  background: var(--accent-lt);
+  border: 1px solid rgba(10,110,79,0.15);
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  color: var(--accent);
+}
+.lock-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ─── Links / Actions ───────────────────────────────────── */
+.link-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.text-link {
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: var(--font-ui);
+  padding: 0;
+  transition: color 0.13s;
+}
+.text-link:hover {
+  color: var(--accent);
+}
+.link-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+/* ─── Footer ────────────────────────────────────────────── */
+.page-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.05em;
+}
+
+/* ─── Responsive ────────────────────────────────────────── */
+@media (max-width: 600px) {
+  body {
+    padding: 16px 12px;
+    justify-content: flex-start;
+    padding-top: 40px;
+  }
+  .login-card {
+    padding: 28px 20px;
+  }
+  .code-inputs input {
+    height: 46px;
+    font-size: 18px;
+  }
+}

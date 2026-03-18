@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const path = require('node:path');
 const helmet = require('helmet');
 const session = require('express-session');
@@ -43,6 +44,7 @@ function createApp() {
   // ─── Body parsing ────────────────────────────────
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+  app.use(cookieParser());
 
   // ─── Static files (webroot) ──────────────────────
   const publicDir = path.join(__dirname, '..', 'public');
@@ -50,6 +52,12 @@ function createApp() {
     dotfiles: 'deny',
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   }));
+
+  // ─── Route Auth (public, before session/csrf) ──────
+  // Must be mounted before session middleware to avoid
+  // admin CSRF token conflicts with route-auth CSRF
+  const routeAuthRoutes = require('./routes/routeAuth');
+  app.use('/route-auth', routeAuthRoutes);
 
   // ─── Sessions ────────────────────────────────────
   const store = new SQLiteStore();

@@ -231,6 +231,104 @@
     }
   });
 
+  // ─── SMTP ───────────────────────────────────────────────
+  // Load SMTP settings
+  api.get('/api/smtp/settings').then(function(data) {
+    if (data.ok && data.data) {
+      document.getElementById('smtp-host').value = data.data.host || '';
+      document.getElementById('smtp-port').value = data.data.port || '';
+      document.getElementById('smtp-user').value = data.data.user || '';
+      document.getElementById('smtp-from').value = data.data.from || '';
+      var tlsToggle = document.getElementById('smtp-tls');
+      if (data.data.secure) tlsToggle.classList.add('on');
+      else tlsToggle.classList.remove('on');
+      if (data.data.hasPassword) {
+        var hint = document.getElementById('smtp-password-hint');
+        hint.textContent = 'Password is set';
+        hint.style.display = '';
+      }
+    }
+  }).catch(function(err) {
+    console.error('Failed to load SMTP settings:', err);
+  });
+
+  // TLS toggle
+  var smtpTlsToggle = document.getElementById('smtp-tls');
+  if (smtpTlsToggle) {
+    smtpTlsToggle.addEventListener('click', function() {
+      smtpTlsToggle.classList.toggle('on');
+    });
+  }
+
+  // Save SMTP settings
+  var btnSmtpSave = document.getElementById('btn-smtp-save');
+  if (btnSmtpSave) {
+    btnSmtpSave.addEventListener('click', async function() {
+      btnLoading(btnSmtpSave);
+      try {
+        var payload = {
+          host: document.getElementById('smtp-host').value,
+          port: document.getElementById('smtp-port').value,
+          user: document.getElementById('smtp-user').value,
+          from: document.getElementById('smtp-from').value,
+          secure: document.getElementById('smtp-tls').classList.contains('on'),
+        };
+        var pw = document.getElementById('smtp-password').value;
+        if (pw) payload.password = pw;
+        var data = await api.put('/api/smtp/settings', payload);
+        if (data.ok) {
+          if (pw) {
+            var hint = document.getElementById('smtp-password-hint');
+            hint.textContent = 'Password is set';
+            hint.style.display = '';
+            document.getElementById('smtp-password').value = '';
+          }
+          showMessage('smtp-test-result', 'SMTP settings saved', 'success');
+          document.getElementById('smtp-test-result').style.display = '';
+        } else {
+          showMessage('smtp-test-result', data.error || 'Failed to save SMTP settings', 'error');
+          document.getElementById('smtp-test-result').style.display = '';
+        }
+      } catch (err) {
+        showMessage('smtp-test-result', err.message, 'error');
+        document.getElementById('smtp-test-result').style.display = '';
+      } finally {
+        btnReset(btnSmtpSave);
+      }
+    });
+  }
+
+  // Test SMTP
+  var btnSmtpTest = document.getElementById('btn-smtp-test');
+  if (btnSmtpTest) {
+    btnSmtpTest.addEventListener('click', async function() {
+      var email = document.getElementById('smtp-test-email').value.trim();
+      var resultEl = document.getElementById('smtp-test-result');
+      if (!email) {
+        resultEl.textContent = 'Email address is required';
+        resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
+        return;
+      }
+      btnLoading(btnSmtpTest);
+      resultEl.style.display = 'none';
+      try {
+        var data = await api.post('/api/smtp/test', { email: email });
+        if (data.ok) {
+          resultEl.textContent = 'Test email sent to ' + email;
+          resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--green-bg);color:var(--green)';
+        } else {
+          resultEl.textContent = data.error || 'Test failed';
+          resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
+        }
+      } catch (err) {
+        resultEl.textContent = err.message;
+        resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
+      } finally {
+        btnReset(btnSmtpTest);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
 })();

@@ -201,6 +201,50 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_routes_enabled_domain ON routes(enabled, domain);
   `);
 
+  // Migration: Route Auth tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS route_auth (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id INTEGER NOT NULL UNIQUE,
+      auth_type TEXT NOT NULL,
+      two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+      two_factor_method TEXT,
+      email TEXT,
+      password_hash TEXT,
+      totp_secret_encrypted TEXT,
+      session_max_age INTEGER NOT NULL DEFAULT 86400000,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_auth_route_id ON route_auth(route_id);
+
+    CREATE TABLE IF NOT EXISTS route_auth_sessions (
+      id TEXT PRIMARY KEY,
+      route_id INTEGER NOT NULL,
+      email TEXT NOT NULL,
+      ip_address TEXT,
+      two_factor_pending INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_auth_sessions_expires ON route_auth_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_route_auth_sessions_route_pending ON route_auth_sessions(route_id, two_factor_pending);
+
+    CREATE TABLE IF NOT EXISTS route_auth_otp (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id INTEGER NOT NULL,
+      code_hash TEXT NOT NULL,
+      email TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_auth_otp_route_email ON route_auth_otp(route_id, email);
+  `);
+
   logger.info('Database migrations completed');
 }
 

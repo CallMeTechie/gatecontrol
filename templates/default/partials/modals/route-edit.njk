@@ -75,14 +75,20 @@
           </div>
           <div class="toggle" id="edit-route-backend-https"></div>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.basic_auth') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.basic_auth_desc') }}</div>
+
+        <!-- Auth type selection -->
+        <div class="form-group">
+          <label class="form-label">{{ t('route_auth.auth_type') }}</label>
+          <div class="toggle-group" id="edit-auth-type-group">
+            <button type="button" class="toggle-btn on" data-value="none">{{ t('route_auth.auth_none') }}</button>
+            <button type="button" class="toggle-btn" data-value="basic">{{ t('route_auth.auth_basic') }}</button>
+            <button type="button" class="toggle-btn" data-value="route">{{ t('route_auth.auth_route') }}</button>
           </div>
-          <div class="toggle" id="edit-route-auth"></div>
+          <input type="hidden" id="edit-auth-type" value="none">
         </div>
-        <div id="edit-auth-fields" style="display:none;margin-bottom:14px">
+
+        <!-- Basic Auth fields -->
+        <div id="edit-basic-auth-fields" style="display:none;margin-bottom:14px">
           <div class="form-group">
             <label class="form-label">{{ t('routes.basic_auth_user') or 'Username' }}</label>
             <input type="text" id="edit-route-auth-user" placeholder="admin" autocomplete="off" maxlength="64">
@@ -90,6 +96,124 @@
           <div class="form-group">
             <label class="form-label">{{ t('routes.basic_auth_password') or 'Password' }}</label>
             <input type="password" id="edit-route-auth-pass" placeholder="{{ t('routes.basic_auth_password_hint') or 'Leave empty to keep current' }}" autocomplete="new-password" maxlength="128">
+          </div>
+        </div>
+
+        <!-- Route Auth fields -->
+        <div id="edit-route-auth-fields" style="display:none">
+          <input type="hidden" id="edit-ra-method" value="email_password">
+
+          <!-- ═══ Single Factor view (shown when 2FA is OFF) ═══ -->
+          <div id="edit-ra-single-factor">
+            <div class="form-group">
+              <label class="form-label">{{ t('route_auth.method') }}</label>
+              <div class="toggle-group" id="edit-ra-method-group" style="width:100%">
+                <button type="button" class="toggle-btn on" data-value="email_password" style="flex:1">{{ t('route_auth.method_email_password') }}</button>
+                <button type="button" class="toggle-btn" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+              </div>
+            </div>
+
+            <!-- Single factor fields (dynamic) -->
+            <div id="edit-ra-sf-email-group" class="form-group">
+              <label class="form-label">{{ t('route_auth.email') }}</label>
+              <input type="email" id="edit-ra-email" placeholder="name@example.com">
+            </div>
+            <div id="edit-ra-sf-password-group" class="form-group">
+              <label class="form-label">{{ t('route_auth.password') }}</label>
+              <input type="password" id="edit-ra-password" autocomplete="new-password">
+              <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+            </div>
+            <div id="edit-ra-sf-totp-group" style="display:none;margin-bottom:14px">
+              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+                <div style="font-size:13px;font-weight:600;margin-bottom:2px">{{ t('route_auth.totp_setup') }}</div>
+                <div style="font-size:11px;color:var(--text-3)">{{ t('route_auth.totp_scan_qr') }}</div>
+                <div id="edit-ra-totp-qr" style="margin:10px auto;display:none"></div>
+                <div id="edit-ra-totp-secret" style="font-family:var(--font-mono);font-size:12px;background:var(--bg-input);padding:6px 10px;border-radius:var(--radius-xs);border:1px solid var(--border);letter-spacing:2px;display:none;margin:6px auto;word-break:break-all"></div>
+                <button type="button" class="btn btn-primary" id="btn-ra-totp-generate" style="margin-top:8px">{{ t('route_auth.totp_generate') }}</button>
+                <div id="edit-ra-totp-verify" style="display:none;margin-top:10px">
+                  <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">{{ t('route_auth.totp_confirm_code') }}</div>
+                  <div style="display:flex;gap:8px">
+                    <input type="text" id="edit-ra-totp-code" placeholder="000000" style="flex:1;text-align:center;letter-spacing:4px;font-family:var(--font-mono)">
+                    <button type="button" class="btn btn-primary" id="btn-ra-totp-confirm" style="padding:8px 14px">{{ t('route_auth.totp_confirm') }}</button>
+                  </div>
+                  <div id="edit-ra-totp-status" style="font-size:11px;margin-top:6px;display:none"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ 2FA view (shown when 2FA is ON) ═══ -->
+          <div id="edit-ra-2fa-view" style="display:none">
+            <!-- Factor 1: Email & Password -->
+            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+              <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
+              <div class="form-group">
+                <label class="form-label">{{ t('route_auth.email') }}</label>
+                <input type="email" id="edit-ra-2fa-email" placeholder="name@example.com">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">{{ t('route_auth.password') }}</label>
+                <input type="password" id="edit-ra-2fa-password" autocomplete="new-password">
+                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+              </div>
+            </div>
+
+            <!-- Factor 2: Method selection -->
+            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+              <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px" id="edit-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
+              <div class="form-group">
+                <div class="toggle-group" id="edit-ra-2fa-method-group" style="width:100%">
+                  <button type="button" class="toggle-btn on" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                  <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+                </div>
+              </div>
+
+              <!-- Email Code hint -->
+              <div id="edit-ra-2fa-email-hint" style="font-size:11px;color:var(--text-3);padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-xs)">
+                {{ t('route_auth.code_sent_to_same_email') }}
+              </div>
+
+              <!-- TOTP setup for 2FA -->
+              <div id="edit-ra-2fa-totp-group" style="display:none">
+                <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">{{ t('route_auth.totp_setup') }}</div>
+                  <div style="font-size:11px;color:var(--text-3)">{{ t('route_auth.totp_scan_qr') }}</div>
+                  <div id="edit-ra-2fa-totp-qr" style="margin:10px auto;display:none"></div>
+                  <div id="edit-ra-2fa-totp-secret" style="font-family:var(--font-mono);font-size:12px;background:var(--bg-input);padding:6px 10px;border-radius:var(--radius-xs);border:1px solid var(--border);letter-spacing:2px;display:none;margin:6px auto;word-break:break-all"></div>
+                  <button type="button" class="btn btn-primary" id="btn-ra-2fa-totp-generate" style="margin-top:8px">{{ t('route_auth.totp_generate') }}</button>
+                  <div id="edit-ra-2fa-totp-verify" style="display:none;margin-top:10px">
+                    <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">{{ t('route_auth.totp_confirm_code') }}</div>
+                    <div style="display:flex;gap:8px">
+                      <input type="text" id="edit-ra-2fa-totp-code" placeholder="000000" style="flex:1;text-align:center;letter-spacing:4px;font-family:var(--font-mono)">
+                      <button type="button" class="btn btn-primary" id="btn-ra-2fa-totp-confirm" style="padding:8px 14px">{{ t('route_auth.totp_confirm') }}</button>
+                    </div>
+                    <div id="edit-ra-2fa-totp-status" style="font-size:11px;margin-top:6px;display:none"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ 2FA toggle (always visible) ═══ -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.two_factor_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-ra-2fa" data-managed="true"></div>
+          </div>
+
+          <!-- Session duration -->
+          <div class="form-group">
+            <label class="form-label">{{ t('route_auth.session_duration') }}</label>
+            <select id="edit-ra-session-duration" class="form-select">
+              <option value="3600000">{{ t('route_auth.session_1h') }}</option>
+              <option value="43200000">{{ t('route_auth.session_12h') }}</option>
+              <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
+              <option value="604800000">{{ t('route_auth.session_7d') }}</option>
+              <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
+            </select>
           </div>
         </div>
       </div>

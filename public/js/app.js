@@ -2,6 +2,7 @@
 
 // ─── Toggle switches ────────────────────────────────────
 document.querySelectorAll('.toggle').forEach(t => {
+  if (t.dataset.managed) return; // Skip toggles managed by specific JS (e.g. route auth)
   t.addEventListener('click', () => t.classList.toggle('on'));
 });
 
