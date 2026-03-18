@@ -22,6 +22,7 @@ const pages = [
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
   { path: '/routes', template: 'routes', titleKey: 'nav.routes' },
   { path: '/config', template: 'config', titleKey: 'nav.wg_config' },
+  { path: '/caddy-config', template: 'caddy-config', titleKey: 'nav.caddy_config' },
   { path: '/certificates', template: 'certificates', titleKey: 'nav.certificates' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },

@@ -6,6 +6,7 @@
   "nav.wg_config": "WG Konfiguration",
   "nav.routing": "Routing",
   "nav.routes": "Subdomains / Routen",
+  "nav.caddy_config": "Caddy Konfiguration",
   "nav.certificates": "SSL / Zertifikate",
   "nav.system": "System",
   "nav.logs": "Logs & Monitoring",
@@ -390,5 +391,9 @@
   "route_auth.smtp_invalid_port": "Ungültige Portnummer",
   "route_auth.smtp_save": "Speichern",
   "route_auth.badge_route_auth": "Route Auth",
-  "route_auth.email_password_is_factor_1": "Email & Passwort ist bei 2FA immer Faktor 1"
+  "route_auth.email_password_is_factor_1": "Email & Passwort ist bei 2FA immer Faktor 1",
+
+  "caddy_config.subtitle": "Live Caddy Reverse-Proxy Konfiguration (JSON)",
+  "caddy_config.live_config": "Live Konfiguration",
+  "caddy_config.export": "JSON exportieren"
 }

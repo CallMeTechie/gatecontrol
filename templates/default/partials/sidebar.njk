@@ -22,6 +22,10 @@
     {{ t('nav.routes') }}
     <span class="nav-badge" id="route-count-badge">{{ routeCount or 0 }}</span>
   </a>
+  <a href="/caddy-config" class="nav-item {{ 'active' if activeNav == 'caddy-config' }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+    {{ t('nav.caddy_config') }}
+  </a>
   <a href="/certificates" class="nav-item {{ 'active' if activeNav == 'certificates' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     {{ t('nav.certificates') }}
