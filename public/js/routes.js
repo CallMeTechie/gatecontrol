@@ -503,6 +503,9 @@
 
     document.getElementById('edit-route-id').value = id;
     document.getElementById('edit-route-domain').value = route.domain || '';
+    // Reset DNS hint on modal open
+    const editDnsHintEl = document.getElementById('edit-route-dns-hint');
+    if (editDnsHintEl) editDnsHintEl.style.display = 'none';
     document.getElementById('edit-route-desc').value = route.description || '';
     document.getElementById('edit-route-port').value = route.target_port || '';
 
@@ -990,6 +993,64 @@
   }
   setupPortAutofill('route-port', 'l4-listen-port');
   setupPortAutofill('edit-route-port', 'edit-l4-listen-port');
+
+  // ─── DNS check ──────────────────────────────────────────
+  async function checkDns(domain, hintEl, inputEl) {
+    if (!domain || !hintEl || !inputEl) return;
+    const routeTypeId = inputEl.id === 'create-route-domain' ? 'route-type' : 'edit-route-type';
+    const routeType = document.getElementById(routeTypeId)?.value || 'http';
+    if (routeType === 'l4') {
+      hintEl.style.display = 'none';
+      return;
+    }
+    const checking = inputEl.dataset.dnsChecking || 'Checking DNS...';
+    const okMsg = inputEl.dataset.dnsOk || 'DNS OK';
+    const warnTpl = inputEl.dataset.dnsWarning || 'Domain does not point to this server (expected: {{ip}})';
+    hintEl.textContent = checking;
+    hintEl.style.color = 'var(--text-3)';
+    hintEl.style.display = '';
+    try {
+      const data = await api.post('/api/routes/check-dns', { domain });
+      if (!data || !data.ok) {
+        hintEl.style.display = 'none';
+        return;
+      }
+      if (data.resolves) {
+        hintEl.textContent = okMsg;
+        hintEl.style.color = 'var(--green, #4ade80)';
+      } else if (data.expected) {
+        hintEl.textContent = warnTpl.replace('{{ip}}', data.expected);
+        hintEl.style.color = 'var(--yellow, #facc15)';
+      } else {
+        hintEl.style.display = 'none';
+      }
+    } catch (_) {
+      hintEl.style.display = 'none';
+    }
+  }
+
+  // Attach DNS check blur handlers
+  (function setupDnsCheck() {
+    const createDomainInput = document.getElementById('create-route-domain');
+    const createDnsHint = document.getElementById('create-route-dns-hint');
+    if (createDomainInput && createDnsHint) {
+      createDomainInput.addEventListener('blur', function() {
+        const val = this.value.trim();
+        if (val) checkDns(val, createDnsHint, createDomainInput);
+        else createDnsHint.style.display = 'none';
+      });
+    }
+
+    const editDomainInput = document.getElementById('edit-route-domain');
+    const editDnsHint = document.getElementById('edit-route-dns-hint');
+    if (editDomainInput && editDnsHint) {
+      editDomainInput.addEventListener('blur', function() {
+        const val = this.value.trim();
+        if (val) checkDns(val, editDnsHint, editDomainInput);
+        else editDnsHint.style.display = 'none';
+      });
+    }
+  })();
 
   // ─── Initialize toggle groups ─────────────────────────
   setupToggleGroup('route-type-group', 'route-type');

@@ -8,7 +8,11 @@
       <input type="hidden" id="edit-route-id">
       <div class="form-group">
         <label class="form-label">{{ t('routes.domain') }}</label>
-        <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253">
+        <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253"
+          data-dns-checking="{{ t('routes.dns_checking') }}"
+          data-dns-ok="{{ t('routes.dns_ok') }}"
+          data-dns-warning="{{ t('routes.dns_warning') }}">
+        <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
       </div>
       <div class="form-group">
         <label class="form-label">{{ t('routes.description') or 'Description' }}</label>

@@ -48,7 +48,11 @@
         </div>
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.domain') }}</label>
-          <input type="text" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253">
+          <input type="text" id="create-route-domain" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253"
+            data-dns-checking="{{ t('routes.dns_checking') }}"
+            data-dns-ok="{{ t('routes.dns_ok') }}"
+            data-dns-warning="{{ t('routes.dns_warning') }}">
+          <small id="create-route-dns-hint" class="form-hint" style="display:none"></small>
         </div>
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.description') or 'Description' }}</label>

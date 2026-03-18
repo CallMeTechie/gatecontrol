@@ -1,10 +1,12 @@
 'use strict';
 
 const { Router } = require('express');
+const dns = require('dns').promises;
 const routes = require('../../services/routes');
 const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
+const config = require('../../config/default');
 
 const router = Router();
 
@@ -55,6 +57,58 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list routes');
     res.status(500).json({ ok: false, error: req.t('error.routes.list') });
+  }
+});
+
+// ─── Server public IP cache ──────────────────────────────
+let _cachedServerIp = null;
+
+function isPublicIp(str) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(str);
+}
+
+async function getServerIp() {
+  if (_cachedServerIp) return _cachedServerIp;
+  const wgHost = config.wireguard.host;
+  if (wgHost && isPublicIp(wgHost)) {
+    _cachedServerIp = wgHost;
+    return _cachedServerIp;
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch('https://api.ipify.org', { signal: controller.signal });
+    clearTimeout(timeout);
+    const ip = (await res.text()).trim();
+    if (isPublicIp(ip)) {
+      _cachedServerIp = ip;
+      return _cachedServerIp;
+    }
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
+/**
+ * POST /api/routes/check-dns — Check if domain resolves to server IP
+ */
+router.post('/check-dns', async (req, res) => {
+  const { domain } = req.body || {};
+  if (!domain || typeof domain !== 'string') {
+    return res.status(400).json({ ok: false, error: 'domain required' });
+  }
+  try {
+    const dnsTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('DNS timeout')), 2000)
+    );
+    const [serverIp, addresses] = await Promise.all([
+      getServerIp(),
+      Promise.race([dns.resolve4(domain), dnsTimeout]),
+    ]);
+    const resolves = serverIp ? addresses.includes(serverIp) : false;
+    return res.json({ ok: true, resolves, expected: serverIp, actual: addresses });
+  } catch (err) {
+    logger.debug({ error: err.message, domain }, 'DNS check failed');
+    return res.json({ ok: true, resolves: false, expected: null, actual: [] });
   }
 });
 
