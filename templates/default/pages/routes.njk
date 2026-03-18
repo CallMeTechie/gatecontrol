@@ -127,35 +127,71 @@
 
           <!-- Route Auth fields -->
           <div id="create-route-auth-fields" style="display:none;margin-bottom:14px">
-            <div class="form-group">
-              <label class="form-label">{{ t('route_auth.method') }}</label>
-              <div class="toggle-group" id="create-ra-method-group" style="width:100%">
-                <button type="button" class="toggle-btn on" data-value="email_password" style="flex:1">{{ t('route_auth.method_email_password') }}</button>
-                <button type="button" class="toggle-btn" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
-                <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+            <input type="hidden" id="create-ra-method" value="email_password">
+
+            <!-- ═══ Single Factor view ═══ -->
+            <div id="create-ra-single-factor">
+              <div class="form-group">
+                <label class="form-label">{{ t('route_auth.method') }}</label>
+                <div class="toggle-group" id="create-ra-method-group" style="width:100%">
+                  <button type="button" class="toggle-btn on" data-value="email_password" style="flex:1">{{ t('route_auth.method_email_password') }}</button>
+                  <button type="button" class="toggle-btn" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                  <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+                </div>
               </div>
-              <input type="hidden" id="create-ra-method" value="email_password">
-              <small class="form-hint" id="create-ra-method-hint" style="display:none">{{ t('route_auth.email_password_is_factor_1') }}</small>
-            </div>
 
-            <div class="form-group" id="create-ra-email-group">
-              <label class="form-label">{{ t('route_auth.email') }}</label>
-              <input type="email" id="create-ra-email" placeholder="name@example.com" style="width:100%">
-            </div>
-
-            <div class="form-group" id="create-ra-password-group">
-              <label class="form-label">{{ t('route_auth.password') }}</label>
-              <input type="password" id="create-ra-password" autocomplete="new-password" style="width:100%">
-              <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
-            </div>
-
-            <div id="create-ra-totp-group" style="display:none;margin-bottom:14px">
-              <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center">
-                {{ t('route_auth.totp_setup') }} — {{ t('route_auth.totp_scan_qr') }}<br>
-                <small style="color:var(--text-3)">TOTP kann nach dem Erstellen der Route eingerichtet werden.</small>
+              <div id="create-ra-sf-email-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.email') }}</label>
+                <input type="email" id="create-ra-email" placeholder="name@example.com" style="width:100%">
+              </div>
+              <div id="create-ra-sf-password-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.password') }}</label>
+                <input type="password" id="create-ra-password" autocomplete="new-password" style="width:100%">
+                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+              </div>
+              <div id="create-ra-sf-totp-group" style="display:none;margin-bottom:14px">
+                <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center">
+                  {{ t('route_auth.totp_setup') }} — TOTP kann nach dem Erstellen der Route eingerichtet werden.
+                </div>
               </div>
             </div>
 
+            <!-- ═══ 2FA view ═══ -->
+            <div id="create-ra-2fa-view" style="display:none">
+              <!-- Factor 1 -->
+              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
+                <div class="form-group">
+                  <label class="form-label">{{ t('route_auth.email') }}</label>
+                  <input type="email" id="create-ra-2fa-email" placeholder="name@example.com" style="width:100%">
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">{{ t('route_auth.password') }}</label>
+                  <input type="password" id="create-ra-2fa-password" autocomplete="new-password" style="width:100%">
+                  <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+                </div>
+              </div>
+              <!-- Factor 2 -->
+              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px" id="create-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
+                <div class="form-group">
+                  <div class="toggle-group" id="create-ra-2fa-method-group" style="width:100%">
+                    <button type="button" class="toggle-btn on" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                    <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+                  </div>
+                </div>
+                <div id="create-ra-2fa-email-hint" style="font-size:11px;color:var(--text-3);padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-xs)">
+                  {{ t('route_auth.code_sent_to_same_email') }}
+                </div>
+                <div id="create-ra-2fa-totp-group" style="display:none">
+                  <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;margin-top:8px">
+                    TOTP kann nach dem Erstellen der Route eingerichtet werden.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══ 2FA toggle ═══ -->
             <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
               <div>
                 <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
@@ -164,6 +200,7 @@
               <div class="toggle" id="create-ra-2fa" data-managed="true"></div>
             </div>
 
+            <!-- Session duration -->
             <div class="form-group">
               <label class="form-label">{{ t('route_auth.session_duration') }}</label>
               <select id="create-ra-session-duration" class="form-select" style="width:100%">

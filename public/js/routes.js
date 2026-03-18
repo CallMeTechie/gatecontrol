@@ -229,14 +229,22 @@
       if (data.ok) {
         // If Route Auth selected, configure it on the new route
         if (authType === 'route' && data.route && data.route.id) {
-          const raMethod = document.getElementById('create-ra-method')?.value || 'email_password';
-          const is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on') || false;
-          const raPayload = {
-            auth_type: is2fa ? (raMethod === 'email_password' ? 'email_code' : raMethod) : raMethod,
+          var raMethod = document.getElementById('create-ra-method')?.value || 'email_password';
+          var is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on') || false;
+          var raEmailVal, raPasswordVal;
+          if (is2fa) {
+            raEmailVal = document.getElementById('create-ra-2fa-email')?.value || null;
+            raPasswordVal = document.getElementById('create-ra-2fa-password')?.value || null;
+          } else {
+            raEmailVal = document.getElementById('create-ra-email')?.value || null;
+            raPasswordVal = document.getElementById('create-ra-password')?.value || null;
+          }
+          var raPayload = {
+            auth_type: is2fa ? 'email_password' : raMethod,
             two_factor_enabled: is2fa,
             two_factor_method: is2fa ? raMethod : null,
-            email: document.getElementById('create-ra-email')?.value || null,
-            password: document.getElementById('create-ra-password')?.value || null,
+            email: raEmailVal,
+            password: raPasswordVal,
             session_max_age: parseInt(document.getElementById('create-ra-session-duration')?.value || '86400000', 10),
           };
           try {
@@ -842,42 +850,83 @@
 
   // ─── Create form: Auth type toggle ──────────────────────
   function updateCreateAuthTypeUI() {
-    const authType = document.getElementById('create-auth-type')?.value || 'none';
-    const basicFields = document.getElementById('create-basic-auth-fields');
-    const routeAuthFields = document.getElementById('create-route-auth-fields');
+    var authType = document.getElementById('create-auth-type')?.value || 'none';
+    var basicFields = document.getElementById('create-basic-auth-fields');
+    var routeAuthFields = document.getElementById('create-route-auth-fields');
     if (basicFields) basicFields.style.display = authType === 'basic' ? 'block' : 'none';
     if (routeAuthFields) routeAuthFields.style.display = authType === 'route' ? 'block' : 'none';
     if (authType === 'route') updateCreateRouteAuthMethodUI();
   }
 
-  function updateCreateRouteAuthMethodUI() {
-    const method = document.getElementById('create-ra-method')?.value || 'email_password';
-    const is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on');
-    const emailGroup = document.getElementById('create-ra-email-group');
-    const passwordGroup = document.getElementById('create-ra-password-group');
-    const totpGroup = document.getElementById('create-ra-totp-group');
-    const methodHint = document.getElementById('create-ra-method-hint');
-
-    if (is2fa) {
-      if (emailGroup) emailGroup.style.display = 'block';
-      if (passwordGroup) passwordGroup.style.display = 'block';
-      if (totpGroup) totpGroup.style.display = method === 'totp' ? 'block' : 'none';
-      if (methodHint) methodHint.style.display = 'block';
+  function updateCreateSingleFactorUI(method) {
+    var emailGroup = document.getElementById('create-ra-sf-email-group');
+    var passwordGroup = document.getElementById('create-ra-sf-password-group');
+    var totpGroup = document.getElementById('create-ra-sf-totp-group');
+    if (method === 'totp') {
+      if (emailGroup) emailGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = '';
+    } else if (method === 'email_code') {
+      if (emailGroup) emailGroup.style.display = '';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = 'none';
     } else {
-      const needsEmail = method === 'email_password' || method === 'email_code';
-      const needsPassword = method === 'email_password';
-      if (emailGroup) emailGroup.style.display = needsEmail ? 'block' : 'none';
-      if (passwordGroup) passwordGroup.style.display = needsPassword ? 'block' : 'none';
-      if (totpGroup) totpGroup.style.display = method === 'totp' ? 'block' : 'none';
-      if (methodHint) methodHint.style.display = 'none';
+      if (emailGroup) emailGroup.style.display = '';
+      if (passwordGroup) passwordGroup.style.display = '';
+      if (totpGroup) totpGroup.style.display = 'none';
     }
   }
 
-  const createAuthTypeGroup = document.getElementById('create-auth-type-group');
+  function updateCreate2faMethodUI() {
+    var method = document.getElementById('create-ra-method')?.value || 'email_code';
+    var emailHint = document.getElementById('create-ra-2fa-email-hint');
+    var totpGroup = document.getElementById('create-ra-2fa-totp-group');
+    var label = document.getElementById('create-ra-2fa-factor2-label');
+    if (method === 'totp') {
+      if (emailHint) emailHint.style.display = 'none';
+      if (totpGroup) totpGroup.style.display = '';
+      if (label) label.textContent = label.dataset.totp || 'Factor 2 — TOTP';
+    } else {
+      if (emailHint) emailHint.style.display = '';
+      if (totpGroup) totpGroup.style.display = 'none';
+      if (label) label.textContent = label.dataset.email || 'Factor 2 — Email Code';
+    }
+  }
+
+  function updateCreateRouteAuthMethodUI() {
+    var is2fa = document.getElementById('create-ra-2fa')?.classList.contains('on') || false;
+    var singleView = document.getElementById('create-ra-single-factor');
+    var tfaView = document.getElementById('create-ra-2fa-view');
+    if (is2fa) {
+      if (singleView) singleView.style.display = 'none';
+      if (tfaView) tfaView.style.display = '';
+      // Sync email from single-factor to 2FA
+      var sfEmail = document.getElementById('create-ra-email');
+      var tfaEmail = document.getElementById('create-ra-2fa-email');
+      if (sfEmail && tfaEmail && !tfaEmail.value && sfEmail.value) tfaEmail.value = sfEmail.value;
+      var sfPass = document.getElementById('create-ra-password');
+      var tfaPass = document.getElementById('create-ra-2fa-password');
+      if (sfPass && tfaPass && !tfaPass.value && sfPass.value) tfaPass.value = sfPass.value;
+      updateCreate2faMethodUI();
+    } else {
+      if (singleView) singleView.style.display = '';
+      if (tfaView) tfaView.style.display = 'none';
+      var tfaEmail2 = document.getElementById('create-ra-2fa-email');
+      var sfEmail2 = document.getElementById('create-ra-email');
+      if (tfaEmail2 && sfEmail2 && !sfEmail2.value && tfaEmail2.value) sfEmail2.value = tfaEmail2.value;
+      var tfaPass2 = document.getElementById('create-ra-2fa-password');
+      var sfPass2 = document.getElementById('create-ra-password');
+      if (tfaPass2 && sfPass2 && !sfPass2.value && tfaPass2.value) sfPass2.value = tfaPass2.value;
+      updateCreateSingleFactorUI(document.getElementById('create-ra-method')?.value || 'email_password');
+    }
+  }
+
+  // Auth type toggle
+  var createAuthTypeGroup = document.getElementById('create-auth-type-group');
   if (createAuthTypeGroup) {
-    createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+    createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        createAuthTypeGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
         btn.classList.add('on');
         document.getElementById('create-auth-type').value = btn.dataset.value;
         updateCreateAuthTypeUI();
@@ -885,30 +934,43 @@
     });
   }
 
-  const createMethodGroup = document.getElementById('create-ra-method-group');
+  // Single-factor method toggle
+  var createMethodGroup = document.getElementById('create-ra-method-group');
   if (createMethodGroup) {
-    createMethodGroup.querySelectorAll('.toggle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        createMethodGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+    createMethodGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        createMethodGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
         btn.classList.add('on');
         document.getElementById('create-ra-method').value = btn.dataset.value;
-        updateCreateRouteAuthMethodUI();
+        updateCreateSingleFactorUI(btn.dataset.value);
       });
     });
   }
 
+  // 2FA Factor 2 method toggle
+  var create2faMethodGroup = document.getElementById('create-ra-2fa-method-group');
+  if (create2faMethodGroup) {
+    create2faMethodGroup.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        create2faMethodGroup.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
+        btn.classList.add('on');
+        document.getElementById('create-ra-method').value = btn.dataset.value;
+        updateCreate2faMethodUI();
+      });
+    });
+  }
+
+  // 2FA toggle
   document.getElementById('create-ra-2fa')?.addEventListener('click', function () {
     this.classList.toggle('on');
-    const is2fa = this.classList.contains('on');
-    const methodGroup = document.getElementById('create-ra-method-group');
-    if (is2fa && document.getElementById('create-ra-method').value === 'email_password') {
-      setToggleGroup('create-ra-method-group', 'create-ra-method', 'email_code');
-    }
-    if (methodGroup) {
-      const epBtn = methodGroup.querySelector('[data-value="email_password"]');
-      if (epBtn) {
-        epBtn.style.opacity = is2fa ? '0.4' : '1';
-        epBtn.style.pointerEvents = is2fa ? 'none' : 'auto';
+    var is2fa = this.classList.contains('on');
+    if (is2fa) {
+      var currentMethod = document.getElementById('create-ra-method')?.value || 'email_password';
+      if (currentMethod === 'email_password') {
+        document.getElementById('create-ra-method').value = 'email_code';
+        setToggleGroup('create-ra-2fa-method-group', 'create-ra-method', 'email_code');
+      } else {
+        setToggleGroup('create-ra-2fa-method-group', 'create-ra-method', currentMethod);
       }
     }
     updateCreateRouteAuthMethodUI();
