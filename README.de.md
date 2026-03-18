@@ -40,6 +40,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Domain-basiertes Reverse-Proxy-Routing mit Caddy
 - Automatisches HTTPS mit Let's-Encrypt-Zertifikaten — Zero-Configuration TLS
 - Optionale Basic-Authentifizierung pro Route
+- **Route-Authentifizierung** — Eigene Login-Seite pro Route mit mehreren Auth-Methoden: Email & Passwort, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optionale Zwei-Faktor-Authentifizierung (2FA) mit konfigurierbarer Session-Dauer.
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
@@ -74,8 +75,13 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - JSON-Payloads mit Ereignistyp, Nachricht, Details und Zeitstempel
 
 ### Internationalisierung
-- Vollständige englische und deutsche Sprachunterstützung (200+ Übersetzungsschlüssel)
+- Vollständige englische und deutsche Sprachunterstützung (400+ Übersetzungsschlüssel)
 - Umfasst alle UI-Elemente: Navigation, Formulare, Statusmeldungen, Fehlermeldungen, Dialoge
+
+### SMTP-Konfiguration
+- Integrierte SMTP-Einstellungen für den Versand von E-Mail-Verifizierungscodes
+- Konfigurierbar über die Weboberfläche (Host, Port, Benutzer, Passwort, Absender, TLS)
+- Test-E-Mail-Funktion zur Überprüfung der SMTP-Konfiguration
 
 ---
 
@@ -128,7 +134,7 @@ src/
 ├── app.js                 # Express-Setup, Sicherheits-Middleware, Template-Engine
 ├── db/
 │   ├── connection.js      # SQLite mit WAL-Modus und Performance-Pragmas
-│   ├── migrations.js      # Schema-Definition (8 Tabellen)
+│   ├── migrations.js      # Schema-Definition (11 Tabellen)
 │   └── seed.js            # Admin-Benutzer-Initialisierung beim ersten Start
 ├── services/              # Geschäftslogik-Schicht
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync
@@ -141,15 +147,20 @@ src/
 │   ├── accessLog.js       # HTTP-Zugriffsprotokoll-Verarbeitung
 │   ├── settings.js        # Key-Value Einstellungs-Persistenz
 │   ├── backup.js          # Vollständiges Backup/Restore mit atomaren Transaktionen
+│   ├── email.js           # SMTP E-Mail-Service (OTP-Versand, Test-Emails)
+│   ├── routeAuth.js       # Route-Authentifizierung (Sessions, OTP, TOTP, CSRF)
 │   ├── webhook.js         # Ereignisgesteuerte Webhook-Zustellung
 │   ├── qrcode.js          # QR-Code-Generierung für Peer-Konfigurationen
 │   └── system.js          # Systeminfo (CPU, RAM, Uptime, Festplatte)
 ├── routes/
 │   ├── index.js           # Seitenrouten (Dashboard, Peers, Routen, Logs, Einstellungen)
 │   ├── auth.js            # Login/Logout-Handler
+│   ├── routeAuth.js       # Öffentliche Route-Auth-Endpunkte (Verify, Login, Logout)
 │   └── api/               # RESTful API-Endpunkte
 │       ├── peers.js       # /api/peers — CRUD, Toggle, Sync, Config-Export
 │       ├── routes.js      # /api/routes — CRUD, Toggle
+│       ├── routeAuth.js   # /api/routes/:id/auth — Route-Auth-Konfigurations-CRUD
+│       ├── smtp.js        # /api/smtp — SMTP-Einstellungsverwaltung
 │       ├── dashboard.js   # /api/dashboard — Statistiken, Traffic, Charts
 │       ├── settings.js    # /api/settings — Abrufen/Setzen
 │       ├── logs.js        # /api/logs — Aktivitäts- + Zugriffslogs mit Filterung
@@ -217,6 +228,7 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 | **Authentifizierung** | Session-basiert mit Argon2-Passwort-Hashing |
 | **CSRF-Schutz** | Synchronizer-Token-Pattern via csrf-sync bei allen zustandsändernden Requests |
 | **Rate Limiting** | 5 Login-Versuche / 15 Min, 100 API-Requests / 15 Min pro IP (konfigurierbar) |
+| **Route-Authentifizierung** | Pro-Route-Auth mit Email+Passwort, OTP, TOTP, 2FA. HMAC-signierte CSRF-Tokens, Argon2-Passwort-Hashing, AES-256-GCM-verschlüsselte TOTP-Secrets |
 | **Sicherheits-Header** | Helmet.js mit strikter Content Security Policy, HSTS, X-Frame-Options |
 | **CSP-Nonces** | Pro Request `crypto.randomBytes(16)` Nonce für Inline-Scripts |
 | **Session-Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, konfigurierbares Max-Age |
@@ -410,11 +422,13 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 **Config** — Aktuelle WireGuard-Konfiguration anzeigen (privater Schlüssel maskiert).
 
+**Caddy Konfiguration** — Live-Caddy-Reverse-Proxy-JSON-Konfiguration mit Syntax-Highlighting anzeigen. Als JSON-Datei exportieren.
+
 **Zertifikate** — Von Caddy verwaltete SSL/TLS-Zertifikate anzeigen.
 
 **Logs** — Aktivitäts- und Zugriffsprotokolle mit Filterung nach Ereignistyp und Schweregrad durchsuchen.
 
-**Einstellungen** — Systemeinstellungen, Backup/Wiederherstellung und Webhook-Konfiguration.
+**Einstellungen** — Systemeinstellungen, SMTP-E-Mail-Konfiguration, Backup/Wiederherstellung und Webhook-Konfiguration.
 
 ### API
 
@@ -471,7 +485,9 @@ Aktiviere **Backend-HTTPS** auf der Route für Dienste, die selbstsignierte Zert
 | **Reverse Proxy** | Caddy (automatisches HTTPS) + caddy-l4 (TCP/UDP Proxy) |
 | **Template-Engine** | Nunjucks |
 | **Passwort-Hashing** | Argon2 (Admin), bcrypt (Route Basic Auth) |
+| **TOTP** | otpauth (RFC 6238) |
 | **Verschlüsselung** | AES-256-GCM (Node.js crypto) |
+| **E-Mail** | Nodemailer (SMTP) |
 | **Session-Speicher** | SQLite-gestützt |
 | **Sicherheit** | Helmet, csrf-sync, express-rate-limit |
 | **Logging** | Pino |

@@ -40,6 +40,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Domain-based reverse proxy routes powered by Caddy
 - Automatic HTTPS with Let's Encrypt certificates — zero-configuration TLS
 - Optional Basic Authentication per route
+- **Route Authentication** — Custom login page per route with multiple auth methods: Email & Password, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optional Two-Factor Authentication (2FA) with configurable session duration.
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
 - Atomic configuration sync to Caddy with automatic rollback on failure
@@ -74,8 +75,13 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - JSON payloads with event type, message, details, and timestamp
 
 ### Internationalization
-- Full English and German language support (200+ translation keys)
+- Full English and German language support (400+ translation keys)
 - Covers all UI elements: navigation, forms, status messages, error messages, dialogs
+
+### SMTP Configuration
+- Built-in SMTP settings for sending email verification codes
+- Configurable via web UI (host, port, user, password, sender, TLS)
+- Test email functionality to verify SMTP configuration
 
 ---
 
@@ -128,7 +134,7 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Schema definition (8 tables)
+│   ├── migrations.js      # Schema definition (11 tables)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
@@ -141,15 +147,20 @@ src/
 │   ├── accessLog.js       # HTTP access log processing
 │   ├── settings.js        # Key-value settings persistence
 │   ├── backup.js          # Full backup/restore with atomic transactions
+│   ├── email.js           # SMTP email service (OTP delivery, test emails)
+│   ├── routeAuth.js       # Route authentication (sessions, OTP, TOTP, CSRF)
 │   ├── webhook.js         # Event-driven webhook delivery
 │   ├── qrcode.js          # QR code generation for peer configs
 │   └── system.js          # System info (CPU, RAM, uptime, disk)
 ├── routes/
 │   ├── index.js           # Page routes (dashboard, peers, routes, logs, settings)
 │   ├── auth.js            # Login/logout handlers
+│   ├── routeAuth.js       # Public route auth endpoints (verify, login, logout)
 │   └── api/               # RESTful API endpoints
 │       ├── peers.js       # /api/peers — CRUD, toggle, sync, config export
 │       ├── routes.js      # /api/routes — CRUD, toggle
+│       ├── routeAuth.js   # /api/routes/:id/auth — route auth config CRUD
+│       ├── smtp.js        # /api/smtp — SMTP settings management
 │       ├── dashboard.js   # /api/dashboard — stats, traffic, charts
 │       ├── settings.js    # /api/settings — get/set
 │       ├── logs.js        # /api/logs — activity + access logs with filtering
@@ -217,6 +228,7 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 | **Authentication** | Session-based with Argon2 password hashing |
 | **CSRF Protection** | Synchronizer token pattern via csrf-sync on all state-changing requests |
 | **Rate Limiting** | 5 login attempts / 15 min, 100 API requests / 15 min per IP (configurable) |
+| **Route Authentication** | Per-route auth with Email+Password, OTP, TOTP, 2FA. HMAC-signed CSRF tokens, Argon2 password hashing, AES-256-GCM encrypted TOTP secrets |
 | **Security Headers** | Helmet.js with strict Content Security Policy, HSTS, X-Frame-Options |
 | **CSP Nonces** | Per-request `crypto.randomBytes(16)` nonce for inline scripts |
 | **Session Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, configurable max age |
@@ -410,11 +422,13 @@ After starting GateControl, navigate to your configured `GC_BASE_URL` and log in
 
 **Config** — View the current WireGuard configuration (private key masked).
 
+**Caddy Config** — View the live Caddy reverse proxy JSON configuration with syntax highlighting. Export as JSON file.
+
 **Certificates** — View SSL/TLS certificates managed by Caddy.
 
 **Logs** — Browse activity logs and access logs with filtering by event type and severity.
 
-**Settings** — System settings, backup/restore, and webhook configuration.
+**Settings** — System settings, SMTP email configuration, backup/restore, and webhook configuration.
 
 ### API
 
@@ -471,7 +485,9 @@ Enable **Backend HTTPS** on the route for services that use self-signed certific
 | **Reverse Proxy** | Caddy (automatic HTTPS) + caddy-l4 (TCP/UDP proxy) |
 | **Template Engine** | Nunjucks |
 | **Password Hashing** | Argon2 (admin), bcrypt (route basic auth) |
+| **TOTP** | otpauth (RFC 6238) |
 | **Encryption** | AES-256-GCM (Node.js crypto) |
+| **Email** | Nodemailer (SMTP) |
 | **Session Store** | SQLite-backed |
 | **Security** | Helmet, csrf-sync, express-rate-limit |
 | **Logging** | Pino |
