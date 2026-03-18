@@ -32,16 +32,21 @@ jobs:
       - name: Set image name and version from tag
         run: |
           echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
 
-      # ─── Sync package.json version with tag ─────────
+      # ─── Verify and sync package.json version ─────────
       - uses: actions/setup-node@v6
         with:
           node-version: 20
 
-      - name: Set package.json version from tag
-        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - name: Verify package.json version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::warning::package.json version ($PKG_VERSION) differs from tag ($VERSION). Syncing."
+          fi
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       # ─── GHCR: Build & Push ───────────────────────────
       - uses: docker/login-action@v4
