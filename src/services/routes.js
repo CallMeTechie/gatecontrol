@@ -131,6 +131,11 @@ function buildCaddyConfig() {
             routes: [{
               handle: [
                 { handler: 'rewrite', uri: '{http.vars.original_uri}' },
+                // Strip Authorization header to prevent cached Basic Auth from interfering with backend
+                {
+                  handler: 'headers',
+                  request: { delete: ['Authorization'] },
+                },
                 reverseProxy,
               ],
             }],
