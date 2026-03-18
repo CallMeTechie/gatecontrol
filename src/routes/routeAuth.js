@@ -237,7 +237,7 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
     const existingSession = sessionId ? getSession(sessionId) : null;
     const isTwoFactor = existingSession && existingSession.two_factor_pending;
 
-    const email = (existingSession && existingSession.email) || req.body.email;
+    const email = (existingSession && existingSession.email) || req.body.email || authConfig.email || 'anonymous';
 
     // Determine verification method
     let isValid = false;
