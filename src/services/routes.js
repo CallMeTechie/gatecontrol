@@ -109,6 +109,9 @@ function buildCaddyConfig() {
         }],
       };
 
+      // Forward auth: subrequest to /route-auth/verify.
+      // On 2xx → proxy to backend. On 401 → redirect to login.
+      // We save the original URI in a variable before rewrite.
       const forwardAuthHandler = {
         handler: 'reverse_proxy',
         upstreams: [{ dial: '127.0.0.1:3000' }],
@@ -118,29 +121,42 @@ function buildCaddyConfig() {
             set: {
               'X-Route-Domain': [route.domain],
               'X-Forwarded-Host': ['{http.request.host}'],
-              'X-Forwarded-Uri': ['{http.request.uri}'],
+              'X-Forwarded-Uri': ['{http.vars.original_uri}'],
             },
           },
         },
-        handle_response: [{
-          match: { status_code: [401] },
-          routes: [{
-            handle: [
-              {
-                handler: 'headers',
-                response: {
-                  set: {
-                    'Location': [`/route-auth/login?route=${route.domain}&redirect={http.request.uri}`],
-                  },
+        handle_response: [
+          {
+            match: { status_code: [2] },
+            routes: [{
+              handle: [
+                { handler: 'rewrite', uri: '{http.vars.original_uri}' },
+                reverseProxy,
+              ],
+            }],
+          },
+          {
+            routes: [{
+              handle: [{
+                handler: 'static_response',
+                status_code: 302,
+                headers: {
+                  'Location': [`/route-auth/login?route=${route.domain}&redirect={http.vars.original_uri}`],
                 },
-              },
-              { handler: 'static_response', status_code: 302 },
-            ],
-          }],
-        }],
+              }],
+            }],
+          },
+        ],
       };
 
-      routeConfig.handle.unshift(forwardAuthHandler);
+      // Save original URI before forward auth rewrites it
+      const saveOrigUri = {
+        handler: 'vars',
+        original_uri: '{http.request.uri}',
+      };
+
+      // Forward auth replaces the normal handlers
+      routeConfig.handle = [saveOrigUri, forwardAuthHandler];
 
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
