@@ -132,12 +132,14 @@ router.get('/login', (req, res) => {
 // POST /route-auth/login — email & password login
 router.post('/login', routeAuthLoginLimiter, (req, res) => {
   (async () => {
-    const { email, password, _csrf, redirect } = req.body;
+    const { email, password, _csrf, redirect } = req.body || {};
     const redirectTo = redirect || '/';
 
-    // CSRF double-submit check: body _csrf or X-CSRF-Token header vs cookie
+    // CSRF: verify HMAC-signed token from body or header
     const csrfToken = _csrf || req.headers['x-csrf-token'];
     if (!verifySignedCsrf(csrfToken)) {
+      const logger = require('../utils/logger');
+      logger.warn({ hasBody: !!req.body, csrfLen: csrfToken?.length, csrfStart: csrfToken?.substring(0, 12) }, 'CSRF failed');
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
