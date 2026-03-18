@@ -122,16 +122,19 @@ function buildCaddyConfig() {
       // Actually, we use Caddy's forward_auth which is a reverse_proxy
       // that buffers the request body and replays it to the upstream.
       // The key is setting `buffer_requests: true`.
+      // Forward auth subrequest — mirrors Caddy's forward_auth directive output:
+      // - Rewrites to GET (preserves original request body for backend)
+      // - On 2xx: sets vars and continues to next handler (backend proxy)
+      // - On non-2xx: redirects to login page
       const forwardAuthSubrequest = {
         handler: 'reverse_proxy',
         upstreams: [{ dial: '127.0.0.1:3000' }],
-        rewrite: { uri: '/route-auth/verify' },
-        buffer_requests: true,
+        rewrite: { method: 'GET', uri: '/route-auth/verify' },
         headers: {
           request: {
             set: {
               'X-Route-Domain': [route.domain],
-              'X-Forwarded-Host': ['{http.request.host}'],
+              'X-Forwarded-Method': ['{http.request.method}'],
               'X-Forwarded-Uri': ['{http.request.uri}'],
             },
           },
@@ -139,10 +142,9 @@ function buildCaddyConfig() {
         handle_response: [
           {
             match: { status_code: [2] },
-            routes: [],  // Empty routes = Caddy continues to next handler
+            routes: [{ handle: [{ handler: 'vars' }] }],
           },
           {
-            // Non-2xx → redirect to login
             routes: [{
               handle: [{
                 handler: 'static_response',
@@ -156,14 +158,8 @@ function buildCaddyConfig() {
         ],
       };
 
-      // Strip Authorization header + proxy to backend
-      const stripAuthAndProxy = {
-        handler: 'headers',
-        request: { delete: ['Authorization'] },
-      };
-
-      // The main route: auth subrequest → strip header → proxy to backend
-      routeConfig.handle = [forwardAuthSubrequest, stripAuthAndProxy, reverseProxy];
+      // The main route: auth subrequest → proxy to backend
+      routeConfig.handle = [forwardAuthSubrequest, reverseProxy];
 
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
