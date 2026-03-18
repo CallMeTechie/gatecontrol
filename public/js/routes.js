@@ -305,14 +305,23 @@
       if (methodHint) methodHint.style.display = 'none';
     }
 
-    if (method === 'totp') {
-      if (emailGroup) emailGroup.style.display = 'none';
-      if (passwordGroup) passwordGroup.style.display = 'none';
-      if (totpGroup) totpGroup.style.display = '';
-    } else {
+    if (is2fa) {
+      // 2FA: Email + Password are always visible (Factor 1)
+      // Method selection determines Factor 2
       if (emailGroup) emailGroup.style.display = '';
-      if (passwordGroup) passwordGroup.style.display = method === 'email_password' ? '' : 'none';
-      if (totpGroup) totpGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = '';
+      if (totpGroup) totpGroup.style.display = method === 'totp' ? '' : 'none';
+    } else {
+      // Single factor: show fields based on selected method
+      if (method === 'totp') {
+        if (emailGroup) emailGroup.style.display = 'none';
+        if (passwordGroup) passwordGroup.style.display = 'none';
+        if (totpGroup) totpGroup.style.display = '';
+      } else {
+        if (emailGroup) emailGroup.style.display = '';
+        if (passwordGroup) passwordGroup.style.display = method === 'email_password' ? '' : 'none';
+        if (totpGroup) totpGroup.style.display = 'none';
+      }
     }
   }
 
