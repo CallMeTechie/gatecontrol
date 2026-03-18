@@ -518,10 +518,10 @@
     // Load route auth config from API
     try {
       const authData = await api.get('/api/routes/' + id + '/auth');
-      if (authData.ok && authData.auth) {
+      if (authData.ok && authData.data) {
         // Route Auth is configured
         setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'route');
-        const auth = authData.auth;
+        const auth = authData.data;
         if (auth.two_factor_enabled) {
           if (ra2fa) ra2fa.classList.add('on');
         }
