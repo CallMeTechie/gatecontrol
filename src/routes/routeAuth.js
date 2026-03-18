@@ -121,10 +121,13 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     const { email, password, _csrf, redirect } = req.body;
     const redirectTo = redirect || '/';
 
-    // CSRF double-submit check
+    // CSRF double-submit check: body _csrf or X-CSRF-Token header vs cookie
     const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    if (!verifyCsrfToken(cookieCsrf, _csrf)) {
-      return res.status(403).json({ ok: false, error: req.t('error.csrf_invalid') });
+    const bodyCsrf = _csrf || req.headers['x-csrf-token'];
+    if (!verifyCsrfToken(cookieCsrf, bodyCsrf)) {
+      const logger = require('../utils/logger');
+      logger.warn({ cookiePresent: !!cookieCsrf, bodyPresent: !!bodyCsrf, cookieLen: cookieCsrf?.length, bodyLen: bodyCsrf?.length }, 'Route auth CSRF mismatch');
+      return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
     const domain = req.body.domain || req.headers['x-forwarded-host'] || req.headers.host;
@@ -176,8 +179,9 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
 
     // CSRF check
     const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    if (!verifyCsrfToken(cookieCsrf, _csrf)) {
-      return res.status(403).json({ ok: false, error: req.t('error.csrf_invalid') });
+    const csrfBody = _csrf || req.headers['x-csrf-token'];
+    if (!verifyCsrfToken(cookieCsrf, csrfBody)) {
+      return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
     const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
@@ -205,8 +209,9 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
 
     // CSRF check
     const cookieCsrf = req.cookies && req.cookies[COOKIE_CSRF];
-    if (!verifyCsrfToken(cookieCsrf, _csrf)) {
-      return res.status(403).json({ ok: false, error: req.t('error.csrf_invalid') });
+    const csrfBody = _csrf || req.headers['x-csrf-token'];
+    if (!verifyCsrfToken(cookieCsrf, csrfBody)) {
+      return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
 
     const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
