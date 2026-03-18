@@ -17,6 +17,7 @@ const {
   verifyTotp,
   generateCsrfToken,
   verifyCsrfToken,
+  maskEmail,
 } = require('../services/routeAuth');
 const { isSmtpConfigured } = require('../services/email');
 const { decrypt } = require('../utils/crypto');
@@ -103,15 +104,12 @@ router.get('/login', (req, res) => {
 
     res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
       domain,
-      redirectTo,
-      authConfig: authConfig
-        ? {
-            auth_type: authConfig.auth_type,
-            two_factor_enabled: authConfig.two_factor_enabled,
-            two_factor_method: authConfig.two_factor_method,
-          }
-        : null,
-      twoFactorPending,
+      redirect: redirectTo || '/',
+      authType: authConfig ? authConfig.auth_type : null,
+      twoFactorEnabled: !!authConfig?.two_factor_enabled,
+      twoFactorMethod: authConfig?.two_factor_method || null,
+      is2faStep2: twoFactorPending,
+      maskedEmail: authConfig ? maskEmail(authConfig.email) : '',
       csrfToken,
     });
   })().catch((err) => res.status(500).send(err.message));
