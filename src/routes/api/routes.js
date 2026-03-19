@@ -153,12 +153,13 @@ router.post('/', async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
-      route_type, l4_protocol, l4_listen_port, l4_tls_mode } = req.body;
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled } = req.body;
     const route = await routes.create({
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+      monitoring_enabled,
     });
     res.status(201).json({ ok: true, route: stripRoute(route) });
   } catch (err) {
@@ -175,12 +176,13 @@ router.put('/:id', async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
-      route_type, l4_protocol, l4_listen_port, l4_tls_mode } = req.body;
+      route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled } = req.body;
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password, enabled,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+      monitoring_enabled,
     });
     res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {

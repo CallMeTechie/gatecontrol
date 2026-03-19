@@ -222,7 +222,8 @@
     const submitBtn = routeForm.querySelector('button[type="submit"]');
     btnLoading(submitBtn);
     try {
-      const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled };
+      const createMonitoring = document.getElementById('create-route-monitoring')?.classList.contains('on') || false;
+      const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled, monitoring_enabled: createMonitoring };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
       if (routeType === 'l4') {
@@ -266,6 +267,8 @@
         // Reset toggles
         if (httpsToggle) httpsToggle.classList.add('on');
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
+        var cmt = document.getElementById('create-route-monitoring');
+        if (cmt) cmt.classList.remove('on');
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
         updateCreateAuthTypeUI();
         loadRoutes();
@@ -996,6 +999,10 @@
     }
     updateCreateRouteAuthMethodUI();
   });
+
+  // ─── Create monitoring toggle ──────────────────────────
+  var createMonToggle = document.getElementById('create-route-monitoring');
+  if (createMonToggle) createMonToggle.addEventListener('click', function() { createMonToggle.classList.toggle('on'); });
 
   // ─── L4 listen port auto-fill ───────────────────────────
   function setupPortAutofill(portId, listenPortId) {

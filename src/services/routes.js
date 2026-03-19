@@ -422,8 +422,8 @@ async function create(data) {
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
-                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -438,7 +438,8 @@ async function create(data) {
     routeType,
     data.l4_protocol || null,
     data.l4_listen_port || null,
-    data.l4_tls_mode || null
+    data.l4_tls_mode || null,
+    data.monitoring_enabled ? 1 : 0
   );
 
   const routeId = result.lastInsertRowid;
