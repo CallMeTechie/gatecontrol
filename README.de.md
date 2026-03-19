@@ -77,10 +77,25 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Atomare, transaktionsbasierte Wiederherstellung mit automatischer WireGuard- und Caddy-Resynchronisation
 - Backup-Versionierung für Vorwärtskompatibilität
 
+### Email-Benachrichtigungen
+- Event-basiertes Email-Benachrichtigungssystem — jedes Aktivitäts-Event kann einen Email-Alert auslösen
+- Konfigurierbar pro Event-Gruppe über Einstellungen > Email-Benachrichtigungen
+- Periodische Prüfungen: Backup-Erinnerung (kein Backup seit N Tagen), CPU/RAM-Schwellwert-Alerts (stündlich)
+- Alle Alerts nutzen den bestehenden SMTP-Service
+
+**Alert-Event-Gruppen:**
+
+| Gruppe | Events | Auslöser |
+|--------|--------|----------|
+| **Sicherheit** | `login_failed`, `account_locked`, `password_changed` | Fehlgeschlagener Admin-Login, Kontosperrung ausgelöst, Passwort geändert |
+| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted` | Peer kommt online/geht offline via WireGuard-Handshake, Peer hinzugefügt/entfernt |
+| **Routen** | `route_down`, `route_up`, `route_created`, `route_deleted` | Uptime-Monitor erkennt Route down/recovered, Route hinzugefügt/entfernt |
+| **System** | `system_start`, `wg_restart`, `backup_restored`, `backup_reminder`, `resource_alert` | Anwendung gestartet, WireGuard neugestartet, Backup wiederhergestellt, kein Backup seit N Tagen, CPU/RAM über Schwellwert |
+
 ### Webhooks
 - Ereignisgesteuerte Benachrichtigungen an externe Dienste
 - Abonnement für spezifische Ereignisse oder Wildcard (`*`) für alle Ereignisse
-- URL-Validierung blockiert private/interne IP-Bereiche zur SSRF-Prävention
+- URL-Validierung blockiert private/interne IP-Bereiche zur SSRF-Prävention mit DNS-Rebinding-Schutz
 - JSON-Payloads mit Ereignistyp, Nachricht, Details und Zeitstempel
 
 ### Internationalisierung

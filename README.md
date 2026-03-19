@@ -77,10 +77,25 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Atomic transaction-based restore with automatic WireGuard and Caddy resync
 - Backup versioning for forward compatibility
 
+### Email Alerts
+- Event-based email notification system — any activity event can trigger an email alert
+- Configurable per event group via Settings > Email Alerts
+- Periodic checks: backup reminders (no backup in N days), CPU/RAM threshold alerts (hourly)
+- All alerts use the existing SMTP service
+
+**Alert Event Groups:**
+
+| Group | Events | Triggers |
+|-------|--------|----------|
+| **Security** | `login_failed`, `account_locked`, `password_changed` | Failed admin login, account lockout triggered, password changed |
+| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted` | Peer comes online/goes offline via WireGuard handshake, peer added/removed |
+| **Routes** | `route_down`, `route_up`, `route_created`, `route_deleted` | Uptime monitor detects route down/recovered, route added/removed |
+| **System** | `system_start`, `wg_restart`, `backup_restored`, `backup_reminder`, `resource_alert` | Application started, WireGuard restarted, backup restored, no backup in N days, CPU/RAM above threshold |
+
 ### Webhooks
 - Event-driven notifications to external services
 - Subscribe to specific events or use wildcard (`*`) for all events
-- URL validation blocks private/internal IP ranges to prevent SSRF
+- URL validation blocks private/internal IP ranges to prevent SSRF with DNS rebinding protection
 - JSON payloads with event type, message, details, and timestamp
 
 ### Internationalization
