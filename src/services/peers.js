@@ -287,14 +287,17 @@ async function rewriteWgConfig() {
       return;
     }
 
-    // Extract Interface section
-    const ifaceMatch = existingConf.match(/\[Interface\][\s\S]*?(?=\n\[Peer\]|\n#\s*Peer:|$)/);
-    if (!ifaceMatch) {
+    // Extract Interface section by splitting on [Peer] or # Peer: markers
+    // Use split instead of lazy regex to correctly capture the full Interface body
+    // even when no [Peer] blocks exist
+    const peerSplit = existingConf.split(/\n(?=\[Peer\]|\#\s*Peer:)/);
+    const ifaceSection = peerSplit[0];
+    if (!ifaceSection || !ifaceSection.includes('[Interface]')) {
       logger.error('Could not parse Interface section from WG config');
       return;
     }
 
-    let newConf = ifaceMatch[0].trimEnd() + '\n';
+    let newConf = ifaceSection.trimEnd() + '\n';
 
     // Add peers
     for (const peer of peers) {

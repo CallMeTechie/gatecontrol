@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 
 let collectorInterval = null;
 let previousTotals = null;
+let previousTimestamp = null;
 
 /**
  * Take a traffic snapshot and store it
@@ -15,12 +16,25 @@ async function takeSnapshot() {
     const totals = await wireguard.getTransferTotals();
     const db = getDb();
 
+    // Store delta (difference since last snapshot) instead of absolute values
+    // This avoids broken charts when WireGuard counters reset on interface restart
+    let uploadDelta = 0;
+    let downloadDelta = 0;
+    if (previousTotals) {
+      const txDiff = totals.totalTx - previousTotals.totalTx;
+      const rxDiff = totals.totalRx - previousTotals.totalRx;
+      // Only count positive deltas — negative means counter reset
+      uploadDelta = txDiff >= 0 ? txDiff : 0;
+      downloadDelta = rxDiff >= 0 ? rxDiff : 0;
+    }
+
     db.prepare(`
       INSERT INTO traffic_snapshots (upload_bytes, download_bytes, peer_count)
       VALUES (?, ?, ?)
-    `).run(totals.totalTx, totals.totalRx, totals.peerCount);
+    `).run(uploadDelta, downloadDelta, totals.peerCount);
 
     previousTotals = totals;
+    previousTimestamp = Date.now();
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to take traffic snapshot');
   }
@@ -32,14 +46,19 @@ async function takeSnapshot() {
 async function getCurrentRates() {
   const totals = await wireguard.getTransferTotals();
 
-  if (!previousTotals) {
+  if (!previousTotals || !previousTimestamp) {
     previousTotals = totals;
+    previousTimestamp = Date.now();
     return { uploadRate: 0, downloadRate: 0 };
   }
 
-  const interval = 60; // seconds between snapshots
-  const uploadRate = Math.max(0, Math.round((totals.totalTx - previousTotals.totalTx) / interval));
-  const downloadRate = Math.max(0, Math.round((totals.totalRx - previousTotals.totalRx) / interval));
+  const elapsedSec = Math.max(1, (Date.now() - previousTimestamp) / 1000);
+  const txDelta = totals.totalTx - previousTotals.totalTx;
+  const rxDelta = totals.totalRx - previousTotals.totalRx;
+
+  // Detect counter reset (WireGuard interface restart) — skip negative deltas
+  const uploadRate = txDelta >= 0 ? Math.round(txDelta / elapsedSec) : 0;
+  const downloadRate = rxDelta >= 0 ? Math.round(rxDelta / elapsedSec) : 0;
 
   return { uploadRate, downloadRate };
 }
@@ -76,8 +95,8 @@ function getChartData(period = '1h') {
   const rows = db.prepare(`
     SELECT
       strftime(?, recorded_at) as bucket,
-      MAX(upload_bytes) - MIN(upload_bytes) as upload_delta,
-      MAX(download_bytes) - MIN(download_bytes) as download_delta,
+      SUM(upload_bytes) as upload_delta,
+      SUM(download_bytes) as download_delta,
       AVG(peer_count) as avg_peers
     FROM traffic_snapshots
     WHERE recorded_at >= datetime('now', ?)
@@ -101,8 +120,8 @@ function getTodayTotals() {
   const db = getDb();
   const row = db.prepare(`
     SELECT
-      COALESCE(MAX(upload_bytes) - MIN(upload_bytes), 0) as upload_today,
-      COALESCE(MAX(download_bytes) - MIN(download_bytes), 0) as download_today
+      COALESCE(SUM(upload_bytes), 0) as upload_today,
+      COALESCE(SUM(download_bytes), 0) as download_today
     FROM traffic_snapshots
     WHERE recorded_at >= datetime('now', 'start of day')
   `).get();

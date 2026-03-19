@@ -2,7 +2,7 @@
 
 const { Router } = require('express');
 const activity = require('../../services/activity');
-const { caddyApi } = require('../../services/routes');
+const { caddyApi, syncToCaddy } = require('../../services/routes');
 
 const router = Router();
 
@@ -23,19 +23,17 @@ router.get('/status', async (req, res) => {
 });
 
 /**
- * POST /api/caddy/reload
+ * POST /api/caddy/reload — rebuild and push full config to Caddy
  */
 router.post('/reload', async (req, res) => {
   try {
-    const result = await caddyApi('/load', {
-      method: 'POST',
-    });
+    await syncToCaddy();
     activity.log('caddy_reload', 'Caddy configuration reloaded', {
       source: 'admin',
       ipAddress: req.ip,
       severity: 'info',
     });
-    res.json({ ok: true, success: result !== null });
+    res.json({ ok: true, success: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: req.t('error.caddy.reload') });
   }

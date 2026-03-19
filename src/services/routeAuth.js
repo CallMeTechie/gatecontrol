@@ -350,35 +350,42 @@ async function createAndSendOtp(routeId, email, domain, lang) {
  */
 function verifyOtp(routeId, email, code) {
   const db = getDb();
-
-  const otp = db.prepare(`
-    SELECT * FROM route_auth_otp
-    WHERE route_id = ?
-      AND email = ?
-      AND used = 0
-      AND expires_at > datetime('now')
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(routeId, email);
-
-  if (!otp) return false;
-
   const inputHash = hashOtp(code);
-  // Timing-safe comparison to prevent side-channel attacks
-  let isValid = false;
-  try {
-    const a = Buffer.from(otp.code_hash, 'hex');
-    const b = Buffer.from(inputHash, 'hex');
-    isValid = a.length === b.length && crypto.timingSafeEqual(a, b);
-  } catch {
-    isValid = false;
-  }
 
-  if (isValid) {
-    db.prepare('UPDATE route_auth_otp SET used = 1 WHERE id = ?').run(otp.id);
-  }
+  // Atomic fetch-and-mark-used to prevent TOCTOU race condition
+  // Two concurrent requests with the same OTP can no longer both succeed
+  const markUsed = db.transaction(() => {
+    const otp = db.prepare(`
+      SELECT * FROM route_auth_otp
+      WHERE route_id = ?
+        AND email = ?
+        AND used = 0
+        AND expires_at > datetime('now')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(routeId, email);
 
-  return isValid;
+    if (!otp) return null;
+
+    // Timing-safe comparison to prevent side-channel attacks
+    let isValid = false;
+    try {
+      const a = Buffer.from(otp.code_hash, 'hex');
+      const b = Buffer.from(inputHash, 'hex');
+      isValid = a.length === b.length && crypto.timingSafeEqual(a, b);
+    } catch {
+      isValid = false;
+    }
+
+    if (isValid) {
+      db.prepare('UPDATE route_auth_otp SET used = 1 WHERE id = ?').run(otp.id);
+    }
+
+    return isValid;
+  });
+
+  const result = markUsed();
+  return result === true;
 }
 
 // ---------------------------------------------------------------------------

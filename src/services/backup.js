@@ -67,6 +67,25 @@ function createBackup() {
     enabled: w.enabled,
   }));
 
+  // Route Auth configs
+  const rawRouteAuth = db.prepare('SELECT * FROM route_auth').all();
+  const routeAuth = rawRouteAuth.map(ra => {
+    // Resolve route_id to domain for portability
+    const route = db.prepare('SELECT domain FROM routes WHERE id = ?').get(ra.route_id);
+    return {
+      route_domain: route ? route.domain : null,
+      auth_type: ra.auth_type,
+      email: ra.email,
+      password_hash: ra.password_hash,
+      totp_secret_encrypted: ra.totp_secret_encrypted || null,
+      two_factor_enabled: ra.two_factor_enabled,
+      two_factor_method: ra.two_factor_method,
+      session_max_age: ra.session_max_age,
+      created_at: ra.created_at,
+      updated_at: ra.updated_at,
+    };
+  }).filter(ra => ra.route_domain); // Only include auth for routes that exist
+
   return {
     version: BACKUP_VERSION,
     created_at: new Date().toISOString(),
@@ -75,6 +94,7 @@ function createBackup() {
       routes,
       settings,
       webhooks,
+      route_auth: routeAuth,
     },
   };
 }
@@ -163,6 +183,7 @@ function getBackupSummary(backup) {
     routes: d.routes.length,
     settings: d.settings.length,
     webhooks: d.webhooks.length,
+    route_auth: (d.route_auth || []).length,
   };
 }
 
@@ -176,11 +197,29 @@ async function restoreBackup(backup) {
   }
 
   const db = getDb();
-  const { peers, routes, settings, webhooks } = backup.data;
+  const { peers, routes, settings, webhooks, route_auth: routeAuth } = backup.data;
+
+  // Validate that encrypted keys can be decrypted with the current encryption key (#13)
+  for (let i = 0; i < peers.length; i++) {
+    const p = peers[i];
+    if (p.private_key_encrypted) {
+      try { decrypt(p.private_key_encrypted); } catch {
+        throw new Error(`Peer "${p.name}": cannot decrypt private key — the backup was created with a different GC_ENCRYPTION_KEY`);
+      }
+    }
+    if (p.preshared_key_encrypted) {
+      try { decrypt(p.preshared_key_encrypted); } catch {
+        throw new Error(`Peer "${p.name}": cannot decrypt preshared key — the backup was created with a different GC_ENCRYPTION_KEY`);
+      }
+    }
+  }
 
   // Run everything in a transaction for atomicity
   const restore = db.transaction(() => {
-    // Clear existing data
+    // Clear existing data (route_auth, sessions, OTPs cascade via FK on routes)
+    db.prepare('DELETE FROM route_auth_otp').run();
+    db.prepare('DELETE FROM route_auth_sessions').run();
+    db.prepare('DELETE FROM route_auth').run();
     db.prepare('DELETE FROM routes').run();
     db.prepare('DELETE FROM peers').run();
     db.prepare('DELETE FROM settings').run();
@@ -270,6 +309,30 @@ async function restoreBackup(backup) {
         w.description || null,
         w.enabled !== undefined ? (w.enabled ? 1 : 0) : 1,
       );
+    }
+
+    // Restore route auth configs (#12) — resolve domain back to route_id
+    if (Array.isArray(routeAuth) && routeAuth.length > 0) {
+      const insertRouteAuth = db.prepare(`
+        INSERT INTO route_auth (route_id, auth_type, email, password_hash, totp_secret_encrypted,
+                                two_factor_enabled, two_factor_method, session_max_age)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const ra of routeAuth) {
+        if (!ra.route_domain) continue;
+        const route = db.prepare('SELECT id FROM routes WHERE domain = ?').get(ra.route_domain);
+        if (!route) continue;
+        insertRouteAuth.run(
+          route.id,
+          ra.auth_type || 'password',
+          ra.email || null,
+          ra.password_hash || null,
+          ra.totp_secret_encrypted || null,
+          ra.two_factor_enabled ? 1 : 0,
+          ra.two_factor_method || null,
+          ra.session_max_age !== undefined ? ra.session_max_age : 86400000,
+        );
+      }
     }
   });
 
