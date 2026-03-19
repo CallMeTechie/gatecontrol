@@ -67,6 +67,49 @@ async function start() {
       }
     }, 6 * 60 * 60 * 1000);
 
+    // Periodic alert checks (every hour)
+    setInterval(async () => {
+      try {
+        const settingsSvc = require('./services/settings');
+
+        // Backup reminder
+        const backupDays = parseInt(settingsSvc.get('alerts.backup_reminder_days', '0'), 10);
+        if (backupDays > 0) {
+          const { getDb } = require('./db/connection');
+          const db = getDb();
+          const lastBackup = db.prepare("SELECT created_at FROM activity_log WHERE event_type = 'backup_created' ORDER BY created_at DESC LIMIT 1").get();
+          const daysSince = lastBackup
+            ? Math.floor((Date.now() - new Date(lastBackup.created_at + 'Z').getTime()) / 86400000)
+            : 999;
+          if (daysSince >= backupDays) {
+            activity.log('backup_reminder', `No backup in ${daysSince} days (threshold: ${backupDays})`, {
+              source: 'system', severity: 'warning',
+            });
+          }
+        }
+
+        // Resource alerts
+        const cpuThreshold = parseInt(settingsSvc.get('alerts.resource_cpu_threshold', '0'), 10);
+        const ramThreshold = parseInt(settingsSvc.get('alerts.resource_ram_threshold', '0'), 10);
+        if (cpuThreshold > 0 || ramThreshold > 0) {
+          const system = require('./services/system');
+          const res = await system.getResources();
+          if (cpuThreshold > 0 && res.cpu.percent > cpuThreshold) {
+            activity.log('resource_alert', `CPU usage ${res.cpu.percent}% exceeds threshold ${cpuThreshold}%`, {
+              source: 'system', severity: 'warning', details: { cpu: res.cpu.percent, threshold: cpuThreshold },
+            });
+          }
+          if (ramThreshold > 0 && res.memory.percent > ramThreshold) {
+            activity.log('resource_alert', `RAM usage ${res.memory.percent}% exceeds threshold ${ramThreshold}%`, {
+              source: 'system', severity: 'warning', details: { ram: res.memory.percent, threshold: ramThreshold },
+            });
+          }
+        }
+      } catch (err) {
+        logger.error({ error: err.message }, 'Periodic alert check failed');
+      }
+    }, 60 * 60 * 1000); // Every hour
+
     // Log startup
     activity.log('system_start', `${config.app.name} started`, {
       source: 'system',

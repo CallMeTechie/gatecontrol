@@ -244,6 +244,57 @@
 
     <div class="card">
       <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <span class="card-title">{{ t('alerts.title') or 'Email Alerts' }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('alerts.subtitle') or 'Get notified by email when events occur. Requires SMTP to be configured.' }}</div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="alerts-email">{{ t('alerts.email') or 'Alert email address' }}</label>
+          <input type="email" id="alerts-email" placeholder="admin@example.com" style="width:100%">
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-top:4px">{{ t('alerts.events_label') or 'Notify on these events:' }}</div>
+        <div id="alerts-events" style="display:flex;flex-direction:column;gap:6px">
+          {% set alertGroups = [
+            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed' },
+            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted' },
+            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted' },
+            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert' }
+          ] %}
+          {% for g in alertGroups %}
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px">
+            <input type="checkbox" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
+            <span>{{ g.label }}</span>
+            <span style="color:var(--text-3);margin-left:auto;font-size:10px">{{ g.events }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px">{{ t('alerts.extra_checks') or 'Periodic checks' }}</div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label" for="alerts-backup-days">{{ t('alerts.backup_reminder') or 'Backup reminder (days, 0=off)' }}</label>
+            <input type="number" id="alerts-backup-days" value="0" min="0" max="365" style="width:100%">
+          </div>
+          <div style="display:flex;gap:10px">
+            <div class="form-group" style="flex:1;margin-bottom:0">
+              <label class="form-label" for="alerts-cpu">{{ t('alerts.cpu_threshold') or 'CPU alert (%, 0=off)' }}</label>
+              <input type="number" id="alerts-cpu" value="0" min="0" max="100" style="width:100%">
+            </div>
+            <div class="form-group" style="flex:1;margin-bottom:0">
+              <label class="form-label" for="alerts-ram">{{ t('alerts.ram_threshold') or 'RAM alert (%, 0=off)' }}</label>
+              <input type="number" id="alerts-ram" value="0" min="0" max="100" style="width:100%">
+            </div>
+          </div>
+        </div>
+        <div id="alerts-message" style="display:none"></div>
+        <div style="display:flex;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-primary" id="btn-alerts-save">{{ t('alerts.save') or 'Save' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span class="card-title">{{ t('settings.danger_zone') }}</span>
       </div>

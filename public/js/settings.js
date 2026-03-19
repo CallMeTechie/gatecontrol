@@ -487,10 +487,68 @@
     });
   }
 
+  // ─── Email Alert Settings ──────────────────────────────
+
+  async function loadAlertSettings() {
+    try {
+      var data = await api.get('/api/settings/alerts');
+      if (!data.ok) return;
+      var d = data.data;
+      var emailEl = document.getElementById('alerts-email');
+      if (emailEl) emailEl.value = d.email || '';
+      var backupEl = document.getElementById('alerts-backup-days');
+      if (backupEl) backupEl.value = d.backup_reminder_days || 0;
+      var cpuEl = document.getElementById('alerts-cpu');
+      if (cpuEl) cpuEl.value = d.resource_cpu_threshold || 0;
+      var ramEl = document.getElementById('alerts-ram');
+      if (ramEl) ramEl.value = d.resource_ram_threshold || 0;
+
+      // Set checkboxes based on configured events
+      var configuredEvents = (d.email_events || '').split(',').map(function(e) { return e.trim(); }).filter(Boolean);
+      document.querySelectorAll('.alert-event-group').forEach(function(cb) {
+        var groupEvents = cb.dataset.events.split(',');
+        cb.checked = groupEvents.some(function(e) { return configuredEvents.includes(e); });
+      });
+    } catch (err) {
+      console.error('Failed to load alert settings:', err);
+    }
+  }
+
+  var btnAlertsSave = document.getElementById('btn-alerts-save');
+  if (btnAlertsSave) {
+    btnAlertsSave.addEventListener('click', async function() {
+      btnLoading(btnAlertsSave);
+      try {
+        // Collect selected events from checkboxes
+        var events = [];
+        document.querySelectorAll('.alert-event-group:checked').forEach(function(cb) {
+          cb.dataset.events.split(',').forEach(function(e) { if (events.indexOf(e) === -1) events.push(e); });
+        });
+        var data = await api.put('/api/settings/alerts', {
+          email: document.getElementById('alerts-email').value,
+          email_events: events.join(','),
+          backup_reminder_days: document.getElementById('alerts-backup-days').value,
+          resource_cpu_threshold: document.getElementById('alerts-cpu').value,
+          resource_ram_threshold: document.getElementById('alerts-ram').value,
+        });
+        if (data.ok) {
+          showMessage('alerts-message', GC.t['security.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('alerts-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('alerts-message', err.message, 'error');
+      } finally {
+        btnReset(btnAlertsSave);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
   loadSecuritySettings();
   loadLockedAccounts();
   loadMonitoringSettings();
+  loadAlertSettings();
   setInterval(loadLockedAccounts, 30000);
 })();

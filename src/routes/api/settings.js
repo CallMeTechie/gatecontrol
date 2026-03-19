@@ -367,6 +367,45 @@ router.put('/monitoring', (req, res) => {
   }
 });
 
+// ─── Email Alert Settings ───────────────────────────────
+
+/**
+ * GET /api/settings/alerts — Get email alert settings
+ */
+router.get('/alerts', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      email: settings.get('alerts.email', ''),
+      email_events: settings.get('alerts.email_events', ''),
+      backup_reminder_days: parseInt(settings.get('alerts.backup_reminder_days', '0'), 10),
+      resource_cpu_threshold: parseInt(settings.get('alerts.resource_cpu_threshold', '0'), 10),
+      resource_ram_threshold: parseInt(settings.get('alerts.resource_ram_threshold', '0'), 10),
+    },
+  });
+});
+
+/**
+ * PUT /api/settings/alerts — Update email alert settings
+ */
+router.put('/alerts', (req, res) => {
+  try {
+    const { email, email_events, backup_reminder_days, resource_cpu_threshold, resource_ram_threshold } = req.body;
+    if (email !== undefined) settings.set('alerts.email', String(email));
+    if (email_events !== undefined) settings.set('alerts.email_events', String(email_events));
+    if (backup_reminder_days !== undefined) settings.set('alerts.backup_reminder_days', String(parseInt(backup_reminder_days, 10) || 0));
+    if (resource_cpu_threshold !== undefined) settings.set('alerts.resource_cpu_threshold', String(parseInt(resource_cpu_threshold, 10) || 0));
+    if (resource_ram_threshold !== undefined) settings.set('alerts.resource_ram_threshold', String(parseInt(resource_ram_threshold, 10) || 0));
+
+    activity.log('alert_settings_updated', 'Email alert settings updated', {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 /**
  * GET /api/settings/lockout — Get currently locked accounts
  */

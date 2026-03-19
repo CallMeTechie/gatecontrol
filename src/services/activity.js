@@ -2,6 +2,7 @@
 
 const { getDb } = require('../db/connection');
 const webhook = require('./webhook');
+const logger = require('../utils/logger');
 
 const IP_V4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
 const IP_V6_REGEX = /^[0-9a-fA-F:]+$/;
@@ -52,6 +53,47 @@ function log(eventType, message, options = {}) {
 
   // Fire webhook notifications (non-blocking)
   webhook.notify(eventType, message, details);
+
+  // Fire email alert if this event type is configured (non-blocking)
+  sendEmailAlert(eventType, message, severity, details);
+}
+
+/**
+ * Check if an event type should trigger an email alert, and send it
+ */
+async function sendEmailAlert(eventType, message, severity, details) {
+  try {
+    const settings = require('./settings');
+    const alertEventsStr = settings.get('alerts.email_events', '');
+    if (!alertEventsStr) return;
+
+    const alertEmail = settings.get('alerts.email', '');
+    if (!alertEmail) return;
+
+    const alertEvents = alertEventsStr.split(',').map(e => e.trim()).filter(Boolean);
+    if (!alertEvents.includes(eventType)) return;
+
+    const { isSmtpConfigured, sendMail } = require('./email');
+    if (!isSmtpConfigured()) return;
+
+    const severityLabel = { info: 'Info', success: 'Success', warning: 'Warning', error: 'Alert' };
+    const subject = `[GateControl] ${severityLabel[severity] || 'Event'}: ${message}`;
+    const body = [
+      message,
+      '',
+      `Event: ${eventType}`,
+      `Severity: ${severity}`,
+      `Time: ${new Date().toISOString()}`,
+      details ? `Details: ${JSON.stringify(details, null, 2)}` : '',
+      '',
+      '— GateControl',
+    ].filter(Boolean).join('\n');
+
+    await sendMail({ to: alertEmail, subject, text: body });
+    logger.debug({ eventType, to: alertEmail }, 'Email alert sent');
+  } catch (err) {
+    logger.warn({ err: err.message, eventType }, 'Failed to send email alert');
+  }
 }
 
 /**
