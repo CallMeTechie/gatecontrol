@@ -1,6 +1,8 @@
 'use strict';
 
 const net = require('node:net');
+const https = require('node:https');
+const http = require('node:http');
 const { getDb } = require('../db/connection');
 const settings = require('./settings');
 const activity = require('./activity');
@@ -24,24 +26,39 @@ function getSettings() {
  * HTTP(S) health check — returns { up: boolean, responseTime: number }
  */
 async function checkHttp(targetIp, targetPort, useHttps) {
-  const proto = useHttps ? 'https' : 'http';
-  const url = `${proto}://${targetIp}:${targetPort}/`;
   const start = Date.now();
 
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(10000),
-      redirect: 'follow',
+  return new Promise((resolve) => {
+    const mod = useHttps ? https : http;
+    const options = {
+      hostname: targetIp,
+      port: targetPort,
+      path: '/',
+      method: 'GET',
+      timeout: 10000,
       headers: { 'User-Agent': 'GateControl-Monitor/1.0' },
-      // For self-signed certs
-      ...(useHttps ? { dispatcher: undefined } : {}),
+      // Accept self-signed certificates for backend HTTPS
+      ...(useHttps ? { rejectUnauthorized: false } : {}),
+    };
+
+    const req = mod.request(options, (res) => {
+      const responseTime = Date.now() - start;
+      const up = res.statusCode >= 200 && res.statusCode < 400;
+      res.resume(); // Consume response to free memory
+      resolve({ up, responseTime });
     });
-    const responseTime = Date.now() - start;
-    const up = res.status >= 200 && res.status < 400;
-    return { up, responseTime };
-  } catch {
-    return { up: false, responseTime: Date.now() - start };
-  }
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ up: false, responseTime: Date.now() - start });
+    });
+
+    req.on('error', () => {
+      resolve({ up: false, responseTime: Date.now() - start });
+    });
+
+    req.end();
+  });
 }
 
 /**

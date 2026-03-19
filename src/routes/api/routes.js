@@ -161,6 +161,10 @@ router.post('/', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
       monitoring_enabled,
     });
+    // Trigger immediate check if monitoring enabled on create
+    if (monitoring_enabled) {
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id); } catch {}
+    }
     res.status(201).json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
@@ -184,6 +188,10 @@ router.put('/:id', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
       monitoring_enabled,
     });
+    // Trigger immediate check if monitoring was just enabled
+    if (monitoring_enabled) {
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id); } catch {}
+    }
     res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update route');
