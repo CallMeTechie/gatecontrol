@@ -80,6 +80,16 @@ router.post('/', (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('route_auth.password_required') });
     }
 
+    // Check password complexity if a new password is being set
+    if (password) {
+      const { validatePasswordComplexity } = require('../../utils/validate');
+      const complexityErrors = validatePasswordComplexity(password);
+      if (complexityErrors) {
+        const msg = complexityErrors.map(e => req.t(e.key).replace('{{min}}', e.params?.min || '')).join(', ');
+        return res.status(400).json({ ok: false, error: msg });
+      }
+    }
+
     // SMTP required for email_code
     if (auth_type === 'email_code' && !isSmtpConfigured()) {
       return res.status(400).json({ ok: false, error: req.t('route_auth.smtp_required') });

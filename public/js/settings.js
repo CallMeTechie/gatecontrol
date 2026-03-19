@@ -329,6 +329,124 @@
     });
   }
 
+  // ─── Security Settings ────────────────────────────────
+
+  // Toggle helpers for managed toggles
+  function setupManagedToggle(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', function() { el.classList.toggle('on'); });
+  }
+  ['security-lockout-enabled', 'security-password-enabled', 'security-password-uppercase',
+   'security-password-number', 'security-password-special'].forEach(setupManagedToggle);
+
+  async function loadSecuritySettings() {
+    try {
+      var data = await api.get('/api/settings/security');
+      if (!data.ok) return;
+      var lo = data.data.lockout;
+      var pw = data.data.password;
+
+      var loEnabled = document.getElementById('security-lockout-enabled');
+      if (loEnabled) { if (lo.enabled) loEnabled.classList.add('on'); else loEnabled.classList.remove('on'); }
+      var loAttempts = document.getElementById('security-lockout-attempts');
+      if (loAttempts) loAttempts.value = lo.max_attempts;
+      var loDuration = document.getElementById('security-lockout-duration');
+      if (loDuration) loDuration.value = lo.duration;
+
+      var pwEnabled = document.getElementById('security-password-enabled');
+      if (pwEnabled) { if (pw.complexity_enabled) pwEnabled.classList.add('on'); else pwEnabled.classList.remove('on'); }
+      var pwMin = document.getElementById('security-password-min-length');
+      if (pwMin) pwMin.value = pw.min_length;
+      var pwUpper = document.getElementById('security-password-uppercase');
+      if (pwUpper) { if (pw.require_uppercase) pwUpper.classList.add('on'); else pwUpper.classList.remove('on'); }
+      var pwNum = document.getElementById('security-password-number');
+      if (pwNum) { if (pw.require_number) pwNum.classList.add('on'); else pwNum.classList.remove('on'); }
+      var pwSpecial = document.getElementById('security-password-special');
+      if (pwSpecial) { if (pw.require_special) pwSpecial.classList.add('on'); else pwSpecial.classList.remove('on'); }
+    } catch (err) {
+      console.error('Failed to load security settings:', err);
+    }
+  }
+
+  async function loadLockedAccounts() {
+    var listEl = document.getElementById('security-locked-list');
+    if (!listEl) return;
+    try {
+      var data = await api.get('/api/settings/lockout');
+      if (!data.ok || !data.locked || data.locked.length === 0) {
+        listEl.textContent = GC.t['security.lockout.no_locked'] || 'No locked accounts';
+        return;
+      }
+      listEl.textContent = '';
+      data.locked.forEach(function(acc) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)';
+        var info = document.createElement('div');
+        info.style.cssText = 'font-size:12px';
+        var id = document.createElement('span');
+        id.style.fontWeight = '600';
+        id.textContent = acc.identifier;
+        info.appendChild(id);
+        var remaining = document.createElement('span');
+        remaining.style.cssText = 'color:var(--text-3);margin-left:8px';
+        var mins = Math.ceil(acc.remainingSeconds / 60);
+        remaining.textContent = (GC.t['security.lockout.remaining'] || '{{minutes}} min remaining').replace('{{minutes}}', mins);
+        info.appendChild(remaining);
+        row.appendChild(info);
+        var btn = document.createElement('button');
+        btn.className = 'btn btn-ghost';
+        btn.style.cssText = 'font-size:11px;padding:3px 8px;color:var(--red)';
+        btn.textContent = GC.t['security.lockout.unlock'] || 'Unlock';
+        btn.addEventListener('click', async function() {
+          try {
+            await api.del('/api/settings/lockout/' + encodeURIComponent(acc.identifier));
+            loadLockedAccounts();
+          } catch (err) { alert(err.message); }
+        });
+        row.appendChild(btn);
+        listEl.appendChild(row);
+      });
+    } catch (err) {
+      listEl.textContent = GC.t['security.lockout.no_locked'] || 'No locked accounts';
+    }
+  }
+
+  var btnSecuritySave = document.getElementById('btn-security-save');
+  if (btnSecuritySave) {
+    btnSecuritySave.addEventListener('click', async function() {
+      btnLoading(btnSecuritySave);
+      try {
+        var payload = {
+          lockout: {
+            enabled: document.getElementById('security-lockout-enabled').classList.contains('on'),
+            max_attempts: document.getElementById('security-lockout-attempts').value,
+            duration: document.getElementById('security-lockout-duration').value,
+          },
+          password: {
+            complexity_enabled: document.getElementById('security-password-enabled').classList.contains('on'),
+            min_length: document.getElementById('security-password-min-length').value,
+            require_uppercase: document.getElementById('security-password-uppercase').classList.contains('on'),
+            require_number: document.getElementById('security-password-number').classList.contains('on'),
+            require_special: document.getElementById('security-password-special').classList.contains('on'),
+          },
+        };
+        var data = await api.put('/api/settings/security', payload);
+        if (data.ok) {
+          showMessage('security-message', GC.t['security.saved'] || 'Security settings saved', 'success');
+        } else {
+          showMessage('security-message', data.error || 'Failed to save', 'error');
+        }
+      } catch (err) {
+        showMessage('security-message', err.message, 'error');
+      } finally {
+        btnReset(btnSecuritySave);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
+  loadSecuritySettings();
+  loadLockedAccounts();
+  setInterval(loadLockedAccounts, 30000);
 })();

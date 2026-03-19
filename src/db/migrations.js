@@ -245,6 +245,19 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_route_auth_otp_route_email ON route_auth_otp(route_id, email);
   `);
 
+  // Migration: Login attempts table for account lockout
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      identifier TEXT NOT NULL,
+      type TEXT NOT NULL,
+      ip_address TEXT,
+      failed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_attempts_identifier ON login_attempts(identifier, failed_at);
+    CREATE INDEX IF NOT EXISTS idx_login_attempts_failed_at ON login_attempts(failed_at);
+  `);
+
   logger.info('Database migrations completed');
 }
 

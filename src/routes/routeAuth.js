@@ -21,6 +21,7 @@ const {
 } = require('../services/routeAuth');
 const { isSmtpConfigured } = require('../services/email');
 const { decrypt } = require('../utils/crypto');
+const lockout = require('../services/lockout');
 
 const router = Router();
 
@@ -165,11 +166,23 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
+    // Check account lockout
+    const lockoutId = `${req.ip}:${authConfig.route_id}`;
+    const lockoutStatus = lockout.isLocked(lockoutId);
+    if (lockoutStatus.locked) {
+      const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
+      return res.status(429).json({ ok: false, error: req.t('route_auth.account_locked').replace('{{minutes}}', String(mins)) });
+    }
+
     // Verify password
     const valid = await verifyPassword(authConfig, email, password);
     if (!valid) {
+      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip);
       return res.status(401).json({ ok: false, error: req.t('route_auth.invalid_credentials') });
     }
+
+    // Clear lockout on successful login
+    lockout.clearAttempts(lockoutId);
 
     // Check if 2FA required
     if (authConfig.two_factor_enabled) {
@@ -245,6 +258,14 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
+    // Check account lockout for code verification
+    const lockoutId = `${req.ip}:${authConfig.route_id}`;
+    const lockoutStatus = lockout.isLocked(lockoutId);
+    if (lockoutStatus.locked) {
+      const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
+      return res.status(429).json({ ok: false, error: req.t('route_auth.account_locked').replace('{{minutes}}', String(mins)) });
+    }
+
     // Get current session (pending or full)
     const sessionId = req.cookies && req.cookies[COOKIE_SID];
     const existingSession = sessionId ? getSession(sessionId) : null;
@@ -269,8 +290,12 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
     }
 
     if (!isValid) {
+      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip);
       return res.status(401).json({ ok: false, error: req.t('route_auth.invalid_code') });
     }
+
+    // Clear lockout on successful verification
+    lockout.clearAttempts(lockoutId);
 
     if (isTwoFactor) {
       // Complete the 2FA — extend session to full duration

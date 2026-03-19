@@ -5,6 +5,7 @@ const { getDb } = require('../db/connection');
 const { setFlash } = require('../middleware/locals');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const lockout = require('../services/lockout');
 
 const authRoutes = {
   loginPage(req, res) {
@@ -24,10 +25,23 @@ const authRoutes = {
 
     try {
       const db = getDb();
+
+      // Check account lockout
+      const lockoutStatus = lockout.isLocked(username);
+      if (lockoutStatus.locked) {
+        const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
+        logger.warn({ username, ip: req.ip, remainingSeconds: lockoutStatus.remainingSeconds }, 'Login blocked by lockout');
+        setFlash(req, 'error', res.locals.t('auth.error_locked').replace('{{minutes}}', String(mins)));
+        return res.redirect('/login');
+      }
+
       const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
       if (!user || !(await argon2.verify(user.password_hash, password))) {
         logger.warn({ username, ip: req.ip }, 'Failed login attempt');
+
+        // Record failed attempt for lockout
+        lockout.recordFailedAttempt(username, 'admin', req.ip);
 
         // Log failed attempt
         db.prepare(`
@@ -38,6 +52,9 @@ const authRoutes = {
         setFlash(req, 'error', res.locals.t('auth.error_invalid'));
         return res.redirect('/login');
       }
+
+      // Clear lockout on successful login
+      lockout.clearAttempts(username);
 
       // Update last login
       db.prepare('UPDATE users SET last_login_at = datetime(\'now\') WHERE id = ?').run(user.id);

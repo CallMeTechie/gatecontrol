@@ -58,6 +58,8 @@ async function start() {
         const { cleanup: cleanTraffic } = require('./services/traffic');
         cleanTraffic(30);  // Keep 30 days of traffic data
         activity.cleanup(30);  // Keep 30 days of activity logs
+        const { cleanup: cleanLoginAttempts } = require('./services/lockout');
+        cleanLoginAttempts(1);  // Keep 1 day of login attempts
       } catch (err) {
         logger.error({ error: err.message }, 'Cleanup task failed');
       }

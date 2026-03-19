@@ -113,6 +113,38 @@ function sanitize(str) {
   return String(str).trim();
 }
 
+/**
+ * Validate password complexity against configurable rules.
+ * Reads settings from DB. Returns null if valid, or an array of error message keys.
+ */
+function validatePasswordComplexity(password) {
+  const settings = require('../services/settings');
+  const enabled = settings.get('security.password.complexity_enabled', 'false') === 'true';
+  if (!enabled) return null;
+
+  const minLength = parseInt(settings.get('security.password.min_length', '8'), 10) || 8;
+  const requireUppercase = settings.get('security.password.require_uppercase', 'true') === 'true';
+  const requireNumber = settings.get('security.password.require_number', 'true') === 'true';
+  const requireSpecial = settings.get('security.password.require_special', 'true') === 'true';
+
+  const errors = [];
+
+  if (!password || password.length < minLength) {
+    errors.push({ key: 'error.security.password_min_length', params: { min: minLength } });
+  }
+  if (requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push({ key: 'error.security.password_no_uppercase' });
+  }
+  if (requireNumber && !/[0-9]/.test(password)) {
+    errors.push({ key: 'error.security.password_no_number' });
+  }
+  if (requireSpecial && !/[^a-zA-Z0-9]/.test(password)) {
+    errors.push({ key: 'error.security.password_no_special' });
+  }
+
+  return errors.length > 0 ? errors : null;
+}
+
 module.exports = {
   validatePeerName,
   validateDomain,
@@ -121,6 +153,7 @@ module.exports = {
   validateDescription,
   validateBasicAuthUser,
   validateBasicAuthPassword,
+  validatePasswordComplexity,
   sanitize,
   validateL4Protocol,
   validateL4ListenPort,
