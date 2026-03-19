@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomBytes } = require('node:crypto');
 const path = require('node:path');
 
 function env(key, fallback) {
@@ -86,9 +87,13 @@ const config = {
   },
 };
 
-// Fail loudly if session secret is missing — entrypoint.sh must set GC_SECRET
+// In test environment, auto-generate secret; in production, fail loudly
 if (!config.app.secret) {
-  throw new Error('GC_SECRET is not set. The entrypoint must generate and export a session secret.');
+  if (process.env.NODE_ENV === 'test') {
+    config.app.secret = randomBytes(48).toString('hex');
+  } else {
+    throw new Error('GC_SECRET is not set. The entrypoint must generate and export a session secret.');
+  }
 }
 
 module.exports = config;

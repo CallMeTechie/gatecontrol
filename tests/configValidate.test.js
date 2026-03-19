@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 
 // Save original env
 const originalEnv = { ...process.env };
+// Ensure a valid encryption key is set for tests
+const TEST_ENCRYPTION_KEY = 'a'.repeat(64);
 
 function resetEnv() {
   // Restore original env and clear config cache
@@ -21,6 +23,7 @@ describe('validateConfig', () => {
   afterEach(() => resetEnv());
 
   it('passes with default configuration', () => {
+    process.env.GC_ENCRYPTION_KEY = TEST_ENCRYPTION_KEY;
     delete require.cache[require.resolve('../config/default')];
     delete require.cache[require.resolve('../config/validate')];
     const { validateConfig } = require('../config/validate');
