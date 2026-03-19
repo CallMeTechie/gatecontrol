@@ -7,15 +7,15 @@
     <div class="modal-body">
       <input type="hidden" id="edit-peer-id">
       <div class="form-group">
-        <label class="form-label">{{ t('peers.add_name') }}</label>
+        <label class="form-label" for="edit-peer-name">{{ t('peers.add_name') }}</label>
         <input type="text" id="edit-peer-name" autocomplete="off" maxlength="63">
       </div>
       <div class="form-group">
-        <label class="form-label">{{ t('peers.add_description') }}</label>
+        <label class="form-label" for="edit-peer-desc">{{ t('peers.add_description') }}</label>
         <input type="text" id="edit-peer-desc" autocomplete="off" maxlength="255">
       </div>
       <div class="form-group">
-        <label class="form-label">{{ t('peers.tags') or 'Tags' }}</label>
+        <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
         <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>
       </div>

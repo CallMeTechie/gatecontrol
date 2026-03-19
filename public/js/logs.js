@@ -70,7 +70,7 @@
 
   function renderLogs(entries) {
     if (!entries.length) {
-      logContainer.textContent = 'No log entries';
+      logContainer.textContent = GC.t['logs.no_entries'] || 'No log entries';
       return;
     }
 
@@ -155,7 +155,7 @@
 
   function renderAccessLogs(entries) {
     if (!entries.length) {
-      accessContainer.textContent = 'No access log entries';
+      accessContainer.textContent = GC.t['logs.no_access_entries'] || 'No access log entries';
       return;
     }
 

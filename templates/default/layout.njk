@@ -42,7 +42,31 @@
   window.GC = {
     csrfToken: '{{ csrfToken }}',
     language: '{{ language }}',
-    baseUrl: '{{ baseUrl }}'
+    baseUrl: '{{ baseUrl }}',
+    t: {
+      'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
+      'peers.online': {{ t('peers.online') | dump | safe }},
+      'peers.offline': {{ t('peers.offline') | dump | safe }},
+      'peers.disabled': {{ t('peers.disabled') | dump | safe }},
+      'peers.name_required': {{ t('peers.name_required') | dump | safe }},
+      'peers.confirm_delete': {{ t('peers.confirm_delete') | dump | safe }},
+      'routes.no_routes': {{ t('routes.no_routes') | dump | safe }},
+      'routes.active': {{ t('routes.active') | dump | safe }},
+      'routes.disabled': {{ t('routes.disabled') | dump | safe }},
+      'routes.peer_offline': {{ t('routes.peer_offline') | dump | safe }},
+      'routes.confirm_delete': {{ t('routes.confirm_delete') | dump | safe }},
+      'routes.auth_basic_required': {{ t('routes.auth_basic_required') | dump | safe }},
+      'route_auth.method_email_password': {{ t('route_auth.method_email_password') | dump | safe }},
+      'route_auth.method_email_code': {{ t('route_auth.method_email_code') | dump | safe }},
+      'route_auth.method_totp': {{ t('route_auth.method_totp') | dump | safe }},
+      'dashboard.no_events': {{ t('dashboard.no_events') | dump | safe }},
+      'logs.no_entries': {{ t('logs.no_entries') | dump | safe }},
+      'logs.no_access_entries': {{ t('logs.no_access_entries') | dump | safe }},
+      'settings.confirm_clear_logs': {{ t('settings.confirm_clear_logs') | dump | safe }},
+      'settings.logs_cleared': {{ t('settings.logs_cleared') | dump | safe }},
+      'settings.confirm_delete_webhook': {{ t('settings.confirm_delete_webhook') | dump | safe }},
+      'common.error': {{ t('common.error') | dump | safe }}
+    }
   };
 </script>
 <script src="/js/app.js"></script>

@@ -72,10 +72,10 @@
       const target = `${peerIp}:${r.target_port}`;
       const peerOnline = r.peer_enabled !== 0;
       const statusTag = !r.enabled
-        ? '<span class="tag tag-amber"><span class="tag-dot"></span>Disabled</span>'
+        ? '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.disabled'] || 'Disabled') + '</span>'
         : peerOnline
-          ? '<span class="tag tag-green"><span class="tag-dot"></span>Active</span>'
-          : '<span class="tag tag-red"><span class="tag-dot"></span>Peer offline</span>';
+          ? '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.active'] || 'Active') + '</span>'
+          : '<span class="tag tag-red"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.peer_offline'] || 'Peer offline') + '</span>';
       const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
@@ -88,7 +88,7 @@
       let routeAuthTags = '';
       if (r.route_auth_enabled && r.route_type !== 'l4') {
         // Auth method badge
-        const methodLabels = { email_password: 'Email & Passwort', email_code: 'Email & Code', totp: 'TOTP' };
+        const methodLabels = { email_password: GC.t['route_auth.method_email_password'] || 'Email & Password', email_code: GC.t['route_auth.method_email_code'] || 'Email & Code', totp: GC.t['route_auth.method_totp'] || 'TOTP' };
         const methodLabel = methodLabels[r.route_auth_type] || r.route_auth_type;
         routeAuthTags += '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> ' + escapeHtml(methodLabel) + '</span>';
         // 2FA badge
@@ -206,7 +206,7 @@
     if (!domain || !target_port) return;
 
     if (basic_auth_enabled && (!basic_auth_user || !basic_auth_password)) {
-      alert('Basic auth username and password are required when auth is enabled');
+      alert(GC.t['routes.auth_basic_required'] || 'Basic auth username and password are required when auth is enabled');
       return;
     }
 
@@ -734,7 +734,7 @@
       await api.post('/api/routes/' + id + '/toggle');
       loadRoutes();
     } catch (err) {
-      console.error('Toggle error:', err);
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
     }
   }
 
@@ -744,7 +744,7 @@
   function showConfirmDelete(id, domain) {
     pendingDeleteId = id;
     const msg = document.getElementById('confirm-message');
-    if (msg) msg.textContent = 'Are you sure you want to delete route "' + (domain || id) + '"? This will remove the Caddy proxy rule.';
+    if (msg) msg.textContent = (GC.t['routes.confirm_delete'] || 'Are you sure you want to delete this route?').replace('?', ' "' + (domain || id) + '"?');
     openModal('modal-confirm');
   }
 
@@ -764,7 +764,7 @@
         pendingDeleteId = null;
         loadRoutes();
       } catch (err) {
-        console.error('Delete error:', err);
+        alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
       } finally {
         btnReset(btn);
       }

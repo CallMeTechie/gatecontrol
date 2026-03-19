@@ -80,16 +80,16 @@
     const disabled = peers.filter(p => !p.enabled).length;
 
     let html = '';
-    if (online > 0) html += `<span class="tag tag-green"><span class="tag-dot"></span>${online} Online</span>`;
-    if (offline > 0) html += `<span class="tag tag-grey"><span class="tag-dot"></span>${offline} Offline</span>`;
-    if (disabled > 0) html += `<span class="tag tag-amber"><span class="tag-dot"></span>${disabled} Disabled</span>`;
+    if (online > 0) html += `<span class="tag tag-green"><span class="tag-dot"></span>${online} ${escapeHtml(GC.t['peers.online'] || 'Online')}</span>`;
+    if (offline > 0) html += `<span class="tag tag-grey"><span class="tag-dot"></span>${offline} ${escapeHtml(GC.t['peers.offline'] || 'Offline')}</span>`;
+    if (disabled > 0) html += `<span class="tag tag-amber"><span class="tag-dot"></span>${disabled} ${escapeHtml(GC.t['peers.disabled'] || 'Disabled')}</span>`;
     statusTags.innerHTML = html;
   }
 
   function getStatusTag(peer) {
-    if (!peer.enabled) return '<span class="tag tag-amber"><span class="tag-dot"></span>Disabled</span>';
-    if (peer.isOnline) return '<span class="tag tag-green"><span class="tag-dot"></span>Online</span>';
-    return '<span class="tag tag-grey"><span class="tag-dot"></span>Offline</span>';
+    if (!peer.enabled) return '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.disabled'] || 'Disabled') + '</span>';
+    if (peer.isOnline) return '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.online'] || 'Online') + '</span>';
+    return '<span class="tag tag-grey"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.offline'] || 'Offline') + '</span>';
   }
 
   function formatLastContact(timestamp) {
@@ -189,7 +189,7 @@
     const tags = document.getElementById('add-peer-tags').value.trim();
 
     if (!name) {
-      showError('add-peer-error', 'Name is required');
+      showError('add-peer-error', GC.t['peers.name_required'] || 'Name is required');
       return;
     }
 
@@ -232,7 +232,7 @@
     const tags = document.getElementById('edit-peer-tags').value.trim();
 
     if (!name) {
-      showError('edit-peer-error', 'Name is required');
+      showError('edit-peer-error', GC.t['peers.name_required'] || 'Name is required');
       return;
     }
 
@@ -265,7 +265,7 @@
         openModal('modal-qr-peer');
       }
     } catch (err) {
-      console.error('QR error:', err);
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
     }
   }
 
@@ -290,7 +290,7 @@
       await api.post('/api/peers/' + id + '/toggle');
       loadPeers();
     } catch (err) {
-      console.error('Toggle error:', err);
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
     }
   }
 
@@ -300,7 +300,7 @@
   function showConfirmDelete(id, name) {
     pendingDeleteId = id;
     document.getElementById('confirm-message').textContent =
-      'Are you sure you want to delete peer "' + (name || id) + '"? This action cannot be undone.';
+      (GC.t['peers.confirm_delete'] || 'Are you sure you want to delete this peer?').replace('?', ' "' + (name || id) + '"?');
     openModal('modal-confirm');
   }
 
@@ -314,7 +314,7 @@
       pendingDeleteId = null;
       loadPeers();
     } catch (err) {
-      console.error('Delete error:', err);
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
     } finally {
       btnReset(btn);
     }

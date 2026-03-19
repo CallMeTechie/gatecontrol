@@ -3,7 +3,20 @@
 // ─── Toggle switches ────────────────────────────────────
 document.querySelectorAll('.toggle').forEach(t => {
   if (t.dataset.managed) return; // Skip toggles managed by specific JS (e.g. route auth)
-  t.addEventListener('click', () => t.classList.toggle('on'));
+  // Accessibility: add ARIA attributes and keyboard support
+  if (!t.getAttribute('role')) t.setAttribute('role', 'switch');
+  if (!t.getAttribute('tabindex')) t.setAttribute('tabindex', '0');
+  t.setAttribute('aria-checked', t.classList.contains('on') ? 'true' : 'false');
+  t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    t.setAttribute('aria-checked', t.classList.contains('on') ? 'true' : 'false');
+  });
+  t.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      t.click();
+    }
+  });
 });
 
 // ─── Tab switching ──────────────────────────────────────
@@ -30,7 +43,7 @@ window.api = {
       headers: { 'Accept': 'application/json' },
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
+    try { return await res.json(); } catch { throw new Error('Invalid response from server'); }
   },
 
   async post(url, data) {
@@ -44,7 +57,7 @@ window.api = {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json().then(handleCsrfRotation);
+    try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
   async put(url, data) {
@@ -58,7 +71,7 @@ window.api = {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json().then(handleCsrfRotation);
+    try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
   async del(url) {
@@ -70,7 +83,7 @@ window.api = {
       },
     });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json().then(handleCsrfRotation);
+    try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 };
 

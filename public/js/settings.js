@@ -5,14 +5,14 @@
 (function () {
   // ─── Clear logs ──────────────────────────────────────────
   document.getElementById('btn-clear-logs').addEventListener('click', async function() {
-    if (!confirm('Clear all activity logs? This action cannot be undone.')) return;
+    if (!confirm(GC.t['settings.confirm_clear_logs'] || 'Clear all activity logs? This action cannot be undone.')) return;
     const btn = this;
 
     btnLoading(btn);
     try {
       const data = await api.post('/api/settings/clear-logs');
       if (data.ok) {
-        alert('Logs cleared: ' + data.deleted + ' entries removed');
+        alert((GC.t['settings.logs_cleared'] || 'Logs cleared') + ': ' + data.deleted);
       }
     } catch (err) {
       alert('Error: ' + err.message);
@@ -110,7 +110,7 @@
       } else if (action === 'toggle') {
         try { await api.post('/api/webhooks/' + id + '/toggle'); loadWebhooks(); } catch (err) { console.error(err); }
       } else if (action === 'delete') {
-        if (!confirm('Delete this webhook?')) return;
+        if (!confirm(GC.t['settings.confirm_delete_webhook'] || 'Delete this webhook?')) return;
         try { await api.del('/api/webhooks/' + id); loadWebhooks(); } catch (err) { console.error(err); }
       }
     });

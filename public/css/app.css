@@ -462,7 +462,7 @@ a { color: inherit; text-decoration: none; }
 .tag-red   { background: var(--red-lt);   color: var(--red);   border: 1px solid var(--red-bd); }
 .tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
 .tag-blue  { background: var(--blue-lt);  color: var(--blue);  border: 1px solid var(--blue-bd); }
-.tag-info  { background: var(--bg-hi);    color: var(--text-2); border: 1px solid var(--border); margin-left: 4px; }
+.tag-info  { background: var(--bg-hover);    color: var(--text-2); border: 1px solid var(--border); margin-left: 4px; }
 .tag-grey  { background: var(--bg-base);  color: var(--text-2);border: 1px solid var(--border); }
 .tag-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
@@ -603,7 +603,7 @@ a { color: inherit; text-decoration: none; }
   background: transparent;
   color: var(--text-2);
   font-size: 13px;
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   outline: none;
@@ -612,7 +612,7 @@ a { color: inherit; text-decoration: none; }
   border-right: 1px solid var(--border);
 }
 .toggle-btn:hover {
-  background: var(--bg-hi);
+  background: var(--bg-hover);
 }
 .toggle-btn.on {
   background: var(--accent);
@@ -628,7 +628,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--bg-base);
   color: var(--text-1);
   font-size: 13px;
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -856,6 +856,15 @@ input[type=search] { padding-left: 32px; width: 200px; }
   background: var(--red-lt);
   border: 1px solid var(--red-bd);
   border-radius: var(--radius-xs);
+}
+.btn-secondary {
+  background: var(--bg-base);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hi);
 }
 .btn-danger {
   background: var(--red);
