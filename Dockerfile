@@ -24,14 +24,16 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
 
-RUN mkdir -p /data/caddy /data/wireguard /etc/wireguard /app/config && \
+RUN addgroup -S gatecontrol && adduser -S -G gatecontrol gatecontrol && \
+    mkdir -p /data/caddy /data/wireguard /etc/wireguard /app/config && \
     chmod 700 /data/wireguard /etc/wireguard && \
-    chmod +x /app/scripts/wg-wrapper.sh
+    chmod +x /app/scripts/wg-wrapper.sh && \
+    chown -R gatecontrol:gatecontrol /app /data
 
 VOLUME ["/data"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://127.0.0.1:3000/login || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://127.0.0.1:3000/health || exit 1
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

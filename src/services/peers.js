@@ -317,7 +317,10 @@ async function rewriteWgConfig() {
       }
     }
 
-    fs.writeFileSync(config.wireguard.configPath, newConf, { mode: 0o600 });
+    // Atomic write: write to temp file, then rename (rename is atomic on POSIX)
+    const tmpPath = config.wireguard.configPath + '.tmp';
+    fs.writeFileSync(tmpPath, newConf, { mode: 0o600 });
+    fs.renameSync(tmpPath, config.wireguard.configPath);
     logger.info({ peerCount: peers.length }, 'WireGuard config rewritten');
 
     // Sync with running interface

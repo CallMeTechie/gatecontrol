@@ -8,6 +8,30 @@ const config = require('../../config/default');
 
 const router = Router();
 
+// ─── Health check (public, no auth) ────────────────
+router.get('/health', async (req, res) => {
+  const checks = { db: false, wireguard: false };
+  let status = 200;
+
+  // Check database connectivity
+  try {
+    const { getDb } = require('../db/connection');
+    const db = getDb();
+    const row = db.prepare('SELECT 1 as ok').get();
+    checks.db = !!(row && row.ok);
+  } catch { checks.db = false; }
+
+  // Check WireGuard interface exists via /sys/class/net (no root needed)
+  try {
+    const fs = require('node:fs');
+    const wgInterface = require('../../config/default').wireguard.interface;
+    checks.wireguard = fs.existsSync(`/sys/class/net/${wgInterface}`);
+  } catch { checks.wireguard = false; }
+
+  if (!checks.db || !checks.wireguard) status = 503;
+  res.status(status).json({ ok: status === 200, ...checks });
+});
+
 // ─── Auth routes (public) ──────────────────────────
 const authRoutes = require('./auth');
 router.get('/login', guestOnly, authRoutes.loginPage);

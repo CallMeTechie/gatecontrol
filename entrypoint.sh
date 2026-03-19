@@ -157,5 +157,9 @@ fi
 chmod 600 "$KEY_FILE"
 chown root:root "$KEY_FILE"
 
+# ─── Set ownership for non-root Node process ─────────
+chown -R gatecontrol:gatecontrol /data 2>/dev/null || true
+chown -R gatecontrol:gatecontrol /app/config 2>/dev/null || true
+
 echo "» Starting services via supervisord..."
 exec "$@"

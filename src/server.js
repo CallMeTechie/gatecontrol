@@ -8,7 +8,7 @@ const { seedAdminUser } = require('./db/seed');
 const { createApp } = require('./app');
 const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
-const { startSessionCleanup } = require('./services/routeAuth');
+const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAuth');
 const activity = require('./services/activity');
 
 let server;
@@ -81,6 +81,7 @@ function shutdown(signal) {
   logger.info(`${signal} received, shutting down gracefully`);
   stopCollector();
   stopPoller();
+  stopSessionCleanup();
 
   const closeAndExit = () => {
     const { closeDb } = require('./db/connection');

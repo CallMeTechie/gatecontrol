@@ -16,6 +16,7 @@ async function caddyApi(path, options = {}) {
   const url = `${CADDY_ADMIN}${path}`;
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
       ...options,
       headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
     });
