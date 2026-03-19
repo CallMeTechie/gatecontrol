@@ -45,20 +45,21 @@ function safeRedirect(url) {
 function generateSignedCsrf(domain) {
   const timestamp = Date.now().toString(36);
   const random = crypto.randomBytes(16).toString('hex');
-  const payload = `${timestamp}.${random}.${domain || ''}`;
+  // Use | as separator since domains can contain dots
+  const payload = `${timestamp}|${random}|${domain || ''}`;
   const sig = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('hex');
-  return `${payload}.${sig}`;
+  return `${payload}|${sig}`;
 }
 
 function verifySignedCsrf(token, domain) {
   if (!token || typeof token !== 'string') return false;
-  const parts = token.split('.');
+  const parts = token.split('|');
   if (parts.length !== 4) return false;
   const [timestamp, random, tokenDomain, sig] = parts;
   // Verify domain binding
   if ((tokenDomain || '') !== (domain || '')) return false;
   // Timing-safe signature comparison
-  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(`${timestamp}.${random}.${tokenDomain}`).digest('hex');
+  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(`${timestamp}|${random}|${tokenDomain}`).digest('hex');
   try {
     const sigBuf = Buffer.from(sig, 'hex');
     const expectedBuf = Buffer.from(expected, 'hex');
