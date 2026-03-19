@@ -195,7 +195,10 @@
 
   "common.delete": "Delete",
   "common.save": "Save",
+  "common.close": "Close",
   "common.cancel": "Cancel",
+  "peers.upload": "Upload",
+  "peers.download": "Download",
   "common.edit": "Edit",
   "common.enable": "Enable",
   "common.disable": "Disable",

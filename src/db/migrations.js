@@ -245,6 +245,29 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_route_auth_otp_route_email ON route_auth_otp(route_id, email);
   `);
 
+  // Migration: Per-peer traffic snapshots
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS peer_traffic_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      peer_id INTEGER NOT NULL,
+      upload_bytes INTEGER NOT NULL DEFAULT 0,
+      download_bytes INTEGER NOT NULL DEFAULT 0,
+      recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_peer_traffic_peer_recorded ON peer_traffic_snapshots(peer_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_peer_traffic_recorded ON peer_traffic_snapshots(recorded_at);
+  `);
+
+  // Add total_rx/total_tx columns to peers for persistent totals
+  try {
+    db.exec(`ALTER TABLE peers ADD COLUMN total_rx INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`ALTER TABLE peers ADD COLUMN total_tx INTEGER NOT NULL DEFAULT 0`);
+    logger.info('Added total_rx/total_tx columns to peers');
+  } catch (e) {
+    // Columns already exist
+  }
+
   // Migration: Login attempts table for account lockout
   db.exec(`
     CREATE TABLE IF NOT EXISTS login_attempts (

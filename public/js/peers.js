@@ -51,10 +51,16 @@
         <td><span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(ip)}</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${escapeHtml(pubKey)}</span></td>
         <td><span style="font-size:12px;color:var(--text-2)">${lastContact}</span></td>
-        <td><span style="font-family:var(--font-mono);font-size:11px">↓${rx} ↑${tx}</span></td>
+        <td>
+          <span style="font-family:var(--font-mono);font-size:11px">↓${rx} ↑${tx}</span>
+          ${(p.total_rx || p.total_tx) ? `<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">Σ ${formatBytes((p.total_rx || 0) + (p.total_tx || 0))}</div>` : ''}
+        </td>
         <td>${statusTag}</td>
         <td>
           <div class="peer-actions">
+            <button class="icon-btn" title="Traffic" data-action="traffic" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </button>
             <button class="icon-btn" title="QR Code" data-action="qr" data-id="${p.id}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             </button>
@@ -165,6 +171,7 @@
     const id = btn.dataset.id;
 
     switch (action) {
+      case 'traffic': showTrafficModal(id); break;
       case 'qr': showQrModal(id); break;
       case 'edit': showEditModal(id); break;
       case 'toggle': togglePeer(id); break;
@@ -318,6 +325,78 @@
     } finally {
       btnReset(btn);
     }
+  });
+
+  // ─── Traffic modal ─────────────────────────────────────
+  let trafficPeerId = null;
+  let trafficPeriod = '24h';
+
+  async function showTrafficModal(id) {
+    trafficPeerId = id;
+    trafficPeriod = '24h';
+    const modal = document.getElementById('modal-peer-traffic');
+    if (!modal) return;
+    modal.querySelectorAll('.tab[data-period]').forEach(function(t) {
+      t.classList.toggle('active', t.dataset.period === '24h');
+    });
+    openModal('modal-peer-traffic');
+    await loadTrafficChart();
+  }
+
+  async function loadTrafficChart() {
+    if (!trafficPeerId) return;
+    try {
+      var data = await api.get('/api/peers/' + trafficPeerId + '/traffic?period=' + trafficPeriod);
+      if (!data.ok) return;
+      document.getElementById('traffic-peer-title').textContent = data.peer.name;
+      document.getElementById('traffic-peer-total').textContent =
+        'Σ ' + formatBytes((data.peer.total_rx || 0) + (data.peer.total_tx || 0)) +
+        '  ↓' + formatBytes(data.peer.total_rx || 0) +
+        '  ↑' + formatBytes(data.peer.total_tx || 0);
+      renderTrafficChart(data.data);
+    } catch (err) {
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+    }
+  }
+
+  function renderTrafficChart(dataPoints) {
+    var svg = document.getElementById('traffic-peer-chart');
+    if (!svg) return;
+    if (!dataPoints || dataPoints.length === 0) {
+      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="var(--text-3)" font-size="13">No data</text>';
+      return;
+    }
+    var w = 520, h = 120;
+    var maxVal = Math.max(1, Math.max.apply(null, dataPoints.map(function(d) { return Math.max(d.upload, d.download); })));
+    function toPath(points, key) {
+      var step = w / Math.max(1, points.length - 1);
+      return points.map(function(p, i) {
+        var x = i * step;
+        var y = h - 10 - ((p[key] / maxVal) * (h - 20));
+        return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+    }
+    var upPath = toPath(dataPoints, 'upload');
+    var dnPath = toPath(dataPoints, 'download');
+    svg.innerHTML =
+      '<defs><linearGradient id="gPUp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0a6e4f" stop-opacity="0.18"/><stop offset="100%" stop-color="#0a6e4f" stop-opacity="0"/></linearGradient>' +
+      '<linearGradient id="gPDn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1d4ed8" stop-opacity="0.14"/><stop offset="100%" stop-color="#1d4ed8" stop-opacity="0"/></linearGradient></defs>' +
+      '<line x1="0" y1="30" x2="' + w + '" y2="30" stroke="var(--border)" stroke-width="1"/>' +
+      '<line x1="0" y1="60" x2="' + w + '" y2="60" stroke="var(--border)" stroke-width="1"/>' +
+      '<line x1="0" y1="90" x2="' + w + '" y2="90" stroke="var(--border)" stroke-width="1"/>' +
+      '<path d="' + upPath + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#gPUp)"/>' +
+      '<path d="' + upPath + '" fill="none" stroke="#0a6e4f" stroke-width="2"/>' +
+      '<path d="' + dnPath + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#gPDn)"/>' +
+      '<path d="' + dnPath + '" fill="none" stroke="#1d4ed8" stroke-width="2"/>';
+  }
+
+  document.addEventListener('click', function(e) {
+    var tab = e.target.closest('#modal-peer-traffic .tab[data-period]');
+    if (!tab) return;
+    document.getElementById('modal-peer-traffic').querySelectorAll('.tab[data-period]').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    trafficPeriod = tab.dataset.period;
+    loadTrafficChart();
   });
 
   // Modal helpers use global openModal/closeModal from app.js

@@ -147,4 +147,27 @@ router.get('/:id/qr', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/peers/:id/traffic — Get per-peer traffic chart data
+ */
+router.get('/:id/traffic', (req, res) => {
+  try {
+    const peer = peers.getById(req.params.id);
+    if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
+
+    const { getPeerChartData } = require('../../services/traffic');
+    const period = ['24h', '7d', '30d'].includes(req.query.period) ? req.query.period : '24h';
+    const data = getPeerChartData(peer.id, period);
+
+    res.json({
+      ok: true,
+      peer: { id: peer.id, name: peer.name, total_rx: peer.total_rx, total_tx: peer.total_tx },
+      data,
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get peer traffic');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 module.exports = router;
