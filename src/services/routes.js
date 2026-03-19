@@ -591,6 +591,7 @@ async function update(id, data) {
       l4_listen_port = ?,
       l4_tls_mode = ?,
       enabled = COALESCE(?, enabled),
+      monitoring_enabled = COALESCE(?, monitoring_enabled),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -609,6 +610,7 @@ async function update(id, data) {
     data.l4_listen_port !== undefined ? (data.l4_listen_port || null) : route.l4_listen_port,
     data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
+    data.monitoring_enabled !== undefined ? (data.monitoring_enabled ? 1 : 0) : null,
     id
   );
 

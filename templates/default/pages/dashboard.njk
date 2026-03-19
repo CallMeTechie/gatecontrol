@@ -56,6 +56,14 @@
     <div class="stat-value" style="color:var(--amber)" id="stat-latency">—</div>
     <div class="stat-label">{{ t('dashboard.avg_latency') }}</div>
   </div>
+
+  <div class="stat-card">
+    <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </div>
+    <div class="stat-value" style="color:var(--green)" id="stat-monitoring">—</div>
+    <div class="stat-label">{{ t('monitoring.dashboard_label') or 'Uptime' }}</div>
+  </div>
 </div>
 
 <!-- Traffic + Activity -->

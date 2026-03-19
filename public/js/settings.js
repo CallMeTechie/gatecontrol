@@ -444,9 +444,53 @@
     });
   }
 
+  // ─── Monitoring Settings ───────────────────────────────
+
+  var monEmailToggle = document.getElementById('monitoring-email-alerts');
+  if (monEmailToggle) monEmailToggle.addEventListener('click', function() { monEmailToggle.classList.toggle('on'); });
+
+  async function loadMonitoringSettings() {
+    try {
+      var data = await api.get('/api/settings/monitoring');
+      if (!data.ok) return;
+      var d = data.data;
+      var intervalEl = document.getElementById('monitoring-interval');
+      if (intervalEl) intervalEl.value = d.interval;
+      if (monEmailToggle) { if (d.emailAlerts) monEmailToggle.classList.add('on'); else monEmailToggle.classList.remove('on'); }
+      var emailEl = document.getElementById('monitoring-alert-email');
+      if (emailEl) emailEl.value = d.alertEmail || '';
+    } catch (err) {
+      console.error('Failed to load monitoring settings:', err);
+    }
+  }
+
+  var btnMonSave = document.getElementById('btn-monitoring-save');
+  if (btnMonSave) {
+    btnMonSave.addEventListener('click', async function() {
+      btnLoading(btnMonSave);
+      try {
+        var data = await api.put('/api/settings/monitoring', {
+          interval: document.getElementById('monitoring-interval').value,
+          email_alerts: monEmailToggle.classList.contains('on'),
+          alert_email: document.getElementById('monitoring-alert-email').value,
+        });
+        if (data.ok) {
+          showMessage('monitoring-message', GC.t['security.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('monitoring-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('monitoring-message', err.message, 'error');
+      } finally {
+        btnReset(btnMonSave);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
   loadSecuritySettings();
   loadLockedAccounts();
+  loadMonitoringSettings();
   setInterval(loadLockedAccounts, 30000);
 })();

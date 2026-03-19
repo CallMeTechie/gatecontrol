@@ -76,6 +76,14 @@
         : peerOnline
           ? '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.active'] || 'Active') + '</span>'
           : '<span class="tag tag-red"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.peer_offline'] || 'Peer offline') + '</span>';
+      let monitorTag = '';
+      if (r.monitoring_enabled) {
+        const mStatus = r.monitoring_status || 'unknown';
+        const mColor = mStatus === 'up' ? 'tag-green' : mStatus === 'down' ? 'tag-red' : 'tag-grey';
+        const mLabel = mStatus === 'up' ? 'UP' : mStatus === 'down' ? 'DOWN' : '?';
+        const mTime = r.monitoring_response_time != null ? ' ' + r.monitoring_response_time + 'ms' : '';
+        monitorTag = '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
+      }
       const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
@@ -133,7 +141,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
+          ${statusTag}${monitorTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -620,6 +628,14 @@
     }
     updateEditFieldVisibility();
 
+    // Monitoring toggle
+    const monitorToggle = document.getElementById('edit-route-monitoring');
+    if (monitorToggle) {
+      if (route.monitoring_enabled) monitorToggle.classList.add('on');
+      else monitorToggle.classList.remove('on');
+      monitorToggle.onclick = function() { monitorToggle.classList.toggle('on'); };
+    }
+
     hideError('edit-route-error');
     openModal('modal-edit-route');
     document.getElementById('edit-route-domain').focus();
@@ -657,7 +673,8 @@
 
       btnLoading(btn);
       try {
-        const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled };
+        const monitoringEnabled = document.getElementById('edit-route-monitoring')?.classList.contains('on') || false;
+        const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled, monitoring_enabled: monitoringEnabled };
         const editRouteType = document.getElementById('edit-route-type').value;
         payload.route_type = editRouteType;
         if (editRouteType === 'l4') {

@@ -334,6 +334,39 @@ router.put('/security', (req, res) => {
   }
 });
 
+// ─── Monitoring Settings ────────────────────────────────
+
+/**
+ * GET /api/settings/monitoring — Get monitoring settings
+ */
+router.get('/monitoring', (req, res) => {
+  const monitor = require('../../services/monitor');
+  const cfg = monitor.getSettings();
+  res.json({ ok: true, data: cfg });
+});
+
+/**
+ * PUT /api/settings/monitoring — Update monitoring settings
+ */
+router.put('/monitoring', (req, res) => {
+  try {
+    const { interval, email_alerts, alert_email } = req.body;
+    if (interval !== undefined) {
+      const val = parseInt(interval, 10);
+      if (val >= 10 && val <= 3600) settings.set('monitoring.interval', String(val));
+    }
+    if (email_alerts !== undefined) settings.set('monitoring.email_alerts', String(email_alerts));
+    if (alert_email !== undefined) settings.set('monitoring.alert_email', String(alert_email));
+
+    activity.log('monitoring_settings_updated', 'Monitoring settings updated', {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 /**
  * GET /api/settings/lockout — Get currently locked accounts
  */

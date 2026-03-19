@@ -17,6 +17,19 @@
       const routesEl = document.getElementById('stat-routes');
       if (routesEl) routesEl.textContent = data.routes.active;
 
+      // Monitoring summary
+      const monitorEl = document.getElementById('stat-monitoring');
+      if (monitorEl && data.monitoring) {
+        if (data.monitoring.total > 0) {
+          monitorEl.innerHTML = '<span style="color:var(--green)">' + data.monitoring.up + '</span>/<span>' + data.monitoring.total + '</span>';
+          if (data.monitoring.down > 0) {
+            monitorEl.innerHTML += ' <span style="color:var(--red);font-size:12px">(' + data.monitoring.down + ' down)</span>';
+          }
+        } else {
+          monitorEl.textContent = '—';
+        }
+      }
+
       // Traffic today
       const trafficEl = document.getElementById('stat-traffic');
       if (trafficEl) trafficEl.innerHTML = formatTrafficValue(data.traffic.today);

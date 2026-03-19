@@ -245,6 +245,18 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_route_auth_otp_route_email ON route_auth_otp(route_id, email);
   `);
 
+  // Migration: Monitoring columns on routes
+  try {
+    db.exec(`ALTER TABLE routes ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`ALTER TABLE routes ADD COLUMN monitoring_status TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN monitoring_last_check TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN monitoring_last_change TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN monitoring_response_time INTEGER`);
+    logger.info('Migration: Added monitoring columns to routes');
+  } catch (e) {
+    // Columns already exist
+  }
+
   // Migration: Per-peer traffic snapshots
   db.exec(`
     CREATE TABLE IF NOT EXISTS peer_traffic_snapshots (

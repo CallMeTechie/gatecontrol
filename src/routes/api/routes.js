@@ -218,4 +218,18 @@ router.post('/:id/toggle', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/routes/:id/check — Manually trigger a monitoring check
+ */
+router.post('/:id/check', async (req, res) => {
+  try {
+    const { checkRouteById } = require('../../services/monitor');
+    const result = await checkRouteById(req.params.id);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Manual check failed');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;

@@ -9,6 +9,7 @@ const { createApp } = require('./app');
 const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
 const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAuth');
+const { startMonitor, stopMonitor } = require('./services/monitor');
 const activity = require('./services/activity');
 
 let server;
@@ -51,6 +52,7 @@ async function start() {
     startCollector(60000);  // Traffic snapshots every 60s
     startPoller(30000);     // Peer status every 30s
     startSessionCleanup();  // Route auth session cleanup every 15 min
+    startMonitor();         // Uptime monitoring checks
 
     // Periodic cleanup (every 6 hours)
     setInterval(() => {
@@ -84,6 +86,7 @@ function shutdown(signal) {
   stopCollector();
   stopPoller();
   stopSessionCleanup();
+  stopMonitor();
 
   const closeAndExit = () => {
     const { closeDb } = require('./db/connection');

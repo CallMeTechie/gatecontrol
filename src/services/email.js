@@ -251,6 +251,33 @@ function saveSmtpSettings({ host, port, user, password, from, secure }) {
   logger.info('SMTP settings saved');
 }
 
+/**
+ * Send a monitoring alert email (route down/recovered)
+ */
+async function sendMonitoringAlert({ to, domain, status, responseTime, target }) {
+  if (!isSmtpConfigured()) return;
+
+  const isDown = status === 'down';
+  const subject = isDown
+    ? `[GateControl] Route down: ${domain}`
+    : `[GateControl] Route recovered: ${domain}`;
+
+  const body = [
+    isDown ? 'A monitored route is DOWN.' : 'A monitored route has RECOVERED.',
+    '',
+    `Domain: ${domain}`,
+    `Target: ${target}`,
+    `Status: ${status.toUpperCase()}`,
+    `Response time: ${responseTime}ms`,
+    `Time: ${new Date().toISOString()}`,
+    '',
+    '— GateControl Monitoring',
+  ].join('\n');
+
+  await sendMail({ to, subject, text: body });
+  logger.info({ to, domain, status }, 'Monitoring alert email sent');
+}
+
 module.exports = {
   getSmtpSettings,
   isSmtpConfigured,
@@ -258,6 +285,7 @@ module.exports = {
   sendMail,
   sendOtpEmail,
   sendTestEmail,
+  sendMonitoringAlert,
   saveSmtpSettings,
   resetTransporter,
 };

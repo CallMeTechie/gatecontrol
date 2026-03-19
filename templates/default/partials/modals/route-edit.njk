@@ -221,6 +221,13 @@
           </div>
         </div>
       </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:12px">
+        <div>
+          <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+        </div>
+        <div class="toggle" id="edit-route-monitoring" data-managed="true"></div>
+      </div>
       <div id="edit-route-error" class="form-error" style="display:none"></div>
     </div>
     <div class="modal-foot">

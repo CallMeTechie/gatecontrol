@@ -33,6 +33,10 @@ router.get('/stats', async (req, res) => {
     // Average latency (ping online peers)
     const avgLatency = await wireguard.getAverageLatency();
 
+    // Monitoring summary
+    const { getSummary: getMonitoringSummary } = require('../../services/monitor');
+    const monitoring = getMonitoringSummary();
+
     res.json({
       ok: true,
       peers: {
@@ -42,6 +46,7 @@ router.get('/stats', async (req, res) => {
       routes: {
         active: activeRoutes,
       },
+      monitoring,
       traffic: {
         today: todayTraffic.total,
         todayUpload: todayTraffic.upload,
