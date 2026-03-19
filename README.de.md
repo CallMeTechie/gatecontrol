@@ -57,13 +57,22 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 
 ### Monitoring & Logging
 - Echtzeit-Traffic-Monitoring mit Upload-/Download-Statistiken pro Peer
+- **Per-Peer Traffic-Verlauf** mit persistenten Gesamtwerten und interaktiven Charts (24h, 7d, 30d)
 - Dashboard mit Systemmetriken: verbundene Peers, aktive Routen, CPU, RAM, Uptime
 - Traffic-Charts mit 1-Stunden-, 24-Stunden- und 7-Tage-Ansichten
+- **Health-Check-Endpoint** (`/health`) zur Verifizierung von Datenbank- und WireGuard-Status
 - Vollständiges Aktivitätsprotokoll mit Schweregrad-Stufen und Filterung (Peer erstellt, Route geändert, Login-Events, etc.)
 - Caddy-Zugriffsprotokoll mit automatischer Rotation (10 MB, 3 Dateien behalten)
 
+### Sicherheitseinstellungen
+- **Konfigurierbarer Account-Lockout** — Konten nach N Fehlversuchen für eine konfigurierbare Dauer sperren (gilt für Admin- und Route-Auth-Login)
+- **Manuelles Entsperren** — Gesperrte Konten direkt auf der Einstellungsseite anzeigen und entsperren
+- **Passwort-Komplexität erzwingen** — Konfigurierbare Regeln für Mindestlänge, Großbuchstaben, Zahlen und Sonderzeichen
+- Alle Sicherheitseinstellungen über die Weboberfläche verwaltbar (Einstellungen > Sicherheit)
+
 ### Backup & Wiederherstellung
-- Vollständiges System-Backup als portables JSON (Peers, Routen, Einstellungen, Webhooks)
+- Vollständiges System-Backup als portables JSON (Peers, Routen, Route-Auth-Konfigurationen, Einstellungen, Webhooks)
+- **Verschlüsselungsschlüssel-Validierung** bei Wiederherstellung — verhindert stille Fehler bei Wiederherstellung auf einer anderen Instanz
 - Verschlüsselte Schlüssel werden für den Export entschlüsselt — Wiederherstellung auf beliebiger Instanz
 - Atomare, transaktionsbasierte Wiederherstellung mit automatischer WireGuard- und Caddy-Resynchronisation
 - Backup-Versionierung für Vorwärtskompatibilität
@@ -134,14 +143,15 @@ src/
 ├── app.js                 # Express-Setup, Sicherheits-Middleware, Template-Engine
 ├── db/
 │   ├── connection.js      # SQLite mit WAL-Modus und Performance-Pragmas
-│   ├── migrations.js      # Schema-Definition (11 Tabellen)
+│   ├── migrations.js      # Schema-Definition (14 Tabellen)
 │   └── seed.js            # Admin-Benutzer-Initialisierung beim ersten Start
 ├── services/              # Geschäftslogik-Schicht
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync
 │   ├── wireguard.js       # WireGuard CLI-Wrapper (wg, wg-quick, wg syncconf)
 │   ├── routes.js          # Route CRUD, Caddy JSON-Config-Builder, Admin-API-Sync
 │   ├── l4.js              # Layer 4 Server-Gruppierung, Config-Generierung, Konflikterkennung
-│   ├── traffic.js         # Periodische Traffic-Snapshots, Chart-Daten-Aggregation
+│   ├── traffic.js         # Periodische Traffic-Snapshots, Per-Peer und aggregierte Chart-Daten
+│   ├── lockout.js         # Account-Lockout-Tracking und -Durchsetzung
 │   ├── peerStatus.js      # Hintergrund-Peer-Online/Offline-Abfrage
 │   ├── activity.js        # Aktivitäts-Event-Logging mit Schweregrad-Stufen
 │   ├── accessLog.js       # HTTP-Zugriffsprotokoll-Verarbeitung
@@ -157,12 +167,12 @@ src/
 │   ├── auth.js            # Login/Logout-Handler
 │   ├── routeAuth.js       # Öffentliche Route-Auth-Endpunkte (Verify, Login, Logout)
 │   └── api/               # RESTful API-Endpunkte
-│       ├── peers.js       # /api/peers — CRUD, Toggle, Sync, Config-Export
+│       ├── peers.js       # /api/peers — CRUD, Toggle, Sync, Config-Export, Traffic-Charts
 │       ├── routes.js      # /api/routes — CRUD, Toggle
 │       ├── routeAuth.js   # /api/routes/:id/auth — Route-Auth-Konfigurations-CRUD
 │       ├── smtp.js        # /api/smtp — SMTP-Einstellungsverwaltung
 │       ├── dashboard.js   # /api/dashboard — Statistiken, Traffic, Charts
-│       ├── settings.js    # /api/settings — Abrufen/Setzen
+│       ├── settings.js    # /api/settings — Abrufen/Setzen, Sicherheitseinstellungen, Lockout-Verwaltung
 │       ├── logs.js        # /api/logs — Aktivitäts- + Zugriffslogs mit Filterung
 │       ├── wireguard.js   # /api/wg — Status, Neustart
 │       ├── caddy.js       # /api/caddy — Status, Neuladen
@@ -226,14 +236,16 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 | Schicht | Implementierung |
 |---------|----------------|
 | **Authentifizierung** | Session-basiert mit Argon2-Passwort-Hashing |
-| **CSRF-Schutz** | Synchronizer-Token-Pattern via csrf-sync bei allen zustandsändernden Requests |
+| **Account-Lockout** | Konfigurierbarer Max-Versuche + Sperrdauer für Admin- und Route-Auth-Login. Manuelles Entsperren via UI |
+| **Passwort-Komplexität** | Konfigurierbarer Erzwingung von Mindestlänge, Großbuchstaben, Zahlen, Sonderzeichen |
+| **CSRF-Schutz** | Synchronizer-Token-Pattern via csrf-sync; domain-gebundene HMAC-signierte Tokens für Route-Auth mit Timing-Safe-Vergleich |
 | **Rate Limiting** | 5 Login-Versuche / 15 Min, 100 API-Requests / 15 Min pro IP (konfigurierbar) |
-| **Route-Authentifizierung** | Pro-Route-Auth mit Email+Passwort, OTP, TOTP, 2FA. HMAC-signierte CSRF-Tokens, Argon2-Passwort-Hashing, AES-256-GCM-verschlüsselte TOTP-Secrets |
+| **Route-Authentifizierung** | Pro-Route-Auth mit Email+Passwort, OTP, TOTP, 2FA. Argon2-Passwort-Hashing, AES-256-GCM-verschlüsselte TOTP-Secrets |
 | **Sicherheits-Header** | Helmet.js mit strikter Content Security Policy, HSTS, X-Frame-Options |
 | **CSP-Nonces** | Pro Request `crypto.randomBytes(16)` Nonce für Inline-Scripts |
 | **Session-Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, konfigurierbares Max-Age |
 | **Eingabevalidierung** | Serverseitige Validierung für Domains, IPs, Namen, Beschreibungen |
-| **Webhook-SSRF-Schutz** | Blockiert Requests an localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x) |
+| **Webhook-SSRF-Schutz** | Blockiert Requests an localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) mit DNS-Rebinding-Schutz |
 | **Fehler-Bereinigung** | Detaillierte Fehler nur in der Entwicklung; generische Meldungen in Produktion |
 
 ### Container-Sicherheit
@@ -242,7 +254,9 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 - WireGuard-Konfigurationsdateien mit `chmod 600` gesichert
 - Verschlüsselungsschlüssel-Datei mit `chmod 600` gesichert
 - Nur benötigte Capabilities: `NET_ADMIN` (Netzwerk-Interface-Verwaltung) und `SYS_MODULE` (Kernel-Modul-Laden)
-- Health-Check-Endpoint nur auf internem Port (`127.0.0.1:3000`)
+- Health-Check-Endpoint (`/health`) überprüft DB-Konnektivität und WireGuard-Interface-Status
+- Atomare WireGuard-Config-Schreibvorgänge (Write-to-Tmp + Rename) verhindern Korruption bei Crash
+- Graceful Shutdown mit Bereinigung aller Hintergrundaufgaben und Timer
 
 ---
 
@@ -416,7 +430,7 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 **Dashboard** — Überblick über verbundene Peers, aktive Routen, Traffic-Charts und Systemmetriken.
 
-**Peers** — WireGuard VPN-Peers erstellen und verwalten. Jeder Peer erhält eine automatisch zugewiesene IP, generierte Schlüssel und eine herunterladbare Konfigurationsdatei mit QR-Code.
+**Peers** — WireGuard VPN-Peers erstellen und verwalten. Jeder Peer erhält eine automatisch zugewiesene IP, generierte Schlüssel und eine herunterladbare Konfigurationsdatei mit QR-Code. Per-Peer Traffic-Verlauf mit interaktiven Charts (24h, 7d, 30d) und persistenten Upload/Download-Gesamtwerten anzeigen.
 
 **Routen** — Reverse-Proxy-Routen (HTTP) und Layer 4 Proxy-Routen (TCP/UDP) konfigurieren. Externe Domains auf interne Dienste über deine VPN-Peers abbilden. HTTP-Routen erhalten automatisches HTTPS via Caddy. L4-Routen leiten Raw-TCP/UDP-Traffic für Dienste wie RDP, SSH oder Datenbanken weiter.
 
@@ -428,7 +442,7 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 **Logs** — Aktivitäts- und Zugriffsprotokolle mit Filterung nach Ereignistyp und Schweregrad durchsuchen.
 
-**Einstellungen** — Systemeinstellungen, SMTP-E-Mail-Konfiguration, Backup/Wiederherstellung und Webhook-Konfiguration.
+**Einstellungen** — Systemeinstellungen, Sicherheitskonfiguration (Account-Lockout, Passwort-Komplexität), SMTP-E-Mail-Konfiguration, Backup/Wiederherstellung und Webhook-Verwaltung.
 
 ### API
 

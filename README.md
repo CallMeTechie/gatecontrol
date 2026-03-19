@@ -57,13 +57,22 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 
 ### Monitoring & Logging
 - Real-time traffic monitoring with upload/download statistics per peer
+- **Per-peer traffic history** with persistent totals and interactive charts (24h, 7d, 30d)
 - Dashboard with system metrics: connected peers, active routes, CPU, RAM, uptime
 - Traffic charts with 1-hour, 24-hour, and 7-day views
+- **Health check endpoint** (`/health`) verifying database and WireGuard status
 - Full activity log with severity levels and filtering (peer created, route modified, login events, etc.)
 - Caddy access log with automatic rotation (10 MB, keep 3 files)
 
+### Security Settings
+- **Configurable account lockout** — lock accounts after N failed login attempts for a configurable duration (applies to both admin and route-auth login)
+- **Manual unlock** — view and unlock locked accounts directly from the Settings page
+- **Password complexity enforcement** — configurable rules for minimum length, uppercase letters, numbers, and special characters
+- All security settings manageable through the web UI (Settings > Security)
+
 ### Backup & Restore
-- Full system backup as portable JSON (peers, routes, settings, webhooks)
+- Full system backup as portable JSON (peers, routes, route auth configs, settings, webhooks)
+- **Encryption key validation** on restore — prevents silent failures when restoring on a different instance
 - Encrypted keys are decrypted for export portability — restore on any instance
 - Atomic transaction-based restore with automatic WireGuard and Caddy resync
 - Backup versioning for forward compatibility
@@ -134,14 +143,15 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Schema definition (11 tables)
+│   ├── migrations.js      # Schema definition (14 tables)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
 │   ├── wireguard.js       # WireGuard CLI wrapper (wg, wg-quick, wg syncconf)
 │   ├── routes.js          # Route CRUD, Caddy JSON config builder, admin API sync
 │   ├── l4.js              # Layer 4 server grouping, config generation, conflict detection
-│   ├── traffic.js         # Periodic traffic snapshots, chart data aggregation
+│   ├── traffic.js         # Periodic traffic snapshots, per-peer and aggregate chart data
+│   ├── lockout.js         # Account lockout tracking and enforcement
 │   ├── peerStatus.js      # Background peer online/offline polling
 │   ├── activity.js        # Activity event logging with severity levels
 │   ├── accessLog.js       # HTTP access log processing
@@ -157,12 +167,12 @@ src/
 │   ├── auth.js            # Login/logout handlers
 │   ├── routeAuth.js       # Public route auth endpoints (verify, login, logout)
 │   └── api/               # RESTful API endpoints
-│       ├── peers.js       # /api/peers — CRUD, toggle, sync, config export
+│       ├── peers.js       # /api/peers — CRUD, toggle, sync, config export, traffic charts
 │       ├── routes.js      # /api/routes — CRUD, toggle
 │       ├── routeAuth.js   # /api/routes/:id/auth — route auth config CRUD
 │       ├── smtp.js        # /api/smtp — SMTP settings management
 │       ├── dashboard.js   # /api/dashboard — stats, traffic, charts
-│       ├── settings.js    # /api/settings — get/set
+│       ├── settings.js    # /api/settings — get/set, security settings, lockout management
 │       ├── logs.js        # /api/logs — activity + access logs with filtering
 │       ├── wireguard.js   # /api/wg — status, restart
 │       ├── caddy.js       # /api/caddy — status, reload
@@ -226,14 +236,16 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 | Layer | Implementation |
 |-------|---------------|
 | **Authentication** | Session-based with Argon2 password hashing |
-| **CSRF Protection** | Synchronizer token pattern via csrf-sync on all state-changing requests |
+| **Account Lockout** | Configurable max attempts + lock duration for admin and route-auth login. Manual unlock via UI |
+| **Password Complexity** | Configurable enforcement of min length, uppercase, numbers, special characters |
+| **CSRF Protection** | Synchronizer token pattern via csrf-sync; domain-bound HMAC-signed tokens for route-auth with timing-safe comparison |
 | **Rate Limiting** | 5 login attempts / 15 min, 100 API requests / 15 min per IP (configurable) |
-| **Route Authentication** | Per-route auth with Email+Password, OTP, TOTP, 2FA. HMAC-signed CSRF tokens, Argon2 password hashing, AES-256-GCM encrypted TOTP secrets |
+| **Route Authentication** | Per-route auth with Email+Password, OTP, TOTP, 2FA. Argon2 password hashing, AES-256-GCM encrypted TOTP secrets |
 | **Security Headers** | Helmet.js with strict Content Security Policy, HSTS, X-Frame-Options |
 | **CSP Nonces** | Per-request `crypto.randomBytes(16)` nonce for inline scripts |
 | **Session Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, configurable max age |
 | **Input Validation** | Server-side validation for domains, IPs, names, descriptions |
-| **Webhook SSRF Protection** | Blocks requests to localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x) |
+| **Webhook SSRF Protection** | Blocks requests to localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) with DNS rebinding protection |
 | **Error Sanitization** | Detailed errors in development only; generic messages in production |
 
 ### Container Security
@@ -242,7 +254,9 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 - WireGuard configuration files secured with `chmod 600`
 - Encryption key file secured with `chmod 600`
 - Only required capabilities: `NET_ADMIN` (network interface management) and `SYS_MODULE` (kernel module loading)
-- Health check endpoint on internal port only (`127.0.0.1:3000`)
+- Health check endpoint (`/health`) validates DB connectivity and WireGuard interface status
+- Atomic WireGuard config writes (write-to-tmp + rename) prevent corruption on crash
+- Graceful shutdown with cleanup of all background tasks and timers
 
 ---
 
@@ -416,7 +430,7 @@ After starting GateControl, navigate to your configured `GC_BASE_URL` and log in
 
 **Dashboard** — Overview of connected peers, active routes, traffic charts, and system metrics.
 
-**Peers** — Create and manage WireGuard VPN peers. Each peer gets an auto-allocated IP, generated keys, and a downloadable configuration file with QR code.
+**Peers** — Create and manage WireGuard VPN peers. Each peer gets an auto-allocated IP, generated keys, and a downloadable configuration file with QR code. View per-peer traffic history with interactive charts (24h, 7d, 30d) and persistent upload/download totals.
 
 **Routes** — Configure reverse proxy routes (HTTP) and Layer 4 proxy routes (TCP/UDP). Map external domains to internal services through your VPN peers. HTTP routes get automatic HTTPS via Caddy. L4 routes forward raw TCP/UDP traffic for services like RDP, SSH, or databases.
 
@@ -428,7 +442,7 @@ After starting GateControl, navigate to your configured `GC_BASE_URL` and log in
 
 **Logs** — Browse activity logs and access logs with filtering by event type and severity.
 
-**Settings** — System settings, SMTP email configuration, backup/restore, and webhook configuration.
+**Settings** — System settings, security configuration (account lockout, password complexity), SMTP email configuration, backup/restore, and webhook management.
 
 ### API
 
