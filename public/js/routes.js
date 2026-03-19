@@ -82,7 +82,8 @@
         const mColor = mStatus === 'up' ? 'tag-green' : mStatus === 'down' ? 'tag-red' : 'tag-grey';
         const mLabel = mStatus === 'up' ? 'UP' : mStatus === 'down' ? 'DOWN' : '?';
         const mTime = r.monitoring_response_time != null ? ' ' + r.monitoring_response_time + 'ms' : '';
-        monitorTag = '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
+        monitorTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Monitoring</span>';
+        monitorTag += '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
       }
       const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
