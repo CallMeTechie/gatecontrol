@@ -40,7 +40,7 @@ const routeAuthCodeLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.body?.email || req.ip,
+  keyGenerator: (req) => req.ip,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'Too many code requests. Try again later.' });
   },

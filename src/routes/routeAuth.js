@@ -42,22 +42,28 @@ function safeRedirect(url) {
   return url.startsWith('/') ? url : '/';
 }
 
-function generateSignedCsrf() {
+function generateSignedCsrf(domain) {
   const timestamp = Date.now().toString(36);
   const random = crypto.randomBytes(16).toString('hex');
-  const payload = `${timestamp}.${random}`;
+  const payload = `${timestamp}.${random}.${domain || ''}`;
   const sig = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('hex');
   return `${payload}.${sig}`;
 }
 
-function verifySignedCsrf(token) {
+function verifySignedCsrf(token, domain) {
   if (!token || typeof token !== 'string') return false;
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  const [timestamp, random, sig] = parts;
-  // Check signature (compare hex strings directly for exact match)
-  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(`${timestamp}.${random}`).digest('hex');
-  if (sig.length !== expected.length || sig !== expected) return false;
+  if (parts.length !== 4) return false;
+  const [timestamp, random, tokenDomain, sig] = parts;
+  // Verify domain binding
+  if ((tokenDomain || '') !== (domain || '')) return false;
+  // Timing-safe signature comparison
+  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(`${timestamp}.${random}.${tokenDomain}`).digest('hex');
+  try {
+    const sigBuf = Buffer.from(sig, 'hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
+  } catch { return false; }
   // Check expiry
   const ts = parseInt(timestamp, 36);
   if (isNaN(ts) || Date.now() - ts > CSRF_MAX_AGE) return false;
@@ -122,8 +128,8 @@ router.get('/login', (req, res) => {
       }
     }
 
-    // Set CSRF double-submit cookie
-    const csrfToken = generateSignedCsrf();
+    // Set CSRF double-submit cookie (bound to domain)
+    const csrfToken = generateSignedCsrf(domain);
 
     res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
       domain,
@@ -143,16 +149,15 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
   (async () => {
     const { email, password, _csrf, redirect } = req.body || {};
     const redirectTo = safeRedirect(redirect);
+    const domain = req.body.domain || req.headers['x-forwarded-host'] || req.headers.host;
 
-    // CSRF: verify HMAC-signed token from body or header
+    // CSRF: verify HMAC-signed token from body or header (bound to domain)
     const csrfToken = _csrf || req.headers['x-csrf-token'];
-    if (!verifySignedCsrf(csrfToken)) {
+    if (!verifySignedCsrf(csrfToken, domain)) {
       const logger = require('../utils/logger');
       logger.warn({ hasBody: !!req.body, csrfLen: csrfToken?.length, csrfStart: csrfToken?.substring(0, 12) }, 'CSRF failed');
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
-
-    const domain = req.body.domain || req.headers['x-forwarded-host'] || req.headers.host;
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
     if (!authConfig) {
@@ -198,14 +203,13 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
 router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
   (async () => {
     const { email, domain: bodyDomain, _csrf } = req.body;
+    const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
 
-    // CSRF check
+    // CSRF check (bound to domain)
     const csrfToken = _csrf || req.headers['x-csrf-token'];
-    if (!verifySignedCsrf(csrfToken)) {
+    if (!verifySignedCsrf(csrfToken, domain)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
-
-    const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
     if (!authConfig) {
@@ -227,14 +231,13 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
   (async () => {
     const { code, domain: bodyDomain, _csrf, redirect } = req.body;
     const redirectTo = safeRedirect(redirect);
+    const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
 
-    // CSRF check
+    // CSRF check (bound to domain)
     const csrfToken = _csrf || req.headers['x-csrf-token'];
-    if (!verifySignedCsrf(csrfToken)) {
+    if (!verifySignedCsrf(csrfToken, domain)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
-
-    const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
     if (!authConfig) {

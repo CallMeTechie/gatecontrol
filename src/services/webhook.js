@@ -1,5 +1,6 @@
 'use strict';
 
+const dns = require('node:dns');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
@@ -37,6 +38,7 @@ function validateWebhookUrl(urlStr) {
         (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
         (a === 192 && b === 168) ||           // 192.168.0.0/16
         (a === 169 && b === 254) ||           // 169.254.0.0/16 (link-local, cloud metadata)
+        (a === 100 && b >= 64 && b <= 127) || // 100.64.0.0/10 (CGNAT / shared address space)
         a === 127 ||                          // 127.0.0.0/8
         a === 0) {                            // 0.0.0.0/8
       throw new Error('Webhook URL must not target private or reserved IP addresses');
@@ -44,6 +46,47 @@ function validateWebhookUrl(urlStr) {
   }
 
   return parsed;
+}
+
+/**
+ * Check if an IP address is private/reserved (used for DNS rebinding protection)
+ */
+function isPrivateIp(ip) {
+  const match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (match) {
+    const [, a, b] = match.map(Number);
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+           (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ||
+           a === 127 || a === 0;
+  }
+  // IPv6 private ranges
+  const bare = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  return bare === '::1' || bare.startsWith('fc') || bare.startsWith('fd') ||
+         bare.startsWith('fe80') || bare.startsWith('::ffff:');
+}
+
+/**
+ * Resolve hostname and verify all IPs are public (DNS rebinding protection)
+ */
+async function validateResolvedIps(hostname) {
+  // Skip validation for direct IP addresses (already checked by validateWebhookUrl)
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return;
+  if (hostname.startsWith('[') || hostname === '::1') return;
+
+  try {
+    const addresses = await dns.promises.resolve4(hostname).catch(() => []);
+    const addresses6 = await dns.promises.resolve6(hostname).catch(() => []);
+    const allAddresses = [...addresses, ...addresses6];
+
+    for (const addr of allAddresses) {
+      if (isPrivateIp(addr)) {
+        throw new Error('Webhook URL resolves to a private or reserved IP address');
+      }
+    }
+  } catch (err) {
+    if (err.message.includes('private or reserved')) throw err;
+    // DNS resolution failure — allow the request (may be a temporary DNS issue)
+  }
 }
 
 /**
@@ -166,6 +209,12 @@ async function notify(eventType, message, details = null) {
 
     // Validate URL before making request (guards against pre-existing unsafe URLs)
     try { validateWebhookUrl(wh.url); } catch { continue; }
+
+    // DNS rebinding protection: re-validate resolved IPs at request time
+    try { await validateResolvedIps(new URL(wh.url).hostname); } catch {
+      logger.warn({ webhookId: wh.id, url: wh.url }, 'Webhook blocked: DNS resolves to private IP');
+      continue;
+    }
 
     // Fire-and-forget — don't block the caller
     fetch(wh.url, {

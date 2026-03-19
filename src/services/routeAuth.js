@@ -364,7 +364,15 @@ function verifyOtp(routeId, email, code) {
   if (!otp) return false;
 
   const inputHash = hashOtp(code);
-  const isValid = otp.code_hash === inputHash;
+  // Timing-safe comparison to prevent side-channel attacks
+  let isValid = false;
+  try {
+    const a = Buffer.from(otp.code_hash, 'hex');
+    const b = Buffer.from(inputHash, 'hex');
+    isValid = a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    isValid = false;
+  }
 
   if (isValid) {
     db.prepare('UPDATE route_auth_otp SET used = 1 WHERE id = ?').run(otp.id);
