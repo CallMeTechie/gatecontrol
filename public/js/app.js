@@ -234,11 +234,11 @@ window.escapeHtml = function(str) {
 // ─── Shared error helpers ───────────────────────────────
 window.showError = function(containerId, message) {
   const el = document.getElementById(containerId);
-  if (el) { el.textContent = message; el.classList.remove('hidden'); }
+  if (el) { el.textContent = message; el.style.display = 'block'; }
 };
 window.hideError = function(containerId) {
   const el = document.getElementById(containerId);
-  if (el) { el.textContent = ''; el.classList.add('hidden'); }
+  if (el) { el.textContent = ''; el.style.display = 'none'; }
 };
 
 // ─── Shared message helper ──────────────────────────────
@@ -246,9 +246,9 @@ window.showMessage = function(containerId, message, type) {
   const el = document.getElementById(containerId);
   if (!el) return;
   el.textContent = message;
-  el.className = 'mt-4 p-3 rounded-lg text-sm ' + (type === 'error' ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200');
-  el.classList.remove('hidden');
-  if (type !== 'error') setTimeout(() => el.classList.add('hidden'), 3000);
+  el.className = 'flash ' + (type === 'error' ? 'flash-error' : 'flash-success');
+  el.style.display = 'block';
+  if (type !== 'error') setTimeout(() => { el.style.display = 'none'; }, 5000);
 };
 
 console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');

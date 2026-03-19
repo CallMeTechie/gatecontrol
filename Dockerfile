@@ -24,8 +24,9 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
 
-RUN mkdir -p /data/caddy /data/wireguard /etc/wireguard && \
-    chmod 700 /data/wireguard /etc/wireguard
+RUN mkdir -p /data/caddy /data/wireguard /etc/wireguard /app/config && \
+    chmod 700 /data/wireguard /etc/wireguard && \
+    chmod +x /app/scripts/wg-wrapper.sh
 
 VOLUME ["/data"]
 

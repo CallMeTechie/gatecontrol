@@ -57,40 +57,45 @@ async function create(data) {
 
   const db = getDb();
 
-  // Check for duplicate name
-  const existing = db.prepare('SELECT id FROM peers WHERE name = ?').get(sanitize(data.name));
-  if (existing) throw new Error('A peer with this name already exists');
-
-  // Generate keys
+  // Generate keys (async, before transaction)
   const { privateKey, publicKey } = await generateKeyPair();
   const presharedKey = await generatePresharedKey();
 
-  // Allocate IP
-  const ip = getNextAvailableIp();
-  if (!ip) throw new Error('No available IP addresses in subnet');
-
-  const allowedIps = `${ip}/32`;
   const dns = data.dns || config.wireguard.dns.join(',');
   const keepalive = data.persistentKeepalive || config.wireguard.persistentKeepalive;
 
-  // Store peer in DB
-  const result = db.prepare(`
-    INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                       allowed_ips, dns, persistent_keepalive, enabled, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-  `).run(
-    sanitize(data.name),
-    sanitize(data.description) || null,
-    publicKey,
-    encrypt(privateKey),
-    encrypt(presharedKey),
-    allowedIps,
-    dns,
-    keepalive,
-    sanitize(data.tags) || ''
-  );
+  // Wrap IP allocation + INSERT in a transaction to prevent race conditions
+  const insertPeer = db.transaction(() => {
+    // Check for duplicate name
+    const existing = db.prepare('SELECT id FROM peers WHERE name = ?').get(sanitize(data.name));
+    if (existing) throw new Error('A peer with this name already exists');
 
-  const peerId = result.lastInsertRowid;
+    // Allocate IP inside transaction to prevent two peers getting the same IP
+    const ip = getNextAvailableIp();
+    if (!ip) throw new Error('No available IP addresses in subnet');
+
+    const allowedIps = `${ip}/32`;
+
+    const result = db.prepare(`
+      INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
+                         allowed_ips, dns, persistent_keepalive, enabled, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(
+      sanitize(data.name),
+      sanitize(data.description) || null,
+      publicKey,
+      encrypt(privateKey),
+      encrypt(presharedKey),
+      allowedIps,
+      dns,
+      keepalive,
+      sanitize(data.tags) || ''
+    );
+
+    return { peerId: result.lastInsertRowid, ip, allowedIps };
+  });
+
+  const { peerId, ip, allowedIps } = insertPeer();
 
   // Update WireGuard config and sync
   await rewriteWgConfig();

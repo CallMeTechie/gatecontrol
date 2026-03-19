@@ -33,6 +33,15 @@ const COOKIE_SID = 'gc.route.sid';
 const CSRF_SECRET = config.app.secret; // reuse app secret for HMAC
 const CSRF_MAX_AGE = 15 * 60 * 1000; // 15 min
 
+/**
+ * Validate that a redirect target is a safe relative path (no open redirect)
+ */
+function safeRedirect(url) {
+  if (!url || typeof url !== 'string') return '/';
+  if (url.startsWith('//') || /^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(url)) return '/';
+  return url.startsWith('/') ? url : '/';
+}
+
 function generateSignedCsrf() {
   const timestamp = Date.now().toString(36);
   const random = crypto.randomBytes(16).toString('hex');
@@ -91,7 +100,7 @@ router.get('/verify', (req, res) => {
 router.get('/login', (req, res) => {
   (async () => {
     const domain = req.query.route || req.headers['x-forwarded-host'] || req.headers.host;
-    const redirectTo = req.query.redirect || '/';
+    const redirectTo = safeRedirect(req.query.redirect);
 
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
@@ -133,7 +142,7 @@ router.get('/login', (req, res) => {
 router.post('/login', routeAuthLoginLimiter, (req, res) => {
   (async () => {
     const { email, password, _csrf, redirect } = req.body || {};
-    const redirectTo = redirect || '/';
+    const redirectTo = safeRedirect(redirect);
 
     // CSRF: verify HMAC-signed token from body or header
     const csrfToken = _csrf || req.headers['x-csrf-token'];
@@ -217,7 +226,7 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
 router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
   (async () => {
     const { code, domain: bodyDomain, _csrf, redirect } = req.body;
-    const redirectTo = redirect || '/';
+    const redirectTo = safeRedirect(redirect);
 
     // CSRF check
     const csrfToken = _csrf || req.headers['x-csrf-token'];
@@ -292,7 +301,7 @@ router.post('/logout', (req, res) => {
       deleteSession(sessionId);
     }
     clearSessionCookie(res);
-    const redirectTo = req.body.redirect || req.query.redirect || '/';
+    const redirectTo = safeRedirect(req.body.redirect || req.query.redirect);
     res.redirect(redirectTo);
   })().catch((err) => res.status(500).send(err.message));
 });
