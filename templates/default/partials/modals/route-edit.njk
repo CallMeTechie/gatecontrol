@@ -1,86 +1,98 @@
 <div class="modal-overlay" id="modal-edit-route" style="display:none">
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="modal-head">
       <span class="modal-title">{{ t('routes.edit_title') }}</span>
       <button class="modal-close" data-close-modal>&times;</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="edit-route-id">
-      <div class="form-group">
-        <label class="form-label">{{ t('routes.domain') }}</label>
-        <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253"
-          data-dns-checking="{{ t('routes.dns_checking') }}"
-          data-dns-ok="{{ t('routes.dns_ok') }}"
-          data-dns-warning="{{ t('routes.dns_warning') }}">
-        <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
-      </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
-        <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
-      </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('routes.target_peer') }}</label>
-        <select id="edit-route-peer" style="width:100%">
-          <option value="">— {{ t('routes.direct_ip') }} —</option>
-        </select>
-      </div>
-      <div class="form-group" id="edit-route-ip-group">
-        <label class="form-label">Target IP</label>
-        <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
-      </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('routes.target_port') }}</label>
-        <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
-      </div>
-      <div class="form-group">
-        <div class="toggle-group" id="edit-route-type-group">
-          <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
-          <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
-        </div>
-        <input type="hidden" id="edit-route-type" value="http">
+
+      {# ─── Tabs ─────────────────────────────────────── #}
+      <div class="tabs edit-route-tabs" style="margin-bottom:16px">
+        <button class="tab active" data-edit-tab="general">{{ t('routes.tab_general') or 'General' }}</button>
+        <button class="tab" data-edit-tab="auth">{{ t('routes.tab_auth') or 'Auth' }}</button>
+        <button class="tab" data-edit-tab="security">{{ t('routes.tab_security') or 'Security' }}</button>
+        <button class="tab" data-edit-tab="branding">{{ t('routes.tab_branding') or 'Branding' }}</button>
       </div>
 
-      <div id="edit-l4-fields" style="display:none">
+      {# ═══ TAB: General ═══════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="general">
         <div class="form-group">
-          <label>{{ t('routes.l4_protocol') }}</label>
-          <div class="toggle-group" id="edit-l4-protocol-group">
-            <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
-            <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
-          </div>
-          <input type="hidden" id="edit-l4-protocol" value="tcp">
+          <label class="form-label">{{ t('routes.domain') }}</label>
+          <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253"
+            data-dns-checking="{{ t('routes.dns_checking') }}"
+            data-dns-ok="{{ t('routes.dns_ok') }}"
+            data-dns-warning="{{ t('routes.dns_warning') }}">
+          <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
         </div>
         <div class="form-group">
-          <label>{{ t('routes.l4_listen_port') }}</label>
-          <input type="text" id="edit-l4-listen-port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+          <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
+          <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
         </div>
         <div class="form-group">
-          <label>{{ t('routes.l4_tls_mode') }}</label>
-          <select id="edit-l4-tls-mode" class="form-select">
-            <option value="none">{{ t('routes.tls_none') }}</option>
-            <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
-            <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+          <label class="form-label">{{ t('routes.target_peer') }}</label>
+          <select id="edit-route-peer" style="width:100%">
+            <option value="">— {{ t('routes.direct_ip') }} —</option>
           </select>
-          <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+        </div>
+        <div class="form-group" id="edit-route-ip-group">
+          <label class="form-label">Target IP</label>
+          <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('routes.target_port') }}</label>
+          <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+        </div>
+        <div class="form-group">
+          <div class="toggle-group" id="edit-route-type-group">
+            <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
+            <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
+          </div>
+          <input type="hidden" id="edit-route-type" value="http">
+        </div>
+        <div id="edit-l4-fields" style="display:none">
+          <div class="form-group">
+            <label>{{ t('routes.l4_protocol') }}</label>
+            <div class="toggle-group" id="edit-l4-protocol-group">
+              <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
+              <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
+            </div>
+            <input type="hidden" id="edit-l4-protocol" value="tcp">
+          </div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_listen_port') }}</label>
+            <input type="text" id="edit-l4-listen-port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+          </div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_tls_mode') }}</label>
+            <select id="edit-l4-tls-mode" class="form-select">
+              <option value="none">{{ t('routes.tls_none') }}</option>
+              <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
+              <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+            </select>
+            <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+          </div>
+        </div>
+        <div id="edit-http-fields">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+            </div>
+            <div class="toggle on" id="edit-route-https"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <div>
+              <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
+            </div>
+            <div class="toggle" id="edit-route-backend-https"></div>
+          </div>
         </div>
       </div>
 
-      <div id="edit-http-fields">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
-          </div>
-          <div class="toggle on" id="edit-route-https"></div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
-          </div>
-          <div class="toggle" id="edit-route-backend-https"></div>
-        </div>
-
-        <!-- Auth type selection -->
+      {# ═══ TAB: Auth ══════════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="auth" style="display:none">
         <div class="form-group">
           <label class="form-label">{{ t('route_auth.auth_type') }}</label>
           <div class="toggle-group" id="edit-auth-type-group">
@@ -91,7 +103,6 @@
           <input type="hidden" id="edit-auth-type" value="none">
         </div>
 
-        <!-- Basic Auth fields -->
         <div id="edit-basic-auth-fields" style="display:none;margin-bottom:14px">
           <div class="form-group">
             <label class="form-label">{{ t('routes.basic_auth_user') or 'Username' }}</label>
@@ -103,11 +114,8 @@
           </div>
         </div>
 
-        <!-- Route Auth fields -->
         <div id="edit-route-auth-fields" style="display:none">
           <input type="hidden" id="edit-ra-method" value="email_password">
-
-          <!-- ═══ Single Factor view (shown when 2FA is OFF) ═══ -->
           <div id="edit-ra-single-factor">
             <div class="form-group">
               <label class="form-label">{{ t('route_auth.method') }}</label>
@@ -117,8 +125,6 @@
                 <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
               </div>
             </div>
-
-            <!-- Single factor fields (dynamic) -->
             <div id="edit-ra-sf-email-group" class="form-group">
               <label class="form-label">{{ t('route_auth.email') }}</label>
               <input type="email" id="edit-ra-email" placeholder="name@example.com">
@@ -147,9 +153,7 @@
             </div>
           </div>
 
-          <!-- ═══ 2FA view (shown when 2FA is ON) ═══ -->
           <div id="edit-ra-2fa-view" style="display:none">
-            <!-- Factor 1: Email & Password -->
             <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
               <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
               <div class="form-group">
@@ -162,8 +166,6 @@
                 <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
               </div>
             </div>
-
-            <!-- Factor 2: Method selection -->
             <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
               <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px" id="edit-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
               <div class="form-group">
@@ -172,13 +174,9 @@
                   <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
                 </div>
               </div>
-
-              <!-- Email Code hint -->
               <div id="edit-ra-2fa-email-hint" style="font-size:11px;color:var(--text-3);padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-xs)">
                 {{ t('route_auth.code_sent_to_same_email') }}
               </div>
-
-              <!-- TOTP setup for 2FA -->
               <div id="edit-ra-2fa-totp-group" style="display:none">
                 <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
                   <div style="font-size:13px;font-weight:600;margin-bottom:2px">{{ t('route_auth.totp_setup') }}</div>
@@ -199,7 +197,6 @@
             </div>
           </div>
 
-          <!-- ═══ 2FA toggle (always visible) ═══ -->
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
             <div>
               <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
@@ -208,7 +205,6 @@
             <div class="toggle" id="edit-ra-2fa" data-managed="true"></div>
           </div>
 
-          <!-- Session duration -->
           <div class="form-group">
             <label class="form-label">{{ t('route_auth.session_duration') }}</label>
             <select id="edit-ra-session-duration" class="form-select">
@@ -221,41 +217,46 @@
           </div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:12px">
-        <div>
-          <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
-        </div>
-        <div class="toggle" id="edit-route-monitoring" data-managed="true"></div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:12px">
-        <div>
-          <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
-        </div>
-        <div class="toggle" id="edit-route-ip-filter" data-managed="true"></div>
-      </div>
-      <div id="edit-ip-filter-fields" style="display:none;margin-top:10px">
-        <div style="margin-bottom:8px">
-          <div class="toggle-group" id="edit-ip-filter-mode-group" style="margin-bottom:8px">
-            <button type="button" class="toggle-btn on" data-value="whitelist">Whitelist</button>
-            <button type="button" class="toggle-btn" data-value="blacklist">Blacklist</button>
+
+      {# ═══ TAB: Security ══════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="security" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
           </div>
-          <input type="hidden" id="edit-ip-filter-mode" value="whitelist">
+          <div class="toggle" id="edit-route-monitoring" data-managed="true"></div>
         </div>
-        <div id="edit-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-        <div style="display:flex;gap:6px">
-          <input type="text" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;padding:6px 10px;font-size:12px">
-          <select id="edit-ip-filter-type" style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-            <option value="ip">IP</option>
-            <option value="cidr">CIDR</option>
-            <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
-          </select>
-          <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+          </div>
+          <div class="toggle" id="edit-route-ip-filter" data-managed="true"></div>
+        </div>
+        <div id="edit-ip-filter-fields" style="display:none;margin-top:10px">
+          <div style="margin-bottom:8px">
+            <div class="toggle-group" id="edit-ip-filter-mode-group" style="margin-bottom:8px">
+              <button type="button" class="toggle-btn on" data-value="whitelist">Whitelist</button>
+              <button type="button" class="toggle-btn" data-value="blacklist">Blacklist</button>
+            </div>
+            <input type="hidden" id="edit-ip-filter-mode" value="whitelist">
+          </div>
+          <div id="edit-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <select id="edit-ip-filter-type" style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option value="ip">IP</option>
+              <option value="cidr">CIDR</option>
+              <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
+            </select>
+            <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
         </div>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px">{{ t('branding.title') or 'Login Page Branding' }}</div>
+
+      {# ═══ TAB: Branding ══════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="branding" style="display:none">
         <div class="form-group" style="margin-bottom:8px">
           <label class="form-label" for="edit-branding-title">{{ t('branding.page_title') or 'Title' }}</label>
           <input type="text" id="edit-branding-title" placeholder="GateControl" maxlength="100" style="width:100%">
@@ -283,6 +284,7 @@
           </div>
         </div>
       </div>
+
       <div id="edit-route-error" class="form-error" style="display:none"></div>
     </div>
     <div class="modal-foot">

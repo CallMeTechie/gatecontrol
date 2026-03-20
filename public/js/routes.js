@@ -696,6 +696,10 @@
 
     hideError('edit-route-error');
     clearFieldErrors();
+    // Reset to first tab
+    var editModal = document.getElementById('modal-edit-route');
+    editModal.querySelectorAll('.edit-route-tabs .tab').forEach(function(t) { t.classList.toggle('active', t.dataset.editTab === 'general'); });
+    editModal.querySelectorAll('.edit-route-panel').forEach(function(p) { p.style.display = p.dataset.panel === 'general' ? '' : 'none'; });
     openModal('modal-edit-route');
     document.getElementById('edit-route-domain').focus();
   }
@@ -1134,6 +1138,18 @@
   }
 
   setupIpFilter('edit', editIpFilterRules);
+
+  // ─── Edit modal tab switching ─────────────────────────
+  document.addEventListener('click', function(e) {
+    var tab = e.target.closest('.edit-route-tabs .tab[data-edit-tab]');
+    if (!tab) return;
+    var modal = document.getElementById('modal-edit-route');
+    modal.querySelectorAll('.edit-route-tabs .tab').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    modal.querySelectorAll('.edit-route-panel').forEach(function(p) { p.style.display = 'none'; });
+    var panel = modal.querySelector('.edit-route-panel[data-panel="' + tab.dataset.editTab + '"]');
+    if (panel) panel.style.display = '';
+  });
   setupIpFilter('create', createIpFilterRules);
 
   // ─── Branding logo upload/remove ──────────────────────

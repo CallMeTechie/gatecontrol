@@ -807,6 +807,9 @@ input[type=search] { padding-left: 32px; width: 200px; }
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
+}
+.modal.modal-wide {
+  width: 1000px;
   animation: slideUp 0.2s ease;
 }
 .modal-sm { width: 380px; }
