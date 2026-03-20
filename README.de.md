@@ -40,7 +40,9 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Domain-basiertes Reverse-Proxy-Routing mit Caddy
 - Automatisches HTTPS mit Let's-Encrypt-Zertifikaten — Zero-Configuration TLS
 - Optionale Basic-Authentifizierung pro Route
-- **Route-Authentifizierung** — Eigene Login-Seite pro Route mit mehreren Auth-Methoden: Email & Passwort, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optionale Zwei-Faktor-Authentifizierung (2FA) mit konfigurierbarer Session-Dauer.
+- **Route-Authentifizierung** — Eigene Login-Seite pro Route mit mehreren Auth-Methoden: Email & Passwort, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optionale Zwei-Faktor-Authentifizierung (2FA) mit konfigurierbarer Session-Dauer
+- **Custom Branding** — Logo-Upload, Titel, Begrüßungstext, Akzent-/Hintergrundfarbe und Hintergrundbild pro Route-Auth-Login-Seite
+- **IP-Zugriffskontrolle / Geo-Blocking** — Per-Route IP/CIDR Whitelist oder Blacklist mit optionaler länderbasierter Filterung via ip2location.io Integration
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
@@ -54,6 +56,13 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Blockierte-Port-Schutz verhindert versehentliches Binden an System-Ports (80, 443, 2019, 3000, 51820)
 - L4-Routen mit WireGuard-Peers verknüpfbar — gleiche Peer-Auswahl wie bei HTTP-Routen
 - Host-Networking (`network_mode: host`) für dynamische Port-Bindung ohne Container-Neustart
+
+### Uptime Monitoring
+- **Backend-Service-Monitoring** mit HTTP- und TCP-Health-Checks pro Route
+- Konfigurierbares Check-Intervall mit per-Route Aktivieren/Deaktivieren
+- Dashboard-Widget zeigt überwachte Routen mit Echtzeit-Status (up/down/unknown)
+- Automatische Email-Benachrichtigungen bei Route-Ausfall und -Wiederherstellung (integriert mit Email-Alerts)
+- Checks laufen im Hintergrund — kein Einfluss auf die Request-Verarbeitung
 
 ### Monitoring & Logging
 - Echtzeit-Traffic-Monitoring mit Upload-/Download-Statistiken pro Peer
@@ -259,7 +268,7 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 | **Sicherheits-Header** | Helmet.js mit strikter Content Security Policy, HSTS, X-Frame-Options |
 | **CSP-Nonces** | Pro Request `crypto.randomBytes(16)` Nonce für Inline-Scripts |
 | **Session-Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, konfigurierbares Max-Age |
-| **Eingabevalidierung** | Serverseitige Validierung für Domains, IPs, Namen, Beschreibungen |
+| **Eingabevalidierung** | Serverseitige Validierung für Domains, IPs, Namen, Beschreibungen mit Feld-Level-Fehler-Feedback |
 | **Webhook-SSRF-Schutz** | Blockiert Requests an localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) mit DNS-Rebinding-Schutz |
 | **Fehler-Bereinigung** | Detaillierte Fehler nur in der Entwicklung; generische Meldungen in Produktion |
 
@@ -461,14 +470,14 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 ### API
 
-Alle Verwaltungsfunktionen sind über die REST-API unter `/api/*` verfügbar. Requests erfordern eine authentifizierte Session.
+Alle Verwaltungsfunktionen sind über die REST-API unter `/api/v1/*` verfügbar (mit abwärtskompatibler `/api/*`-Weiterleitung). Requests erfordern eine authentifizierte Session. Alle Endpoints liefern ein standardisiertes JSON-Antwortformat mit einem `ok`-Feld.
 
 ```bash
 # Beispiel: Alle Peers auflisten
-curl -b cookies.txt https://gate.beispiel.de/api/peers
+curl -b cookies.txt https://gate.beispiel.de/api/v1/peers
 
 # Beispiel: Neuen Peer erstellen
-curl -b cookies.txt -X POST https://gate.beispiel.de/api/peers \
+curl -b cookies.txt -X POST https://gate.beispiel.de/api/v1/peers \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: <token>" \
   -d '{"name": "mein-laptop", "description": "Arbeitslaptop"}'
@@ -543,6 +552,15 @@ npm run dev
 # Tests ausführen
 npm test
 ```
+
+### Tests
+
+```bash
+# API-Integrationstests ausführen (30+ Tests über alle Endpoint-Gruppen)
+npm test
+```
+
+Tests decken Auth, Peers, Routes, Dashboard, Settings, Webhooks, Logs, System, Health und Backup Endpoints ab. Tests sind CI-kompatibel und überspringen Tests, die WireGuard/Caddy erfordern, wenn diese nicht verfügbar sind.
 
 ### Voraussetzungen
 

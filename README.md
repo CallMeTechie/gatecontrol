@@ -40,7 +40,9 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Domain-based reverse proxy routes powered by Caddy
 - Automatic HTTPS with Let's Encrypt certificates — zero-configuration TLS
 - Optional Basic Authentication per route
-- **Route Authentication** — Custom login page per route with multiple auth methods: Email & Password, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optional Two-Factor Authentication (2FA) with configurable session duration.
+- **Route Authentication** — Custom login page per route with multiple auth methods: Email & Password, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optional Two-Factor Authentication (2FA) with configurable session duration
+- **Custom Branding** — Upload logo, set title, welcome text, accent/background color, and background image per route auth login page
+- **IP Access Control / Geo-Blocking** — Per-route IP/CIDR whitelist or blacklist with optional country-based filtering via ip2location.io integration
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
 - Atomic configuration sync to Caddy with automatic rollback on failure
@@ -54,6 +56,13 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Blocked port protection prevents accidentally binding to system ports (80, 443, 2019, 3000, 51820)
 - Link L4 routes to WireGuard peers — same peer dropdown as HTTP routes
 - Host networking (`network_mode: host`) for dynamic port binding without container restart
+
+### Uptime Monitoring
+- **Backend service monitoring** with HTTP and TCP health checks per route
+- Configurable check interval with per-route enable/disable toggle
+- Dashboard widget showing monitored routes with real-time status (up/down/unknown)
+- Automatic email alerts on route down/recovery events (integrates with Email Alerts)
+- Checks run in background — no impact on request handling
 
 ### Monitoring & Logging
 - Real-time traffic monitoring with upload/download statistics per peer
@@ -259,7 +268,7 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 | **Security Headers** | Helmet.js with strict Content Security Policy, HSTS, X-Frame-Options |
 | **CSP Nonces** | Per-request `crypto.randomBytes(16)` nonce for inline scripts |
 | **Session Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, configurable max age |
-| **Input Validation** | Server-side validation for domains, IPs, names, descriptions |
+| **Input Validation** | Server-side validation for domains, IPs, names, descriptions with field-level error feedback |
 | **Webhook SSRF Protection** | Blocks requests to localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) with DNS rebinding protection |
 | **Error Sanitization** | Detailed errors in development only; generic messages in production |
 
@@ -461,14 +470,14 @@ After starting GateControl, navigate to your configured `GC_BASE_URL` and log in
 
 ### API
 
-All management functions are available via REST API at `/api/*`. Requests require an authenticated session.
+All management functions are available via REST API at `/api/v1/*` (with backward-compatible `/api/*` alias). Requests require an authenticated session. All endpoints return a standardized JSON response format with an `ok` field.
 
 ```bash
 # Example: List all peers
-curl -b cookies.txt https://gate.example.com/api/peers
+curl -b cookies.txt https://gate.example.com/api/v1/peers
 
 # Example: Create a new peer
-curl -b cookies.txt -X POST https://gate.example.com/api/peers \
+curl -b cookies.txt -X POST https://gate.example.com/api/v1/peers \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: <token>" \
   -d '{"name": "my-laptop", "description": "Work laptop"}'
@@ -543,6 +552,15 @@ npm run dev
 # Run tests
 npm test
 ```
+
+### Testing
+
+```bash
+# Run API integration tests (30+ tests across all endpoint groups)
+npm test
+```
+
+Tests cover Auth, Peers, Routes, Dashboard, Settings, Webhooks, Logs, System, Health, and Backup endpoints. Tests are CI-compatible and skip tests requiring WireGuard/Caddy when not available.
 
 ### Requirements
 
