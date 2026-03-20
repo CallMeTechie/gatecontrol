@@ -105,7 +105,7 @@ function buildCaddyConfig() {
     if (needsForwardAuth) {
       // Route 1: /route-auth/* and static assets → proxy to GateControl (no auth check)
       const routeAuthProxy = {
-        match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*'] }],
+        match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*', '/branding/*'] }],
         handle: [{
           handler: 'reverse_proxy',
           upstreams: [{ dial: '127.0.0.1:3000' }],

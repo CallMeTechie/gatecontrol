@@ -1172,7 +1172,6 @@
         if (data.ok) {
           document.getElementById('edit-branding-logo-current').textContent = data.filename;
           document.getElementById('edit-branding-logo-remove').style.display = '';
-          logoFileInput.value = '';
         } else {
           alert(data.error || 'Upload failed');
         }
