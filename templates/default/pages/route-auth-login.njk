@@ -15,7 +15,9 @@
     .logo-icon { background: {{ branding.color }}; }
   </style>
   {% endif %}
-  {% if branding and branding.bg %}
+  {% if branding and branding.bg_image %}
+  <style>body { background: url('/branding/{{ branding.bg_image }}') center/cover no-repeat fixed; }</style>
+  {% elif branding and branding.bg %}
   <style>body { background: {{ branding.bg }}; }</style>
   {% endif %}
 </head>

@@ -252,9 +252,18 @@ function runMigrations() {
     db.exec(`ALTER TABLE routes ADD COLUMN branding_logo TEXT`);
     db.exec(`ALTER TABLE routes ADD COLUMN branding_color TEXT`);
     db.exec(`ALTER TABLE routes ADD COLUMN branding_bg TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN branding_bg_image TEXT`);
     logger.info('Migration: Added branding columns to routes');
   } catch (e) {
     // Columns already exist
+  }
+
+  // Migration: Branding background image column
+  try {
+    db.exec(`ALTER TABLE routes ADD COLUMN branding_bg_image TEXT`);
+    logger.info('Migration: Added branding_bg_image column');
+  } catch (e) {
+    // Column already exists
   }
 
   // Migration: IP filter columns on routes

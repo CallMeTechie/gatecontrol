@@ -147,7 +147,7 @@ router.get('/login', (req, res) => {
     // Load branding for this route
     const { getDb } = require('../db/connection');
     const db = getDb();
-    const routeData = domain ? db.prepare('SELECT branding_title, branding_text, branding_logo, branding_color, branding_bg FROM routes WHERE domain = ? AND enabled = 1').get(domain) : null;
+    const routeData = domain ? db.prepare('SELECT branding_title, branding_text, branding_logo, branding_color, branding_bg, branding_bg_image FROM routes WHERE domain = ? AND enabled = 1').get(domain) : null;
 
     res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
       domain,
@@ -164,6 +164,7 @@ router.get('/login', (req, res) => {
         logo: routeData.branding_logo,
         color: routeData.branding_color,
         bg: routeData.branding_bg,
+        bg_image: routeData.branding_bg_image,
       } : null,
     });
   })().catch((err) => res.status(500).send(err.message));

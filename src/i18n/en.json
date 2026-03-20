@@ -278,6 +278,7 @@
   "branding.logo": "Logo",
   "branding.color": "Accent color",
   "branding.bg_color": "Background color",
+  "branding.bg_image": "Background image (optional, overrides color)",
   "routes.tab_general": "General",
   "routes.tab_auth": "Auth",
   "routes.tab_security": "Security",

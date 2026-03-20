@@ -370,4 +370,55 @@ router.delete('/:id/branding/logo', (req, res) => {
   }
 });
 
+/**
+ * POST /api/routes/:id/branding/bg-image — Upload background image
+ */
+router.post('/:id/branding/bg-image', logoUpload.single('bg_image'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
+
+    const { getDb } = require('../../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT branding_bg_image FROM routes WHERE id = ?').get(req.params.id);
+    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+
+    if (route.branding_bg_image) {
+      const oldPath = path.join(BRANDING_DIR, route.branding_bg_image);
+      try { fs.unlinkSync(oldPath); } catch {}
+    }
+
+    db.prepare("UPDATE routes SET branding_bg_image = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(req.file.filename, req.params.id);
+
+    res.json({ ok: true, filename: req.file.filename });
+  } catch (err) {
+    logger.error({ error: err.message }, 'BG image upload failed');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/routes/:id/branding/bg-image — Remove background image
+ */
+router.delete('/:id/branding/bg-image', (req, res) => {
+  try {
+    const { getDb } = require('../../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT branding_bg_image FROM routes WHERE id = ?').get(req.params.id);
+    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+
+    if (route.branding_bg_image) {
+      const filePath = path.join(BRANDING_DIR, route.branding_bg_image);
+      try { fs.unlinkSync(filePath); } catch {}
+    }
+
+    db.prepare("UPDATE routes SET branding_bg_image = NULL, updated_at = datetime('now') WHERE id = ?")
+      .run(req.params.id);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;

@@ -693,6 +693,12 @@
     var logoRemove = document.getElementById('edit-branding-logo-remove');
     if (logoCurrent) logoCurrent.textContent = route.branding_logo || '';
     if (logoRemove) logoRemove.style.display = route.branding_logo ? '' : 'none';
+    var bgFileEl = document.getElementById('edit-branding-bg-file');
+    if (bgFileEl) bgFileEl.value = '';
+    var bgCurrent = document.getElementById('edit-branding-bg-current');
+    var bgRemove = document.getElementById('edit-branding-bg-remove');
+    if (bgCurrent) bgCurrent.textContent = route.branding_bg_image || '';
+    if (bgRemove) bgRemove.style.display = route.branding_bg_image ? '' : 'none';
 
     hideError('edit-route-error');
     clearFieldErrors();
@@ -1188,6 +1194,45 @@
         await api.del('/api/v1/routes/' + routeId + '/branding/logo');
         document.getElementById('edit-branding-logo-current').textContent = '';
         logoRemoveBtn.style.display = 'none';
+      } catch (err) { alert(err.message); }
+    });
+  }
+
+  var bgFileInput = document.getElementById('edit-branding-bg-file');
+  if (bgFileInput) {
+    bgFileInput.addEventListener('change', async function() {
+      var file = this.files[0];
+      if (!file) return;
+      var routeId = document.getElementById('edit-route-id')?.value;
+      if (!routeId) return;
+      var formData = new FormData();
+      formData.append('bg_image', file);
+      try {
+        var resp = await fetch('/api/v1/routes/' + routeId + '/branding/bg-image', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': window.GC.csrfToken },
+          body: formData,
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          document.getElementById('edit-branding-bg-current').textContent = data.filename;
+          document.getElementById('edit-branding-bg-remove').style.display = '';
+        } else {
+          alert(data.error || 'Upload failed');
+        }
+      } catch (err) { alert(err.message); }
+    });
+  }
+
+  var bgRemoveBtn = document.getElementById('edit-branding-bg-remove');
+  if (bgRemoveBtn) {
+    bgRemoveBtn.addEventListener('click', async function() {
+      var routeId = document.getElementById('edit-route-id')?.value;
+      if (!routeId) return;
+      try {
+        await api.del('/api/v1/routes/' + routeId + '/branding/bg-image');
+        document.getElementById('edit-branding-bg-current').textContent = '';
+        bgRemoveBtn.style.display = 'none';
       } catch (err) { alert(err.message); }
     });
   }
