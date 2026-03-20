@@ -23,18 +23,20 @@
 
   <div class="login-card">
 
-    {# Logo #}
-    <div class="logo">
+    {# Logo + Title #}
+    <div class="logo" style="{% if branding and not branding.title %}justify-content:center{% endif %}">
       {% if branding and branding.logo %}
-      <img src="/branding/{{ branding.logo }}" alt="Logo" style="max-height:96px;max-width:400px;object-fit:contain">
-      {% else %}
+      <img src="/branding/{{ branding.logo }}" alt="Logo" style="max-height:96px;max-width:400px;object-fit:contain{% if branding and not branding.title %};margin:0 auto;display:block{% endif %}">
+      {% elif not branding or branding.title %}
       <div class="logo-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
       </div>
       {% endif %}
+      {% if not branding or branding.title %}
       <div class="logo-wordmark">{{ branding.title if branding and branding.title else 'GateControl' }}</div>
+      {% endif %}
     </div>
     {% if branding and branding.text %}
     <div style="text-align:center;font-size:13px;color:#6b6460;margin-bottom:12px">{{ branding.text }}</div>
