@@ -140,7 +140,7 @@
 
   document.getElementById('btn-backup-download').addEventListener('click', async function() {
     try {
-      const resp = await fetch('/api/settings/backup', { credentials: 'same-origin' });
+      const resp = await fetch('/api/v1/settings/backup', { credentials: 'same-origin' });
       if (!resp.ok) throw new Error('Download failed');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
@@ -174,7 +174,7 @@
     formData.append('backup', file);
 
     try {
-      const resp = await fetch('/api/settings/restore/preview', {
+      const resp = await fetch('/api/v1/settings/restore/preview', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'X-CSRF-Token': window.GC.csrfToken },
@@ -211,7 +211,7 @@
     formData.append('backup', pendingBackupFile);
 
     try {
-      const resp = await fetch('/api/settings/restore', {
+      const resp = await fetch('/api/v1/settings/restore', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'X-CSRF-Token': window.GC.csrfToken },

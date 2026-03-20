@@ -275,7 +275,7 @@
         document.getElementById('qr-peer-title').textContent = data.name + ' — QR Code';
         document.getElementById('qr-peer-img').src = data.qr;
         document.getElementById('qr-peer-config').textContent = data.config;
-        document.getElementById('qr-peer-download').href = '/api/peers/' + id + '/config?download=1';
+        document.getElementById('qr-peer-download').href = '/api/v1/peers/' + id + '/config?download=1';
         document.getElementById('qr-peer-download').download = data.name + '.conf';
         openModal('modal-qr-peer');
       }

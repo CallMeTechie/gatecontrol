@@ -37,8 +37,17 @@ function handleCsrfRotation(data) {
   return data;
 }
 
+function apiUrl(url) {
+  // Rewrite /api/ to /api/v1/ for all API calls
+  if (url.startsWith('/api/') && !url.startsWith('/api/v1/')) {
+    return '/api/v1/' + url.slice(5);
+  }
+  return url;
+}
+
 window.api = {
   async get(url) {
+    url = apiUrl(url);
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
     });
@@ -47,6 +56,7 @@ window.api = {
   },
 
   async post(url, data) {
+    url = apiUrl(url);
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -65,6 +75,7 @@ window.api = {
   },
 
   async put(url, data) {
+    url = apiUrl(url);
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
@@ -82,6 +93,7 @@ window.api = {
   },
 
   async del(url) {
+    url = apiUrl(url);
     const res = await fetch(url, {
       method: 'DELETE',
       headers: {

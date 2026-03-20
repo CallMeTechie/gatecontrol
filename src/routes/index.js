@@ -63,8 +63,6 @@ pages.forEach(({ path, template, titleKey }) => {
 });
 
 // ─── API routes ────────────────────────────────────
-const apiRoutes = require('./api');
-router.use('/api/v1', requireAuth, apiLimiter, apiRoutes);
-router.use('/api', requireAuth, apiLimiter, apiRoutes); // Backward-compatible alias
+router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 
 module.exports = router;
