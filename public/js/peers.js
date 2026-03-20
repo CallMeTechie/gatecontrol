@@ -302,7 +302,7 @@
   // ─── Toggle ──────────────────────────────────────────────
   async function togglePeer(id) {
     try {
-      await api.post('/api/peers/' + id + '/toggle');
+      await api.put('/api/peers/' + id + '/toggle');
       loadPeers();
     } catch (err) {
       alert((GC.t['common.error'] || 'Error') + ': ' + err.message);

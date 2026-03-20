@@ -261,9 +261,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * POST /api/routes/:id/toggle — Toggle route enabled/disabled
+ * PUT /api/routes/:id/toggle — Toggle route enabled/disabled
  */
-router.post('/:id/toggle', async (req, res) => {
+router.put('/:id/toggle', async (req, res) => {
   try {
     const route = await routes.toggle(req.params.id);
     res.json({ ok: true, route: stripRoute(route) });

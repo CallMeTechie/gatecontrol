@@ -108,7 +108,7 @@
           alert(data.ok ? 'Test sent (HTTP ' + data.status + ')' : 'Test failed: ' + data.error);
         } catch (err) { alert('Test failed: ' + err.message); }
       } else if (action === 'toggle') {
-        try { await api.post('/api/webhooks/' + id + '/toggle'); loadWebhooks(); } catch (err) { console.error(err); }
+        try { await api.put('/api/webhooks/' + id + '/toggle'); loadWebhooks(); } catch (err) { console.error(err); }
       } else if (action === 'delete') {
         if (!confirm(GC.t['settings.confirm_delete_webhook'] || 'Delete this webhook?')) return;
         try { await api.del('/api/webhooks/' + id); loadWebhooks(); } catch (err) { console.error(err); }

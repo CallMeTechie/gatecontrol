@@ -119,9 +119,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * POST /api/peers/:id/toggle — Toggle peer enabled/disabled
+ * PUT /api/peers/:id/toggle — Toggle peer enabled/disabled
  */
-router.post('/:id/toggle', async (req, res) => {
+router.put('/:id/toggle', async (req, res) => {
   try {
     const peer = await peers.toggle(req.params.id);
     res.json({ ok: true, peer: stripPeer(peer) });

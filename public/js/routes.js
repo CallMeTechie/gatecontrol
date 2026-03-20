@@ -765,7 +765,7 @@
   // ─── Toggle ──────────────────────────────────────────────
   async function toggleRoute(id) {
     try {
-      await api.post('/api/routes/' + id + '/toggle');
+      await api.put('/api/routes/' + id + '/toggle');
       loadRoutes();
     } catch (err) {
       alert((GC.t['common.error'] || 'Error') + ': ' + err.message);

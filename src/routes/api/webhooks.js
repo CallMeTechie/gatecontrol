@@ -76,9 +76,9 @@ router.delete('/:id', (req, res) => {
 });
 
 /**
- * POST /api/webhooks/:id/toggle — Toggle webhook
+ * PUT /api/webhooks/:id/toggle — Toggle webhook
  */
-router.post('/:id/toggle', (req, res) => {
+router.put('/:id/toggle', (req, res) => {
   try {
     const wh = webhooks.toggle(req.params.id);
     res.json({ ok: true, webhook: wh });
