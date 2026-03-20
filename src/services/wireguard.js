@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 
 async function run(cmd, args) {
   try {
-    const { stdout } = await exec(cmd, args, { timeout: 10000 });
+    const { stdout } = await exec(cmd, args, { timeout: config.timeouts.wgCommand });
     return stdout.trim();
   } catch (err) {
     logger.error({ cmd, args, error: err.message }, 'Command execution failed');
@@ -53,7 +53,9 @@ async function getStatus() {
     const tx = parseInt(parts[6], 10) || 0;
 
     // Consider online if handshake within last 3 minutes
-    const isOnline = latestHandshake > 0 && (Date.now() / 1000 - latestHandshake) < 180;
+    const settings = require('./settings');
+    const peerTimeout = parseInt(settings.get('data.peer_online_timeout', '180'), 10) || 180;
+    const isOnline = latestHandshake > 0 && (Date.now() / 1000 - latestHandshake) < peerTimeout;
 
     peers.push({
       publicKey: parts[0],

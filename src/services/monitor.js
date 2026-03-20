@@ -4,6 +4,7 @@ const net = require('node:net');
 const https = require('node:https');
 const http = require('node:http');
 const { getDb } = require('../db/connection');
+const config = require('../../config/default');
 const settings = require('./settings');
 const activity = require('./activity');
 const webhook = require('./webhook');
@@ -35,7 +36,7 @@ async function checkHttp(targetIp, targetPort, useHttps) {
       port: targetPort,
       path: '/',
       method: 'GET',
-      timeout: 10000,
+      timeout: config.timeouts.monitorHttp,
       headers: { 'User-Agent': 'GateControl-Monitor/1.0' },
       // Accept self-signed certificates for backend HTTPS
       ...(useHttps ? { rejectUnauthorized: false } : {}),
@@ -68,7 +69,7 @@ function checkTcp(targetIp, targetPort) {
   return new Promise((resolve) => {
     const start = Date.now();
     const socket = new net.Socket();
-    socket.setTimeout(5000);
+    socket.setTimeout(config.timeouts.monitorTcp);
 
     socket.on('connect', () => {
       const responseTime = Date.now() - start;

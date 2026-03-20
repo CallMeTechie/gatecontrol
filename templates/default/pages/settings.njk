@@ -216,6 +216,34 @@
 
     <div class="card">
       <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        <span class="card-title">{{ t('data.title') or 'Data & Retention' }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label class="form-label" for="data-traffic-days">{{ t('data.traffic_retention') or 'Traffic data (days)' }}</label>
+            <input type="number" id="data-traffic-days" value="30" min="1" max="365" style="width:100%">
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label class="form-label" for="data-activity-days">{{ t('data.activity_retention') or 'Activity logs (days)' }}</label>
+            <input type="number" id="data-activity-days" value="30" min="1" max="365" style="width:100%">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="data-peer-timeout">{{ t('data.peer_timeout') or 'Peer online timeout (seconds)' }}</label>
+          <input type="number" id="data-peer-timeout" value="180" min="30" max="600" style="width:100%">
+          <small class="form-hint">{{ t('data.peer_timeout_hint') or 'Peer is considered offline after no handshake for this many seconds' }}</small>
+        </div>
+        <div id="data-message" style="display:none"></div>
+        <div style="display:flex;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-primary" id="btn-data-save">{{ t('data.save') or 'Save' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span class="card-title">{{ t('monitoring.settings_title') or 'Uptime Monitoring' }}</span>
       </div>

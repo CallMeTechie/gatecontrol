@@ -446,6 +446,49 @@
 
   // ─── Monitoring Settings ───────────────────────────────
 
+  // ─── Data & Retention Settings ─────────────────────────
+
+  async function loadDataSettings() {
+    try {
+      var data = await api.get('/api/settings/data');
+      if (!data.ok) return;
+      var d = data.data;
+      var el1 = document.getElementById('data-traffic-days');
+      if (el1) el1.value = d.retention_traffic_days;
+      var el2 = document.getElementById('data-activity-days');
+      if (el2) el2.value = d.retention_activity_days;
+      var el3 = document.getElementById('data-peer-timeout');
+      if (el3) el3.value = d.peer_online_timeout;
+    } catch (err) {
+      console.error('Failed to load data settings:', err);
+    }
+  }
+
+  var btnDataSave = document.getElementById('btn-data-save');
+  if (btnDataSave) {
+    btnDataSave.addEventListener('click', async function() {
+      btnLoading(btnDataSave);
+      try {
+        var data = await api.put('/api/settings/data', {
+          retention_traffic_days: document.getElementById('data-traffic-days').value,
+          retention_activity_days: document.getElementById('data-activity-days').value,
+          peer_online_timeout: document.getElementById('data-peer-timeout').value,
+        });
+        if (data.ok) {
+          showMessage('data-message', GC.t['security.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('data-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('data-message', err.message, 'error');
+      } finally {
+        btnReset(btnDataSave);
+      }
+    });
+  }
+
+  // ─── Monitoring Settings ───────────────────────────────
+
   var monEmailToggle = document.getElementById('monitoring-email-alerts');
   if (monEmailToggle) monEmailToggle.addEventListener('click', function() { monEmailToggle.classList.toggle('on'); });
 
@@ -548,6 +591,7 @@
   loadWebhooks();
   loadSecuritySettings();
   loadLockedAccounts();
+  loadDataSettings();
   loadMonitoringSettings();
   loadAlertSettings();
   setInterval(loadLockedAccounts, 30000);

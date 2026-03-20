@@ -221,7 +221,7 @@ async function notify(eventType, message, details = null) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(require('../../config/default').timeouts.webhookDelivery),
     }).then(res => {
       if (!res.ok) {
         logger.warn({ webhookId: wh.id, status: res.status, url: wh.url }, 'Webhook delivery failed');

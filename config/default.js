@@ -85,6 +85,21 @@ const config = {
   encryption: {
     key: env('GC_ENCRYPTION_KEY', ''),
   },
+
+  intervals: {
+    trafficCollector: envInt('GC_TRAFFIC_INTERVAL', 60000),        // Traffic snapshot interval (ms)
+    peerPoller: envInt('GC_PEER_POLL_INTERVAL', 30000),            // Peer status poll interval (ms)
+    caddySyncDelay: envInt('GC_CADDY_SYNC_DELAY', 5000),           // Delay before initial Caddy sync (ms)
+    shutdownTimeout: envInt('GC_SHUTDOWN_TIMEOUT', 10000),         // Graceful shutdown timeout (ms)
+  },
+
+  timeouts: {
+    wgCommand: envInt('GC_WG_COMMAND_TIMEOUT', 10000),             // WireGuard CLI command timeout (ms)
+    caddyApi: envInt('GC_CADDY_API_TIMEOUT', 10000),               // Caddy admin API timeout (ms)
+    webhookDelivery: envInt('GC_WEBHOOK_TIMEOUT', 10000),          // Webhook delivery timeout (ms)
+    monitorHttp: envInt('GC_MONITOR_HTTP_TIMEOUT', 10000),         // HTTP health check timeout (ms)
+    monitorTcp: envInt('GC_MONITOR_TCP_TIMEOUT', 5000),            // TCP health check timeout (ms)
+  },
 };
 
 // In test environment, auto-generate secret; in production, fail loudly

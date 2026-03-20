@@ -46,22 +46,25 @@ async function start() {
       } catch (err) {
         logger.warn({ error: err.message }, 'Could not sync routes to Caddy on startup (will retry on next change)');
       }
-    }, 5000);
+    }, config.intervals.caddySyncDelay);
 
     // Start background tasks
-    startCollector(60000);  // Traffic snapshots every 60s
-    startPoller(30000);     // Peer status every 30s
+    startCollector(config.intervals.trafficCollector);
+    startPoller(config.intervals.peerPoller);
     startSessionCleanup();  // Route auth session cleanup every 15 min
     startMonitor();         // Uptime monitoring checks
 
     // Periodic cleanup (every 6 hours)
     setInterval(() => {
       try {
+        const settingsSvc = require('./services/settings');
+        const trafficDays = parseInt(settingsSvc.get('data.retention_traffic_days', '30'), 10) || 30;
+        const activityDays = parseInt(settingsSvc.get('data.retention_activity_days', '30'), 10) || 30;
         const { cleanup: cleanTraffic } = require('./services/traffic');
-        cleanTraffic(30);  // Keep 30 days of traffic data
-        activity.cleanup(30);  // Keep 30 days of activity logs
+        cleanTraffic(trafficDays);
+        activity.cleanup(activityDays);
         const { cleanup: cleanLoginAttempts } = require('./services/lockout');
-        cleanLoginAttempts(1);  // Keep 1 day of login attempts
+        cleanLoginAttempts(1);
       } catch (err) {
         logger.error({ error: err.message }, 'Cleanup task failed');
       }
@@ -140,11 +143,11 @@ function shutdown(signal) {
 
   if (server) {
     server.close(closeAndExit);
-    // Force exit after 10s if connections don't close
+    // Force exit if connections don't close
     setTimeout(() => {
       logger.warn('Forcing shutdown after timeout');
       closeAndExit();
-    }, 10000);
+    }, config.intervals.shutdownTimeout);
   } else {
     closeAndExit();
   }

@@ -367,6 +367,49 @@ router.put('/monitoring', (req, res) => {
   }
 });
 
+// ─── Data & Retention Settings ──────────────────────────
+
+/**
+ * GET /api/settings/data — Get data retention settings
+ */
+router.get('/data', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      retention_traffic_days: parseInt(settings.get('data.retention_traffic_days', '30'), 10),
+      retention_activity_days: parseInt(settings.get('data.retention_activity_days', '30'), 10),
+      peer_online_timeout: parseInt(settings.get('data.peer_online_timeout', '180'), 10),
+    },
+  });
+});
+
+/**
+ * PUT /api/settings/data — Update data retention settings
+ */
+router.put('/data', (req, res) => {
+  try {
+    const { retention_traffic_days, retention_activity_days, peer_online_timeout } = req.body;
+    if (retention_traffic_days !== undefined) {
+      const val = parseInt(retention_traffic_days, 10);
+      if (val >= 1 && val <= 365) settings.set('data.retention_traffic_days', String(val));
+    }
+    if (retention_activity_days !== undefined) {
+      const val = parseInt(retention_activity_days, 10);
+      if (val >= 1 && val <= 365) settings.set('data.retention_activity_days', String(val));
+    }
+    if (peer_online_timeout !== undefined) {
+      const val = parseInt(peer_online_timeout, 10);
+      if (val >= 30 && val <= 600) settings.set('data.peer_online_timeout', String(val));
+    }
+    activity.log('data_settings_updated', 'Data retention settings updated', {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 // ─── Email Alert Settings ───────────────────────────────
 
 /**
