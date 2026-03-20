@@ -1,0 +1,148 @@
+# Changelog
+
+All notable changes to GateControl are documented in this file.
+
+---
+
+## [1.3.0] — 2026-03-20
+
+### New Features
+- **Custom Branding for Route Auth** — Upload logo, set title, welcome text, accent/background color, and background image per route auth login page
+- **IP Access Control / Geo-Blocking** — Per-route IP/CIDR whitelist or blacklist with optional country-based filtering via ip2location.io
+- **Uptime Monitoring** — HTTP and TCP health checks per route with dashboard widget, configurable interval, and email alerts on route down/recovery
+- **Email Alert System** — Event-based email notifications configurable per event group (Security, Peers, Routes, System) with backup reminders and CPU/RAM threshold alerts
+- **Per-Peer Traffic Graphs** — Interactive traffic history charts (24h, 7d, 30d) with persistent upload/download totals per peer
+- **Account Lockout** — Configurable lockout after N failed login attempts for admin and route-auth login with manual unlock via Settings
+- **Password Complexity Enforcement** — Configurable rules for minimum length, uppercase letters, numbers, and special characters
+- **API Versioning** — `/api/v1/` as primary mount with backward-compatible `/api/` alias
+- **API Integration Tests** — 30+ tests with Supertest covering Auth, Peers, Routes, Dashboard, Settings, Webhooks, Logs, System, Health, and Backup endpoints
+- **Field-Level Validation Errors** — Per-field error messages with red border and focus for peers and routes
+- **Configurable Operational Timeouts** — 9 ENV vars for operational timeouts plus Settings UI for data retention and peer timeout
+- **Favicon** — SVG + ICO favicon added
+
+### Improvements
+- Toggle endpoints changed from POST to PUT for REST correctness
+- All frontend API calls migrated to `/api/v1/`
+- Route edit modal restructured with tabs and wider layout
+- DNS validation warning when creating/editing HTTP routes
+- "Subdomains" renamed to "Domains" in navigation, titles, and labels
+- Architecture diagram updated with Route Auth, SMTP, and Forward Auth
+
+### Security
+- 6 critical code review issues resolved (open redirect, IP allocation race condition, WireGuard iptables leak, showError/hideError fix, session secret validation, CSS class fix)
+- 5 important security issues resolved (timing-safe CSRF/OTP comparison, rate limiter IP keying, SSRF DNS rebinding protection, route-auth CSRF domain binding)
+- Node reverted to root user — WireGuard CLI requires root privileges; container provides isolation
+
+### Bug Fixes
+- 7 business logic issues resolved (backup includes route-auth, encryption key validation on restore, traffic rates with real time interval, traffic snapshots as deltas, Caddy reload uses syncToCaddy, WG config parser fix, atomic OTP verification)
+- 4 Docker/Ops issues resolved (Caddy fetch timeout, atomic WG config writes, encryption key startup validation, health check verifies DB + WireGuard, shutdown stops session cleanup)
+- 8 Frontend/UX issues resolved (i18n in JS, toggle/delete error visibility, German labels replaced with i18n, JSON parse error handling, label for-attributes, toggle ARIA/keyboard, CSS variables corrected, btn-secondary defined)
+- Monitoring HTTP check now accepts self-signed certificates
+- Route-auth CSRF tokens use pipe separator instead of dots
+
+---
+
+## [1.2.0] — 2026-03-18
+
+### New Features
+- **Route Authentication System** — Custom login page per route with multiple auth methods: Email & Password, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optional Two-Factor Authentication (2FA) with configurable session duration
+- **SMTP Configuration** — Built-in SMTP settings for sending email verification codes, configurable via Settings UI with test email functionality
+- **Caddy Config Page** — View live Caddy reverse proxy JSON configuration with syntax highlighting and JSON export
+- Route auth config integrated into both route create form and edit modal
+- Auth method, 2FA, and session duration badges displayed on route list
+
+### Improvements
+- Security hardening: 13 issues addressed from security review
+- Duplicated code consolidated and simplified across codebase
+- Host networking fix for QUIC and L4 port issues
+
+### Bug Fixes
+- Forward auth uses Caddy pattern (GET rewrite + vars) to preserve request body
+- CSRF protection replaced with HMAC-signed tokens for route auth (no cookie needed)
+- Forward auth correctly proxies to backend on 2xx instead of returning 'OK'
+- Static assets (CSS, JS) bypass forward auth on route-auth domains
+- Caddy config syncs after route auth create/update/delete
+- Email input CSS, sticky modal header/footer, 2FA toggle double-click fix
+
+---
+
+## [1.1.0] — 2026-03-16
+
+### New Features
+- **Layer 4 TCP/UDP Proxy** — Raw TCP and UDP port forwarding via caddy-l4 plugin. Three TLS modes (None, Passthrough, Terminate), port ranges, TLS-SNI routing, blocked port protection
+- **Custom Caddy Build** — Caddy built with caddy-l4 plugin for Layer 4 routing support
+- **Host Networking** — `network_mode: host` for dynamic L4 port binding without container restart
+
+### Improvements
+- **Multi-Stage Docker Build** — Native dependencies compiled in builder stage (420MB → 402MB)
+- **Graceful Shutdown** — HTTP server closed cleanly, running requests finish, 10s timeout
+- **Composite Database Indexes** — 4 composite indexes for activity_log, peers, and routes
+- **Standardized API Response Format** — `ok` field added to all endpoints
+- Caddy config validation in entrypoint with warning on errors
+- Copy-to-clipboard button for WireGuard config
+- Setup script updated for host networking, auto iptables, port conflict check
+- API rate limiter no longer blocks authenticated users
+
+### Bug Fixes
+- WireGuard FORWARD rules inserted before Docker rules (`-I` instead of `-A`)
+- RELATED/ESTABLISHED FORWARD rule and subnet-scoped MASQUERADE for WireGuard NAT
+- Caddy admin API Origin header compatibility (v2.11+ requirement)
+- L4 proxy dial format corrected (array of strings)
+- HTTP-only badges hidden for L4 routes
+
+---
+
+## [1.0.3] — 2026-03-14
+
+### Improvements
+- Profile dropdown with separate profile page and logout button
+- Retry-After header added to rate limiting responses
+- CSRF token rotation after sensitive actions (password change, restore)
+- Button loading states for all async operations
+- Duplicate `formatBytes()` removed from logs.js
+
+### Bug Fixes
+- Nunjucks template error in topbar dropdown fixed
+- Auto-sync package.json version from release tag
+
+---
+
+## [1.0.2] — 2026-03-13
+
+### Improvements
+- Modal focus trap and centralized modal handling
+- Error responses sanitized with i18n for all API error messages
+
+### Bug Fixes
+- Modal no longer closes on overlay click (prevents accidental data loss)
+- Release workflow: delete existing assets before upload
+
+---
+
+## [1.0.1] — 2026-03-11
+
+### Initial Release
+
+First public release of GateControl — Unified WireGuard VPN + Caddy Reverse Proxy Management.
+
+#### Core Features
+- **WireGuard VPN Peer Management** — Create, edit, enable/disable, delete peers with automatic key generation, IP allocation, QR codes, and hot-reload via `wg syncconf`
+- **Caddy Reverse Proxy Routing** — Domain-based routing with automatic HTTPS via Let's Encrypt, optional Basic Auth, backend HTTPS support, peer-linked routes
+- **Dashboard** — Connected peers, active routes, traffic charts (1h, 24h, 7d), CPU/RAM/uptime, average latency
+- **Backup & Restore** — Full system backup as portable JSON with atomic transaction-based restore
+- **Activity & Access Logs** — Full activity log with severity levels and filtering, Caddy access log with rotation
+- **Webhooks** — Event-driven notifications with SSRF protection
+- **Internationalization** — Full English and German language support (400+ keys)
+
+#### Security
+- AES-256-GCM encryption at rest for sensitive data
+- Session-based auth with Argon2 password hashing
+- CSRF protection, rate limiting, Helmet.js security headers, CSP nonces
+- Webhook SSRF protection blocking private/internal IP ranges
+
+#### Infrastructure
+- Single Docker container orchestrating Node.js, WireGuard, and Caddy via Supervisord
+- Interactive setup script supporting Ubuntu, Debian, Fedora, CentOS, RHEL, Rocky, Alma, Alpine
+- Online (GHCR) and offline (tar.gz) installation options
+- Docker health check endpoint (`/health`)
+- GitHub Actions CI/CD with automatic GHCR publishing
