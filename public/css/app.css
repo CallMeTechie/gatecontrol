@@ -659,6 +659,8 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   color: var(--text-2);
   transition: all 0.13s;
+  border: none;
+  background: none;
 }
 .tab.active {
   background: var(--bg-panel);
@@ -811,6 +813,25 @@ input[type=search] { padding-left: 32px; width: 200px; }
 .modal.modal-wide {
   width: 1000px;
   animation: slideUp 0.2s ease;
+}
+.modal.modal-wide .modal-body {
+  min-height: 420px;
+}
+.form-row {
+  display: flex;
+  gap: 14px;
+}
+.form-row > .form-group {
+  flex: 1;
+  min-width: 0;
+}
+input[type="file"] {
+  font-size: 12px;
+  padding: 6px 0;
+  color: var(--text-2);
+}
+@media (max-width: 768px) {
+  .form-row { flex-direction: column; gap: 0; }
 }
 .modal-sm { width: 380px; }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }

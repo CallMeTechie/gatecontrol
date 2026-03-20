@@ -17,31 +17,35 @@
 
       {# ═══ TAB: General ═══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="general">
-        <div class="form-group">
-          <label class="form-label">{{ t('routes.domain') }}</label>
-          <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253"
-            data-dns-checking="{{ t('routes.dns_checking') }}"
-            data-dns-ok="{{ t('routes.dns_ok') }}"
-            data-dns-warning="{{ t('routes.dns_warning') }}">
-          <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.domain') }}</label>
+            <input type="text" id="edit-route-domain" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253"
+              data-dns-checking="{{ t('routes.dns_checking') }}"
+              data-dns-ok="{{ t('routes.dns_ok') }}"
+              data-dns-warning="{{ t('routes.dns_warning') }}">
+            <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
+            <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
-          <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('routes.target_peer') }}</label>
-          <select id="edit-route-peer" style="width:100%">
-            <option value="">— {{ t('routes.direct_ip') }} —</option>
-          </select>
-        </div>
-        <div class="form-group" id="edit-route-ip-group">
-          <label class="form-label">Target IP</label>
-          <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('routes.target_port') }}</label>
-          <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.target_peer') }}</label>
+            <select id="edit-route-peer" style="width:100%">
+              <option value="">— {{ t('routes.direct_ip') }} —</option>
+            </select>
+          </div>
+          <div class="form-group" id="edit-route-ip-group">
+            <label class="form-label">Target IP</label>
+            <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('routes.target_port') }}</label>
+            <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+          </div>
         </div>
         <div class="form-group">
           <div class="toggle-group" id="edit-route-type-group">
@@ -125,14 +129,16 @@
                 <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
               </div>
             </div>
-            <div id="edit-ra-sf-email-group" class="form-group">
-              <label class="form-label">{{ t('route_auth.email') }}</label>
-              <input type="email" id="edit-ra-email" placeholder="name@example.com">
-            </div>
-            <div id="edit-ra-sf-password-group" class="form-group">
-              <label class="form-label">{{ t('route_auth.password') }}</label>
-              <input type="password" id="edit-ra-password" autocomplete="new-password">
-              <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+            <div class="form-row">
+              <div id="edit-ra-sf-email-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.email') }}</label>
+                <input type="email" id="edit-ra-email" placeholder="name@example.com">
+              </div>
+              <div id="edit-ra-sf-password-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.password') }}</label>
+                <input type="password" id="edit-ra-password" autocomplete="new-password">
+                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+              </div>
             </div>
             <div id="edit-ra-sf-totp-group" style="display:none;margin-bottom:14px">
               <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
@@ -156,14 +162,16 @@
           <div id="edit-ra-2fa-view" style="display:none">
             <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
               <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
-              <div class="form-group">
-                <label class="form-label">{{ t('route_auth.email') }}</label>
-                <input type="email" id="edit-ra-2fa-email" placeholder="name@example.com">
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label class="form-label">{{ t('route_auth.password') }}</label>
-                <input type="password" id="edit-ra-2fa-password" autocomplete="new-password">
-                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">{{ t('route_auth.email') }}</label>
+                  <input type="email" id="edit-ra-2fa-email" placeholder="name@example.com">
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">{{ t('route_auth.password') }}</label>
+                  <input type="password" id="edit-ra-2fa-password" autocomplete="new-password">
+                  <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+                </div>
               </div>
             </div>
             <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
@@ -197,23 +205,24 @@
             </div>
           </div>
 
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.two_factor_desc') }}</div>
+          <div class="form-row" style="align-items:stretch">
+            <div style="flex:1;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+              <div>
+                <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
+                <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.two_factor_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-ra-2fa" data-managed="true"></div>
             </div>
-            <div class="toggle" id="edit-ra-2fa" data-managed="true"></div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{ t('route_auth.session_duration') }}</label>
-            <select id="edit-ra-session-duration" class="form-select">
-              <option value="3600000">{{ t('route_auth.session_1h') }}</option>
-              <option value="43200000">{{ t('route_auth.session_12h') }}</option>
-              <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
-              <option value="604800000">{{ t('route_auth.session_7d') }}</option>
-              <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
-            </select>
+            <div class="form-group" style="flex:1">
+              <label class="form-label">{{ t('route_auth.session_duration') }}</label>
+              <select id="edit-ra-session-duration" class="form-select">
+                <option value="3600000">{{ t('route_auth.session_1h') }}</option>
+                <option value="43200000">{{ t('route_auth.session_12h') }}</option>
+                <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
+                <option value="604800000">{{ t('route_auth.session_7d') }}</option>
+                <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
