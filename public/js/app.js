@@ -56,6 +56,10 @@ window.api = {
       },
       body: JSON.stringify(data),
     });
+    // Return 400 validation errors as data (with ok: false + fields) instead of throwing
+    if (res.status === 400) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -70,6 +74,9 @@ window.api = {
       },
       body: JSON.stringify(data),
     });
+    if (res.status === 400) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -252,6 +259,38 @@ window.showError = function(containerId, message) {
 window.hideError = function(containerId) {
   const el = document.getElementById(containerId);
   if (el) { el.textContent = ''; el.style.display = 'none'; }
+};
+
+/**
+ * Show field-level validation errors under input fields.
+ * @param {Object} fields - { fieldName: "error message" }
+ * @param {Object} fieldMap - { fieldName: "input-element-id" }
+ */
+window.showFieldErrors = function(fields, fieldMap) {
+  // Clear previous field errors
+  document.querySelectorAll('.field-error').forEach(function(el) { el.remove(); });
+  document.querySelectorAll('.field-invalid').forEach(function(el) { el.classList.remove('field-invalid'); });
+
+  if (!fields || !fieldMap) return;
+  var firstInput = null;
+  for (var field in fields) {
+    var inputId = fieldMap[field];
+    if (!inputId) continue;
+    var input = document.getElementById(inputId);
+    if (!input) continue;
+    input.classList.add('field-invalid');
+    var errEl = document.createElement('div');
+    errEl.className = 'field-error';
+    errEl.textContent = fields[field];
+    input.parentNode.insertBefore(errEl, input.nextSibling);
+    if (!firstInput) firstInput = input;
+  }
+  if (firstInput) firstInput.focus();
+};
+
+window.clearFieldErrors = function() {
+  document.querySelectorAll('.field-error').forEach(function(el) { el.remove(); });
+  document.querySelectorAll('.field-invalid').forEach(function(el) { el.classList.remove('field-invalid'); });
 };
 
 // ─── Shared message helper ──────────────────────────────

@@ -6,6 +6,7 @@ const routes = require('../../services/routes');
 const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
+const { validateDomain, validatePort, validateDescription, validateIp } = require('../../utils/validate');
 const config = require('../../../config/default');
 
 const router = Router();
@@ -154,6 +155,28 @@ router.post('/', async (req, res) => {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled } = req.body;
+
+    // Field-level validation
+    const fields = {};
+    const rt = route_type || 'http';
+    if (rt === 'http' || domain) {
+      const domErr = validateDomain(domain);
+      if (domErr) fields.domain = req.t('error.routes.domain_invalid') || domErr;
+    }
+    const portErr = validatePort(target_port);
+    if (portErr) fields.target_port = req.t('error.routes.port_invalid') || portErr;
+    if (description) {
+      const descErr = validateDescription(description);
+      if (descErr) fields.description = req.t('error.routes.description_invalid') || descErr;
+    }
+    if (target_ip && !peer_id) {
+      const ipErr = validateIp(target_ip);
+      if (ipErr) fields.target_ip = req.t('error.routes.ip_invalid') || ipErr;
+    }
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
     const route = await routes.create({
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -181,6 +204,29 @@ router.put('/:id', async (req, res) => {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled } = req.body;
+
+    // Field-level validation
+    const fields = {};
+    if (domain !== undefined) {
+      const domErr = validateDomain(domain);
+      if (domErr) fields.domain = req.t('error.routes.domain_invalid') || domErr;
+    }
+    if (target_port !== undefined) {
+      const portErr = validatePort(target_port);
+      if (portErr) fields.target_port = req.t('error.routes.port_invalid') || portErr;
+    }
+    if (description !== undefined) {
+      const descErr = validateDescription(description);
+      if (descErr) fields.description = req.t('error.routes.description_invalid') || descErr;
+    }
+    if (target_ip !== undefined && !peer_id) {
+      const ipErr = validateIp(target_ip);
+      if (ipErr) fields.target_ip = req.t('error.routes.ip_invalid') || ipErr;
+    }
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,

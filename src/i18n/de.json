@@ -278,6 +278,8 @@
 
   "error.peers.list": "Peers konnten nicht geladen werden",
   "error.peers.get": "Peer konnte nicht geladen werden",
+  "error.peers.name_invalid": "Peer-Name muss alphanumerisch sein (1-63 Zeichen)",
+  "error.peers.description_invalid": "Beschreibung zu lang (max. 255 Zeichen)",
   "error.peers.create": "Peer konnte nicht erstellt werden",
   "error.peers.update": "Peer konnte nicht aktualisiert werden",
   "error.peers.delete": "Peer konnte nicht gelöscht werden",
@@ -290,6 +292,10 @@
 
   "error.routes.list": "Routen konnten nicht geladen werden",
   "error.routes.get": "Route konnte nicht geladen werden",
+  "error.routes.domain_invalid": "Ungültiges Domain-Format",
+  "error.routes.port_invalid": "Port muss zwischen 1 und 65535 liegen",
+  "error.routes.description_invalid": "Beschreibung zu lang (max. 255 Zeichen)",
+  "error.routes.ip_invalid": "Ungültiges IP-Adress-Format",
   "error.routes.create": "Route konnte nicht erstellt werden",
   "error.routes.update": "Route konnte nicht aktualisiert werden",
   "error.routes.delete": "Route konnte nicht gelöscht werden",

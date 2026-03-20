@@ -272,6 +272,11 @@
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
         updateCreateAuthTypeUI();
         loadRoutes();
+      } else if (data.fields) {
+        showFieldErrors(data.fields, {
+          domain: 'create-route-domain', target_port: 'route-port',
+          description: 'route-description', target_ip: 'route-ip',
+        });
       } else {
         alert(data.error || 'Failed to create route');
       }
@@ -641,6 +646,7 @@
     }
 
     hideError('edit-route-error');
+    clearFieldErrors();
     openModal('modal-edit-route');
     document.getElementById('edit-route-domain').focus();
   }
@@ -694,7 +700,14 @@
         }
         const data = await api.put('/api/routes/' + id, payload);
         if (!data.ok) {
-          showError('edit-route-error', data.error);
+          if (data.fields) {
+            showFieldErrors(data.fields, {
+              domain: 'edit-route-domain', target_port: 'edit-route-port',
+              description: 'edit-route-desc', target_ip: 'edit-route-ip',
+            });
+          } else {
+            showError('edit-route-error', data.error);
+          }
           return;
         }
 

@@ -185,6 +185,7 @@
     document.getElementById('add-peer-desc').value = '';
     document.getElementById('add-peer-tags').value = '';
     hideError('add-peer-error');
+    clearFieldErrors();
     openModal('modal-add-peer');
     document.getElementById('add-peer-name').focus();
   });
@@ -204,9 +205,12 @@
     try {
       const data = await api.post('/api/peers', { name, description, tags });
       if (data.ok) {
+        clearFieldErrors();
         closeModal('modal-add-peer');
         showQrModal(data.peer.id);
         loadPeers();
+      } else if (data.fields) {
+        showFieldErrors(data.fields, { name: 'add-peer-name', description: 'add-peer-desc' });
       } else {
         showError('add-peer-error', data.error);
       }
@@ -227,6 +231,7 @@
     document.getElementById('edit-peer-desc').value = peer.description || '';
     document.getElementById('edit-peer-tags').value = peer.tags || '';
     hideError('edit-peer-error');
+    clearFieldErrors();
     openModal('modal-edit-peer');
     document.getElementById('edit-peer-name').focus();
   }
@@ -247,8 +252,11 @@
     try {
       const data = await api.put('/api/peers/' + id, { name, description, tags });
       if (data.ok) {
+        clearFieldErrors();
         closeModal('modal-edit-peer');
         loadPeers();
+      } else if (data.fields) {
+        showFieldErrors(data.fields, { name: 'edit-peer-name', description: 'edit-peer-desc' });
       } else {
         showError('edit-peer-error', data.error);
       }

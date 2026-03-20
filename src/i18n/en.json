@@ -278,6 +278,8 @@
 
   "error.peers.list": "Failed to list peers",
   "error.peers.get": "Failed to get peer",
+  "error.peers.name_invalid": "Peer name must be alphanumeric (1-63 chars)",
+  "error.peers.description_invalid": "Description too long (max 255 chars)",
   "error.peers.create": "Failed to create peer",
   "error.peers.update": "Failed to update peer",
   "error.peers.delete": "Failed to delete peer",
@@ -290,6 +292,10 @@
 
   "error.routes.list": "Failed to list routes",
   "error.routes.get": "Failed to get route",
+  "error.routes.domain_invalid": "Invalid domain format",
+  "error.routes.port_invalid": "Port must be between 1 and 65535",
+  "error.routes.description_invalid": "Description too long (max 255 chars)",
+  "error.routes.ip_invalid": "Invalid IP address format",
   "error.routes.create": "Failed to create route",
   "error.routes.update": "Failed to update route",
   "error.routes.delete": "Failed to delete route",

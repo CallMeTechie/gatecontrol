@@ -857,6 +857,14 @@ input[type=search] { padding-left: 32px; width: 200px; }
   border: 1px solid var(--red-bd);
   border-radius: var(--radius-xs);
 }
+.field-error {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 4px;
+}
+.field-invalid {
+  border-color: var(--red) !important;
+}
 .btn-secondary {
   background: var(--bg-base);
   color: var(--text-1);

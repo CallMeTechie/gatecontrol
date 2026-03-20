@@ -6,6 +6,7 @@ const qrcode = require('../../services/qrcode');
 const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
 const stripFields = require('../../utils/stripFields');
+const { validatePeerName, validateDescription } = require('../../utils/validate');
 
 const router = Router();
 
@@ -53,6 +54,17 @@ router.get('/:id', (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { name, description, tags } = req.body;
+
+    // Field-level validation
+    const fields = {};
+    const nameErr = validatePeerName(name);
+    if (nameErr) fields.name = req.t('error.peers.name_invalid') || nameErr;
+    const descErr = validateDescription(description);
+    if (descErr) fields.description = req.t('error.peers.description_invalid') || descErr;
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
     const peer = await peers.create({ name, description, tags });
     res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
@@ -68,6 +80,21 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { name, description, dns, persistentKeepalive, enabled, tags } = req.body;
+
+    // Field-level validation
+    const fields = {};
+    if (name !== undefined) {
+      const nameErr = validatePeerName(name);
+      if (nameErr) fields.name = req.t('error.peers.name_invalid') || nameErr;
+    }
+    if (description !== undefined) {
+      const descErr = validateDescription(description);
+      if (descErr) fields.description = req.t('error.peers.description_invalid') || descErr;
+    }
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
     const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled, tags });
     res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
