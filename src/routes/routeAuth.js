@@ -144,6 +144,11 @@ router.get('/login', (req, res) => {
     // Set CSRF double-submit cookie (bound to domain)
     const csrfToken = generateSignedCsrf(domain);
 
+    // Load branding for this route
+    const { getDb } = require('../db/connection');
+    const db = getDb();
+    const routeData = domain ? db.prepare('SELECT branding_title, branding_text, branding_logo, branding_color, branding_bg FROM routes WHERE domain = ? AND enabled = 1').get(domain) : null;
+
     res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
       domain,
       redirect: redirectTo || '/',
@@ -153,6 +158,13 @@ router.get('/login', (req, res) => {
       is2faStep2: twoFactorPending,
       maskedEmail: authConfig ? maskEmail(authConfig.email) : '',
       routeCsrfToken: csrfToken,
+      branding: routeData ? {
+        title: routeData.branding_title,
+        text: routeData.branding_text,
+        logo: routeData.branding_logo,
+        color: routeData.branding_color,
+        bg: routeData.branding_bg,
+      } : null,
     });
   })().catch((err) => res.status(500).send(err.message));
 });

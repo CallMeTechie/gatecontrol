@@ -8,6 +8,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/route-auth.css">
+  {% if branding and branding.color %}
+  <style>
+    :root { --ra-accent: {{ branding.color }}; }
+    .login-card .btn-primary { background: {{ branding.color }}; }
+    .logo-icon { background: {{ branding.color }}; }
+  </style>
+  {% endif %}
+  {% if branding and branding.bg %}
+  <style>body { background: {{ branding.bg }}; }</style>
+  {% endif %}
 </head>
 <body>
 
@@ -15,13 +25,20 @@
 
     {# Logo #}
     <div class="logo">
+      {% if branding and branding.logo %}
+      <img src="/branding/{{ branding.logo }}" alt="Logo" style="max-height:48px;max-width:200px;object-fit:contain">
+      {% else %}
       <div class="logo-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
       </div>
-      <div class="logo-wordmark">GateControl</div>
+      {% endif %}
+      <div class="logo-wordmark">{{ branding.title if branding and branding.title else 'GateControl' }}</div>
     </div>
+    {% if branding and branding.text %}
+    <div style="text-align:center;font-size:13px;color:#6b6460;margin-bottom:12px">{{ branding.text }}</div>
+    {% endif %}
 
     {# Error card (non-JS / server-side errors) #}
     {% if error %}

@@ -6,7 +6,11 @@ const { csrfProtection } = require('../middleware/csrf');
 const { loginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
 
+const express = require('express');
 const router = Router();
+
+// ─── Branding assets (public, no auth) ─────────────
+router.use('/branding', express.static('/data/branding', { maxAge: '1d' }));
 
 // ─── Health check (public, no auth) ────────────────
 router.get('/health', async (req, res) => {

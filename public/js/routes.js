@@ -678,6 +678,22 @@
     } catch {}
     renderIpFilterRules('edit', editIpFilterRules);
 
+    // Branding
+    var btEl = document.getElementById('edit-branding-title');
+    if (btEl) btEl.value = route.branding_title || '';
+    var bxEl = document.getElementById('edit-branding-text');
+    if (bxEl) bxEl.value = route.branding_text || '';
+    var bcEl = document.getElementById('edit-branding-color');
+    if (bcEl) bcEl.value = route.branding_color || '#0a6e4f';
+    var bbEl = document.getElementById('edit-branding-bg');
+    if (bbEl) bbEl.value = route.branding_bg || '#f2f0eb';
+    var logoFileEl = document.getElementById('edit-branding-logo-file');
+    if (logoFileEl) logoFileEl.value = '';
+    var logoCurrent = document.getElementById('edit-branding-logo-current');
+    var logoRemove = document.getElementById('edit-branding-logo-remove');
+    if (logoCurrent) logoCurrent.textContent = route.branding_logo || '';
+    if (logoRemove) logoRemove.style.display = route.branding_logo ? '' : 'none';
+
     hideError('edit-route-error');
     clearFieldErrors();
     openModal('modal-edit-route');
@@ -724,6 +740,10 @@
           ip_filter_enabled: ipFilterEnabled,
           ip_filter_mode: document.getElementById('edit-ip-filter-mode')?.value || 'whitelist',
           ip_filter_rules: ipFilterEnabled ? JSON.stringify(editIpFilterRules) : null,
+          branding_title: document.getElementById('edit-branding-title')?.value || '',
+          branding_text: document.getElementById('edit-branding-text')?.value || '',
+          branding_color: document.getElementById('edit-branding-color')?.value || '',
+          branding_bg: document.getElementById('edit-branding-bg')?.value || '',
         };
         const editRouteType = document.getElementById('edit-route-type').value;
         payload.route_type = editRouteType;
@@ -1115,6 +1135,47 @@
 
   setupIpFilter('edit', editIpFilterRules);
   setupIpFilter('create', createIpFilterRules);
+
+  // ─── Branding logo upload/remove ──────────────────────
+  var logoFileInput = document.getElementById('edit-branding-logo-file');
+  if (logoFileInput) {
+    logoFileInput.addEventListener('change', async function() {
+      var file = this.files[0];
+      if (!file) return;
+      var routeId = document.getElementById('edit-route-id')?.value;
+      if (!routeId) return;
+      var formData = new FormData();
+      formData.append('logo', file);
+      try {
+        var resp = await fetch('/api/v1/routes/' + routeId + '/branding/logo', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': window.GC.csrfToken },
+          body: formData,
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          document.getElementById('edit-branding-logo-current').textContent = data.filename;
+          document.getElementById('edit-branding-logo-remove').style.display = '';
+          logoFileInput.value = '';
+        } else {
+          alert(data.error || 'Upload failed');
+        }
+      } catch (err) { alert(err.message); }
+    });
+  }
+
+  var logoRemoveBtn = document.getElementById('edit-branding-logo-remove');
+  if (logoRemoveBtn) {
+    logoRemoveBtn.addEventListener('click', async function() {
+      var routeId = document.getElementById('edit-route-id')?.value;
+      if (!routeId) return;
+      try {
+        await api.del('/api/v1/routes/' + routeId + '/branding/logo');
+        document.getElementById('edit-branding-logo-current').textContent = '';
+        logoRemoveBtn.style.display = 'none';
+      } catch (err) { alert(err.message); }
+    });
+  }
 
   // ─── L4 listen port auto-fill ───────────────────────────
   function setupPortAutofill(portId, listenPortId) {

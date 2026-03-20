@@ -44,7 +44,7 @@ sysctl -w net.ipv4.ip_forward=1 > /dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.all.src_valid_mark=1 > /dev/null 2>&1 || true
 
 # ─── Ensure data directory ───────────────────────────
-mkdir -p /data/caddy /data/wireguard
+mkdir -p /data/caddy /data/wireguard /data/branding
 mkdir -p "$(dirname "$GC_DB_PATH")"
 
 # ─── Generate WireGuard config if not exists ─────────

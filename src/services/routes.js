@@ -425,8 +425,9 @@ async function create(data) {
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
                         route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
-                        ip_filter_enabled, ip_filter_mode, ip_filter_rules, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        ip_filter_enabled, ip_filter_mode, ip_filter_rules,
+                        branding_title, branding_text, branding_color, branding_bg, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -445,7 +446,11 @@ async function create(data) {
     data.monitoring_enabled ? 1 : 0,
     data.ip_filter_enabled ? 1 : 0,
     data.ip_filter_mode || null,
-    data.ip_filter_rules ? (typeof data.ip_filter_rules === 'string' ? data.ip_filter_rules : JSON.stringify(data.ip_filter_rules)) : null
+    data.ip_filter_rules ? (typeof data.ip_filter_rules === 'string' ? data.ip_filter_rules : JSON.stringify(data.ip_filter_rules)) : null,
+    data.branding_title || null,
+    data.branding_text || null,
+    data.branding_color || null,
+    data.branding_bg || null
   );
 
   const routeId = result.lastInsertRowid;
@@ -602,6 +607,11 @@ async function update(id, data) {
       ip_filter_enabled = COALESCE(?, ip_filter_enabled),
       ip_filter_mode = COALESCE(?, ip_filter_mode),
       ip_filter_rules = COALESCE(?, ip_filter_rules),
+      branding_title = COALESCE(?, branding_title),
+      branding_text = COALESCE(?, branding_text),
+      branding_logo = COALESCE(?, branding_logo),
+      branding_color = COALESCE(?, branding_color),
+      branding_bg = COALESCE(?, branding_bg),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -624,6 +634,11 @@ async function update(id, data) {
     data.ip_filter_enabled !== undefined ? (data.ip_filter_enabled ? 1 : 0) : null,
     data.ip_filter_mode !== undefined ? (data.ip_filter_mode || null) : null,
     data.ip_filter_rules !== undefined ? (typeof data.ip_filter_rules === 'string' ? data.ip_filter_rules : JSON.stringify(data.ip_filter_rules)) : null,
+    data.branding_title !== undefined ? (data.branding_title || null) : null,
+    data.branding_text !== undefined ? (data.branding_text || null) : null,
+    data.branding_logo !== undefined ? (data.branding_logo || null) : null,
+    data.branding_color !== undefined ? (data.branding_color || null) : null,
+    data.branding_bg !== undefined ? (data.branding_bg || null) : null,
     id
   );
 

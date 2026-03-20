@@ -8,6 +8,28 @@ const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
 const { validateDomain, validatePort, validateDescription, validateIp } = require('../../utils/validate');
 const config = require('../../../config/default');
+const multer = require('multer');
+const path = require('node:path');
+const fs = require('node:fs');
+
+const BRANDING_DIR = '/data/branding';
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      if (!fs.existsSync(BRANDING_DIR)) fs.mkdirSync(BRANDING_DIR, { recursive: true });
+      cb(null, BRANDING_DIR);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.png';
+      cb(null, `${req.params.id}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 const router = Router();
 
@@ -155,7 +177,8 @@ router.post('/', async (req, res) => {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
-      ip_filter_enabled, ip_filter_mode, ip_filter_rules } = req.body;
+      ip_filter_enabled, ip_filter_mode, ip_filter_rules,
+      branding_title, branding_text, branding_color, branding_bg } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -185,6 +208,7 @@ router.post('/', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
+      branding_title, branding_text, branding_color, branding_bg,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -206,7 +230,8 @@ router.put('/:id', async (req, res) => {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
-      ip_filter_enabled, ip_filter_mode, ip_filter_rules } = req.body;
+      ip_filter_enabled, ip_filter_mode, ip_filter_rules,
+      branding_title, branding_text, branding_color, branding_bg } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -237,6 +262,7 @@ router.put('/:id', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode,
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
+      branding_title, branding_text, branding_color, branding_bg,
     });
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {
@@ -288,6 +314,58 @@ router.post('/:id/check', async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error({ error: err.message }, 'Manual check failed');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/routes/:id/branding/logo — Upload branding logo
+ */
+router.post('/:id/branding/logo', logoUpload.single('logo'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
+
+    const { getDb } = require('../../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT branding_logo FROM routes WHERE id = ?').get(req.params.id);
+    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+
+    // Delete old logo if exists
+    if (route.branding_logo) {
+      const oldPath = path.join(BRANDING_DIR, route.branding_logo);
+      try { fs.unlinkSync(oldPath); } catch {}
+    }
+
+    db.prepare("UPDATE routes SET branding_logo = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(req.file.filename, req.params.id);
+
+    res.json({ ok: true, filename: req.file.filename });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Logo upload failed');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/routes/:id/branding/logo — Remove branding logo
+ */
+router.delete('/:id/branding/logo', (req, res) => {
+  try {
+    const { getDb } = require('../../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT branding_logo FROM routes WHERE id = ?').get(req.params.id);
+    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+
+    if (route.branding_logo) {
+      const filePath = path.join(BRANDING_DIR, route.branding_logo);
+      try { fs.unlinkSync(filePath); } catch {}
+    }
+
+    db.prepare("UPDATE routes SET branding_logo = NULL, updated_at = datetime('now') WHERE id = ?")
+      .run(req.params.id);
+
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
