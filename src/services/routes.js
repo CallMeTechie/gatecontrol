@@ -99,8 +99,10 @@ function buildCaddyConfig() {
 
     // Route Auth (forward auth) — mutually exclusive with basic auth
     const routeAuthConfig = !route.basic_auth_enabled ? getAuthForRoute(route.id) : null;
+    // IP filter also needs forward auth (even without route auth)
+    const needsForwardAuth = routeAuthConfig || route.ip_filter_enabled;
 
-    if (routeAuthConfig) {
+    if (needsForwardAuth) {
       // Route 1: /route-auth/* and static assets → proxy to GateControl (no auth check)
       const routeAuthProxy = {
         match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*'] }],
@@ -422,8 +424,9 @@ async function create(data) {
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
-                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
+                        ip_filter_enabled, ip_filter_mode, ip_filter_rules, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -439,7 +442,10 @@ async function create(data) {
     data.l4_protocol || null,
     data.l4_listen_port || null,
     data.l4_tls_mode || null,
-    data.monitoring_enabled ? 1 : 0
+    data.monitoring_enabled ? 1 : 0,
+    data.ip_filter_enabled ? 1 : 0,
+    data.ip_filter_mode || null,
+    data.ip_filter_rules ? (typeof data.ip_filter_rules === 'string' ? data.ip_filter_rules : JSON.stringify(data.ip_filter_rules)) : null
   );
 
   const routeId = result.lastInsertRowid;
@@ -593,6 +599,9 @@ async function update(id, data) {
       l4_tls_mode = ?,
       enabled = COALESCE(?, enabled),
       monitoring_enabled = COALESCE(?, monitoring_enabled),
+      ip_filter_enabled = COALESCE(?, ip_filter_enabled),
+      ip_filter_mode = COALESCE(?, ip_filter_mode),
+      ip_filter_rules = COALESCE(?, ip_filter_rules),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -612,6 +621,9 @@ async function update(id, data) {
     data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     data.monitoring_enabled !== undefined ? (data.monitoring_enabled ? 1 : 0) : null,
+    data.ip_filter_enabled !== undefined ? (data.ip_filter_enabled ? 1 : 0) : null,
+    data.ip_filter_mode !== undefined ? (data.ip_filter_mode || null) : null,
+    data.ip_filter_rules !== undefined ? (typeof data.ip_filter_rules === 'string' ? data.ip_filter_rules : JSON.stringify(data.ip_filter_rules)) : null,
     id
   );
 

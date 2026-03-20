@@ -272,6 +272,25 @@
 
     <div class="card">
       <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">{{ t('ip2location.title') or 'ip2location (Geo-IP)' }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:12px;color:var(--text-3)">{{ t('ip2location.subtitle') or 'API key for country-based IP access control. Get a free key at ip2location.io' }}</div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="ip2location-key">{{ t('ip2location.api_key') or 'API Key' }}</label>
+          <input type="password" id="ip2location-key" style="width:100%">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btn-ip2location-save" style="font-size:12px">{{ t('ip2location.save') or 'Save' }}</button>
+          <button class="btn btn-ghost" id="btn-ip2location-test" style="font-size:12px">{{ t('ip2location.test') or 'Test' }}</button>
+        </div>
+        <div id="ip2location-result" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         <span class="card-title">{{ t('alerts.title') or 'Email Alerts' }}</span>
       </div>

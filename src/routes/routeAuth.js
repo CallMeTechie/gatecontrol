@@ -22,6 +22,7 @@ const {
 const { isSmtpConfigured } = require('../services/email');
 const { decrypt } = require('../utils/crypto');
 const lockout = require('../services/lockout');
+const ipFilter = require('../services/ipFilter');
 
 const router = Router();
 
@@ -90,6 +91,16 @@ router.get('/verify', (req, res) => {
   (async () => {
     const domain = req.headers['x-route-domain'];
     if (!domain) return res.sendStatus(200);
+
+    // IP filter check (works for all routes with ip_filter_enabled, even without route auth)
+    const { getDb } = require('../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT id, ip_filter_enabled FROM routes WHERE domain = ? AND enabled = 1').get(domain);
+    if (route && route.ip_filter_enabled) {
+      const clientIp = req.headers['x-forwarded-for'] || req.ip;
+      const access = await ipFilter.checkAccess(route.id, clientIp);
+      if (!access.allowed) return res.sendStatus(403);
+    }
 
     const authConfig = getAuthByDomain(domain);
     if (!authConfig) return res.sendStatus(200);

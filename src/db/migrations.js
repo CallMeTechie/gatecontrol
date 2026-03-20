@@ -245,6 +245,16 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_route_auth_otp_route_email ON route_auth_otp(route_id, email);
   `);
 
+  // Migration: IP filter columns on routes
+  try {
+    db.exec(`ALTER TABLE routes ADD COLUMN ip_filter_enabled INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`ALTER TABLE routes ADD COLUMN ip_filter_mode TEXT`);
+    db.exec(`ALTER TABLE routes ADD COLUMN ip_filter_rules TEXT`);
+    logger.info('Migration: Added IP filter columns to routes');
+  } catch (e) {
+    // Columns already exist
+  }
+
   // Migration: Monitoring columns on routes
   try {
     db.exec(`ALTER TABLE routes ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 0`);

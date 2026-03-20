@@ -410,6 +410,37 @@ router.put('/data', (req, res) => {
   }
 });
 
+// ─── ip2location Settings ────────────────────────────────
+
+router.get('/ip2location', (req, res) => {
+  const key = settings.get('ip2location.api_key', '');
+  res.json({ ok: true, data: { api_key: key ? key.substring(0, 4) + '****' : '' } });
+});
+
+router.put('/ip2location', (req, res) => {
+  try {
+    const { api_key } = req.body;
+    if (api_key !== undefined) settings.set('ip2location.api_key', String(api_key));
+    activity.log('ip2location_settings_updated', 'ip2location API key updated', {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+router.post('/ip2location/test', async (req, res) => {
+  try {
+    const { testLookup } = require('../../services/ipFilter');
+    const ip = req.body.ip || req.ip;
+    const result = await testLookup(ip.startsWith('::ffff:') ? ip.slice(7) : ip);
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ─── Email Alert Settings ───────────────────────────────
 
 /**

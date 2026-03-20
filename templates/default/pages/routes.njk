@@ -224,6 +224,32 @@
           </div>
           <div class="toggle" id="create-route-monitoring" data-managed="true"></div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+          </div>
+          <div class="toggle" id="create-route-ip-filter" data-managed="true"></div>
+        </div>
+        <div id="create-ip-filter-fields" style="display:none;margin-bottom:14px">
+          <div style="margin-bottom:8px">
+            <div class="toggle-group" id="create-ip-filter-mode-group" style="margin-bottom:8px">
+              <button type="button" class="toggle-btn on" data-value="whitelist">Whitelist</button>
+              <button type="button" class="toggle-btn" data-value="blacklist">Blacklist</button>
+            </div>
+            <input type="hidden" id="create-ip-filter-mode" value="whitelist">
+          </div>
+          <div id="create-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="create-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <select id="create-ip-filter-type" style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option value="ip">IP</option>
+              <option value="cidr">CIDR</option>
+              <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
+            </select>
+            <button type="button" class="btn btn-ghost" id="create-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>

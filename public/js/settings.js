@@ -587,6 +587,53 @@
     });
   }
 
+  // ─── ip2location Settings ──────────────────────────────
+
+  async function loadIp2locationSettings() {
+    try {
+      var data = await api.get('/api/v1/settings/ip2location');
+      if (data.ok && data.data.api_key) {
+        var el = document.getElementById('ip2location-key');
+        if (el) el.placeholder = data.data.api_key;
+      }
+    } catch (err) { console.error('Failed to load ip2location settings:', err); }
+  }
+
+  var btnIp2Save = document.getElementById('btn-ip2location-save');
+  if (btnIp2Save) {
+    btnIp2Save.addEventListener('click', async function() {
+      btnLoading(btnIp2Save);
+      try {
+        var key = document.getElementById('ip2location-key').value;
+        var data = await api.put('/api/v1/settings/ip2location', { api_key: key });
+        if (data.ok) {
+          showMessage('ip2location-result', GC.t['security.saved'] || 'Saved', 'success');
+          document.getElementById('ip2location-key').value = '';
+          loadIp2locationSettings();
+        } else {
+          showMessage('ip2location-result', data.error || 'Failed', 'error');
+        }
+      } catch (err) { showMessage('ip2location-result', err.message, 'error'); }
+      finally { btnReset(btnIp2Save); }
+    });
+  }
+
+  var btnIp2Test = document.getElementById('btn-ip2location-test');
+  if (btnIp2Test) {
+    btnIp2Test.addEventListener('click', async function() {
+      btnLoading(btnIp2Test);
+      try {
+        var data = await api.post('/api/v1/settings/ip2location/test', {});
+        if (data.ok && data.data) {
+          showMessage('ip2location-result', data.data.country_name + ' (' + data.data.country_code + ') — ' + data.data.ip, 'success');
+        } else {
+          showMessage('ip2location-result', data.error || 'Test failed', 'error');
+        }
+      } catch (err) { showMessage('ip2location-result', err.message, 'error'); }
+      finally { btnReset(btnIp2Test); }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
   loadSecuritySettings();
@@ -594,5 +641,6 @@
   loadDataSettings();
   loadMonitoringSettings();
   loadAlertSettings();
+  loadIp2locationSettings();
   setInterval(loadLockedAccounts, 30000);
 })();

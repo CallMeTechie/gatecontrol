@@ -85,6 +85,11 @@
         monitorTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Monitoring</span>';
         monitorTag += '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
       }
+      let ipFilterTag = '';
+      if (r.ip_filter_enabled) {
+        const mode = r.ip_filter_mode === 'blacklist' ? 'Blacklist' : 'Whitelist';
+        ipFilterTag = '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> ' + mode + '</span>';
+      }
       const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
@@ -142,7 +147,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${monitorTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
+          ${statusTag}${monitorTag}${ipFilterTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -223,7 +228,14 @@
     btnLoading(submitBtn);
     try {
       const createMonitoring = document.getElementById('create-route-monitoring')?.classList.contains('on') || false;
-      const payload = { domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled, monitoring_enabled: createMonitoring };
+      const createIpFilter = document.getElementById('create-route-ip-filter')?.classList.contains('on') || false;
+      const payload = {
+        domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
+        monitoring_enabled: createMonitoring,
+        ip_filter_enabled: createIpFilter,
+        ip_filter_mode: document.getElementById('create-ip-filter-mode')?.value || 'whitelist',
+        ip_filter_rules: createIpFilter ? JSON.stringify(createIpFilterRules) : null,
+      };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
       if (routeType === 'l4') {
@@ -269,6 +281,12 @@
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
         var cmt = document.getElementById('create-route-monitoring');
         if (cmt) cmt.classList.remove('on');
+        var cipf = document.getElementById('create-route-ip-filter');
+        if (cipf) cipf.classList.remove('on');
+        var cipfFields = document.getElementById('create-ip-filter-fields');
+        if (cipfFields) cipfFields.style.display = 'none';
+        createIpFilterRules.length = 0;
+        renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
         updateCreateAuthTypeUI();
         loadRoutes();
@@ -645,6 +663,21 @@
       monitorToggle.onclick = function() { monitorToggle.classList.toggle('on'); };
     }
 
+    // IP filter
+    var ipFilterToggle = document.getElementById('edit-route-ip-filter');
+    var ipFilterFields = document.getElementById('edit-ip-filter-fields');
+    if (ipFilterToggle) {
+      if (route.ip_filter_enabled) ipFilterToggle.classList.add('on'); else ipFilterToggle.classList.remove('on');
+      if (ipFilterFields) ipFilterFields.style.display = route.ip_filter_enabled ? '' : 'none';
+    }
+    setToggleGroup('edit-ip-filter-mode-group', 'edit-ip-filter-mode', route.ip_filter_mode || 'whitelist');
+    editIpFilterRules.length = 0;
+    try {
+      var parsed = JSON.parse(route.ip_filter_rules || '[]');
+      if (Array.isArray(parsed)) parsed.forEach(function(r) { editIpFilterRules.push(r); });
+    } catch {}
+    renderIpFilterRules('edit', editIpFilterRules);
+
     hideError('edit-route-error');
     clearFieldErrors();
     openModal('modal-edit-route');
@@ -684,7 +717,14 @@
       btnLoading(btn);
       try {
         const monitoringEnabled = document.getElementById('edit-route-monitoring')?.classList.contains('on') || false;
-        const payload = { domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled, monitoring_enabled: monitoringEnabled };
+        const ipFilterEnabled = document.getElementById('edit-route-ip-filter')?.classList.contains('on') || false;
+        const payload = {
+          domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
+          monitoring_enabled: monitoringEnabled,
+          ip_filter_enabled: ipFilterEnabled,
+          ip_filter_mode: document.getElementById('edit-ip-filter-mode')?.value || 'whitelist',
+          ip_filter_rules: ipFilterEnabled ? JSON.stringify(editIpFilterRules) : null,
+        };
         const editRouteType = document.getElementById('edit-route-type').value;
         payload.route_type = editRouteType;
         if (editRouteType === 'l4') {
@@ -1016,6 +1056,65 @@
   // ─── Create monitoring toggle ──────────────────────────
   var createMonToggle = document.getElementById('create-route-monitoring');
   if (createMonToggle) createMonToggle.addEventListener('click', function() { createMonToggle.classList.toggle('on'); });
+
+  // ─── IP filter helpers ─────────────────────────────────
+  var editIpFilterRules = [];
+  var createIpFilterRules = [];
+
+  function setupIpFilter(prefix, rulesArr) {
+    var toggle = document.getElementById(prefix + '-route-ip-filter');
+    var fields = document.getElementById(prefix + '-ip-filter-fields');
+    var modeGroup = document.getElementById(prefix + '-ip-filter-mode-group');
+    var addBtn = document.getElementById(prefix + '-ip-filter-add');
+
+    if (toggle) toggle.addEventListener('click', function() {
+      toggle.classList.toggle('on');
+      if (fields) fields.style.display = toggle.classList.contains('on') ? '' : 'none';
+    });
+
+    if (modeGroup) modeGroup.querySelectorAll('.toggle-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        modeGroup.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('on'); });
+        btn.classList.add('on');
+        document.getElementById(prefix + '-ip-filter-mode').value = btn.dataset.value;
+      });
+    });
+
+    if (addBtn) addBtn.addEventListener('click', function() {
+      var input = document.getElementById(prefix + '-ip-filter-input');
+      var typeSelect = document.getElementById(prefix + '-ip-filter-type');
+      var val = input.value.trim();
+      if (!val) return;
+      var arr = prefix === 'edit' ? editIpFilterRules : createIpFilterRules;
+      arr.push({ type: typeSelect.value, value: val });
+      input.value = '';
+      renderIpFilterRules(prefix, arr);
+    });
+  }
+
+  function renderIpFilterRules(prefix, rulesArr) {
+    var list = document.getElementById(prefix + '-ip-filter-rules-list');
+    if (!list) return;
+    list.textContent = '';
+    rulesArr.forEach(function(rule, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs);font-size:12px';
+      var label = document.createElement('span');
+      label.style.cssText = 'flex:1;font-family:var(--font-mono)';
+      label.textContent = '[' + rule.type.toUpperCase() + '] ' + rule.value;
+      row.appendChild(label);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '\u00d7';
+      del.style.cssText = 'background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px';
+      del.addEventListener('click', function() { rulesArr.splice(idx, 1); renderIpFilterRules(prefix, rulesArr); });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  setupIpFilter('edit', editIpFilterRules);
+  setupIpFilter('create', createIpFilterRules);
 
   // ─── L4 listen port auto-fill ───────────────────────────
   function setupPortAutofill(portId, listenPortId) {
