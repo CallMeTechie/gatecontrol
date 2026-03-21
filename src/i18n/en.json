@@ -491,5 +491,8 @@
 
   "caddy_config.subtitle": "Live Caddy reverse proxy configuration (JSON)",
   "caddy_config.live_config": "Live Configuration",
-  "caddy_config.export": "Export JSON"
+  "caddy_config.export": "Export JSON",
+
+  "sidebar.toggle_open": "Open navigation menu",
+  "sidebar.toggle_close": "Close navigation menu"
 }
