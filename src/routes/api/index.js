@@ -6,8 +6,12 @@ const { csrfProtection } = require('../../middleware/csrf');
 const router = Router();
 
 // CSRF protection on all state-changing API methods
+// Skip CSRF for token-authenticated requests (stateless, no session)
 router.use((req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    if (req.tokenAuth) {
+      return next(); // Token auth bypasses CSRF
+    }
     return csrfProtection(req, res, next);
   }
   next();
@@ -24,5 +28,6 @@ router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));
 router.use('/caddy', require('./caddy'));
 router.use('/webhooks', require('./webhooks'));
+router.use('/tokens', require('./tokens'));
 
 module.exports = router;

@@ -61,6 +61,80 @@
 
     <div class="card">
       <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+        <span class="card-title">{{ t('tokens.title') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('tokens.subtitle') }}</div>
+        <div id="tokens-list"></div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">{{ t('tokens.name') }}</label>
+            <input type="text" id="token-name" placeholder="{{ t('tokens.name_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="100">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">{{ t('tokens.scopes') }}</label>
+            <div id="token-scopes" style="display:flex;flex-wrap:wrap;gap:6px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="read-only" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_read_only') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="full-access" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_full_access') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="peers" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_peers') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="routes" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_routes') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="settings" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_settings') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="webhooks" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_webhooks') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="logs" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_logs') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="system" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_system') }}
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <input type="checkbox" value="backup" class="token-scope-cb" style="accent-color:var(--accent)">
+                {{ t('tokens.scope_backup') }}
+              </label>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">{{ t('tokens.expires') }}</label>
+            <select id="token-expires" style="width:100%;padding:8px 12px;font-size:12px">
+              <option value="">{{ t('tokens.expires_never') }}</option>
+              <option value="30d">{{ t('tokens.expires_30d') }}</option>
+              <option value="90d">{{ t('tokens.expires_90d') }}</option>
+              <option value="1y">{{ t('tokens.expires_1y') }}</option>
+              <option value="custom">{{ t('tokens.expires_custom') }}</option>
+            </select>
+            <input type="date" id="token-expires-custom" style="display:none;width:100%;padding:8px 12px;font-size:12px;margin-top:6px">
+          </div>
+          <div id="token-created-result" style="display:none"></div>
+          <div id="tokens-message" style="display:none"></div>
+          <button class="btn btn-primary" id="btn-create-token" style="align-self:flex-start">
+            {{ t('tokens.add') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         <span class="card-title">{{ t('route_auth.smtp_server_settings') }}</span>
       </div>
@@ -356,4 +430,5 @@
 
 {% block scripts %}
 <script src="/js/settings.js"></script>
+<script src="/js/tokens.js"></script>
 {% endblock %}

@@ -329,6 +329,22 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_login_attempts_failed_at ON login_attempts(failed_at);
     `,
   },
+  {
+    version: 15,
+    name: 'create_api_tokens_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        scopes TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT,
+        last_used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

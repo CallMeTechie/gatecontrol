@@ -19,8 +19,9 @@ const apiLimiter = rateLimit({
   max: (req) => (req.session && req.session.userId) ? config.auth.rateLimitApi * 10 : config.auth.rateLimitApi,
   standardHeaders: true,
   legacyHeaders: true,
+  keyGenerator: (req) => req.tokenAuth ? `token:${req.tokenId}` : req.ip,
   handler: (req, res) => {
-    res.status(429).json({ error: req.t('error.rate_limit.api') });
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.api') });
   },
 });
 
