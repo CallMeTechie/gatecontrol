@@ -503,7 +503,7 @@ curl -H "Authorization: Bearer gc_your_token" \
   -d '{"name": "my-laptop", "description": "Work laptop"}'
 ```
 
-See **[API.md](API.md)** for the complete API reference with all endpoints, request/response formats, scopes, and examples.
+See **[API.md](API.md)** for the complete endpoint reference and **[API_GUIDE.md](API_GUIDE.md)** for practical integration examples (Home Assistant, Python, Node.js, Bash, Telegram/Discord bots, CI/CD, Prometheus).
 
 ### Networking
 
