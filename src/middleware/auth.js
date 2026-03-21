@@ -33,7 +33,8 @@ function requireAuth(req, res, next) {
   }
 
   // Then check API token auth (only for /api/ routes)
-  if (req.path.startsWith('/api/')) {
+  const fullUrl = req.originalUrl || (req.baseUrl + req.path);
+  if (fullUrl.startsWith('/api/')) {
     const rawToken = extractToken(req);
     if (rawToken) {
       const tokenRecord = getTokens().authenticate(rawToken);

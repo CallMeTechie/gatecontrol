@@ -16,7 +16,7 @@ const loginLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: (req) => (req.session && req.session.userId) ? config.auth.rateLimitApi * 10 : config.auth.rateLimitApi,
+  max: (req) => (req.session && req.session.userId) || req.headers?.['authorization']?.startsWith('Bearer gc_') || req.headers?.['x-api-token']?.startsWith('gc_') ? config.auth.rateLimitApi * 10 : config.auth.rateLimitApi,
   standardHeaders: true,
   legacyHeaders: true,
   keyGenerator: (req) => req.tokenAuth ? `token:${req.tokenId}` : req.ip,
