@@ -111,6 +111,20 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Full English and German language support (400+ translation keys)
 - Covers all UI elements: navigation, forms, status messages, error messages, dialogs
 
+### API Tokens
+- **Stateless token authentication** for automation, CI/CD pipelines, and external integrations
+- Scoped permissions: `full-access`, `read-only`, or per-resource (`peers`, `routes`, `settings`, `webhooks`, `logs`, `system`, `backup`)
+- Token management in Settings (create, list, revoke) — token value shown only once on creation
+- Secure storage: only SHA-256 hash stored in database, `gc_` prefix for easy identification
+- Accepted via `Authorization: Bearer gc_xxx` or `X-API-Token: gc_xxx` header
+- Tokens cannot create other tokens (prevents privilege escalation)
+- Rate limiting per token ID
+
+### Responsive UI
+- **Mobile sidebar** with hamburger menu for phones and tablets (< 1024px)
+- Slide-in animation with overlay backdrop, focus trap, and keyboard navigation (Escape to close)
+- Desktop layout unchanged — sidebar always visible on large screens
+
 ### SMTP Configuration
 - Built-in SMTP settings for sending email verification codes
 - Configurable via web UI (host, port, user, password, sender, TLS)
@@ -167,7 +181,7 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Schema definition (14 tables)
+│   ├── migrations.js      # Versioned migrations with history tracking (15 migrations)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
@@ -184,6 +198,7 @@ src/
 │   ├── email.js           # SMTP email service (OTP delivery, test emails)
 │   ├── routeAuth.js       # Route authentication (sessions, OTP, TOTP, CSRF)
 │   ├── webhook.js         # Event-driven webhook delivery
+│   ├── tokens.js          # API token CRUD, SHA-256 hashing, scope enforcement
 │   ├── qrcode.js          # QR code generation for peer configs
 │   └── system.js          # System info (CPU, RAM, uptime, disk)
 ├── routes/
@@ -201,6 +216,7 @@ src/
 │       ├── wireguard.js   # /api/wg — status, restart
 │       ├── caddy.js       # /api/caddy — status, reload
 │       ├── webhooks.js    # /api/webhooks — CRUD
+│       ├── tokens.js      # /api/tokens — API token management
 │       └── system.js      # /api/system — system info
 ├── middleware/
 │   ├── auth.js            # Session-based authentication guards
@@ -470,18 +486,24 @@ After starting GateControl, navigate to your configured `GC_BASE_URL` and log in
 
 ### API
 
-All management functions are available via REST API at `/api/v1/*` (with backward-compatible `/api/*` alias). Requests require an authenticated session. All endpoints return a standardized JSON response format with an `ok` field.
+All 68 management endpoints are available via REST API at `/api/v1/*` (with backward-compatible `/api/*` alias). Authenticate with session cookies or **API tokens** (`Authorization: Bearer gc_xxx`). All responses use a standardized `{ ok: true/false }` format.
 
 ```bash
-# Example: List all peers
+# Session auth
 curl -b cookies.txt https://gate.example.com/api/v1/peers
 
-# Example: Create a new peer
-curl -b cookies.txt -X POST https://gate.example.com/api/v1/peers \
+# API token auth (no CSRF needed)
+curl -H "Authorization: Bearer gc_your_token" \
+  https://gate.example.com/api/v1/peers
+
+# Create a new peer
+curl -H "Authorization: Bearer gc_your_token" \
+  -X POST https://gate.example.com/api/v1/peers \
   -H "Content-Type: application/json" \
-  -H "X-CSRF-Token: <token>" \
   -d '{"name": "my-laptop", "description": "Work laptop"}'
 ```
+
+See **[API.md](API.md)** for the complete API reference with all endpoints, request/response formats, scopes, and examples.
 
 ### Networking
 

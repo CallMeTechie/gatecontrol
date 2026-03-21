@@ -111,6 +111,20 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Vollständige englische und deutsche Sprachunterstützung (400+ Übersetzungsschlüssel)
 - Umfasst alle UI-Elemente: Navigation, Formulare, Statusmeldungen, Fehlermeldungen, Dialoge
 
+### API-Tokens
+- **Stateless Token-Authentifizierung** für Automatisierung, CI/CD-Pipelines und externe Integrationen
+- Scoped Permissions: `full-access`, `read-only` oder pro Ressource (`peers`, `routes`, `settings`, `webhooks`, `logs`, `system`, `backup`)
+- Token-Verwaltung in Einstellungen (erstellen, auflisten, widerrufen) — Token-Wert wird nur einmal bei Erstellung angezeigt
+- Sichere Speicherung: nur SHA-256-Hash in der Datenbank, `gc_`-Prefix zur einfachen Identifikation
+- Akzeptiert via `Authorization: Bearer gc_xxx` oder `X-API-Token: gc_xxx` Header
+- Tokens können keine anderen Tokens erstellen (verhindert Privilegien-Eskalation)
+- Rate Limiting pro Token-ID
+
+### Responsive UI
+- **Mobile Sidebar** mit Hamburger-Menü für Smartphones und Tablets (< 1024px)
+- Slide-In-Animation mit Overlay-Backdrop, Focus-Trap und Tastaturnavigation (Escape zum Schließen)
+- Desktop-Layout unverändert — Sidebar immer sichtbar auf großen Bildschirmen
+
 ### SMTP-Konfiguration
 - Integrierte SMTP-Einstellungen für den Versand von E-Mail-Verifizierungscodes
 - Konfigurierbar über die Weboberfläche (Host, Port, Benutzer, Passwort, Absender, TLS)
@@ -167,7 +181,7 @@ src/
 ├── app.js                 # Express-Setup, Sicherheits-Middleware, Template-Engine
 ├── db/
 │   ├── connection.js      # SQLite mit WAL-Modus und Performance-Pragmas
-│   ├── migrations.js      # Schema-Definition (14 Tabellen)
+│   ├── migrations.js      # Versionierte Migrationen mit History-Tracking (15 Migrationen)
 │   └── seed.js            # Admin-Benutzer-Initialisierung beim ersten Start
 ├── services/              # Geschäftslogik-Schicht
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync
@@ -184,6 +198,7 @@ src/
 │   ├── email.js           # SMTP E-Mail-Service (OTP-Versand, Test-Emails)
 │   ├── routeAuth.js       # Route-Authentifizierung (Sessions, OTP, TOTP, CSRF)
 │   ├── webhook.js         # Ereignisgesteuerte Webhook-Zustellung
+│   ├── tokens.js          # API-Token CRUD, SHA-256-Hashing, Scope-Durchsetzung
 │   ├── qrcode.js          # QR-Code-Generierung für Peer-Konfigurationen
 │   └── system.js          # Systeminfo (CPU, RAM, Uptime, Festplatte)
 ├── routes/
@@ -201,6 +216,7 @@ src/
 │       ├── wireguard.js   # /api/wg — Status, Neustart
 │       ├── caddy.js       # /api/caddy — Status, Neuladen
 │       ├── webhooks.js    # /api/webhooks — CRUD
+│       ├── tokens.js      # /api/tokens — API-Token-Verwaltung
 │       └── system.js      # /api/system — Systeminfo
 ├── middleware/
 │   ├── auth.js            # Session-basierte Authentifizierungs-Guards
@@ -470,18 +486,24 @@ Nach dem Start von GateControl navigiere zu deiner konfigurierten `GC_BASE_URL` 
 
 ### API
 
-Alle Verwaltungsfunktionen sind über die REST-API unter `/api/v1/*` verfügbar (mit abwärtskompatibler `/api/*`-Weiterleitung). Requests erfordern eine authentifizierte Session. Alle Endpoints liefern ein standardisiertes JSON-Antwortformat mit einem `ok`-Feld.
+Alle 68 Verwaltungs-Endpoints sind über die REST-API unter `/api/v1/*` verfügbar (mit abwärtskompatibler `/api/*`-Weiterleitung). Authentifizierung via Session-Cookies oder **API-Tokens** (`Authorization: Bearer gc_xxx`). Alle Antworten nutzen ein standardisiertes `{ ok: true/false }`-Format.
 
 ```bash
-# Beispiel: Alle Peers auflisten
+# Session-Authentifizierung
 curl -b cookies.txt https://gate.beispiel.de/api/v1/peers
 
-# Beispiel: Neuen Peer erstellen
-curl -b cookies.txt -X POST https://gate.beispiel.de/api/v1/peers \
+# API-Token-Authentifizierung (kein CSRF nötig)
+curl -H "Authorization: Bearer gc_dein_token" \
+  https://gate.beispiel.de/api/v1/peers
+
+# Neuen Peer erstellen
+curl -H "Authorization: Bearer gc_dein_token" \
+  -X POST https://gate.beispiel.de/api/v1/peers \
   -H "Content-Type: application/json" \
-  -H "X-CSRF-Token: <token>" \
   -d '{"name": "mein-laptop", "description": "Arbeitslaptop"}'
 ```
+
+Siehe **[API.md](API.md)** für die vollständige API-Referenz mit allen Endpoints, Request-/Response-Formaten, Scopes und Beispielen.
 
 ### Netzwerk
 
