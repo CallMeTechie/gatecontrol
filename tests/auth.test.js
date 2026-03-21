@@ -38,7 +38,7 @@ describe('requireAuth', () => {
     const res = mockRes();
     requireAuth(req, res, () => { assert.fail('should not call next'); });
     assert.equal(res.statusCode, 401);
-    assert.deepEqual(res.jsonData, { error: 'Unauthorized' });
+    assert.deepEqual(res.jsonData, { ok: false, error: 'Unauthorized' });
   });
 
   it('redirects to /login for unauthenticated page requests', () => {

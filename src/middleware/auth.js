@@ -1,11 +1,17 @@
 'use strict';
 
-const tokens = require('../services/tokens');
+// Lazy-loaded to avoid DB connection at import time (breaks tests)
+let tokens;
+function getTokens() {
+  if (!tokens) tokens = require('../services/tokens');
+  return tokens;
+}
 
 /**
  * Extract Bearer or X-API-Token from request
  */
 function extractToken(req) {
+  if (!req.headers) return null;
   // Check Authorization: Bearer gc_xxx
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -30,11 +36,11 @@ function requireAuth(req, res, next) {
   if (req.path.startsWith('/api/')) {
     const rawToken = extractToken(req);
     if (rawToken) {
-      const tokenRecord = tokens.authenticate(rawToken);
+      const tokenRecord = getTokens().authenticate(rawToken);
       if (tokenRecord) {
         // Check scope for this request
         const fullPath = req.baseUrl + req.path;
-        if (!tokens.checkScope(tokenRecord.scopes, fullPath, req.method)) {
+        if (!getTokens().checkScope(tokenRecord.scopes, fullPath, req.method)) {
           return res.status(403).json({ ok: false, error: 'Token does not have permission for this resource' });
         }
 
