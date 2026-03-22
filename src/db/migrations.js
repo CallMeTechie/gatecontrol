@@ -366,6 +366,28 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'acl_enabled'),
   },
+  {
+    version: 18,
+    name: 'add_compress_enabled',
+    sql: `ALTER TABLE routes ADD COLUMN compress_enabled INTEGER DEFAULT 0;`,
+    detect: (db) => hasColumn(db, 'routes', 'compress_enabled'),
+  },
+  {
+    version: 19,
+    name: 'add_custom_headers',
+    sql: `ALTER TABLE routes ADD COLUMN custom_headers TEXT;`,
+    detect: (db) => hasColumn(db, 'routes', 'custom_headers'),
+  },
+  {
+    version: 20,
+    name: 'add_rate_limit_columns',
+    sql: `
+      ALTER TABLE routes ADD COLUMN rate_limit_enabled INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN rate_limit_requests INTEGER DEFAULT 100;
+      ALTER TABLE routes ADD COLUMN rate_limit_window TEXT DEFAULT '1m';
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'rate_limit_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

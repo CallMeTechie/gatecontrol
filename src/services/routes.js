@@ -81,10 +81,27 @@ function buildCaddyConfig() {
 
     const upstream = `${targetIp}:${route.target_port}`;
 
+    // Parse custom headers
+    let customHeaders = null;
+    if (route.custom_headers) {
+      try { customHeaders = JSON.parse(route.custom_headers); } catch {}
+    }
+
     const reverseProxy = {
       handler: 'reverse_proxy',
       upstreams: [{ dial: upstream }],
     };
+
+    // Response custom headers — applied inside reverse_proxy handler
+    if (customHeaders && Array.isArray(customHeaders.response) && customHeaders.response.length > 0) {
+      const responseSet = {};
+      for (const h of customHeaders.response) {
+        if (h.name && h.value) responseSet[h.name] = [h.value];
+      }
+      if (Object.keys(responseSet).length > 0) {
+        reverseProxy.headers = { response: { set: responseSet } };
+      }
+    }
 
     // If backend uses HTTPS (e.g. Synology DSM on port 5001)
     // WARNING: insecure_skip_verify disables TLS cert validation for the upstream
@@ -98,8 +115,48 @@ function buildCaddyConfig() {
       };
     }
 
+    const routeHandlers = [];
+
+    // Request custom headers — added BEFORE reverse_proxy
+    if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
+      const requestSet = {};
+      for (const h of customHeaders.request) {
+        if (h.name && h.value) requestSet[h.name] = [h.value];
+      }
+      if (Object.keys(requestSet).length > 0) {
+        routeHandlers.push({
+          handler: 'headers',
+          request: { set: requestSet },
+        });
+      }
+    }
+
+    // Rate limiting — must come before reverse_proxy
+    if (route.rate_limit_enabled) {
+      routeHandlers.push({
+        handler: 'rate_limit',
+        rate_limits: {
+          static: {
+            key: '{http.request.remote.host}',
+            window: route.rate_limit_window || '1m',
+            max_events: route.rate_limit_requests || 100,
+          },
+        },
+      });
+    }
+
+    // Compression — encode handler must come before reverse_proxy
+    if (route.compress_enabled) {
+      routeHandlers.push({
+        handler: 'encode',
+        encodings: { zstd: {}, gzip: {} },
+      });
+    }
+
+    routeHandlers.push(reverseProxy);
+
     const routeConfig = {
-      handle: [reverseProxy],
+      handle: routeHandlers,
     };
 
     // Peer ACL — restrict by remote_ip when acl_enabled
@@ -196,8 +253,38 @@ function buildCaddyConfig() {
         ],
       };
 
-      // The main route: auth subrequest → proxy to backend
-      routeConfig.handle = [forwardAuthSubrequest, reverseProxy];
+      // The main route: auth subrequest → (optional headers/rate limit/encode) → proxy to backend
+      const authHandlers = [forwardAuthSubrequest];
+      // Request custom headers
+      if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
+        const requestSet = {};
+        for (const h of customHeaders.request) {
+          if (h.name && h.value) requestSet[h.name] = [h.value];
+        }
+        if (Object.keys(requestSet).length > 0) {
+          authHandlers.push({
+            handler: 'headers',
+            request: { set: requestSet },
+          });
+        }
+      }
+      if (route.rate_limit_enabled) {
+        authHandlers.push({
+          handler: 'rate_limit',
+          rate_limits: {
+            static: {
+              key: '{http.request.remote.host}',
+              window: route.rate_limit_window || '1m',
+              max_events: route.rate_limit_requests || 100,
+            },
+          },
+        });
+      }
+      if (route.compress_enabled) {
+        authHandlers.push({ handler: 'encode', encodings: { zstd: {}, gzip: {} } });
+      }
+      authHandlers.push(reverseProxy);
+      routeConfig.handle = authHandlers;
 
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
@@ -460,13 +547,19 @@ async function create(data) {
     targetIp = sanitize(data.target_ip);
   }
 
+  // Validate and serialize custom_headers
+  const customHeaders = data.custom_headers
+    ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers))
+    : null;
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
                         route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
                         ip_filter_enabled, ip_filter_mode, ip_filter_rules,
-                        branding_title, branding_text, branding_color, branding_bg, acl_enabled, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        branding_title, branding_text, branding_color, branding_bg, acl_enabled, compress_enabled,
+                        custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -490,7 +583,12 @@ async function create(data) {
     data.branding_text || null,
     data.branding_color || null,
     data.branding_bg || null,
-    data.acl_enabled ? 1 : 0
+    data.acl_enabled ? 1 : 0,
+    data.compress_enabled ? 1 : 0,
+    customHeaders,
+    data.rate_limit_enabled ? 1 : 0,
+    data.rate_limit_requests ? parseInt(data.rate_limit_requests, 10) : 100,
+    data.rate_limit_window || '1m'
   );
 
   const routeId = result.lastInsertRowid;
@@ -640,6 +738,11 @@ async function update(id, data) {
     }
   }
 
+  // Serialize custom_headers for update
+  const updateCustomHeaders = data.custom_headers !== undefined
+    ? (data.custom_headers ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers)) : null)
+    : route.custom_headers;
+
   db.prepare(`
     UPDATE routes SET
       domain = COALESCE(?, domain),
@@ -667,6 +770,11 @@ async function update(id, data) {
       branding_color = COALESCE(?, branding_color),
       branding_bg = COALESCE(?, branding_bg),
       acl_enabled = COALESCE(?, acl_enabled),
+      compress_enabled = COALESCE(?, compress_enabled),
+      custom_headers = ?,
+      rate_limit_enabled = COALESCE(?, rate_limit_enabled),
+      rate_limit_requests = COALESCE(?, rate_limit_requests),
+      rate_limit_window = COALESCE(?, rate_limit_window),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -695,6 +803,11 @@ async function update(id, data) {
     data.branding_color !== undefined ? (data.branding_color || null) : null,
     data.branding_bg !== undefined ? (data.branding_bg || null) : null,
     data.acl_enabled !== undefined ? (data.acl_enabled ? 1 : 0) : null,
+    data.compress_enabled !== undefined ? (data.compress_enabled ? 1 : 0) : null,
+    updateCustomHeaders,
+    data.rate_limit_enabled !== undefined ? (data.rate_limit_enabled ? 1 : 0) : null,
+    data.rate_limit_requests !== undefined ? parseInt(data.rate_limit_requests, 10) : null,
+    data.rate_limit_window !== undefined ? (data.rate_limit_window || null) : null,
     id
   );
 

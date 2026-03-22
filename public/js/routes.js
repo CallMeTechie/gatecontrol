@@ -94,11 +94,31 @@
         const mode = r.ip_filter_mode === 'blacklist' ? 'Blacklist' : 'Whitelist';
         ipFilterTag = '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> ' + mode + '</span>';
       }
+      let rateLimitTag = '';
+      if (r.rate_limit_enabled && r.route_type !== 'l4') {
+        var rlWindows = { '1s': 's', '1m': 'min', '5m': '5min', '1h': 'h' };
+        var rlW = rlWindows[r.rate_limit_window] || r.rate_limit_window;
+        rateLimitTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' + (GC.t['routes.rate_limit_badge'] || 'Rate Limit: {{requests}}/{{window}}').replace('{{requests}}', r.rate_limit_requests || 100).replace('{{window}}', rlW) + '</span>';
+      }
+      let headersTag = '';
+      if (r.custom_headers && r.route_type !== 'l4') {
+        try {
+          var ch = typeof r.custom_headers === 'string' ? JSON.parse(r.custom_headers) : r.custom_headers;
+          var reqCount = (ch.request || []).length;
+          var respCount = (ch.response || []).length;
+          if (reqCount + respCount > 0) {
+            headersTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 6h16M4 12h16M4 18h16"/></svg> ' + escapeHtml(GC.t['headers.badge'] || 'Headers') + '</span>';
+          }
+        } catch (_) {}
+      }
       const httpsTag = r.https_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> HTTPS</span>'
         : '';
       const backendHttpsTag = r.backend_https && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Backend HTTPS</span>'
+        : '';
+      const compressTag = r.compress_enabled && r.route_type !== 'l4'
+        ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 14l8-8 8 8"/><path d="M4 20l8-8 8 8"/></svg> ' + escapeHtml(GC.t['routes.compress_badge'] || 'Compress') + '</span>'
         : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
@@ -151,7 +171,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
+          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${rateLimitTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -234,14 +254,20 @@
       const createMonitoring = document.getElementById('create-route-monitoring')?.classList.contains('on') || false;
       const createIpFilter = document.getElementById('create-route-ip-filter')?.classList.contains('on') || false;
       const createAcl = document.getElementById('create-route-acl')?.classList.contains('on') || false;
+      const createCompress = document.getElementById('create-route-compress')?.classList.contains('on') || false;
+      const createRateLimit = document.getElementById('create-route-rate-limit')?.classList.contains('on') || false;
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
+        compress_enabled: createCompress,
         monitoring_enabled: createMonitoring,
         ip_filter_enabled: createIpFilter,
         ip_filter_mode: document.getElementById('create-ip-filter-mode')?.value || 'whitelist',
         ip_filter_rules: createIpFilter ? JSON.stringify(createIpFilterRules) : null,
         acl_enabled: createAcl,
         acl_peers: createAcl ? getSelectedAclPeers('create') : [],
+        rate_limit_enabled: createRateLimit,
+        rate_limit_requests: createRateLimit ? parseInt(document.getElementById('create-rate-limit-requests')?.value || '100', 10) : 100,
+        rate_limit_window: createRateLimit ? (document.getElementById('create-rate-limit-window')?.value || '1m') : '1m',
       };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
@@ -286,6 +312,8 @@
         // Reset toggles
         if (httpsToggle) httpsToggle.classList.add('on');
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
+        var ccmp = document.getElementById('create-route-compress');
+        if (ccmp) ccmp.classList.remove('on');
         var cmt = document.getElementById('create-route-monitoring');
         if (cmt) cmt.classList.remove('on');
         var cipf = document.getElementById('create-route-ip-filter');
@@ -296,6 +324,10 @@
         if (cacl) cacl.classList.remove('on');
         var caclFields = document.getElementById('create-acl-fields');
         if (caclFields) caclFields.style.display = 'none';
+        var crl = document.getElementById('create-route-rate-limit');
+        if (crl) crl.classList.remove('on');
+        var crlFields = document.getElementById('create-rate-limit-fields');
+        if (crlFields) crlFields.style.display = 'none';
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
@@ -583,6 +615,12 @@
       else backendHttpsToggle.classList.remove('on');
     }
 
+    const compressToggle = document.getElementById('edit-route-compress');
+    if (compressToggle) {
+      if (route.compress_enabled) compressToggle.classList.add('on');
+      else compressToggle.classList.remove('on');
+    }
+
     // Reset auth type to none first
     setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'none');
 
@@ -685,6 +723,45 @@
       renderAclPeerChecklist('edit', []);
     }
 
+    // Rate limit toggle
+    var rateLimitToggle = document.getElementById('edit-route-rate-limit');
+    var rateLimitFields = document.getElementById('edit-rate-limit-fields');
+    if (rateLimitToggle) {
+      if (route.rate_limit_enabled) rateLimitToggle.classList.add('on'); else rateLimitToggle.classList.remove('on');
+      if (rateLimitFields) rateLimitFields.style.display = route.rate_limit_enabled ? '' : 'none';
+      rateLimitToggle.onclick = function() {
+        rateLimitToggle.classList.toggle('on');
+        if (rateLimitFields) rateLimitFields.style.display = rateLimitToggle.classList.contains('on') ? '' : 'none';
+      };
+    }
+    var rlRequests = document.getElementById('edit-rate-limit-requests');
+    if (rlRequests) rlRequests.value = route.rate_limit_requests || 100;
+    var rlWindow = document.getElementById('edit-rate-limit-window');
+    if (rlWindow) rlWindow.value = route.rate_limit_window || '1m';
+
+    // Custom headers
+    editHeadersRequest.length = 0;
+    editHeadersResponse.length = 0;
+    if (route.custom_headers) {
+      try {
+        var ch = typeof route.custom_headers === 'string' ? JSON.parse(route.custom_headers) : route.custom_headers;
+        if (Array.isArray(ch.request)) ch.request.forEach(function(h) { editHeadersRequest.push(h); });
+        if (Array.isArray(ch.response)) ch.response.forEach(function(h) { editHeadersResponse.push(h); });
+      } catch (_) {}
+    }
+    renderHeadersList('edit', 'request', editHeadersRequest);
+    renderHeadersList('edit', 'response', editHeadersResponse);
+
+    // Show/hide headers tab based on route type
+    var headersTab = document.querySelector('.edit-route-tabs .tab[data-edit-tab="headers"]');
+    if (headersTab) headersTab.style.display = (route.route_type === 'l4') ? 'none' : '';
+
+    // Compress toggle
+    const editCompressToggle = document.getElementById('edit-route-compress');
+    if (editCompressToggle) {
+      editCompressToggle.onclick = function() { editCompressToggle.classList.toggle('on'); };
+    }
+
     // Monitoring toggle
     const monitorToggle = document.getElementById('edit-route-monitoring');
     if (monitorToggle) {
@@ -775,8 +852,11 @@
         const monitoringEnabled = document.getElementById('edit-route-monitoring')?.classList.contains('on') || false;
         const ipFilterEnabled = document.getElementById('edit-route-ip-filter')?.classList.contains('on') || false;
         const aclEnabled = document.getElementById('edit-route-acl')?.classList.contains('on') || false;
+        const compressEnabled = document.getElementById('edit-route-compress')?.classList.contains('on') || false;
+        const rateLimitEnabled = document.getElementById('edit-route-rate-limit')?.classList.contains('on') || false;
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
+          compress_enabled: compressEnabled,
           monitoring_enabled: monitoringEnabled,
           ip_filter_enabled: ipFilterEnabled,
           ip_filter_mode: document.getElementById('edit-ip-filter-mode')?.value || 'whitelist',
@@ -787,7 +867,13 @@
           branding_bg: document.getElementById('edit-branding-bg')?.value || '',
           acl_enabled: aclEnabled,
           acl_peers: aclEnabled ? getSelectedAclPeers('edit') : [],
+          rate_limit_enabled: rateLimitEnabled,
+          rate_limit_requests: rateLimitEnabled ? parseInt(document.getElementById('edit-rate-limit-requests')?.value || '100', 10) : 100,
+          rate_limit_window: rateLimitEnabled ? (document.getElementById('edit-rate-limit-window')?.value || '1m') : '1m',
         };
+        // Custom headers
+        var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
+        payload.custom_headers = hasCustomHeaders ? { request: editHeadersRequest, response: editHeadersResponse } : null;
         const editRouteType = document.getElementById('edit-route-type').value;
         payload.route_type = editRouteType;
         if (editRouteType === 'l4') {
@@ -1116,9 +1202,23 @@
     updateCreateRouteAuthMethodUI();
   });
 
+  // ─── Create compress toggle ────────────────────────────
+  var createCompressToggle = document.getElementById('create-route-compress');
+  if (createCompressToggle) createCompressToggle.addEventListener('click', function() { createCompressToggle.classList.toggle('on'); });
+
   // ─── Create monitoring toggle ──────────────────────────
   var createMonToggle = document.getElementById('create-route-monitoring');
   if (createMonToggle) createMonToggle.addEventListener('click', function() { createMonToggle.classList.toggle('on'); });
+
+  // ─── Create rate limit toggle ──────────────────────────
+  var createRlToggle = document.getElementById('create-route-rate-limit');
+  var createRlFields = document.getElementById('create-rate-limit-fields');
+  if (createRlToggle) {
+    createRlToggle.addEventListener('click', function() {
+      createRlToggle.classList.toggle('on');
+      if (createRlFields) createRlFields.style.display = createRlToggle.classList.contains('on') ? '' : 'none';
+    });
+  }
 
   // ─── ACL helpers ──────────────────────────────────────
   function renderAclPeerChecklist(prefix, selectedPeerIds) {
@@ -1265,6 +1365,71 @@
     if (panel) panel.style.display = '';
   });
   setupIpFilter('create', createIpFilterRules);
+
+  // ─── Custom Headers helpers ─────────────────────────
+  var editHeadersRequest = [];
+  var editHeadersResponse = [];
+
+  function renderHeadersList(prefix, type, arr) {
+    var list = document.getElementById(prefix + '-headers-' + type + '-list');
+    if (!list) return;
+    list.textContent = '';
+    arr.forEach(function(h, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs);font-size:12px';
+      var label = document.createElement('span');
+      label.style.cssText = 'flex:1;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      label.textContent = h.name + ': ' + h.value;
+      row.appendChild(label);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '\u00d7';
+      del.style.cssText = 'background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px';
+      del.addEventListener('click', function() { arr.splice(idx, 1); renderHeadersList(prefix, type, arr); });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function setupHeadersAdd(prefix, type, arr) {
+    var addBtn = document.getElementById(prefix + '-headers-' + (type === 'request' ? 'req' : 'resp') + '-add');
+    if (!addBtn) return;
+    addBtn.addEventListener('click', function() {
+      var nameInput = document.getElementById(prefix + '-headers-' + (type === 'request' ? 'req' : 'resp') + '-name');
+      var valueInput = document.getElementById(prefix + '-headers-' + (type === 'request' ? 'req' : 'resp') + '-value');
+      var name = nameInput.value.trim();
+      var value = valueInput.value.trim();
+      if (!name || !value) return;
+      arr.push({ name: name, value: value });
+      nameInput.value = '';
+      valueInput.value = '';
+      renderHeadersList(prefix, type, arr);
+    });
+  }
+
+  setupHeadersAdd('edit', 'request', editHeadersRequest);
+  setupHeadersAdd('edit', 'response', editHeadersResponse);
+
+  // Presets dropdown
+  var headersPreset = document.getElementById('edit-headers-preset');
+  if (headersPreset) {
+    headersPreset.addEventListener('change', function() {
+      var val = this.value;
+      if (!val) return;
+      if (val === 'cors') {
+        editHeadersResponse.push({ name: 'Access-Control-Allow-Origin', value: '*' });
+        editHeadersResponse.push({ name: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' });
+        editHeadersResponse.push({ name: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' });
+      } else if (val === 'security') {
+        editHeadersResponse.push({ name: 'X-Frame-Options', value: 'DENY' });
+        editHeadersResponse.push({ name: 'X-Content-Type-Options', value: 'nosniff' });
+        editHeadersResponse.push({ name: 'X-XSS-Protection', value: '1; mode=block' });
+        editHeadersResponse.push({ name: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' });
+      }
+      renderHeadersList('edit', 'response', editHeadersResponse);
+      this.value = '';
+    });
+  }
 
   // ─── Branding logo upload/remove ──────────────────────
   var logoFileInput = document.getElementById('edit-branding-logo-file');

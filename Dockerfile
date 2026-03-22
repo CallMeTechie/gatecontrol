@@ -1,7 +1,8 @@
 # Stage 1: Caddy with L4 plugin
 FROM caddy:2-builder AS caddy-builder
 RUN xcaddy build \
-    --with github.com/mholt/caddy-l4
+    --with github.com/mholt/caddy-l4 \
+    --with github.com/mholt/caddy-ratelimit
 
 # Stage 2: Node dependencies
 FROM node:20-alpine AS builder

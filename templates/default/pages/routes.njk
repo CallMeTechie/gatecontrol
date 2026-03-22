@@ -106,6 +106,13 @@
             </div>
             <div class="toggle" data-field="backend_https"></div>
           </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-compress" data-managed="true"></div>
+          </div>
           <!-- Auth type selection -->
           <div class="form-group">
             <label class="form-label">{{ t('route_auth.auth_type') }}</label>
@@ -261,6 +268,30 @@
               <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
             </select>
             <button type="button" class="btn btn-ghost" id="create-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-rate-limit" data-managed="true"></div>
+        </div>
+        <div id="create-rate-limit-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_requests') }}</label>
+              <input type="number" id="create-rate-limit-requests" value="100" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_window') }}</label>
+              <select id="create-rate-limit-window" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option value="1s">{{ t('routes.rate_limit_window_1s') }}</option>
+                <option value="1m" selected>{{ t('routes.rate_limit_window_1m') }}</option>
+                <option value="5m">{{ t('routes.rate_limit_window_5m') }}</option>
+                <option value="1h">{{ t('routes.rate_limit_window_1h') }}</option>
+              </select>
+            </div>
           </div>
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">

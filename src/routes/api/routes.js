@@ -179,7 +179,8 @@ router.post('/', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers } = req.body;
+      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      rate_limit_enabled, rate_limit_requests, rate_limit_window } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -210,7 +211,8 @@ router.post('/', async (req, res) => {
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers,
+      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      rate_limit_enabled, rate_limit_requests, rate_limit_window,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -234,7 +236,8 @@ router.put('/:id', async (req, res) => {
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers } = req.body;
+      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      rate_limit_enabled, rate_limit_requests, rate_limit_window } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -266,7 +269,8 @@ router.put('/:id', async (req, res) => {
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers,
+      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      rate_limit_enabled, rate_limit_requests, rate_limit_window,
     });
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {

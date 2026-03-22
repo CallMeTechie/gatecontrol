@@ -60,7 +60,12 @@ function createBackup() {
       l4_listen_port: r.l4_listen_port,
       l4_tls_mode: r.l4_tls_mode,
       acl_enabled: r.acl_enabled || 0,
+      compress_enabled: r.compress_enabled || 0,
       acl_peer_names: aclPeerRows.map(p => p.name),
+      custom_headers: r.custom_headers || null,
+      rate_limit_enabled: r.rate_limit_enabled || 0,
+      rate_limit_requests: r.rate_limit_requests || 100,
+      rate_limit_window: r.rate_limit_window || '1m',
       created_at: r.created_at,
       updated_at: r.updated_at,
     };
@@ -273,9 +278,10 @@ async function restoreBackup(backup) {
                           https_enabled, backend_https, basic_auth_enabled,
                           basic_auth_user, basic_auth_password_hash, enabled,
                           route_type, l4_protocol, l4_listen_port, l4_tls_mode,
-                          acl_enabled,
+                          acl_enabled, compress_enabled,
+                          custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -299,6 +305,11 @@ async function restoreBackup(backup) {
         r.l4_listen_port || null,
         r.l4_tls_mode || null,
         r.acl_enabled ? 1 : 0,
+        r.compress_enabled ? 1 : 0,
+        r.custom_headers || null,
+        r.rate_limit_enabled ? 1 : 0,
+        r.rate_limit_requests || 100,
+        r.rate_limit_window || '1m',
         r.created_at || null,
         r.updated_at || null,
       );

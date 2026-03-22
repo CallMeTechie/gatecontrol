@@ -12,6 +12,7 @@
         <button class="tab active" data-edit-tab="general">{{ t('routes.tab_general') or 'General' }}</button>
         <button class="tab" data-edit-tab="auth">{{ t('routes.tab_auth') or 'Auth' }}</button>
         <button class="tab" data-edit-tab="security">{{ t('routes.tab_security') or 'Security' }}</button>
+        <button class="tab" data-edit-tab="headers">{{ t('headers.title') or 'Headers' }}</button>
         <button class="tab" data-edit-tab="branding">{{ t('routes.tab_branding') or 'Branding' }}</button>
       </div>
 
@@ -85,12 +86,19 @@
             </div>
             <div class="toggle on" id="edit-route-https"></div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
             <div>
               <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
               <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
             </div>
             <div class="toggle" id="edit-route-backend-https"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-compress" data-managed="true"></div>
           </div>
         </div>
       </div>
@@ -273,6 +281,62 @@
               <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
             </select>
             <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-rate-limit" data-managed="true"></div>
+        </div>
+        <div id="edit-rate-limit-fields" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_requests') }}</label>
+              <input type="number" id="edit-rate-limit-requests" value="100" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_window') }}</label>
+              <select id="edit-rate-limit-window" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option value="1s">{{ t('routes.rate_limit_window_1s') }}</option>
+                <option value="1m">{{ t('routes.rate_limit_window_1m') }}</option>
+                <option value="5m">{{ t('routes.rate_limit_window_5m') }}</option>
+                <option value="1h">{{ t('routes.rate_limit_window_1h') }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ═══ TAB: Headers ═══════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="headers" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600">{{ t('headers.title') or 'Custom Headers' }}</div>
+          <div style="display:flex;gap:6px">
+            <select id="edit-headers-preset" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option value="">{{ t('headers.preset') or 'Presets' }}...</option>
+              <option value="cors">{{ t('headers.preset_cors') or 'CORS Headers' }}</option>
+              <option value="security">{{ t('headers.preset_security') or 'Security Headers' }}</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.request_headers') or 'Request Headers' }}</label>
+          <div id="edit-headers-request-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="edit-headers-req-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <input type="text" id="edit-headers-req-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <button type="button" class="btn btn-ghost" id="edit-headers-req-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.response_headers') or 'Response Headers' }}</label>
+          <div id="edit-headers-response-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="edit-headers-resp-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <input type="text" id="edit-headers-resp-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <button type="button" class="btn btn-ghost" id="edit-headers-resp-add" style="padding:6px 10px;font-size:12px">+</button>
           </div>
         </div>
       </div>

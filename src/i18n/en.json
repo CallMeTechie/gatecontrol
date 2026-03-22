@@ -139,6 +139,18 @@
   "routes.dns_ok": "DNS OK — domain points to this server",
   "routes.dns_warning": "This domain does not point to this server (expected: {{ip}})",
   "routes.dns_error": "Could not check DNS",
+  "routes.rate_limit": "Rate Limiting",
+  "routes.rate_limit_desc": "Limit requests per IP address",
+  "routes.rate_limit_requests": "Max requests",
+  "routes.rate_limit_window": "Time window",
+  "routes.rate_limit_window_1s": "1 second",
+  "routes.rate_limit_window_1m": "1 minute",
+  "routes.rate_limit_window_5m": "5 minutes",
+  "routes.rate_limit_window_1h": "1 hour",
+  "routes.rate_limit_badge": "Rate Limit: {{requests}}/{{window}}",
+  "routes.compress": "Compression",
+  "routes.compress_desc": "Enable Gzip/Zstd response compression via Caddy",
+  "routes.compress_badge": "Compress",
 
   "config.eyebrow": "WireGuard Interface",
   "config.title": "Configuration",
@@ -584,5 +596,16 @@
   "error.autobackup.delete": "Failed to delete backup file",
   "error.autobackup.download": "Failed to download backup file",
   "error.autobackup.not_found": "Backup file not found",
-  "error.autobackup.invalid_filename": "Invalid filename"
+  "error.autobackup.invalid_filename": "Invalid filename",
+
+  "headers.title": "Custom Headers",
+  "headers.request_headers": "Request Headers",
+  "headers.response_headers": "Response Headers",
+  "headers.name": "Header Name",
+  "headers.value": "Value",
+  "headers.add": "Add",
+  "headers.preset": "Presets",
+  "headers.preset_cors": "CORS Headers",
+  "headers.preset_security": "Security Headers",
+  "headers.badge": "Headers"
 }
