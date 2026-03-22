@@ -649,6 +649,7 @@
     if (compressToggle) {
       if (route.compress_enabled) compressToggle.classList.add('on');
       else compressToggle.classList.remove('on');
+      compressToggle.setAttribute('aria-checked', route.compress_enabled ? 'true' : 'false');
     }
 
     // Reset auth type to none first
@@ -758,11 +759,8 @@
     var rateLimitFields = document.getElementById('edit-rate-limit-fields');
     if (rateLimitToggle) {
       if (route.rate_limit_enabled) rateLimitToggle.classList.add('on'); else rateLimitToggle.classList.remove('on');
+      rateLimitToggle.setAttribute('aria-checked', route.rate_limit_enabled ? 'true' : 'false');
       if (rateLimitFields) rateLimitFields.style.display = route.rate_limit_enabled ? '' : 'none';
-      rateLimitToggle.onclick = function() {
-        rateLimitToggle.classList.toggle('on');
-        if (rateLimitFields) rateLimitFields.style.display = rateLimitToggle.classList.contains('on') ? '' : 'none';
-      };
     }
     var rlRequests = document.getElementById('edit-rate-limit-requests');
     if (rlRequests) rlRequests.value = route.rate_limit_requests || 100;
@@ -774,11 +772,8 @@
     var retryFields = document.getElementById('edit-retry-fields');
     if (retryToggle) {
       if (route.retry_enabled) retryToggle.classList.add('on'); else retryToggle.classList.remove('on');
+      retryToggle.setAttribute('aria-checked', route.retry_enabled ? 'true' : 'false');
       if (retryFields) retryFields.style.display = route.retry_enabled ? '' : 'none';
-      retryToggle.onclick = function() {
-        retryToggle.classList.toggle('on');
-        if (retryFields) retryFields.style.display = retryToggle.classList.contains('on') ? '' : 'none';
-      };
     }
     var retryCount = document.getElementById('edit-retry-count');
     if (retryCount) retryCount.value = route.retry_count || 3;
@@ -801,12 +796,8 @@
     }
     if (backendsToggle) {
       if (hasBackends) backendsToggle.classList.add('on'); else backendsToggle.classList.remove('on');
+      backendsToggle.setAttribute('aria-checked', hasBackends ? 'true' : 'false');
       if (backendsFields) backendsFields.style.display = hasBackends ? '' : 'none';
-      backendsToggle.onclick = function() {
-        backendsToggle.classList.toggle('on');
-        var isOn = backendsToggle.classList.contains('on');
-        if (backendsFields) backendsFields.style.display = isOn ? '' : 'none';
-      };
     }
     renderBackendsList();
 
@@ -815,11 +806,8 @@
     var stickyFields = document.getElementById('edit-sticky-fields');
     if (stickyToggle) {
       if (route.sticky_enabled && hasBackends) stickyToggle.classList.add('on'); else stickyToggle.classList.remove('on');
+      stickyToggle.setAttribute('aria-checked', (route.sticky_enabled && hasBackends) ? 'true' : 'false');
       if (stickyFields) stickyFields.style.display = (route.sticky_enabled && hasBackends) ? '' : 'none';
-      stickyToggle.onclick = function() {
-        stickyToggle.classList.toggle('on');
-        if (stickyFields) stickyFields.style.display = stickyToggle.classList.contains('on') ? '' : 'none';
-      };
     }
     var stickyCookieName = document.getElementById('edit-sticky-cookie-name');
     if (stickyCookieName) stickyCookieName.value = route.sticky_cookie_name || 'gc_sticky';
@@ -843,18 +831,12 @@
     var headersTab = document.querySelector('.edit-route-tabs .tab[data-edit-tab="headers"]');
     if (headersTab) headersTab.style.display = (route.route_type === 'l4') ? 'none' : '';
 
-    // Compress toggle
-    const editCompressToggle = document.getElementById('edit-route-compress');
-    if (editCompressToggle) {
-      editCompressToggle.onclick = function() { editCompressToggle.classList.toggle('on'); };
-    }
-
     // Monitoring toggle
     const monitorToggle = document.getElementById('edit-route-monitoring');
     if (monitorToggle) {
       if (route.monitoring_enabled) monitorToggle.classList.add('on');
       else monitorToggle.classList.remove('on');
-      monitorToggle.onclick = function() { monitorToggle.classList.toggle('on'); };
+      monitorToggle.setAttribute('aria-checked', route.monitoring_enabled ? 'true' : 'false');
     }
 
     // IP filter
@@ -862,6 +844,7 @@
     var ipFilterFields = document.getElementById('edit-ip-filter-fields');
     if (ipFilterToggle) {
       if (route.ip_filter_enabled) ipFilterToggle.classList.add('on'); else ipFilterToggle.classList.remove('on');
+      ipFilterToggle.setAttribute('aria-checked', route.ip_filter_enabled ? 'true' : 'false');
       if (ipFilterFields) ipFilterFields.style.display = route.ip_filter_enabled ? '' : 'none';
     }
     setToggleGroup('edit-ip-filter-mode-group', 'edit-ip-filter-mode', route.ip_filter_mode || 'whitelist');
@@ -1299,21 +1282,14 @@
     updateCreateRouteAuthMethodUI();
   });
 
-  // ─── Create compress toggle ────────────────────────────
-  var createCompressToggle = document.getElementById('create-route-compress');
-  if (createCompressToggle) createCompressToggle.addEventListener('click', function() { createCompressToggle.classList.toggle('on'); });
-
-  // ─── Create monitoring toggle ──────────────────────────
-  var createMonToggle = document.getElementById('create-route-monitoring');
-  if (createMonToggle) createMonToggle.addEventListener('click', function() { createMonToggle.classList.toggle('on'); });
-
   // ─── Create rate limit toggle ──────────────────────────
   var createRlToggle = document.getElementById('create-route-rate-limit');
   var createRlFields = document.getElementById('create-rate-limit-fields');
   if (createRlToggle) {
     createRlToggle.addEventListener('click', function() {
-      createRlToggle.classList.toggle('on');
-      if (createRlFields) createRlFields.style.display = createRlToggle.classList.contains('on') ? '' : 'none';
+      setTimeout(function() {
+        if (createRlFields) createRlFields.style.display = createRlToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
     });
   }
 
@@ -1403,8 +1379,9 @@
     var addBtn = document.getElementById(prefix + '-ip-filter-add');
 
     if (toggle) toggle.addEventListener('click', function() {
-      toggle.classList.toggle('on');
-      if (fields) fields.style.display = toggle.classList.contains('on') ? '' : 'none';
+      setTimeout(function() {
+        if (fields) fields.style.display = toggle.classList.contains('on') ? '' : 'none';
+      }, 0);
     });
 
     if (modeGroup) modeGroup.querySelectorAll('.toggle-btn').forEach(function(btn) {
@@ -1526,8 +1503,9 @@
   var createRetryFields = document.getElementById('create-retry-fields');
   if (createRetryToggle) {
     createRetryToggle.addEventListener('click', function() {
-      createRetryToggle.classList.toggle('on');
-      if (createRetryFields) createRetryFields.style.display = createRetryToggle.classList.contains('on') ? '' : 'none';
+      setTimeout(function() {
+        if (createRetryFields) createRetryFields.style.display = createRetryToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
     });
   }
 
@@ -1758,6 +1736,26 @@
   document.getElementById('edit-l4-tls-mode')?.addEventListener('change', function() {
     updateEditFieldVisibility();
   });
+
+  // ─── Edit modal: one-time toggle handlers for show/hide fields ──
+  // app.js handles the visual toggle (classList, ARIA, keyboard) since
+  // data-managed was removed. We just react AFTER app.js toggles the state.
+  function setupSimpleToggle(toggleId, fieldsId) {
+    var toggle = document.getElementById(toggleId);
+    var fields = document.getElementById(fieldsId);
+    if (toggle && fields) {
+      toggle.addEventListener('click', function() {
+        setTimeout(function() {
+          fields.style.display = toggle.classList.contains('on') ? '' : 'none';
+        }, 0);
+      });
+    }
+  }
+
+  setupSimpleToggle('edit-route-rate-limit', 'edit-rate-limit-fields');
+  setupSimpleToggle('edit-route-retry', 'edit-retry-fields');
+  setupSimpleToggle('edit-route-backends', 'edit-backends-fields');
+  setupSimpleToggle('edit-route-sticky', 'edit-sticky-fields');
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();
