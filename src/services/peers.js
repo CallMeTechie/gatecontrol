@@ -118,6 +118,7 @@ async function create(data) {
     presharedKey,
     allowedIps,
     ip,
+    expires_at: data.expiresAt || null,
   };
 }
 

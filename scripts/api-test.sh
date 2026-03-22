@@ -799,10 +799,471 @@ else
 fi
 
 # ============================================================================
-# 15. BACKWARD COMPATIBILITY
+# 15. PEER EXPIRY
 # ============================================================================
 
-section "15. Backward Compatibility (/api/ alias)"
+section "15. Peer Expiry"
+
+FUTURE_DATE="2099-12-31T23:59:59Z"
+PAST_DATE="2020-01-01T00:00:00Z"
+
+subsection "Create peer with expires_at (future date)"
+parse "$(api POST "/peers" -d "{\"name\":\"api-test-expiry-peer\",\"description\":\"Expiry test\",\"expires_at\":\"$FUTURE_DATE\"}")"
+assert_status "201" "POST /peers with expires_at returns 201"
+EXPIRY_PEER_ID=$(echo "$BODY" | jq -r '.peer.id')
+CLEANUP_PEER_IDS+=("$EXPIRY_PEER_ID")
+EXPIRY_VAL=$(echo "$BODY" | jq -r '.peer.expires_at // empty')
+if [ -n "$EXPIRY_VAL" ] && [ "$EXPIRY_VAL" != "null" ]; then
+  pass "expires_at present in create response"
+else
+  fail "expires_at in create response" "expected expires_at to be set, got '$EXPIRY_VAL'"
+fi
+
+subsection "Create peer with expires_at (past date)"
+parse "$(api POST "/peers" -d "{\"name\":\"api-test-expiry-past\",\"description\":\"Past expiry\",\"expires_at\":\"$PAST_DATE\"}")"
+assert_status "201" "POST /peers with past expires_at returns 201"
+EXPIRY_PAST_PEER_ID=$(echo "$BODY" | jq -r '.peer.id')
+CLEANUP_PEER_IDS+=("$EXPIRY_PAST_PEER_ID")
+
+subsection "Update peer expiry"
+NEW_FUTURE="2098-06-15T12:00:00Z"
+parse "$(api PUT "/peers/$EXPIRY_PEER_ID" -d "{\"expires_at\":\"$NEW_FUTURE\"}")"
+assert_status "200" "PUT /peers/$EXPIRY_PEER_ID with new expires_at returns 200"
+
+subsection "Verify expiry in GET response"
+parse "$(api GET "/peers/$EXPIRY_PEER_ID")"
+assert_status "200" "GET /peers/$EXPIRY_PEER_ID returns 200"
+EXPIRY_VAL=$(echo "$BODY" | jq -r '.peer.expires_at // empty')
+if [ -n "$EXPIRY_VAL" ] && [ "$EXPIRY_VAL" != "null" ]; then
+  pass "expires_at field present in GET response"
+else
+  fail "expires_at in GET response" "expected expires_at to be set, got '$EXPIRY_VAL'"
+fi
+
+subsection "Remove expiry"
+parse "$(api PUT "/peers/$EXPIRY_PEER_ID" -d '{"expires_at":null}')"
+assert_status "200" "PUT /peers/$EXPIRY_PEER_ID with expires_at:null returns 200"
+
+parse "$(api GET "/peers/$EXPIRY_PEER_ID")"
+EXPIRY_VAL=$(echo "$BODY" | jq -r '.peer.expires_at // "null"')
+if [ "$EXPIRY_VAL" = "null" ] || [ -z "$EXPIRY_VAL" ]; then
+  pass "expires_at cleared after setting to null"
+else
+  fail "expires_at cleared" "expected null/empty, got '$EXPIRY_VAL'"
+fi
+
+# Cleanup expiry test peers
+api DELETE "/peers/$EXPIRY_PEER_ID" > /dev/null 2>&1
+CLEANUP_PEER_IDS=("${CLEANUP_PEER_IDS[@]/$EXPIRY_PEER_ID}")
+api DELETE "/peers/$EXPIRY_PAST_PEER_ID" > /dev/null 2>&1
+CLEANUP_PEER_IDS=("${CLEANUP_PEER_IDS[@]/$EXPIRY_PAST_PEER_ID}")
+
+# ============================================================================
+# 16. PEER ACL
+# ============================================================================
+
+section "16. Peer ACL"
+
+subsection "Create route with ACL"
+parse "$(api POST "/routes" -d "{
+  \"domain\": \"api-test-acl-$(date +%s).example.com\",
+  \"target_ip\": \"$PEER_IP\",
+  \"target_port\": 8080,
+  \"peer_id\": $PEER_ID,
+  \"https_enabled\": true,
+  \"acl_enabled\": true,
+  \"acl_peers\": [$PEER_ID]
+}")"
+assert_status "201" "POST /routes with ACL returns 201"
+ACL_ROUTE_ID=$(echo "$BODY" | jq -r '.route.id')
+CLEANUP_ROUTE_IDS+=("$ACL_ROUTE_ID")
+
+subsection "Verify ACL in GET"
+parse "$(api GET "/routes/$ACL_ROUTE_ID")"
+assert_status "200" "GET /routes/$ACL_ROUTE_ID returns 200"
+ACL_ENABLED=$(echo "$BODY" | jq -r '.route.acl_enabled // empty')
+if [ "$ACL_ENABLED" = "true" ] || [ "$ACL_ENABLED" = "1" ]; then
+  pass "acl_enabled is true/1 in GET response"
+else
+  fail "acl_enabled in GET" "expected true/1, got '$ACL_ENABLED'"
+fi
+ACL_PEERS=$(echo "$BODY" | jq -r '.route.acl_peers // empty')
+if [ -n "$ACL_PEERS" ] && [ "$ACL_PEERS" != "null" ] && [ "$ACL_PEERS" != "" ]; then
+  pass "acl_peers present in GET response"
+else
+  fail "acl_peers in GET" "expected acl_peers to be set"
+fi
+
+subsection "Update ACL peers"
+parse "$(api PUT "/routes/$ACL_ROUTE_ID" -d "{\"acl_peers\":[$PEER_ID]}")"
+assert_status "200" "PUT /routes/$ACL_ROUTE_ID with updated acl_peers returns 200"
+
+subsection "Disable ACL"
+parse "$(api PUT "/routes/$ACL_ROUTE_ID" -d '{"acl_enabled":false}')"
+assert_status "200" "PUT /routes/$ACL_ROUTE_ID with acl_enabled:false returns 200"
+
+subsection "Caddy reload after ACL change"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after ACL change"
+
+# Cleanup ACL test route
+api DELETE "/routes/$ACL_ROUTE_ID" > /dev/null 2>&1
+CLEANUP_ROUTE_IDS=("${CLEANUP_ROUTE_IDS[@]/$ACL_ROUTE_ID}")
+
+# ============================================================================
+# 17. AUTOMATIC BACKUPS
+# ============================================================================
+
+section "17. Automatic Backups"
+
+subsection "Get auto-backup settings"
+parse "$(api GET "/settings/autobackup")"
+assert_status "200" "GET /settings/autobackup returns 200"
+
+subsection "Update auto-backup settings"
+parse "$(api PUT "/settings/autobackup" -d '{"enabled":true,"schedule":"daily","retention":3}')"
+assert_status "200" "PUT /settings/autobackup returns 200"
+
+subsection "Trigger manual backup"
+parse "$(api POST "/settings/autobackup/run")"
+assert_status "200" "POST /settings/autobackup/run returns 200"
+
+subsection "List backup files"
+parse "$(api GET "/settings/autobackup/list")"
+assert_status "200" "GET /settings/autobackup/list returns 200"
+BACKUP_FILES=$(echo "$BODY" | jq -r '.files // .backups // []')
+BACKUP_COUNT=$(echo "$BACKUP_FILES" | jq 'length' 2>/dev/null)
+if [ -n "$BACKUP_COUNT" ] && [ "$BACKUP_COUNT" -ge 1 ]; then
+  pass "At least 1 backup file listed ($BACKUP_COUNT found)"
+  BACKUP_FILENAME=$(echo "$BACKUP_FILES" | jq -r '.[0].filename // .[0].name // .[0]' 2>/dev/null)
+else
+  fail "Backup file count" "expected >= 1, got $BACKUP_COUNT"
+  BACKUP_FILENAME=""
+fi
+
+subsection "Download backup file"
+if [ -n "$BACKUP_FILENAME" ] && [ "$BACKUP_FILENAME" != "null" ]; then
+  DOWNLOAD_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $TOKEN" \
+    "$API/settings/autobackup/download/$BACKUP_FILENAME")
+  if [ "$DOWNLOAD_CODE" = "200" ]; then
+    pass "GET /settings/autobackup/download/$BACKUP_FILENAME returns 200"
+  else
+    fail "Download backup file" "expected 200, got $DOWNLOAD_CODE"
+  fi
+else
+  skip "Download backup file" "no backup filename available"
+fi
+
+subsection "Delete backup file"
+if [ -n "$BACKUP_FILENAME" ] && [ "$BACKUP_FILENAME" != "null" ]; then
+  parse "$(api DELETE "/settings/autobackup/$BACKUP_FILENAME")"
+  assert_status "200" "DELETE /settings/autobackup/$BACKUP_FILENAME returns 200"
+else
+  skip "Delete backup file" "no backup filename available"
+fi
+
+subsection "Disable auto-backup"
+parse "$(api PUT "/settings/autobackup" -d '{"enabled":false}')"
+assert_status "200" "PUT /settings/autobackup with enabled:false returns 200"
+
+# ============================================================================
+# 18. LOG EXPORT
+# ============================================================================
+
+section "18. Log Export"
+
+subsection "Export activity log as CSV"
+EXPORT_RESP=$(curl -sk -o /dev/null -w "%{http_code}|%{content_type}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API/logs/activity/export?format=csv")
+EXPORT_CODE=$(echo "$EXPORT_RESP" | cut -d'|' -f1)
+EXPORT_CT=$(echo "$EXPORT_RESP" | cut -d'|' -f2)
+if [ "$EXPORT_CODE" = "200" ]; then
+  pass "GET /logs/activity/export?format=csv returns 200"
+  if echo "$EXPORT_CT" | grep -qi "text/csv"; then
+    pass "Activity CSV Content-Type contains text/csv"
+  else
+    fail "Activity CSV Content-Type" "expected text/csv, got '$EXPORT_CT'"
+  fi
+else
+  fail "Activity log CSV export" "expected 200, got $EXPORT_CODE"
+fi
+
+subsection "Export activity log as JSON"
+EXPORT_RESP=$(curl -sk -o /dev/null -w "%{http_code}|%{content_type}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API/logs/activity/export?format=json")
+EXPORT_CODE=$(echo "$EXPORT_RESP" | cut -d'|' -f1)
+EXPORT_CT=$(echo "$EXPORT_RESP" | cut -d'|' -f2)
+if [ "$EXPORT_CODE" = "200" ]; then
+  pass "GET /logs/activity/export?format=json returns 200"
+  if echo "$EXPORT_CT" | grep -qi "application/json"; then
+    pass "Activity JSON Content-Type contains application/json"
+  else
+    fail "Activity JSON Content-Type" "expected application/json, got '$EXPORT_CT'"
+  fi
+else
+  fail "Activity log JSON export" "expected 200, got $EXPORT_CODE"
+fi
+
+subsection "Export access log as CSV"
+EXPORT_RESP=$(curl -sk -o /dev/null -w "%{http_code}|%{content_type}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API/logs/access/export?format=csv")
+EXPORT_CODE=$(echo "$EXPORT_RESP" | cut -d'|' -f1)
+if [ "$EXPORT_CODE" = "200" ]; then
+  pass "GET /logs/access/export?format=csv returns 200"
+else
+  fail "Access log CSV export" "expected 200, got $EXPORT_CODE"
+fi
+
+subsection "Export access log as JSON"
+EXPORT_RESP=$(curl -sk -o /dev/null -w "%{http_code}|%{content_type}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API/logs/access/export?format=json")
+EXPORT_CODE=$(echo "$EXPORT_RESP" | cut -d'|' -f1)
+if [ "$EXPORT_CODE" = "200" ]; then
+  pass "GET /logs/access/export?format=json returns 200"
+else
+  fail "Access log JSON export" "expected 200, got $EXPORT_CODE"
+fi
+
+# ============================================================================
+# 19. ROUTE COMPRESSION
+# ============================================================================
+
+section "19. Route Compression"
+
+subsection "Create route with compression"
+parse "$(api POST "/routes" -d "{
+  \"domain\": \"api-test-compress-$(date +%s).example.com\",
+  \"target_ip\": \"$PEER_IP\",
+  \"target_port\": 8080,
+  \"peer_id\": $PEER_ID,
+  \"https_enabled\": true,
+  \"compress_enabled\": true
+}")"
+assert_status "201" "POST /routes with compress_enabled returns 201"
+COMPRESS_ROUTE_ID=$(echo "$BODY" | jq -r '.route.id')
+CLEANUP_ROUTE_IDS+=("$COMPRESS_ROUTE_ID")
+
+subsection "Verify compression in GET"
+parse "$(api GET "/routes/$COMPRESS_ROUTE_ID")"
+assert_status "200" "GET /routes/$COMPRESS_ROUTE_ID returns 200"
+COMPRESS_VAL=$(echo "$BODY" | jq -r '.route.compress_enabled // empty')
+if [ "$COMPRESS_VAL" = "true" ] || [ "$COMPRESS_VAL" = "1" ]; then
+  pass "compress_enabled is true/1 in GET response"
+else
+  fail "compress_enabled in GET" "expected true/1, got '$COMPRESS_VAL'"
+fi
+
+subsection "Caddy reload after compression"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after compression change"
+
+subsection "Disable compression"
+parse "$(api PUT "/routes/$COMPRESS_ROUTE_ID" -d '{"compress_enabled":false}')"
+assert_status "200" "PUT /routes/$COMPRESS_ROUTE_ID with compress_enabled:false returns 200"
+
+parse "$(api GET "/routes/$COMPRESS_ROUTE_ID")"
+COMPRESS_VAL=$(echo "$BODY" | jq -r '.route.compress_enabled // "0"')
+if [ "$COMPRESS_VAL" = "false" ] || [ "$COMPRESS_VAL" = "0" ]; then
+  pass "compress_enabled disabled"
+else
+  fail "compress_enabled disabled" "expected false/0, got '$COMPRESS_VAL'"
+fi
+
+# Cleanup compression test route
+api DELETE "/routes/$COMPRESS_ROUTE_ID" > /dev/null 2>&1
+CLEANUP_ROUTE_IDS=("${CLEANUP_ROUTE_IDS[@]/$COMPRESS_ROUTE_ID}")
+
+# ============================================================================
+# 20. CUSTOM HEADERS
+# ============================================================================
+
+section "20. Custom Headers"
+
+subsection "Update route with custom headers"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"custom_headers":"{\"X-Test-Header\":\"test-value\",\"X-Another\":\"value2\"}"}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with custom_headers returns 200"
+
+subsection "Verify headers in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+HEADERS_VAL=$(echo "$BODY" | jq -r '.route.custom_headers // empty')
+if [ -n "$HEADERS_VAL" ] && [ "$HEADERS_VAL" != "null" ] && [ "$HEADERS_VAL" != "" ]; then
+  pass "custom_headers present in GET response"
+else
+  fail "custom_headers in GET" "expected custom_headers to be set"
+fi
+
+subsection "Caddy reload after headers"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after custom headers"
+
+subsection "Clear headers"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"custom_headers":null}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with custom_headers:null returns 200"
+
+# ============================================================================
+# 21. PER-ROUTE RATE LIMITING
+# ============================================================================
+
+section "21. Per-Route Rate Limiting"
+
+subsection "Update route with rate limiting"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"rate_limit_enabled":true,"rate_limit_requests":50,"rate_limit_window":"1m"}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with rate limiting returns 200"
+
+subsection "Verify rate limit in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+RL_ENABLED=$(echo "$BODY" | jq -r '.route.rate_limit_enabled // empty')
+if [ "$RL_ENABLED" = "true" ] || [ "$RL_ENABLED" = "1" ]; then
+  pass "rate_limit_enabled is true/1"
+else
+  fail "rate_limit_enabled" "expected true/1, got '$RL_ENABLED'"
+fi
+RL_REQUESTS=$(echo "$BODY" | jq -r '.route.rate_limit_requests // empty')
+if [ "$RL_REQUESTS" = "50" ]; then
+  pass "rate_limit_requests is 50"
+else
+  fail "rate_limit_requests" "expected 50, got '$RL_REQUESTS'"
+fi
+RL_WINDOW=$(echo "$BODY" | jq -r '.route.rate_limit_window // empty')
+if [ -n "$RL_WINDOW" ] && [ "$RL_WINDOW" != "null" ]; then
+  pass "rate_limit_window present ($RL_WINDOW)"
+else
+  fail "rate_limit_window" "expected to be set, got '$RL_WINDOW'"
+fi
+
+subsection "Caddy reload after rate limit"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after rate limit"
+
+subsection "Disable rate limiting"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"rate_limit_enabled":false}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with rate_limit_enabled:false returns 200"
+
+# ============================================================================
+# 22. RETRY WITH BACKOFF
+# ============================================================================
+
+section "22. Retry with Backoff"
+
+subsection "Update route with retry"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"retry_enabled":true,"retry_count":3,"retry_match_status":"502,503,504"}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with retry settings returns 200"
+
+subsection "Verify retry in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+RETRY_ENABLED=$(echo "$BODY" | jq -r '.route.retry_enabled // empty')
+if [ "$RETRY_ENABLED" = "true" ] || [ "$RETRY_ENABLED" = "1" ]; then
+  pass "retry_enabled is true/1"
+else
+  fail "retry_enabled" "expected true/1, got '$RETRY_ENABLED'"
+fi
+RETRY_COUNT=$(echo "$BODY" | jq -r '.route.retry_count // empty')
+if [ "$RETRY_COUNT" = "3" ]; then
+  pass "retry_count is 3"
+else
+  fail "retry_count" "expected 3, got '$RETRY_COUNT'"
+fi
+RETRY_STATUS=$(echo "$BODY" | jq -r '.route.retry_match_status // empty')
+if [ -n "$RETRY_STATUS" ] && [ "$RETRY_STATUS" != "null" ]; then
+  pass "retry_match_status present ($RETRY_STATUS)"
+else
+  fail "retry_match_status" "expected to be set, got '$RETRY_STATUS'"
+fi
+
+subsection "Caddy reload after retry"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after retry config"
+
+subsection "Disable retry"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"retry_enabled":false}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with retry_enabled:false returns 200"
+
+# ============================================================================
+# 23. MULTIPLE BACKENDS
+# ============================================================================
+
+section "23. Multiple Backends"
+
+subsection "Update route with backends"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"backends":"[{\"address\":\"10.8.0.2:8080\",\"weight\":1},{\"address\":\"10.8.0.3:8080\",\"weight\":1}]"}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with backends returns 200"
+
+subsection "Verify backends in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+BACKENDS_VAL=$(echo "$BODY" | jq -r '.route.backends // empty')
+if [ -n "$BACKENDS_VAL" ] && [ "$BACKENDS_VAL" != "null" ] && [ "$BACKENDS_VAL" != "" ]; then
+  pass "backends field present in GET response"
+else
+  fail "backends in GET" "expected backends to be set"
+fi
+
+subsection "Caddy reload after backends"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after backends change"
+
+subsection "Clear backends"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"backends":null}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with backends:null returns 200"
+
+# ============================================================================
+# 24. STICKY SESSIONS
+# ============================================================================
+
+section "24. Sticky Sessions"
+
+subsection "Update route with sticky sessions + backends"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{
+  "sticky_enabled": true,
+  "sticky_cookie_name": "gc_test",
+  "sticky_cookie_ttl": "3600",
+  "backends": "[{\"address\":\"10.8.0.2:8080\",\"weight\":1},{\"address\":\"10.8.0.3:8080\",\"weight\":1}]"
+}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with sticky sessions returns 200"
+
+subsection "Verify sticky in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+STICKY_ENABLED=$(echo "$BODY" | jq -r '.route.sticky_enabled // empty')
+if [ "$STICKY_ENABLED" = "true" ] || [ "$STICKY_ENABLED" = "1" ]; then
+  pass "sticky_enabled is true/1"
+else
+  fail "sticky_enabled" "expected true/1, got '$STICKY_ENABLED'"
+fi
+STICKY_COOKIE=$(echo "$BODY" | jq -r '.route.sticky_cookie_name // empty')
+if [ "$STICKY_COOKIE" = "gc_test" ]; then
+  pass "sticky_cookie_name is gc_test"
+else
+  fail "sticky_cookie_name" "expected gc_test, got '$STICKY_COOKIE'"
+fi
+STICKY_TTL=$(echo "$BODY" | jq -r '.route.sticky_cookie_ttl // empty')
+if [ -n "$STICKY_TTL" ] && [ "$STICKY_TTL" != "null" ]; then
+  pass "sticky_cookie_ttl present ($STICKY_TTL)"
+else
+  fail "sticky_cookie_ttl" "expected to be set, got '$STICKY_TTL'"
+fi
+
+subsection "Caddy reload after sticky sessions"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after sticky sessions"
+
+subsection "Disable sticky sessions"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"sticky_enabled":false,"backends":null}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with sticky_enabled:false returns 200"
+
+# ============================================================================
+# 25. BACKWARD COMPATIBILITY
+# ============================================================================
+
+section "25. Backward Compatibility (/api/ alias)"
 
 subsection "/api/ prefix (legacy)"
 RESP=$(curl -sk -w "\n%{http_code}" \
@@ -820,10 +1281,10 @@ else
 fi
 
 # ============================================================================
-# 16. ERROR HANDLING & EDGE CASES
+# 26. ERROR HANDLING & EDGE CASES
 # ============================================================================
 
-section "16. Error Handling & Edge Cases"
+section "26. Error Handling & Edge Cases"
 
 subsection "Consistent error format"
 parse "$(api GET "/peers/99999")"
@@ -883,10 +1344,10 @@ else
 fi
 
 # ============================================================================
-# 17. DELETE (CLEANUP VERIFICATION)
+# 27. DELETE (CLEANUP VERIFICATION)
 # ============================================================================
 
-section "17. Delete Operations"
+section "27. Delete Operations"
 
 subsection "Delete peer"
 parse "$(api DELETE "/peers/$PEER2_ID")"

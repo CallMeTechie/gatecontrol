@@ -110,18 +110,18 @@ function buildCaddyConfig() {
       if (route.sticky_enabled) {
         // Sticky sessions replace load balancing policy with cookie affinity
         reverseProxy.load_balancing = {
-          selection_policy: [{ policy: 'cookie', name: route.sticky_cookie_name || 'gc_sticky', max_age: (route.sticky_cookie_ttl || '3600') + 's' }],
+          selection_policy: { policy: 'cookie', name: route.sticky_cookie_name || 'gc_sticky', max_age: (route.sticky_cookie_ttl || '3600') + 's' },
         };
       } else {
         const weights = backends.map(b => b.weight || 1);
         const allEqual = weights.every(w => w === weights[0]);
         if (allEqual) {
           reverseProxy.load_balancing = {
-            selection_policy: [{ policy: 'round_robin' }],
+            selection_policy: { policy: 'round_robin' },
           };
         } else {
           reverseProxy.load_balancing = {
-            selection_policy: [{ policy: 'weighted_round_robin', weights }],
+            selection_policy: { policy: 'weighted_round_robin', weights },
           };
         }
       }
