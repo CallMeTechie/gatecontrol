@@ -127,14 +127,15 @@ function buildCaddyConfig() {
       }
     }
 
-    // Retry configuration
+    // Retry configuration — part of load_balancing in Caddy JSON
     if (route.retry_enabled) {
       const statusCodes = (route.retry_match_status || '502,503,504')
         .split(',')
         .map(s => parseInt(s.trim(), 10))
         .filter(n => !isNaN(n));
-      reverseProxy.lb_retry_match = [{ status_code: statusCodes }];
-      reverseProxy.lb_retries = route.retry_count || 3;
+      if (!reverseProxy.load_balancing) reverseProxy.load_balancing = {};
+      reverseProxy.load_balancing.retry_match = [{ status_code: statusCodes }];
+      reverseProxy.load_balancing.retries = route.retry_count || 3;
     }
 
     // Response custom headers — applied inside reverse_proxy handler
