@@ -658,6 +658,8 @@
   "batch.enable": "Enable ({{count}})",
   "batch.disable": "Disable ({{count}})",
   "batch.delete": "Delete ({{count}})",
+  "batch.selected": "selected",
+  "batch.none_selected": "Select items...",
   "batch.confirm_delete_peers": "Are you sure you want to delete {{count}} peer(s)?",
   "batch.confirm_delete_routes": "Are you sure you want to delete {{count}} route(s)?",
   "error.batch.invalid_action": "Invalid batch action",

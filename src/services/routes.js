@@ -500,7 +500,7 @@ async function syncToCaddy() {
  */
 function getAll({ limit = 250, offset = 0, type = null } = {}) {
   const db = getDb();
-  let query = `SELECT r.*, p.name as peer_name, p.enabled as peer_enabled,
+  let query = `SELECT r.*, p.name as peer_name, p.enabled as peer_enabled, p.allowed_ips as peer_ip,
     ra.auth_type as route_auth_type, ra.two_factor_enabled as route_auth_2fa,
     ra.two_factor_method as route_auth_2fa_method, ra.session_max_age as route_auth_session_max_age,
     CASE WHEN ra.id IS NOT NULL THEN 1 ELSE 0 END as route_auth_enabled

@@ -658,6 +658,8 @@
   "batch.enable": "Aktivieren ({{count}})",
   "batch.disable": "Deaktivieren ({{count}})",
   "batch.delete": "Löschen ({{count}})",
+  "batch.selected": "ausgewählt",
+  "batch.none_selected": "Elemente auswählen...",
   "batch.confirm_delete_peers": "Sollen {{count}} Peer(s) wirklich gelöscht werden?",
   "batch.confirm_delete_routes": "Sollen {{count}} Route(n) wirklich gelöscht werden?",
   "error.batch.invalid_action": "Ungültige Batch-Aktion",

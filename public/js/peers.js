@@ -735,12 +735,22 @@
 
   function updateBatchBar() {
     var count = batchSelected.size;
-    if (count > 0) {
+    if (batchMode) {
       batchBar.style.display = '';
-      batchCountEl.textContent = count + ' selected';
-      document.getElementById('batch-enable-peers').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
-      document.getElementById('batch-disable-peers').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
-      document.getElementById('batch-delete-peers').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
+      if (count > 0) {
+        batchCountEl.textContent = count + ' ' + (GC.t['batch.selected'] || 'selected');
+        document.getElementById('batch-enable-peers').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-disable-peers').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-delete-peers').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-enable-peers').disabled = false;
+        document.getElementById('batch-disable-peers').disabled = false;
+        document.getElementById('batch-delete-peers').disabled = false;
+      } else {
+        batchCountEl.textContent = GC.t['batch.none_selected'] || 'Select items...';
+        document.getElementById('batch-enable-peers').disabled = true;
+        document.getElementById('batch-disable-peers').disabled = true;
+        document.getElementById('batch-delete-peers').disabled = true;
+      }
     } else {
       batchBar.style.display = 'none';
     }

@@ -1859,12 +1859,22 @@
 
   function updateBatchBar() {
     var count = batchSelected.size;
-    if (count > 0 && batchBar) {
+    if (batchMode && batchBar) {
       batchBar.style.display = '';
-      batchCountEl.textContent = count + ' selected';
-      document.getElementById('batch-enable-routes').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
-      document.getElementById('batch-disable-routes').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
-      document.getElementById('batch-delete-routes').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
+      if (count > 0) {
+        batchCountEl.textContent = count + ' ' + (GC.t['batch.selected'] || 'selected');
+        document.getElementById('batch-enable-routes').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-disable-routes').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-delete-routes').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
+        document.getElementById('batch-enable-routes').disabled = false;
+        document.getElementById('batch-disable-routes').disabled = false;
+        document.getElementById('batch-delete-routes').disabled = false;
+      } else {
+        batchCountEl.textContent = GC.t['batch.none_selected'] || 'Select items...';
+        document.getElementById('batch-enable-routes').disabled = true;
+        document.getElementById('batch-disable-routes').disabled = true;
+        document.getElementById('batch-delete-routes').disabled = true;
+      }
     } else if (batchBar) {
       batchBar.style.display = 'none';
     }
