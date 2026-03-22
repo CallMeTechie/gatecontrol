@@ -50,6 +50,7 @@ ERRORS=()
 CLEANUP_PEER_IDS=()
 CLEANUP_ROUTE_IDS=()
 CLEANUP_WEBHOOK_IDS=()
+CLEANUP_PEER_GROUP_IDS=()
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -178,6 +179,11 @@ assert_json_array_min() {
 cleanup() {
   echo ""
   section "Cleanup"
+
+  for id in "${CLEANUP_PEER_GROUP_IDS[@]}"; do
+    api DELETE "/peer-groups/$id" > /dev/null 2>&1
+    echo -e "  ${YELLOW}→${NC} Deleted test peer group #$id"
+  done
 
   for id in "${CLEANUP_WEBHOOK_IDS[@]}"; do
     api DELETE "/webhooks/$id" > /dev/null 2>&1
@@ -1260,10 +1266,249 @@ parse "$(api PUT "/routes/$ROUTE_ID" -d '{"sticky_enabled":false,"backends":null
 assert_status "200" "PUT /routes/$ROUTE_ID with sticky_enabled:false returns 200"
 
 # ============================================================================
-# 25. BACKWARD COMPATIBILITY
+# 25. PROMETHEUS METRICS
 # ============================================================================
 
-section "25. Backward Compatibility (/api/ alias)"
+section "25. Prometheus Metrics"
+
+subsection "Enable metrics"
+parse "$(api PUT "/settings/metrics" -d '{"enabled":true}')"
+assert_status "200" "PUT /settings/metrics with enabled:true returns 200"
+
+subsection "GET /metrics"
+METRICS_RESP=$(curl -sk -o /tmp/gc_metrics_body -w "%{http_code}|%{content_type}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/metrics" 2>/dev/null)
+METRICS_CODE=$(echo "$METRICS_RESP" | cut -d'|' -f1)
+METRICS_CT=$(echo "$METRICS_RESP" | cut -d'|' -f2)
+METRICS_BODY=$(cat /tmp/gc_metrics_body 2>/dev/null)
+if [ "$METRICS_CODE" = "200" ]; then
+  pass "GET /metrics returns 200"
+else
+  fail "GET /metrics" "expected 200, got $METRICS_CODE"
+fi
+if echo "$METRICS_CT" | grep -qi "text/plain"; then
+  pass "Metrics Content-Type contains text/plain"
+else
+  fail "Metrics Content-Type" "expected text/plain, got '$METRICS_CT'"
+fi
+
+subsection "Verify metric names"
+if echo "$METRICS_BODY" | grep -q "gatecontrol_peers_total"; then
+  pass "Metrics contain gatecontrol_peers_total"
+else
+  fail "gatecontrol_peers_total" "metric not found in response"
+fi
+if echo "$METRICS_BODY" | grep -q "gatecontrol_routes_total"; then
+  pass "Metrics contain gatecontrol_routes_total"
+else
+  fail "gatecontrol_routes_total" "metric not found in response"
+fi
+if echo "$METRICS_BODY" | grep -q "gatecontrol_cpu_usage_percent"; then
+  pass "Metrics contain gatecontrol_cpu_usage_percent"
+else
+  fail "gatecontrol_cpu_usage_percent" "metric not found in response"
+fi
+
+subsection "GET /metrics with query param auth"
+METRICS_TOKEN_RESP=$(curl -sk -o /dev/null -w "%{http_code}" \
+  "$BASE_URL/metrics?token=$TOKEN" 2>/dev/null)
+if [ "$METRICS_TOKEN_RESP" = "200" ]; then
+  pass "GET /metrics?token=\$TOKEN returns 200"
+else
+  fail "GET /metrics with query token" "expected 200, got $METRICS_TOKEN_RESP"
+fi
+
+subsection "Disable metrics"
+parse "$(api PUT "/settings/metrics" -d '{"enabled":false}')"
+assert_status "200" "PUT /settings/metrics with enabled:false returns 200"
+
+subsection "GET /metrics when disabled"
+METRICS_OFF_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/metrics" 2>/dev/null)
+if [ "$METRICS_OFF_CODE" = "404" ]; then
+  pass "GET /metrics when disabled returns 404"
+else
+  fail "GET /metrics when disabled" "expected 404, got $METRICS_OFF_CODE"
+fi
+
+rm -f /tmp/gc_metrics_body
+
+# ============================================================================
+# 26. CIRCUIT BREAKER
+# ============================================================================
+
+section "26. Circuit Breaker"
+
+subsection "Update route with circuit breaker"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"circuit_breaker_enabled":true,"circuit_breaker_threshold":5,"circuit_breaker_timeout":30}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with circuit breaker returns 200"
+
+subsection "Verify circuit breaker in GET"
+parse "$(api GET "/routes/$ROUTE_ID")"
+assert_status "200" "GET /routes/$ROUTE_ID returns 200"
+CB_ENABLED=$(echo "$BODY" | jq -r '.route.circuit_breaker_enabled // empty')
+if [ "$CB_ENABLED" = "true" ] || [ "$CB_ENABLED" = "1" ]; then
+  pass "circuit_breaker_enabled is true/1"
+else
+  fail "circuit_breaker_enabled" "expected true/1, got '$CB_ENABLED'"
+fi
+CB_STATUS=$(echo "$BODY" | jq -r '.route.circuit_breaker_status // empty')
+if [ "$CB_STATUS" = "closed" ]; then
+  pass "circuit_breaker_status is 'closed'"
+else
+  fail "circuit_breaker_status" "expected 'closed', got '$CB_STATUS'"
+fi
+
+subsection "Caddy reload after circuit breaker"
+parse "$(api POST "/caddy/reload")"
+assert_status "200" "POST /caddy/reload returns 200 after circuit breaker"
+
+subsection "Disable circuit breaker"
+parse "$(api PUT "/routes/$ROUTE_ID" -d '{"circuit_breaker_enabled":false}')"
+assert_status "200" "PUT /routes/$ROUTE_ID with circuit_breaker_enabled:false returns 200"
+
+# ============================================================================
+# 27. BATCH OPERATIONS
+# ============================================================================
+
+section "27. Batch Operations"
+
+subsection "Create test peers for batch"
+parse "$(api POST "/peers" -d '{"name":"api-test-batch-peer-1","description":"Batch test peer 1","tags":"batch,test"}')"
+assert_status "201" "Batch peer 1 created"
+BATCH_PEER1_ID=$(echo "$BODY" | jq -r '.peer.id')
+CLEANUP_PEER_IDS+=("$BATCH_PEER1_ID")
+
+parse "$(api POST "/peers" -d '{"name":"api-test-batch-peer-2","description":"Batch test peer 2","tags":"batch,test"}')"
+assert_status "201" "Batch peer 2 created"
+BATCH_PEER2_ID=$(echo "$BODY" | jq -r '.peer.id')
+CLEANUP_PEER_IDS+=("$BATCH_PEER2_ID")
+
+subsection "Batch disable peers"
+parse "$(api POST "/peers/batch" -d "{\"action\":\"disable\",\"ids\":[$BATCH_PEER1_ID,$BATCH_PEER2_ID]}")"
+assert_status "200" "POST /peers/batch with action:disable returns 200"
+AFFECTED=$(echo "$BODY" | jq -r '.affected // .count // empty')
+if [ "$AFFECTED" = "2" ]; then
+  pass "Batch disable affected 2 peers"
+else
+  fail "Batch disable affected count" "expected 2, got '$AFFECTED'"
+fi
+
+subsection "Verify peers disabled"
+parse "$(api GET "/peers/$BATCH_PEER1_ID")"
+BP1_ENABLED=$(echo "$BODY" | jq -r '.peer.enabled')
+if [ "$BP1_ENABLED" = "false" ] || [ "$BP1_ENABLED" = "0" ]; then
+  pass "Batch peer 1 disabled"
+else
+  fail "Batch peer 1 disabled" "expected false/0, got '$BP1_ENABLED'"
+fi
+
+parse "$(api GET "/peers/$BATCH_PEER2_ID")"
+BP2_ENABLED=$(echo "$BODY" | jq -r '.peer.enabled')
+if [ "$BP2_ENABLED" = "false" ] || [ "$BP2_ENABLED" = "0" ]; then
+  pass "Batch peer 2 disabled"
+else
+  fail "Batch peer 2 disabled" "expected false/0, got '$BP2_ENABLED'"
+fi
+
+subsection "Batch enable peers"
+parse "$(api POST "/peers/batch" -d "{\"action\":\"enable\",\"ids\":[$BATCH_PEER1_ID,$BATCH_PEER2_ID]}")"
+assert_status "200" "POST /peers/batch with action:enable returns 200"
+
+subsection "Batch delete peers"
+parse "$(api POST "/peers/batch" -d "{\"action\":\"delete\",\"ids\":[$BATCH_PEER1_ID,$BATCH_PEER2_ID]}")"
+assert_status "200" "POST /peers/batch with action:delete returns 200"
+
+subsection "Verify batch-deleted peers"
+parse "$(api GET "/peers/$BATCH_PEER1_ID")"
+assert_status "404" "Batch-deleted peer 1 returns 404"
+
+parse "$(api GET "/peers/$BATCH_PEER2_ID")"
+assert_status "404" "Batch-deleted peer 2 returns 404"
+
+# Remove from cleanup since already deleted
+CLEANUP_PEER_IDS=("${CLEANUP_PEER_IDS[@]/$BATCH_PEER1_ID}")
+CLEANUP_PEER_IDS=("${CLEANUP_PEER_IDS[@]/$BATCH_PEER2_ID}")
+
+subsection "Invalid batch action"
+parse "$(api POST "/peers/batch" -d '{"action":"invalid","ids":[1]}')"
+assert_status "400" "POST /peers/batch with action:invalid returns 400"
+
+subsection "Empty IDs"
+parse "$(api POST "/peers/batch" -d '{"action":"enable","ids":[]}')"
+assert_status "400" "POST /peers/batch with empty ids returns 400"
+
+# ============================================================================
+# 28. PEER GROUPS
+# ============================================================================
+
+section "28. Peer Groups"
+
+subsection "Create group"
+parse "$(api POST "/peer-groups" -d '{"name":"Test Group","color":"#3b82f6"}')"
+assert_status "201" "POST /peer-groups returns 201"
+assert_json ".ok" "true" "Create group response ok"
+GROUP_ID=$(echo "$BODY" | jq -r '.group.id // .peerGroup.id // .peer_group.id')
+if [ -n "$GROUP_ID" ] && [ "$GROUP_ID" != "null" ]; then
+  pass "Group ID returned: #$GROUP_ID"
+  CLEANUP_PEER_GROUP_IDS+=("$GROUP_ID")
+else
+  fail "Group ID returned" "could not extract group ID"
+fi
+
+subsection "List groups"
+parse "$(api GET "/peer-groups")"
+assert_status "200" "GET /peer-groups returns 200"
+GRP_FOUND=$(echo "$BODY" | jq "[(.groups // .peerGroups // .peer_groups // [])[] | select(.id == $GROUP_ID)] | length" 2>/dev/null)
+if [ "$GRP_FOUND" = "1" ]; then
+  pass "New group appears in list"
+else
+  fail "Group in list" "Group #$GROUP_ID not found in list"
+fi
+
+subsection "Update group"
+parse "$(api PUT "/peer-groups/$GROUP_ID" -d '{"name":"Updated Group"}')"
+assert_status "200" "PUT /peer-groups/$GROUP_ID returns 200"
+
+subsection "Assign peer to group"
+parse "$(api PUT "/peers/$PEER_ID" -d "{\"group_id\":$GROUP_ID}")"
+assert_status "200" "PUT /peers/$PEER_ID with group_id returns 200"
+
+subsection "Verify group in peer GET"
+parse "$(api GET "/peers/$PEER_ID")"
+assert_status "200" "GET /peers/$PEER_ID returns 200"
+PEER_GROUP=$(echo "$BODY" | jq -r '.peer.group_id // empty')
+if [ -n "$PEER_GROUP" ] && [ "$PEER_GROUP" != "null" ]; then
+  pass "group_id present in peer ($PEER_GROUP)"
+else
+  fail "group_id in peer GET" "expected group_id to be set"
+fi
+
+subsection "Remove peer from group"
+parse "$(api PUT "/peers/$PEER_ID" -d '{"group_id":null}')"
+assert_status "200" "PUT /peers/$PEER_ID with group_id:null returns 200"
+
+subsection "Delete group"
+parse "$(api DELETE "/peer-groups/$GROUP_ID")"
+assert_status "200" "DELETE /peer-groups/$GROUP_ID returns 200"
+CLEANUP_PEER_GROUP_IDS=("${CLEANUP_PEER_GROUP_IDS[@]/$GROUP_ID}")
+
+subsection "Verify group deleted"
+parse "$(api GET "/peer-groups")"
+GRP_FOUND=$(echo "$BODY" | jq "[(.groups // .peerGroups // .peer_groups // [])[] | select(.id == $GROUP_ID)] | length" 2>/dev/null)
+if [ "$GRP_FOUND" = "0" ] || [ -z "$GRP_FOUND" ]; then
+  pass "Group no longer in list after delete"
+else
+  fail "Group deleted" "Group #$GROUP_ID still appears in list"
+fi
+
+# ============================================================================
+# 29. BACKWARD COMPATIBILITY
+# ============================================================================
+
+section "29. Backward Compatibility (/api/ alias)"
 
 subsection "/api/ prefix (legacy)"
 RESP=$(curl -sk -w "\n%{http_code}" \
@@ -1281,10 +1526,10 @@ else
 fi
 
 # ============================================================================
-# 26. ERROR HANDLING & EDGE CASES
+# 30. ERROR HANDLING & EDGE CASES
 # ============================================================================
 
-section "26. Error Handling & Edge Cases"
+section "30. Error Handling & Edge Cases"
 
 subsection "Consistent error format"
 parse "$(api GET "/peers/99999")"
@@ -1344,10 +1589,10 @@ else
 fi
 
 # ============================================================================
-# 27. DELETE (CLEANUP VERIFICATION)
+# 31. DELETE (CLEANUP VERIFICATION)
 # ============================================================================
 
-section "27. Delete Operations"
+section "31. Delete Operations"
 
 subsection "Delete peer"
 parse "$(api DELETE "/peers/$PEER2_ID")"
