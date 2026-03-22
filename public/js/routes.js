@@ -85,6 +85,10 @@
         monitorTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Monitoring</span>';
         monitorTag += '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
       }
+      let aclTag = '';
+      if (r.acl_enabled) {
+        aclTag = '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> ACL</span>';
+      }
       let ipFilterTag = '';
       if (r.ip_filter_enabled) {
         const mode = r.ip_filter_mode === 'blacklist' ? 'Blacklist' : 'Whitelist';
@@ -147,7 +151,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${monitorTag}${ipFilterTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
+          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${httpsTag}${backendHttpsTag}${authTag}${routeAuthTags}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -229,12 +233,15 @@
     try {
       const createMonitoring = document.getElementById('create-route-monitoring')?.classList.contains('on') || false;
       const createIpFilter = document.getElementById('create-route-ip-filter')?.classList.contains('on') || false;
+      const createAcl = document.getElementById('create-route-acl')?.classList.contains('on') || false;
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         monitoring_enabled: createMonitoring,
         ip_filter_enabled: createIpFilter,
         ip_filter_mode: document.getElementById('create-ip-filter-mode')?.value || 'whitelist',
         ip_filter_rules: createIpFilter ? JSON.stringify(createIpFilterRules) : null,
+        acl_enabled: createAcl,
+        acl_peers: createAcl ? getSelectedAclPeers('create') : [],
       };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
@@ -285,6 +292,10 @@
         if (cipf) cipf.classList.remove('on');
         var cipfFields = document.getElementById('create-ip-filter-fields');
         if (cipfFields) cipfFields.style.display = 'none';
+        var cacl = document.getElementById('create-route-acl');
+        if (cacl) cacl.classList.remove('on');
+        var caclFields = document.getElementById('create-acl-fields');
+        if (caclFields) caclFields.style.display = 'none';
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
@@ -655,6 +666,25 @@
     }
     updateEditFieldVisibility();
 
+    // ACL toggle
+    var aclToggle = document.getElementById('edit-route-acl');
+    var aclFields = document.getElementById('edit-acl-fields');
+    if (aclToggle) {
+      if (route.acl_enabled) aclToggle.classList.add('on'); else aclToggle.classList.remove('on');
+      if (aclFields) aclFields.style.display = route.acl_enabled ? '' : 'none';
+    }
+    // Load ACL peers for this route
+    try {
+      var routeDetail = await api.get('/api/routes/' + id);
+      if (routeDetail.ok && routeDetail.route) {
+        renderAclPeerChecklist('edit', routeDetail.route.acl_peers || []);
+      } else {
+        renderAclPeerChecklist('edit', []);
+      }
+    } catch (_) {
+      renderAclPeerChecklist('edit', []);
+    }
+
     // Monitoring toggle
     const monitorToggle = document.getElementById('edit-route-monitoring');
     if (monitorToggle) {
@@ -744,6 +774,7 @@
       try {
         const monitoringEnabled = document.getElementById('edit-route-monitoring')?.classList.contains('on') || false;
         const ipFilterEnabled = document.getElementById('edit-route-ip-filter')?.classList.contains('on') || false;
+        const aclEnabled = document.getElementById('edit-route-acl')?.classList.contains('on') || false;
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
           monitoring_enabled: monitoringEnabled,
@@ -754,6 +785,8 @@
           branding_text: document.getElementById('edit-branding-text')?.value || '',
           branding_color: document.getElementById('edit-branding-color')?.value || '',
           branding_bg: document.getElementById('edit-branding-bg')?.value || '',
+          acl_enabled: aclEnabled,
+          acl_peers: aclEnabled ? getSelectedAclPeers('edit') : [],
         };
         const editRouteType = document.getElementById('edit-route-type').value;
         payload.route_type = editRouteType;
@@ -1086,6 +1119,73 @@
   // ─── Create monitoring toggle ──────────────────────────
   var createMonToggle = document.getElementById('create-route-monitoring');
   if (createMonToggle) createMonToggle.addEventListener('click', function() { createMonToggle.classList.toggle('on'); });
+
+  // ─── ACL helpers ──────────────────────────────────────
+  function renderAclPeerChecklist(prefix, selectedPeerIds) {
+    var list = document.getElementById(prefix + '-acl-peers-list');
+    if (!list) return;
+    list.textContent = '';
+    var selected = new Set((selectedPeerIds || []).map(Number));
+    for (var i = 0; i < allPeers.length; i++) {
+      var p = allPeers[i];
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;font-size:12px;border-radius:var(--radius-xs)';
+      label.onmouseenter = function() { this.style.background = 'var(--bg-panel)'; };
+      label.onmouseleave = function() { this.style.background = ''; };
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = p.id;
+      cb.checked = selected.has(p.id);
+      cb.dataset.aclPeer = prefix;
+      cb.addEventListener('change', function() { updateAclHint(prefix); });
+      label.appendChild(cb);
+      var text = document.createElement('span');
+      var ip = p.ip || '?';
+      var status = p.isOnline ? ' (online)' : p.enabled ? '' : ' (disabled)';
+      text.textContent = p.name + ' — ' + ip + status;
+      text.style.cssText = 'font-family:var(--font-mono)';
+      label.appendChild(text);
+      list.appendChild(label);
+    }
+    updateAclHint(prefix);
+  }
+
+  function getSelectedAclPeers(prefix) {
+    var list = document.getElementById(prefix + '-acl-peers-list');
+    if (!list) return [];
+    var cbs = list.querySelectorAll('input[type="checkbox"]:checked');
+    var ids = [];
+    for (var i = 0; i < cbs.length; i++) ids.push(Number(cbs[i].value));
+    return ids;
+  }
+
+  function updateAclHint(prefix) {
+    var hint = document.getElementById(prefix + '-acl-hint');
+    if (!hint) return;
+    var count = getSelectedAclPeers(prefix).length;
+    if (count === 0) {
+      hint.textContent = GC.t['acl.no_peers_selected'] || 'No peers selected';
+      hint.style.color = 'var(--yellow, #facc15)';
+    } else {
+      hint.textContent = (GC.t['acl.peers_selected'] || '{{count}} peer(s) allowed').replace('{{count}}', count);
+      hint.style.color = 'var(--green, #4ade80)';
+    }
+  }
+
+  function setupAclToggle(prefix) {
+    var toggle = document.getElementById(prefix + '-route-acl');
+    var fields = document.getElementById(prefix + '-acl-fields');
+    if (toggle) {
+      toggle.addEventListener('click', function() {
+        toggle.classList.toggle('on');
+        if (fields) fields.style.display = toggle.classList.contains('on') ? '' : 'none';
+        if (toggle.classList.contains('on')) renderAclPeerChecklist(prefix, []);
+      });
+    }
+  }
+
+  setupAclToggle('create');
+  setupAclToggle('edit');
 
   // ─── IP filter helpers ─────────────────────────────────
   var editIpFilterRules = [];

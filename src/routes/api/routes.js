@@ -178,7 +178,8 @@ router.post('/', async (req, res) => {
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
-      branding_title, branding_text, branding_color, branding_bg } = req.body;
+      branding_title, branding_text, branding_color, branding_bg,
+      acl_enabled, acl_peers } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -209,6 +210,7 @@ router.post('/', async (req, res) => {
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
+      acl_enabled, acl_peers,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -231,7 +233,8 @@ router.put('/:id', async (req, res) => {
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
-      branding_title, branding_text, branding_color, branding_bg } = req.body;
+      branding_title, branding_text, branding_color, branding_bg,
+      acl_enabled, acl_peers } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -263,6 +266,7 @@ router.put('/:id', async (req, res) => {
       monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
+      acl_enabled, acl_peers,
     });
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {

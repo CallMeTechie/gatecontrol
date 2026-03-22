@@ -153,10 +153,28 @@ function cleanup(daysToKeep = 30) {
   return result.changes;
 }
 
+/**
+ * Get all activity log entries (for export, no pagination)
+ */
+function getAll() {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM activity_log
+    ORDER BY created_at DESC, id DESC
+  `).all();
+
+  return rows.map(row => ({
+    ...row,
+    details: row.details ? JSON.parse(row.details) : null,
+    color: SEVERITY_COLORS[row.severity] || 'blue',
+  }));
+}
+
 module.exports = {
   log,
   getRecent,
   getCount,
   getPaginated,
+  getAll,
   cleanup,
 };

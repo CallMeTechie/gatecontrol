@@ -226,6 +226,19 @@
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
+            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-acl" data-managed="true"></div>
+        </div>
+        <div id="create-acl-fields" style="display:none;margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('acl.select_peers') }}</label>
+          <div id="create-acl-peers-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          </div>
+          <div id="create-acl-hint" style="font-size:11px;color:var(--text-3);margin-top:6px"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
             <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
             <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
           </div>

@@ -79,4 +79,62 @@ async function getRecent(limit = 50, filters = {}) {
   };
 }
 
-module.exports = { getRecent };
+/**
+ * Get all access log entries matching filters (for export, no pagination)
+ */
+async function getAllFiltered(filters = {}) {
+  if (!fs.existsSync(LOG_FILE)) return [];
+
+  const lines = [];
+  const stream = fs.createReadStream(LOG_FILE, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      lines.push(entry);
+    } catch {
+      // skip malformed lines
+    }
+  }
+
+  // Newest first
+  lines.reverse();
+
+  // Apply filters
+  let filtered = lines;
+
+  if (filters.domain) {
+    const d = filters.domain.toLowerCase();
+    filtered = filtered.filter(e => e.request && e.request.host && e.request.host.toLowerCase().includes(d));
+  }
+
+  if (filters.status) {
+    const s = parseInt(filters.status, 10);
+    if (s >= 100) {
+      const cls = Math.floor(s / 100);
+      filtered = filtered.filter(e => Math.floor(e.status / 100) === cls);
+    }
+  }
+
+  if (filters.method) {
+    const m = filters.method.toUpperCase();
+    filtered = filtered.filter(e => e.request && e.request.method === m);
+  }
+
+  return filtered.map(e => ({
+    timestamp: e.ts ? new Date(e.ts * 1000).toISOString() : null,
+    method: e.request ? e.request.method : '',
+    host: e.request ? e.request.host : '',
+    uri: e.request ? e.request.uri : '',
+    status: e.status || 0,
+    duration: e.duration != null ? Math.round(e.duration * 1000) : 0,
+    size: e.size || 0,
+    remote_ip: e.request ? e.request.remote_ip : '',
+    proto: e.request ? e.request.proto : '',
+    user_agent: e.request && e.request.headers ? (e.request.headers['User-Agent'] || [''])[0] : '',
+  }));
+}
+
+module.exports = { getRecent, getAllFiltered };

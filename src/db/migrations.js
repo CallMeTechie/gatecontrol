@@ -345,6 +345,27 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
     `,
   },
+  {
+    version: 16,
+    name: 'add_peers_expires_at',
+    sql: `ALTER TABLE peers ADD COLUMN expires_at TEXT;`,
+    detect: (db) => hasColumn(db, 'peers', 'expires_at'),
+  },
+  {
+    version: 17,
+    name: 'add_route_peer_acl',
+    sql: `
+      ALTER TABLE routes ADD COLUMN acl_enabled INTEGER DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS route_peer_acl (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+        peer_id INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        UNIQUE(route_id, peer_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_peer_acl_route ON route_peer_acl(route_id);
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'acl_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

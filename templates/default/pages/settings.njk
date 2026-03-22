@@ -378,7 +378,7 @@
         <div id="alerts-events" style="display:flex;flex-direction:column;gap:6px">
           {% set alertGroups = [
             { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed' },
-            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted' },
+            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired' },
             { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted' },
             { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert' }
           ] %}
@@ -409,6 +409,60 @@
         <div id="alerts-message" style="display:none"></div>
         <div style="display:flex;justify-content:flex-end;padding-top:4px">
           <button class="btn btn-primary" id="btn-alerts-save">{{ t('alerts.save') or 'Save' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        <span class="card-title">{{ t('autobackup.title') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('autobackup.subtitle') }}</div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('autobackup.enabled') }}</span>
+          <div class="toggle" id="autobackup-enabled" data-managed="true"></div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="autobackup-schedule">{{ t('autobackup.schedule') }}</label>
+          <select id="autobackup-schedule" style="width:100%;padding:8px 12px;font-size:12px">
+            <option value="6h">{{ t('autobackup.schedule_6h') }}</option>
+            <option value="12h">{{ t('autobackup.schedule_12h') }}</option>
+            <option value="daily" selected>{{ t('autobackup.schedule_daily') }}</option>
+            <option value="3d">{{ t('autobackup.schedule_3d') }}</option>
+            <option value="weekly">{{ t('autobackup.schedule_weekly') }}</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="autobackup-retention">{{ t('autobackup.retention') }}</label>
+          <input type="number" id="autobackup-retention" value="5" min="1" max="100" style="width:100%">
+          <small class="form-hint">{{ t('autobackup.retention_hint') }}</small>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:12px;color:var(--text-2)">{{ t('autobackup.directory') }}</span>
+          <code style="font-family:var(--font-mono);font-size:11px">/data/backups/</code>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:12px;color:var(--text-2)">{{ t('autobackup.last_run') }}</span>
+          <span id="autobackup-last-run" style="font-size:11px;font-family:var(--font-mono);color:var(--text-3)">{{ t('autobackup.last_run_never') }}</span>
+        </div>
+
+        <div id="autobackup-message" style="display:none"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-ghost" id="btn-autobackup-run">{{ t('autobackup.run_now') }}</button>
+          <button class="btn btn-primary" id="btn-autobackup-save">{{ t('autobackup.save') }}</button>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px">{{ t('autobackup.existing_files') }}</div>
+          <div id="autobackup-files" style="font-size:12px;color:var(--text-3)">{{ t('autobackup.no_files') }}</div>
         </div>
       </div>
     </div>

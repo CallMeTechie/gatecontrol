@@ -19,6 +19,18 @@
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
         <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>
       </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-expires">{{ t('peers.expires') }}</label>
+        <select id="edit-peer-expires">
+          <option value="">{{ t('peers.expires_never') }}</option>
+          <option value="1d">{{ t('peers.expires_1d') }}</option>
+          <option value="7d">{{ t('peers.expires_7d') }}</option>
+          <option value="30d">{{ t('peers.expires_30d') }}</option>
+          <option value="90d">{{ t('peers.expires_90d') }}</option>
+          <option value="custom">{{ t('peers.expires_custom') }}</option>
+        </select>
+        <input type="date" id="edit-peer-expires-date" style="display:none;margin-top:6px">
+      </div>
       <div id="edit-peer-error" class="form-error" style="display:none"></div>
     </div>
     <div class="modal-foot">

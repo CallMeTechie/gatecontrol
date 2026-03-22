@@ -53,7 +53,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, description, tags } = req.body;
+    const { name, description, tags, expires_at } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    const peer = await peers.create({ name, description, tags });
+    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null });
     res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
@@ -79,7 +79,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled, tags } = req.body;
+    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -95,7 +95,13 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    const peer = await peers.update(req.params.id, { name, description, dns, persistentKeepalive, enabled, tags });
+    // Pass expires_at: explicit null clears it, undefined means don't change
+    const updateData = { name, description, dns, persistentKeepalive, enabled, tags };
+    if (expires_at !== undefined) {
+      updateData.expiresAt = expires_at || null;
+    }
+
+    const peer = await peers.update(req.params.id, updateData);
     res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');

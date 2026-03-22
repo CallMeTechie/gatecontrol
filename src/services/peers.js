@@ -78,8 +78,8 @@ async function create(data) {
 
     const result = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `).run(
       sanitize(data.name),
       sanitize(data.description) || null,
@@ -89,7 +89,8 @@ async function create(data) {
       allowedIps,
       dns,
       keepalive,
-      sanitize(data.tags) || ''
+      sanitize(data.tags) || '',
+      data.expiresAt || null
     );
 
     return { peerId: result.lastInsertRowid, ip, allowedIps };
@@ -141,6 +142,11 @@ async function update(id, data) {
     if (descErr) throw new Error(descErr);
   }
 
+  // Handle expires_at: explicit null clears expiry, undefined means no change
+  const expiresAtValue = data.expiresAt !== undefined
+    ? (data.expiresAt || null)
+    : undefined;
+
   db.prepare(`
     UPDATE peers SET
       name = COALESCE(?, name),
@@ -149,6 +155,7 @@ async function update(id, data) {
       persistent_keepalive = COALESCE(?, persistent_keepalive),
       enabled = COALESCE(?, enabled),
       tags = COALESCE(?, tags),
+      expires_at = CASE WHEN ? = 1 THEN ? ELSE expires_at END,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -158,6 +165,8 @@ async function update(id, data) {
     data.persistentKeepalive || null,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     data.tags !== undefined ? sanitize(data.tags) : null,
+    expiresAtValue !== undefined ? 1 : 0,
+    expiresAtValue !== undefined ? expiresAtValue : null,
     id
   );
 
@@ -330,6 +339,38 @@ async function rewriteWgConfig() {
   }
 }
 
+/**
+ * Check for expired peers and disable them.
+ * Called periodically from the background task in server.js.
+ */
+async function checkExpiredPeers() {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const expired = db.prepare(
+    `SELECT * FROM peers WHERE expires_at IS NOT NULL AND expires_at < ? AND enabled = 1`
+  ).all(now);
+
+  if (expired.length === 0) return;
+
+  let needSync = false;
+  for (const peer of expired) {
+    db.prepare('UPDATE peers SET enabled = 0, updated_at = datetime(\'now\') WHERE id = ?').run(peer.id);
+
+    activity.log('peer_expired', `Peer "${peer.name}" expired and was disabled`, {
+      source: 'system',
+      severity: 'warning',
+      details: { peerId: peer.id, expiresAt: peer.expires_at },
+    });
+
+    logger.info({ peerId: peer.id, name: peer.name, expiresAt: peer.expires_at }, 'Peer expired and disabled');
+    needSync = true;
+  }
+
+  if (needSync) {
+    await rewriteWgConfig();
+  }
+}
+
 module.exports = {
   getAll,
   getById,
@@ -339,4 +380,5 @@ module.exports = {
   toggle,
   getClientConfig,
   rewriteWgConfig,
+  checkExpiredPeers,
 };

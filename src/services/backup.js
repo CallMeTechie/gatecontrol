@@ -29,31 +29,42 @@ function createBackup() {
     persistent_keepalive: p.persistent_keepalive,
     enabled: p.enabled,
     tags: p.tags || '',
+    expires_at: p.expires_at || null,
     created_at: p.created_at,
     updated_at: p.updated_at,
   }));
 
   // Routes
   const rawRoutes = db.prepare('SELECT * FROM routes').all();
-  const routes = rawRoutes.map(r => ({
-    domain: r.domain,
-    target_ip: r.target_ip,
-    target_port: r.target_port,
-    description: r.description,
-    peer_name: r.peer_id ? db.prepare('SELECT name FROM peers WHERE id = ?').get(r.peer_id)?.name || null : null,
-    https_enabled: r.https_enabled,
-    backend_https: r.backend_https,
-    basic_auth_enabled: r.basic_auth_enabled,
-    basic_auth_user: r.basic_auth_user,
-    basic_auth_password_hash: r.basic_auth_password_hash,
-    enabled: r.enabled,
-    route_type: r.route_type || 'http',
-    l4_protocol: r.l4_protocol,
-    l4_listen_port: r.l4_listen_port,
-    l4_tls_mode: r.l4_tls_mode,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  }));
+  const routes = rawRoutes.map(r => {
+    // Gather ACL peer names for portability
+    const aclPeerRows = db.prepare(`
+      SELECT p.name FROM route_peer_acl rpa
+      JOIN peers p ON p.id = rpa.peer_id
+      WHERE rpa.route_id = ?
+    `).all(r.id);
+    return {
+      domain: r.domain,
+      target_ip: r.target_ip,
+      target_port: r.target_port,
+      description: r.description,
+      peer_name: r.peer_id ? db.prepare('SELECT name FROM peers WHERE id = ?').get(r.peer_id)?.name || null : null,
+      https_enabled: r.https_enabled,
+      backend_https: r.backend_https,
+      basic_auth_enabled: r.basic_auth_enabled,
+      basic_auth_user: r.basic_auth_user,
+      basic_auth_password_hash: r.basic_auth_password_hash,
+      enabled: r.enabled,
+      route_type: r.route_type || 'http',
+      l4_protocol: r.l4_protocol,
+      l4_listen_port: r.l4_listen_port,
+      l4_tls_mode: r.l4_tls_mode,
+      acl_enabled: r.acl_enabled || 0,
+      acl_peer_names: aclPeerRows.map(p => p.name),
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    };
+  });
 
   // Settings
   const settings = db.prepare('SELECT key, value FROM settings').all();
@@ -217,6 +228,7 @@ async function restoreBackup(backup) {
   // Run everything in a transaction for atomicity
   const restore = db.transaction(() => {
     // Clear existing data (route_auth, sessions, OTPs cascade via FK on routes)
+    db.prepare('DELETE FROM route_peer_acl').run();
     db.prepare('DELETE FROM route_auth_otp').run();
     db.prepare('DELETE FROM route_auth_sessions').run();
     db.prepare('DELETE FROM route_auth').run();
@@ -228,8 +240,8 @@ async function restoreBackup(backup) {
     // Restore peers
     const insertPeer = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const peerIdMap = new Map(); // name → new id
@@ -248,6 +260,7 @@ async function restoreBackup(backup) {
         p.persistent_keepalive || 25,
         p.enabled !== undefined ? (p.enabled ? 1 : 0) : 1,
         p.tags || '',
+        p.expires_at || null,
         p.created_at || null,
         p.updated_at || null,
       );
@@ -260,13 +273,16 @@ async function restoreBackup(backup) {
                           https_enabled, backend_https, basic_auth_enabled,
                           basic_auth_user, basic_auth_password_hash, enabled,
                           route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+                          acl_enabled,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
+
+    const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
 
     for (const r of routes) {
       const peerId = r.peer_name ? (peerIdMap.get(r.peer_name) || null) : null;
-      insertRoute.run(
+      const result = insertRoute.run(
         r.domain,
         r.target_ip || null,
         r.target_port || null,
@@ -282,9 +298,18 @@ async function restoreBackup(backup) {
         r.l4_protocol || null,
         r.l4_listen_port || null,
         r.l4_tls_mode || null,
+        r.acl_enabled ? 1 : 0,
         r.created_at || null,
         r.updated_at || null,
       );
+      // Restore ACL peer associations
+      if (Array.isArray(r.acl_peer_names) && r.acl_peer_names.length > 0) {
+        const routeId = result.lastInsertRowid;
+        for (const peerName of r.acl_peer_names) {
+          const aclPeerId = peerIdMap.get(peerName);
+          if (aclPeerId) insertAcl.run(routeId, aclPeerId);
+        }
+      }
     }
 
     // Restore settings

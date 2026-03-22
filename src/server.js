@@ -10,6 +10,7 @@ const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
 const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAuth');
 const { startMonitor, stopMonitor } = require('./services/monitor');
+const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = require('./services/autobackup');
 const activity = require('./services/activity');
 
 let server;
@@ -53,6 +54,17 @@ async function start() {
     startPoller(config.intervals.peerPoller);
     startSessionCleanup();  // Route auth session cleanup every 15 min
     startMonitor();         // Uptime monitoring checks
+    startAutoBackup();      // Automatic backup scheduler
+
+    // Peer expiry check (every 60 seconds)
+    const { checkExpiredPeers } = require('./services/peers');
+    setInterval(async () => {
+      try {
+        await checkExpiredPeers();
+      } catch (err) {
+        logger.error({ error: err.message }, 'Peer expiry check failed');
+      }
+    }, 60 * 1000);
 
     // Periodic cleanup (every 6 hours)
     setInterval(() => {
@@ -133,6 +145,7 @@ function shutdown(signal) {
   stopPoller();
   stopSessionCleanup();
   stopMonitor();
+  stopAutoBackup();
 
   const closeAndExit = () => {
     const { closeDb } = require('./db/connection');

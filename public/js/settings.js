@@ -634,6 +634,183 @@
     });
   }
 
+  // ─── Auto-Backup Settings ──────────────────────────────
+
+  var autobackupEnabledToggle = document.getElementById('autobackup-enabled');
+  if (autobackupEnabledToggle) {
+    autobackupEnabledToggle.addEventListener('click', function() {
+      autobackupEnabledToggle.classList.toggle('on');
+    });
+  }
+
+  function createSvgIcon(paths) {
+    // Safe: creates SVG elements via DOM API, no innerHTML used
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    paths.forEach(function(p) {
+      var el;
+      if (p.type === 'path') {
+        el = document.createElementNS(ns, 'path');
+        el.setAttribute('d', p.d);
+      } else if (p.type === 'polyline') {
+        el = document.createElementNS(ns, 'polyline');
+        el.setAttribute('points', p.points);
+      } else if (p.type === 'line') {
+        el = document.createElementNS(ns, 'line');
+        el.setAttribute('x1', p.x1); el.setAttribute('y1', p.y1);
+        el.setAttribute('x2', p.x2); el.setAttribute('y2', p.y2);
+      }
+      if (el) svg.appendChild(el);
+    });
+    return svg;
+  }
+
+  async function loadAutobackupSettings() {
+    try {
+      var data = await api.get('/api/settings/autobackup');
+      if (!data.ok) return;
+      var d = data.data;
+      if (autobackupEnabledToggle) {
+        if (d.enabled) autobackupEnabledToggle.classList.add('on');
+        else autobackupEnabledToggle.classList.remove('on');
+      }
+      var scheduleEl = document.getElementById('autobackup-schedule');
+      if (scheduleEl) scheduleEl.value = d.schedule || 'daily';
+      var retentionEl = document.getElementById('autobackup-retention');
+      if (retentionEl) retentionEl.value = d.retention || 5;
+      var lastRunEl = document.getElementById('autobackup-last-run');
+      if (lastRunEl) {
+        lastRunEl.textContent = d.lastRun
+          ? new Date(d.lastRun).toLocaleString()
+          : (GC.t['autobackup.last_run_never'] || 'Never');
+      }
+    } catch (err) {
+      console.error('Failed to load auto-backup settings:', err);
+    }
+  }
+
+  async function loadAutobackupFiles() {
+    var container = document.getElementById('autobackup-files');
+    if (!container) return;
+    try {
+      var data = await api.get('/api/settings/autobackup/list');
+      if (!data.ok || !data.files || data.files.length === 0) {
+        container.textContent = GC.t['autobackup.no_files'] || 'No backup files yet';
+        return;
+      }
+      container.textContent = '';
+      data.files.forEach(function(f) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0';
+        var nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        nameEl.textContent = f.filename;
+        info.appendChild(nameEl);
+        var metaEl = document.createElement('div');
+        metaEl.style.cssText = 'font-size:10px;color:var(--text-3);margin-top:2px';
+        var sizeKb = (f.size / 1024).toFixed(1);
+        metaEl.textContent = sizeKb + ' KB — ' + new Date(f.created).toLocaleString();
+        info.appendChild(metaEl);
+        row.appendChild(info);
+
+        var downloadBtn = document.createElement('button');
+        downloadBtn.className = 'icon-btn';
+        downloadBtn.title = GC.t['peers.download'] || 'Download';
+        downloadBtn.style.cssText = 'width:24px;height:24px';
+        downloadBtn.appendChild(createSvgIcon([
+          { type: 'path', d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4' },
+          { type: 'polyline', points: '7 10 12 15 17 10' },
+          { type: 'line', x1: '12', y1: '15', x2: '12', y2: '3' },
+        ]));
+        downloadBtn.addEventListener('click', function() {
+          var a = document.createElement('a');
+          a.href = '/api/v1/settings/autobackup/download/' + encodeURIComponent(f.filename);
+          a.download = f.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        });
+        row.appendChild(downloadBtn);
+
+        var deleteBtn = document.createElement('button');
+        deleteBtn.className = 'icon-btn';
+        deleteBtn.title = GC.t['common.delete'] || 'Delete';
+        deleteBtn.style.cssText = 'width:24px;height:24px;color:var(--red)';
+        deleteBtn.appendChild(createSvgIcon([
+          { type: 'polyline', points: '3 6 5 6 21 6' },
+          { type: 'path', d: 'M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2' },
+        ]));
+        deleteBtn.addEventListener('click', async function() {
+          if (!confirm(GC.t['autobackup.confirm_delete'] || 'Delete this backup file?')) return;
+          try {
+            var res = await api.del('/api/settings/autobackup/' + encodeURIComponent(f.filename));
+            if (res.ok) loadAutobackupFiles();
+            else alert(res.error || 'Failed');
+          } catch (err) { alert(err.message); }
+        });
+        row.appendChild(deleteBtn);
+
+        container.appendChild(row);
+      });
+    } catch (err) {
+      container.textContent = GC.t['autobackup.no_files'] || 'No backup files yet';
+      console.error('Failed to load backup files:', err);
+    }
+  }
+
+  var btnAutobackupSave = document.getElementById('btn-autobackup-save');
+  if (btnAutobackupSave) {
+    btnAutobackupSave.addEventListener('click', async function() {
+      btnLoading(btnAutobackupSave);
+      try {
+        var data = await api.put('/api/settings/autobackup', {
+          enabled: autobackupEnabledToggle.classList.contains('on'),
+          schedule: document.getElementById('autobackup-schedule').value,
+          retention: document.getElementById('autobackup-retention').value,
+        });
+        if (data.ok) {
+          showMessage('autobackup-message', GC.t['autobackup.saved'] || 'Auto-backup settings saved', 'success');
+        } else {
+          showMessage('autobackup-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('autobackup-message', err.message, 'error');
+      } finally {
+        btnReset(btnAutobackupSave);
+      }
+    });
+  }
+
+  var btnAutobackupRun = document.getElementById('btn-autobackup-run');
+  if (btnAutobackupRun) {
+    btnAutobackupRun.addEventListener('click', async function() {
+      btnLoading(btnAutobackupRun);
+      try {
+        var data = await api.post('/api/settings/autobackup/run');
+        if (data.ok) {
+          showMessage('autobackup-message', (GC.t['autobackup.run_success'] || 'Backup created successfully') + ': ' + data.filename, 'success');
+          loadAutobackupFiles();
+          loadAutobackupSettings();
+        } else {
+          showMessage('autobackup-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('autobackup-message', err.message, 'error');
+      } finally {
+        btnReset(btnAutobackupRun);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
   loadSecuritySettings();
@@ -642,5 +819,7 @@
   loadMonitoringSettings();
   loadAlertSettings();
   loadIp2locationSettings();
+  loadAutobackupSettings();
+  loadAutobackupFiles();
   setInterval(loadLockedAccounts, 30000);
 })();

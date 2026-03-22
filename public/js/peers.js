@@ -39,12 +39,13 @@
       const rx = formatBytes(p.transferRx || p.transfer_rx || 0);
       const tx = formatBytes(p.transferTx || p.transfer_tx || 0);
       const statusTag = getStatusTag(p);
+      const expiryTag = getExpiryTag(p);
       const peerTags = parseTags(p.tags);
       const tagsHtml = peerTags.map(t => `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${escapeHtml(t)}</span>`).join('');
 
       return `<tr data-peer-id="${p.id}">
         <td>
-          <div class="peer-name">${escapeHtml(p.name)}</div>
+          <div class="peer-name">${escapeHtml(p.name)}${expiryTag}</div>
           <div class="peer-meta">${escapeHtml(p.description || '')}</div>
           ${tagsHtml ? `<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">${tagsHtml}</div>` : ''}
         </td>
@@ -90,6 +91,22 @@
     if (offline > 0) html += `<span class="tag tag-grey"><span class="tag-dot"></span>${offline} ${escapeHtml(GC.t['peers.offline'] || 'Offline')}</span>`;
     if (disabled > 0) html += `<span class="tag tag-amber"><span class="tag-dot"></span>${disabled} ${escapeHtml(GC.t['peers.disabled'] || 'Disabled')}</span>`;
     statusTags.innerHTML = html;
+  }
+
+  function getExpiryTag(peer) {
+    if (!peer.expires_at) return '';
+    var expiresAt = new Date(peer.expires_at);
+    var now = new Date();
+    var daysLeft = Math.ceil((expiresAt - now) / 86400000);
+    var dateStr = expiresAt.toLocaleDateString();
+
+    if (daysLeft < 0) {
+      return '<span class="tag tag-red" style="font-size:10px;margin-left:4px">' + escapeHtml(GC.t['peers.expired'] || 'Expired') + '</span>';
+    }
+    if (daysLeft <= 7) {
+      return '<span class="tag tag-amber" style="font-size:10px;margin-left:4px" title="' + escapeHtml(dateStr) + '">' + escapeHtml(GC.t['peers.expires_soon'] || 'Expires soon') + '</span>';
+    }
+    return '<span class="tag tag-grey" style="font-size:10px;margin-left:4px" title="' + escapeHtml(dateStr) + '">' + escapeHtml(dateStr) + '</span>';
   }
 
   function getStatusTag(peer) {
@@ -159,6 +176,34 @@
     renderPeers(filtered);
   }
 
+  // ─── Expiry helpers ──────────────────────────────────────
+  function computeExpiresAt(selectId, dateInputId) {
+    var sel = document.getElementById(selectId);
+    var dateInput = document.getElementById(dateInputId);
+    var val = sel.value;
+    if (!val) return null;
+    if (val === 'custom') {
+      if (!dateInput.value) return null;
+      // Set to end of the selected day (23:59:59 UTC)
+      return dateInput.value + 'T23:59:59.000Z';
+    }
+    var days = parseInt(val, 10);
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString();
+  }
+
+  function setupExpiryToggle(selectId, dateInputId) {
+    var sel = document.getElementById(selectId);
+    var dateInput = document.getElementById(dateInputId);
+    sel.addEventListener('change', function() {
+      dateInput.style.display = sel.value === 'custom' ? '' : 'none';
+    });
+  }
+
+  setupExpiryToggle('add-peer-expires', 'add-peer-expires-date');
+  setupExpiryToggle('edit-peer-expires', 'edit-peer-expires-date');
+
   // ─── Search ──────────────────────────────────────────────
   searchInput.addEventListener('input', () => applyFilters());
 
@@ -184,6 +229,9 @@
     document.getElementById('add-peer-name').value = '';
     document.getElementById('add-peer-desc').value = '';
     document.getElementById('add-peer-tags').value = '';
+    document.getElementById('add-peer-expires').value = '';
+    document.getElementById('add-peer-expires-date').value = '';
+    document.getElementById('add-peer-expires-date').style.display = 'none';
     hideError('add-peer-error');
     clearFieldErrors();
     openModal('modal-add-peer');
@@ -203,7 +251,8 @@
 
     btnLoading(btn);
     try {
-      const data = await api.post('/api/peers', { name, description, tags });
+      const expires_at = computeExpiresAt('add-peer-expires', 'add-peer-expires-date');
+      const data = await api.post('/api/peers', { name, description, tags, expires_at });
       if (data.ok) {
         clearFieldErrors();
         closeModal('modal-add-peer');
@@ -230,6 +279,20 @@
     document.getElementById('edit-peer-name').value = peer.name || '';
     document.getElementById('edit-peer-desc').value = peer.description || '';
     document.getElementById('edit-peer-tags').value = peer.tags || '';
+
+    // Populate expiry fields
+    var editExpiresSel = document.getElementById('edit-peer-expires');
+    var editExpiresDate = document.getElementById('edit-peer-expires-date');
+    if (peer.expires_at) {
+      editExpiresSel.value = 'custom';
+      editExpiresDate.style.display = '';
+      editExpiresDate.value = peer.expires_at.substring(0, 10);
+    } else {
+      editExpiresSel.value = '';
+      editExpiresDate.style.display = 'none';
+      editExpiresDate.value = '';
+    }
+
     hideError('edit-peer-error');
     clearFieldErrors();
     openModal('modal-edit-peer');
@@ -250,7 +313,8 @@
 
     btnLoading(btn);
     try {
-      const data = await api.put('/api/peers/' + id, { name, description, tags });
+      const expires_at = computeExpiresAt('edit-peer-expires', 'edit-peer-expires-date');
+      const data = await api.put('/api/peers/' + id, { name, description, tags, expires_at });
       if (data.ok) {
         clearFieldErrors();
         closeModal('modal-edit-peer');

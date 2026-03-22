@@ -502,4 +502,119 @@ router.delete('/lockout/:identifier', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Auto-Backup Settings ───────────────────────────────
+
+/**
+ * GET /api/settings/autobackup — Get auto-backup settings
+ */
+router.get('/autobackup', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    const cfg = autobackup.getSettings();
+    res.json({ ok: true, data: cfg });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get auto-backup settings');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.get') });
+  }
+});
+
+/**
+ * PUT /api/settings/autobackup — Update auto-backup settings
+ */
+router.put('/autobackup', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    const { enabled, schedule, retention } = req.body;
+    autobackup.updateSettings({ enabled, schedule, retention });
+
+    // Restart scheduler with new settings
+    autobackup.restartScheduler();
+
+    activity.log('autobackup_settings_updated', 'Auto-backup settings updated', {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to update auto-backup settings');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.save') });
+  }
+});
+
+/**
+ * POST /api/settings/autobackup/run — Trigger immediate backup
+ */
+router.post('/autobackup/run', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    const filename = autobackup.runBackup();
+    res.json({ ok: true, filename });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to run auto-backup');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.run') });
+  }
+});
+
+/**
+ * GET /api/settings/autobackup/list — List existing backup files
+ */
+router.get('/autobackup/list', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    const files = autobackup.listBackupFiles();
+    res.json({ ok: true, files });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list backup files');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.list') });
+  }
+});
+
+/**
+ * GET /api/settings/autobackup/download/:filename — Download a backup file
+ */
+router.get('/autobackup/download/:filename', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    const filepath = autobackup.getBackupFilePath(req.params.filename);
+    if (!filepath) {
+      return res.status(404).json({ ok: false, error: req.t('error.autobackup.not_found') });
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.sendFile(filepath);
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to download backup file');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.download') });
+  }
+});
+
+/**
+ * DELETE /api/settings/autobackup/:filename — Delete a backup file
+ */
+router.delete('/autobackup/:filename', (req, res) => {
+  try {
+    const autobackup = require('../../services/autobackup');
+    autobackup.deleteBackupFile(req.params.filename);
+
+    activity.log('autobackup_file_deleted', `Backup file deleted: ${req.params.filename}`, {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'Invalid filename') {
+      return res.status(400).json({ ok: false, error: req.t('error.autobackup.invalid_filename') });
+    }
+    if (err.message === 'File not found') {
+      return res.status(404).json({ ok: false, error: req.t('error.autobackup.not_found') });
+    }
+    logger.error({ error: err.message }, 'Failed to delete backup file');
+    res.status(500).json({ ok: false, error: req.t('error.autobackup.delete') });
+  }
+});
+
 module.exports = router;

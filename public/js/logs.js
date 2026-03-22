@@ -210,6 +210,54 @@
     loadAccessLogs(parseInt(btn.dataset.accessPage, 10));
   });
 
+  // ═══════════════════════════════════════════════════
+  //  EXPORT
+  // ═══════════════════════════════════════════════════
+  function triggerDownload(url) {
+    // Rewrite /api/ to /api/v1/ to match server routes (same as apiUrl in app.js)
+    if (url.startsWith('/api/') && !url.startsWith('/api/v1/')) {
+      url = '/api/v1/' + url.slice(5);
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Activity export buttons
+  const activityExportCsv = document.getElementById('activity-export-csv');
+  const activityExportJson = document.getElementById('activity-export-json');
+  if (activityExportCsv) {
+    activityExportCsv.addEventListener('click', () => {
+      triggerDownload('/api/logs/activity/export?format=csv');
+    });
+  }
+  if (activityExportJson) {
+    activityExportJson.addEventListener('click', () => {
+      triggerDownload('/api/logs/activity/export?format=json');
+    });
+  }
+
+  // Access export buttons
+  const accessExportCsv = document.getElementById('access-export-csv');
+  const accessExportJson = document.getElementById('access-export-json');
+  if (accessExportCsv) {
+    accessExportCsv.addEventListener('click', () => {
+      const params = new URLSearchParams({ format: 'csv' });
+      if (accessStatusFilter) params.set('status', accessStatusFilter);
+      triggerDownload('/api/logs/access/export?' + params.toString());
+    });
+  }
+  if (accessExportJson) {
+    accessExportJson.addEventListener('click', () => {
+      const params = new URLSearchParams({ format: 'json' });
+      if (accessStatusFilter) params.set('status', accessStatusFilter);
+      triggerDownload('/api/logs/access/export?' + params.toString());
+    });
+  }
+
   // ─── Init ─────────────────────────────────────────
   loadLogs(1);
   setInterval(() => {

@@ -35,6 +35,28 @@ async function caddyApi(path, options = {}) {
   }
 }
 
+// ─── ACL helpers ────────────────────────────────────────
+function getAclPeers(routeId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT rpa.peer_id, p.name, p.allowed_ips
+    FROM route_peer_acl rpa
+    JOIN peers p ON p.id = rpa.peer_id
+    WHERE rpa.route_id = ?
+  `).all(routeId);
+}
+
+function setAclPeers(routeId, peerIds) {
+  const db = getDb();
+  db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
+  if (Array.isArray(peerIds) && peerIds.length > 0) {
+    const insert = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
+    for (const peerId of peerIds) {
+      insert.run(routeId, peerId);
+    }
+  }
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 function buildCaddyConfig() {
   const db = getDb();
@@ -79,6 +101,19 @@ function buildCaddyConfig() {
     const routeConfig = {
       handle: [reverseProxy],
     };
+
+    // Peer ACL — restrict by remote_ip when acl_enabled
+    if (route.acl_enabled) {
+      const aclPeers = getAclPeers(route.id);
+      if (aclPeers.length > 0) {
+        const ranges = aclPeers
+          .map(p => p.allowed_ips ? p.allowed_ips.split('/')[0] + '/32' : null)
+          .filter(Boolean);
+        if (ranges.length > 0) {
+          routeConfig.match = [{ remote_ip: { ranges } }];
+        }
+      }
+    }
 
     // Basic auth if enabled
     if (route.basic_auth_enabled && route.basic_auth_user && route.basic_auth_password_hash) {
@@ -342,12 +377,16 @@ function getAll({ limit = 250, offset = 0, type = null } = {}) {
  */
 function getById(id) {
   const db = getDb();
-  return db.prepare(`
+  const route = db.prepare(`
     SELECT r.*, p.name AS peer_name, p.allowed_ips AS peer_ip
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
     WHERE r.id = ?
   `).get(id);
+  if (route) {
+    route.acl_peers = getAclPeers(id).map(p => p.peer_id);
+  }
+  return route;
 }
 
 /**
@@ -426,8 +465,8 @@ async function create(data) {
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
                         route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
                         ip_filter_enabled, ip_filter_mode, ip_filter_rules,
-                        branding_title, branding_text, branding_color, branding_bg, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        branding_title, branding_text, branding_color, branding_bg, acl_enabled, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -450,15 +489,22 @@ async function create(data) {
     data.branding_title || null,
     data.branding_text || null,
     data.branding_color || null,
-    data.branding_bg || null
+    data.branding_bg || null,
+    data.acl_enabled ? 1 : 0
   );
 
   const routeId = result.lastInsertRowid;
+
+  // Set ACL peers if provided
+  if (data.acl_enabled && Array.isArray(data.acl_peers)) {
+    setAclPeers(routeId, data.acl_peers);
+  }
 
   // Sync to Caddy — rollback DB insert on failure
   try {
     await syncToCaddy();
   } catch (err) {
+    db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
     throw err;
   }
@@ -468,6 +514,14 @@ async function create(data) {
     severity: 'success',
     details: { routeId, domain, targetIp, targetPort: data.target_port },
   });
+
+  if (data.acl_enabled) {
+    activity.log('route_acl_toggled', `Route "${domain}" ACL enabled`, {
+      source: 'admin',
+      severity: 'info',
+      details: { routeId, acl_enabled: true, acl_peers: data.acl_peers || [] },
+    });
+  }
 
   logger.info({ routeId, domain }, 'Route created');
 
@@ -612,6 +666,7 @@ async function update(id, data) {
       branding_logo = COALESCE(?, branding_logo),
       branding_color = COALESCE(?, branding_color),
       branding_bg = COALESCE(?, branding_bg),
+      acl_enabled = COALESCE(?, acl_enabled),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -639,8 +694,36 @@ async function update(id, data) {
     data.branding_logo !== undefined ? (data.branding_logo || null) : null,
     data.branding_color !== undefined ? (data.branding_color || null) : null,
     data.branding_bg !== undefined ? (data.branding_bg || null) : null,
+    data.acl_enabled !== undefined ? (data.acl_enabled ? 1 : 0) : null,
     id
   );
+
+  // Update ACL peers if provided
+  const oldAclPeers = getAclPeers(id).map(p => p.peer_id).sort();
+  if (data.acl_peers !== undefined) {
+    setAclPeers(id, data.acl_peers || []);
+  }
+
+  // Log ACL changes
+  const newAclEnabled = data.acl_enabled !== undefined ? !!data.acl_enabled : !!route.acl_enabled;
+  const oldAclEnabled = !!route.acl_enabled;
+  if (newAclEnabled !== oldAclEnabled) {
+    activity.log('route_acl_toggled', `Route "${route.domain}" ACL ${newAclEnabled ? 'enabled' : 'disabled'}`, {
+      source: 'admin',
+      severity: 'info',
+      details: { routeId: id, acl_enabled: newAclEnabled },
+    });
+  }
+  if (data.acl_peers !== undefined) {
+    const newPeersSorted = (data.acl_peers || []).map(Number).sort();
+    if (JSON.stringify(oldAclPeers) !== JSON.stringify(newPeersSorted)) {
+      activity.log('route_acl_peers_changed', `Route "${route.domain}" ACL peers updated`, {
+        source: 'admin',
+        severity: 'info',
+        details: { routeId: id, old_peers: oldAclPeers, new_peers: newPeersSorted },
+      });
+    }
+  }
 
   // Sync to Caddy — rollback DB update on failure
   try {
@@ -760,4 +843,6 @@ module.exports = {
   syncToCaddy,
   buildCaddyConfig,
   caddyApi,
+  getAclPeers,
+  setAclPeers,
 };

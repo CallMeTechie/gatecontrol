@@ -17,13 +17,23 @@
 
 {# ─── Activity Log Panel ─── #}
 <div id="activity-panel">
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;justify-content:space-between">
     <div class="tabs" id="log-severity-filter">
       <div class="tab active" data-severity="all">{{ t('logs.all') }}</div>
       <div class="tab" data-severity="success">{{ t('logs.success') }}</div>
       <div class="tab" data-severity="info">Info</div>
       <div class="tab" data-severity="warning">{{ t('logs.warning') }}</div>
       <div class="tab" data-severity="error">{{ t('logs.error') }}</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="activity-export-csv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_csv') }}
+      </button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="activity-export-json">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_json') }}
+      </button>
     </div>
   </div>
   <div class="card">
@@ -40,13 +50,23 @@
 
 {# ─── Access Log Panel ─── #}
 <div id="access-panel" style="display:none">
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;justify-content:space-between">
     <div class="tabs" id="access-status-filter">
       <div class="tab active" data-status="">{{ t('logs.all') }}</div>
       <div class="tab" data-status="200">2xx</div>
       <div class="tab" data-status="300">3xx</div>
       <div class="tab" data-status="400">4xx</div>
       <div class="tab" data-status="500">5xx</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="access-export-csv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_csv') }}
+      </button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="access-export-json">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_json') }}
+      </button>
     </div>
   </div>
   <div class="card">
