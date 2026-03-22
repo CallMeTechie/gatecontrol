@@ -79,7 +79,20 @@ function buildCaddyConfig() {
       targetIp = route.allowed_ips.split('/')[0];
     }
 
-    const upstream = `${targetIp}:${route.target_port}`;
+    // Parse backends for load balancing
+    let backends = null;
+    if (route.backends) {
+      try { backends = JSON.parse(route.backends); } catch {}
+    }
+    const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
+
+    let upstreams;
+    if (hasMultipleBackends) {
+      upstreams = backends.map(b => ({ dial: `${b.ip}:${b.port}` }));
+    } else {
+      const upstream = `${targetIp}:${route.target_port}`;
+      upstreams = [{ dial: upstream }];
+    }
 
     // Parse custom headers
     let customHeaders = null;
@@ -89,8 +102,40 @@ function buildCaddyConfig() {
 
     const reverseProxy = {
       handler: 'reverse_proxy',
-      upstreams: [{ dial: upstream }],
+      upstreams,
     };
+
+    // Load balancing policy (only for multiple backends)
+    if (hasMultipleBackends) {
+      if (route.sticky_enabled) {
+        // Sticky sessions replace load balancing policy with cookie affinity
+        reverseProxy.load_balancing = {
+          selection_policy: [{ policy: 'cookie', name: route.sticky_cookie_name || 'gc_sticky', max_age: (route.sticky_cookie_ttl || '3600') + 's' }],
+        };
+      } else {
+        const weights = backends.map(b => b.weight || 1);
+        const allEqual = weights.every(w => w === weights[0]);
+        if (allEqual) {
+          reverseProxy.load_balancing = {
+            selection_policy: [{ policy: 'round_robin' }],
+          };
+        } else {
+          reverseProxy.load_balancing = {
+            selection_policy: [{ policy: 'weighted_round_robin', weights }],
+          };
+        }
+      }
+    }
+
+    // Retry configuration
+    if (route.retry_enabled) {
+      const statusCodes = (route.retry_match_status || '502,503,504')
+        .split(',')
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => !isNaN(n));
+      reverseProxy.retry_match = [{ status_code: statusCodes }];
+      reverseProxy.retries = route.retry_count || 3;
+    }
 
     // Response custom headers — applied inside reverse_proxy handler
     if (customHeaders && Array.isArray(customHeaders.response) && customHeaders.response.length > 0) {
@@ -106,7 +151,7 @@ function buildCaddyConfig() {
     // If backend uses HTTPS (e.g. Synology DSM on port 5001)
     // WARNING: insecure_skip_verify disables TLS cert validation for the upstream
     if (route.backend_https) {
-      logger.warn({ domain: route.domain, upstream }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
+      logger.warn({ domain: route.domain, upstreams: upstreams.map(u => u.dial).join(',') }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
       reverseProxy.transport = {
         protocol: 'http',
         tls: {
@@ -552,14 +597,21 @@ async function create(data) {
     ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers))
     : null;
 
+  // Validate and serialize backends
+  const backendsJson = data.backends
+    ? (typeof data.backends === 'string' ? data.backends : JSON.stringify(data.backends))
+    : null;
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
                         route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
                         ip_filter_enabled, ip_filter_mode, ip_filter_rules,
                         branding_title, branding_text, branding_color, branding_bg, acl_enabled, compress_enabled,
-                        custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
+                        retry_enabled, retry_count, retry_match_status,
+                        backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -588,7 +640,14 @@ async function create(data) {
     customHeaders,
     data.rate_limit_enabled ? 1 : 0,
     data.rate_limit_requests ? parseInt(data.rate_limit_requests, 10) : 100,
-    data.rate_limit_window || '1m'
+    data.rate_limit_window || '1m',
+    data.retry_enabled ? 1 : 0,
+    data.retry_count ? parseInt(data.retry_count, 10) : 3,
+    data.retry_match_status || '502,503,504',
+    backendsJson,
+    data.sticky_enabled ? 1 : 0,
+    data.sticky_cookie_name || 'gc_sticky',
+    data.sticky_cookie_ttl || '3600'
   );
 
   const routeId = result.lastInsertRowid;
@@ -743,6 +802,11 @@ async function update(id, data) {
     ? (data.custom_headers ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers)) : null)
     : route.custom_headers;
 
+  // Serialize backends for update
+  const updateBackends = data.backends !== undefined
+    ? (data.backends ? (typeof data.backends === 'string' ? data.backends : JSON.stringify(data.backends)) : null)
+    : route.backends;
+
   db.prepare(`
     UPDATE routes SET
       domain = COALESCE(?, domain),
@@ -775,6 +839,13 @@ async function update(id, data) {
       rate_limit_enabled = COALESCE(?, rate_limit_enabled),
       rate_limit_requests = COALESCE(?, rate_limit_requests),
       rate_limit_window = COALESCE(?, rate_limit_window),
+      retry_enabled = COALESCE(?, retry_enabled),
+      retry_count = COALESCE(?, retry_count),
+      retry_match_status = COALESCE(?, retry_match_status),
+      backends = ?,
+      sticky_enabled = COALESCE(?, sticky_enabled),
+      sticky_cookie_name = COALESCE(?, sticky_cookie_name),
+      sticky_cookie_ttl = COALESCE(?, sticky_cookie_ttl),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -808,6 +879,13 @@ async function update(id, data) {
     data.rate_limit_enabled !== undefined ? (data.rate_limit_enabled ? 1 : 0) : null,
     data.rate_limit_requests !== undefined ? parseInt(data.rate_limit_requests, 10) : null,
     data.rate_limit_window !== undefined ? (data.rate_limit_window || null) : null,
+    data.retry_enabled !== undefined ? (data.retry_enabled ? 1 : 0) : null,
+    data.retry_count !== undefined ? parseInt(data.retry_count, 10) : null,
+    data.retry_match_status !== undefined ? (data.retry_match_status || null) : null,
+    updateBackends,
+    data.sticky_enabled !== undefined ? (data.sticky_enabled ? 1 : 0) : null,
+    data.sticky_cookie_name !== undefined ? (data.sticky_cookie_name || null) : null,
+    data.sticky_cookie_ttl !== undefined ? (data.sticky_cookie_ttl || null) : null,
     id
   );
 

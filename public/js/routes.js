@@ -100,6 +100,28 @@
         var rlW = rlWindows[r.rate_limit_window] || r.rate_limit_window;
         rateLimitTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' + (GC.t['routes.rate_limit_badge'] || 'Rate Limit: {{requests}}/{{window}}').replace('{{requests}}', r.rate_limit_requests || 100).replace('{{window}}', rlW) + '</span>';
       }
+      let retryTag = '';
+      if (r.retry_enabled && r.route_type !== 'l4') {
+        retryTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg> ' + (GC.t['routes.retry_badge'] || 'Retry: {{count}}x').replace('{{count}}', r.retry_count || 3) + '</span>';
+      }
+      let backendsTag = '';
+      if (r.backends && r.route_type !== 'l4') {
+        try {
+          var be = typeof r.backends === 'string' ? JSON.parse(r.backends) : r.backends;
+          if (Array.isArray(be) && be.length > 0) {
+            backendsTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg> ' + (GC.t['routes.backends_badge'] || 'LB: {{count}} backends').replace('{{count}}', be.length) + '</span>';
+          }
+        } catch (_) {}
+      }
+      let stickyTag = '';
+      if (r.sticky_enabled && r.backends && r.route_type !== 'l4') {
+        try {
+          var beSt = typeof r.backends === 'string' ? JSON.parse(r.backends) : r.backends;
+          if (Array.isArray(beSt) && beSt.length > 0) {
+            stickyTag = '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 014 4c0 2-2 3-2 5h-4c0-2-2-3-2-5a4 4 0 014-4z"/><rect x="9" y="17" width="6" height="3" rx="1"/></svg> ' + escapeHtml(GC.t['routes.sticky_badge'] || 'Sticky') + '</span>';
+          }
+        } catch (_) {}
+      }
       let headersTag = '';
       if (r.custom_headers && r.route_type !== 'l4') {
         try {
@@ -171,7 +193,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${rateLimitTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
+          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -256,6 +278,7 @@
       const createAcl = document.getElementById('create-route-acl')?.classList.contains('on') || false;
       const createCompress = document.getElementById('create-route-compress')?.classList.contains('on') || false;
       const createRateLimit = document.getElementById('create-route-rate-limit')?.classList.contains('on') || false;
+      const createRetry = document.getElementById('create-route-retry')?.classList.contains('on') || false;
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         compress_enabled: createCompress,
@@ -268,6 +291,9 @@
         rate_limit_enabled: createRateLimit,
         rate_limit_requests: createRateLimit ? parseInt(document.getElementById('create-rate-limit-requests')?.value || '100', 10) : 100,
         rate_limit_window: createRateLimit ? (document.getElementById('create-rate-limit-window')?.value || '1m') : '1m',
+        retry_enabled: createRetry,
+        retry_count: createRetry ? parseInt(document.getElementById('create-retry-count')?.value || '3', 10) : 3,
+        retry_match_status: createRetry ? (document.getElementById('create-retry-status')?.value || '502,503,504') : '502,503,504',
       };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
@@ -328,6 +354,10 @@
         if (crl) crl.classList.remove('on');
         var crlFields = document.getElementById('create-rate-limit-fields');
         if (crlFields) crlFields.style.display = 'none';
+        var crt = document.getElementById('create-route-retry');
+        if (crt) crt.classList.remove('on');
+        var crtFields = document.getElementById('create-retry-fields');
+        if (crtFields) crtFields.style.display = 'none';
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
@@ -739,6 +769,63 @@
     var rlWindow = document.getElementById('edit-rate-limit-window');
     if (rlWindow) rlWindow.value = route.rate_limit_window || '1m';
 
+    // Retry toggle
+    var retryToggle = document.getElementById('edit-route-retry');
+    var retryFields = document.getElementById('edit-retry-fields');
+    if (retryToggle) {
+      if (route.retry_enabled) retryToggle.classList.add('on'); else retryToggle.classList.remove('on');
+      if (retryFields) retryFields.style.display = route.retry_enabled ? '' : 'none';
+      retryToggle.onclick = function() {
+        retryToggle.classList.toggle('on');
+        if (retryFields) retryFields.style.display = retryToggle.classList.contains('on') ? '' : 'none';
+      };
+    }
+    var retryCount = document.getElementById('edit-retry-count');
+    if (retryCount) retryCount.value = route.retry_count || 3;
+    var retryStatus = document.getElementById('edit-retry-status');
+    if (retryStatus) retryStatus.value = route.retry_match_status || '502,503,504';
+
+    // Backends toggle
+    editBackendsList.length = 0;
+    var backendsToggle = document.getElementById('edit-route-backends');
+    var backendsFields = document.getElementById('edit-backends-fields');
+    var hasBackends = false;
+    if (route.backends) {
+      try {
+        var parsedBe = typeof route.backends === 'string' ? JSON.parse(route.backends) : route.backends;
+        if (Array.isArray(parsedBe) && parsedBe.length > 0) {
+          parsedBe.forEach(function(b) { editBackendsList.push(b); });
+          hasBackends = true;
+        }
+      } catch (_) {}
+    }
+    if (backendsToggle) {
+      if (hasBackends) backendsToggle.classList.add('on'); else backendsToggle.classList.remove('on');
+      if (backendsFields) backendsFields.style.display = hasBackends ? '' : 'none';
+      backendsToggle.onclick = function() {
+        backendsToggle.classList.toggle('on');
+        var isOn = backendsToggle.classList.contains('on');
+        if (backendsFields) backendsFields.style.display = isOn ? '' : 'none';
+      };
+    }
+    renderBackendsList();
+
+    // Sticky toggle
+    var stickyToggle = document.getElementById('edit-route-sticky');
+    var stickyFields = document.getElementById('edit-sticky-fields');
+    if (stickyToggle) {
+      if (route.sticky_enabled && hasBackends) stickyToggle.classList.add('on'); else stickyToggle.classList.remove('on');
+      if (stickyFields) stickyFields.style.display = (route.sticky_enabled && hasBackends) ? '' : 'none';
+      stickyToggle.onclick = function() {
+        stickyToggle.classList.toggle('on');
+        if (stickyFields) stickyFields.style.display = stickyToggle.classList.contains('on') ? '' : 'none';
+      };
+    }
+    var stickyCookieName = document.getElementById('edit-sticky-cookie-name');
+    if (stickyCookieName) stickyCookieName.value = route.sticky_cookie_name || 'gc_sticky';
+    var stickyCookieTtl = document.getElementById('edit-sticky-cookie-ttl');
+    if (stickyCookieTtl) stickyCookieTtl.value = route.sticky_cookie_ttl || '3600';
+
     // Custom headers
     editHeadersRequest.length = 0;
     editHeadersResponse.length = 0;
@@ -854,6 +941,9 @@
         const aclEnabled = document.getElementById('edit-route-acl')?.classList.contains('on') || false;
         const compressEnabled = document.getElementById('edit-route-compress')?.classList.contains('on') || false;
         const rateLimitEnabled = document.getElementById('edit-route-rate-limit')?.classList.contains('on') || false;
+        const retryEnabled = document.getElementById('edit-route-retry')?.classList.contains('on') || false;
+        const backendsEnabled = document.getElementById('edit-route-backends')?.classList.contains('on') || false;
+        const stickyEnabled = document.getElementById('edit-route-sticky')?.classList.contains('on') || false;
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
           compress_enabled: compressEnabled,
@@ -870,6 +960,13 @@
           rate_limit_enabled: rateLimitEnabled,
           rate_limit_requests: rateLimitEnabled ? parseInt(document.getElementById('edit-rate-limit-requests')?.value || '100', 10) : 100,
           rate_limit_window: rateLimitEnabled ? (document.getElementById('edit-rate-limit-window')?.value || '1m') : '1m',
+          retry_enabled: retryEnabled,
+          retry_count: retryEnabled ? parseInt(document.getElementById('edit-retry-count')?.value || '3', 10) : 3,
+          retry_match_status: retryEnabled ? (document.getElementById('edit-retry-status')?.value || '502,503,504') : '502,503,504',
+          backends: backendsEnabled ? editBackendsList : null,
+          sticky_enabled: backendsEnabled && stickyEnabled,
+          sticky_cookie_name: stickyEnabled ? (document.getElementById('edit-sticky-cookie-name')?.value || 'gc_sticky') : 'gc_sticky',
+          sticky_cookie_ttl: stickyEnabled ? (document.getElementById('edit-sticky-cookie-ttl')?.value || '3600') : '3600',
         };
         // Custom headers
         var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
@@ -1365,6 +1462,74 @@
     if (panel) panel.style.display = '';
   });
   setupIpFilter('create', createIpFilterRules);
+
+  // ─── Backends helpers ─────────────────────────────────
+  var editBackendsList = [];
+
+  function renderBackendsList() {
+    var list = document.getElementById('edit-backends-list');
+    if (!list) return;
+    list.textContent = '';
+    editBackendsList.forEach(function(b, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs);font-size:12px';
+
+      var ipInput = document.createElement('input');
+      ipInput.type = 'text';
+      ipInput.value = b.ip || '';
+      ipInput.placeholder = GC.t['routes.backends_ip'] || 'IP';
+      ipInput.style.cssText = 'flex:2;padding:4px 8px;font-size:12px';
+      ipInput.addEventListener('change', function() { editBackendsList[idx].ip = this.value; });
+      row.appendChild(ipInput);
+
+      var portInput = document.createElement('input');
+      portInput.type = 'number';
+      portInput.value = b.port || 8080;
+      portInput.placeholder = GC.t['routes.backends_port'] || 'Port';
+      portInput.min = 1;
+      portInput.max = 65535;
+      portInput.style.cssText = 'flex:1;padding:4px 8px;font-size:12px';
+      portInput.addEventListener('change', function() { editBackendsList[idx].port = parseInt(this.value, 10); });
+      row.appendChild(portInput);
+
+      var weightInput = document.createElement('input');
+      weightInput.type = 'number';
+      weightInput.value = b.weight || 1;
+      weightInput.placeholder = GC.t['routes.backends_weight'] || 'Weight';
+      weightInput.min = 1;
+      weightInput.max = 100;
+      weightInput.style.cssText = 'width:60px;padding:4px 8px;font-size:12px';
+      weightInput.addEventListener('change', function() { editBackendsList[idx].weight = parseInt(this.value, 10); });
+      row.appendChild(weightInput);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '\u00d7';
+      del.style.cssText = 'background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px';
+      del.addEventListener('click', function() { editBackendsList.splice(idx, 1); renderBackendsList(); });
+      row.appendChild(del);
+
+      list.appendChild(row);
+    });
+  }
+
+  var backendsAddBtn = document.getElementById('edit-backends-add');
+  if (backendsAddBtn) {
+    backendsAddBtn.addEventListener('click', function() {
+      editBackendsList.push({ ip: '', port: 8080, weight: 1 });
+      renderBackendsList();
+    });
+  }
+
+  // ─── Create retry toggle ──────────────────────────────
+  var createRetryToggle = document.getElementById('create-route-retry');
+  var createRetryFields = document.getElementById('create-retry-fields');
+  if (createRetryToggle) {
+    createRetryToggle.addEventListener('click', function() {
+      createRetryToggle.classList.toggle('on');
+      if (createRetryFields) createRetryFields.style.display = createRetryToggle.classList.contains('on') ? '' : 'none';
+    });
+  }
 
   // ─── Custom Headers helpers ─────────────────────────
   var editHeadersRequest = [];

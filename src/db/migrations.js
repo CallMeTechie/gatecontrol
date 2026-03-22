@@ -388,6 +388,32 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'rate_limit_enabled'),
   },
+  {
+    version: 21,
+    name: 'add_retry_columns',
+    sql: `
+      ALTER TABLE routes ADD COLUMN retry_enabled INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN retry_count INTEGER DEFAULT 3;
+      ALTER TABLE routes ADD COLUMN retry_match_status TEXT DEFAULT '502,503,504';
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'retry_enabled'),
+  },
+  {
+    version: 22,
+    name: 'add_backends_column',
+    sql: `ALTER TABLE routes ADD COLUMN backends TEXT;`,
+    detect: (db) => hasColumn(db, 'routes', 'backends'),
+  },
+  {
+    version: 23,
+    name: 'add_sticky_session_columns',
+    sql: `
+      ALTER TABLE routes ADD COLUMN sticky_enabled INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN sticky_cookie_name TEXT DEFAULT 'gc_sticky';
+      ALTER TABLE routes ADD COLUMN sticky_cookie_ttl TEXT DEFAULT '3600';
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'sticky_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

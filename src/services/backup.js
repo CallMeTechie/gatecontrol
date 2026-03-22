@@ -66,6 +66,13 @@ function createBackup() {
       rate_limit_enabled: r.rate_limit_enabled || 0,
       rate_limit_requests: r.rate_limit_requests || 100,
       rate_limit_window: r.rate_limit_window || '1m',
+      retry_enabled: r.retry_enabled || 0,
+      retry_count: r.retry_count || 3,
+      retry_match_status: r.retry_match_status || '502,503,504',
+      backends: r.backends || null,
+      sticky_enabled: r.sticky_enabled || 0,
+      sticky_cookie_name: r.sticky_cookie_name || 'gc_sticky',
+      sticky_cookie_ttl: r.sticky_cookie_ttl || '3600',
       created_at: r.created_at,
       updated_at: r.updated_at,
     };
@@ -280,8 +287,10 @@ async function restoreBackup(backup) {
                           route_type, l4_protocol, l4_listen_port, l4_tls_mode,
                           acl_enabled, compress_enabled,
                           custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
+                          retry_enabled, retry_count, retry_match_status,
+                          backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -310,6 +319,13 @@ async function restoreBackup(backup) {
         r.rate_limit_enabled ? 1 : 0,
         r.rate_limit_requests || 100,
         r.rate_limit_window || '1m',
+        r.retry_enabled ? 1 : 0,
+        r.retry_count || 3,
+        r.retry_match_status || '502,503,504',
+        r.backends || null,
+        r.sticky_enabled ? 1 : 0,
+        r.sticky_cookie_name || 'gc_sticky',
+        r.sticky_cookie_ttl || '3600',
         r.created_at || null,
         r.updated_at || null,
       );

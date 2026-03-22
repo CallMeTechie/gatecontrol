@@ -180,7 +180,9 @@ router.post('/', async (req, res) => {
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
       acl_enabled, acl_peers, compress_enabled, custom_headers,
-      rate_limit_enabled, rate_limit_requests, rate_limit_window } = req.body;
+      rate_limit_enabled, rate_limit_requests, rate_limit_window,
+      retry_enabled, retry_count, retry_match_status,
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -213,6 +215,8 @@ router.post('/', async (req, res) => {
       branding_title, branding_text, branding_color, branding_bg,
       acl_enabled, acl_peers, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
+      retry_enabled, retry_count, retry_match_status,
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -237,7 +241,9 @@ router.put('/:id', async (req, res) => {
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
       acl_enabled, acl_peers, compress_enabled, custom_headers,
-      rate_limit_enabled, rate_limit_requests, rate_limit_window } = req.body;
+      rate_limit_enabled, rate_limit_requests, rate_limit_window,
+      retry_enabled, retry_count, retry_match_status,
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -271,6 +277,8 @@ router.put('/:id', async (req, res) => {
       branding_title, branding_text, branding_color, branding_bg,
       acl_enabled, acl_peers, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
+      retry_enabled, retry_count, retry_match_status,
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
     });
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {

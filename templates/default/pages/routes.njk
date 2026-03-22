@@ -294,6 +294,25 @@
             </div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-retry" data-managed="true"></div>
+        </div>
+        <div id="create-retry-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_count') }}</label>
+              <input type="number" id="create-retry-count" value="3" min="1" max="10" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_status_codes') }}</label>
+              <input type="text" id="create-retry-status" value="502,503,504" style="width:100%;padding:6px 10px;font-size:12px" placeholder="502,503,504">
+            </div>
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>
