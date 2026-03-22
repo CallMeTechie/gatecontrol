@@ -45,6 +45,12 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Custom Branding** — Logo-Upload, Titel, Begrüßungstext, Akzent-/Hintergrundfarbe und Hintergrundbild pro Route-Auth-Login-Seite
 - **IP-Zugriffskontrolle / Geo-Blocking** — Per-Route IP/CIDR Whitelist oder Blacklist mit optionaler länderbasierter Filterung via ip2location.io Integration
 - **Peer-Zugriffskontrolle (ACL)** — Festlegen, welche WireGuard-Peers auf eine Route zugreifen dürfen. Caddy erzwingt erlaubte Peer-IPs über `remote_ip` Matcher. Konfiguration über Multi-Select-Checkliste in den Route-Einstellungen
+- **Gzip/Zstd-Komprimierung** — Per-Route-Toggle für Response-Komprimierung über Caddys `encode` Handler
+- **Benutzerdefinierte Request/Response-Header** — Key-Value-Editor pro Route mit CORS- und Security-Header-Presets
+- **Per-Route Rate Limiting** — Konfigurierbare Requests/Zeitfenster pro Route via caddy-ratelimit Plugin
+- **Retry mit Backoff** — Automatische Wiederholungen bei Backend-Fehler mit konfigurierbarer Anzahl und Status-Code-Matching
+- **Mehrere Backends / Load Balancing** — Weighted Round Robin über mehrere Backend-Ziele pro Route
+- **Sticky Sessions** — Cookie-basierte Session-Affinität bei Multi-Backend-Routen mit konfigurierbarem Cookie-Name und TTL
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
@@ -185,7 +191,7 @@ src/
 ├── app.js                 # Express-Setup, Sicherheits-Middleware, Template-Engine
 ├── db/
 │   ├── connection.js      # SQLite mit WAL-Modus und Performance-Pragmas
-│   ├── migrations.js      # Versionierte Migrationen mit History-Tracking (17 Migrationen)
+│   ├── migrations.js      # Versionierte Migrationen mit History-Tracking (23 Migrationen)
 │   └── seed.js            # Admin-Benutzer-Initialisierung beim ersten Start
 ├── services/              # Geschäftslogik-Schicht
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync

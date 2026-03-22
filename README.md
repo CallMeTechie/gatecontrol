@@ -45,6 +45,12 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Custom Branding** — Upload logo, set title, welcome text, accent/background color, and background image per route auth login page
 - **IP Access Control / Geo-Blocking** — Per-route IP/CIDR whitelist or blacklist with optional country-based filtering via ip2location.io integration
 - **Peer Access Control (ACL)** — Restrict which WireGuard peers can access a route. Caddy enforces allowed peer IPs via `remote_ip` matcher. Configure via multi-select checklist in the route settings
+- **Gzip/Zstd Compression** — Per-route toggle for response compression via Caddy's `encode` handler
+- **Custom Request/Response Headers** — Key-value editor per route with CORS and Security header presets
+- **Per-Route Rate Limiting** — Configurable requests/window per route via caddy-ratelimit plugin
+- **Retry with Backoff** — Automatic retries on backend failure with configurable retry count and status code matching
+- **Multiple Backends / Load Balancing** — Weighted round-robin across multiple backend targets per route
+- **Sticky Sessions** — Cookie-based session affinity for multi-backend routes with configurable cookie name and TTL
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
 - Atomic configuration sync to Caddy with automatic rollback on failure
@@ -185,7 +191,7 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Versioned migrations with history tracking (17 migrations)
+│   ├── migrations.js      # Versioned migrations with history tracking (23 migrations)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
