@@ -9,6 +9,8 @@
   const routeSearch = document.getElementById('route-search');
   let allRoutes = [];
   let allPeers = [];
+  let batchMode = false;
+  let batchSelected = new Set();
 
   // ─── Load routes ─────────────────────────────────────────
   async function loadRoutes() {
@@ -122,6 +124,15 @@
           }
         } catch (_) {}
       }
+      let cbTag = '';
+      if (r.circuit_breaker_enabled && r.route_type !== 'l4') {
+        var cbStatus = r.circuit_breaker_status || 'closed';
+        var cbColor = cbStatus === 'closed' ? 'tag-green' : cbStatus === 'open' ? 'tag-red' : 'tag-amber';
+        var cbLabel = cbStatus === 'closed' ? (GC.t['circuit_breaker.badge_closed'] || 'CB: Closed')
+          : cbStatus === 'open' ? (GC.t['circuit_breaker.badge_open'] || 'CB: Open')
+          : (GC.t['circuit_breaker.badge_half_open'] || 'CB: Half-Open');
+        cbTag = '<span class="tag ' + cbColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + escapeHtml(cbLabel) + '</span>';
+      }
       let headersTag = '';
       if (r.custom_headers && r.route_type !== 'l4') {
         try {
@@ -183,7 +194,12 @@
         ? ':' + (r.l4_listen_port || '') + ' → ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')'
         : '→ ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')';
 
-      return `<div class="route-item" data-route-id="${r.id}">
+      // r.id is a numeric DB id, safe for attribute use; checked is a static string
+      var batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
+      var batchCbHtml = batchMode ? '<div class="batch-checkbox-wrap" style="display:flex;align-items:center;padding-right:10px"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></div>' : '';
+
+      return `<div class="route-item${batchMode ? ' batch-mode' : ''}" data-route-id="${r.id}">
+        ${batchCbHtml}
         <div class="route-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         </div>
@@ -193,7 +209,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          ${statusTag}${monitorTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
+          ${statusTag}${monitorTag}${cbTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -279,6 +295,7 @@
       const createCompress = document.getElementById('create-route-compress')?.classList.contains('on') || false;
       const createRateLimit = document.getElementById('create-route-rate-limit')?.classList.contains('on') || false;
       const createRetry = document.getElementById('create-route-retry')?.classList.contains('on') || false;
+      const createCb = document.getElementById('create-route-circuit-breaker')?.classList.contains('on') || false;
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         compress_enabled: createCompress,
@@ -294,6 +311,9 @@
         retry_enabled: createRetry,
         retry_count: createRetry ? parseInt(document.getElementById('create-retry-count')?.value || '3', 10) : 3,
         retry_match_status: createRetry ? (document.getElementById('create-retry-status')?.value || '502,503,504') : '502,503,504',
+        circuit_breaker_enabled: createCb,
+        circuit_breaker_threshold: createCb ? parseInt(document.getElementById('create-cb-threshold')?.value || '5', 10) : 5,
+        circuit_breaker_timeout: createCb ? parseInt(document.getElementById('create-cb-timeout')?.value || '30', 10) : 30,
       };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
@@ -358,6 +378,10 @@
         if (crt) crt.classList.remove('on');
         var crtFields = document.getElementById('create-retry-fields');
         if (crtFields) crtFields.style.display = 'none';
+        var ccb = document.getElementById('create-route-circuit-breaker');
+        if (ccb) ccb.classList.remove('on');
+        var ccbFields = document.getElementById('create-circuit-breaker-fields');
+        if (ccbFields) ccbFields.style.display = 'none';
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
@@ -839,6 +863,45 @@
       monitorToggle.setAttribute('aria-checked', route.monitoring_enabled ? 'true' : 'false');
     }
 
+    // Circuit breaker toggle
+    var cbToggle = document.getElementById('edit-route-circuit-breaker');
+    var cbFields = document.getElementById('edit-circuit-breaker-fields');
+    if (cbToggle) {
+      if (route.circuit_breaker_enabled) cbToggle.classList.add('on'); else cbToggle.classList.remove('on');
+      cbToggle.setAttribute('aria-checked', route.circuit_breaker_enabled ? 'true' : 'false');
+      if (cbFields) cbFields.style.display = route.circuit_breaker_enabled ? '' : 'none';
+    }
+    var cbThreshold = document.getElementById('edit-cb-threshold');
+    if (cbThreshold) cbThreshold.value = route.circuit_breaker_threshold || 5;
+    var cbTimeout = document.getElementById('edit-cb-timeout');
+    if (cbTimeout) cbTimeout.value = route.circuit_breaker_timeout || 30;
+    // Circuit breaker status indicator
+    var cbStatusIndicator = document.getElementById('edit-cb-status-indicator');
+    if (cbStatusIndicator && route.circuit_breaker_enabled) {
+      var cbStatus = route.circuit_breaker_status || 'closed';
+      cbStatusIndicator.style.display = '';
+      if (cbStatus === 'closed') {
+        cbStatusIndicator.style.background = 'var(--green, #4ade80)';
+        cbStatusIndicator.style.color = '#fff';
+        cbStatusIndicator.textContent = GC.t['circuit_breaker.status_closed'] || 'Closed';
+      } else if (cbStatus === 'open') {
+        cbStatusIndicator.style.background = 'var(--red, #f87171)';
+        cbStatusIndicator.style.color = '#fff';
+        cbStatusIndicator.textContent = GC.t['circuit_breaker.status_open'] || 'Open';
+      } else {
+        cbStatusIndicator.style.background = 'var(--yellow, #facc15)';
+        cbStatusIndicator.style.color = '#000';
+        cbStatusIndicator.textContent = GC.t['circuit_breaker.status_half_open'] || 'Half-Open';
+      }
+    } else if (cbStatusIndicator) {
+      cbStatusIndicator.style.display = 'none';
+    }
+    // Show monitoring requirement warning if monitoring not enabled
+    var cbRequiresMonitoring = document.getElementById('edit-cb-requires-monitoring');
+    if (cbRequiresMonitoring) {
+      cbRequiresMonitoring.style.display = !route.monitoring_enabled ? '' : 'none';
+    }
+
     // IP filter
     var ipFilterToggle = document.getElementById('edit-route-ip-filter');
     var ipFilterFields = document.getElementById('edit-ip-filter-fields');
@@ -927,6 +990,7 @@
         const retryEnabled = document.getElementById('edit-route-retry')?.classList.contains('on') || false;
         const backendsEnabled = document.getElementById('edit-route-backends')?.classList.contains('on') || false;
         const stickyEnabled = document.getElementById('edit-route-sticky')?.classList.contains('on') || false;
+        const cbEnabled = document.getElementById('edit-route-circuit-breaker')?.classList.contains('on') || false;
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
           compress_enabled: compressEnabled,
@@ -950,6 +1014,9 @@
           sticky_enabled: backendsEnabled && stickyEnabled,
           sticky_cookie_name: stickyEnabled ? (document.getElementById('edit-sticky-cookie-name')?.value || 'gc_sticky') : 'gc_sticky',
           sticky_cookie_ttl: stickyEnabled ? (document.getElementById('edit-sticky-cookie-ttl')?.value || '3600') : '3600',
+          circuit_breaker_enabled: cbEnabled,
+          circuit_breaker_threshold: cbEnabled ? parseInt(document.getElementById('edit-cb-threshold')?.value || '5', 10) : 5,
+          circuit_breaker_timeout: cbEnabled ? parseInt(document.getElementById('edit-cb-timeout')?.value || '30', 10) : 30,
         };
         // Custom headers
         var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
@@ -1509,6 +1576,17 @@
     });
   }
 
+  // ─── Create circuit breaker toggle ────────────────────
+  var createCbToggle = document.getElementById('create-route-circuit-breaker');
+  var createCbFields = document.getElementById('create-circuit-breaker-fields');
+  if (createCbToggle) {
+    createCbToggle.addEventListener('click', function() {
+      setTimeout(function() {
+        if (createCbFields) createCbFields.style.display = createCbToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
+    });
+  }
+
   // ─── Custom Headers helpers ─────────────────────────
   var editHeadersRequest = [];
   var editHeadersResponse = [];
@@ -1756,6 +1834,105 @@
   setupSimpleToggle('edit-route-retry', 'edit-retry-fields');
   setupSimpleToggle('edit-route-backends', 'edit-backends-fields');
   setupSimpleToggle('edit-route-sticky', 'edit-sticky-fields');
+  setupSimpleToggle('edit-route-circuit-breaker', 'edit-circuit-breaker-fields');
+
+  // ─── Batch mode (routes) ─────────────────────────────────
+  var batchBtn = document.getElementById('btn-batch-routes');
+  var batchBar = document.getElementById('batch-bar-routes');
+  var batchCountEl = document.getElementById('batch-bar-routes-count');
+
+  function enterBatchMode() {
+    batchMode = true;
+    batchSelected.clear();
+    if (batchBtn) batchBtn.style.display = 'none';
+    applyRouteFilter();
+    updateBatchBar();
+  }
+
+  function exitBatchMode() {
+    batchMode = false;
+    batchSelected.clear();
+    if (batchBtn) batchBtn.style.display = '';
+    if (batchBar) batchBar.style.display = 'none';
+    applyRouteFilter();
+  }
+
+  function updateBatchBar() {
+    var count = batchSelected.size;
+    if (count > 0 && batchBar) {
+      batchBar.style.display = '';
+      batchCountEl.textContent = count + ' selected';
+      document.getElementById('batch-enable-routes').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
+      document.getElementById('batch-disable-routes').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
+      document.getElementById('batch-delete-routes').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
+    } else if (batchBar) {
+      batchBar.style.display = 'none';
+    }
+  }
+
+  if (batchBtn) batchBtn.addEventListener('click', enterBatchMode);
+  var batchCancelBtn = document.getElementById('batch-cancel-routes');
+  if (batchCancelBtn) batchCancelBtn.addEventListener('click', exitBatchMode);
+
+  // Checkbox delegation on routes list
+  routesList.addEventListener('change', function(e) {
+    var cb = e.target.closest('.batch-checkbox');
+    if (!cb) return;
+    var id = String(cb.dataset.batchId);
+    if (cb.checked) batchSelected.add(id);
+    else batchSelected.delete(id);
+    updateBatchBar();
+  });
+
+  // Click on route-item in batch mode toggles checkbox
+  routesList.addEventListener('click', function(e) {
+    if (!batchMode) return;
+    // Don't toggle if clicking action buttons or the checkbox itself
+    if (e.target.closest('[data-action]') || e.target.closest('.batch-checkbox')) return;
+    var item = e.target.closest('.route-item');
+    if (!item) return;
+    var cb = item.querySelector('.batch-checkbox');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    var id = String(cb.dataset.batchId);
+    if (cb.checked) batchSelected.add(id);
+    else batchSelected.delete(id);
+    updateBatchBar();
+  });
+
+  async function executeBatchAction(action) {
+    var ids = Array.from(batchSelected).map(Number);
+    if (ids.length === 0) return;
+    try {
+      var data = await api.post('/api/routes/batch', { action: action, ids: ids });
+      if (data.ok) {
+        exitBatchMode();
+        loadRoutes();
+      } else {
+        alert(data.error || (GC.t['common.error'] || 'Error'));
+      }
+    } catch (err) {
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+    }
+  }
+
+  var batchEnableBtn = document.getElementById('batch-enable-routes');
+  var batchDisableBtn = document.getElementById('batch-disable-routes');
+  var batchDeleteBtn = document.getElementById('batch-delete-routes');
+
+  if (batchEnableBtn) batchEnableBtn.addEventListener('click', function() {
+    executeBatchAction('enable');
+  });
+  if (batchDisableBtn) batchDisableBtn.addEventListener('click', function() {
+    executeBatchAction('disable');
+  });
+  if (batchDeleteBtn) batchDeleteBtn.addEventListener('click', function() {
+    var count = batchSelected.size;
+    var msg = (GC.t['batch.confirm_delete_routes'] || 'Are you sure you want to delete {{count}} route(s)?').replace('{{count}}', count);
+    if (confirm(msg)) {
+      executeBatchAction('delete');
+    }
+  });
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();

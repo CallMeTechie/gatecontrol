@@ -617,4 +617,38 @@ router.delete('/autobackup/:filename', (req, res) => {
   }
 });
 
+// ─── Prometheus Metrics Settings ─────────────────────
+
+/**
+ * GET /api/settings/metrics — Get metrics settings
+ */
+router.get('/metrics', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      enabled: settings.get('metrics_enabled', 'false') === 'true',
+    },
+  });
+});
+
+/**
+ * PUT /api/settings/metrics — Update metrics settings
+ */
+router.put('/metrics', (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (enabled !== undefined) settings.set('metrics_enabled', String(!!enabled));
+
+    activity.log('metrics_settings_updated', 'Prometheus metrics settings updated', {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 module.exports = router;

@@ -34,9 +34,13 @@ function injectLocals(req, res, next) {
       const routeRow = db.prepare('SELECT COUNT(*) as c FROM routes WHERE enabled = 1').get();
       res.locals.peerCount = peerRow ? peerRow.c : 0;
       res.locals.routeCount = routeRow ? routeRow.c : 0;
+
+      const groupRow = db.prepare('SELECT COUNT(*) as c FROM peer_groups').get();
+      res.locals.peerGroupCount = groupRow ? groupRow.c : 0;
     } catch {
       res.locals.peerCount = 0;
       res.locals.routeCount = 0;
+      res.locals.peerGroupCount = 0;
     }
   }
 

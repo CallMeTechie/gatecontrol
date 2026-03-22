@@ -8,13 +8,22 @@ const { validatePeerName, validateDomain, validatePort, validateIp } = require('
 const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 
 /**
  * Create a full backup as JSON object
  */
 function createBackup() {
   const db = getDb();
+
+  // Peer groups
+  const rawPeerGroups = db.prepare('SELECT * FROM peer_groups').all();
+  const peerGroups = rawPeerGroups.map(g => ({
+    name: g.name,
+    color: g.color,
+    description: g.description,
+    created_at: g.created_at,
+  }));
 
   // Peers — export encrypted keys (never plaintext)
   const rawPeers = db.prepare('SELECT * FROM peers').all();
@@ -30,6 +39,7 @@ function createBackup() {
     enabled: p.enabled,
     tags: p.tags || '',
     expires_at: p.expires_at || null,
+    group_name: p.group_id ? (db.prepare('SELECT name FROM peer_groups WHERE id = ?').get(p.group_id)?.name || null) : null,
     created_at: p.created_at,
     updated_at: p.updated_at,
   }));
@@ -73,6 +83,9 @@ function createBackup() {
       sticky_enabled: r.sticky_enabled || 0,
       sticky_cookie_name: r.sticky_cookie_name || 'gc_sticky',
       sticky_cookie_ttl: r.sticky_cookie_ttl || '3600',
+      circuit_breaker_enabled: r.circuit_breaker_enabled || 0,
+      circuit_breaker_threshold: r.circuit_breaker_threshold || 5,
+      circuit_breaker_timeout: r.circuit_breaker_timeout || 30,
       created_at: r.created_at,
       updated_at: r.updated_at,
     };
@@ -113,6 +126,7 @@ function createBackup() {
     version: BACKUP_VERSION,
     created_at: new Date().toISOString(),
     data: {
+      peer_groups: peerGroups,
       peers,
       routes,
       settings,
@@ -131,7 +145,7 @@ function validateBackup(backup) {
   if (!backup || typeof backup !== 'object') {
     return ['Invalid backup: not a JSON object'];
   }
-  if (backup.version !== BACKUP_VERSION) {
+  if (backup.version !== BACKUP_VERSION && backup.version !== 2) {
     errors.push(`Unsupported backup version: ${backup.version} (expected ${BACKUP_VERSION})`);
   }
   if (!backup.data || typeof backup.data !== 'object') {
@@ -202,6 +216,7 @@ function getBackupSummary(backup) {
   return {
     version: backup.version,
     created_at: backup.created_at,
+    peer_groups: (d.peer_groups || []).length,
     peers: d.peers.length,
     routes: d.routes.length,
     settings: d.settings.length,
@@ -220,7 +235,7 @@ async function restoreBackup(backup) {
   }
 
   const db = getDb();
-  const { peers, routes, settings, webhooks, route_auth: routeAuth } = backup.data;
+  const { peer_groups: peerGroups, peers, routes, settings, webhooks, route_auth: routeAuth } = backup.data;
 
   // Validate that encrypted keys can be decrypted with the current encryption key (#13)
   for (let i = 0; i < peers.length; i++) {
@@ -246,14 +261,27 @@ async function restoreBackup(backup) {
     db.prepare('DELETE FROM route_auth').run();
     db.prepare('DELETE FROM routes').run();
     db.prepare('DELETE FROM peers').run();
+    db.prepare('DELETE FROM peer_groups').run();
     db.prepare('DELETE FROM settings').run();
     db.prepare('DELETE FROM webhooks').run();
+
+    // Restore peer groups
+    const groupIdMap = new Map(); // name → new id
+    if (Array.isArray(peerGroups) && peerGroups.length > 0) {
+      const insertGroup = db.prepare(
+        `INSERT INTO peer_groups (name, color, description, created_at) VALUES (?, ?, ?, COALESCE(?, datetime('now')))`
+      );
+      for (const g of peerGroups) {
+        const result = insertGroup.run(g.name, g.color || '#6b7280', g.description || null, g.created_at || null);
+        groupIdMap.set(g.name, result.lastInsertRowid);
+      }
+    }
 
     // Restore peers
     const insertPeer = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const peerIdMap = new Map(); // name → new id
@@ -261,6 +289,7 @@ async function restoreBackup(backup) {
       // Support both encrypted (v2+) and legacy plaintext backups
       const privKeyEnc = p.private_key_encrypted || (p.private_key ? encrypt(p.private_key) : null);
       const pskEnc = p.preshared_key_encrypted || (p.preshared_key ? encrypt(p.preshared_key) : null);
+      const groupId = p.group_name ? (groupIdMap.get(p.group_name) || null) : null;
       const result = insertPeer.run(
         p.name,
         p.description || null,
@@ -273,6 +302,7 @@ async function restoreBackup(backup) {
         p.enabled !== undefined ? (p.enabled ? 1 : 0) : 1,
         p.tags || '',
         p.expires_at || null,
+        groupId,
         p.created_at || null,
         p.updated_at || null,
       );
@@ -289,8 +319,9 @@ async function restoreBackup(backup) {
                           custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
                           retry_enabled, retry_count, retry_match_status,
                           backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+                          circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout, circuit_breaker_status,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -326,6 +357,9 @@ async function restoreBackup(backup) {
         r.sticky_enabled ? 1 : 0,
         r.sticky_cookie_name || 'gc_sticky',
         r.sticky_cookie_ttl || '3600',
+        r.circuit_breaker_enabled ? 1 : 0,
+        r.circuit_breaker_threshold || 5,
+        r.circuit_breaker_timeout || 30,
         r.created_at || null,
         r.updated_at || null,
       );
@@ -391,6 +425,7 @@ async function restoreBackup(backup) {
   restore();
 
   logger.info({
+    peer_groups: (peerGroups || []).length,
     peers: peers.length,
     routes: routes.length,
     settings: settings.length,
@@ -408,6 +443,7 @@ async function restoreBackup(backup) {
   }
 
   return {
+    peer_groups: (peerGroups || []).length,
     peers: peers.length,
     routes: routes.length,
     settings: settings.length,

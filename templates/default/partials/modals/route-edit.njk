@@ -364,6 +364,33 @@
             </div>
           </div>
         </div>
+        {# ─── Circuit Breaker ─── #}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-circuit-breaker"></div>
+        </div>
+        <div id="edit-circuit-breaker-fields" style="display:none;margin-top:10px">
+          <div id="edit-cb-requires-monitoring" style="display:none;font-size:11px;color:var(--amber);margin-bottom:8px;padding:6px 10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs)">
+            {{ t('circuit_breaker.requires_monitoring') }}
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.threshold') }}</label>
+              <input type="number" id="edit-cb-threshold" value="5" min="1" max="100" style="width:100%;padding:6px 10px;font-size:12px">
+              <small class="form-hint" style="font-size:10px;color:var(--text-3)">{{ t('circuit_breaker.threshold_hint') }}</small>
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.timeout') }}</label>
+              <input type="number" id="edit-cb-timeout" value="30" min="5" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
+              <small class="form-hint" style="font-size:10px;color:var(--text-3)">{{ t('circuit_breaker.timeout_hint') }}</small>
+            </div>
+          </div>
+          <div id="edit-cb-status-indicator" style="display:none;padding:6px 10px;border-radius:var(--radius-xs);font-size:12px;font-weight:600;text-align:center;margin-bottom:4px">
+          </div>
+        </div>
       </div>
 
       {# ═══ TAB: Headers ═══════════════════════════════ #}

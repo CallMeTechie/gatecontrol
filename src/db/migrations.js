@@ -414,6 +414,33 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'sticky_enabled'),
   },
+  {
+    version: 24,
+    name: 'add_circuit_breaker_columns',
+    sql: `
+      ALTER TABLE routes ADD COLUMN circuit_breaker_enabled INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN circuit_breaker_threshold INTEGER DEFAULT 5;
+      ALTER TABLE routes ADD COLUMN circuit_breaker_timeout INTEGER DEFAULT 30;
+      ALTER TABLE routes ADD COLUMN circuit_breaker_status TEXT DEFAULT 'closed';
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'circuit_breaker_enabled'),
+  },
+  {
+    version: 25,
+    name: 'create_peer_groups',
+    sql: `
+      CREATE TABLE IF NOT EXISTS peer_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT DEFAULT '#6b7280',
+        description TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      ALTER TABLE peers ADD COLUMN group_id INTEGER REFERENCES peer_groups(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_peers_group_id ON peers(group_id);
+    `,
+    detect: (db) => hasColumn(db, 'peers', 'group_id'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

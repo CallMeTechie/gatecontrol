@@ -8,6 +8,7 @@ const config = require('../../config/default');
 const settings = require('./settings');
 const activity = require('./activity');
 const webhook = require('./webhook');
+const circuitBreaker = require('./circuitBreaker');
 const logger = require('../utils/logger');
 
 let pollerInterval = null;
@@ -187,6 +188,39 @@ async function checkRoute(route) {
     logger.info({ routeId: route.id, domain: route.domain, status: newStatus, responseTime: result.responseTime }, 'Route status changed');
   }
 
+  // Circuit breaker integration
+  const cbResult = circuitBreaker.checkAndUpdate(route.id, result.up);
+  if (cbResult && cbResult.statusChanged) {
+    const cbStatus = cbResult.newStatus;
+    if (cbStatus === 'open') {
+      activity.log('circuit_breaker_open', `Circuit breaker opened for "${route.domain}" — returning 503`, {
+        source: 'monitor',
+        severity: 'warning',
+        details: { routeId: route.id, domain: route.domain, cbStatus },
+      });
+      // Update Caddy to return 503 for this route
+      try {
+        const { syncToCaddy } = require('./routes');
+        await syncToCaddy();
+      } catch (err) {
+        logger.warn({ err: err.message, routeId: route.id }, 'Failed to sync Caddy after circuit breaker open');
+      }
+    } else if (cbStatus === 'closed') {
+      activity.log('circuit_breaker_closed', `Circuit breaker closed for "${route.domain}" — normal operation restored`, {
+        source: 'monitor',
+        severity: 'success',
+        details: { routeId: route.id, domain: route.domain, cbStatus },
+      });
+      // Restore normal Caddy config
+      try {
+        const { syncToCaddy } = require('./routes');
+        await syncToCaddy();
+      } catch (err) {
+        logger.warn({ err: err.message, routeId: route.id }, 'Failed to sync Caddy after circuit breaker close');
+      }
+    }
+  }
+
   return { ...result, status: newStatus, changed: statusChanged };
 }
 
@@ -205,10 +239,24 @@ async function checkRouteById(routeId) {
  */
 async function runChecks() {
   try {
+    // Check circuit breaker timeouts (open -> half-open transitions)
+    circuitBreaker.checkTimeouts();
+
     const db = getDb();
     const routes = db.prepare('SELECT * FROM routes WHERE monitoring_enabled = 1 AND enabled = 1').all();
 
     if (routes.length === 0) return;
+
+    // Check for half-open circuits that need a Caddy sync
+    const halfOpenRoutes = routes.filter(r => r.circuit_breaker_enabled && r.circuit_breaker_status === 'half-open');
+    if (halfOpenRoutes.length > 0) {
+      try {
+        const { syncToCaddy } = require('./routes');
+        await syncToCaddy();
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Failed to sync Caddy for half-open circuit breakers');
+      }
+    }
 
     // Run checks in parallel (max 10 concurrent)
     const batchSize = 10;

@@ -12,6 +12,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="search" id="route-search" placeholder="{{ t('routes.search') or 'Search routes...' }}">
     </div>
+    <button class="btn btn-ghost" id="btn-batch-routes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      {{ t('batch.select') }}
+    </button>
     <button class="btn btn-primary" id="btn-add-route">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       {{ t('routes.add') }}
@@ -313,11 +317,41 @@
             </div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-circuit-breaker"></div>
+        </div>
+        <div id="create-circuit-breaker-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.threshold') }}</label>
+              <input type="number" id="create-cb-threshold" value="5" min="1" max="100" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.timeout') }}</label>
+              <input type="number" id="create-cb-timeout" value="30" min="5" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>
       </form>
     </div>
+  </div>
+</div>
+
+<!-- Batch action bar -->
+<div id="batch-bar-routes" class="batch-bar" style="display:none">
+  <span id="batch-bar-routes-count"></span>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-ghost" id="batch-enable-routes">{{ t('batch.enable') }}</button>
+    <button class="btn btn-ghost" id="batch-disable-routes">{{ t('batch.disable') }}</button>
+    <button class="btn btn-danger" id="batch-delete-routes">{{ t('batch.delete') }}</button>
+    <button class="btn btn-ghost" id="batch-cancel-routes">{{ t('batch.cancel') }}</button>
   </div>
 </div>
 

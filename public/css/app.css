@@ -1015,3 +1015,27 @@ input[type="file"] {
   .topbar-status span { display: none; }
   .topbar-divider { display: none; }
 }
+
+/* ─── Batch operations bar ───────────────────────────── */
+.batch-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  z-index: 100;
+  font-size: 13px;
+  font-weight: 500;
+}
+.batch-bar span { white-space: nowrap; }
+.batch-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+.batch-col { text-align: center; }
+.route-item.batch-mode { cursor: pointer; }
+.route-item.batch-mode .batch-checkbox-wrap { display: flex !important; }

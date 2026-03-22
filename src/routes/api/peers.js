@@ -20,6 +20,31 @@ const VALIDATION_ERROR_MAP = {
 };
 
 /**
+ * POST /api/peers/batch — Batch enable/disable/delete peers
+ */
+router.post('/batch', async (req, res) => {
+  try {
+    const { action, ids } = req.body;
+
+    if (!action || !['enable', 'disable', 'delete'].includes(action)) {
+      return res.status(400).json({ ok: false, error: req.t('error.batch.invalid_action') });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ ok: false, error: req.t('error.batch.no_ids') });
+    }
+
+    const affected = await peers.batch(action, ids);
+    res.json({ ok: true, affected });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to batch operate on peers');
+    if (err.message.includes('not found')) {
+      return res.status(404).json({ ok: false, error: req.t('error.batch.not_found') });
+    }
+    res.status(500).json({ ok: false, error: req.t('error.batch.failed') });
+  }
+});
+
+/**
  * GET /api/peers — List all peers with live status
  */
 router.get('/', async (req, res) => {
@@ -53,7 +78,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, description, tags, expires_at } = req.body;
+    const { name, description, tags, expires_at, group_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -65,7 +90,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null });
+    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null });
     res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
@@ -79,7 +104,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at } = req.body;
+    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -99,6 +124,9 @@ router.put('/:id', async (req, res) => {
     const updateData = { name, description, dns, persistentKeepalive, enabled, tags };
     if (expires_at !== undefined) {
       updateData.expiresAt = expires_at || null;
+    }
+    if (group_id !== undefined) {
+      updateData.groupId = group_id || null;
     }
 
     const peer = await peers.update(req.params.id, updateData);

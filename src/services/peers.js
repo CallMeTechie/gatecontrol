@@ -78,8 +78,8 @@ async function create(data) {
 
     const result = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
       sanitize(data.name),
       sanitize(data.description) || null,
@@ -90,7 +90,8 @@ async function create(data) {
       dns,
       keepalive,
       sanitize(data.tags) || '',
-      data.expiresAt || null
+      data.expiresAt || null,
+      data.groupId || null
     );
 
     return { peerId: result.lastInsertRowid, ip, allowedIps };
@@ -148,6 +149,9 @@ async function update(id, data) {
     ? (data.expiresAt || null)
     : undefined;
 
+  // Handle group_id: explicit null clears group, undefined means no change
+  const groupIdValue = data.groupId !== undefined ? (data.groupId || null) : undefined;
+
   db.prepare(`
     UPDATE peers SET
       name = COALESCE(?, name),
@@ -157,6 +161,7 @@ async function update(id, data) {
       enabled = COALESCE(?, enabled),
       tags = COALESCE(?, tags),
       expires_at = CASE WHEN ? = 1 THEN ? ELSE expires_at END,
+      group_id = CASE WHEN ? = 1 THEN ? ELSE group_id END,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -168,6 +173,8 @@ async function update(id, data) {
     data.tags !== undefined ? sanitize(data.tags) : null,
     expiresAtValue !== undefined ? 1 : 0,
     expiresAtValue !== undefined ? expiresAtValue : null,
+    groupIdValue !== undefined ? 1 : 0,
+    groupIdValue !== undefined ? groupIdValue : null,
     id
   );
 
@@ -372,6 +379,59 @@ async function checkExpiredPeers() {
   }
 }
 
+/**
+ * Batch enable, disable, or delete peers.
+ * Returns the count of affected peers.
+ */
+async function batch(action, ids) {
+  if (!['enable', 'disable', 'delete'].includes(action)) {
+    throw new Error('Invalid batch action');
+  }
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('No IDs provided');
+  }
+
+  const db = getDb();
+
+  // Validate all IDs exist
+  const placeholders = ids.map(() => '?').join(',');
+  const existing = db.prepare(`SELECT id, name FROM peers WHERE id IN (${placeholders})`).all(...ids);
+  if (existing.length !== ids.length) {
+    const found = new Set(existing.map(p => p.id));
+    const missing = ids.filter(id => !found.has(id));
+    throw new Error(`Peers not found: ${missing.join(', ')}`);
+  }
+
+  const names = existing.map(p => p.name);
+
+  if (action === 'enable') {
+    db.prepare(`UPDATE peers SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+  } else if (action === 'disable') {
+    db.prepare(`UPDATE peers SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+  } else if (action === 'delete') {
+    db.prepare(`DELETE FROM peers WHERE id IN (${placeholders})`).run(...ids);
+    // Unlink routes pointing to deleted peers
+    db.prepare(`UPDATE routes SET peer_id = NULL WHERE peer_id IN (${placeholders})`).run(...ids);
+  }
+
+  await rewriteWgConfig();
+
+  const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
+  activity.log(
+    `batch_peers_${actionPast}`,
+    `Batch ${actionPast} ${ids.length} peer(s): ${names.join(', ')}`,
+    {
+      source: 'admin',
+      severity: action === 'delete' ? 'warning' : 'info',
+      details: { peerIds: ids, action },
+    }
+  );
+
+  logger.info({ action, peerIds: ids, count: ids.length }, `Batch ${actionPast} peers`);
+
+  return ids.length;
+}
+
 module.exports = {
   getAll,
   getById,
@@ -382,4 +442,5 @@ module.exports = {
   getClientConfig,
   rewriteWgConfig,
   checkExpiredPeers,
+  batch,
 };

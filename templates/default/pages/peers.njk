@@ -12,6 +12,13 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="search" id="peer-search" placeholder="{{ t('peers.search') }}">
     </div>
+    <select id="peer-group-filter" style="padding:7px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-1);min-width:140px">
+      <option value="">{{ t('peer_groups.all') }}</option>
+    </select>
+    <button class="btn btn-ghost" id="btn-batch-peers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      {{ t('batch.select') }}
+    </button>
     <button class="btn btn-primary" id="btn-add-peer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       {{ t('peers.add') }}
@@ -30,6 +37,7 @@
   <table class="peer-table">
     <thead>
       <tr>
+        <th class="batch-col" style="display:none;width:40px"><input type="checkbox" id="batch-select-all-peers" title="{{ t('batch.select_all') }}"></th>
         <th>{{ t('peers.name_device') }}</th>
         <th>{{ t('peers.wg_ip') }}</th>
         <th>{{ t('peers.pub_key') }}</th>
@@ -43,6 +51,39 @@
       <tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:40px">{{ t('common.loading') }}</td></tr>
     </tbody>
   </table>
+  </div>
+</div>
+
+<!-- Batch action bar -->
+<div id="batch-bar-peers" class="batch-bar" style="display:none">
+  <span id="batch-bar-peers-count"></span>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-ghost" id="batch-enable-peers">{{ t('batch.enable') }}</button>
+    <button class="btn btn-ghost" id="batch-disable-peers">{{ t('batch.disable') }}</button>
+    <button class="btn btn-danger" id="batch-delete-peers">{{ t('batch.delete') }}</button>
+    <button class="btn btn-ghost" id="batch-cancel-peers">{{ t('batch.cancel') }}</button>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <div class="card-head">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    <span class="card-title">{{ t('peer_groups.title') }}</span>
+  </div>
+  <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+    <div style="font-size:12px;color:var(--text-3)">{{ t('peer_groups.subtitle') }}</div>
+    <div id="peer-groups-list"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="pg-name" placeholder="{{ t('peer_groups.name_placeholder') }}" style="flex:1;padding:8px 12px;font-size:12px" maxlength="100">
+        <input type="color" id="pg-color" value="#6b7280" style="width:40px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+      </div>
+      <input type="text" id="pg-desc" placeholder="{{ t('peer_groups.description_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="255">
+      <div id="pg-error" class="form-error" style="display:none"></div>
+      <button class="btn btn-primary" id="btn-add-peer-group" style="align-self:flex-start">
+        {{ t('peer_groups.add') }}
+      </button>
+    </div>
   </div>
 </div>
 

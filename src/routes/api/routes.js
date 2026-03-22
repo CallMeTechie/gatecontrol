@@ -68,6 +68,31 @@ function resolveError(req, err, fallbackKey) {
 }
 
 /**
+ * POST /api/routes/batch — Batch enable/disable/delete routes
+ */
+router.post('/batch', async (req, res) => {
+  try {
+    const { action, ids } = req.body;
+
+    if (!action || !['enable', 'disable', 'delete'].includes(action)) {
+      return res.status(400).json({ ok: false, error: req.t('error.batch.invalid_action') });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ ok: false, error: req.t('error.batch.no_ids') });
+    }
+
+    const affected = await routes.batch(action, ids);
+    res.json({ ok: true, affected });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to batch operate on routes');
+    if (err.message.includes('not found')) {
+      return res.status(404).json({ ok: false, error: req.t('error.batch.not_found') });
+    }
+    res.status(500).json({ ok: false, error: req.t('error.batch.failed') });
+  }
+});
+
+/**
  * GET /api/routes — List all routes with peer info
  */
 router.get('/', async (req, res) => {
@@ -182,7 +207,8 @@ router.post('/', async (req, res) => {
       acl_enabled, acl_peers, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
-      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl } = req.body;
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -217,6 +243,7 @@ router.post('/', async (req, res) => {
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -243,7 +270,8 @@ router.put('/:id', async (req, res) => {
       acl_enabled, acl_peers, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
-      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl } = req.body;
+      backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -279,7 +307,12 @@ router.put('/:id', async (req, res) => {
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
     });
+    // Reset circuit breaker status when settings change
+    if (circuit_breaker_enabled !== undefined) {
+      try { const cb = require('../../services/circuitBreaker'); cb.resetStatus(req.params.id); } catch {}
+    }
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {
       try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id); } catch {}

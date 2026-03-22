@@ -811,6 +811,49 @@
     });
   }
 
+  // ─── Metrics Settings ──────────────────────────────────
+
+  var metricsEnabledToggle = document.getElementById('metrics-enabled');
+  if (metricsEnabledToggle) {
+    metricsEnabledToggle.addEventListener('click', function() {
+      metricsEnabledToggle.classList.toggle('on');
+    });
+  }
+
+  async function loadMetricsSettings() {
+    try {
+      var data = await api.get('/api/settings/metrics');
+      if (!data.ok) return;
+      if (metricsEnabledToggle) {
+        if (data.data.enabled) metricsEnabledToggle.classList.add('on');
+        else metricsEnabledToggle.classList.remove('on');
+      }
+    } catch (err) {
+      console.error('Failed to load metrics settings:', err);
+    }
+  }
+
+  var btnMetricsSave = document.getElementById('btn-metrics-save');
+  if (btnMetricsSave) {
+    btnMetricsSave.addEventListener('click', async function() {
+      btnLoading(btnMetricsSave);
+      try {
+        var data = await api.put('/api/settings/metrics', {
+          enabled: metricsEnabledToggle.classList.contains('on'),
+        });
+        if (data.ok) {
+          showMessage('metrics-message', GC.t['security.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('metrics-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('metrics-message', err.message, 'error');
+      } finally {
+        btnReset(btnMetricsSave);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadWebhooks();
   loadSecuritySettings();
@@ -821,5 +864,6 @@
   loadIp2locationSettings();
   loadAutobackupSettings();
   loadAutobackupFiles();
+  loadMetricsSettings();
   setInterval(loadLockedAccounts, 30000);
 })();

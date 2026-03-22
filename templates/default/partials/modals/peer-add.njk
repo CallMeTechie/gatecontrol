@@ -14,6 +14,12 @@
         <input type="text" id="add-peer-desc" placeholder="{{ t('peers.add_description_placeholder') }}" autocomplete="off" maxlength="255">
       </div>
       <div class="form-group">
+        <label class="form-label" for="add-peer-group">{{ t('peer_groups.group') }}</label>
+        <select id="add-peer-group" style="width:100%">
+          <option value="">{{ t('peer_groups.none') }}</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label class="form-label" for="add-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="add-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
         <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>

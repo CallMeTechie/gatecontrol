@@ -11,6 +11,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
     {{ t('nav.peers') }}
     <span class="nav-badge green" id="peer-count-badge">{{ peerCount or 0 }}</span>
+    {% if peerGroupCount %}<span class="nav-badge" id="peer-group-count-badge" title="{{ t('peer_groups.title') }}">{{ peerGroupCount }} {{ t('peer_groups.badge_groups') }}</span>{% endif %}
   </a>
   <a href="/config" class="nav-item {{ 'active' if activeNav == 'config' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>

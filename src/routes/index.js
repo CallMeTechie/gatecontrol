@@ -12,6 +12,68 @@ const router = Router();
 // ─── Branding assets (public, no auth) ─────────────
 router.use('/branding', express.static('/data/branding', { maxAge: '1d' }));
 
+// ─── Prometheus metrics (token auth or session) ────
+router.get('/metrics', async (req, res) => {
+  const settings = require('../services/settings');
+
+  // Check if metrics are enabled
+  if (settings.get('metrics_enabled', 'false') !== 'true') {
+    return res.status(404).json({ ok: false, error: 'Not found' });
+  }
+
+  // Authenticate: session, Bearer token, or ?token= query param
+  let authenticated = false;
+
+  // 1. Session auth
+  if (req.session && req.session.userId) {
+    authenticated = true;
+  }
+
+  // 2. Bearer / X-API-Token header
+  if (!authenticated) {
+    const tokens = require('../services/tokens');
+    let rawToken = null;
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const t = authHeader.slice(7).trim();
+      if (t.startsWith('gc_')) rawToken = t;
+    }
+    if (!rawToken) {
+      const apiToken = req.headers['x-api-token'];
+      if (apiToken && apiToken.startsWith('gc_')) rawToken = apiToken;
+    }
+
+    // 3. Query param ?token=gc_xxx
+    if (!rawToken && req.query.token && String(req.query.token).startsWith('gc_')) {
+      rawToken = String(req.query.token);
+    }
+
+    if (rawToken) {
+      const tokenRecord = tokens.authenticate(rawToken);
+      if (tokenRecord) {
+        const scopes = tokenRecord.scopes;
+        if (scopes.includes('system') || scopes.includes('read-only') || scopes.includes('full-access')) {
+          authenticated = true;
+        }
+      }
+    }
+  }
+
+  if (!authenticated) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const metrics = require('../services/metrics');
+    const output = await metrics.collect();
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.send(output);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Failed to collect metrics' });
+  }
+});
+
 // ─── Health check (public, no auth) ────────────────
 router.get('/health', async (req, res) => {
   const checks = { db: false, wireguard: false };

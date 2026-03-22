@@ -156,6 +156,23 @@ function buildCaddyConfig() {
       };
     }
 
+    // Circuit breaker — when open, return 503 instead of proxying
+    if (route.circuit_breaker_enabled && route.circuit_breaker_status === 'open') {
+      const routeConfig503 = {
+        handle: [{
+          handler: 'static_response',
+          status_code: '503',
+          body: 'Service temporarily unavailable',
+          headers: { 'Retry-After': [String(route.circuit_breaker_timeout || 30)] },
+        }],
+      };
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [routeConfig503],
+      };
+      continue;
+    }
+
     const routeHandlers = [];
 
     // Request custom headers — added BEFORE reverse_proxy
@@ -606,8 +623,9 @@ async function create(data) {
                         branding_title, branding_text, branding_color, branding_bg, acl_enabled, compress_enabled,
                         custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
                         retry_enabled, retry_count, retry_match_status,
-                        backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
+                        circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -643,7 +661,10 @@ async function create(data) {
     backendsJson,
     data.sticky_enabled ? 1 : 0,
     data.sticky_cookie_name || 'gc_sticky',
-    data.sticky_cookie_ttl || '3600'
+    data.sticky_cookie_ttl || '3600',
+    data.circuit_breaker_enabled ? 1 : 0,
+    data.circuit_breaker_threshold ? parseInt(data.circuit_breaker_threshold, 10) : 5,
+    data.circuit_breaker_timeout ? parseInt(data.circuit_breaker_timeout, 10) : 30
   );
 
   const routeId = result.lastInsertRowid;
@@ -842,6 +863,9 @@ async function update(id, data) {
       sticky_enabled = COALESCE(?, sticky_enabled),
       sticky_cookie_name = COALESCE(?, sticky_cookie_name),
       sticky_cookie_ttl = COALESCE(?, sticky_cookie_ttl),
+      circuit_breaker_enabled = COALESCE(?, circuit_breaker_enabled),
+      circuit_breaker_threshold = COALESCE(?, circuit_breaker_threshold),
+      circuit_breaker_timeout = COALESCE(?, circuit_breaker_timeout),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -882,6 +906,9 @@ async function update(id, data) {
     data.sticky_enabled !== undefined ? (data.sticky_enabled ? 1 : 0) : null,
     data.sticky_cookie_name !== undefined ? (data.sticky_cookie_name || null) : null,
     data.sticky_cookie_ttl !== undefined ? (data.sticky_cookie_ttl || null) : null,
+    data.circuit_breaker_enabled !== undefined ? (data.circuit_breaker_enabled ? 1 : 0) : null,
+    data.circuit_breaker_threshold !== undefined ? parseInt(data.circuit_breaker_threshold, 10) : null,
+    data.circuit_breaker_timeout !== undefined ? parseInt(data.circuit_breaker_timeout, 10) : null,
     id
   );
 
@@ -1019,6 +1046,58 @@ function getCount() {
   return db.prepare('SELECT COUNT(*) AS count FROM routes WHERE enabled = 1').get().count;
 }
 
+/**
+ * Batch enable, disable, or delete routes.
+ * Returns the count of affected routes.
+ */
+async function batch(action, ids) {
+  if (!['enable', 'disable', 'delete'].includes(action)) {
+    throw new Error('Invalid batch action');
+  }
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('No IDs provided');
+  }
+
+  const db = getDb();
+
+  // Validate all IDs exist
+  const placeholders = ids.map(() => '?').join(',');
+  const existing = db.prepare(`SELECT id, domain FROM routes WHERE id IN (${placeholders})`).all(...ids);
+  if (existing.length !== ids.length) {
+    const found = new Set(existing.map(r => r.id));
+    const missing = ids.filter(id => !found.has(id));
+    throw new Error(`Routes not found: ${missing.join(', ')}`);
+  }
+
+  const domains = existing.map(r => r.domain);
+
+  if (action === 'enable') {
+    db.prepare(`UPDATE routes SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+  } else if (action === 'disable') {
+    db.prepare(`UPDATE routes SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+  } else if (action === 'delete') {
+    db.prepare(`DELETE FROM route_peer_acl WHERE route_id IN (${placeholders})`).run(...ids);
+    db.prepare(`DELETE FROM routes WHERE id IN (${placeholders})`).run(...ids);
+  }
+
+  await syncToCaddy();
+
+  const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
+  activity.log(
+    `batch_routes_${actionPast}`,
+    `Batch ${actionPast} ${ids.length} route(s): ${domains.join(', ')}`,
+    {
+      source: 'admin',
+      severity: action === 'delete' ? 'warning' : 'info',
+      details: { routeIds: ids, action },
+    }
+  );
+
+  logger.info({ action, routeIds: ids, count: ids.length }, `Batch ${actionPast} routes`);
+
+  return ids.length;
+}
+
 module.exports = {
   getAll,
   getById,
@@ -1032,4 +1111,5 @@ module.exports = {
   caddyApi,
   getAclPeers,
   setAclPeers,
+  batch,
 };
