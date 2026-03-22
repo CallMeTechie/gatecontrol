@@ -1177,9 +1177,12 @@
     var fields = document.getElementById(prefix + '-acl-fields');
     if (toggle) {
       toggle.addEventListener('click', function() {
-        toggle.classList.toggle('on');
-        if (fields) fields.style.display = toggle.classList.contains('on') ? '' : 'none';
-        if (toggle.classList.contains('on')) renderAclPeerChecklist(prefix, []);
+        // app.js handles the visual toggle (on/off class), we just show/hide fields
+        setTimeout(function() {
+          var isOn = toggle.classList.contains('on');
+          if (fields) fields.style.display = isOn ? '' : 'none';
+          if (isOn) renderAclPeerChecklist(prefix, []);
+        }, 0);
       });
     }
   }
