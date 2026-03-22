@@ -19,11 +19,11 @@ after(() => teardown());
 
 // ─── Auth ───────────────────────────────────────────
 describe('Auth', () => {
-  it('redirects unauthenticated to /login', async () => {
+  it('returns 401 for unauthenticated API requests', async () => {
     const supertest = require('supertest');
     const { createApp } = require('../src/app');
     const freshAgent = supertest(createApp());
-    await freshAgent.get('/api/v1/peers').expect(302);
+    await freshAgent.get('/api/v1/peers').expect(401);
   });
 
   it('returns dashboard for authenticated user', async () => {

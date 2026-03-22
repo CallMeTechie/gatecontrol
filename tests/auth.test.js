@@ -5,11 +5,15 @@ const assert = require('node:assert/strict');
 const { requireAuth, guestOnly } = require('../src/middleware/auth');
 
 function mockReq(overrides = {}) {
-  return {
+  const req = {
     session: {},
     path: '/api/test',
+    baseUrl: '',
     ...overrides,
   };
+  // Ensure originalUrl is set for auth middleware
+  if (!req.originalUrl) req.originalUrl = (req.baseUrl || '') + req.path;
+  return req;
 }
 
 function mockRes() {
