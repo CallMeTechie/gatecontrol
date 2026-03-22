@@ -1175,16 +1175,21 @@
   function setupAclToggle(prefix) {
     var toggle = document.getElementById(prefix + '-route-acl');
     var fields = document.getElementById(prefix + '-acl-fields');
-    if (toggle) {
-      toggle.addEventListener('click', function() {
-        // app.js handles the visual toggle (on/off class), we just show/hide fields
-        setTimeout(function() {
-          var isOn = toggle.classList.contains('on');
-          if (fields) fields.style.display = isOn ? '' : 'none';
-          if (isOn) renderAclPeerChecklist(prefix, []);
-        }, 0);
-      });
-    }
+    if (!toggle) return;
+    // Set up ARIA and visual toggle ourselves (app.js skips data-managed)
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('tabindex', '0');
+    toggle.setAttribute('aria-checked', toggle.classList.contains('on') ? 'true' : 'false');
+    toggle.addEventListener('click', function() {
+      toggle.classList.toggle('on');
+      var isOn = toggle.classList.contains('on');
+      toggle.setAttribute('aria-checked', isOn ? 'true' : 'false');
+      if (fields) fields.style.display = isOn ? '' : 'none';
+      if (isOn) renderAclPeerChecklist(prefix, []);
+    });
+    toggle.addEventListener('keydown', function(e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle.click(); }
+    });
   }
 
   setupAclToggle('create');
