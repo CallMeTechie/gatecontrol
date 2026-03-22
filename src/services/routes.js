@@ -133,8 +133,8 @@ function buildCaddyConfig() {
         .split(',')
         .map(s => parseInt(s.trim(), 10))
         .filter(n => !isNaN(n));
-      reverseProxy.retry_match = [{ status_code: statusCodes }];
-      reverseProxy.retries = route.retry_count || 3;
+      reverseProxy.lb_retry_match = [{ status_code: statusCodes }];
+      reverseProxy.lb_retries = route.retry_count || 3;
     }
 
     // Response custom headers — applied inside reverse_proxy handler
