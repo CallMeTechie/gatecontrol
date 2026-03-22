@@ -33,6 +33,8 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Automatische IP-Zuweisung aus einem konfigurierbaren Subnetz (Standard `10.8.0.0/24`)
 - Herunterladbare Peer-Konfigurationsdateien und scannbare QR-Codes für mobile Clients
 - Echtzeit-Peer-Statusüberwachung (Online/Offline-Erkennung über WireGuard-Handshake)
+- **Peer-Gruppen** — Peers nach Team, Standort oder Zweck organisieren mit farbigen Badges, Filter-Dropdown und Gruppen-Verwaltung
+- **Batch-Operationen** — Mehrere Peers gleichzeitig aktivieren, deaktivieren oder löschen mit Floating Action Bar
 - Peer-Tagging zur Organisation
 - **Peer-Ablaufdatum** — Optionales Ablaufdatum pro Peer (1 Tag, 7 Tage, 30 Tage, 90 Tage oder benutzerdefiniert). Abgelaufene Peers werden automatisch durch einen Hintergrund-Task deaktiviert. Visuelle Indikatoren zeigen "Abgelaufen" (rot) und "Läuft bald ab" (orange) an
 - Hot-Reload von Konfigurationsänderungen über `wg syncconf` — kein VPN-Neustart erforderlich
@@ -51,6 +53,8 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Retry mit Backoff** — Automatische Wiederholungen bei Backend-Fehler mit konfigurierbarer Anzahl und Status-Code-Matching
 - **Mehrere Backends / Load Balancing** — Weighted Round Robin über mehrere Backend-Ziele pro Route
 - **Sticky Sessions** — Cookie-basierte Session-Affinität bei Multi-Backend-Routen mit konfigurierbarem Cookie-Name und TTL
+- **Circuit Breaker** — Per-Route Circuit Breaker (Closed/Open/Half-Open) der 503 zurückgibt wenn Backends wiederholt ausfallen, mit automatischer Wiederherstellung über Monitoring-Checks
+- **Batch-Operationen** — Mehrere Routen gleichzeitig aktivieren, deaktivieren oder löschen
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
@@ -80,6 +84,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Health-Check-Endpoint** (`/health`) zur Verifizierung von Datenbank- und WireGuard-Status
 - Vollständiges Aktivitätsprotokoll mit Schweregrad-Stufen und Filterung (Peer erstellt, Route geändert, Login-Events, etc.)
 - **Log-Export** — Aktivitäts- und Zugriffsprotokolle als CSV oder JSON herunterladen mit Filter-Unterstützung
+- **Prometheus Metrics** — `/metrics` Endpoint mit 12 Gauges für Grafana/Prometheus (Peers, Routen, CPU, RAM, Uptime, Per-Peer Traffic, Per-Route Monitoring-Status)
 - Caddy-Zugriffsprotokoll mit automatischer Rotation (10 MB, 3 Dateien behalten)
 
 ### Sicherheitseinstellungen

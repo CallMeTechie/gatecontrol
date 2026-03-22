@@ -33,6 +33,8 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Automatic IP allocation from a configurable subnet (default `10.8.0.0/24`)
 - Downloadable peer configuration files and scannable QR codes for mobile clients
 - Real-time peer status monitoring (online/offline detection via WireGuard handshake)
+- **Peer groups** — organize peers by team, location, or purpose with colored badges, filter dropdown, and group management
+- **Batch operations** — multi-select peers for bulk enable, disable, or delete with floating action bar
 - Peer tagging for organization
 - **Peer expiry** — optional expiration date per peer (1 day, 7 days, 30 days, 90 days, or custom date). Expired peers are automatically disabled by a background task. Visual indicators show "expired" (red) and "expires soon" (orange) status
 - Hot-reload configuration changes via `wg syncconf` — no VPN restart needed
@@ -51,6 +53,8 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Retry with Backoff** — Automatic retries on backend failure with configurable retry count and status code matching
 - **Multiple Backends / Load Balancing** — Weighted round-robin across multiple backend targets per route
 - **Sticky Sessions** — Cookie-based session affinity for multi-backend routes with configurable cookie name and TTL
+- **Circuit Breaker** — Per-route circuit breaker (closed/open/half-open) that returns 503 when backends fail repeatedly, with automatic recovery via monitoring checks
+- **Batch operations** — multi-select routes for bulk enable, disable, or delete
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
 - Atomic configuration sync to Caddy with automatic rollback on failure
@@ -80,6 +84,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Health check endpoint** (`/health`) verifying database and WireGuard status
 - Full activity log with severity levels and filtering (peer created, route modified, login events, etc.)
 - **Log export** — Download activity and access logs as CSV or JSON files with filter support
+- **Prometheus metrics** — `/metrics` endpoint with 12 gauges for Grafana/Prometheus (peers, routes, CPU, RAM, uptime, per-peer traffic, per-route monitoring status)
 - Caddy access log with automatic rotation (10 MB, keep 3 files)
 
 ### Security Settings
@@ -191,7 +196,7 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Versioned migrations with history tracking (23 migrations)
+│   ├── migrations.js      # Versioned migrations with history tracking (25 migrations)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
