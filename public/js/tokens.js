@@ -126,7 +126,6 @@
     var id = btn.dataset.tokenId;
 
     if (action === 'delete') {
-      if (!confirm(GC.t['tokens.confirm_revoke'] || 'Revoke this API token? This cannot be undone.')) return;
       try {
         await api.del('/api/v1/tokens/' + id);
         loadTokens();
