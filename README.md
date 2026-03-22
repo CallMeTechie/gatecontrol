@@ -34,6 +34,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Downloadable peer configuration files and scannable QR codes for mobile clients
 - Real-time peer status monitoring (online/offline detection via WireGuard handshake)
 - Peer tagging for organization
+- **Peer expiry** — optional expiration date per peer (1 day, 7 days, 30 days, 90 days, or custom date). Expired peers are automatically disabled by a background task. Visual indicators show "expired" (red) and "expires soon" (orange) status
 - Hot-reload configuration changes via `wg syncconf` — no VPN restart needed
 
 ### Reverse Proxy Routing (Layer 7)
@@ -43,6 +44,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Route Authentication** — Custom login page per route with multiple auth methods: Email & Password, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optional Two-Factor Authentication (2FA) with configurable session duration
 - **Custom Branding** — Upload logo, set title, welcome text, accent/background color, and background image per route auth login page
 - **IP Access Control / Geo-Blocking** — Per-route IP/CIDR whitelist or blacklist with optional country-based filtering via ip2location.io integration
+- **Peer Access Control (ACL)** — Restrict which WireGuard peers can access a route. Caddy enforces allowed peer IPs via `remote_ip` matcher. Configure via multi-select checklist in the route settings
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
 - Atomic configuration sync to Caddy with automatic rollback on failure
@@ -71,6 +73,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - Traffic charts with 1-hour, 24-hour, and 7-day views
 - **Health check endpoint** (`/health`) verifying database and WireGuard status
 - Full activity log with severity levels and filtering (peer created, route modified, login events, etc.)
+- **Log export** — Download activity and access logs as CSV or JSON files with filter support
 - Caddy access log with automatic rotation (10 MB, keep 3 files)
 
 ### Security Settings
@@ -80,7 +83,8 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - All security settings manageable through the web UI (Settings > Security)
 
 ### Backup & Restore
-- Full system backup as portable JSON (peers, routes, route auth configs, settings, webhooks)
+- Full system backup as portable JSON (peers, routes, route auth configs, ACL rules, settings, webhooks)
+- **Automatic scheduled backups** — configurable interval (6h, 12h, daily, 3 days, weekly) with retention limit. Manage backup files (download, delete) directly in Settings
 - **Encryption key validation** on restore — prevents silent failures when restoring on a different instance
 - Encrypted keys are decrypted for export portability — restore on any instance
 - Atomic transaction-based restore with automatic WireGuard and Caddy resync
@@ -97,7 +101,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 | Group | Events | Triggers |
 |-------|--------|----------|
 | **Security** | `login_failed`, `account_locked`, `password_changed` | Failed admin login, account lockout triggered, password changed |
-| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted` | Peer comes online/goes offline via WireGuard handshake, peer added/removed |
+| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted`, `peer_expired` | Peer comes online/goes offline via WireGuard handshake, peer added/removed, peer auto-disabled by expiry |
 | **Routes** | `route_down`, `route_up`, `route_created`, `route_deleted` | Uptime monitor detects route down/recovered, route added/removed |
 | **System** | `system_start`, `wg_restart`, `backup_restored`, `backup_reminder`, `resource_alert` | Application started, WireGuard restarted, backup restored, no backup in N days, CPU/RAM above threshold |
 
@@ -181,7 +185,7 @@ src/
 ├── app.js                 # Express setup, security middleware, template engine
 ├── db/
 │   ├── connection.js      # SQLite with WAL mode and performance pragmas
-│   ├── migrations.js      # Versioned migrations with history tracking (15 migrations)
+│   ├── migrations.js      # Versioned migrations with history tracking (17 migrations)
 │   └── seed.js            # Admin user initialization on first run
 ├── services/              # Business logic layer
 │   ├── peers.js           # Peer CRUD, key generation, IP allocation, WG sync
@@ -194,6 +198,7 @@ src/
 │   ├── activity.js        # Activity event logging with severity levels
 │   ├── accessLog.js       # HTTP access log processing
 │   ├── settings.js        # Key-value settings persistence
+│   ├── autobackup.js      # Scheduled automatic backups with retention
 │   ├── backup.js          # Full backup/restore with atomic transactions
 │   ├── email.js           # SMTP email service (OTP delivery, test emails)
 │   ├── routeAuth.js       # Route authentication (sessions, OTP, TOTP, CSRF)
@@ -503,7 +508,7 @@ curl -H "Authorization: Bearer gc_your_token" \
   -d '{"name": "my-laptop", "description": "Work laptop"}'
 ```
 
-See **[API.md](API.md)** for the complete endpoint reference and **[API_GUIDE.md](API_GUIDE.md)** for practical integration examples (Home Assistant, Python, Node.js, Bash, Telegram/Discord bots, CI/CD, Prometheus).
+See **[API.md](API.md)** for the complete endpoint reference, **[API_GUIDE.md](API_GUIDE.md)** for practical integration examples (Home Assistant, Python, Node.js, Bash, Telegram/Discord bots, CI/CD, Prometheus), and **[FEATURES.md](FEATURES.md)** for detailed feature documentation.
 
 ### Networking
 

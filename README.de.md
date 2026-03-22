@@ -34,6 +34,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Herunterladbare Peer-Konfigurationsdateien und scannbare QR-Codes für mobile Clients
 - Echtzeit-Peer-Statusüberwachung (Online/Offline-Erkennung über WireGuard-Handshake)
 - Peer-Tagging zur Organisation
+- **Peer-Ablaufdatum** — Optionales Ablaufdatum pro Peer (1 Tag, 7 Tage, 30 Tage, 90 Tage oder benutzerdefiniert). Abgelaufene Peers werden automatisch durch einen Hintergrund-Task deaktiviert. Visuelle Indikatoren zeigen "Abgelaufen" (rot) und "Läuft bald ab" (orange) an
 - Hot-Reload von Konfigurationsänderungen über `wg syncconf` — kein VPN-Neustart erforderlich
 
 ### Reverse-Proxy-Routing (Layer 7)
@@ -43,6 +44,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Route-Authentifizierung** — Eigene Login-Seite pro Route mit mehreren Auth-Methoden: Email & Passwort, Email & Code (OTP via SMTP), TOTP (Authenticator App). Optionale Zwei-Faktor-Authentifizierung (2FA) mit konfigurierbarer Session-Dauer
 - **Custom Branding** — Logo-Upload, Titel, Begrüßungstext, Akzent-/Hintergrundfarbe und Hintergrundbild pro Route-Auth-Login-Seite
 - **IP-Zugriffskontrolle / Geo-Blocking** — Per-Route IP/CIDR Whitelist oder Blacklist mit optionaler länderbasierter Filterung via ip2location.io Integration
+- **Peer-Zugriffskontrolle (ACL)** — Festlegen, welche WireGuard-Peers auf eine Route zugreifen dürfen. Caddy erzwingt erlaubte Peer-IPs über `remote_ip` Matcher. Konfiguration über Multi-Select-Checkliste in den Route-Einstellungen
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers
 - Atomare Konfigurationssynchronisation mit Caddy mit automatischem Rollback bei Fehler
@@ -71,6 +73,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Traffic-Charts mit 1-Stunden-, 24-Stunden- und 7-Tage-Ansichten
 - **Health-Check-Endpoint** (`/health`) zur Verifizierung von Datenbank- und WireGuard-Status
 - Vollständiges Aktivitätsprotokoll mit Schweregrad-Stufen und Filterung (Peer erstellt, Route geändert, Login-Events, etc.)
+- **Log-Export** — Aktivitäts- und Zugriffsprotokolle als CSV oder JSON herunterladen mit Filter-Unterstützung
 - Caddy-Zugriffsprotokoll mit automatischer Rotation (10 MB, 3 Dateien behalten)
 
 ### Sicherheitseinstellungen
@@ -80,7 +83,8 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - Alle Sicherheitseinstellungen über die Weboberfläche verwaltbar (Einstellungen > Sicherheit)
 
 ### Backup & Wiederherstellung
-- Vollständiges System-Backup als portables JSON (Peers, Routen, Route-Auth-Konfigurationen, Einstellungen, Webhooks)
+- Vollständiges System-Backup als portables JSON (Peers, Routen, Route-Auth-Konfigurationen, ACL-Regeln, Einstellungen, Webhooks)
+- **Automatische geplante Backups** — Konfigurierbares Intervall (6h, 12h, täglich, 3 Tage, wöchentlich) mit Aufbewahrungslimit. Backup-Dateien direkt in den Einstellungen verwalten (herunterladen, löschen)
 - **Verschlüsselungsschlüssel-Validierung** bei Wiederherstellung — verhindert stille Fehler bei Wiederherstellung auf einer anderen Instanz
 - Verschlüsselte Schlüssel werden für den Export entschlüsselt — Wiederherstellung auf beliebiger Instanz
 - Atomare, transaktionsbasierte Wiederherstellung mit automatischer WireGuard- und Caddy-Resynchronisation
@@ -97,7 +101,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 | Gruppe | Events | Auslöser |
 |--------|--------|----------|
 | **Sicherheit** | `login_failed`, `account_locked`, `password_changed` | Fehlgeschlagener Admin-Login, Kontosperrung ausgelöst, Passwort geändert |
-| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted` | Peer kommt online/geht offline via WireGuard-Handshake, Peer hinzugefügt/entfernt |
+| **Peers** | `peer_connected`, `peer_disconnected`, `peer_created`, `peer_deleted`, `peer_expired` | Peer kommt online/geht offline via WireGuard-Handshake, Peer hinzugefügt/entfernt, Peer durch Ablauf automatisch deaktiviert |
 | **Routen** | `route_down`, `route_up`, `route_created`, `route_deleted` | Uptime-Monitor erkennt Route down/recovered, Route hinzugefügt/entfernt |
 | **System** | `system_start`, `wg_restart`, `backup_restored`, `backup_reminder`, `resource_alert` | Anwendung gestartet, WireGuard neugestartet, Backup wiederhergestellt, kein Backup seit N Tagen, CPU/RAM über Schwellwert |
 
@@ -181,7 +185,7 @@ src/
 ├── app.js                 # Express-Setup, Sicherheits-Middleware, Template-Engine
 ├── db/
 │   ├── connection.js      # SQLite mit WAL-Modus und Performance-Pragmas
-│   ├── migrations.js      # Versionierte Migrationen mit History-Tracking (15 Migrationen)
+│   ├── migrations.js      # Versionierte Migrationen mit History-Tracking (17 Migrationen)
 │   └── seed.js            # Admin-Benutzer-Initialisierung beim ersten Start
 ├── services/              # Geschäftslogik-Schicht
 │   ├── peers.js           # Peer CRUD, Schlüsselgenerierung, IP-Zuweisung, WG-Sync
@@ -194,6 +198,7 @@ src/
 │   ├── activity.js        # Aktivitäts-Event-Logging mit Schweregrad-Stufen
 │   ├── accessLog.js       # HTTP-Zugriffsprotokoll-Verarbeitung
 │   ├── settings.js        # Key-Value Einstellungs-Persistenz
+│   ├── autobackup.js      # Geplante automatische Backups mit Aufbewahrung
 │   ├── backup.js          # Vollständiges Backup/Restore mit atomaren Transaktionen
 │   ├── email.js           # SMTP E-Mail-Service (OTP-Versand, Test-Emails)
 │   ├── routeAuth.js       # Route-Authentifizierung (Sessions, OTP, TOTP, CSRF)
@@ -503,7 +508,7 @@ curl -H "Authorization: Bearer gc_dein_token" \
   -d '{"name": "mein-laptop", "description": "Arbeitslaptop"}'
 ```
 
-Siehe **[API.md](API.md)** für die vollständige Endpoint-Referenz und **[API_GUIDE.md](API_GUIDE.md)** für praktische Integrationsbeispiele (Home Assistant, Python, Node.js, Bash, Telegram/Discord Bots, CI/CD, Prometheus).
+Siehe **[API.md](API.md)** für die vollständige Endpoint-Referenz, **[API_GUIDE.md](API_GUIDE.md)** für praktische Integrationsbeispiele (Home Assistant, Python, Node.js, Bash, Telegram/Discord Bots, CI/CD, Prometheus) und **[FEATURES.md](FEATURES.md)** für detaillierte Feature-Dokumentation.
 
 ### Netzwerk
 
