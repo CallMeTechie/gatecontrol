@@ -336,6 +336,18 @@
             </div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-mirror"></div>
+        </div>
+        <div id="create-mirror-fields" style="display:none;margin-bottom:14px">
+          <div id="create-mirror-targets-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+          <button type="button" class="btn btn-ghost" id="create-mirror-add-target" style="font-size:12px">+ {{ t('routes.mirror_add_target') }}</button>
+          <div id="create-mirror-max-hint" style="display:none;font-size:11px;color:var(--text-3);margin-top:4px">{{ t('routes.mirror_max') }}</div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>

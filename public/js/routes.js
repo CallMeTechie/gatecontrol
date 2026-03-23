@@ -133,6 +133,15 @@
           : (GC.t['circuit_breaker.badge_half_open'] || 'CB: Half-Open');
         cbTag = '<span class="tag ' + cbColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + escapeHtml(cbLabel) + '</span>';
       }
+      let mirrorTag = '';
+      if (r.mirror_enabled && r.route_type !== 'l4') {
+        try {
+          var mt = typeof r.mirror_targets === 'string' ? JSON.parse(r.mirror_targets) : r.mirror_targets;
+          if (Array.isArray(mt) && mt.length > 0) {
+            mirrorTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg> ' + (GC.t['routes.mirror_badge'] || 'Mirror: {{count}} targets').replace('{{count}}', mt.length) + '</span>';
+          }
+        } catch (_) {}
+      }
       let headersTag = '';
       if (r.custom_headers && r.route_type !== 'l4') {
         try {
@@ -209,7 +218,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div class="route-tags">
-          ${statusTag}${monitorTag}${cbTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
+          ${statusTag}${monitorTag}${cbTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -314,6 +323,8 @@
         circuit_breaker_enabled: createCb,
         circuit_breaker_threshold: createCb ? parseInt(document.getElementById('create-cb-threshold')?.value || '5', 10) : 5,
         circuit_breaker_timeout: createCb ? parseInt(document.getElementById('create-cb-timeout')?.value || '30', 10) : 30,
+        mirror_enabled: document.getElementById('create-route-mirror')?.classList.contains('on') ? 1 : 0,
+        mirror_targets: createMirrorTargets.length > 0 ? createMirrorTargets : null,
       };
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
@@ -382,6 +393,12 @@
         if (ccb) ccb.classList.remove('on');
         var ccbFields = document.getElementById('create-circuit-breaker-fields');
         if (ccbFields) ccbFields.style.display = 'none';
+        var cmr = document.getElementById('create-route-mirror');
+        if (cmr) cmr.classList.remove('on');
+        var cmrFields = document.getElementById('create-mirror-fields');
+        if (cmrFields) cmrFields.style.display = 'none';
+        createMirrorTargets.length = 0;
+        renderCreateMirrorTargets();
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
@@ -902,6 +919,21 @@
       cbRequiresMonitoring.style.display = !route.monitoring_enabled ? '' : 'none';
     }
 
+    // Mirror
+    var mirrorToggle = document.getElementById('edit-route-mirror');
+    if (mirrorToggle) {
+      mirrorToggle.classList.toggle('on', !!route.mirror_enabled);
+      mirrorToggle.setAttribute('aria-checked', route.mirror_enabled ? 'true' : 'false');
+    }
+    var mirrorFields = document.getElementById('edit-mirror-fields');
+    if (mirrorFields) mirrorFields.style.display = route.mirror_enabled ? '' : 'none';
+    editMirrorTargets.length = 0;
+    if (route.mirror_targets) {
+      var parsedMt = typeof route.mirror_targets === 'string' ? JSON.parse(route.mirror_targets) : route.mirror_targets;
+      if (Array.isArray(parsedMt)) parsedMt.forEach(function (t) { editMirrorTargets.push(t); });
+    }
+    renderEditMirrorTargets();
+
     // IP filter
     var ipFilterToggle = document.getElementById('edit-route-ip-filter');
     var ipFilterFields = document.getElementById('edit-ip-filter-fields');
@@ -1017,6 +1049,8 @@
           circuit_breaker_enabled: cbEnabled,
           circuit_breaker_threshold: cbEnabled ? parseInt(document.getElementById('edit-cb-threshold')?.value || '5', 10) : 5,
           circuit_breaker_timeout: cbEnabled ? parseInt(document.getElementById('edit-cb-timeout')?.value || '30', 10) : 30,
+          mirror_enabled: document.getElementById('edit-route-mirror')?.classList.contains('on') ? 1 : 0,
+          mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
         };
         // Custom headers
         var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
@@ -1438,6 +1472,8 @@
   // ─── IP filter helpers ─────────────────────────────────
   var editIpFilterRules = [];
   var createIpFilterRules = [];
+  var createMirrorTargets = [];
+  var editMirrorTargets = [];
 
   function setupIpFilter(prefix, rulesArr) {
     var toggle = document.getElementById(prefix + '-route-ip-filter');
@@ -1584,6 +1620,89 @@
       setTimeout(function() {
         if (createCbFields) createCbFields.style.display = createCbToggle.classList.contains('on') ? '' : 'none';
       }, 0);
+    });
+  }
+
+  // ─── Create mirror toggle ────────────────────────────
+  var createMirrorToggle = document.getElementById('create-route-mirror');
+  var createMirrorFields = document.getElementById('create-mirror-fields');
+  if (createMirrorToggle) {
+    createMirrorToggle.addEventListener('click', function() {
+      setTimeout(function() {
+        if (createMirrorFields) createMirrorFields.style.display = createMirrorToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
+    });
+  }
+
+  // NOTE: Mirror target rows use innerHTML with escapeHtml-sanitized values only,
+  // following the same pattern as the existing backends editor in this file.
+  function renderCreateMirrorTargets() {
+    var list = document.getElementById('create-mirror-targets-list');
+    var hint = document.getElementById('create-mirror-max-hint');
+    var addBtn = document.getElementById('create-mirror-add-target');
+    if (!list) return;
+    list.innerHTML = '';
+    createMirrorTargets.forEach(function (t, i) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center';
+      row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
+        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (t.port || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
+        + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
+      var inputs = row.querySelectorAll('input');
+      inputs[0].addEventListener('input', function () { createMirrorTargets[i].ip = this.value; });
+      inputs[1].addEventListener('input', function () { createMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
+      row.querySelector('button').addEventListener('click', function () {
+        createMirrorTargets.splice(i, 1);
+        renderCreateMirrorTargets();
+      });
+      list.appendChild(row);
+    });
+    if (hint) hint.style.display = createMirrorTargets.length >= 5 ? '' : 'none';
+    if (addBtn) addBtn.disabled = createMirrorTargets.length >= 5;
+  }
+
+  var createMirrorAddBtn = document.getElementById('create-mirror-add-target');
+  if (createMirrorAddBtn) {
+    createMirrorAddBtn.addEventListener('click', function () {
+      if (createMirrorTargets.length < 5) {
+        createMirrorTargets.push({ ip: '', port: 8080 });
+        renderCreateMirrorTargets();
+      }
+    });
+  }
+
+  function renderEditMirrorTargets() {
+    var list = document.getElementById('edit-mirror-targets-list');
+    var hint = document.getElementById('edit-mirror-max-hint');
+    var addBtn = document.getElementById('edit-mirror-add-target');
+    if (!list) return;
+    list.innerHTML = '';
+    editMirrorTargets.forEach(function (t, i) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center';
+      row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
+        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (t.port || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
+        + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
+      var inputs = row.querySelectorAll('input');
+      inputs[0].addEventListener('input', function () { editMirrorTargets[i].ip = this.value; });
+      inputs[1].addEventListener('input', function () { editMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
+      row.querySelector('button').addEventListener('click', function () {
+        editMirrorTargets.splice(i, 1);
+        renderEditMirrorTargets();
+      });
+      list.appendChild(row);
+    });
+    if (hint) hint.style.display = editMirrorTargets.length >= 5 ? '' : 'none';
+    if (addBtn) addBtn.disabled = editMirrorTargets.length >= 5;
+  }
+
+  var editMirrorAddBtn = document.getElementById('edit-mirror-add-target');
+  if (editMirrorAddBtn) {
+    editMirrorAddBtn.addEventListener('click', function () {
+      if (editMirrorTargets.length < 5) {
+        editMirrorTargets.push({ ip: '', port: 8080 });
+        renderEditMirrorTargets();
+      }
     });
   }
 
@@ -1835,6 +1954,7 @@
   setupSimpleToggle('edit-route-backends', 'edit-backends-fields');
   setupSimpleToggle('edit-route-sticky', 'edit-sticky-fields');
   setupSimpleToggle('edit-route-circuit-breaker', 'edit-circuit-breaker-fields');
+  setupSimpleToggle('edit-route-mirror', 'edit-mirror-fields');
 
   // ─── Batch mode (routes) ─────────────────────────────────
   var batchBtn = document.getElementById('btn-batch-routes');

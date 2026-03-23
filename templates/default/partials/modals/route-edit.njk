@@ -391,6 +391,18 @@
           <div id="edit-cb-status-indicator" style="display:none;padding:6px 10px;border-radius:var(--radius-xs);font-size:12px;font-weight:600;text-align:center;margin-bottom:4px">
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-mirror"></div>
+        </div>
+        <div id="edit-mirror-fields" style="display:none;margin-top:10px">
+          <div id="edit-mirror-targets-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+          <button type="button" class="btn btn-ghost" id="edit-mirror-add-target" style="font-size:12px">+ {{ t('routes.mirror_add_target') }}</button>
+          <div id="edit-mirror-max-hint" style="display:none;font-size:11px;color:var(--text-3);margin-top:4px">{{ t('routes.mirror_max') }}</div>
+        </div>
       </div>
 
       {# ═══ TAB: Headers ═══════════════════════════════ #}
