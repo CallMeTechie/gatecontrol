@@ -4,6 +4,56 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
+## [1.5.1] — 2026-03-23
+
+### Security — Critical
+- **CSRF-Bypass Prevention** — Defensive reset of `req.tokenAuth` against prototype pollution attacks
+- **Route-Auth Forward-Auth** — Returns 401 instead of 200 when `x-route-domain` header is missing
+- **Caddy Config Injection** — Header name/value validation, rate_limit_window allowlist, sticky_cookie_name regex
+- **DNS-Check SSRF** — Domain validation before DNS lookup, resolved IPs removed from response
+- **Key-File Permissions** — Re-secured after recursive chown in entrypoint
+
+### Security — High
+- **Route-Auth Lockout** — Changed from IP-based to email-based lockout (prevents IP rotation bypass)
+- **OTP Range** — Full 000000–999999 range with `padStart` (was excluding leading-zero codes)
+- **OTP Resend** — Requires valid pending 2FA session before allowing code resend
+- **CSRF Key Separation** — Route-auth CSRF uses HMAC-derived key instead of shared app secret
+- **WireGuard Config Injection** — DNS validated as IP list, keepalive as integer, newlines blocked
+- **Email HTML Injection** — All interpolated values in email templates escaped
+- **Route Target SSRF** — Private/loopback IPs blocked for direct route targets (peer-linked routes unaffected)
+- **Metrics Token Leak** — Removed `?token=` query parameter auth, header-only authentication
+- **WG Key in Logs** — wg-quick output filtered to strip private key lines
+- **Trust Proxy** — Restricted to loopback only (prevents IP spoofing via X-Forwarded-For)
+- **CSP Styles** — Split into `style-src-elem` (nonce-protected) and `style-src-attr` (inline attributes)
+- **Dashboard XSS** — API integers coerced with `parseInt` and inserted via `textContent`
+
+### Security — Medium
+- **TOTP Replay Prevention** — In-memory tracking of used TOTP codes per route (90s expiry)
+- **Session Secure Warning** — Startup warning when production mode without HTTPS
+- **Rate-Limiter Bypass** — Elevated limit only for session-authenticated requests
+- **Backup Key Validation** — Regex allowlist for settings keys during restore
+- **IP Filter Fix** — Uses Express-resolved `req.ip` instead of raw X-Forwarded-For header
+- **CSS Injection** — Peer group color validated against hex regex
+- **Monitoring XSS** — Response time sanitized with `parseInt` before HTML insertion
+- **API Key Masking** — ip2location key no longer exposed in DOM, shows "Key is set" instead
+- **Health Endpoint** — Detailed component state only for localhost, external gets `{ok: true/false}`
+- **WG Signal Handling** — Guard variable prevents premature `wg-quick down` during startup
+
+### Security — Low/Info
+- Rate-limit error strings translated (EN+DE)
+- Hardcoded German strings in routes.njk replaced with i18n
+- Dead code `generateCsrfToken`/`verifyCsrfToken` removed
+- Argon2 parallelism reduced from 4 to 1 (libuv thread pool)
+- CSP `frame-ancestors: 'self'` added (clickjacking protection)
+- Crypto ciphertext split with explicit length validation
+- Branding fields capped at 255 (title) / 2000 (text) characters
+
+### Documentation
+- `documentation/SECURITY-HARDENING-v1.5.1.md` — Full security audit report with all 39 findings
+- `documentation/SECURITY-CHANGES-v1.5.md` — Detailed migration guide for breaking changes (#13, #14, Prometheus config, Header-Auth)
+
+---
+
 ## [1.5.0] — 2026-03-23
 
 ### New Features
