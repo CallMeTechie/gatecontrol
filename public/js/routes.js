@@ -208,7 +208,7 @@
           <div class="route-target">${targetDisplay}</div>
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <div class="route-tags">
           ${statusTag}${monitorTag}${cbTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${l4Tags}
         </div>
         <div class="route-actions">
