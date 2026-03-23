@@ -1,8 +1,11 @@
-# Stage 1: Caddy with L4 plugin
+# Stage 1: Caddy with L4 + ratelimit + mirror plugins
 FROM caddy:2-builder AS caddy-builder
-RUN xcaddy build \
+COPY caddy-plugins/mirror /tmp/caddy-mirror
+RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
+    xcaddy build \
     --with github.com/mholt/caddy-l4 \
-    --with github.com/mholt/caddy-ratelimit
+    --with github.com/mholt/caddy-ratelimit \
+    --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies
 FROM node:20-alpine AS builder
