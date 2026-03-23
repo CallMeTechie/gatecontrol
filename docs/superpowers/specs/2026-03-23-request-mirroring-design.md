@@ -23,7 +23,7 @@ Mirroring is implemented as a **custom Caddy HTTP handler module** (`http.handle
 
 ### 1. Caddy Go Module — `caddy-mirror`
 
-**File:** `caddy-plugins/mirror/mirror.go` (~70-80 lines)
+**Files:** `caddy-plugins/mirror/mirror.go` (~70-80 lines), `caddy-plugins/mirror/go.mod`
 
 **Registration:** `http.handlers.mirror`
 
@@ -71,10 +71,12 @@ Same pattern as `backends` (JSON text column).
 
 In `buildCaddyConfig()`, when `route.mirror_enabled === 1` and `mirror_targets` is non-empty:
 
-Insert the mirror handler into the handler chain **before** compress and reverse_proxy:
+Insert the mirror handler into the handler chain **before** compress and reverse_proxy.
+
+**Important:** `buildCaddyConfig()` has two separate handler chain constructions — the standard `routeHandlers` array and the `authHandlers` array (for routes using forward_auth / IP filtering). The mirror handler must be injected into **both** code paths at the same relative position.
 
 ```
-Handler order:
+Handler order (both code paths):
 1. Request Headers (if custom_headers.request)
 2. Rate Limit (if rate_limit_enabled)
 3. Mirror (if mirror_enabled)          ← NEW
@@ -106,6 +108,11 @@ Generated JSON:
 - Maximum 5 mirror targets per route
 - Mirror only available for HTTP routes (`route_type !== 'l4'`)
 - Mirror targets array must be non-empty when `mirror_enabled` is true
+- No mirror target may match the primary upstream (same IP:port) to prevent accidental double-delivery
+
+**Rollback:** The existing rollback logic in `update()` does not cover newer columns (compress, rate_limit, retry, backends, sticky, circuit_breaker). This is a pre-existing limitation. `mirror_enabled` and `mirror_targets` are included in the same snapshot-based rollback as all other route columns — if refactored in the future, mirror columns will benefit automatically.
+
+**Activity logging:** Enabling/disabling mirroring and changing mirror targets logs a `route_mirror_changed` event to the activity log for audit trail consistency.
 
 **GET `/api/v1/routes`** returns `mirror_enabled` and `mirror_targets` in route objects.
 
@@ -147,12 +154,13 @@ routes.mirror_max        → "Maximum 5 mirror targets" / "Maximal 5 Mirror-Ziel
 
 In the xcaddy build stage, add the mirror module:
 
+Add to the existing `xcaddy build` command (which already includes `github.com/mholt/caddy-l4` and `github.com/mholt/caddy-ratelimit`):
+
 ```dockerfile
-RUN xcaddy build \
-    --with github.com/mholt/caddy-l4 \
-    --with github.com/RussellLuo/caddy-ext/ratelimit \
-    --with github.com/custom/caddy-mirror=./caddy-plugins/mirror
+--with github.com/custom/caddy-mirror=./caddy-plugins/mirror
 ```
+
+The exact plugin paths must match the existing Dockerfile — do not replace the existing `--with` lines.
 
 ### 9. Testing
 
@@ -173,6 +181,7 @@ RUN xcaddy build \
 |------|--------|
 | `caddy-plugins/mirror/mirror.go` | NEW — Custom Caddy module |
 | `caddy-plugins/mirror/mirror_test.go` | NEW — Go unit tests |
+| `caddy-plugins/mirror/go.mod` | NEW — Go module definition |
 | `Dockerfile` | Add mirror module to xcaddy build |
 | `src/db/migrations.js` | Migration 26: mirror columns |
 | `src/services/routes.js` | Mirror handler in buildCaddyConfig() |
