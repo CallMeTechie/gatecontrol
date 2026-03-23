@@ -165,7 +165,7 @@
     if (!peer.group_id) return '';
     var group = getGroupById(peer.group_id);
     if (!group) return '';
-    var color = escapeHtml(group.color || '#6b7280');
+    var color = /^#[0-9a-fA-F]{3,8}$/.test(group.color) ? group.color : '#6b7280';
     return ' <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:1px 6px;border-radius:9999px;background:' + color + '1a;color:' + color + ';border:1px solid ' + color + '40;margin-left:4px">' +
       '<span style="width:6px;height:6px;border-radius:50%;background:' + color + ';display:inline-block"></span>' +
       escapeHtml(group.name) + '</span>';
@@ -614,7 +614,7 @@
         '</div>';
       }
       return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-group-id="' + g.id + '">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(g.color || '#6b7280') + ';flex-shrink:0"></span>' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : '#6b7280') + ';flex-shrink:0"></span>' +
         '<span style="font-size:13px;font-weight:500;flex:1">' + escapeHtml(g.name) + '</span>' +
         (g.description ? '<span style="font-size:11px;color:var(--text-3);flex:1">' + escapeHtml(g.description) + '</span>' : '') +
         '<span class="tag tag-grey" style="font-size:10px">' + g.peer_count + ' peer(s)</span>' +

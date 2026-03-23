@@ -102,6 +102,11 @@ function validateConfig() {
   if (errors.length > 0) {
     throw new Error('Configuration errors:\n  - ' + errors.join('\n  - '));
   }
+
+  // Warn if production without HTTPS (session cookies won't have Secure flag)
+  if (process.env.NODE_ENV === 'production' && !config.app.baseUrl.startsWith('https')) {
+    console.warn('GC_BASE_URL does not use HTTPS — session cookies will not have the Secure flag. This is insecure for production.');
+  }
 }
 
 module.exports = { validateConfig };

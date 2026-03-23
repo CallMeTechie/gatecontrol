@@ -83,7 +83,7 @@
         const mStatus = r.monitoring_status || 'unknown';
         const mColor = mStatus === 'up' ? 'tag-green' : mStatus === 'down' ? 'tag-red' : 'tag-grey';
         const mLabel = mStatus === 'up' ? 'UP' : mStatus === 'down' ? 'DOWN' : '?';
-        const mTime = r.monitoring_response_time != null ? ' ' + r.monitoring_response_time + 'ms' : '';
+        const mTime = r.monitoring_response_time != null ? ' ' + (parseInt(r.monitoring_response_time, 10) || 0) + 'ms' : '';
         monitorTag = '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Monitoring</span>';
         monitorTag += '<span class="tag ' + mColor + '" style="margin-left:4px"><span class="tag-dot"></span>' + mLabel + mTime + '</span>';
       }

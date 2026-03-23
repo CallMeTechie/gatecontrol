@@ -90,7 +90,12 @@ router.get('/health', async (req, res) => {
   } catch { checks.wireguard = false; }
 
   if (!checks.db || !checks.wireguard) status = 503;
-  res.status(status).json({ ok: status === 200, ...checks });
+  const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+  if (isLocalhost) {
+    res.status(status).json({ ok: status === 200, ...checks });
+  } else {
+    res.status(status).json({ ok: status === 200 });
+  }
 });
 
 // ─── Auth routes (public) ──────────────────────────

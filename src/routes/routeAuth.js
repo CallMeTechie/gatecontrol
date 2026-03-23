@@ -97,7 +97,7 @@ router.get('/verify', (req, res) => {
     const db = getDb();
     const route = db.prepare('SELECT id, ip_filter_enabled FROM routes WHERE domain = ? AND enabled = 1').get(domain);
     if (route && route.ip_filter_enabled) {
-      const clientIp = req.headers['x-forwarded-for'] || req.ip;
+      const clientIp = req.ip;
       const access = await ipFilter.checkAccess(route.id, clientIp);
       if (!access.allowed) return res.sendStatus(403);
     }
