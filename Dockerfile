@@ -19,12 +19,9 @@ RUN npm ci --production --ignore-scripts && \
 FROM node:20-alpine
 
 RUN apk add --no-cache \
-    wireguard-tools=1.0.20250521-r1 \
-    iptables=1.8.11-r1 ip6tables=1.8.11-r1 \
-    supervisor=4.3.0-r0 \
-    curl=8.17.0-r1 \
-    procps-ng=4.0.5-r0 \
-    openssl=3.5.5-r0
+    wireguard-tools \
+    iptables ip6tables \
+    supervisor curl procps openssl
 
 COPY --from=caddy-builder /usr/bin/caddy /usr/local/bin/caddy
 
