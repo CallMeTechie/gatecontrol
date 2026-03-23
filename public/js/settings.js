@@ -6,6 +6,9 @@
 (function () {
   var tabs = document.querySelectorAll('.settings-tabs .tab');
   var panels = document.querySelectorAll('.settings-panel');
+  var toggle = document.querySelector('.settings-tab-toggle');
+  var dropdown = document.querySelector('.settings-tab-dropdown');
+  var label = document.querySelector('.settings-tab-label');
   if (!tabs.length) return;
 
   function switchTab(tabName) {
@@ -15,14 +18,42 @@
     panels.forEach(function (p) {
       p.style.display = p.dataset.settingsPanel === tabName ? '' : 'none';
     });
+    // Update mobile hamburger label
+    if (label) {
+      var activeTab = document.querySelector('.settings-tabs > .tab.active');
+      if (activeTab) label.textContent = activeTab.textContent;
+    }
     try { localStorage.setItem('settings-active-tab', tabName); } catch (e) {}
   }
 
   tabs.forEach(function (t) {
     t.addEventListener('click', function () {
       switchTab(t.dataset.settingsTab);
+      // Close dropdown on mobile after selection
+      if (dropdown && dropdown.classList.contains('open')) {
+        dropdown.classList.remove('open');
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
     });
   });
+
+  // Mobile hamburger toggle
+  if (toggle && dropdown) {
+    toggle.addEventListener('click', function () {
+      var isOpen = dropdown.classList.toggle('open');
+      toggle.classList.toggle('open', isOpen);
+      toggle.setAttribute('aria-expanded', String(isOpen));
+    });
+    // Close on outside click
+    document.addEventListener('click', function (e) {
+      if (!toggle.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('open');
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
 
   // Restore last active tab
   var saved = null;
