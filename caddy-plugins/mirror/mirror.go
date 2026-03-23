@@ -22,6 +22,8 @@ var bufPool = sync.Pool{
 	New: func() any { return new(bytes.Buffer) },
 }
 
+var mirrorSem = make(chan struct{}, 100)
+
 type Mirror struct {
 	Targets      []MirrorTarget `json:"targets,omitempty"`
 	MaxBodyBytes int64          `json:"max_body_bytes,omitempty"`
@@ -63,26 +65,28 @@ func (m Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 		_, err := io.Copy(buf, io.LimitReader(r.Body, m.MaxBodyBytes+1))
+
+		// Always copy bytes out of pool buffer before returning it
+		raw := make([]byte, buf.Len())
+		copy(raw, buf.Bytes())
+		bufPool.Put(buf) // safe: no more references to buf
+
 		if err != nil {
 			m.logger.Warn("failed to read request body for mirroring", zap.Error(err))
-			r.Body = io.NopCloser(buf)
+			r.Body = io.NopCloser(bytes.NewReader(raw))
 			m.fireTargets(r, nil)
-			bufPool.Put(buf)
 			return next.ServeHTTP(w, r)
 		}
-		if int64(buf.Len()) > m.MaxBodyBytes {
+		if int64(len(raw)) > m.MaxBodyBytes {
 			m.logger.Info("request body exceeds mirror max size, mirroring without body",
-				zap.Int64("size", int64(buf.Len())),
+				zap.Int64("size", int64(len(raw))),
 				zap.Int64("max", m.MaxBodyBytes))
-			r.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
+			r.Body = io.NopCloser(bytes.NewReader(raw))
 			m.fireTargets(r, nil)
-			bufPool.Put(buf)
 			return next.ServeHTTP(w, r)
 		}
-		bodyBytes = make([]byte, buf.Len())
-		copy(bodyBytes, buf.Bytes())
+		bodyBytes = raw
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		bufPool.Put(buf)
 	}
 
 	m.fireTargets(r, bodyBytes)
@@ -93,6 +97,14 @@ func (m *Mirror) fireTargets(r *http.Request, body []byte) {
 	for _, t := range m.Targets {
 		target := t
 		go func() {
+			select {
+			case mirrorSem <- struct{}{}:
+				defer func() { <-mirrorSem }()
+			default:
+				m.logger.Warn("mirror: concurrency limit reached, dropping request", zap.String("target", target.Dial))
+				return
+			}
+
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 

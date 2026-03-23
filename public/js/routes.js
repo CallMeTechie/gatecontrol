@@ -1646,7 +1646,7 @@
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;align-items:center';
       row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
-        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (t.port || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
+        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (parseInt(t.port, 10) || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
         + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
       var inputs = row.querySelectorAll('input');
       inputs[0].addEventListener('input', function () { createMirrorTargets[i].ip = this.value; });
@@ -1681,7 +1681,7 @@
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;align-items:center';
       row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
-        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (t.port || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
+        + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (parseInt(t.port, 10) || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
         + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
       var inputs = row.querySelectorAll('input');
       inputs[0].addEventListener('input', function () { editMirrorTargets[i].ip = this.value; });
