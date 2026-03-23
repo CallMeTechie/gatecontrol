@@ -144,6 +144,8 @@ router.post('/check-dns', async (req, res) => {
   if (!domain || typeof domain !== 'string') {
     return res.status(400).json({ ok: false, error: 'domain required' });
   }
+  const domainErr = validateDomain(domain);
+  if (domainErr) return res.status(400).json({ ok: false, error: domainErr });
   try {
     const dnsTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('DNS timeout')), 2000)
@@ -153,7 +155,7 @@ router.post('/check-dns', async (req, res) => {
       Promise.race([dns.resolve4(domain), dnsTimeout]),
     ]);
     const resolves = serverIp ? addresses.includes(serverIp) : false;
-    return res.json({ ok: true, resolves, expected: serverIp, actual: addresses });
+    return res.json({ ok: true, resolves, expected: serverIp });
   } catch (err) {
     logger.debug({ error: err.message, domain }, 'DNS check failed');
     return res.json({ ok: true, resolves: false, expected: null, actual: [] });

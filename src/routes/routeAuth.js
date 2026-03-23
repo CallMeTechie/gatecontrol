@@ -90,7 +90,7 @@ function clearSessionCookie(res) {
 router.get('/verify', (req, res) => {
   (async () => {
     const domain = req.headers['x-route-domain'];
-    if (!domain) return res.sendStatus(200);
+    if (!domain) return res.sendStatus(401);
 
     // IP filter check (works for all routes with ip_filter_enabled, even without route auth)
     const { getDb } = require('../db/connection');

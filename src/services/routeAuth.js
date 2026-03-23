@@ -303,7 +303,7 @@ async function verifyPassword(authConfig, email, password) {
  * Generate a 6-digit OTP code as a zero-padded string
  */
 function generateOtp() {
-  return String(crypto.randomInt(100000, 999999));
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
 /**

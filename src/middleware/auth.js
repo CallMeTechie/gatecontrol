@@ -27,6 +27,11 @@ function extractToken(req) {
 }
 
 function requireAuth(req, res, next) {
+  // Defensive resets to prevent prototype pollution CSRF bypass
+  req.tokenAuth = false;
+  req.tokenId = null;
+  req.tokenScopes = null;
+
   // First check session auth
   if (req.session && req.session.userId) {
     return next();

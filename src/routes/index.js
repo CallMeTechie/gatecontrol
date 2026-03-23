@@ -44,11 +44,6 @@ router.get('/metrics', async (req, res) => {
       if (apiToken && apiToken.startsWith('gc_')) rawToken = apiToken;
     }
 
-    // 3. Query param ?token=gc_xxx
-    if (!rawToken && req.query.token && String(req.query.token).startsWith('gc_')) {
-      rawToken = String(req.query.token);
-    }
-
     if (rawToken) {
       const tokenRecord = tokens.authenticate(rawToken);
       if (tokenRecord) {

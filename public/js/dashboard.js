@@ -17,19 +17,32 @@
       const routesEl = document.getElementById('stat-routes');
       if (routesEl) routesEl.textContent = data.routes.active;
 
-      // Monitoring summary
+      // Monitoring summary — parseInt guards against type-coercion XSS
       const monitorEl = document.getElementById('stat-monitoring');
       if (monitorEl && data.monitoring) {
-        if (data.monitoring.total > 0) {
-          monitorEl.innerHTML = '<span style="color:var(--green)">' + data.monitoring.up + '</span>/<span>' + data.monitoring.total + '</span>';
-          if (data.monitoring.down > 0) {
-            monitorEl.innerHTML += ' <span style="color:var(--red);font-size:12px">(' + data.monitoring.down + ' down)</span>';
+        var up = parseInt(data.monitoring.up, 10) || 0;
+        var total = parseInt(data.monitoring.total, 10) || 0;
+        var down = parseInt(data.monitoring.down, 10) || 0;
+        if (total > 0) {
+          monitorEl.textContent = '';
+          var spanUp = document.createElement('span');
+          spanUp.style.color = 'var(--green)';
+          spanUp.textContent = up;
+          var spanTotal = document.createElement('span');
+          spanTotal.textContent = total;
+          monitorEl.appendChild(spanUp);
+          monitorEl.appendChild(document.createTextNode('/'));
+          monitorEl.appendChild(spanTotal);
+          if (down > 0) {
+            var spanDown = document.createElement('span');
+            spanDown.style.cssText = 'color:var(--red);font-size:12px';
+            spanDown.textContent = ' (' + down + ' down)';
+            monitorEl.appendChild(spanDown);
           }
         } else {
-          monitorEl.textContent = '—';
+          monitorEl.textContent = '\u2014';
         }
       }
-
       // Traffic today
       const trafficEl = document.getElementById('stat-traffic');
       if (trafficEl) trafficEl.innerHTML = formatTrafficValue(data.traffic.today);
