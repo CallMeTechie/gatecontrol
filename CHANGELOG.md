@@ -4,6 +4,62 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
+## [1.4.0] — 2026-03-23
+
+### New Features — Phase 1: Foundation
+- **API Tokens** — Stateless token authentication for automation (CI/CD, Home Automation, scripts). Scoped permissions (full-access, read-only, per-resource). SHA-256 hash storage, `gc_` prefix, Bearer and X-API-Token header support
+- **Migration History Table** — Versioned database migration system with auto-detection of legacy databases. 25 migrations tracked
+- **Mobile Sidebar** — Responsive hamburger menu for phones/tablets (< 1024px) with slide-in animation, overlay, focus trap, ARIA
+
+### New Features — Phase 2: Core Improvements
+- **Peer Expiry** — Optional expiration date per peer (1d/7d/30d/90d/custom). Background task auto-disables expired peers every 60s. Visual indicators (expired/expires soon)
+- **Peer Access Control (ACL)** — Restrict which WireGuard peers can access a route via Caddy `remote_ip` matcher. Multi-select checklist in route settings
+- **Automatic Backups** — Scheduled backups (6h/12h/daily/3d/weekly) with retention limit. Run-now button, file list with download/delete in Settings
+- **Log Export** — Download activity and access logs as CSV or JSON with filter support
+
+### New Features — Phase 3: Traefik-Inspired Features
+- **Gzip/Zstd Compression** — Per-route response compression via Caddy `encode` handler
+- **Custom Request/Response Headers** — Key-value editor per route with CORS and Security header presets. New "Headers" tab in route edit modal
+- **Per-Route Rate Limiting** — Configurable requests/window via `caddy-ratelimit` plugin (added to Dockerfile)
+- **Retry with Backoff** — Automatic retries on backend failure via Caddy `load_balancing.retries`
+- **Multiple Backends / Load Balancing** — Weighted round-robin across multiple backend targets per route
+- **Sticky Sessions** — Cookie-based session affinity for multi-backend routes
+
+### New Features — Phase 4: Observability & Advanced
+- **Prometheus Metrics Export** — `/metrics` endpoint with 12 gauges (peers, routes, CPU, RAM, uptime, per-peer traffic, per-route monitoring). Token + query-param auth. Toggle in Settings
+- **Circuit Breaker** — Per-route circuit breaker (closed/open/half-open). Returns 503 via Caddy when backends fail repeatedly. Auto-recovery via monitoring checks
+- **Batch Operations** — Multi-select peers and routes for bulk enable/disable/delete with floating action bar
+- **Peer Groups** — Organize peers by team/location with colored badges, filter dropdown, group management card. Backup v3
+
+### Documentation
+- **API.md** — Complete reference for all 68+ endpoints with request/response formats
+- **API_GUIDE.md** — Practical integration guide (Home Assistant, Python, Node.js, Bash, Telegram/Discord bots, CI/CD, Prometheus, Grafana)
+- **FEATURES.md** — Detailed feature documentation
+- **Phase documentation** — PHASE1-FOUNDATION.md, PHASE2-CORE.md, PHASE3-TRAEFIK-FEATURES.md, PHASE4-OBSERVABILITY.md
+- **CHANGELOG.md** — Release notes for all versions
+
+### Testing
+- **API test script** expanded to 231 tests across 31 sections covering all features
+- Tests cover: health, auth, dashboard, peers CRUD, routes CRUD, route auth, settings, SMTP, logs, WireGuard, Caddy, system, webhooks, tokens, backup, peer expiry, ACL, auto-backup, log export, compression, custom headers, rate limiting, retry, backends, sticky sessions, Prometheus, circuit breaker, batch operations, peer groups, error handling, security
+
+### Improvements
+- Docker: `caddy-ratelimit` plugin added to Caddy build, `/data/backups` directory
+- Deploy: `SYS_MODULE` capability in docker-compose.yml, feature summary in setup.sh
+- Rate limiting: 1000 req/15min for token-authenticated requests (vs 100 for unauthenticated)
+- Backup format upgraded to version 3 (includes peer groups and ACL rules)
+
+### Bug Fixes
+- Fix token auth: use `req.originalUrl` to detect API routes
+- Fix Caddy `load_balancing.selection_policy` format (object, not array)
+- Fix Caddy retry config (inside `load_balancing` object, not top-level)
+- Fix all route toggle switches (remove `data-managed`, deduplicate handlers)
+- Fix ACL toggle with self-contained click handler
+- Fix batch bar visibility in batch mode
+- Fix backup test for version 3
+- Remove browser confirm dialog on token revoke
+
+---
+
 ## [1.3.0] — 2026-03-20
 
 ### New Features
