@@ -54,6 +54,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Multiple Backends / Load Balancing** — Weighted round-robin across multiple backend targets per route
 - **Sticky Sessions** — Cookie-based session affinity for multi-backend routes with configurable cookie name and TTL
 - **Circuit Breaker** — Per-route circuit breaker (closed/open/half-open) that returns 503 when backends fail repeatedly, with automatic recovery via monitoring checks
+- **Request Mirroring** — Duplicate requests asynchronously to up to 5 secondary backends for testing, debugging, or shadow deployments. Custom Caddy Go module with async goroutines, 10 MB body buffer with sync.Pool, and 10s timeout. Client response is never affected by mirror targets
 - **Batch operations** — multi-select routes for bulk enable, disable, or delete
 - Backend HTTPS support for targets with self-signed certificates (e.g., Synology DSM on port 5001)
 - Link routes directly to VPN peers — the route automatically targets the peer's WireGuard IP
