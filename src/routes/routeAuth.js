@@ -32,7 +32,7 @@ router.use(i18nMiddleware);
 const crypto = require('crypto');
 
 const COOKIE_SID = 'gc.route.sid';
-const CSRF_SECRET = config.app.secret; // reuse app secret for HMAC
+const CSRF_SECRET = crypto.createHmac('sha256', config.app.secret).update('csrf-route-auth').digest('hex');
 const CSRF_MAX_AGE = 15 * 60 * 1000; // 15 min
 
 /**
@@ -191,7 +191,7 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     }
 
     // Check account lockout
-    const lockoutId = `${req.ip}:${authConfig.route_id}`;
+    const lockoutId = `${email}:${authConfig.route_id}`;
     const lockoutStatus = lockout.isLocked(lockoutId);
     if (lockoutStatus.locked) {
       const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
@@ -254,6 +254,13 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
+    // Verify pending 2FA session exists before allowing code resend
+    const sessionId = req.cookies && req.cookies[COOKIE_SID];
+    const pendingSession = sessionId ? getSession(sessionId) : null;
+    if (!pendingSession || !pendingSession.two_factor_pending) {
+      return res.status(403).json({ ok: false, error: req.t('route_auth.session_expired') });
+    }
+
     // Verify email matches config
     if (authConfig.email !== email) {
       return res.status(400).json({ ok: false, error: req.t('route_auth.email_mismatch') });
@@ -282,20 +289,20 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
-    // Check account lockout for code verification
-    const lockoutId = `${req.ip}:${authConfig.route_id}`;
-    const lockoutStatus = lockout.isLocked(lockoutId);
-    if (lockoutStatus.locked) {
-      const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
-      return res.status(429).json({ ok: false, error: req.t('route_auth.account_locked').replace('{{minutes}}', String(mins)) });
-    }
-
     // Get current session (pending or full)
     const sessionId = req.cookies && req.cookies[COOKIE_SID];
     const existingSession = sessionId ? getSession(sessionId) : null;
     const isTwoFactor = existingSession && existingSession.two_factor_pending;
 
     const email = (existingSession && existingSession.email) || req.body.email || authConfig.email || 'anonymous';
+
+    // Check account lockout for code verification
+    const lockoutId = `${email}:${authConfig.route_id}`;
+    const lockoutStatus = lockout.isLocked(lockoutId);
+    if (lockoutStatus.locked) {
+      const mins = Math.ceil(lockoutStatus.remainingSeconds / 60);
+      return res.status(429).json({ ok: false, error: req.t('route_auth.account_locked').replace('{{minutes}}', String(mins)) });
+    }
 
     // Determine verification method
     let isValid = false;

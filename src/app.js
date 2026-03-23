@@ -18,7 +18,7 @@ function createApp() {
   const app = express();
 
   // ─── Trust proxy (behind Caddy) ───────────────────
-  app.set('trust proxy', 1);
+  app.set('trust proxy', 'loopback');
 
   // ─── CSP nonce generation ───────────────────────
   app.use((req, res, next) => {

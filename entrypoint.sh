@@ -161,5 +161,9 @@ chown root:root "$KEY_FILE"
 chown -R gatecontrol:gatecontrol /data 2>/dev/null || true
 chown -R gatecontrol:gatecontrol /app/config 2>/dev/null || true
 
+# Re-secure sensitive key files after recursive chown
+chown root:gatecontrol /data/.session_secret /data/.encryption_key 2>/dev/null || true
+chmod 640 /data/.session_secret /data/.encryption_key 2>/dev/null || true
+
 echo "» Starting services via supervisord..."
 exec "$@"

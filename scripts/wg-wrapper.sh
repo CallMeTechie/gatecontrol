@@ -9,7 +9,7 @@ _stop() {
 trap _stop TERM INT
 
 echo "» Starting WireGuard interface ${GC_WG_INTERFACE}..."
-wg-quick up "$GC_WG_INTERFACE" 2>&1
+wg-quick up "$GC_WG_INTERFACE" 2>&1 | grep -vi "privatekey" || true
 
 # Keep the process alive until signalled
 sleep infinity &
