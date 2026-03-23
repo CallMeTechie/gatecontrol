@@ -148,6 +148,8 @@
   "routes.rate_limit_window_5m": "5 minutes",
   "routes.rate_limit_window_1h": "1 hour",
   "routes.rate_limit_badge": "Rate Limit: {{requests}}/{{window}}",
+  "routes.backend_https": "Backend HTTPS",
+  "routes.backend_https_desc": "Backend uses HTTPS (e.g. Synology DSM Port 5001)",
   "routes.compress": "Compression",
   "routes.compress_desc": "Enable Gzip/Zstd response compression via Caddy",
   "routes.compress_badge": "Compress",
@@ -409,6 +411,8 @@
 
   "error.rate_limit.login": "Too many login attempts, please try again later",
   "error.rate_limit.api": "Too many requests, please try again later",
+  "error.rate_limit.route_auth_login": "Too many login attempts. Try again later.",
+  "error.rate_limit.route_auth_code": "Too many code requests. Try again later.",
 
   "error.dashboard.stats": "Failed to fetch dashboard stats",
   "error.dashboard.traffic": "Failed to fetch traffic data",
@@ -487,6 +491,7 @@
   "route_auth.session_7d": "7 days",
   "route_auth.session_30d": "30 days",
   "route_auth.totp_setup": "Set up TOTP",
+  "route_auth.totp_setup_hint": "TOTP can be configured after creating the route.",
   "route_auth.totp_scan_qr": "Scan QR code with authenticator app",
   "route_auth.totp_confirm_code": "Enter code to confirm setup:",
   "route_auth.totp_confirm": "Confirm",

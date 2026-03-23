@@ -34,7 +34,7 @@ const routeAuthLoginLimiter = rateLimit({
   legacyHeaders: true,
   keyGenerator: (req) => req.ip,
   handler: (req, res) => {
-    res.status(429).json({ ok: false, error: 'Too many login attempts. Try again later.' });
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.route_auth_login') || 'Too many login attempts. Try again later.' });
   },
 });
 
@@ -45,7 +45,7 @@ const routeAuthCodeLimiter = rateLimit({
   legacyHeaders: true,
   keyGenerator: (req) => req.ip,
   handler: (req, res) => {
-    res.status(429).json({ ok: false, error: 'Too many code requests. Try again later.' });
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.route_auth_code') || 'Too many code requests. Try again later.' });
   },
 });
 

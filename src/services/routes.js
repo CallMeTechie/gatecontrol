@@ -618,6 +618,13 @@ async function create(data) {
     if (descErr) throw new Error(descErr);
   }
 
+  if (data.branding_title && data.branding_title.length > 255) {
+    throw new Error('Branding title must be 255 characters or less');
+  }
+  if (data.branding_text && data.branding_text.length > 2000) {
+    throw new Error('Branding text must be 2000 characters or less');
+  }
+
   const db = getDb();
   const domain = data.domain ? sanitize(data.domain).toLowerCase() : null;
 
@@ -819,6 +826,13 @@ async function update(id, data) {
   if (data.description !== undefined) {
     const descErr = validateDescription(data.description);
     if (descErr) throw new Error(descErr);
+  }
+
+  if (data.branding_title && data.branding_title.length > 255) {
+    throw new Error('Branding title must be 255 characters or less');
+  }
+  if (data.branding_text && data.branding_text.length > 2000) {
+    throw new Error('Branding text must be 2000 characters or less');
   }
 
   // Validate and hash basic auth credentials when enabled

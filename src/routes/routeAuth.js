@@ -15,8 +15,6 @@ const {
   createAndSendOtp,
   verifyOtp,
   verifyTotp,
-  generateCsrfToken,
-  // verifyCsrfToken not needed - using HMAC-signed tokens
   maskEmail,
 } = require('../services/routeAuth');
 const { isSmtpConfigured } = require('../services/email');

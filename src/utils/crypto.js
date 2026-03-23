@@ -81,10 +81,12 @@ function decrypt(ciphertext) {
     throw new Error('GC_ENCRYPTION_KEY is not set — cannot decrypt data');
   }
 
-  const [ivHex, tagHex, encHex] = ciphertext.split(':');
-  if (!ivHex || !tagHex || !encHex) {
-    throw new Error('Invalid ciphertext format — data may be corrupted or stored unencrypted');
-  }
+  const parts = ciphertext.split(':');
+  if (parts.length !== 3) throw new Error('Invalid ciphertext format');
+  const [ivHex, tagHex, encHex] = parts;
+  if (ivHex.length !== 24) throw new Error('Invalid IV length');
+  if (tagHex.length !== 32) throw new Error('Invalid auth tag length');
+  if (!encHex || encHex.length === 0) throw new Error('Empty ciphertext');
 
   const keyBuf = Buffer.from(key, 'hex');
   const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuf, Buffer.from(ivHex, 'hex'));

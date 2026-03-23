@@ -37,6 +37,7 @@ function createApp() {
         scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
+        frameAncestors: ["'self'"],
       },
     },
     crossOriginEmbedderPolicy: false,

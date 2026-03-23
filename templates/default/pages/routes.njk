@@ -105,8 +105,8 @@
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
             <div>
-              <div style="font-size:13px;font-weight:600">Backend HTTPS</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">Backend nutzt HTTPS (z.B. Synology DSM Port 5001)</div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.backend_https') or 'Backend HTTPS' }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backend_https_desc') or 'Backend uses HTTPS (e.g. Synology DSM Port 5001)' }}</div>
             </div>
             <div class="toggle" data-field="backend_https"></div>
           </div>
@@ -166,7 +166,7 @@
               </div>
               <div id="create-ra-sf-totp-group" style="display:none;margin-bottom:14px">
                 <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center">
-                  {{ t('route_auth.totp_setup') }} — TOTP kann nach dem Erstellen der Route eingerichtet werden.
+                  {{ t('route_auth.totp_setup') }} — {{ t('route_auth.totp_setup_hint') or 'TOTP can be configured after creating the route.' }}
                 </div>
               </div>
             </div>
@@ -200,7 +200,7 @@
                 </div>
                 <div id="create-ra-2fa-totp-group" style="display:none">
                   <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;margin-top:8px">
-                    TOTP kann nach dem Erstellen der Route eingerichtet werden.
+                    {{ t('route_auth.totp_setup_hint') or 'TOTP can be configured after creating the route.' }}
                   </div>
                 </div>
               </div>

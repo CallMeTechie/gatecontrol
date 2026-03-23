@@ -478,28 +478,6 @@ function maskEmail(email) {
   return `${local[0]}***@${domain}`;
 }
 
-/**
- * Generate a CSRF token (32 random bytes as hex)
- */
-function generateCsrfToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Verify a CSRF token using timing-safe comparison
- */
-function verifyCsrfToken(cookieToken, bodyToken) {
-  if (!cookieToken || !bodyToken) return false;
-  try {
-    const a = Buffer.from(cookieToken, 'hex');
-    const b = Buffer.from(bodyToken, 'hex');
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
 module.exports = {
   // Cleanup
   startSessionCleanup,
@@ -527,6 +505,4 @@ module.exports = {
   verifyTotp,
   // Helpers
   maskEmail,
-  generateCsrfToken,
-  verifyCsrfToken,
 };
