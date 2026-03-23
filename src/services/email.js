@@ -5,6 +5,11 @@ const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 let cachedTransporter = null;
 
 // ---------------------------------------------------------------------------
@@ -125,14 +130,17 @@ async function sendMail({ to, subject, text, html }) {
 async function sendOtpEmail({ to, code, domain, lang }) {
   const isDE = lang === 'de';
 
+  const safeDomain = escapeHtml(domain);
+  const safeCode = escapeHtml(code);
+
   const subject = isDE
     ? `Ihr Einmalcode für ${domain}`
     : `Your one-time code for ${domain}`;
 
   const heading = isDE ? 'Ihr Einmalcode' : 'Your One-Time Code';
   const intro = isDE
-    ? `Verwenden Sie den folgenden Code, um sich bei <strong>${domain}</strong> anzumelden:`
-    : `Use the following code to sign in to <strong>${domain}</strong>:`;
+    ? `Verwenden Sie den folgenden Code, um sich bei <strong>${safeDomain}</strong> anzumelden:`
+    : `Use the following code to sign in to <strong>${safeDomain}</strong>:`;
   const validity = isDE
     ? 'Dieser Code ist <strong>5 Minuten</strong> gültig.'
     : 'This code is valid for <strong>5 minutes</strong>.';
@@ -149,7 +157,7 @@ async function sendOtpEmail({ to, code, domain, lang }) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
+  <title>${escapeHtml(subject)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:40px 0;">
@@ -160,7 +168,7 @@ async function sendOtpEmail({ to, code, domain, lang }) {
           <tr>
             <td style="background-color:#0a6e4f;padding:28px 32px;">
               <p style="margin:0;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:-0.3px;">GateControl</p>
-              <p style="margin:4px 0 0;font-size:13px;color:rgba(255,255,255,0.75);">${domain}</p>
+              <p style="margin:4px 0 0;font-size:13px;color:rgba(255,255,255,0.75);">${safeDomain}</p>
             </td>
           </tr>
           <!-- Body -->
@@ -172,7 +180,7 @@ async function sendOtpEmail({ to, code, domain, lang }) {
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
                 <tr>
                   <td align="center" style="background-color:#f0faf6;border:2px solid #0a6e4f;border-radius:8px;padding:20px;">
-                    <span style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#0a6e4f;font-family:'Courier New',Courier,monospace;">${code}</span>
+                    <span style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#0a6e4f;font-family:'Courier New',Courier,monospace;">${safeCode}</span>
                   </td>
                 </tr>
               </table>
@@ -258,6 +266,8 @@ async function sendMonitoringAlert({ to, domain, status, responseTime, target })
   if (!isSmtpConfigured()) return;
 
   const isDown = status === 'down';
+  const safeDomain = escapeHtml(domain);
+  const safeTarget = escapeHtml(target);
   const subject = isDown
     ? `[GateControl] Route down: ${domain}`
     : `[GateControl] Route recovered: ${domain}`;
@@ -265,9 +275,9 @@ async function sendMonitoringAlert({ to, domain, status, responseTime, target })
   const body = [
     isDown ? 'A monitored route is DOWN.' : 'A monitored route has RECOVERED.',
     '',
-    `Domain: ${domain}`,
-    `Target: ${target}`,
-    `Status: ${status.toUpperCase()}`,
+    `Domain: ${safeDomain}`,
+    `Target: ${safeTarget}`,
+    `Status: ${escapeHtml(status).toUpperCase()}`,
     `Response time: ${responseTime}ms`,
     `Time: ${new Date().toISOString()}`,
     '',

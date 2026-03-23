@@ -234,6 +234,18 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
+    // SSRF protection: block private/loopback IPs for direct target_ip (not peer-linked routes)
+    if (target_ip && !peer_id) {
+      const parts = target_ip.split('.').map(Number);
+      if (parts[0] === 127 || parts[0] === 10 ||
+          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+          (parts[0] === 192 && parts[1] === 168) ||
+          (parts[0] === 169 && parts[1] === 254) ||
+          parts[0] === 0) {
+        return res.status(400).json({ ok: false, error: req.t('error.routes.private_ip') || 'Private/loopback IPs are not allowed as route targets' });
+      }
+    }
+
     // Validate mirror targets
     if (mirror_targets) {
       if (!Array.isArray(mirror_targets)) {
@@ -329,6 +341,18 @@ router.put('/:id', async (req, res) => {
     }
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
+    // SSRF protection: block private/loopback IPs for direct target_ip (not peer-linked routes)
+    if (target_ip && !peer_id) {
+      const parts = target_ip.split('.').map(Number);
+      if (parts[0] === 127 || parts[0] === 10 ||
+          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+          (parts[0] === 192 && parts[1] === 168) ||
+          (parts[0] === 169 && parts[1] === 254) ||
+          parts[0] === 0) {
+        return res.status(400).json({ ok: false, error: req.t('error.routes.private_ip') || 'Private/loopback IPs are not allowed as route targets' });
+      }
     }
 
     // Validate mirror targets

@@ -144,6 +144,31 @@ async function update(id, data) {
     if (descErr) throw new Error(descErr);
   }
 
+  // Validate dns — must be comma-separated valid IPs, no newlines
+  if (data.dns !== undefined && data.dns) {
+    if (/[\r\n]/.test(data.dns)) {
+      throw new Error('DNS must not contain newline characters');
+    }
+    const dnsEntries = data.dns.split(',').map(s => s.trim());
+    for (const entry of dnsEntries) {
+      if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(entry)) {
+        throw new Error('Invalid DNS server IP: ' + entry);
+      }
+    }
+  }
+
+  // Validate persistentKeepalive — must be integer 0-65535, no newlines
+  if (data.persistentKeepalive !== undefined && data.persistentKeepalive !== null) {
+    if (typeof data.persistentKeepalive === 'string' && /[\r\n]/.test(data.persistentKeepalive)) {
+      throw new Error('PersistentKeepalive must not contain newline characters');
+    }
+    const pk = parseInt(data.persistentKeepalive, 10);
+    if (isNaN(pk) || pk < 0 || pk > 65535) {
+      throw new Error('PersistentKeepalive must be 0-65535');
+    }
+    data.persistentKeepalive = pk;
+  }
+
   // Handle expires_at: explicit null clears expiry, undefined means no change
   const expiresAtValue = data.expiresAt !== undefined
     ? (data.expiresAt || null)

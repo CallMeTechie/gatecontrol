@@ -11,6 +11,28 @@ const logger = require('../utils/logger');
 
 const CADDY_ADMIN = config.caddy.adminUrl;
 
+// ─── Header / config injection prevention ────────────────
+const HEADER_NAME_RE = /^[a-zA-Z0-9\-]+$/;
+const CADDY_PLACEHOLDER_RE = /\{[^}]+\}/;
+const VALID_RATE_WINDOWS = ['1s', '1m', '5m', '1h'];
+const STICKY_COOKIE_NAME_RE = /^[a-zA-Z0-9_\-]+$/;
+
+function isValidHeaderName(name) {
+  return typeof name === 'string' && name.length <= 256 && HEADER_NAME_RE.test(name);
+}
+
+function isValidHeaderValue(value) {
+  return typeof value === 'string' && value.length <= 4096 && !CADDY_PLACEHOLDER_RE.test(value);
+}
+
+function sanitizeRateWindow(window) {
+  return VALID_RATE_WINDOWS.includes(window) ? window : '1m';
+}
+
+function sanitizeStickyCookieName(name) {
+  return (typeof name === 'string' && STICKY_COOKIE_NAME_RE.test(name)) ? name : 'gc_sticky';
+}
+
 // ─── Caddy Admin API helper ─────────────────────────────
 async function caddyApi(path, options = {}) {
   const url = `${CADDY_ADMIN}${path}`;
@@ -116,7 +138,7 @@ function buildCaddyConfig() {
       if (route.sticky_enabled) {
         // Sticky sessions replace load balancing policy with cookie affinity
         reverseProxy.load_balancing = {
-          selection_policy: { policy: 'cookie', name: route.sticky_cookie_name || 'gc_sticky', max_age: (route.sticky_cookie_ttl || '3600') + 's' },
+          selection_policy: { policy: 'cookie', name: sanitizeStickyCookieName(route.sticky_cookie_name), max_age: (route.sticky_cookie_ttl || '3600') + 's' },
         };
       } else {
         const weights = backends.map(b => b.weight || 1);
@@ -143,7 +165,9 @@ function buildCaddyConfig() {
     if (customHeaders && Array.isArray(customHeaders.response) && customHeaders.response.length > 0) {
       const responseSet = {};
       for (const h of customHeaders.response) {
-        if (h.name && h.value) responseSet[h.name] = [h.value];
+        if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
+          responseSet[h.name] = [h.value];
+        }
       }
       if (Object.keys(responseSet).length > 0) {
         reverseProxy.headers = { response: { set: responseSet } };
@@ -185,7 +209,9 @@ function buildCaddyConfig() {
     if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
       const requestSet = {};
       for (const h of customHeaders.request) {
-        if (h.name && h.value) requestSet[h.name] = [h.value];
+        if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
+          requestSet[h.name] = [h.value];
+        }
       }
       if (Object.keys(requestSet).length > 0) {
         routeHandlers.push({
@@ -202,7 +228,7 @@ function buildCaddyConfig() {
         rate_limits: {
           static: {
             key: '{http.request.remote.host}',
-            window: route.rate_limit_window || '1m',
+            window: sanitizeRateWindow(route.rate_limit_window),
             max_events: route.rate_limit_requests || 100,
           },
         },
@@ -331,7 +357,9 @@ function buildCaddyConfig() {
       if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
         const requestSet = {};
         for (const h of customHeaders.request) {
-          if (h.name && h.value) requestSet[h.name] = [h.value];
+          if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
+            requestSet[h.name] = [h.value];
+          }
         }
         if (Object.keys(requestSet).length > 0) {
           authHandlers.push({
@@ -346,7 +374,7 @@ function buildCaddyConfig() {
           rate_limits: {
             static: {
               key: '{http.request.remote.host}',
-              window: route.rate_limit_window || '1m',
+              window: sanitizeRateWindow(route.rate_limit_window),
               max_events: route.rate_limit_requests || 100,
             },
           },

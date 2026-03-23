@@ -372,6 +372,7 @@
   "error.routes.l4_port_blocked": "Dieser Port ist vom System reserviert",
   "error.routes.l4_port_conflict": "Port-Konflikt mit einer anderen L4-Route erkannt",
   "error.routes.l4_port_range_too_large": "Port-Bereich überschreitet die maximal erlaubte Größe",
+  "error.routes.private_ip": "Private- oder Loopback-IPs sind als direkte Route-Ziele nicht erlaubt",
 
   "error.settings.profile_get": "Profil konnte nicht geladen werden",
   "error.settings.profile_update": "Profil konnte nicht aktualisiert werden",
