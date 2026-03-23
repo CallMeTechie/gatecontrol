@@ -4,6 +4,30 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
+## [1.5.0] — 2026-03-23
+
+### New Features
+- **Request Mirroring** — Duplicate HTTP requests asynchronously to up to 5 secondary backends for testing, debugging, or shadow deployments. Implemented as a custom Caddy Go module (`http.handlers.mirror`) with async goroutines, `sync.Pool` body buffering (max 10 MB), and 10s per-target timeout. Mirror targets receive an exact copy (method, URI, headers, body). Client response is never affected. WebSocket upgrades are automatically skipped. Configurable via UI toggle + target editor or API.
+
+### Improvements
+- Docker: Custom `caddy-mirror` Go module added to Caddy build via xcaddy
+- `.dockerignore` excludes `*.tar.gz` to reduce build context size
+- Activity log: `route_mirror_changed` event for mirror configuration audit trail
+- Server-side validation for mirror targets (IP, port, max 5, no primary-backend overlap, HTTP-only)
+
+### UI
+- Mirror toggle + target editor in route create form and edit modal
+- Blue `Mirror: N targets` badge on route cards
+- Mobile FAB speed-dial with Peer/Route add options
+- Settings tab bar: no vertical scroll, no rounded corners, active tab with bottom border
+- Settings tabs collapse to hamburger menu on mobile (≤900px)
+- Route badges on mobile: horizontal scroll instead of stacking
+
+### i18n
+- 8 new mirror-related translation keys (EN + DE)
+
+---
+
 ## [1.4.0] — 2026-03-23
 
 ### New Features — Foundation
