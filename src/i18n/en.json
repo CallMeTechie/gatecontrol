@@ -186,6 +186,13 @@
   "certs.no_certs": "No HTTPS routes configured",
 
   "settings.subtitle": "Application configuration",
+  "settings.tab_general": "General",
+  "settings.tab_security": "Security",
+  "settings.tab_backup": "Backup",
+  "settings.tab_email": "Email & SMTP",
+  "settings.tab_monitoring": "Monitoring",
+  "settings.tab_api": "API & Webhooks",
+  "settings.tab_advanced": "Advanced",
 
   "profile.title": "User Profile",
   "profile.subtitle": "Manage your account and preferences",

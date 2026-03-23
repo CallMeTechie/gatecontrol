@@ -2,6 +2,36 @@
 
 // Note: btn.innerHTML usage below is safe - only hardcoded SVG paths are inserted, no user input.
 
+// ─── Settings Tab Switching ──────────────────────────────
+(function () {
+  var tabs = document.querySelectorAll('.settings-tabs .tab');
+  var panels = document.querySelectorAll('.settings-panel');
+  if (!tabs.length) return;
+
+  function switchTab(tabName) {
+    tabs.forEach(function (t) {
+      t.classList.toggle('active', t.dataset.settingsTab === tabName);
+    });
+    panels.forEach(function (p) {
+      p.style.display = p.dataset.settingsPanel === tabName ? '' : 'none';
+    });
+    try { localStorage.setItem('settings-active-tab', tabName); } catch (e) {}
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      switchTab(t.dataset.settingsTab);
+    });
+  });
+
+  // Restore last active tab
+  var saved = null;
+  try { saved = localStorage.getItem('settings-active-tab'); } catch (e) {}
+  if (saved && document.querySelector('[data-settings-panel="' + saved + '"]')) {
+    switchTab(saved);
+  }
+})();
+
 (function () {
   // ─── Clear logs ──────────────────────────────────────────
   document.getElementById('btn-clear-logs').addEventListener('click', async function() {
