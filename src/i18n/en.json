@@ -247,6 +247,7 @@
   "logs.no_access_entries": "No access log entries",
   "settings.confirm_clear_logs": "Clear all activity logs? This action cannot be undone.",
   "settings.logs_cleared": "Logs cleared",
+  "settings.key_is_set": "Key is set",
   "settings.confirm_delete_webhook": "Delete this webhook?",
   "security.title": "Security",
   "security.lockout.title": "Account Lockout",

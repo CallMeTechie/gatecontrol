@@ -414,7 +414,7 @@ router.put('/data', (req, res) => {
 
 router.get('/ip2location', (req, res) => {
   const key = settings.get('ip2location.api_key', '');
-  res.json({ ok: true, data: { api_key: key ? key.substring(0, 4) + '****' : '' } });
+  res.json({ ok: true, data: { has_api_key: !!key } });
 });
 
 router.put('/ip2location', (req, res) => {

@@ -374,12 +374,17 @@ async function restoreBackup(backup) {
     }
 
     // Restore settings
+    const SAFE_KEY_RE = /^[a-zA-Z0-9_.\-]+$/;
     const insertSetting = db.prepare(`
       INSERT INTO settings (key, value, updated_at)
       VALUES (?, ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
     `);
     for (const s of settings) {
+      if (!s.key || !SAFE_KEY_RE.test(s.key)) {
+        logger.warn({ key: s.key }, 'Skipping invalid settings key during restore');
+        continue;
+      }
       insertSetting.run(s.key, s.value);
     }
 

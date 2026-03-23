@@ -389,6 +389,27 @@ function verifyOtp(routeId, email, code) {
 }
 
 // ---------------------------------------------------------------------------
+// TOTP — replay prevention
+// ---------------------------------------------------------------------------
+
+const usedTotpCodes = new Map();
+
+function markTotpUsed(routeId, token) {
+  const key = `${routeId}:${token}`;
+  usedTotpCodes.set(key, Date.now());
+  // Cleanup old entries every time
+  const cutoff = Date.now() - 90000; // 90s = 3 windows
+  for (const [k, ts] of usedTotpCodes) {
+    if (ts < cutoff) usedTotpCodes.delete(k);
+  }
+}
+
+function isTotpUsed(routeId, token) {
+  const key = `${routeId}:${token}`;
+  return usedTotpCodes.has(key);
+}
+
+// ---------------------------------------------------------------------------
 // TOTP
 // ---------------------------------------------------------------------------
 
@@ -416,7 +437,11 @@ function generateTotpSecret(domain) {
 /**
  * Verify a TOTP token against an encrypted secret
  */
-function verifyTotp(encryptedSecret, token) {
+function verifyTotp(encryptedSecret, token, routeId) {
+  if (routeId && isTotpUsed(routeId, String(token))) {
+    return false; // replay detected
+  }
+
   let secretBase32;
   try {
     secretBase32 = decrypt(encryptedSecret);
@@ -433,7 +458,10 @@ function verifyTotp(encryptedSecret, token) {
   });
 
   const delta = totp.validate({ token: String(token), window: 1 });
-  return delta !== null;
+  if (delta === null) return false;
+
+  if (routeId) markTotpUsed(routeId, String(token));
+  return true;
 }
 
 // ---------------------------------------------------------------------------

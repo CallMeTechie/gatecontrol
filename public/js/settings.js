@@ -653,9 +653,9 @@
   async function loadIp2locationSettings() {
     try {
       var data = await api.get('/api/v1/settings/ip2location');
-      if (data.ok && data.data.api_key) {
+      if (data.ok && data.data.has_api_key) {
         var el = document.getElementById('ip2location-key');
-        if (el) el.placeholder = data.data.api_key;
+        if (el) el.placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + ' (' + (GC.t['settings.key_is_set'] || 'Key is set') + ')';
       }
     } catch (err) { console.error('Failed to load ip2location settings:', err); }
   }

@@ -314,7 +314,7 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
       if (!authConfig.totp_secret_encrypted) {
         return res.status(400).json({ ok: false, error: req.t('route_auth.totp_not_configured') });
       }
-      isValid = verifyTotp(authConfig.totp_secret_encrypted, code);
+      isValid = verifyTotp(authConfig.totp_secret_encrypted, code, authConfig.route_id);
     } else {
       // email OTP
       isValid = verifyOtp(authConfig.route_id, email, code);
