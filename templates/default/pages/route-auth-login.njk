@@ -9,16 +9,16 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/route-auth.css">
   {% if branding and branding.color %}
-  <style>
+  <style nonce="{{ cspNonce }}">
     :root { --ra-accent: {{ branding.color }}; }
     .login-card .btn-primary { background: {{ branding.color }}; }
     .logo-icon { background: {{ branding.color }}; }
   </style>
   {% endif %}
   {% if branding and branding.bg_image %}
-  <style>body { background: url('/branding/{{ branding.bg_image }}') center/cover no-repeat fixed; }</style>
+  <style nonce="{{ cspNonce }}">body { background: url('/branding/{{ branding.bg_image }}') center/cover no-repeat fixed; }</style>
   {% elif branding and branding.bg %}
-  <style>body { background: {{ branding.bg }}; }</style>
+  <style nonce="{{ cspNonce }}">body { background: {{ branding.bg }}; }</style>
   {% endif %}
 </head>
 <body>

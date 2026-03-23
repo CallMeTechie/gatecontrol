@@ -1,7 +1,7 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
-<style>
+<style nonce="{{ cspNonce }}">
 .settings-tabs {
   display: flex;
   gap: 0;
