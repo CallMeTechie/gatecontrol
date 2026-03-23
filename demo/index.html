@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GateControl — Interactive Demo</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -13,21 +13,35 @@
   --bg-panel: #ffffff;
   --bg-card: #fdfcf9;
   --bg-hover: #f5f3ee;
+  --bg-input: #f8f7f3;
   --border: #e4e0d6;
   --border-hi: #c8c3b5;
+  --shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
   --text-1: #1c1917;
   --text-2: #6b6460;
   --text-3: #a8a099;
   --accent: #0a6e4f;
+  --accent-lt: #0a6e4f12;
+  --accent-md: #0a6e4f22;
   --green: #16a34a;
+  --green-lt: #16a34a14;
+  --green-bd: #16a34a30;
   --amber: #b45309;
+  --amber-lt: #b4530914;
+  --amber-bd: #b4530930;
   --red: #dc2626;
+  --red-lt: #dc262614;
+  --red-bd: #dc262630;
   --blue: #1d4ed8;
+  --blue-lt: #1d4ed814;
+  --blue-bd: #1d4ed830;
   --font-ui: 'Outfit', sans-serif;
   --font-display: 'DM Serif Display', serif;
   --font-mono: 'JetBrains Mono', monospace;
   --radius: 10px;
   --radius-sm: 6px;
+  --radius-xs: 4px;
 }
 
 body {
@@ -42,2121 +56,1826 @@ body {
 body.hide-cursor { cursor: none !important; }
 body.hide-cursor * { cursor: none !important; }
 
-/* TOPBAR */
+/* === TOPBAR === */
 .topbar {
   position: fixed; top: 0; left: 0; right: 0;
   height: 58px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center;
-  padding: 0 20px;
-  z-index: 100;
+  padding: 0 20px; gap: 14px;
+  z-index: 50;
+  box-shadow: var(--shadow);
 }
-
-.topbar-brand {
-  display: flex; align-items: center; gap: 10px;
-}
-
-.topbar-brand .icon {
-  width: 32px; height: 32px;
+.topbar-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.logo-icon {
+  width: 30px; height: 30px;
   background: var(--accent);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  display: grid; place-items: center;
 }
-
-.topbar-brand .icon svg { width: 18px; height: 18px; }
-
-.topbar-brand .wordmark {
+.logo-icon svg { width: 16px; height: 16px; }
+.logo-wordmark {
   font-family: var(--font-display);
-  font-size: 20px;
-  color: var(--text-1);
+  font-size: 19px; color: var(--text-1);
+  line-height: 1;
 }
-
 .topbar-spacer { flex: 1; }
-
-.topbar-right {
-  display: flex; align-items: center; gap: 14px;
-}
-
-.topbar-divider {
-  width: 1px; height: 24px;
-  background: var(--border);
-}
-
 .topbar-status {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; color: var(--text-2);
-  font-weight: 500;
-}
-
-.pulse-dot {
-  width: 8px; height: 8px;
-  background: var(--green);
-  border-radius: 50%;
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
-}
-
-.topbar-host {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--green-lt);
+  border: 1px solid var(--green-bd);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
   font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-2);
+  font-size: 11px; color: var(--green); font-weight: 500;
 }
-
-.topbar-lang {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--bg-hover);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
+.pulse-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2.5s ease infinite;
 }
-
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+.topbar-divider { width: 1px; height: 24px; background: var(--border); }
 .topbar-avatar {
   width: 32px; height: 32px;
   background: var(--accent);
   border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700;
+  color: #fff; font-family: var(--font-mono);
+  border: none;
 }
 
-/* SIDEBAR */
+/* === SIDEBAR === */
 .sidebar {
   position: fixed; top: 58px; left: 0; bottom: 0;
   width: 232px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  padding: 16px 12px;
   display: flex; flex-direction: column;
-  z-index: 90;
-  overflow-y: auto;
+  padding: 16px 0 0;
+  z-index: 40;
 }
-
-.sidebar-section {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--text-3);
-  padding: 16px 10px 6px;
-}
-
-.sidebar-section:first-child { padding-top: 4px; }
-
-.sidebar-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  position: relative;
-  user-select: none;
-}
-
-.sidebar-item:hover { background: var(--bg-hover); color: var(--text-1); }
-.sidebar-item.active { background: var(--bg-hover); color: var(--accent); font-weight: 600; }
-
-.sidebar-item.disabled {
-  color: var(--text-3);
-  cursor: default;
-  opacity: 0.6;
-}
-.sidebar-item.disabled:hover { background: transparent; color: var(--text-3); }
-
-.sidebar-item svg { width: 18px; height: 18px; flex-shrink: 0; }
-
-.sidebar-item .status-indicator {
-  margin-left: auto;
-  width: 18px; height: 18px;
-  display: flex; align-items: center; justify-content: center;
-}
-
-.status-dot {
-  width: 6px; height: 6px;
-  background: var(--accent);
-  border-radius: 50%;
-  animation: pulse-glow-accent 2s ease-in-out infinite;
-}
-
-@keyframes pulse-glow-accent {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(10,110,79,0.35); }
-  50% { box-shadow: 0 0 0 5px rgba(10,110,79,0); }
-}
-
-.status-spinner {
-  width: 14px; height: 14px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.status-check svg {
-  width: 16px; height: 16px;
-  color: var(--green);
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  padding: 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 11px;
-  color: var(--text-3);
-}
-
-.sidebar-footer .label {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-3);
-  margin-bottom: 6px;
-}
-
-.sidebar-footer .value {
+.nav-section-label {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
-  line-height: 1.6;
+  font-size: 9.5px; font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding: 16px 16px 5px;
 }
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 16px; margin: 1px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer; color: var(--text-2);
+  font-size: 13.5px; font-weight: 500;
+  transition: all 0.13s;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.nav-item.active { background: var(--accent-lt); color: var(--accent); font-weight: 600; }
+.nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.nav-badge.green { background: var(--green-lt); border-color: var(--green-bd); color: var(--green); }
+.sidebar-footer {
+  margin-top: auto; padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-gateway-info {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.gw-label { font-family: var(--font-mono); font-size: 9px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.gw-host { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 600; }
+.gw-wg { font-size: 11px; color: var(--text-2); margin-top: 3px; font-family: var(--font-mono); }
 
-/* MAIN CONTENT */
+/* === MAIN === */
 .main {
   position: fixed;
-  top: 58px; left: 232px; right: 0; bottom: 0;
-  background: var(--bg-base);
-  padding: 24px;
+  top: 58px; left: 232px; right: 0; bottom: 32px;
   overflow-y: auto;
+  padding: 28px;
+  display: flex; flex-direction: column; gap: 20px;
 }
 
-/* WELCOME / COMPLETION */
-.welcome, .completion {
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  height: 100%; text-align: center;
+/* === PAGE HEADER === */
+.page-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 16px;
 }
-
-.welcome h1 {
+.page-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em; margin-bottom: 4px;
+}
+.page-title {
   font-family: var(--font-display);
-  font-size: 42px;
-  color: var(--text-1);
-  margin-bottom: 6px;
+  font-size: 26px; color: var(--text-1); line-height: 1.1;
 }
+.page-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; font-weight: 400; }
 
-.welcome .subtitle {
-  font-size: 18px;
-  color: var(--text-3);
-  font-weight: 400;
-  margin-bottom: 28px;
-}
-
-.welcome p {
-  font-size: 14px;
-  color: var(--text-2);
-  line-height: 1.7;
-  max-width: 440px;
-}
-
-.completion h1 {
-  font-family: var(--font-display);
-  font-size: 38px;
-  color: var(--text-1);
-  margin-bottom: 20px;
-}
-
-.completion .check-icon {
-  width: 56px; height: 56px;
-  background: rgba(22,163,74,0.1);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 20px;
-}
-
-.completion .check-icon svg { width: 28px; height: 28px; color: var(--green); }
-
-.completion .features {
-  list-style: none;
-  text-align: left;
-  margin-bottom: 28px;
-}
-
-.completion .features li {
-  font-size: 14px;
-  color: var(--text-2);
-  padding: 5px 0;
-  display: flex; align-items: center; gap: 8px;
-}
-
-.completion .features li svg { width: 16px; height: 16px; color: var(--green); }
-
-.completion .buttons { display: flex; gap: 12px; }
-
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 20px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
-  transition: opacity 0.15s;
-}
-
-.btn-primary:hover { opacity: 0.9; }
-
-.btn-secondary {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 20px;
-  background: var(--bg-panel);
-  color: var(--text-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.15s;
-}
-
-.btn-secondary:hover { background: var(--bg-hover); }
-
-/* SCENE COMMON */
-.scene-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.scene-title {
-  font-family: var(--font-display);
-  font-size: 24px;
-  color: var(--text-1);
-}
-
-.scene-desc {
-  font-size: 13px;
-  color: var(--text-2);
-  margin-top: 2px;
-}
-
-.btn-add {
+/* === BUTTONS === */
+.btn {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 16px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
   font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; border: none;
+  transition: all 0.13s;
+  white-space: nowrap;
+}
+.btn svg { width: 14px; height: 14px; }
+.btn-primary {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 1px 3px rgba(10,110,79,0.3), 0 1px 1px rgba(10,110,79,0.2);
+}
+.btn-primary:hover { background: #085f43; box-shadow: 0 3px 10px rgba(10,110,79,0.3); transform: translateY(-1px); }
+.btn-ghost {
+  background: var(--bg-panel); color: var(--text-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
+.btn-secondary {
+  background: var(--bg-panel); color: var(--text-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
 
-.btn-add svg { width: 16px; height: 16px; }
-
-/* CARDS */
+/* === CARDS === */
 .card {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0;
-  margin-bottom: 12px;
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
-
-.card-inner { padding: 18px; }
-
-.card-empty {
-  text-align: center;
-  padding: 48px 18px;
-  color: var(--text-3);
-  font-size: 14px;
-}
-
-.card-empty svg {
-  width: 40px; height: 40px;
-  color: var(--text-3);
-  margin-bottom: 10px;
-  opacity: 0.5;
-}
-
-/* FORMS */
-.form-panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 16px;
-  display: none;
-}
-
-.form-panel.visible {
-  display: block;
-  animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.form-row { margin-bottom: 14px; }
-
-.form-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  margin-bottom: 5px;
-}
-
-.form-input {
-  width: 100%;
-  padding: 9px 12px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text-1);
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.form-input:focus, .form-input.focused {
-  border-color: var(--accent);
-}
-
-.form-input::placeholder { color: var(--text-3); }
-
-.form-actions {
-  display: flex; gap: 10px;
-  margin-top: 16px;
-}
-
-.btn-save {
-  padding: 9px 18px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-cancel {
-  padding: 9px 18px;
-  background: var(--bg-panel);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-/* TOGGLE SWITCH */
-.toggle-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 0;
-}
-
-.toggle-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-1);
-}
-
-.toggle {
-  width: 40px; height: 22px;
-  background: var(--border-hi);
-  border-radius: 11px;
-  position: relative;
-  cursor: pointer;
-  transition: background 0.25s;
-  flex-shrink: 0;
-}
-
-.toggle.on { background: var(--green); }
-
-.toggle .knob {
-  width: 18px; height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  position: absolute;
-  top: 2px; left: 2px;
-  transition: left 0.25s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-}
-
-.toggle.on .knob { left: 20px; }
-
-/* BADGES */
-.badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: background 0.3s, color 0.3s;
-}
-
-.badge-green { background: rgba(22,163,74,0.1); color: var(--green); }
-.badge-red { background: rgba(220,38,38,0.1); color: var(--red); }
-.badge-amber { background: rgba(180,83,9,0.1); color: var(--amber); }
-.badge-blue { background: rgba(29,78,216,0.1); color: var(--blue); }
-.badge-gray { background: var(--bg-hover); color: var(--text-2); }
-
-.badge .dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-}
-
-.badge-green .dot { background: var(--green); }
-.badge-red .dot { background: var(--red); }
-.badge-blue .dot { background: var(--blue); }
-.badge-amber .dot { background: var(--amber); }
-
-/* PEER CARD */
-.peer-card {
-  display: flex; align-items: center; gap: 14px;
-  padding: 16px;
-}
-
-.peer-card .peer-icon {
-  width: 40px; height: 40px;
-  background: rgba(10,110,79,0.08);
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-}
-
-.peer-card .peer-icon svg { width: 20px; height: 20px; color: var(--accent); }
-
-.peer-card .peer-info { flex: 1; }
-
-.peer-card .peer-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.peer-card .peer-ip {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-2);
-  margin-top: 2px;
-}
-
-.peer-card .peer-actions {
+.card-head {
   display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600;
 }
+.card-head svg { width: 15px; height: 15px; flex-shrink: 0; }
+.card-title { font-weight: 600; }
+.card-sub {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-3); margin-left: 6px;
+}
+.card-body { padding: 18px; }
 
-.qr-btn {
-  width: 34px; height: 34px;
+/* === TABLE === */
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px;
+}
+thead th {
+  text-align: left;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
   background: var(--bg-card);
+}
+tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tbody tr:hover { background: var(--bg-hover); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+.peer-name-cell .peer-name { font-weight: 600; font-size: 13px; }
+.peer-name-cell .peer-desc { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.peer-tags { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+
+/* === TAGS / BADGES === */
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px; font-weight: 600;
+  font-family: var(--font-mono);
+}
+.tag-dot { width: 5px; height: 5px; border-radius: 50%; }
+.tag-green { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
+.tag-green .tag-dot { background: var(--green); }
+.tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
+.tag-amber .tag-dot { background: var(--amber); }
+.tag-red { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-bd); }
+.tag-red .tag-dot { background: var(--red); }
+.tag-blue { background: var(--blue-lt); color: var(--blue); border: 1px solid var(--blue-bd); }
+.tag-blue .tag-dot { background: var(--blue); }
+.tag-muted { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border); }
+
+/* === STATUS DOT === */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 12px;
+  font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono);
+}
+.status-pill.online { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
+.status-pill.offline { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-bd); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.status-pill.online .status-dot { background: var(--green); }
+.status-pill.offline .status-dot { background: var(--red); }
+
+/* === ACTION BUTTONS === */
+.action-btns { display: flex; gap: 4px; }
+.action-btn {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-panel);
+  display: grid; place-items: center;
   cursor: pointer;
-}
-
-.qr-btn svg { width: 18px; height: 18px; color: var(--text-2); }
-
-@keyframes qr-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-}
-
-.qr-btn.pulsing { animation: qr-pulse 0.8s ease-in-out 3; }
-
-/* ROUTE CARD */
-.route-card {
-  display: flex; align-items: center; gap: 14px;
-  padding: 16px;
-}
-
-.route-card .route-icon {
-  width: 40px; height: 40px;
-  background: rgba(29,78,216,0.08);
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-}
-
-.route-card .route-icon svg { width: 20px; height: 20px; color: var(--blue); }
-
-.route-card .route-info { flex: 1; }
-
-.route-card .route-domain {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-1);
-}
-
-.route-card .route-target {
-  font-family: var(--font-mono);
-  font-size: 12px;
+  transition: all 0.13s;
   color: var(--text-2);
-  margin-top: 2px;
 }
+.action-btn:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
+.action-btn svg { width: 13px; height: 13px; }
+.action-btn.danger:hover { background: var(--red-lt); color: var(--red); border-color: var(--red-bd); }
 
-.route-card .route-badges {
-  display: flex; gap: 6px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.route-card .route-actions {
-  display: flex; align-items: center; gap: 8px;
-}
-
-.btn-edit {
-  width: 34px; height: 34px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-}
-
-.btn-edit svg { width: 16px; height: 16px; color: var(--text-2); }
-
-/* MODAL */
+/* === MODAL === */
 .modal-overlay {
+  display: none;
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0,0,0,0.35);
   z-index: 200;
-  display: flex; align-items: center; justify-content: center;
-  animation: fadeIn 0.2s ease-out;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.15s;
 }
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
+.modal-overlay.open { display: flex; }
 .modal {
   background: var(--bg-panel);
   border-radius: var(--radius);
-  width: 520px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08);
+  width: 480px;
   max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-  animation: modalIn 0.25s ease-out;
+  display: flex; flex-direction: column;
+  animation: modalIn 0.2s ease;
 }
-
-@keyframes modalIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.modal-header {
-  padding: 18px 20px;
+@keyframes modalIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal-head {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
 }
-
-.modal-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-
+.modal-title { font-family: var(--font-display); font-size: 18px; }
 .modal-close {
   width: 28px; height: 28px;
-  background: none; border: none;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-3);
-  border-radius: var(--radius-sm);
-  font-size: 18px;
+  border: none; background: none;
+  font-size: 20px; color: var(--text-3);
+  cursor: pointer; border-radius: var(--radius-xs);
+  display: grid; place-items: center;
 }
-
 .modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
-
-.modal-body { padding: 20px; }
-
-.modal-footer {
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
-  display: flex; justify-content: flex-end; gap: 10px;
 }
 
-/* ROUTES LAYOUT */
-.routes-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.routes-form-panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-}
-
-/* DNS CHECK */
-.dns-check {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  margin-top: 4px;
-}
-
-.dns-check.checking { color: var(--text-3); }
-.dns-check.ok { color: var(--green); }
-
-.dns-spinner {
-  width: 12px; height: 12px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  display: inline-block;
-}
-
-/* SELECT */
-.form-select {
-  width: 100%;
-  padding: 9px 12px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
+/* === FORM ELEMENTS === */
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label {
   font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="search"], select, textarea {
+  width: 100%; padding: 8px 12px;
+  font-family: var(--font-ui);
   font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
   color: var(--text-1);
   outline: none;
-  appearance: none;
   transition: border-color 0.15s;
+}
+input:focus, select:focus { border-color: var(--accent); }
+.form-hint { font-size: 11px; color: var(--text-3); }
+
+/* === TOGGLE SWITCH === */
+.toggle {
+  width: 36px; height: 20px;
+  border-radius: 12px;
+  background: var(--border-hi);
+  position: relative;
   cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
 }
-
-.form-select:focus, .form-select.focused { border-color: var(--accent); }
-
-.select-wrapper { position: relative; }
-
-.select-wrapper::after {
+.toggle::after {
   content: '';
-  position: absolute; right: 12px; top: 50%;
-  transform: translateY(-50%);
-  border: 4px solid transparent;
-  border-top: 5px solid var(--text-3);
-  pointer-events: none;
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform 0.2s;
 }
+.toggle.on { background: var(--accent); }
+.toggle.on::after { transform: translateX(16px); }
 
-/* AUTH TABS */
-.auth-tabs {
-  display: flex;
+/* === TOGGLE GROUP === */
+.toggle-group {
+  display: flex; gap: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-bottom: 14px;
 }
-
-.auth-tab {
+.toggle-btn {
   flex: 1;
-  padding: 8px 12px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--bg-card);
+  padding: 7px 14px;
+  font-family: var(--font-ui);
+  font-size: 12px; font-weight: 600;
   border: none;
+  background: var(--bg-input);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: all 0.13s;
 }
-
-.auth-tab + .auth-tab { border-left: 1px solid var(--border); }
-
-.auth-tab.active {
+.toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
+.toggle-btn.on {
   background: var(--accent);
   color: #fff;
 }
 
-/* MIRROR TARGETS */
-.mirror-target-row {
-  display: flex; gap: 8px;
-  margin-bottom: 8px;
-  align-items: center;
-}
-
-.mirror-target-row .form-input { flex: 1; }
-.mirror-target-row .port-input { width: 90px; flex: none; }
-
-.mirror-target-num {
-  width: 24px; height: 24px;
-  background: var(--bg-hover);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-2);
-  flex-shrink: 0;
-}
-
-/* TOAST */
-.toast {
-  position: fixed;
-  top: 74px; right: 24px;
-  background: var(--bg-panel);
+/* === TOGGLE ROW (toggle switches in forms) === */
+.toggle-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-base);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 18px;
-  display: flex; align-items: center; gap: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  z-index: 300;
-  animation: toastIn 0.3s ease-out;
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+}
+.toggle-row-text .toggle-row-title { font-size: 13px; font-weight: 600; }
+.toggle-row-text .toggle-row-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* === TWO COLUMN LAYOUT === */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+/* === SEARCH INPUT === */
+.input-wrap {
+  position: relative; display: flex; align-items: center;
+}
+.input-wrap svg {
+  position: absolute; left: 10px;
+  width: 14px; height: 14px;
+  color: var(--text-3);
+}
+.input-wrap input {
+  padding-left: 32px;
+  width: 220px;
+}
+
+/* === WG CONFIG BLOCK === */
+.wg-config {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-1);
+  white-space: pre;
+  line-height: 1.7;
+  text-align: left;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
-.toast.success { border-left: 3px solid var(--green); }
-.toast svg { width: 18px; height: 18px; }
-
-@keyframes toastIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+/* === QR CODE PLACEHOLDER === */
+.qr-placeholder {
+  width: 200px; height: 200px;
+  margin: 0 auto 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid; place-items: center;
+  overflow: hidden;
 }
 
-@keyframes toastOut {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(20px); }
+/* === ROUTE ITEM IN LIST === */
+.route-item {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  transition: background 0.13s;
+}
+.route-item:hover { background: var(--bg-hover); }
+.route-item:last-child { border-bottom: none; }
+.route-domain {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  color: var(--accent);
+}
+.route-target {
+  font-family: var(--font-mono);
+  font-size: 11px; color: var(--text-2);
+  margin-top: 2px;
+}
+.route-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.route-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* === FLASH MESSAGE === */
+.flash {
+  position: fixed;
+  top: 70px; right: 28px;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600;
+  box-shadow: var(--shadow-md);
+  z-index: 300;
+  animation: flashIn 0.3s ease, flashOut 0.3s ease 2s forwards;
+}
+.flash-success {
+  background: var(--green-lt);
+  border: 1px solid var(--green-bd);
+  color: var(--green);
+}
+@keyframes flashIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@keyframes flashOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+/* === DNS CHECK === */
+.dns-hint {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; margin-top: 4px;
+}
+.dns-hint.checking { color: var(--amber); }
+.dns-hint.ok { color: var(--green); }
+.spinner-small {
+  width: 12px; height: 12px;
+  border: 2px solid var(--amber);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.5s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* === PROGRESS BAR === */
+.progress-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: 32px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 12px;
+  z-index: 100;
+}
+.progress-track {
+  flex: 1; height: 4px;
+  background: var(--bg-base);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+.progress-label {
+  font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-3);
+  white-space: nowrap;
+}
+.progress-step {
+  font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-2);
+  white-space: nowrap;
 }
 
-/* FAKE CURSOR */
-#fake-cursor {
+/* === CURSOR === */
+#demo-cursor {
   position: fixed;
   z-index: 9999;
   pointer-events: none;
-  width: 20px; height: 20px;
-  transition: left 0.4s ease-in-out, top 0.4s ease-in-out;
-  filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.2));
-  display: none;
+  transition: none;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
 }
 
-#fake-cursor.visible { display: block; }
-
-/* CLICK RIPPLE */
+/* === CLICK RIPPLE === */
 .click-ripple {
   position: fixed;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
   z-index: 9998;
   pointer-events: none;
-  width: 40px; height: 40px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  opacity: 1;
-  animation: rippleOut 0.5s ease-out forwards;
+  animation: ripple 0.4s ease forwards;
+}
+@keyframes ripple {
+  0% { transform: translate(-50%,-50%) scale(0.5); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(2); opacity: 0; }
 }
 
-@keyframes rippleOut {
-  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.7; }
-  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+/* === SCENE CONTAINER === */
+.scene { display: none; flex-direction: column; gap: 20px; }
+.scene.active { display: flex; }
+
+/* === EMPTY STATE === */
+.empty-state {
+  text-align: center; padding: 40px;
+  color: var(--text-3); font-size: 13px;
 }
-
-/* PROGRESS BAR */
-#progress-bar {
-  position: fixed;
-  bottom: 0; left: 0;
-  height: 3px;
-  background: var(--accent);
-  z-index: 500;
-  transition: width 0.4s ease-out;
-  width: 0%;
-}
-
-/* SCENE FADE IN */
-.scene-content { animation: sceneIn 0.3s ease-out; }
-
-@keyframes sceneIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.hidden { display: none !important; }
 </style>
 </head>
-<body>
+<body class="hide-cursor">
 
-<!-- TOPBAR -->
-<header class="topbar">
-  <div class="topbar-brand">
-    <div class="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    </div>
-    <span class="wordmark">GateControl</span>
-  </div>
-  <div class="topbar-spacer"></div>
-  <div class="topbar-right">
-    <div class="topbar-status"><span class="pulse-dot"></span> WireGuard Active</div>
-    <div class="topbar-divider"></div>
-    <span class="topbar-host">demo.example.com</span>
-    <div class="topbar-divider"></div>
-    <span class="topbar-lang">EN</span>
-    <div class="topbar-divider"></div>
-    <div class="topbar-avatar">A</div>
-  </div>
-</header>
-
-<!-- SIDEBAR -->
-<aside class="sidebar">
-  <div class="sidebar-section">Overview</div>
-  <div class="sidebar-item disabled">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-    Dashboard
-  </div>
-
-  <div class="sidebar-section">VPN</div>
-  <div class="sidebar-item" data-scene="peers" id="nav-peers">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    Peers / Clients
-    <span class="status-indicator" id="status-peers"><span class="status-dot"></span></span>
-  </div>
-  <div class="sidebar-item disabled">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-    WG Config
-  </div>
-
-  <div class="sidebar-section">Routing</div>
-  <div class="sidebar-item" data-scene="routes" id="nav-routes">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-    Domains / Routes
-    <span class="status-indicator" id="status-routes"><span class="status-dot"></span></span>
-  </div>
-  <div class="sidebar-item disabled">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-    Caddy Config
-  </div>
-  <div class="sidebar-item disabled">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    Certificates
-  </div>
-
-  <div class="sidebar-section">System</div>
-  <div class="sidebar-item" data-scene="monitoring" id="nav-monitoring">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-    Monitoring
-    <span class="status-indicator" id="status-monitoring"><span class="status-dot"></span></span>
-  </div>
-  <div class="sidebar-item" data-scene="security" id="nav-security">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-    Security
-    <span class="status-indicator" id="status-security"><span class="status-dot"></span></span>
-  </div>
-  <div class="sidebar-item" data-scene="mirroring" id="nav-mirroring">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-    Mirroring
-    <span class="status-indicator" id="status-mirroring"><span class="status-dot"></span></span>
-  </div>
-
-  <div class="sidebar-footer">
-    <div class="label">Gateway</div>
-    <div class="value">
-      WireGuard 1.0.20210914<br>
-      Caddy 2.7.6<br>
-      10.8.0.1/24
-    </div>
-  </div>
-</aside>
-
-<!-- MAIN CONTENT -->
-<main class="main" id="main-content"></main>
-
-<!-- FAKE CURSOR -->
-<svg id="fake-cursor" viewBox="0 0 24 24" width="20" height="20">
-  <path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.53.35-.85L5.85 2.36a.5.5 0 0 0-.35.85z" fill="#1c1917" stroke="#fff" stroke-width="1"/>
+<!-- SVG CURSOR -->
+<svg id="demo-cursor" width="20" height="24" viewBox="0 0 20 24" style="left:-40px;top:-40px">
+  <path d="M1 1L1 19L5.5 14.5L9.5 22L12.5 20.5L8.5 12.5L14.5 12.5L1 1Z" fill="white" stroke="#1c1917" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>
 
+<!-- TOPBAR -->
+<div class="topbar">
+  <a class="topbar-logo" href="#">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <span class="logo-wordmark">GateControl</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <div class="topbar-status"><div class="pulse-dot"></div> WireGuard Active</div>
+  <div class="topbar-divider"></div>
+  <button class="topbar-avatar">AD</button>
+</div>
+
+<!-- SIDEBAR -->
+<div class="sidebar" id="sidebar">
+  <div class="nav-section-label">Gateway</div>
+  <div class="nav-item" data-scene="0" id="nav-dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Dashboard
+  </div>
+  <div class="nav-item active" data-scene="1" id="nav-peers">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    Peers / Clients
+    <span class="nav-badge" id="nav-peers-badge">0</span>
+  </div>
+  <div class="nav-item" data-scene="2" id="nav-routes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+    Domains / Routes
+    <span class="nav-badge" id="nav-routes-badge">0</span>
+  </div>
+  <div class="nav-section-label">Advanced</div>
+  <div class="nav-item" data-scene="3" id="nav-monitoring">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Monitoring
+  </div>
+  <div class="nav-item" data-scene="4" id="nav-security">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    Security
+  </div>
+  <div class="nav-item" data-scene="5" id="nav-mirroring">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+    Mirroring
+  </div>
+  <div class="sidebar-footer">
+    <div class="sidebar-gateway-info">
+      <div class="gw-label">Gateway</div>
+      <div class="gw-host">demo.example.com</div>
+      <div class="gw-wg">wg0 · 10.8.0.0/24 · :51820</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN CONTENT AREA -->
+<div class="main" id="main-content">
+
+  <!-- ============================================ -->
+  <!-- SCENE 1: PEERS / CLIENTS                     -->
+  <!-- ============================================ -->
+  <div class="scene active" id="scene-peers">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">VPN</div>
+        <div class="page-title">Peers / Clients</div>
+        <div class="page-sub">Manage WireGuard peers connected to this gateway</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+        <div class="input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" placeholder="Search peers...">
+        </div>
+        <select style="padding:7px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-1);min-width:140px">
+          <option>All Groups</option>
+        </select>
+        <button class="btn btn-ghost">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Batch Select
+        </button>
+        <button class="btn btn-primary" id="btn-add-peer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Peer
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        <span class="card-title">All Peers</span>
+        <span class="card-sub" id="peers-count-label">0 peers</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name / Device</th>
+              <th>WG IP</th>
+              <th>Public Key</th>
+              <th>Last Contact</th>
+              <th>Traffic</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="peers-tbody">
+            <tr id="peers-empty"><td colspan="7" class="empty-state">No peers configured yet. Click "Add Peer" to get started.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- SCENE 2: DOMAINS / ROUTES                    -->
+  <!-- ============================================ -->
+  <div class="scene" id="scene-routes">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Reverse Proxy</div>
+        <div class="page-title">Domains / Routes</div>
+        <div class="page-sub" id="routes-subtitle">0 active routes</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+        <div class="input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" placeholder="Search routes...">
+        </div>
+      </div>
+    </div>
+    <div class="two-col">
+      <!-- LEFT: Active Routes -->
+      <div class="card">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <span class="card-title">Active Routes</span>
+          <span class="card-sub" id="routes-count">0</span>
+        </div>
+        <div id="routes-list">
+          <div class="empty-state" id="routes-empty">No routes configured yet.</div>
+        </div>
+      </div>
+      <!-- RIGHT: New Route Form -->
+      <div class="card">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="card-title">New Route</span>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+          <!-- Type toggle -->
+          <div class="form-group">
+            <div class="toggle-group" id="route-type-group">
+              <button class="toggle-btn on" type="button">HTTP</button>
+              <button class="toggle-btn" type="button">L4</button>
+            </div>
+          </div>
+          <!-- Domain -->
+          <div class="form-group">
+            <label class="form-label">Domain</label>
+            <input type="text" id="route-domain" placeholder="e.g. app.example.com">
+            <div class="dns-hint" id="dns-hint" style="display:none"></div>
+          </div>
+          <!-- Description -->
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <input type="text" id="route-desc" placeholder="Optional description">
+          </div>
+          <!-- Target Peer -->
+          <div class="form-group">
+            <label class="form-label">Target Peer</label>
+            <select id="route-peer">
+              <option value="">—</option>
+            </select>
+          </div>
+          <!-- Target Port -->
+          <div class="form-group">
+            <label class="form-label">Target Port</label>
+            <input type="text" id="route-port" placeholder="e.g. 8080">
+          </div>
+          <!-- Toggle rows -->
+          <div class="toggle-row" id="toggle-https">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Force HTTPS</div>
+              <div class="toggle-row-desc">Redirect HTTP to HTTPS automatically</div>
+            </div>
+            <div class="toggle on" id="tog-https"></div>
+          </div>
+          <div class="toggle-row" id="toggle-backend-https">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Backend HTTPS</div>
+              <div class="toggle-row-desc">Backend uses HTTPS (e.g. Synology DSM Port 5001)</div>
+            </div>
+            <div class="toggle" id="tog-backend-https"></div>
+          </div>
+          <div class="toggle-row" id="toggle-compress">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Compression</div>
+              <div class="toggle-row-desc">Enable gzip/brotli compression</div>
+            </div>
+            <div class="toggle" id="tog-compress"></div>
+          </div>
+          <!-- Auth type -->
+          <div class="form-group">
+            <label class="form-label">Auth Type</label>
+            <div class="toggle-group" id="create-auth-group">
+              <button class="toggle-btn on" type="button">None</button>
+              <button class="toggle-btn" type="button">Basic</button>
+              <button class="toggle-btn" type="button">Route Auth</button>
+            </div>
+          </div>
+          <!-- More toggles -->
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Uptime Monitoring</div>
+              <div class="toggle-row-desc">Periodically check if this route is reachable</div>
+            </div>
+            <div class="toggle" id="tog-monitoring"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">ACL</div>
+              <div class="toggle-row-desc">Restrict access to specific peers</div>
+            </div>
+            <div class="toggle" id="tog-acl"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">IP Access Control</div>
+              <div class="toggle-row-desc">Restrict access by IP, CIDR range, or country</div>
+            </div>
+            <div class="toggle" id="tog-ip-filter"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Rate Limit</div>
+              <div class="toggle-row-desc">Limit requests per time window</div>
+            </div>
+            <div class="toggle" id="tog-rate-limit"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Retry</div>
+              <div class="toggle-row-desc">Auto-retry failed requests</div>
+            </div>
+            <div class="toggle" id="tog-retry"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Circuit Breaker</div>
+              <div class="toggle-row-desc">Stop forwarding on repeated failures</div>
+            </div>
+            <div class="toggle" id="tog-circuit-breaker"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-text">
+              <div class="toggle-row-title">Request Mirroring</div>
+              <div class="toggle-row-desc">Duplicate traffic to additional targets</div>
+            </div>
+            <div class="toggle" id="tog-mirror"></div>
+          </div>
+          <!-- Save button -->
+          <button class="btn btn-primary" id="btn-save-route" style="width:100%;justify-content:center;padding:10px 16px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Save &amp; Reload
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- SCENE 3: MONITORING & CIRCUIT BREAKER        -->
+  <!-- ============================================ -->
+  <div class="scene" id="scene-monitoring">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Operations</div>
+        <div class="page-title">Monitoring &amp; Circuit Breaker</div>
+        <div class="page-sub">Health checks, uptime monitoring, and automatic circuit breaking</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">Active Routes</span>
+      </div>
+      <div id="monitoring-routes-list">
+        <div class="route-item" id="monitoring-route-item">
+          <div style="flex:1;min-width:0">
+            <div class="route-domain">nas.example.com</div>
+            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
+            <div class="route-badges" id="monitoring-badges">
+              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+              <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
+              <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="action-btn" id="btn-edit-monitoring" title="Edit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="action-btn danger" title="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- SCENE 4: SECURITY (Route Auth + 2FA)         -->
+  <!-- ============================================ -->
+  <div class="scene" id="scene-security">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Access Control</div>
+        <div class="page-title">Security &amp; Authentication</div>
+        <div class="page-sub">Configure Route Auth with multi-factor authentication</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="card-title">Route: nas.example.com</span>
+      </div>
+      <div id="security-route-list">
+        <div class="route-item" id="security-route-item">
+          <div style="flex:1;min-width:0">
+            <div class="route-domain">nas.example.com</div>
+            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
+            <div class="route-badges" id="security-badges">
+              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+              <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
+              <span class="tag tag-green"><span class="tag-dot"></span>UP</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="action-btn" id="btn-edit-security" title="Edit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- SCENE 5: REQUEST MIRRORING                   -->
+  <!-- ============================================ -->
+  <div class="scene" id="scene-mirroring">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Traffic</div>
+        <div class="page-title">Request Mirroring</div>
+        <div class="page-sub">Duplicate traffic to additional targets for testing or analysis</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+        <span class="card-title">Route: nas.example.com</span>
+      </div>
+      <div id="mirroring-route-list">
+        <div class="route-item" id="mirroring-route-item">
+          <div style="flex:1;min-width:0">
+            <div class="route-domain">nas.example.com</div>
+            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
+            <div class="route-badges" id="mirroring-badges">
+              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+              <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
+              <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
+              <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="action-btn" id="btn-edit-mirroring" title="Edit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end main -->
+
+<!-- ============================================ -->
+<!-- MODALS                                        -->
+<!-- ============================================ -->
+
+<!-- ADD PEER MODAL -->
+<div class="modal-overlay" id="modal-add-peer">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Add Peer</span>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="add-peer-name">Name</label>
+        <input type="text" id="add-peer-name" placeholder="e.g. Office Laptop" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-desc">Description</label>
+        <input type="text" id="add-peer-desc" placeholder="Optional device description" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-group">Group</label>
+        <select id="add-peer-group">
+          <option value="">None</option>
+          <option value="home">Home</option>
+          <option value="office">Office</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-tags">Tags</label>
+        <input type="text" id="add-peer-tags" placeholder="e.g. server, production" autocomplete="off">
+        <div class="form-hint">Comma-separated tags for grouping</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-expires">Expires</label>
+        <select id="add-peer-expires">
+          <option value="">Never</option>
+          <option value="1d">1 Day</option>
+          <option value="7d">7 Days</option>
+          <option value="30d">30 Days</option>
+          <option value="90d">90 Days</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btn-cancel-add-peer">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-peer">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR CODE MODAL -->
+<div class="modal-overlay" id="modal-qr-peer">
+  <div class="modal" style="width:440px">
+    <div class="modal-head">
+      <span class="modal-title" id="qr-modal-title">NAS Zuhause — QR Code</span>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <div class="qr-placeholder" id="qr-image">
+        <canvas id="qr-canvas" width="180" height="180"></canvas>
+      </div>
+      <div class="wg-config" id="qr-config">[Interface]
+PrivateKey = mK8j3nF7vB2pLqW9...
+Address = 10.8.0.2/32
+DNS = 1.1.1.1, 8.8.8.8
+
+[Peer]
+PublicKey = Gx7RkT4mN8sYpV6w...
+PresharedKey = p4QwZx9cL1jHnR5t...
+Endpoint = demo.example.com:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btn-close-qr">Cancel</button>
+      <button class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy
+      </button>
+      <button class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download .conf
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT ROUTE MODAL (used for scenes 3, 4, 5) -->
+<div class="modal-overlay" id="modal-edit-route">
+  <div class="modal" style="width:520px;max-height:85vh">
+    <div class="modal-head">
+      <span class="modal-title" id="edit-modal-title">Edit Route</span>
+      <button class="modal-close" id="btn-close-edit">&times;</button>
+    </div>
+    <div class="modal-body" id="edit-modal-body" style="gap:12px">
+      <!-- Dynamically populated per scene -->
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btn-cancel-edit">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-edit">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROGRESS BAR -->
-<div id="progress-bar"></div>
+<div class="progress-bar">
+  <span class="progress-step" id="progress-step">Scene 1 / 5</span>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <span class="progress-label" id="progress-label">Peers / Clients</span>
+</div>
 
 <script>
+/* ================================================================
+   GateControl Interactive Demo — Animation Engine
+   ================================================================ */
 (function() {
-  "use strict";
+  'use strict';
 
-  // ---- STATE ----
-  var state = {
-    currentScene: null,
-    completedScenes: {},
-    isPlaying: false
-  };
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+  const cursor = $('#demo-cursor');
+  let curX = -40, curY = -40;
 
-  var mainEl = document.getElementById('main-content');
-  var cursorEl = document.getElementById('fake-cursor');
-  var progressBar = document.getElementById('progress-bar');
+  /* ── Helpers ── */
+  function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ---- SVG SNIPPETS ----
-  var svgPlus = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
-  var svgCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-  var svgCheckGreen = '<svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-  var svgCheckSmall = '<svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>';
-  var svgPeer = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
-  var svgQr = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/></svg>';
-  var svgEdit = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-  var svgRoute = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
-  var svgNetwork = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="40" height="40"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
-  var svgGlobe = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="40" height="40"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
-  var svgGithub = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>';
-
-  // ---- HELPERS ----
-  function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
-
-  function getCenter(el) {
-    var rect = el.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }
-
-  function moveCursor(selector) {
-    return new Promise(function(resolve) {
-      var el = typeof selector === 'string' ? document.querySelector(selector) : selector;
-      if (!el) { resolve(); return; }
-      var pos = getCenter(el);
-      cursorEl.style.left = (pos.x - 2) + 'px';
-      cursorEl.style.top = (pos.y - 2) + 'px';
-      setTimeout(resolve, 450);
+  function moveTo(el, offX, offY) {
+    return new Promise(resolve => {
+      const rect = (typeof el === 'string' ? $(el) : el).getBoundingClientRect();
+      const tx = rect.left + (offX || rect.width / 2);
+      const ty = rect.top + (offY || rect.height / 2);
+      const dx = tx - curX, dy = ty - curY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dur = Math.max(300, Math.min(800, dist * 1.5));
+      cursor.style.transition = `left ${dur}ms cubic-bezier(0.22,1,0.36,1), top ${dur}ms cubic-bezier(0.22,1,0.36,1)`;
+      cursor.style.left = tx + 'px';
+      cursor.style.top = ty + 'px';
+      curX = tx; curY = ty;
+      setTimeout(resolve, dur + 60);
     });
   }
 
-  function clickEffect() {
-    return new Promise(function(resolve) {
-      var x = parseFloat(cursorEl.style.left) + 2;
-      var y = parseFloat(cursorEl.style.top) + 2;
-      cursorEl.style.transform = 'scale(0.85)';
-      setTimeout(function() { cursorEl.style.transform = 'scale(1)'; }, 150);
-      var ripple = document.createElement('div');
-      ripple.className = 'click-ripple';
-      ripple.style.left = x + 'px';
-      ripple.style.top = y + 'px';
-      document.body.appendChild(ripple);
-      setTimeout(function() { ripple.remove(); }, 600);
+  function click() {
+    return new Promise(resolve => {
+      const rip = document.createElement('div');
+      rip.className = 'click-ripple';
+      rip.style.left = curX + 'px';
+      rip.style.top = curY + 'px';
+      document.body.appendChild(rip);
+      setTimeout(() => rip.remove(), 500);
       setTimeout(resolve, 200);
     });
   }
 
-  function typeText(selector, text) {
-    return new Promise(function(resolve) {
-      var el = typeof selector === 'string' ? document.querySelector(selector) : selector;
-      if (!el) { resolve(); return; }
-      el.classList.add('focused');
-      var i = 0;
-      function nextChar() {
-        if (i >= text.length) { setTimeout(resolve, 100); return; }
+  function typeInto(selector, text, charMs) {
+    const el = typeof selector === 'string' ? $(selector) : selector;
+    charMs = charMs || 55;
+    return new Promise(resolve => {
+      let i = 0;
+      el.focus();
+      const iv = setInterval(() => {
         el.value += text[i];
+        el.dispatchEvent(new Event('input', { bubbles: true }));
         i++;
-        setTimeout(nextChar, 55 + Math.random() * 30);
-      }
-      nextChar();
+        if (i >= text.length) { clearInterval(iv); setTimeout(resolve, 150); }
+      }, charMs);
     });
   }
 
-  function showToast(msg) {
-    var toast = document.createElement('div');
-    toast.className = 'toast success';
-    var toastIcon = document.createElement('span');
-    toastIcon.style.display = 'flex';
-    toastIcon.style.alignItems = 'center';
-    var iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    iconSvg.setAttribute('viewBox', '0 0 24 24');
-    iconSvg.setAttribute('fill', 'none');
-    iconSvg.setAttribute('stroke', '#16a34a');
-    iconSvg.setAttribute('stroke-width', '2');
-    iconSvg.setAttribute('stroke-linecap', 'round');
-    iconSvg.setAttribute('stroke-linejoin', 'round');
-    iconSvg.setAttribute('width', '18');
-    iconSvg.setAttribute('height', '18');
-    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '20 6 9 17 4 12');
-    iconSvg.appendChild(polyline);
-    toast.appendChild(iconSvg);
-    var textNode = document.createTextNode(' ' + msg);
-    toast.appendChild(textNode);
-    document.body.appendChild(toast);
-    return new Promise(function(resolve) {
-      setTimeout(function() {
-        toast.style.animation = 'toastOut 0.3s ease-in forwards';
-        setTimeout(function() { toast.remove(); resolve(); }, 350);
-      }, 1800);
+  function typePassword(selector, len, charMs) {
+    const el = typeof selector === 'string' ? $(selector) : selector;
+    charMs = charMs || 70;
+    return new Promise(resolve => {
+      let i = 0;
+      el.focus();
+      el.type = 'password';
+      const iv = setInterval(() => {
+        el.value += '*';
+        i++;
+        if (i >= len) { clearInterval(iv); setTimeout(resolve, 150); }
+      }, charMs);
     });
   }
 
-  function showToastNoWait(msg) {
-    var toast = document.createElement('div');
-    toast.className = 'toast success';
-    var iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    iconSvg.setAttribute('viewBox', '0 0 24 24');
-    iconSvg.setAttribute('fill', 'none');
-    iconSvg.setAttribute('stroke', '#16a34a');
-    iconSvg.setAttribute('stroke-width', '2');
-    iconSvg.setAttribute('stroke-linecap', 'round');
-    iconSvg.setAttribute('stroke-linejoin', 'round');
-    iconSvg.setAttribute('width', '18');
-    iconSvg.setAttribute('height', '18');
-    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '20 6 9 17 4 12');
-    iconSvg.appendChild(polyline);
-    toast.appendChild(iconSvg);
-    toast.appendChild(document.createTextNode(' ' + msg));
-    document.body.appendChild(toast);
-    setTimeout(function() {
-      toast.style.animation = 'toastOut 0.3s ease-in forwards';
-      setTimeout(function() { toast.remove(); }, 350);
-    }, 1800);
+  function flash(msg) {
+    const el = document.createElement('div');
+    el.className = 'flash flash-success';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
   }
 
-  function setProgress(pct) {
-    progressBar.style.width = pct + '%';
+  function showModal(id) {
+    $(id).classList.add('open');
+    return wait(300);
   }
 
-  function updateSidebarStatus(scene, status) {
-    var el = document.getElementById('status-' + scene);
-    if (!el) return;
-    while (el.firstChild) el.removeChild(el.firstChild);
-    if (status === 'pending') {
-      var dot = document.createElement('span');
-      dot.className = 'status-dot';
-      el.appendChild(dot);
-    } else if (status === 'playing') {
-      var spinner = document.createElement('span');
-      spinner.className = 'status-spinner';
-      el.appendChild(spinner);
-    } else if (status === 'done') {
-      var wrap = document.createElement('span');
-      wrap.className = 'status-check';
-      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 24 24');
-      svg.setAttribute('fill', 'none');
-      svg.setAttribute('stroke', '#16a34a');
-      svg.setAttribute('stroke-width', '2.5');
-      svg.setAttribute('stroke-linecap', 'round');
-      svg.setAttribute('stroke-linejoin', 'round');
-      svg.setAttribute('width', '16');
-      svg.setAttribute('height', '16');
-      var p = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      p.setAttribute('points', '20 6 9 17 4 12');
-      svg.appendChild(p);
-      wrap.appendChild(svg);
-      el.appendChild(wrap);
-    }
+  function hideModal(id) {
+    $(id).classList.remove('open');
+    return wait(300);
   }
 
-  // Safe DOM builder helpers
-  function el(tag, attrs, children) {
-    var node = document.createElement(tag);
-    if (attrs) {
-      Object.keys(attrs).forEach(function(k) {
-        if (k === 'className') node.className = attrs[k];
-        else if (k === 'textContent') node.textContent = attrs[k];
-        else if (k === 'type') node.type = attrs[k];
-        else if (k === 'placeholder') node.placeholder = attrs[k];
-        else if (k === 'value') node.value = attrs[k];
-        else if (k === 'disabled') node.disabled = attrs[k];
-        else if (k === 'selected') node.selected = attrs[k];
-        else node.setAttribute(k, attrs[k]);
-      });
-    }
-    if (children) {
-      if (typeof children === 'string') {
-        // For trusted static content only
-        node.textContent = children;
-      } else if (Array.isArray(children)) {
-        children.forEach(function(c) {
-          if (c) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-        });
-      } else {
-        node.appendChild(typeof children === 'string' ? document.createTextNode(children) : children);
+  function setToggle(id, on) {
+    const el = typeof id === 'string' ? $(id) : id;
+    if (on) el.classList.add('on');
+    else el.classList.remove('on');
+  }
+
+  function switchScene(sceneId, navId, label, num) {
+    $$('.scene').forEach(s => s.classList.remove('active'));
+    $(sceneId).classList.add('active');
+    $$('.nav-item').forEach(n => n.classList.remove('active'));
+    $(navId).classList.add('active');
+    $('#progress-step').textContent = `Scene ${num} / 5`;
+    $('#progress-label').textContent = label;
+    $('#progress-fill').style.width = (num * 20) + '%';
+    return wait(400);
+  }
+
+  function drawQR() {
+    const canvas = $('#qr-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const size = 180;
+    const cells = 25;
+    const cellSize = size / cells;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#000';
+    // Simple pseudo-random QR pattern
+    const seed = 42;
+    for (let r = 0; r < cells; r++) {
+      for (let c = 0; c < cells; c++) {
+        // Position patterns (corners)
+        if ((r < 7 && c < 7) || (r < 7 && c >= cells - 7) || (r >= cells - 7 && c < 7)) {
+          const inOuter = (r < 7 && c < 7) ? (r === 0 || r === 6 || c === 0 || c === 6) :
+                          (r < 7 && c >= cells - 7) ? (r === 0 || r === 6 || c === cells - 1 || c === cells - 7) :
+                          (r === cells - 1 || r === cells - 7 || c === 0 || c === 6);
+          const inInner = (r < 7 && c < 7) ? (r >= 2 && r <= 4 && c >= 2 && c <= 4) :
+                          (r < 7 && c >= cells - 7) ? (r >= 2 && r <= 4 && c >= cells - 5 && c <= cells - 3) :
+                          (r >= cells - 5 && r <= cells - 3 && c >= 2 && c <= 4);
+          if (inOuter || inInner) {
+            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+          }
+        } else {
+          // Pseudo-random data
+          const v = ((r * 31 + c * 37 + seed) * 2654435761) >>> 0;
+          if (v % 3 !== 0) {
+            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+          }
+        }
       }
     }
-    return node;
   }
 
-  // For trusted SVG content that is hardcoded in this file
-  function setSvgContent(node, svgString) {
-    var temp = document.createElement('div');
-    temp.innerHTML = svgString;  // Only used with hardcoded SVG constants defined above
-    while (temp.firstChild) node.appendChild(temp.firstChild);
+  /* ── SCENE 1: Peers / Clients ── */
+  async function scene1() {
+    await switchScene('#scene-peers', '#nav-peers', 'Peers / Clients', 1);
+    await wait(600);
+
+    // Move to Add Peer button and click
+    await moveTo('#btn-add-peer');
+    await click();
+    await showModal('#modal-add-peer');
+
+    // Type name
+    await moveTo('#add-peer-name');
+    await click();
+    await typeInto('#add-peer-name', 'NAS Zuhause');
+
+    // Type description
+    await moveTo('#add-peer-desc');
+    await click();
+    await typeInto('#add-peer-desc', 'Synology DS220+');
+
+    // Leave Group as None — skip
+
+    // Type tags
+    await moveTo('#add-peer-tags');
+    await click();
+    await typeInto('#add-peer-tags', 'homelab, nas');
+
+    // Leave Expires as Never — skip
+
+    // Click Save
+    await moveTo('#btn-save-peer');
+    await click();
+    await wait(200);
+    await hideModal('#modal-add-peer');
+    flash('Peer "NAS Zuhause" created successfully');
+
+    // Add peer row to table
+    const empty = $('#peers-empty');
+    if (empty) empty.remove();
+    const tbody = $('#peers-tbody');
+    const tr = document.createElement('tr');
+    tr.id = 'peer-row-1';
+    tr.innerHTML = `
+      <td>
+        <div class="peer-name-cell">
+          <div class="peer-name">NAS Zuhause</div>
+          <div class="peer-desc">Synology DS220+</div>
+          <div class="peer-tags">
+            <span class="tag tag-muted">homelab</span>
+            <span class="tag tag-muted">nas</span>
+          </div>
+        </div>
+      </td>
+      <td class="mono">10.8.0.2</td>
+      <td class="mono" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">a8Kf3m2x...</td>
+      <td style="font-size:12px;color:var(--text-2)">just now</td>
+      <td class="mono" style="font-size:11px"><span style="color:var(--green)">&#8595;0 B</span> <span style="color:var(--blue)">&#8593;0 B</span></td>
+      <td><span class="status-pill online"><span class="status-dot"></span>Online</span></td>
+      <td>
+        <div class="action-btns">
+          <button class="action-btn" title="Traffic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </button>
+          <button class="action-btn" id="btn-qr-peer" title="QR Code">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="17" width="3" height="3"/><rect x="17" y="14" width="3" height="3"/></svg>
+          </button>
+          <button class="action-btn" title="Edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="action-btn" title="Toggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+          </button>
+          <button class="action-btn danger" title="Delete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          </button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+    $('#peers-count-label').textContent = '1 peer';
+    $('#nav-peers-badge').textContent = '1';
+    await wait(500);
+
+    // Click QR button
+    await moveTo('#btn-qr-peer');
+    await click();
+    drawQR();
+    await showModal('#modal-qr-peer');
+    await wait(2500);
+    await hideModal('#modal-qr-peer');
+    await wait(600);
   }
 
-  function setTrustedContent(node, htmlString) {
-    var temp = document.createElement('div');
-    temp.innerHTML = htmlString;  // Only used with hardcoded template strings
-    while (temp.firstChild) node.appendChild(temp.firstChild);
+  /* ── SCENE 2: Domains / Routes ── */
+  async function scene2() {
+    await switchScene('#scene-routes', '#nav-routes', 'Domains / Routes', 2);
+    await wait(600);
+
+    // Add the peer to the dropdown
+    const peerSelect = $('#route-peer');
+    const opt = document.createElement('option');
+    opt.value = 'peer1';
+    opt.textContent = 'NAS Zuhause (10.8.0.2)';
+    peerSelect.appendChild(opt);
+
+    // Type domain
+    await moveTo('#route-domain');
+    await click();
+    await typeInto('#route-domain', 'nas.example.com');
+
+    // DNS check animation
+    const hint = $('#dns-hint');
+    hint.style.display = 'flex';
+    hint.className = 'dns-hint checking';
+    hint.innerHTML = '<div class="spinner-small"></div> Checking DNS...';
+    await wait(1200);
+    hint.className = 'dns-hint ok';
+    hint.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> DNS &#10003;';
+    await wait(400);
+
+    // Type description
+    await moveTo('#route-desc');
+    await click();
+    await typeInto('#route-desc', 'Synology NAS Web UI');
+
+    // Select peer
+    await moveTo('#route-peer');
+    await click();
+    peerSelect.value = 'peer1';
+    peerSelect.dispatchEvent(new Event('change'));
+    await wait(400);
+
+    // Type port
+    await moveTo('#route-port');
+    await click();
+    await typeInto('#route-port', '5001');
+
+    // HTTPS toggle is already on, skip
+
+    // Backend HTTPS toggle
+    await moveTo('#tog-backend-https');
+    await click();
+    setToggle('#tog-backend-https', true);
+    await wait(300);
+
+    // Compression toggle
+    await moveTo('#tog-compress');
+    await click();
+    setToggle('#tog-compress', true);
+    await wait(300);
+
+    // Scroll down to see Save button
+    const mainEl = $('#main-content');
+    mainEl.scrollTop = mainEl.scrollHeight;
+    await wait(300);
+
+    // Click Save & Reload
+    await moveTo('#btn-save-route');
+    await click();
+    flash('Route "nas.example.com" created — Caddy reloaded');
+    await wait(300);
+
+    // Add route to the left side list
+    const routesEmpty = $('#routes-empty');
+    if (routesEmpty) routesEmpty.remove();
+    const routesList = $('#routes-list');
+    const routeItem = document.createElement('div');
+    routeItem.className = 'route-item';
+    routeItem.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div class="route-domain">nas.example.com</div>
+        <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
+        <div class="route-badges">
+          <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+          <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
+          <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>
+        </div>
+      </div>
+      <div class="route-actions">
+        <button class="action-btn" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+      </div>`;
+    routesList.appendChild(routeItem);
+    $('#routes-count').textContent = '1';
+    $('#routes-subtitle').textContent = '1 active route';
+    $('#nav-routes-badge').textContent = '1';
+    mainEl.scrollTop = 0;
+    await wait(800);
   }
 
-  // ---- RENDER WELCOME ----
-  function renderWelcome() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'welcome scene-content' });
-    wrap.appendChild(el('h1', {}, 'GateControl'));
-    wrap.appendChild(el('div', { className: 'subtitle' }, 'Interactive Demo'));
-    var p = el('p');
-    p.appendChild(document.createTextNode('Click a menu item on the left to explore GateControl\'s features.'));
-    p.appendChild(document.createElement('br'));
-    p.appendChild(document.createTextNode('Each section shows an animated walkthrough of a key feature.'));
-    wrap.appendChild(p);
-    mainEl.appendChild(wrap);
+  /* ── SCENE 3: Monitoring & Circuit Breaker ── */
+  async function scene3() {
+    await switchScene('#scene-monitoring', '#nav-monitoring', 'Monitoring & Circuit Breaker', 3);
+    await wait(600);
+
+    // Click edit on route
+    await moveTo('#btn-edit-monitoring');
+    await click();
+
+    // Populate modal for monitoring
+    const body = $('#edit-modal-body');
+    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
+    body.innerHTML = `
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Force HTTPS</div>
+          <div class="toggle-row-desc">Redirect HTTP to HTTPS automatically</div>
+        </div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Backend HTTPS</div>
+          <div class="toggle-row-desc">Backend uses HTTPS</div>
+        </div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Compression</div>
+          <div class="toggle-row-desc">Enable gzip/brotli compression</div>
+        </div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Uptime Monitoring</div>
+          <div class="toggle-row-desc">Periodically check if this route is reachable</div>
+        </div>
+        <div class="toggle" id="edit-tog-monitoring"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Circuit Breaker</div>
+          <div class="toggle-row-desc">Stop forwarding on repeated failures</div>
+        </div>
+        <div class="toggle" id="edit-tog-cb"></div>
+      </div>
+      <div id="cb-fields" style="display:none">
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <div class="form-group" style="flex:1">
+            <label class="form-label">Threshold</label>
+            <input type="number" id="edit-cb-threshold" placeholder="5" style="width:100%">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label class="form-label">Timeout (s)</label>
+            <input type="number" id="edit-cb-timeout" placeholder="30" style="width:100%">
+          </div>
+        </div>
+      </div>`;
+    await showModal('#modal-edit-route');
+    await wait(400);
+
+    // Turn on monitoring
+    await moveTo('#edit-tog-monitoring');
+    await click();
+    setToggle('#edit-tog-monitoring', true);
+    await wait(400);
+
+    // Turn on circuit breaker
+    await moveTo('#edit-tog-cb');
+    await click();
+    setToggle('#edit-tog-cb', true);
+    $('#cb-fields').style.display = 'block';
+    await wait(300);
+
+    // Type threshold
+    await moveTo('#edit-cb-threshold');
+    await click();
+    await typeInto('#edit-cb-threshold', '5');
+
+    // Type timeout
+    await moveTo('#edit-cb-timeout');
+    await click();
+    await typeInto('#edit-cb-timeout', '30');
+
+    // Save
+    await moveTo('#btn-save-edit');
+    await click();
+    await hideModal('#modal-edit-route');
+    flash('Route updated — Monitoring & Circuit Breaker enabled');
+    await wait(400);
+
+    // Update badges
+    const badges = $('#monitoring-badges');
+    badges.innerHTML += `
+      <span class="tag tag-green" id="badge-monitoring"><span class="tag-dot"></span>Monitoring</span>
+      <span class="tag tag-green" id="badge-status"><span class="tag-dot"></span>UP</span>
+      <span class="tag tag-green" id="badge-cb"><span class="tag-dot"></span>CB: Closed</span>`;
+    await wait(1500);
+
+    // Simulate failure: UP → DOWN, CB: Open
+    const statusBadge = $('#badge-status');
+    const cbBadge = $('#badge-cb');
+    statusBadge.className = 'tag tag-red';
+    statusBadge.innerHTML = '<span class="tag-dot"></span>DOWN';
+    cbBadge.className = 'tag tag-red';
+    cbBadge.innerHTML = '<span class="tag-dot"></span>CB: Open';
+    await wait(2000);
+
+    // Recovery: DOWN → UP, CB: Closed
+    statusBadge.className = 'tag tag-green';
+    statusBadge.innerHTML = '<span class="tag-dot"></span>UP';
+    cbBadge.className = 'tag tag-green';
+    cbBadge.innerHTML = '<span class="tag-dot"></span>CB: Closed';
+    await wait(800);
   }
 
-  // ---- RENDER COMPLETION ----
-  function renderCompletion() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'completion scene-content' });
+  /* ── SCENE 4: Security (Route Auth + 2FA) ── */
+  async function scene4() {
+    await switchScene('#scene-security', '#nav-security', 'Security & Authentication', 4);
+    await wait(600);
 
-    var checkIcon = el('div', { className: 'check-icon' });
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', '#16a34a');
-    svg.setAttribute('stroke-width', '2.5');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.setAttribute('width', '28');
-    svg.setAttribute('height', '28');
-    var pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    pl.setAttribute('points', '20 6 9 17 4 12');
-    svg.appendChild(pl);
-    checkIcon.appendChild(svg);
-    wrap.appendChild(checkIcon);
+    // Click edit
+    await moveTo('#btn-edit-security');
+    await click();
 
-    wrap.appendChild(el('h1', {}, 'Demo Complete'));
+    const body = $('#edit-modal-body');
+    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
+    body.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Auth Type</label>
+        <div class="toggle-group" id="edit-auth-group">
+          <button type="button" class="toggle-btn on" id="auth-none">None</button>
+          <button type="button" class="toggle-btn" id="auth-basic">Basic</button>
+          <button type="button" class="toggle-btn" id="auth-route">Route Auth</button>
+        </div>
+      </div>
+      <div id="route-auth-fields" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Method</label>
+          <div class="toggle-group" id="edit-ra-method-group" style="width:100%">
+            <button type="button" class="toggle-btn on" id="ra-email-pw" style="flex:1">Email &amp; Password</button>
+            <button type="button" class="toggle-btn" id="ra-email-code" style="flex:1">Email &amp; Code</button>
+            <button type="button" class="toggle-btn" id="ra-totp" style="flex:1">TOTP</button>
+          </div>
+        </div>
+        <div class="form-group" id="ra-email-group">
+          <label class="form-label">Email</label>
+          <input type="email" id="edit-ra-email" placeholder="name@example.com">
+        </div>
+        <div class="form-group" id="ra-password-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="edit-ra-password" placeholder="••••••••">
+        </div>
+        <div class="toggle-row" style="margin-top:4px">
+          <div class="toggle-row-text">
+            <div class="toggle-row-title">Two-Factor Authentication</div>
+            <div class="toggle-row-desc">Require a second factor after login</div>
+          </div>
+          <div class="toggle" id="edit-tog-2fa"></div>
+        </div>
+        <div id="twofa-fields" style="display:none;margin-top:8px">
+          <div class="form-group">
+            <label class="form-label">2FA Method</label>
+            <div class="toggle-group" id="edit-2fa-method-group" style="width:100%">
+              <button type="button" class="toggle-btn on" id="twofa-email" style="flex:1">Email Code</button>
+              <button type="button" class="toggle-btn" id="twofa-totp" style="flex:1">TOTP</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    await showModal('#modal-edit-route');
+    await wait(400);
 
-    var featureNames = [
-      'Peer Management',
-      'Domain Routing with HTTPS',
-      'Uptime Monitoring & Circuit Breaker',
-      'Route Authentication & 2FA',
-      'Request Mirroring'
-    ];
-    var ul = el('ul', { className: 'features' });
-    featureNames.forEach(function(name) {
-      var li = el('li');
-      var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      s.setAttribute('viewBox', '0 0 24 24');
-      s.setAttribute('fill', 'none');
-      s.setAttribute('stroke', 'currentColor');
-      s.setAttribute('stroke-width', '2.5');
-      s.setAttribute('stroke-linecap', 'round');
-      s.setAttribute('stroke-linejoin', 'round');
-      s.setAttribute('width', '16');
-      s.setAttribute('height', '16');
-      var p2 = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      p2.setAttribute('points', '20 6 9 17 4 12');
-      s.appendChild(p2);
-      li.appendChild(s);
-      li.appendChild(document.createTextNode(name));
-      ul.appendChild(li);
-    });
-    wrap.appendChild(ul);
+    // Click "Route Auth"
+    await moveTo('#auth-route');
+    await click();
+    $('#auth-none').classList.remove('on');
+    $('#auth-route').classList.add('on');
+    $('#route-auth-fields').style.display = 'flex';
+    $('#route-auth-fields').style.flexDirection = 'column';
+    $('#route-auth-fields').style.gap = '12px';
+    await wait(400);
 
-    var btns = el('div', { className: 'buttons' });
-    var btnGh = el('a', { className: 'btn-primary', href: 'https://github.com/CallMeTechie/gatecontrol', target: '_blank' });
-    setSvgContent(btnGh, svgGithub);
-    btnGh.appendChild(document.createTextNode(' View on GitHub'));
-    btns.appendChild(btnGh);
-    var btnDoc = el('a', { className: 'btn-secondary', href: 'https://github.com/CallMeTechie/gatecontrol', target: '_blank' });
-    btnDoc.textContent = 'Documentation';
-    btns.appendChild(btnDoc);
-    wrap.appendChild(btns);
+    // Email & Password is already selected
+    // Type email
+    await moveTo('#edit-ra-email');
+    await click();
+    await typeInto('#edit-ra-email', 'admin@example.com');
 
-    mainEl.appendChild(wrap);
+    // Type password
+    await moveTo('#edit-ra-password');
+    await click();
+    await typePassword('#edit-ra-password', 10);
+    await wait(300);
+
+    // Enable 2FA
+    await moveTo('#edit-tog-2fa');
+    await click();
+    setToggle('#edit-tog-2fa', true);
+    $('#twofa-fields').style.display = 'block';
+    await wait(400);
+
+    // Select TOTP
+    await moveTo('#twofa-totp');
+    await click();
+    $('#twofa-email').classList.remove('on');
+    $('#twofa-totp').classList.add('on');
+    await wait(400);
+
+    // Save
+    await moveTo('#btn-save-edit');
+    await click();
+    await hideModal('#modal-edit-route');
+    flash('Route Auth enabled — Email & Password + 2FA TOTP');
+    await wait(400);
+
+    // Update badges
+    const badges = $('#security-badges');
+    badges.innerHTML += `
+      <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
+      <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>`;
+    await wait(800);
   }
 
-  // ---- SCENE 1: PEERS ----
-  function renderPeersScene() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'scene-content' });
-
-    // Header
-    var header = el('div', { className: 'scene-header' });
-    var headerLeft = el('div');
-    headerLeft.appendChild(el('div', { className: 'scene-title' }, 'Peers / Clients'));
-    headerLeft.appendChild(el('div', { className: 'scene-desc' }, 'Manage WireGuard peers connected to your gateway'));
-    header.appendChild(headerLeft);
-    var btnAdd = el('button', { className: 'btn-add', id: 'btn-add-peer' });
-    setSvgContent(btnAdd, svgPlus);
-    btnAdd.appendChild(document.createTextNode(' Add Peer'));
-    header.appendChild(btnAdd);
-    wrap.appendChild(header);
-
-    // Form panel
-    var form = el('div', { className: 'form-panel', id: 'peer-form' });
-    var row1 = el('div', { className: 'form-row' });
-    row1.appendChild(el('label', { className: 'form-label' }, 'Peer Name'));
-    row1.appendChild(el('input', { className: 'form-input', id: 'input-peer-name', placeholder: 'e.g. My Laptop', autocomplete: 'off' }));
-    form.appendChild(row1);
-    var row2 = el('div', { className: 'form-row' });
-    row2.appendChild(el('label', { className: 'form-label' }, 'DNS Servers'));
-    row2.appendChild(el('input', { className: 'form-input', id: 'input-peer-dns', placeholder: '1.1.1.1, 8.8.8.8', autocomplete: 'off' }));
-    form.appendChild(row2);
-    var row3 = el('div', { className: 'form-row' });
-    row3.appendChild(el('label', { className: 'form-label' }, 'Persistent Keepalive (seconds)'));
-    row3.appendChild(el('input', { className: 'form-input', id: 'input-peer-keepalive', placeholder: '25', autocomplete: 'off' }));
-    form.appendChild(row3);
-    var actions = el('div', { className: 'form-actions' });
-    actions.appendChild(el('button', { className: 'btn-save', id: 'btn-save-peer' }, 'Save Peer'));
-    actions.appendChild(el('button', { className: 'btn-cancel' }, 'Cancel'));
-    form.appendChild(actions);
-    wrap.appendChild(form);
-
-    // Empty card
-    var emptyCard = el('div', { className: 'card', id: 'peer-empty' });
-    var emptyInner = el('div', { className: 'card-empty' });
-    setSvgContent(emptyInner, svgNetwork);
-    emptyInner.appendChild(el('div', {}, 'No peers configured yet. Click "Add Peer" to get started.'));
-    emptyCard.appendChild(emptyInner);
-    wrap.appendChild(emptyCard);
-
-    // Result card (hidden)
-    var resultCard = el('div', { className: 'card hidden', id: 'peer-card-result' });
-    var peerCard = el('div', { className: 'peer-card' });
-    var peerIcon = el('div', { className: 'peer-icon' });
-    setSvgContent(peerIcon, svgPeer);
-    peerCard.appendChild(peerIcon);
-    var peerInfo = el('div', { className: 'peer-info' });
-    peerInfo.appendChild(el('div', { className: 'peer-name' }, 'NAS Zuhause'));
-    peerInfo.appendChild(el('div', { className: 'peer-ip' }, '10.8.0.2/32'));
-    peerCard.appendChild(peerInfo);
-    var peerActions = el('div', { className: 'peer-actions' });
-    var onlineBadge = el('span', { className: 'badge badge-green' });
-    var onlineDot = el('span', { className: 'dot' });
-    onlineBadge.appendChild(onlineDot);
-    onlineBadge.appendChild(document.createTextNode(' Online'));
-    peerActions.appendChild(onlineBadge);
-    var qrBtn = el('button', { className: 'qr-btn', id: 'qr-btn' });
-    setSvgContent(qrBtn, svgQr);
-    peerActions.appendChild(qrBtn);
-    peerCard.appendChild(peerActions);
-    resultCard.appendChild(peerCard);
-    wrap.appendChild(resultCard);
-
-    mainEl.appendChild(wrap);
-  }
-
-  async function playPeersScene() {
-    var total = 9, step = 0;
-    function p() { setProgress(Math.round((++step / total) * 100)); }
-
-    await sleep(400);
-    await moveCursor('#btn-add-peer');
-    await clickEffect(); p();
-    await sleep(200);
-
-    document.getElementById('peer-form').classList.add('visible');
-    p();
-    await sleep(400);
-
-    await moveCursor('#input-peer-name');
-    await clickEffect();
-    await typeText('#input-peer-name', 'NAS Zuhause');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-peer-dns');
-    await clickEffect();
-    await typeText('#input-peer-dns', '1.1.1.1, 8.8.8.8');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-peer-keepalive');
-    await clickEffect();
-    await typeText('#input-peer-keepalive', '25');
-    p();
-    await sleep(200);
-
-    await moveCursor('#btn-save-peer');
-    await clickEffect(); p();
-    await sleep(300);
-
-    var formEl = document.getElementById('peer-form');
-    formEl.classList.remove('visible');
-    formEl.style.display = 'none';
-    showToastNoWait('Peer created successfully');
-    p();
-    await sleep(400);
-
-    document.getElementById('peer-empty').classList.add('hidden');
-    var peerCard = document.getElementById('peer-card-result');
-    peerCard.classList.remove('hidden');
-    peerCard.style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(600);
-
-    document.getElementById('qr-btn').classList.add('pulsing');
-    p();
-    await sleep(2400);
-  }
-
-  // ---- SCENE 2: ROUTES ----
-  function renderRoutesScene() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'scene-content' });
-
-    // Header
-    var header = el('div', { className: 'scene-header' });
-    var headerLeft = el('div');
-    headerLeft.appendChild(el('div', { className: 'scene-title' }, 'Domains / Routes'));
-    headerLeft.appendChild(el('div', { className: 'scene-desc' }, 'Configure reverse proxy routes for your services'));
-    header.appendChild(headerLeft);
-    wrap.appendChild(header);
-
-    // Two column layout
-    var layout = el('div', { className: 'routes-layout' });
-
-    // Left: list
-    var listPanel = el('div', { className: 'routes-list-panel' });
-    var emptyCard = el('div', { className: 'card', id: 'route-empty' });
-    var emptyInner = el('div', { className: 'card-empty' });
-    setSvgContent(emptyInner, svgGlobe);
-    emptyInner.appendChild(el('div', {}, 'No routes configured yet.'));
-    emptyCard.appendChild(emptyInner);
-    listPanel.appendChild(emptyCard);
-
-    // Result card (hidden)
-    var resultCard = el('div', { className: 'card hidden', id: 'route-card-result' });
-    var routeCard = el('div', { className: 'route-card' });
-    var routeIcon = el('div', { className: 'route-icon' });
-    setSvgContent(routeIcon, svgRoute);
-    routeCard.appendChild(routeIcon);
-    var routeInfo = el('div', { className: 'route-info' });
-    routeInfo.appendChild(el('div', { className: 'route-domain' }, 'nas.example.com'));
-    var target = el('div', { className: 'route-target' });
-    target.appendChild(document.createTextNode('\u2192 10.8.0.2:5001'));
-    routeInfo.appendChild(target);
-    var badges = el('div', { className: 'route-badges', id: 'route-badges' });
-    var b1 = el('span', { className: 'badge badge-green' });
-    b1.appendChild(el('span', { className: 'dot' }));
-    b1.appendChild(document.createTextNode(' HTTPS'));
-    badges.appendChild(b1);
-    var b2 = el('span', { className: 'badge badge-blue' });
-    b2.appendChild(el('span', { className: 'dot' }));
-    b2.appendChild(document.createTextNode(' Compression'));
-    badges.appendChild(b2);
-    badges.appendChild(el('span', { className: 'badge badge-gray' }, 'Backend HTTPS'));
-    routeInfo.appendChild(badges);
-    routeCard.appendChild(routeInfo);
-    resultCard.appendChild(routeCard);
-    listPanel.appendChild(resultCard);
-    layout.appendChild(listPanel);
-
-    // Right: form
-    var formPanel = el('div', { className: 'routes-form-panel' });
-    formPanel.appendChild(el('div', { style: 'font-size:15px;font-weight:600;color:var(--text-1);margin-bottom:16px;' }, 'New Route'));
-
-    var row1 = el('div', { className: 'form-row' });
-    row1.appendChild(el('label', { className: 'form-label' }, 'Domain'));
-    row1.appendChild(el('input', { className: 'form-input', id: 'input-route-domain', placeholder: 'e.g. app.example.com', autocomplete: 'off' }));
-    row1.appendChild(el('div', { className: 'dns-check hidden', id: 'dns-check' }));
-    formPanel.appendChild(row1);
-
-    var row2 = el('div', { className: 'form-row' });
-    row2.appendChild(el('label', { className: 'form-label' }, 'Target Peer'));
-    var selWrap = el('div', { className: 'select-wrapper' });
-    var sel = el('select', { className: 'form-select', id: 'select-peer' });
-    var opt0 = el('option', { value: '', disabled: true, selected: true }, 'Select a peer...');
-    sel.appendChild(opt0);
-    sel.appendChild(el('option', { value: 'nas' }, 'NAS Zuhause (10.8.0.2)'));
-    selWrap.appendChild(sel);
-    row2.appendChild(selWrap);
-    formPanel.appendChild(row2);
-
-    var row3 = el('div', { className: 'form-row' });
-    row3.appendChild(el('label', { className: 'form-label' }, 'Target Port'));
-    row3.appendChild(el('input', { className: 'form-input', id: 'input-route-port', placeholder: 'e.g. 8080', autocomplete: 'off' }));
-    formPanel.appendChild(row3);
-
-    // Toggles
-    function addToggle(parent, label, id) {
-      var row = el('div', { className: 'toggle-row' });
-      row.appendChild(el('span', { className: 'toggle-label' }, label));
-      var tog = el('div', { className: 'toggle', id: id });
-      tog.appendChild(el('div', { className: 'knob' }));
-      row.appendChild(tog);
-      parent.appendChild(row);
-    }
-    addToggle(formPanel, 'HTTPS', 'toggle-https');
-    addToggle(formPanel, 'Backend HTTPS', 'toggle-backend-https');
-    addToggle(formPanel, 'Compression', 'toggle-compression');
-
-    var actions = el('div', { className: 'form-actions' });
-    actions.appendChild(el('button', { className: 'btn-save', id: 'btn-save-route' }, 'Save & Reload'));
-    formPanel.appendChild(actions);
-
-    layout.appendChild(formPanel);
-    wrap.appendChild(layout);
-    mainEl.appendChild(wrap);
-  }
-
-  async function playRoutesScene() {
-    var total = 9, step = 0;
-    function p() { setProgress(Math.round((++step / total) * 100)); }
-
-    await sleep(400);
-
-    await moveCursor('#input-route-domain');
-    await clickEffect();
-    await typeText('#input-route-domain', 'nas.example.com');
-    p();
-
-    // DNS check
-    var dnsEl = document.getElementById('dns-check');
-    dnsEl.classList.remove('hidden');
-    dnsEl.className = 'dns-check checking';
-    dnsEl.textContent = '';
-    var spinner = el('span', { className: 'dns-spinner' });
-    dnsEl.appendChild(spinner);
-    dnsEl.appendChild(document.createTextNode(' Checking DNS...'));
-    await sleep(1000);
-    dnsEl.className = 'dns-check ok';
-    dnsEl.textContent = '';
-    setSvgContent(dnsEl, svgCheckSmall);
-    dnsEl.appendChild(document.createTextNode(' DNS \u2713'));
-    p();
-    await sleep(400);
-
-    await moveCursor('#select-peer');
-    await clickEffect();
-    document.getElementById('select-peer').value = 'nas';
-    document.getElementById('select-peer').classList.add('focused');
-    p();
-    await sleep(400);
-
-    await moveCursor('#input-route-port');
-    await clickEffect();
-    await typeText('#input-route-port', '5001');
-    p();
-    await sleep(300);
-
-    await moveCursor('#toggle-https');
-    await clickEffect();
-    document.getElementById('toggle-https').classList.add('on');
-    p();
-    await sleep(300);
-
-    await moveCursor('#toggle-backend-https');
-    await clickEffect();
-    document.getElementById('toggle-backend-https').classList.add('on');
-    p();
-    await sleep(300);
-
-    await moveCursor('#toggle-compression');
-    await clickEffect();
-    document.getElementById('toggle-compression').classList.add('on');
-    p();
-    await sleep(300);
-
-    await moveCursor('#btn-save-route');
-    await clickEffect();
-    p();
-    await sleep(300);
-
-    showToastNoWait('Route created successfully');
-    document.getElementById('route-empty').classList.add('hidden');
-    var routeCard = document.getElementById('route-card-result');
-    routeCard.classList.remove('hidden');
-    routeCard.style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(2200);
-  }
-
-  // ---- SCENE 3: MONITORING ----
-  function renderMonitoringScene() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'scene-content' });
-
-    var header = el('div', { className: 'scene-header' });
-    var headerLeft = el('div');
-    headerLeft.appendChild(el('div', { className: 'scene-title' }, 'Monitoring'));
-    headerLeft.appendChild(el('div', { className: 'scene-desc' }, 'Configure uptime monitoring and circuit breaker for routes'));
-    header.appendChild(headerLeft);
-    wrap.appendChild(header);
-
-    var card = el('div', { className: 'card', id: 'monitoring-route-card' });
-    var routeCard = el('div', { className: 'route-card' });
-    var routeIcon = el('div', { className: 'route-icon' });
-    setSvgContent(routeIcon, svgRoute);
-    routeCard.appendChild(routeIcon);
-    var routeInfo = el('div', { className: 'route-info' });
-    routeInfo.appendChild(el('div', { className: 'route-domain' }, 'nas.example.com'));
-    var tgt = el('div', { className: 'route-target' });
-    tgt.appendChild(document.createTextNode('\u2192 10.8.0.2:5001'));
-    routeInfo.appendChild(tgt);
-    var badges = el('div', { className: 'route-badges', id: 'monitoring-badges' });
-    var b1 = el('span', { className: 'badge badge-green' });
-    b1.appendChild(el('span', { className: 'dot' }));
-    b1.appendChild(document.createTextNode(' HTTPS'));
-    badges.appendChild(b1);
-    routeInfo.appendChild(badges);
-    routeCard.appendChild(routeInfo);
-    var actions = el('div', { className: 'route-actions' });
-    var editBtn = el('button', { className: 'btn-edit', id: 'btn-edit-monitoring' });
-    setSvgContent(editBtn, svgEdit);
-    actions.appendChild(editBtn);
-    routeCard.appendChild(actions);
-    card.appendChild(routeCard);
-    wrap.appendChild(card);
-
-    wrap.appendChild(el('div', { id: 'monitoring-modal-container' }));
-    mainEl.appendChild(wrap);
-  }
-
-  function buildMonitoringModal() {
-    var overlay = el('div', { className: 'modal-overlay', id: 'monitoring-modal' });
-    var modal = el('div', { className: 'modal' });
-
-    var mh = el('div', { className: 'modal-header' });
-    mh.appendChild(el('span', { className: 'modal-title' }, 'Route Settings \u2014 nas.example.com'));
-    var closeBtn = el('button', { className: 'modal-close' });
-    closeBtn.textContent = '\u00d7';
-    mh.appendChild(closeBtn);
-    modal.appendChild(mh);
-
-    var body = el('div', { className: 'modal-body' });
-
-    // Uptime toggle
-    var tr1 = el('div', { className: 'toggle-row' });
-    tr1.appendChild(el('span', { className: 'toggle-label' }, 'Uptime Monitoring'));
-    var tog1 = el('div', { className: 'toggle', id: 'toggle-uptime' });
-    tog1.appendChild(el('div', { className: 'knob' }));
-    tr1.appendChild(tog1);
-    body.appendChild(tr1);
-
-    // Circuit breaker toggle
-    var tr2 = el('div', { className: 'toggle-row' });
-    tr2.appendChild(el('span', { className: 'toggle-label' }, 'Circuit Breaker'));
-    var tog2 = el('div', { className: 'toggle', id: 'toggle-circuit' });
-    tog2.appendChild(el('div', { className: 'knob' }));
-    tr2.appendChild(tog2);
-    body.appendChild(tr2);
-
-    // CB fields (hidden)
-    var cbFields = el('div', { className: 'hidden', id: 'cb-fields', style: 'margin-top:12px;' });
-    var fr1 = el('div', { className: 'form-row' });
-    fr1.appendChild(el('label', { className: 'form-label' }, 'Failure Threshold'));
-    fr1.appendChild(el('input', { className: 'form-input', id: 'input-threshold', placeholder: 'e.g. 5', autocomplete: 'off' }));
-    cbFields.appendChild(fr1);
-    var fr2 = el('div', { className: 'form-row' });
-    fr2.appendChild(el('label', { className: 'form-label' }, 'Timeout (seconds)'));
-    fr2.appendChild(el('input', { className: 'form-input', id: 'input-timeout', placeholder: 'e.g. 30', autocomplete: 'off' }));
-    cbFields.appendChild(fr2);
-    body.appendChild(cbFields);
-
-    modal.appendChild(body);
-
-    var footer = el('div', { className: 'modal-footer' });
-    footer.appendChild(el('button', { className: 'btn-cancel' }, 'Cancel'));
-    footer.appendChild(el('button', { className: 'btn-save', id: 'btn-save-monitoring' }, 'Save'));
-    modal.appendChild(footer);
-
-    overlay.appendChild(modal);
-    return overlay;
-  }
-
-  async function playMonitoringScene() {
-    var total = 11, step = 0;
-    function p() { setProgress(Math.round((++step / total) * 100)); }
-
-    await sleep(400);
-
-    await moveCursor('#btn-edit-monitoring');
-    await clickEffect(); p();
-    await sleep(200);
-
-    var container = document.getElementById('monitoring-modal-container');
-    container.appendChild(buildMonitoringModal());
-    p();
-    await sleep(400);
-
-    await moveCursor('#toggle-uptime');
-    await clickEffect();
-    document.getElementById('toggle-uptime').classList.add('on');
-    p();
-    await sleep(300);
-
-    await moveCursor('#toggle-circuit');
-    await clickEffect();
-    document.getElementById('toggle-circuit').classList.add('on');
-    var cbFields = document.getElementById('cb-fields');
-    cbFields.classList.remove('hidden');
-    cbFields.style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(400);
-
-    await moveCursor('#input-threshold');
-    await clickEffect();
-    await typeText('#input-threshold', '5');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-timeout');
-    await clickEffect();
-    await typeText('#input-timeout', '30');
-    p();
-    await sleep(200);
-
-    await moveCursor('#btn-save-monitoring');
-    await clickEffect(); p();
-    await sleep(300);
-
-    document.getElementById('monitoring-modal').remove();
-    showToastNoWait('Monitoring settings saved');
-    var badges = document.getElementById('monitoring-badges');
-    badges.appendChild(document.createTextNode(' '));
-    badges.appendChild(el('span', { className: 'badge badge-gray' }, 'Monitoring'));
-    badges.appendChild(document.createTextNode(' '));
-    var upBadge = el('span', { className: 'badge badge-green', id: 'uptime-badge' });
-    upBadge.appendChild(el('span', { className: 'dot' }));
-    upBadge.appendChild(document.createTextNode(' UP'));
-    badges.appendChild(upBadge);
-    p();
-    await sleep(2000);
-
-    // DOWN
-    var uptimeBadge = document.getElementById('uptime-badge');
-    uptimeBadge.className = 'badge badge-red';
-    uptimeBadge.textContent = '';
-    uptimeBadge.appendChild(el('span', { className: 'dot' }));
-    uptimeBadge.appendChild(document.createTextNode(' DOWN'));
-    p();
-    await sleep(500);
-
-    // CB Open
-    badges.appendChild(document.createTextNode(' '));
-    var cbBadge = el('span', { className: 'badge badge-red', id: 'cb-badge' });
-    cbBadge.appendChild(el('span', { className: 'dot' }));
-    cbBadge.appendChild(document.createTextNode(' CB: Open'));
-    badges.appendChild(cbBadge);
-    p();
-    await sleep(2000);
-
-    // Recover
-    uptimeBadge.className = 'badge badge-green';
-    uptimeBadge.textContent = '';
-    uptimeBadge.appendChild(el('span', { className: 'dot' }));
-    uptimeBadge.appendChild(document.createTextNode(' UP'));
-    var cbEl = document.getElementById('cb-badge');
-    cbEl.className = 'badge badge-green';
-    cbEl.textContent = '';
-    cbEl.appendChild(el('span', { className: 'dot' }));
-    cbEl.appendChild(document.createTextNode(' CB: Closed'));
-    p();
-    await sleep(1500);
-  }
-
-  // ---- SCENE 4: SECURITY ----
-  function renderSecurityScene() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'scene-content' });
-
-    var header = el('div', { className: 'scene-header' });
-    var headerLeft = el('div');
-    headerLeft.appendChild(el('div', { className: 'scene-title' }, 'Security'));
-    headerLeft.appendChild(el('div', { className: 'scene-desc' }, 'Configure authentication and access control for routes'));
-    header.appendChild(headerLeft);
-    wrap.appendChild(header);
-
-    var card = el('div', { className: 'card', id: 'security-route-card' });
-    var routeCard = el('div', { className: 'route-card' });
-    var routeIcon = el('div', { className: 'route-icon' });
-    setSvgContent(routeIcon, svgRoute);
-    routeCard.appendChild(routeIcon);
-    var routeInfo = el('div', { className: 'route-info' });
-    routeInfo.appendChild(el('div', { className: 'route-domain' }, 'nas.example.com'));
-    var tgt = el('div', { className: 'route-target' });
-    tgt.appendChild(document.createTextNode('\u2192 10.8.0.2:5001'));
-    routeInfo.appendChild(tgt);
-    var badges = el('div', { className: 'route-badges', id: 'security-badges' });
-    var b1 = el('span', { className: 'badge badge-green' });
-    b1.appendChild(el('span', { className: 'dot' }));
-    b1.appendChild(document.createTextNode(' HTTPS'));
-    badges.appendChild(b1);
-    routeInfo.appendChild(badges);
-    routeCard.appendChild(routeInfo);
-    var actions = el('div', { className: 'route-actions' });
-    var editBtn = el('button', { className: 'btn-edit', id: 'btn-edit-security' });
-    setSvgContent(editBtn, svgEdit);
-    actions.appendChild(editBtn);
-    routeCard.appendChild(actions);
-    card.appendChild(routeCard);
-    wrap.appendChild(card);
-
-    wrap.appendChild(el('div', { id: 'security-modal-container' }));
-    mainEl.appendChild(wrap);
-  }
-
-  function buildSecurityModal() {
-    var overlay = el('div', { className: 'modal-overlay', id: 'security-modal' });
-    var modal = el('div', { className: 'modal' });
-
-    var mh = el('div', { className: 'modal-header' });
-    mh.appendChild(el('span', { className: 'modal-title' }, 'Route Authentication \u2014 nas.example.com'));
-    var closeBtn = el('button', { className: 'modal-close' });
-    closeBtn.textContent = '\u00d7';
-    mh.appendChild(closeBtn);
-    modal.appendChild(mh);
-
-    var body = el('div', { className: 'modal-body' });
-    body.appendChild(el('label', { className: 'form-label', style: 'margin-bottom:8px;' }, 'Authentication Type'));
-
-    var tabs = el('div', { className: 'auth-tabs' });
-    tabs.appendChild(el('button', { className: 'auth-tab active', id: 'auth-none' }, 'None'));
-    tabs.appendChild(el('button', { className: 'auth-tab', id: 'auth-basic' }, 'Basic'));
-    tabs.appendChild(el('button', { className: 'auth-tab', id: 'auth-route' }, 'Route Auth'));
-    body.appendChild(tabs);
-
-    var fields = el('div', { className: 'hidden', id: 'auth-fields' });
-    var fr1 = el('div', { className: 'form-row' });
-    fr1.appendChild(el('label', { className: 'form-label' }, 'Email'));
-    fr1.appendChild(el('input', { className: 'form-input', id: 'input-auth-email', placeholder: 'admin@example.com', autocomplete: 'off' }));
-    fields.appendChild(fr1);
-    var fr2 = el('div', { className: 'form-row' });
-    fr2.appendChild(el('label', { className: 'form-label' }, 'Password'));
-    fr2.appendChild(el('input', { className: 'form-input', id: 'input-auth-password', type: 'password', placeholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022', autocomplete: 'off' }));
-    fields.appendChild(fr2);
-
-    var tr = el('div', { className: 'toggle-row' });
-    tr.appendChild(el('span', { className: 'toggle-label' }, 'Two-Factor Authentication (2FA)'));
-    var tog = el('div', { className: 'toggle', id: 'toggle-2fa' });
-    tog.appendChild(el('div', { className: 'knob' }));
-    tr.appendChild(tog);
-    fields.appendChild(tr);
-
-    var totpInfo = el('div', { className: 'hidden', id: 'totp-info', style: 'margin-top:8px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text-2);' });
-    var strong = el('strong', { style: 'color:var(--text-1);' }, 'TOTP');
-    totpInfo.appendChild(strong);
-    totpInfo.appendChild(document.createTextNode(' \u2014 Time-based One-Time Password selected. Users will need an authenticator app.'));
-    fields.appendChild(totpInfo);
-
-    body.appendChild(fields);
-    modal.appendChild(body);
-
-    var footer = el('div', { className: 'modal-footer' });
-    footer.appendChild(el('button', { className: 'btn-cancel' }, 'Cancel'));
-    footer.appendChild(el('button', { className: 'btn-save', id: 'btn-save-security' }, 'Save'));
-    modal.appendChild(footer);
-
-    overlay.appendChild(modal);
-    return overlay;
-  }
-
-  async function playSecurityScene() {
-    var total = 10, step = 0;
-    function p() { setProgress(Math.round((++step / total) * 100)); }
-
-    await sleep(400);
-
-    await moveCursor('#btn-edit-security');
-    await clickEffect(); p();
-    await sleep(200);
-
-    document.getElementById('security-modal-container').appendChild(buildSecurityModal());
-    p();
-    await sleep(400);
-
-    await moveCursor('#auth-route');
-    await clickEffect();
-    document.getElementById('auth-none').classList.remove('active');
-    document.getElementById('auth-route').classList.add('active');
-    p();
-    await sleep(300);
-
-    var authFields = document.getElementById('auth-fields');
-    authFields.classList.remove('hidden');
-    authFields.style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(400);
-
-    await moveCursor('#input-auth-email');
-    await clickEffect();
-    await typeText('#input-auth-email', 'admin@example.com');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-auth-password');
-    await clickEffect();
-    await typeText('#input-auth-password', 'S3cur3P@ss');
-    p();
-    await sleep(200);
-
-    await moveCursor('#toggle-2fa');
-    await clickEffect();
-    document.getElementById('toggle-2fa').classList.add('on');
-    p();
-    await sleep(300);
-
-    document.getElementById('totp-info').classList.remove('hidden');
-    document.getElementById('totp-info').style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(500);
-
-    await moveCursor('#btn-save-security');
-    await clickEffect(); p();
-    await sleep(300);
-
-    document.getElementById('security-modal').remove();
-    showToastNoWait('Authentication settings saved');
-    var badges = document.getElementById('security-badges');
-    badges.appendChild(document.createTextNode(' '));
-    var b1 = el('span', { className: 'badge badge-amber' });
-    b1.appendChild(el('span', { className: 'dot' }));
-    b1.appendChild(document.createTextNode(' Email & Password'));
-    badges.appendChild(b1);
-    badges.appendChild(document.createTextNode(' '));
-    var b2 = el('span', { className: 'badge badge-blue' });
-    b2.appendChild(el('span', { className: 'dot' }));
-    b2.appendChild(document.createTextNode(' 2FA: TOTP'));
-    badges.appendChild(b2);
-    p();
-    await sleep(2200);
-  }
-
-  // ---- SCENE 5: MIRRORING ----
-  function renderMirroringScene() {
-    mainEl.textContent = '';
-    var wrap = el('div', { className: 'scene-content' });
-
-    var header = el('div', { className: 'scene-header' });
-    var headerLeft = el('div');
-    headerLeft.appendChild(el('div', { className: 'scene-title' }, 'Request Mirroring'));
-    headerLeft.appendChild(el('div', { className: 'scene-desc' }, 'Mirror incoming requests to additional backend targets'));
-    header.appendChild(headerLeft);
-    wrap.appendChild(header);
-
-    var card = el('div', { className: 'card', id: 'mirror-route-card' });
-    var routeCard = el('div', { className: 'route-card' });
-    var routeIcon = el('div', { className: 'route-icon' });
-    setSvgContent(routeIcon, svgRoute);
-    routeCard.appendChild(routeIcon);
-    var routeInfo = el('div', { className: 'route-info' });
-    routeInfo.appendChild(el('div', { className: 'route-domain' }, 'nas.example.com'));
-    var tgt = el('div', { className: 'route-target' });
-    tgt.appendChild(document.createTextNode('\u2192 10.8.0.2:5001'));
-    routeInfo.appendChild(tgt);
-    var badges = el('div', { className: 'route-badges', id: 'mirror-badges' });
-    var b1 = el('span', { className: 'badge badge-green' });
-    b1.appendChild(el('span', { className: 'dot' }));
-    b1.appendChild(document.createTextNode(' HTTPS'));
-    badges.appendChild(b1);
-    routeInfo.appendChild(badges);
-    routeCard.appendChild(routeInfo);
-    var actions = el('div', { className: 'route-actions' });
-    var editBtn = el('button', { className: 'btn-edit', id: 'btn-edit-mirror' });
-    setSvgContent(editBtn, svgEdit);
-    actions.appendChild(editBtn);
-    routeCard.appendChild(actions);
-    card.appendChild(routeCard);
-    wrap.appendChild(card);
-
-    wrap.appendChild(el('div', { id: 'mirror-modal-container' }));
-    mainEl.appendChild(wrap);
-  }
-
-  function buildMirrorModal() {
-    var overlay = el('div', { className: 'modal-overlay', id: 'mirror-modal' });
-    var modal = el('div', { className: 'modal' });
-
-    var mh = el('div', { className: 'modal-header' });
-    mh.appendChild(el('span', { className: 'modal-title' }, 'Request Mirroring \u2014 nas.example.com'));
-    var closeBtn = el('button', { className: 'modal-close' });
-    closeBtn.textContent = '\u00d7';
-    mh.appendChild(closeBtn);
-    modal.appendChild(mh);
-
-    var body = el('div', { className: 'modal-body' });
-
-    var tr = el('div', { className: 'toggle-row' });
-    tr.appendChild(el('span', { className: 'toggle-label' }, 'Request Mirroring'));
-    var tog = el('div', { className: 'toggle', id: 'toggle-mirror' });
-    tog.appendChild(el('div', { className: 'knob' }));
-    tr.appendChild(tog);
-    body.appendChild(tr);
-
-    var targets = el('div', { className: 'hidden', id: 'mirror-targets', style: 'margin-top:14px;' });
-    targets.appendChild(el('label', { className: 'form-label', style: 'margin-bottom:10px;' }, 'Mirror Targets'));
-    targets.appendChild(el('div', { id: 'mirror-target-list' }));
-    var addBtn = el('button', { className: 'btn-add', id: 'btn-add-target', style: 'margin-top:8px;font-size:12px;padding:7px 14px;' });
-    setSvgContent(addBtn, svgPlus);
-    addBtn.appendChild(document.createTextNode(' Add Target'));
-    targets.appendChild(addBtn);
-    body.appendChild(targets);
-
-    modal.appendChild(body);
-
-    var footer = el('div', { className: 'modal-footer' });
-    footer.appendChild(el('button', { className: 'btn-cancel' }, 'Cancel'));
-    footer.appendChild(el('button', { className: 'btn-save', id: 'btn-save-mirror' }, 'Save'));
-    modal.appendChild(footer);
-
-    overlay.appendChild(modal);
-    return overlay;
-  }
-
-  function addMirrorTargetRow(num) {
-    var list = document.getElementById('mirror-target-list');
-    var row = el('div', { className: 'mirror-target-row' });
-    row.appendChild(el('span', { className: 'mirror-target-num' }, String(num)));
-    row.appendChild(el('input', { className: 'form-input', id: 'input-mirror-ip-' + num, placeholder: 'IP address', autocomplete: 'off' }));
-    row.appendChild(el('input', { className: 'form-input port-input', id: 'input-mirror-port-' + num, placeholder: 'Port', autocomplete: 'off' }));
-    list.appendChild(row);
-  }
-
-  async function playMirroringScene() {
-    var total = 11, step = 0;
-    function p() { setProgress(Math.round((++step / total) * 100)); }
-
-    await sleep(400);
-
-    await moveCursor('#btn-edit-mirror');
-    await clickEffect(); p();
-    await sleep(200);
-
-    document.getElementById('mirror-modal-container').appendChild(buildMirrorModal());
-    p();
-    await sleep(400);
-
-    await moveCursor('#toggle-mirror');
-    await clickEffect();
-    document.getElementById('toggle-mirror').classList.add('on');
-    p();
-    await sleep(300);
-
-    var targetsEl = document.getElementById('mirror-targets');
-    targetsEl.classList.remove('hidden');
-    targetsEl.style.animation = 'slideIn 0.3s ease-out';
-    p();
-    await sleep(400);
-
-    await moveCursor('#btn-add-target');
-    await clickEffect();
-    addMirrorTargetRow(1);
-    p();
-    await sleep(300);
-
-    await moveCursor('#input-mirror-ip-1');
-    await clickEffect();
-    await typeText('#input-mirror-ip-1', '203.0.113.10');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-mirror-port-1');
-    await clickEffect();
-    await typeText('#input-mirror-port-1', '8080');
-    p();
-    await sleep(200);
-
-    await moveCursor('#btn-add-target');
-    await clickEffect();
-    addMirrorTargetRow(2);
-    p();
-    await sleep(300);
-
-    await moveCursor('#input-mirror-ip-2');
-    await clickEffect();
-    await typeText('#input-mirror-ip-2', '203.0.113.11');
-    p();
-    await sleep(200);
-
-    await moveCursor('#input-mirror-port-2');
-    await clickEffect();
-    await typeText('#input-mirror-port-2', '9090');
-    p();
-    await sleep(200);
-
-    await moveCursor('#btn-save-mirror');
-    await clickEffect(); p();
-    await sleep(300);
-
-    document.getElementById('mirror-modal').remove();
-    showToastNoWait('Mirroring configuration saved');
-    var badges = document.getElementById('mirror-badges');
-    badges.appendChild(document.createTextNode(' '));
-    var b = el('span', { className: 'badge badge-blue' });
-    b.appendChild(el('span', { className: 'dot' }));
-    b.appendChild(document.createTextNode(' Mirror: 2 targets'));
-    badges.appendChild(b);
-    await sleep(2200);
-  }
-
-  // ---- SCENE MAP ----
-  var sceneMap = {
-    peers: { render: renderPeersScene, play: playPeersScene },
-    routes: { render: renderRoutesScene, play: playRoutesScene },
-    monitoring: { render: renderMonitoringScene, play: playMonitoringScene },
-    security: { render: renderSecurityScene, play: playSecurityScene },
-    mirroring: { render: renderMirroringScene, play: playMirroringScene }
-  };
-
-  async function startScene(sceneName) {
-    if (state.isPlaying) return;
-    if (state.completedScenes[sceneName]) return;
-
-    state.isPlaying = true;
-    state.currentScene = sceneName;
-    setProgress(0);
-
-    document.querySelectorAll('.sidebar-item').forEach(function(el) { el.classList.remove('active'); });
-    document.getElementById('nav-' + sceneName).classList.add('active');
-    updateSidebarStatus(sceneName, 'playing');
-
-    document.body.classList.add('hide-cursor');
-    cursorEl.classList.add('visible');
-    cursorEl.style.left = '-50px';
-    cursorEl.style.top = '-50px';
-
-    var scene = sceneMap[sceneName];
-    scene.render();
-    await sleep(300);
-    await scene.play();
-
-    cursorEl.classList.remove('visible');
+  /* ── SCENE 5: Request Mirroring ── */
+  async function scene5() {
+    await switchScene('#scene-mirroring', '#nav-mirroring', 'Request Mirroring', 5);
+    await wait(600);
+
+    // Click edit
+    await moveTo('#btn-edit-mirroring');
+    await click();
+
+    const body = $('#edit-modal-body');
+    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
+    body.innerHTML = `
+      <div class="toggle-row">
+        <div class="toggle-row-text">
+          <div class="toggle-row-title">Request Mirroring</div>
+          <div class="toggle-row-desc">Duplicate traffic to additional targets</div>
+        </div>
+        <div class="toggle" id="edit-tog-mirror"></div>
+      </div>
+      <div id="mirror-fields" style="display:none">
+        <div id="mirror-targets" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+        <button type="button" class="btn btn-ghost" id="btn-add-mirror-target" style="font-size:12px">+ Add Target</button>
+      </div>`;
+    await showModal('#modal-edit-route');
+    await wait(400);
+
+    // Turn on mirroring
+    await moveTo('#edit-tog-mirror');
+    await click();
+    setToggle('#edit-tog-mirror', true);
+    $('#mirror-fields').style.display = 'block';
+    await wait(400);
+
+    // Click Add Target
+    await moveTo('#btn-add-mirror-target');
+    await click();
+    const targets = $('#mirror-targets');
+    targets.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center" id="mirror-t1">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">IP / Host</label>
+          <input type="text" id="mirror-ip-1" placeholder="IP or hostname">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Port</label>
+          <input type="text" id="mirror-port-1" placeholder="Port">
+        </div>
+      </div>`;
+    await wait(300);
+
+    // Type first target
+    await moveTo('#mirror-ip-1');
+    await click();
+    await typeInto('#mirror-ip-1', '203.0.113.10');
+    await moveTo('#mirror-port-1');
+    await click();
+    await typeInto('#mirror-port-1', '8080');
+
+    // Click Add Target again
+    await moveTo('#btn-add-mirror-target');
+    await click();
+    targets.innerHTML += `
+      <div style="display:flex;gap:6px;align-items:center" id="mirror-t2">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">IP / Host</label>
+          <input type="text" id="mirror-ip-2" placeholder="IP or hostname">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Port</label>
+          <input type="text" id="mirror-port-2" placeholder="Port">
+        </div>
+      </div>`;
+    await wait(300);
+
+    // Type second target
+    await moveTo('#mirror-ip-2');
+    await click();
+    await typeInto('#mirror-ip-2', '203.0.113.11');
+    await moveTo('#mirror-port-2');
+    await click();
+    await typeInto('#mirror-port-2', '9090');
+
+    // Save
+    await moveTo('#btn-save-edit');
+    await click();
+    await hideModal('#modal-edit-route');
+    flash('Mirroring enabled — 2 targets configured');
+    await wait(400);
+
+    // Update badges
+    const badges = $('#mirroring-badges');
+    badges.innerHTML += `
+      <span class="tag tag-blue"><span class="tag-dot"></span>Mirror: 2 targets</span>`;
+    await wait(800);
+
+    // Finish
+    $('#progress-fill').style.width = '100%';
+    $('#progress-label').textContent = 'Demo Complete';
+    $('#progress-step').textContent = 'Done';
+    await wait(1000);
+
+    // Show replay hint
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 20px;font-size:13px;color:var(--text-2);box-shadow:var(--shadow-md);z-index:300;cursor:pointer';
+    hint.textContent = 'Demo complete. Click to replay.';
+    hint.onclick = () => { hint.remove(); runDemo(); };
+    document.body.appendChild(hint);
+
+    // Hide cursor
+    cursor.style.left = '-40px';
+    cursor.style.top = '-40px';
     document.body.classList.remove('hide-cursor');
-    state.isPlaying = false;
-    state.completedScenes[sceneName] = true;
-    updateSidebarStatus(sceneName, 'done');
-
-    var completedCount = Object.keys(state.completedScenes).length;
-    if (completedCount === 5) {
-      await sleep(800);
-      renderCompletion();
-    }
-
-    setProgress(0);
   }
 
-  // ---- SIDEBAR CLICKS ----
-  document.querySelectorAll('.sidebar-item[data-scene]').forEach(function(item) {
-    item.addEventListener('click', function() {
-      var scene = item.getAttribute('data-scene');
-      if (!state.isPlaying && !state.completedScenes[scene]) {
-        startScene(scene);
-      }
-    });
+  /* ── Main Runner ── */
+  async function runDemo() {
+    document.body.classList.add('hide-cursor');
+    // Reset state
+    $('#progress-fill').style.width = '0%';
+
+    // Reset peer table
+    const tbody = $('#peers-tbody');
+    tbody.innerHTML = '<tr id="peers-empty"><td colspan="7" class="empty-state">No peers configured yet. Click "Add Peer" to get started.</td></tr>';
+    $('#peers-count-label').textContent = '0 peers';
+    $('#nav-peers-badge').textContent = '0';
+
+    // Reset route list
+    const routesList = $('#routes-list');
+    routesList.innerHTML = '<div class="empty-state" id="routes-empty">No routes configured yet.</div>';
+    $('#routes-count').textContent = '0';
+    $('#routes-subtitle').textContent = '0 active routes';
+    $('#nav-routes-badge').textContent = '0';
+
+    // Reset route form inputs
+    ['#route-domain','#route-desc','#route-port'].forEach(s => { if ($(s)) $(s).value = ''; });
+    const peerSelect = $('#route-peer');
+    // Remove previously added options
+    while (peerSelect.options.length > 1) peerSelect.remove(1);
+    peerSelect.value = '';
+    setToggle('#tog-backend-https', false);
+    setToggle('#tog-compress', false);
+    setToggle('#tog-https', true);
+    const dnsHint = $('#dns-hint');
+    if (dnsHint) { dnsHint.style.display = 'none'; dnsHint.innerHTML = ''; }
+
+    // Reset add peer modal inputs
+    ['#add-peer-name','#add-peer-desc','#add-peer-tags'].forEach(s => { if ($(s)) $(s).value = ''; });
+    if ($('#add-peer-group')) $('#add-peer-group').value = '';
+    if ($('#add-peer-expires')) $('#add-peer-expires').value = '';
+
+    // Reset monitoring badges
+    $('#monitoring-badges').innerHTML = `
+      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+      <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
+      <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>`;
+
+    // Reset security badges
+    $('#security-badges').innerHTML = `
+      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+      <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
+      <span class="tag tag-green"><span class="tag-dot"></span>UP</span>`;
+
+    // Reset mirroring badges
+    $('#mirroring-badges').innerHTML = `
+      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
+      <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
+      <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
+      <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>`;
+
+    // Close any open modals
+    $$('.modal-overlay').forEach(m => m.classList.remove('open'));
+
+    // Reset scroll
+    $('#main-content').scrollTop = 0;
+
+    await wait(500);
+    await scene1();
+    await scene2();
+    await scene3();
+    await scene4();
+    await scene5();
+  }
+
+  // Start demo on load
+  window.addEventListener('load', () => {
+    setTimeout(runDemo, 600);
   });
-
-  // ---- INIT ----
-  renderWelcome();
-
 })();
 </script>
 </body>
