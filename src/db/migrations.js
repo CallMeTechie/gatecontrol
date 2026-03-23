@@ -441,6 +441,15 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'peers', 'group_id'),
   },
+  {
+    version: 26,
+    name: 'add_mirror_columns',
+    sql: `
+      ALTER TABLE routes ADD COLUMN mirror_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN mirror_targets TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'mirror_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

@@ -208,7 +208,8 @@ router.post('/', async (req, res) => {
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
-      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout } = req.body;
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
+      mirror_enabled, mirror_targets } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -231,6 +232,22 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
+    // Validate mirror targets
+    if (mirror_enabled && mirror_targets) {
+      if (!Array.isArray(mirror_targets) || mirror_targets.length === 0) {
+        return res.status(400).json({ ok: false, error: 'Mirror targets must be a non-empty array' });
+      }
+      if (mirror_targets.length > 5) {
+        return res.status(400).json({ ok: false, error: req.t('routes.mirror_max') || 'Maximum 5 mirror targets' });
+      }
+      for (const t of mirror_targets) {
+        const ipErr = validateIp(t.ip);
+        if (ipErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + ipErr });
+        const pErr = validatePort(t.port);
+        if (pErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + pErr });
+      }
+    }
+
     const route = await routes.create({
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -244,6 +261,7 @@ router.post('/', async (req, res) => {
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
+      mirror_enabled, mirror_targets,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -271,7 +289,8 @@ router.put('/:id', async (req, res) => {
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
-      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout } = req.body;
+      circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
+      mirror_enabled, mirror_targets } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -295,6 +314,22 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
+    // Validate mirror targets
+    if (mirror_enabled && mirror_targets) {
+      if (!Array.isArray(mirror_targets) || mirror_targets.length === 0) {
+        return res.status(400).json({ ok: false, error: 'Mirror targets must be a non-empty array' });
+      }
+      if (mirror_targets.length > 5) {
+        return res.status(400).json({ ok: false, error: req.t('routes.mirror_max') || 'Maximum 5 mirror targets' });
+      }
+      for (const t of mirror_targets) {
+        const ipErr = validateIp(t.ip);
+        if (ipErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + ipErr });
+        const pErr = validatePort(t.port);
+        if (pErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + pErr });
+      }
+    }
+
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -308,6 +343,7 @@ router.put('/:id', async (req, res) => {
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
+      mirror_enabled, mirror_targets,
     });
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {

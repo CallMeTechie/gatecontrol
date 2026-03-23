@@ -100,6 +100,12 @@ function buildCaddyConfig() {
       try { customHeaders = JSON.parse(route.custom_headers); } catch {}
     }
 
+    // Parse mirror targets
+    let mirrorTargets = null;
+    if (route.mirror_enabled && route.mirror_targets) {
+      try { mirrorTargets = JSON.parse(route.mirror_targets); } catch {}
+    }
+
     const reverseProxy = {
       handler: 'reverse_proxy',
       upstreams,
@@ -200,6 +206,14 @@ function buildCaddyConfig() {
             max_events: route.rate_limit_requests || 100,
           },
         },
+      });
+    }
+
+    // Request mirroring — must come before compress so targets get uncompressed requests
+    if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
+      routeHandlers.push({
+        handler: 'mirror',
+        targets: mirrorTargets.map(t => ({ dial: `${t.ip}:${t.port}` })),
       });
     }
 
@@ -336,6 +350,12 @@ function buildCaddyConfig() {
               max_events: route.rate_limit_requests || 100,
             },
           },
+        });
+      }
+      if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
+        authHandlers.push({
+          handler: 'mirror',
+          targets: mirrorTargets.map(t => ({ dial: `${t.ip}:${t.port}` })),
         });
       }
       if (route.compress_enabled) {
@@ -615,6 +635,11 @@ async function create(data) {
     ? (typeof data.backends === 'string' ? data.backends : JSON.stringify(data.backends))
     : null;
 
+  // Validate and serialize mirror_targets
+  const mirrorTargetsJson = data.mirror_targets
+    ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets))
+    : null;
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
@@ -624,8 +649,9 @@ async function create(data) {
                         custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
-                        circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
+                        mirror_enabled, mirror_targets, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -664,7 +690,9 @@ async function create(data) {
     data.sticky_cookie_ttl || '3600',
     data.circuit_breaker_enabled ? 1 : 0,
     data.circuit_breaker_threshold ? parseInt(data.circuit_breaker_threshold, 10) : 5,
-    data.circuit_breaker_timeout ? parseInt(data.circuit_breaker_timeout, 10) : 30
+    data.circuit_breaker_timeout ? parseInt(data.circuit_breaker_timeout, 10) : 30,
+    data.mirror_enabled ? 1 : 0,
+    mirrorTargetsJson,
   );
 
   const routeId = result.lastInsertRowid;
@@ -824,6 +852,11 @@ async function update(id, data) {
     ? (data.backends ? (typeof data.backends === 'string' ? data.backends : JSON.stringify(data.backends)) : null)
     : route.backends;
 
+  // Serialize mirror_targets for update
+  const updateMirrorTargets = data.mirror_targets !== undefined
+    ? (data.mirror_targets ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets)) : null)
+    : route.mirror_targets;
+
   db.prepare(`
     UPDATE routes SET
       domain = COALESCE(?, domain),
@@ -866,6 +899,8 @@ async function update(id, data) {
       circuit_breaker_enabled = COALESCE(?, circuit_breaker_enabled),
       circuit_breaker_threshold = COALESCE(?, circuit_breaker_threshold),
       circuit_breaker_timeout = COALESCE(?, circuit_breaker_timeout),
+      mirror_enabled = COALESCE(?, mirror_enabled),
+      mirror_targets = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -909,6 +944,8 @@ async function update(id, data) {
     data.circuit_breaker_enabled !== undefined ? (data.circuit_breaker_enabled ? 1 : 0) : null,
     data.circuit_breaker_threshold !== undefined ? parseInt(data.circuit_breaker_threshold, 10) : null,
     data.circuit_breaker_timeout !== undefined ? parseInt(data.circuit_breaker_timeout, 10) : null,
+    data.mirror_enabled !== undefined ? (data.mirror_enabled ? 1 : 0) : null,
+    updateMirrorTargets,
     id
   );
 
@@ -967,6 +1004,14 @@ async function update(id, data) {
     severity: 'info',
     details: { routeId: id },
   });
+
+  if (data.mirror_enabled !== undefined || data.mirror_targets !== undefined) {
+    activity.log('route_mirror_changed', `Mirror config changed for "${route.domain}"`, {
+      source: 'admin',
+      severity: 'info',
+      details: { routeId: id, mirror_enabled: data.mirror_enabled },
+    });
+  }
 
   return getById(id);
 }
