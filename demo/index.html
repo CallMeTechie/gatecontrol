@@ -4,91 +4,124 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GateControl — Interactive Demo</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+/* ─── Variables ─────────────────────────────────────────── */
 :root {
-  --bg-base: #f2f0eb;
-  --bg-panel: #ffffff;
-  --bg-card: #fdfcf9;
-  --bg-hover: #f5f3ee;
-  --bg-input: #f8f7f3;
-  --border: #e4e0d6;
-  --border-hi: #c8c3b5;
-  --shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-  --text-1: #1c1917;
-  --text-2: #6b6460;
-  --text-3: #a8a099;
-  --accent: #0a6e4f;
-  --accent-lt: #0a6e4f12;
-  --accent-md: #0a6e4f22;
-  --green: #16a34a;
-  --green-lt: #16a34a14;
-  --green-bd: #16a34a30;
-  --amber: #b45309;
-  --amber-lt: #b4530914;
-  --amber-bd: #b4530930;
-  --red: #dc2626;
-  --red-lt: #dc262614;
-  --red-bd: #dc262630;
-  --blue: #1d4ed8;
-  --blue-lt: #1d4ed814;
-  --blue-bd: #1d4ed830;
-  --font-ui: 'Outfit', sans-serif;
-  --font-display: 'DM Serif Display', serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  --radius: 10px;
-  --radius-sm: 6px;
-  --radius-xs: 4px;
+  --bg-base:    #f2f0eb;
+  --bg-panel:   #ffffff;
+  --bg-card:    #fdfcf9;
+  --bg-hover:   #f5f3ee;
+  --bg-input:   #f8f7f3;
+  --border:     #e4e0d6;
+  --border-hi:  #c8c3b5;
+  --shadow:     0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --text-1:     #1c1917;
+  --text-2:     #6b6460;
+  --text-3:     #a8a099;
+  --accent:     #0a6e4f;
+  --accent-lt:  #0a6e4f12;
+  --accent-md:  #0a6e4f22;
+  --green:      #16a34a;
+  --green-lt:   #16a34a14;
+  --green-bd:   #16a34a30;
+  --amber:      #b45309;
+  --amber-lt:   #b4530914;
+  --amber-bd:   #b4530930;
+  --red:        #dc2626;
+  --red-lt:     #dc262614;
+  --red-bd:     #dc262630;
+  --blue:       #1d4ed8;
+  --blue-lt:    #1d4ed814;
+  --blue-bd:    #1d4ed830;
+  --font-ui:    'Outfit', sans-serif;
+  --font-display:'DM Serif Display', serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --nav-h:      58px;
+  --sidebar-w:  232px;
+  --radius:     10px;
+  --radius-sm:  6px;
+  --radius-xs:  4px;
 }
 
+/* ─── Reset & Base ──────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; -webkit-font-smoothing: antialiased; }
 body {
-  font-family: var(--font-ui);
-  color: var(--text-1);
   background: var(--bg-base);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  height: 100%;
   overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+  display: flex;
+  flex-direction: column;
 }
+a { color: inherit; text-decoration: none; }
 
-body.hide-cursor { cursor: none !important; }
-body.hide-cursor * { cursor: none !important; }
+/* ─── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 5px; }
 
-/* === TOPBAR === */
+/* ─── Top Bar ───────────────────────────────────────────── */
 .topbar {
-  position: fixed; top: 0; left: 0; right: 0;
-  height: 58px;
+  height: var(--nav-h);
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center;
-  padding: 0 20px; gap: 14px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 14px;
+  flex-shrink: 0;
+  position: relative;
   z-index: 50;
   box-shadow: var(--shadow);
 }
-.topbar-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
 .logo-icon {
   width: 30px; height: 30px;
   background: var(--accent);
   border-radius: 7px;
-  display: grid; place-items: center;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
 }
 .logo-icon svg { width: 16px; height: 16px; }
 .logo-wordmark {
   font-family: var(--font-display);
-  font-size: 19px; color: var(--text-1);
+  font-size: 19px;
+  color: var(--text-1);
+  letter-spacing: 0;
   line-height: 1;
 }
 .topbar-spacer { flex: 1; }
+
 .topbar-status {
-  display: flex; align-items: center; gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: var(--green-lt);
   border: 1px solid var(--green-bd);
   border-radius: 20px;
   padding: 4px 10px 4px 8px;
   font-family: var(--font-mono);
-  font-size: 11px; color: var(--green); font-weight: 500;
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 500;
+}
+.topbar-status.inactive {
+  background: var(--red-lt);
+  border-color: var(--red-bd);
+  color: var(--red);
 }
 .pulse-dot {
   width: 7px; height: 7px;
@@ -96,47 +129,119 @@ body.hide-cursor * { cursor: none !important; }
   background: var(--green);
   animation: pulse 2.5s ease infinite;
 }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
-.topbar-divider { width: 1px; height: 24px; background: var(--border); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.topbar-divider {
+  width: 1px; height: 24px;
+  background: var(--border);
+}
+
+.topbar-profile { position: relative; }
 .topbar-avatar {
   width: 32px; height: 32px;
   background: var(--accent);
   border-radius: 50%;
-  display: grid; place-items: center;
-  font-size: 12px; font-weight: 700;
-  color: #fff; font-family: var(--font-mono);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
   border: none;
 }
+.topbar-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 300;
+  animation: fadeIn 0.12s;
+}
+.topbar-dropdown.open { display: block; }
+.topbar-dropdown-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  font-family: var(--font-ui);
+}
+.topbar-dropdown-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.topbar-dropdown-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.topbar-dropdown-logout { color: var(--red); }
+.topbar-dropdown-logout:hover { background: var(--red-lt); color: var(--red); }
+.topbar-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
 
-/* === SIDEBAR === */
+/* ─── Shell ─────────────────────────────────────────────── */
+.shell {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────── */
 .sidebar {
-  position: fixed; top: 58px; left: 0; bottom: 0;
-  width: 232px;
+  width: var(--sidebar-w);
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
   padding: 16px 0 0;
-  z-index: 40;
 }
+
 .nav-section-label {
   font-family: var(--font-mono);
-  font-size: 9.5px; font-weight: 600;
+  font-size: 9.5px;
+  font-weight: 600;
   color: var(--text-3);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   padding: 16px 16px 5px;
 }
+
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 16px; margin: 1px 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  margin: 1px 8px;
   border-radius: var(--radius-sm);
-  cursor: pointer; color: var(--text-2);
-  font-size: 13.5px; font-weight: 500;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
   transition: all 0.13s;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
-.nav-item.active { background: var(--accent-lt); color: var(--accent); font-weight: 600; }
+.nav-item.active {
+  background: var(--accent-lt);
+  color: var(--accent);
+  font-weight: 600;
+}
 .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
 .nav-badge {
   margin-left: auto;
   border-radius: 10px;
@@ -147,9 +252,15 @@ body.hide-cursor * { cursor: none !important; }
   border: 1px solid var(--border);
   color: var(--text-2);
 }
-.nav-badge.green { background: var(--green-lt); border-color: var(--green-bd); color: var(--green); }
+.nav-badge.green {
+  background: var(--green-lt);
+  border-color: var(--green-bd);
+  color: var(--green);
+}
+
 .sidebar-footer {
-  margin-top: auto; padding: 14px;
+  margin-top: auto;
+  padding: 14px;
   border-top: 1px solid var(--border);
 }
 .sidebar-gateway-info {
@@ -162,570 +273,934 @@ body.hide-cursor * { cursor: none !important; }
 .gw-host { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 600; }
 .gw-wg { font-size: 11px; color: var(--text-2); margin-top: 3px; font-family: var(--font-mono); }
 
-/* === MAIN === */
+/* ─── Main Content ──────────────────────────────────────── */
 .main {
-  position: fixed;
-  top: 58px; left: 232px; right: 0; bottom: 32px;
+  flex: 1;
   overflow-y: auto;
   padding: 28px;
-  display: flex; flex-direction: column; gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-/* === PAGE HEADER === */
+/* ─── Page Header ───────────────────────────────────────── */
 .page-header {
-  display: flex; align-items: flex-start;
-  justify-content: space-between; gap: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 .page-eyebrow {
   font-family: var(--font-mono);
-  font-size: 10px; color: var(--text-3);
+  font-size: 10px;
+  color: var(--text-3);
   text-transform: uppercase;
-  letter-spacing: 0.12em; margin-bottom: 4px;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
 }
 .page-title {
   font-family: var(--font-display);
-  font-size: 26px; color: var(--text-1); line-height: 1.1;
+  font-size: 26px;
+  color: var(--text-1);
+  line-height: 1.1;
 }
 .page-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; font-weight: 400; }
 
-/* === BUTTONS === */
 .btn {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 8px 16px;
   border-radius: var(--radius-sm);
   font-family: var(--font-ui);
-  font-size: 13px; font-weight: 600;
-  cursor: pointer; border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
   transition: all 0.13s;
+  text-decoration: none;
   white-space: nowrap;
 }
-.btn svg { width: 14px; height: 14px; }
 .btn-primary {
-  background: var(--accent); color: #fff;
+  background: var(--accent);
+  color: #fff;
   box-shadow: 0 1px 3px rgba(10,110,79,0.3), 0 1px 1px rgba(10,110,79,0.2);
 }
-.btn-primary:hover { background: #085f43; box-shadow: 0 3px 10px rgba(10,110,79,0.3); transform: translateY(-1px); }
+.btn-primary:hover {
+  background: #085f43;
+  box-shadow: 0 3px 10px rgba(10,110,79,0.3);
+  transform: translateY(-1px);
+}
 .btn-ghost {
-  background: var(--bg-panel); color: var(--text-2);
+  background: var(--bg-panel);
+  color: var(--text-2);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
-.btn-secondary {
-  background: var(--bg-panel); color: var(--text-1);
+.btn svg { width: 14px; height: 14px; }
+.btn.is-loading {
+  pointer-events: none;
+  opacity: 0.65;
+  position: relative;
+}
+.btn.is-loading::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.5s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* ─── Stats Grid ────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.stat-card {
+  background: var(--bg-panel);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
   box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.stat-card-stripe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px;
+  height: 100%;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.stat-icon {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  margin-bottom: 10px;
+}
+.stat-icon svg { width: 14px; height: 14px; }
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.stat-delta {
+  position: absolute;
+  top: 14px; right: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
 }
 
-/* === CARDS === */
+/* ─── Two / Three Column ────────────────────────────────── */
+.two-col   { display: grid; grid-template-columns: 1fr 360px; gap: 14px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+/* ─── Card ──────────────────────────────────────────────── */
 .card {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   overflow: hidden;
+  box-shadow: var(--shadow);
 }
 .card-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 18px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px; font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
 }
-.card-head svg { width: 15px; height: 15px; flex-shrink: 0; }
-.card-title { font-weight: 600; }
-.card-sub {
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-3); margin-left: 6px;
-}
-.card-body { padding: 18px; }
-
-/* === TABLE === */
-.table-wrap { overflow-x: auto; }
-table {
-  width: 100%; border-collapse: collapse;
+.card-title {
   font-size: 13px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
 }
-thead th {
-  text-align: left;
-  padding: 10px 14px;
-  font-family: var(--font-mono);
-  font-size: 10px; font-weight: 600;
+.card-sub {
+  font-size: 11px;
   color: var(--text-3);
-  text-transform: uppercase;
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+.card-body { padding: 16px 20px; }
+
+/* ─── Tags ──────────────────────────────────────────────── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+.tag-green { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
+.tag-red   { background: var(--red-lt);   color: var(--red);   border: 1px solid var(--red-bd); }
+.tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
+.tag-blue  { background: var(--blue-lt);  color: var(--blue);  border: 1px solid var(--blue-bd); }
+.tag-info  { background: var(--bg-hover);    color: var(--text-2); border: 1px solid var(--border); margin-left: 4px; }
+.tag-grey  { background: var(--bg-base);  color: var(--text-2);border: 1px solid var(--border); }
+.tag-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* ─── Peer Table ────────────────────────────────────────── */
+.peer-table { width: 100%; border-collapse: collapse; }
+.peer-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-card);
 }
-tbody td {
-  padding: 12px 14px;
+.peer-table td {
+  padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
-tbody tr:hover { background: var(--bg-hover); }
-.mono { font-family: var(--font-mono); font-size: 12px; }
-.peer-name-cell .peer-name { font-weight: 600; font-size: 13px; }
-.peer-name-cell .peer-desc { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-.peer-tags { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.peer-table tr:last-child td { border-bottom: none; }
+.peer-table tr:hover td { background: var(--bg-hover); }
+.peer-name { font-weight: 600; font-size: 13px; }
+.peer-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-top: 2px; }
 
-/* === TAGS / BADGES === */
-.tag {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10px; font-weight: 600;
-  font-family: var(--font-mono);
-}
-.tag-dot { width: 5px; height: 5px; border-radius: 50%; }
-.tag-green { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
-.tag-green .tag-dot { background: var(--green); }
-.tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
-.tag-amber .tag-dot { background: var(--amber); }
-.tag-red { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-bd); }
-.tag-red .tag-dot { background: var(--red); }
-.tag-blue { background: var(--blue-lt); color: var(--blue); border: 1px solid var(--blue-bd); }
-.tag-blue .tag-dot { background: var(--blue); }
-.tag-muted { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border); }
-
-/* === STATUS DOT === */
-.status-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 10px; border-radius: 12px;
-  font-size: 11px; font-weight: 600;
-  font-family: var(--font-mono);
-}
-.status-pill.online { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
-.status-pill.offline { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-bd); }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; }
-.status-pill.online .status-dot { background: var(--green); }
-.status-pill.offline .status-dot { background: var(--red); }
-
-/* === ACTION BUTTONS === */
-.action-btns { display: flex; gap: 4px; }
-.action-btn {
-  width: 30px; height: 30px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  display: grid; place-items: center;
-  cursor: pointer;
-  transition: all 0.13s;
-  color: var(--text-2);
-}
-.action-btn:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
-.action-btn svg { width: 13px; height: 13px; }
-.action-btn.danger:hover { background: var(--red-lt); color: var(--red); border-color: var(--red-bd); }
-
-/* === MODAL === */
-.modal-overlay {
-  display: none;
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.35);
-  z-index: 200;
-  justify-content: center;
+/* ─── Route Items ───────────────────────────────────────── */
+.route-item {
+  display: flex;
   align-items: center;
-  animation: fadeIn 0.15s;
-}
-.modal-overlay.open { display: flex; }
-.modal {
-  background: var(--bg-panel);
-  border-radius: var(--radius);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08);
-  width: 480px;
-  max-height: 80vh;
-  display: flex; flex-direction: column;
-  animation: modalIn 0.2s ease;
-}
-@keyframes modalIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-.modal-head {
-  display: flex; align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
+  gap: 12px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--border);
 }
-.modal-title { font-family: var(--font-display); font-size: 18px; }
-.modal-close {
-  width: 28px; height: 28px;
-  border: none; background: none;
-  font-size: 20px; color: var(--text-3);
-  cursor: pointer; border-radius: var(--radius-xs);
-  display: grid; place-items: center;
-}
-.modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
-.modal-body {
-  padding: 20px;
-  overflow-y: auto;
-  display: flex; flex-direction: column; gap: 14px;
-}
-.modal-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--border);
-}
-
-/* === FORM ELEMENTS === */
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-label {
-  font-family: var(--font-mono);
-  font-size: 11px; font-weight: 600;
-  color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="search"], select, textarea {
-  width: 100%; padding: 8px 12px;
-  font-family: var(--font-ui);
-  font-size: 13px;
+.route-item:last-child { border-bottom: none; }
+.route-icon {
+  width: 34px; height: 34px;
+  background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  color: var(--text-1);
-  outline: none;
-  transition: border-color 0.15s;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-2);
 }
-input:focus, select:focus { border-color: var(--accent); }
-.form-hint { font-size: 11px; color: var(--text-3); }
+.route-icon svg { width: 15px; height: 15px; }
+.route-domain { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.route-target { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.route-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.route-actions { margin-left: auto; display: flex; gap: 5px; }
 
-/* === TOGGLE SWITCH === */
+.icon-btn {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.13s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
+.icon-btn svg { width: 12px; height: 12px; }
+
+/* ─── WireGuard Config ──────────────────────────────────── */
+.wg-config {
+  background: #faf9f5;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text-2);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.04);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.wg-section { color: #0a6e4f; font-weight: 700; }
+.wg-key { color: #1d4ed8; }
+.wg-val { color: var(--text-1); }
+.wg-comment { color: var(--text-3); font-style: italic; }
+
+/* ─── Toggle Switch ─────────────────────────────────────── */
 .toggle {
   width: 36px; height: 20px;
-  border-radius: 12px;
   background: var(--border-hi);
+  border-radius: 10px;
   position: relative;
   cursor: pointer;
   transition: background 0.2s;
   flex-shrink: 0;
 }
+.toggle.on { background: var(--accent); }
 .toggle::after {
   content: '';
   position: absolute;
   top: 2px; left: 2px;
   width: 16px; height: 16px;
-  border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  border-radius: 50%;
   transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
-.toggle.on { background: var(--accent); }
 .toggle.on::after { transform: translateX(16px); }
 
-/* === TOGGLE GROUP === */
+/* ─── Toggle Button Group ──────────────────────────────── */
 .toggle-group {
-  display: flex; gap: 0;
+  display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   overflow: hidden;
+  background: var(--bg-base);
 }
 .toggle-btn {
-  flex: 1;
-  padding: 7px 14px;
-  font-family: var(--font-ui);
-  font-size: 12px; font-weight: 600;
+  padding: 6px 16px;
   border: none;
-  background: var(--bg-input);
+  background: transparent;
   color: var(--text-2);
+  font-size: 13px;
+  font-family: var(--font-ui);
   cursor: pointer;
-  transition: all 0.13s;
+  transition: background 0.15s, color 0.15s;
+  outline: none;
 }
-.toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.toggle-btn:hover {
+  background: var(--bg-hover);
+}
 .toggle-btn.on {
   background: var(--accent);
   color: #fff;
 }
 
-/* === TOGGLE ROW (toggle switches in forms) === */
-.toggle-row {
-  display: flex; align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-.toggle-row-text .toggle-row-title { font-size: 13px; font-weight: 600; }
-.toggle-row-text .toggle-row-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
-
-/* === TWO COLUMN LAYOUT === */
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  align-items: flex-start;
-}
-
-/* === SEARCH INPUT === */
-.input-wrap {
-  position: relative; display: flex; align-items: center;
-}
+/* ─── Input ─────────────────────────────────────────────── */
+.input-wrap { position: relative; }
 .input-wrap svg {
-  position: absolute; left: 10px;
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 14px; height: 14px;
   color: var(--text-3);
+  pointer-events: none;
 }
-.input-wrap input {
-  padding-left: 32px;
-  width: 220px;
-}
-
-/* === WG CONFIG BLOCK === */
-.wg-config {
-  background: var(--bg-base);
+input[type=text], input[type=search], input[type=password], input[type=email], input[type=number], select {
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  padding: 8px 12px;
   color: var(--text-1);
-  white-space: pre;
-  line-height: 1.7;
-  text-align: left;
-  max-height: 200px;
-  overflow-y: auto;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.13s, box-shadow 0.13s;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
 }
+input[type=text]:focus, input[type=search]:focus, input[type=password]:focus, input[type=email]:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-lt), inset 0 1px 2px rgba(0,0,0,0.04);
+}
+input[type=search] { padding-left: 32px; width: 200px; }
 
-/* === QR CODE PLACEHOLDER === */
-.qr-placeholder {
-  width: 200px; height: 200px;
-  margin: 0 auto 16px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: grid; place-items: center;
-  overflow: hidden;
-}
-
-/* === ROUTE ITEM IN LIST === */
-.route-item {
-  display: flex; align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  gap: 12px;
-  transition: background 0.13s;
-}
-.route-item:hover { background: var(--bg-hover); }
-.route-item:last-child { border-bottom: none; }
-.route-domain {
-  font-family: var(--font-mono);
-  font-size: 13px; font-weight: 600;
-  color: var(--accent);
-}
-.route-target {
-  font-family: var(--font-mono);
-  font-size: 11px; color: var(--text-2);
-  margin-top: 2px;
-}
-.route-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-.route-actions { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* === FLASH MESSAGE === */
+/* ─── Flash Messages ────────────────────────────────────── */
 .flash {
-  position: fixed;
-  top: 70px; right: 28px;
-  padding: 10px 18px;
+  padding: 10px 16px;
   border-radius: var(--radius-sm);
-  font-size: 13px; font-weight: 600;
-  box-shadow: var(--shadow-md);
-  z-index: 300;
-  animation: flashIn 0.3s ease, flashOut 0.3s ease 2s forwards;
+  font-size: 13px;
+  font-weight: 500;
 }
 .flash-success {
   background: var(--green-lt);
   border: 1px solid var(--green-bd);
   color: var(--green);
 }
-@keyframes flashIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
-@keyframes flashOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
-
-/* === DNS CHECK === */
-.dns-hint {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11px; margin-top: 4px;
+.flash-error {
+  background: var(--red-lt);
+  border: 1px solid var(--red-bd);
+  color: var(--red);
 }
-.dns-hint.checking { color: var(--amber); }
-.dns-hint.ok { color: var(--green); }
-.spinner-small {
-  width: 12px; height: 12px;
-  border: 2px solid var(--amber);
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.5s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 
-/* === PROGRESS BAR === */
-.progress-bar {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  height: 32px;
+/* ─── Animations ────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stat-card { animation: fadeUp 0.35s ease backwards; }
+.stat-card:nth-child(1) { animation-delay: 0.05s; }
+.stat-card:nth-child(2) { animation-delay: 0.10s; }
+.stat-card:nth-child(3) { animation-delay: 0.15s; }
+.stat-card:nth-child(4) { animation-delay: 0.20s; }
+.stat-card:nth-child(5) { animation-delay: 0.25s; }
+
+/* ─── Modal ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
   background: var(--bg-panel);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+.modal.modal-wide {
+  width: 1000px;
+  animation: slideUp 0.2s ease;
+}
+.modal.modal-wide .modal-body {
+  min-height: 420px;
+}
+.form-row {
+  display: flex;
+  gap: 14px;
+}
+.form-row > .form-group {
+  flex: 1;
+  min-width: 0;
+}
+.modal-sm { width: 380px; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.modal-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title { font-weight: 700; font-size: 15px; }
+.modal-close {
+  width: 28px; height: 28px;
+  border: none; background: none;
+  font-size: 20px; cursor: pointer;
+  color: var(--text-3);
+  display: grid; place-items: center;
+  border-radius: var(--radius-xs);
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-foot {
+  padding: 14px 20px;
   border-top: 1px solid var(--border);
-  display: flex; align-items: center;
-  padding: 0 16px; gap: 12px;
-  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
 }
-.progress-track {
-  flex: 1; height: 4px;
+.form-group { margin-bottom: 14px; }
+.form-group:last-child { margin-bottom: 0; }
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 5px;
+}
+.form-group input[type=text], .form-group input[type=email], .form-group input[type=password] { width: 100%; }
+.form-error {
+  font-size: 12px;
+  color: var(--red);
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--red-lt);
+  border: 1px solid var(--red-bd);
+  border-radius: var(--radius-xs);
+}
+.field-error {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 4px;
+}
+.field-invalid {
+  border-color: var(--red) !important;
+}
+.btn-secondary {
   background: var(--bg-base);
-  border-radius: 2px;
-  overflow: hidden;
+  color: var(--text-1);
+  border: 1px solid var(--border);
 }
-.progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  width: 0%;
-  transition: width 0.4s ease;
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hi);
 }
-.progress-label {
-  font-family: var(--font-mono);
-  font-size: 10px; color: var(--text-3);
-  white-space: nowrap;
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(220,38,38,0.3);
 }
-.progress-step {
-  font-family: var(--font-mono);
-  font-size: 10px; color: var(--text-2);
-  white-space: nowrap;
+.btn-danger:hover { background: #b91c1c; }
+
+/* ─── Peer Action Buttons ──────────────────────────────── */
+.peer-actions { display: flex; gap: 4px; }
+
+/* ─── Table responsive wrapper ─────────────────────────── */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ─── Form Select & Hint ───────────────────────────────── */
+.form-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-select:focus {
+  border-color: var(--accent);
+}
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
 }
 
-/* === CURSOR === */
+/* ═══════════════════════════════════════════════════════════
+   Demo-specific styles (cursor, animation, progress)
+   ═══════════════════════════════════════════════════════════ */
+body.playing { cursor: none; }
+body.playing * { cursor: none !important; }
+
 #demo-cursor {
   position: fixed;
   z-index: 9999;
   pointer-events: none;
-  transition: none;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  opacity: 0;
+  transition: opacity 0.25s;
+  filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.18));
 }
+#demo-cursor.visible { opacity: 1; }
 
-/* === CLICK RIPPLE === */
 .click-ripple {
   position: fixed;
-  width: 24px; height: 24px;
+  width: 20px; height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  z-index: 9998;
+  background: var(--accent);
+  opacity: 0.35;
+  transform: scale(0);
+  animation: ripple 0.45s ease-out forwards;
   pointer-events: none;
-  animation: ripple 0.4s ease forwards;
+  z-index: 9998;
 }
 @keyframes ripple {
-  0% { transform: translate(-50%,-50%) scale(0.5); opacity: 1; }
-  100% { transform: translate(-50%,-50%) scale(2); opacity: 0; }
+  to { transform: scale(3); opacity: 0; }
 }
 
-/* === SCENE CONTAINER === */
-.scene { display: none; flex-direction: column; gap: 20px; }
-.scene.active { display: flex; }
-
-/* === EMPTY STATE === */
-.empty-state {
-  text-align: center; padding: 40px;
-  color: var(--text-3); font-size: 13px;
+#demo-progress {
+  position: fixed;
+  bottom: 0; left: 0;
+  height: 3px;
+  background: var(--accent);
+  z-index: 9999;
+  transition: width 0.3s linear;
+  border-radius: 0 2px 0 0;
 }
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 1px;
+  animation: blink 0.6s step-end infinite;
+  vertical-align: text-bottom;
+}
+@keyframes blink { 50% { opacity: 0; } }
 </style>
 </head>
-<body class="hide-cursor">
+<body>
 
-<!-- SVG CURSOR -->
-<svg id="demo-cursor" width="20" height="24" viewBox="0 0 20 24" style="left:-40px;top:-40px">
-  <path d="M1 1L1 19L5.5 14.5L9.5 22L12.5 20.5L8.5 12.5L14.5 12.5L1 1Z" fill="white" stroke="#1c1917" stroke-width="1.5" stroke-linejoin="round"/>
+<!-- ═══ SVG Cursor ═══ -->
+<svg id="demo-cursor" width="20" height="28" viewBox="0 0 20 28">
+  <path d="M1 1 L1 20 L5.5 15.5 L10 25 L13 23.5 L8.5 14 L15 14 Z" fill="#fff" stroke="#0a6e4f" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>
 
-<!-- TOPBAR -->
-<div class="topbar">
-  <a class="topbar-logo" href="#">
+<!-- ═══ Progress Bar ═══ -->
+<div id="demo-progress" style="width:0%"></div>
+
+<!-- ═══ Topbar — exact copy of topbar.njk ═══ -->
+<header class="topbar">
+  <a href="#" class="topbar-logo">
     <div class="logo-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
       </svg>
     </div>
-    <span class="logo-wordmark">GateControl</span>
-  </a>
-  <div class="topbar-spacer"></div>
-  <div class="topbar-status"><div class="pulse-dot"></div> WireGuard Active</div>
-  <div class="topbar-divider"></div>
-  <button class="topbar-avatar">AD</button>
-</div>
-
-<!-- SIDEBAR -->
-<div class="sidebar" id="sidebar">
-  <div class="nav-section-label">Gateway</div>
-  <div class="nav-item" data-scene="0" id="nav-dashboard">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-    Dashboard
-  </div>
-  <div class="nav-item active" data-scene="1" id="nav-peers">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-    Peers / Clients
-    <span class="nav-badge" id="nav-peers-badge">0</span>
-  </div>
-  <div class="nav-item" data-scene="2" id="nav-routes">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-    Domains / Routes
-    <span class="nav-badge" id="nav-routes-badge">0</span>
-  </div>
-  <div class="nav-section-label">Advanced</div>
-  <div class="nav-item" data-scene="3" id="nav-monitoring">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-    Monitoring
-  </div>
-  <div class="nav-item" data-scene="4" id="nav-security">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    Security
-  </div>
-  <div class="nav-item" data-scene="5" id="nav-mirroring">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-    Mirroring
-  </div>
-  <div class="sidebar-footer">
-    <div class="sidebar-gateway-info">
-      <div class="gw-label">Gateway</div>
-      <div class="gw-host">demo.example.com</div>
-      <div class="gw-wg">wg0 · 10.8.0.0/24 · :51820</div>
+    <div>
+      <div class="logo-wordmark">GateControl</div>
     </div>
+  </a>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-status" id="wg-status">
+    <div class="pulse-dot"></div>
+    <span>WireGuard Active</span>
   </div>
+
+  <div class="topbar-divider"></div>
+
+  <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">
+    demo.example.com
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-lang" id="lang-switcher" style="display:flex;gap:2px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px">
+    <button class="lang-btn active" data-lang="de" style="padding:3px 8px;border:none;background:var(--bg-panel);border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:var(--text-1);text-transform:uppercase;box-shadow:var(--shadow)">de</button>
+    <button class="lang-btn" data-lang="en" style="padding:3px 8px;border:none;background:transparent;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:var(--text-3);text-transform:uppercase">en</button>
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-profile">
+    <button class="topbar-avatar">A</button>
+  </div>
+</header>
+
+<!-- ═══ Shell ═══ -->
+<div class="shell">
+
+  <!-- ═══ Sidebar — exact copy of sidebar.njk ═══ -->
+  <nav class="sidebar" id="sidebar">
+    <span class="nav-section-label">OVERVIEW</span>
+    <a class="nav-item active" id="scene-dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+      Dashboard
+    </a>
+
+    <span class="nav-section-label">VPN</span>
+    <a class="nav-item" id="scene-peers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
+      Peers / Clients
+      <span class="nav-badge green">3</span>
+    </a>
+    <a class="nav-item" style="opacity:0.4;pointer-events:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      WG Config
+    </a>
+
+    <span class="nav-section-label">ROUTING</span>
+    <a class="nav-item" id="scene-routes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      Routes
+      <span class="nav-badge">4</span>
+    </a>
+    <a class="nav-item" style="opacity:0.4;pointer-events:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      Caddy Config
+    </a>
+    <a class="nav-item" style="opacity:0.4;pointer-events:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Certificates
+    </a>
+
+    <span class="nav-section-label">SYSTEM</span>
+    <a class="nav-item" id="scene-monitoring">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Monitoring
+    </a>
+    <a class="nav-item" id="scene-security">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      Security
+    </a>
+    <a class="nav-item" id="scene-mirroring">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+      Mirroring
+    </a>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-gateway-info">
+        <div class="gw-label">GATEWAY HOST</div>
+        <div class="gw-host">demo.example.com</div>
+        <div class="gw-wg">wg0 &middot; 10.8.0.1/24 &middot; :51820</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══ Main Content ═══ -->
+  <main class="main" id="main-content">
+    <!-- Scenes render here via JS -->
+  </main>
+
 </div>
 
-<!-- MAIN CONTENT AREA -->
-<div class="main" id="main-content">
+<!-- ═══ Modal container ═══ -->
+<div id="modal-container"></div>
 
-  <!-- ============================================ -->
-  <!-- SCENE 1: PEERS / CLIENTS                     -->
-  <!-- ============================================ -->
-  <div class="scene active" id="scene-peers">
+<script>
+/* ═══════════════════════════════════════════════════════════
+   GateControl Demo — Animation Engine
+   ═══════════════════════════════════════════════════════════ */
+(function() {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ── Helpers ── */
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) Object.entries(attrs).forEach(([k,v]) => {
+    if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else if (k === 'className') e.className = v;
+    else if (k === 'innerHTML') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  });
+  children.forEach(c => {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  });
+  return e;
+}
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ── SVG icon helper ── */
+function svgIcon(inner, w=14, h=14) {
+  return `<svg viewBox="0 0 24 24" width="${w}" height="${h}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+/* ── Cursor ── */
+const cursor = $('#demo-cursor');
+let curX = window.innerWidth / 2, curY = window.innerHeight / 2;
+
+function showCursor() { cursor.classList.add('visible'); document.body.classList.add('playing'); }
+function hideCursor() { cursor.classList.remove('visible'); document.body.classList.remove('playing'); }
+
+function moveTo(x, y, dur=600) {
+  return new Promise(resolve => {
+    const sx = curX, sy = curY;
+    const start = performance.now();
+    function frame(t) {
+      let p = Math.min(1, (t - start) / dur);
+      p = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2; // easeInOutQuad
+      curX = sx + (x - sx) * p;
+      curY = sy + (y - sy) * p;
+      cursor.style.transform = `translate(${curX}px, ${curY}px)`;
+      if (p < 1) requestAnimationFrame(frame); else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function moveToEl(selector, dur) {
+  const el = typeof selector === 'string' ? $(selector) : selector;
+  if (!el) return Promise.resolve();
+  const r = el.getBoundingClientRect();
+  return moveTo(r.left + r.width/2, r.top + r.height/2, dur);
+}
+
+function click(x, y) {
+  const rip = document.createElement('div');
+  rip.className = 'click-ripple';
+  rip.style.left = (x || curX) - 10 + 'px';
+  rip.style.top = (y || curY) - 10 + 'px';
+  document.body.appendChild(rip);
+  setTimeout(() => rip.remove(), 500);
+}
+
+async function clickEl(selector, dur) {
+  await moveToEl(selector, dur);
+  click();
+  await wait(120);
+}
+
+/* ── Typing ── */
+async function typeInto(inputEl, text, charMs=55) {
+  inputEl.focus && inputEl.focus();
+  inputEl.value = '';
+  for (let i = 0; i < text.length; i++) {
+    inputEl.value += text[i];
+    inputEl.dispatchEvent(new Event('input', {bubbles:true}));
+    await wait(charMs + Math.random()*25);
+  }
+}
+
+/* ── Progress ── */
+const progressBar = $('#demo-progress');
+let totalSteps = 0, currentStep = 0;
+function setProgress(step) {
+  currentStep = step;
+  progressBar.style.width = (step/totalSteps*100) + '%';
+}
+
+/* ── Scene Navigation ── */
+const mainContent = $('#main-content');
+
+function setActiveNav(id) {
+  $$('.nav-item').forEach(n => n.classList.remove('active'));
+  const t = $('#' + id);
+  if (t) t.classList.add('active');
+}
+
+/* ════════════════════════════════════════════════════════════
+   SCENE: Dashboard
+   ════════════════════════════════════════════════════════════ */
+function renderDashboard() {
+  mainContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Overview</div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">System status and quick overview</div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--green)"></div>
+        <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+          ${svgIcon('<circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/>')}
+        </div>
+        <div class="stat-value">3</div>
+        <div class="stat-label">Peers Online</div>
+        <div class="stat-delta" style="background:var(--green-lt);color:var(--green)">+1</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--accent)"></div>
+        <div class="stat-icon" style="background:var(--accent-lt);color:var(--accent)">
+          ${svgIcon('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>')}
+        </div>
+        <div class="stat-value">4</div>
+        <div class="stat-label">Active Routes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--blue)"></div>
+        <div class="stat-icon" style="background:var(--blue-lt);color:var(--blue)">
+          ${svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>')}
+        </div>
+        <div class="stat-value">4</div>
+        <div class="stat-label">Certificates</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--amber)"></div>
+        <div class="stat-icon" style="background:var(--amber-lt);color:var(--amber)">
+          ${svgIcon('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>')}
+        </div>
+        <div class="stat-value">99.8%</div>
+        <div class="stat-label">Uptime (30d)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--text-2)"></div>
+        <div class="stat-icon" style="background:var(--bg-base);color:var(--text-2)">
+          ${svgIcon('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>')}
+        </div>
+        <div class="stat-value">14d</div>
+        <div class="stat-label">System Uptime</div>
+      </div>
+    </div>
+  `;
+}
+
+/* ════════════════════════════════════════════════════════════
+   SCENE: Peers
+   ════════════════════════════════════════════════════════════ */
+const PEERS = [
+  { name: 'NAS Zuhause', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '1.2 MB', ul: '340 KB', status: 'Online', statusTag: 'tag-green' },
+  { name: 'MacBook Pro', meta: 'Apple M2 Max', tags: ['dev','mobile'], ip: '10.8.0.3', key: 'p2Lw9nK4vR8X', contact: '3 min ago', dl: '48.3 MB', ul: '12.1 MB', status: 'Online', statusTag: 'tag-green' },
+  { name: 'Office Server', meta: 'Ubuntu 22.04 LTS', tags: ['prod','server'], ip: '10.8.0.4', key: 'mX7j5Kq2w9Rn', contact: '2 hours ago', dl: '2.4 GB', ul: '890 MB', status: 'Offline', statusTag: 'tag-red' },
+];
+
+function renderPeers() {
+  const rows = PEERS.map((p,i) => `
+    <tr>
+      <td>
+        <div class="peer-name">${p.name}</div>
+        <div class="peer-meta">${p.meta}</div>
+        <div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">${p.tags.map(t => `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${t}</span>`).join('')}</div>
+      </td>
+      <td><span style="font-family:var(--font-mono);font-size:12px">${p.ip}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${p.key}&hellip;</span></td>
+      <td><span style="font-size:12px;color:var(--text-2)">${p.contact}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:11px">&darr;${p.dl} &uarr;${p.ul}</span></td>
+      <td><span class="tag ${p.statusTag}"><span class="tag-dot"></span>${p.status}</span></td>
+      <td>
+        <div class="peer-actions">
+          <button class="icon-btn" title="Traffic">${svgIcon('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',12,12)}</button>
+          <button class="icon-btn" title="QR Code" data-qr="${i}">${svgIcon('<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4" rx="0.5"/><line x1="22" y1="14" x2="22" y2="22"/>',12,12)}</button>
+          <button class="icon-btn" title="Edit">${svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',12,12)}</button>
+          <button class="icon-btn" title="Toggle">${svgIcon('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',12,12)}</button>
+          <button class="icon-btn" title="Delete" style="color:var(--red)">${svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',12,12)}</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  mainContent.innerHTML = `
     <div class="page-header">
       <div>
         <div class="page-eyebrow">VPN</div>
         <div class="page-title">Peers / Clients</div>
-        <div class="page-sub">Manage WireGuard peers connected to this gateway</div>
+        <div class="page-sub">Manage WireGuard peers and their configurations</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
         <div class="input-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" placeholder="Search peers...">
+          <input type="search" id="peer-search" placeholder="Search peers...">
         </div>
-        <select style="padding:7px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-1);min-width:140px">
-          <option>All Groups</option>
+        <select id="peer-group-filter" style="padding:7px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-1);min-width:140px">
+          <option value="">All Groups</option>
         </select>
-        <button class="btn btn-ghost">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <button class="btn btn-ghost" id="btn-batch-peers">
+          ${svgIcon('<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',16,16)}
           Batch Select
         </button>
         <button class="btn btn-primary" id="btn-add-peer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          ${svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>')}
           Add Peer
         </button>
       </div>
     </div>
+
     <div class="card">
       <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         <span class="card-title">All Peers</span>
-        <span class="card-sub" id="peers-count-label">0 peers</span>
+        <span class="card-sub" style="margin-left:auto">3 peers</span>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="peer-table">
           <thead>
             <tr>
-              <th>Name / Device</th>
+              <th>Name &amp; Device</th>
               <th>WG IP</th>
               <th>Public Key</th>
               <th>Last Contact</th>
@@ -734,1148 +1209,412 @@ input:focus, select:focus { border-color: var(--accent); }
               <th></th>
             </tr>
           </thead>
-          <tbody id="peers-tbody">
-            <tr id="peers-empty"><td colspan="7" class="empty-state">No peers configured yet. Click "Add Peer" to get started.</td></tr>
-          </tbody>
+          <tbody>${rows}</tbody>
         </table>
       </div>
     </div>
-  </div>
+  `;
+}
 
-  <!-- ============================================ -->
-  <!-- SCENE 2: DOMAINS / ROUTES                    -->
-  <!-- ============================================ -->
-  <div class="scene" id="scene-routes">
+/* ════════════════════════════════════════════════════════════
+   QR Modal
+   ════════════════════════════════════════════════════════════ */
+function showQRModal(peerIndex) {
+  const p = PEERS[peerIndex] || PEERS[0];
+  const mc = $('#modal-container');
+  mc.innerHTML = `
+    <div class="modal-overlay" id="modal-qr">
+      <div class="modal">
+        <div class="modal-head">
+          <span class="modal-title">${p.name} — QR Code</span>
+          <button class="modal-close" id="modal-qr-close">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          <canvas id="qr-canvas" width="200" height="200" style="max-width:200px;margin:0 auto 16px;border:1px solid var(--border);border-radius:var(--radius-sm)"></canvas>
+          <div class="wg-config" style="text-align:left;max-height:200px;overflow-y:auto;font-size:11px"><span class="wg-section">[Interface]</span>
+<span class="wg-key">PrivateKey</span> = <span class="wg-val">mK8j9x2...</span>
+<span class="wg-key">Address</span> = <span class="wg-val">${p.ip}/32</span>
+<span class="wg-key">DNS</span> = <span class="wg-val">1.1.1.1, 8.8.8.8</span>
+
+<span class="wg-section">[Peer]</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">Gx7R4pL...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">p4Qw8nM...</span>
+<span class="wg-key">Endpoint</span> = <span class="wg-val">demo.example.com:51820</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">0.0.0.0/0</span>
+<span class="wg-key">PersistentKeepalive</span> = <span class="wg-val">25</span></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="modal-qr-cancel">Cancel</button>
+          <button class="btn btn-secondary" id="modal-qr-copy">
+            ${svgIcon('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>')}
+            Copy
+          </button>
+          <a class="btn btn-primary" href="#" id="modal-qr-download">
+            ${svgIcon('<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>')}
+            Download .conf
+          </a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Draw a simple QR-like pattern on the canvas
+  const canvas = $('#qr-canvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, 200, 200);
+    ctx.fillStyle = '#1c1917';
+    const s = 8;
+    for (let y = 0; y < 200/s; y++) {
+      for (let x = 0; x < 200/s; x++) {
+        // Finder patterns
+        if ((x < 3 && y < 3) || (x >= 200/s-3 && y < 3) || (x < 3 && y >= 200/s-3)) {
+          ctx.fillRect(x*s, y*s, s-1, s-1);
+        } else if (Math.random() > 0.5) {
+          ctx.fillRect(x*s, y*s, s-1, s-1);
+        }
+      }
+    }
+  }
+
+  $('#modal-qr-close').onclick = () => mc.innerHTML = '';
+  $('#modal-qr-cancel').onclick = () => mc.innerHTML = '';
+  $('#modal-qr').onclick = e => { if (e.target.id === 'modal-qr') mc.innerHTML = ''; };
+}
+
+/* ════════════════════════════════════════════════════════════
+   SCENE: Routes
+   ════════════════════════════════════════════════════════════ */
+const ROUTES = [
+  { domain: 'nas.example.com', target: '10.8.0.2:5000', tags: [{ text: 'HTTPS', cls: 'tag-green' }, { text: 'Monitoring', cls: 'tag-blue' }] },
+  { domain: 'git.example.com', target: '10.8.0.3:3000', tags: [{ text: 'HTTPS', cls: 'tag-green' }, { text: 'Basic Auth', cls: 'tag-amber' }] },
+  { domain: 'cloud.example.com', target: '10.8.0.4:443', tags: [{ text: 'HTTPS', cls: 'tag-green' }, { text: 'Rate Limit', cls: 'tag-blue' }] },
+  { domain: 'home.example.com', target: '10.8.0.2:8080', tags: [{ text: 'HTTPS', cls: 'tag-green' }] },
+];
+
+function renderRoutes() {
+  const routeItems = ROUTES.map(r => `
+    <div class="route-item">
+      <div class="route-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <div>
+        <div class="route-domain">${r.domain}</div>
+        <div class="route-target">&rarr; ${r.target}</div>
+      </div>
+      <div class="route-tags">${r.tags.map(t => `<span class="tag ${t.cls}" style="font-size:10px;padding:2px 6px"><span class="tag-dot"></span>${t.text}</span>`).join('')}</div>
+      <div class="route-actions">
+        <button class="icon-btn" title="Edit">${svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',12,12)}</button>
+        <button class="icon-btn" title="Toggle">${svgIcon('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',12,12)}</button>
+        <button class="icon-btn" title="Delete" style="color:var(--red)">${svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',12,12)}</button>
+      </div>
+    </div>
+  `).join('');
+
+  const labelStyle = 'font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600';
+  const toggleRow = (title, desc, on=false) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+      <div>
+        <div style="font-size:13px;font-weight:600">${title}</div>
+        <div style="font-size:11px;color:var(--text-2);margin-top:2px">${desc}</div>
+      </div>
+      <div class="toggle${on?' on':''}"></div>
+    </div>
+  `;
+
+  mainContent.innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-eyebrow">Reverse Proxy</div>
-        <div class="page-title">Domains / Routes</div>
-        <div class="page-sub" id="routes-subtitle">0 active routes</div>
+        <div class="page-eyebrow">Routing</div>
+        <div class="page-title">Routes</div>
+        <div class="page-sub">4 active routes configured</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
         <div class="input-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" placeholder="Search routes...">
+          <input type="search" id="route-search" placeholder="Search routes...">
         </div>
+        <button class="btn btn-ghost" id="btn-batch-routes">
+          ${svgIcon('<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',16,16)}
+          Batch Select
+        </button>
+        <button class="btn btn-primary" id="btn-add-route">
+          ${svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>')}
+          Add Route
+        </button>
       </div>
     </div>
+
     <div class="two-col">
-      <!-- LEFT: Active Routes -->
       <div class="card">
         <div class="card-head">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
           <span class="card-title">Active Routes</span>
-          <span class="card-sub" id="routes-count">0</span>
+          <span class="card-sub">4</span>
         </div>
-        <div id="routes-list">
-          <div class="empty-state" id="routes-empty">No routes configured yet.</div>
-        </div>
+        <div class="card-body" id="routes-list">${routeItems}</div>
       </div>
-      <!-- RIGHT: New Route Form -->
+
       <div class="card">
         <div class="card-head">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span class="card-title">New Route</span>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-          <!-- Type toggle -->
           <div class="form-group">
             <div class="toggle-group" id="route-type-group">
-              <button class="toggle-btn on" type="button">HTTP</button>
-              <button class="toggle-btn" type="button">L4</button>
+              <button type="button" class="toggle-btn on" data-value="http">HTTP</button>
+              <button type="button" class="toggle-btn" data-value="l4">L4</button>
             </div>
           </div>
-          <!-- Domain -->
-          <div class="form-group">
-            <label class="form-label">Domain</label>
-            <input type="text" id="route-domain" placeholder="e.g. app.example.com">
-            <div class="dns-hint" id="dns-hint" style="display:none"></div>
+          <div>
+            <label style="${labelStyle}">Domain</label>
+            <input type="text" id="create-route-domain" placeholder="app.example.com" style="width:100%;padding:8px 12px">
           </div>
-          <!-- Description -->
-          <div class="form-group">
-            <label class="form-label">Description</label>
-            <input type="text" id="route-desc" placeholder="Optional description">
+          <div>
+            <label style="${labelStyle}">Description</label>
+            <input type="text" placeholder="Optional description" style="width:100%;padding:8px 12px">
           </div>
-          <!-- Target Peer -->
-          <div class="form-group">
-            <label class="form-label">Target Peer</label>
-            <select id="route-peer">
+          <div>
+            <label style="${labelStyle}">Target Peer</label>
+            <select style="width:100%">
               <option value="">—</option>
+              <option>NAS Zuhause (10.8.0.2)</option>
+              <option>MacBook Pro (10.8.0.3)</option>
+              <option>Office Server (10.8.0.4)</option>
             </select>
           </div>
-          <!-- Target Port -->
-          <div class="form-group">
-            <label class="form-label">Target Port</label>
-            <input type="text" id="route-port" placeholder="e.g. 8080">
+          <div>
+            <label style="${labelStyle}">Target Port</label>
+            <input type="text" id="route-port" placeholder="8080" style="width:100%;padding:8px 12px">
           </div>
-          <!-- Toggle rows -->
-          <div class="toggle-row" id="toggle-https">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Force HTTPS</div>
-              <div class="toggle-row-desc">Redirect HTTP to HTTPS automatically</div>
-            </div>
-            <div class="toggle on" id="tog-https"></div>
-          </div>
-          <div class="toggle-row" id="toggle-backend-https">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Backend HTTPS</div>
-              <div class="toggle-row-desc">Backend uses HTTPS (e.g. Synology DSM Port 5001)</div>
-            </div>
-            <div class="toggle" id="tog-backend-https"></div>
-          </div>
-          <div class="toggle-row" id="toggle-compress">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Compression</div>
-              <div class="toggle-row-desc">Enable gzip/brotli compression</div>
-            </div>
-            <div class="toggle" id="tog-compress"></div>
-          </div>
-          <!-- Auth type -->
+          ${toggleRow('HTTPS erzwingen', 'HTTP &rarr; HTTPS Redirect', true)}
+          ${toggleRow('Backend HTTPS', 'Backend uses HTTPS', false)}
+          ${toggleRow('Komprimierung', 'gzip/zstd Compression', false)}
           <div class="form-group">
             <label class="form-label">Auth Type</label>
-            <div class="toggle-group" id="create-auth-group">
-              <button class="toggle-btn on" type="button">None</button>
-              <button class="toggle-btn" type="button">Basic</button>
-              <button class="toggle-btn" type="button">Route Auth</button>
+            <div class="toggle-group" id="create-auth-type-group">
+              <button type="button" class="toggle-btn on" data-value="none">None</button>
+              <button type="button" class="toggle-btn" data-value="basic">Basic</button>
+              <button type="button" class="toggle-btn" data-value="route">Route Auth</button>
             </div>
           </div>
-          <!-- More toggles -->
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Uptime Monitoring</div>
-              <div class="toggle-row-desc">Periodically check if this route is reachable</div>
-            </div>
-            <div class="toggle" id="tog-monitoring"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">ACL</div>
-              <div class="toggle-row-desc">Restrict access to specific peers</div>
-            </div>
-            <div class="toggle" id="tog-acl"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">IP Access Control</div>
-              <div class="toggle-row-desc">Restrict access by IP, CIDR range, or country</div>
-            </div>
-            <div class="toggle" id="tog-ip-filter"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Rate Limit</div>
-              <div class="toggle-row-desc">Limit requests per time window</div>
-            </div>
-            <div class="toggle" id="tog-rate-limit"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Retry</div>
-              <div class="toggle-row-desc">Auto-retry failed requests</div>
-            </div>
-            <div class="toggle" id="tog-retry"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Circuit Breaker</div>
-              <div class="toggle-row-desc">Stop forwarding on repeated failures</div>
-            </div>
-            <div class="toggle" id="tog-circuit-breaker"></div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-row-text">
-              <div class="toggle-row-title">Request Mirroring</div>
-              <div class="toggle-row-desc">Duplicate traffic to additional targets</div>
-            </div>
-            <div class="toggle" id="tog-mirror"></div>
-          </div>
-          <!-- Save button -->
-          <button class="btn btn-primary" id="btn-save-route" style="width:100%;justify-content:center;padding:10px 16px">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          ${toggleRow('Uptime Monitoring', 'Periodically check if route is reachable', false)}
+          ${toggleRow('ACL', 'Restrict access to specific peers', false)}
+          ${toggleRow('IP Access Control', 'Restrict access by IP, CIDR, or country', false)}
+          ${toggleRow('Rate Limit', 'Limit requests per time window', false)}
+          ${toggleRow('Retry', 'Retry failed backend requests', false)}
+          ${toggleRow('Circuit Breaker', 'Temporarily stop forwarding on failure', false)}
+          ${toggleRow('Mirror', 'Duplicate traffic to additional targets', false)}
+          <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
             Save &amp; Reload
           </button>
         </div>
       </div>
     </div>
-  </div>
+  `;
+}
 
-  <!-- ============================================ -->
-  <!-- SCENE 3: MONITORING & CIRCUIT BREAKER        -->
-  <!-- ============================================ -->
-  <div class="scene" id="scene-monitoring">
-    <div class="page-header">
-      <div>
-        <div class="page-eyebrow">Operations</div>
-        <div class="page-title">Monitoring &amp; Circuit Breaker</div>
-        <div class="page-sub">Health checks, uptime monitoring, and automatic circuit breaking</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-        <span class="card-title">Active Routes</span>
-      </div>
-      <div id="monitoring-routes-list">
-        <div class="route-item" id="monitoring-route-item">
-          <div style="flex:1;min-width:0">
-            <div class="route-domain">nas.example.com</div>
-            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
-            <div class="route-badges" id="monitoring-badges">
-              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-              <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
-              <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>
-            </div>
-          </div>
-          <div class="route-actions">
-            <button class="action-btn" id="btn-edit-monitoring" title="Edit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-            <button class="action-btn danger" title="Delete">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-            </button>
-          </div>
+/* ════════════════════════════════════════════════════════════
+   SCENE: Generic settings modal (Monitoring/Security/Mirroring)
+   ════════════════════════════════════════════════════════════ */
+function showSettingsModal(title, fields) {
+  const mc = $('#modal-container');
+  const rows = fields.map(f => {
+    if (f.type === 'toggle') {
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+        <div>
+          <div style="font-size:13px;font-weight:600">${f.label}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:2px">${f.desc||''}</div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================ -->
-  <!-- SCENE 4: SECURITY (Route Auth + 2FA)         -->
-  <!-- ============================================ -->
-  <div class="scene" id="scene-security">
-    <div class="page-header">
-      <div>
-        <div class="page-eyebrow">Access Control</div>
-        <div class="page-title">Security &amp; Authentication</div>
-        <div class="page-sub">Configure Route Auth with multi-factor authentication</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span class="card-title">Route: nas.example.com</span>
-      </div>
-      <div id="security-route-list">
-        <div class="route-item" id="security-route-item">
-          <div style="flex:1;min-width:0">
-            <div class="route-domain">nas.example.com</div>
-            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
-            <div class="route-badges" id="security-badges">
-              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-              <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
-              <span class="tag tag-green"><span class="tag-dot"></span>UP</span>
-            </div>
-          </div>
-          <div class="route-actions">
-            <button class="action-btn" id="btn-edit-security" title="Edit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================ -->
-  <!-- SCENE 5: REQUEST MIRRORING                   -->
-  <!-- ============================================ -->
-  <div class="scene" id="scene-mirroring">
-    <div class="page-header">
-      <div>
-        <div class="page-eyebrow">Traffic</div>
-        <div class="page-title">Request Mirroring</div>
-        <div class="page-sub">Duplicate traffic to additional targets for testing or analysis</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-        <span class="card-title">Route: nas.example.com</span>
-      </div>
-      <div id="mirroring-route-list">
-        <div class="route-item" id="mirroring-route-item">
-          <div style="flex:1;min-width:0">
-            <div class="route-domain">nas.example.com</div>
-            <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
-            <div class="route-badges" id="mirroring-badges">
-              <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-              <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
-              <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
-              <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>
-            </div>
-          </div>
-          <div class="route-actions">
-            <button class="action-btn" id="btn-edit-mirroring" title="Edit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</div><!-- end main -->
-
-<!-- ============================================ -->
-<!-- MODALS                                        -->
-<!-- ============================================ -->
-
-<!-- ADD PEER MODAL -->
-<div class="modal-overlay" id="modal-add-peer">
-  <div class="modal">
-    <div class="modal-head">
-      <span class="modal-title">Add Peer</span>
-      <button class="modal-close">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label" for="add-peer-name">Name</label>
-        <input type="text" id="add-peer-name" placeholder="e.g. Office Laptop" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="add-peer-desc">Description</label>
-        <input type="text" id="add-peer-desc" placeholder="Optional device description" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="add-peer-group">Group</label>
-        <select id="add-peer-group">
-          <option value="">None</option>
-          <option value="home">Home</option>
-          <option value="office">Office</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="add-peer-tags">Tags</label>
-        <input type="text" id="add-peer-tags" placeholder="e.g. server, production" autocomplete="off">
-        <div class="form-hint">Comma-separated tags for grouping</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="add-peer-expires">Expires</label>
-        <select id="add-peer-expires">
-          <option value="">Never</option>
-          <option value="1d">1 Day</option>
-          <option value="7d">7 Days</option>
-          <option value="30d">30 Days</option>
-          <option value="90d">90 Days</option>
-        </select>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="btn-cancel-add-peer">Cancel</button>
-      <button class="btn btn-primary" id="btn-save-peer">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- QR CODE MODAL -->
-<div class="modal-overlay" id="modal-qr-peer">
-  <div class="modal" style="width:440px">
-    <div class="modal-head">
-      <span class="modal-title" id="qr-modal-title">NAS Zuhause — QR Code</span>
-      <button class="modal-close">&times;</button>
-    </div>
-    <div class="modal-body" style="text-align:center">
-      <div class="qr-placeholder" id="qr-image">
-        <canvas id="qr-canvas" width="180" height="180"></canvas>
-      </div>
-      <div class="wg-config" id="qr-config">[Interface]
-PrivateKey = mK8j3nF7vB2pLqW9...
-Address = 10.8.0.2/32
-DNS = 1.1.1.1, 8.8.8.8
-
-[Peer]
-PublicKey = Gx7RkT4mN8sYpV6w...
-PresharedKey = p4QwZx9cL1jHnR5t...
-Endpoint = demo.example.com:51820
-AllowedIPs = 0.0.0.0/0
-PersistentKeepalive = 25</div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="btn-close-qr">Cancel</button>
-      <button class="btn btn-secondary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-        Copy
-      </button>
-      <button class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download .conf
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- EDIT ROUTE MODAL (used for scenes 3, 4, 5) -->
-<div class="modal-overlay" id="modal-edit-route">
-  <div class="modal" style="width:520px;max-height:85vh">
-    <div class="modal-head">
-      <span class="modal-title" id="edit-modal-title">Edit Route</span>
-      <button class="modal-close" id="btn-close-edit">&times;</button>
-    </div>
-    <div class="modal-body" id="edit-modal-body" style="gap:12px">
-      <!-- Dynamically populated per scene -->
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="btn-cancel-edit">Cancel</button>
-      <button class="btn btn-primary" id="btn-save-edit">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- PROGRESS BAR -->
-<div class="progress-bar">
-  <span class="progress-step" id="progress-step">Scene 1 / 5</span>
-  <div class="progress-track">
-    <div class="progress-fill" id="progress-fill"></div>
-  </div>
-  <span class="progress-label" id="progress-label">Peers / Clients</span>
-</div>
-
-<script>
-/* ================================================================
-   GateControl Interactive Demo — Animation Engine
-   ================================================================ */
-(function() {
-  'use strict';
-
-  const $ = s => document.querySelector(s);
-  const $$ = s => document.querySelectorAll(s);
-  const cursor = $('#demo-cursor');
-  let curX = -40, curY = -40;
-
-  /* ── Helpers ── */
-  function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-  function moveTo(el, offX, offY) {
-    return new Promise(resolve => {
-      const rect = (typeof el === 'string' ? $(el) : el).getBoundingClientRect();
-      const tx = rect.left + (offX || rect.width / 2);
-      const ty = rect.top + (offY || rect.height / 2);
-      const dx = tx - curX, dy = ty - curY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const dur = Math.max(300, Math.min(800, dist * 1.5));
-      cursor.style.transition = `left ${dur}ms cubic-bezier(0.22,1,0.36,1), top ${dur}ms cubic-bezier(0.22,1,0.36,1)`;
-      cursor.style.left = tx + 'px';
-      cursor.style.top = ty + 'px';
-      curX = tx; curY = ty;
-      setTimeout(resolve, dur + 60);
-    });
-  }
-
-  function click() {
-    return new Promise(resolve => {
-      const rip = document.createElement('div');
-      rip.className = 'click-ripple';
-      rip.style.left = curX + 'px';
-      rip.style.top = curY + 'px';
-      document.body.appendChild(rip);
-      setTimeout(() => rip.remove(), 500);
-      setTimeout(resolve, 200);
-    });
-  }
-
-  function typeInto(selector, text, charMs) {
-    const el = typeof selector === 'string' ? $(selector) : selector;
-    charMs = charMs || 55;
-    return new Promise(resolve => {
-      let i = 0;
-      el.focus();
-      const iv = setInterval(() => {
-        el.value += text[i];
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        i++;
-        if (i >= text.length) { clearInterval(iv); setTimeout(resolve, 150); }
-      }, charMs);
-    });
-  }
-
-  function typePassword(selector, len, charMs) {
-    const el = typeof selector === 'string' ? $(selector) : selector;
-    charMs = charMs || 70;
-    return new Promise(resolve => {
-      let i = 0;
-      el.focus();
-      el.type = 'password';
-      const iv = setInterval(() => {
-        el.value += '*';
-        i++;
-        if (i >= len) { clearInterval(iv); setTimeout(resolve, 150); }
-      }, charMs);
-    });
-  }
-
-  function flash(msg) {
-    const el = document.createElement('div');
-    el.className = 'flash flash-success';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2500);
-  }
-
-  function showModal(id) {
-    $(id).classList.add('open');
-    return wait(300);
-  }
-
-  function hideModal(id) {
-    $(id).classList.remove('open');
-    return wait(300);
-  }
-
-  function setToggle(id, on) {
-    const el = typeof id === 'string' ? $(id) : id;
-    if (on) el.classList.add('on');
-    else el.classList.remove('on');
-  }
-
-  function switchScene(sceneId, navId, label, num) {
-    $$('.scene').forEach(s => s.classList.remove('active'));
-    $(sceneId).classList.add('active');
-    $$('.nav-item').forEach(n => n.classList.remove('active'));
-    $(navId).classList.add('active');
-    $('#progress-step').textContent = `Scene ${num} / 5`;
-    $('#progress-label').textContent = label;
-    $('#progress-fill').style.width = (num * 20) + '%';
-    return wait(400);
-  }
-
-  function drawQR() {
-    const canvas = $('#qr-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const size = 180;
-    const cells = 25;
-    const cellSize = size / cells;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#000';
-    // Simple pseudo-random QR pattern
-    const seed = 42;
-    for (let r = 0; r < cells; r++) {
-      for (let c = 0; c < cells; c++) {
-        // Position patterns (corners)
-        if ((r < 7 && c < 7) || (r < 7 && c >= cells - 7) || (r >= cells - 7 && c < 7)) {
-          const inOuter = (r < 7 && c < 7) ? (r === 0 || r === 6 || c === 0 || c === 6) :
-                          (r < 7 && c >= cells - 7) ? (r === 0 || r === 6 || c === cells - 1 || c === cells - 7) :
-                          (r === cells - 1 || r === cells - 7 || c === 0 || c === 6);
-          const inInner = (r < 7 && c < 7) ? (r >= 2 && r <= 4 && c >= 2 && c <= 4) :
-                          (r < 7 && c >= cells - 7) ? (r >= 2 && r <= 4 && c >= cells - 5 && c <= cells - 3) :
-                          (r >= cells - 5 && r <= cells - 3 && c >= 2 && c <= 4);
-          if (inOuter || inInner) {
-            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
-          }
-        } else {
-          // Pseudo-random data
-          const v = ((r * 31 + c * 37 + seed) * 2654435761) >>> 0;
-          if (v % 3 !== 0) {
-            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
-          }
-        }
-      }
+        <div class="toggle${f.on?' on':''}"></div>
+      </div>`;
     }
-  }
+    return `<div class="form-group">
+      <label class="form-label">${f.label}</label>
+      <input type="text" value="${f.value||''}" style="width:100%;padding:8px 12px">
+    </div>`;
+  }).join('');
 
-  /* ── SCENE 1: Peers / Clients ── */
-  async function scene1() {
-    await switchScene('#scene-peers', '#nav-peers', 'Peers / Clients', 1);
-    await wait(600);
-
-    // Move to Add Peer button and click
-    await moveTo('#btn-add-peer');
-    await click();
-    await showModal('#modal-add-peer');
-
-    // Type name
-    await moveTo('#add-peer-name');
-    await click();
-    await typeInto('#add-peer-name', 'NAS Zuhause');
-
-    // Type description
-    await moveTo('#add-peer-desc');
-    await click();
-    await typeInto('#add-peer-desc', 'Synology DS220+');
-
-    // Leave Group as None — skip
-
-    // Type tags
-    await moveTo('#add-peer-tags');
-    await click();
-    await typeInto('#add-peer-tags', 'homelab, nas');
-
-    // Leave Expires as Never — skip
-
-    // Click Save
-    await moveTo('#btn-save-peer');
-    await click();
-    await wait(200);
-    await hideModal('#modal-add-peer');
-    flash('Peer "NAS Zuhause" created successfully');
-
-    // Add peer row to table
-    const empty = $('#peers-empty');
-    if (empty) empty.remove();
-    const tbody = $('#peers-tbody');
-    const tr = document.createElement('tr');
-    tr.id = 'peer-row-1';
-    tr.innerHTML = `
-      <td>
-        <div class="peer-name-cell">
-          <div class="peer-name">NAS Zuhause</div>
-          <div class="peer-desc">Synology DS220+</div>
-          <div class="peer-tags">
-            <span class="tag tag-muted">homelab</span>
-            <span class="tag tag-muted">nas</span>
-          </div>
+  mc.innerHTML = `
+    <div class="modal-overlay" id="modal-settings">
+      <div class="modal">
+        <div class="modal-head">
+          <span class="modal-title">${title}</span>
+          <button class="modal-close" id="modal-settings-close">&times;</button>
         </div>
-      </td>
-      <td class="mono">10.8.0.2</td>
-      <td class="mono" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">a8Kf3m2x...</td>
-      <td style="font-size:12px;color:var(--text-2)">just now</td>
-      <td class="mono" style="font-size:11px"><span style="color:var(--green)">&#8595;0 B</span> <span style="color:var(--blue)">&#8593;0 B</span></td>
-      <td><span class="status-pill online"><span class="status-dot"></span>Online</span></td>
-      <td>
-        <div class="action-btns">
-          <button class="action-btn" title="Traffic">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </button>
-          <button class="action-btn" id="btn-qr-peer" title="QR Code">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="17" width="3" height="3"/><rect x="17" y="14" width="3" height="3"/></svg>
-          </button>
-          <button class="action-btn" title="Edit">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-          <button class="action-btn" title="Toggle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-          </button>
-          <button class="action-btn danger" title="Delete">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-          </button>
-        </div>
-      </td>`;
-    tbody.appendChild(tr);
-    $('#peers-count-label').textContent = '1 peer';
-    $('#nav-peers-badge').textContent = '1';
-    await wait(500);
-
-    // Click QR button
-    await moveTo('#btn-qr-peer');
-    await click();
-    drawQR();
-    await showModal('#modal-qr-peer');
-    await wait(2500);
-    await hideModal('#modal-qr-peer');
-    await wait(600);
-  }
-
-  /* ── SCENE 2: Domains / Routes ── */
-  async function scene2() {
-    await switchScene('#scene-routes', '#nav-routes', 'Domains / Routes', 2);
-    await wait(600);
-
-    // Add the peer to the dropdown
-    const peerSelect = $('#route-peer');
-    const opt = document.createElement('option');
-    opt.value = 'peer1';
-    opt.textContent = 'NAS Zuhause (10.8.0.2)';
-    peerSelect.appendChild(opt);
-
-    // Type domain
-    await moveTo('#route-domain');
-    await click();
-    await typeInto('#route-domain', 'nas.example.com');
-
-    // DNS check animation
-    const hint = $('#dns-hint');
-    hint.style.display = 'flex';
-    hint.className = 'dns-hint checking';
-    hint.innerHTML = '<div class="spinner-small"></div> Checking DNS...';
-    await wait(1200);
-    hint.className = 'dns-hint ok';
-    hint.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> DNS &#10003;';
-    await wait(400);
-
-    // Type description
-    await moveTo('#route-desc');
-    await click();
-    await typeInto('#route-desc', 'Synology NAS Web UI');
-
-    // Select peer
-    await moveTo('#route-peer');
-    await click();
-    peerSelect.value = 'peer1';
-    peerSelect.dispatchEvent(new Event('change'));
-    await wait(400);
-
-    // Type port
-    await moveTo('#route-port');
-    await click();
-    await typeInto('#route-port', '5001');
-
-    // HTTPS toggle is already on, skip
-
-    // Backend HTTPS toggle
-    await moveTo('#tog-backend-https');
-    await click();
-    setToggle('#tog-backend-https', true);
-    await wait(300);
-
-    // Compression toggle
-    await moveTo('#tog-compress');
-    await click();
-    setToggle('#tog-compress', true);
-    await wait(300);
-
-    // Scroll down to see Save button
-    const mainEl = $('#main-content');
-    mainEl.scrollTop = mainEl.scrollHeight;
-    await wait(300);
-
-    // Click Save & Reload
-    await moveTo('#btn-save-route');
-    await click();
-    flash('Route "nas.example.com" created — Caddy reloaded');
-    await wait(300);
-
-    // Add route to the left side list
-    const routesEmpty = $('#routes-empty');
-    if (routesEmpty) routesEmpty.remove();
-    const routesList = $('#routes-list');
-    const routeItem = document.createElement('div');
-    routeItem.className = 'route-item';
-    routeItem.innerHTML = `
-      <div style="flex:1;min-width:0">
-        <div class="route-domain">nas.example.com</div>
-        <div class="route-target">→ NAS Zuhause (10.8.0.2:5001)</div>
-        <div class="route-badges">
-          <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-          <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
-          <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>
+        <div class="modal-body">${rows}</div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="modal-settings-cancel">Cancel</button>
+          <button class="btn btn-primary">Save</button>
         </div>
       </div>
-      <div class="route-actions">
-        <button class="action-btn" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
-      </div>`;
-    routesList.appendChild(routeItem);
-    $('#routes-count').textContent = '1';
-    $('#routes-subtitle').textContent = '1 active route';
-    $('#nav-routes-badge').textContent = '1';
-    mainEl.scrollTop = 0;
-    await wait(800);
-  }
+    </div>
+  `;
 
-  /* ── SCENE 3: Monitoring & Circuit Breaker ── */
-  async function scene3() {
-    await switchScene('#scene-monitoring', '#nav-monitoring', 'Monitoring & Circuit Breaker', 3);
-    await wait(600);
+  $('#modal-settings-close').onclick = () => mc.innerHTML = '';
+  $('#modal-settings-cancel').onclick = () => mc.innerHTML = '';
+  $('#modal-settings').onclick = e => { if (e.target.id === 'modal-settings') mc.innerHTML = ''; };
+}
 
-    // Click edit on route
-    await moveTo('#btn-edit-monitoring');
-    await click();
+/* ════════════════════════════════════════════════════════════
+   ANIMATION PLAYBOOK
+   ════════════════════════════════════════════════════════════ */
+async function runDemo() {
+  totalSteps = 18;
+  showCursor();
 
-    // Populate modal for monitoring
-    const body = $('#edit-modal-body');
-    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
-    body.innerHTML = `
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Force HTTPS</div>
-          <div class="toggle-row-desc">Redirect HTTP to HTTPS automatically</div>
-        </div>
-        <div class="toggle on"></div>
-      </div>
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Backend HTTPS</div>
-          <div class="toggle-row-desc">Backend uses HTTPS</div>
-        </div>
-        <div class="toggle on"></div>
-      </div>
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Compression</div>
-          <div class="toggle-row-desc">Enable gzip/brotli compression</div>
-        </div>
-        <div class="toggle on"></div>
-      </div>
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Uptime Monitoring</div>
-          <div class="toggle-row-desc">Periodically check if this route is reachable</div>
-        </div>
-        <div class="toggle" id="edit-tog-monitoring"></div>
-      </div>
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Circuit Breaker</div>
-          <div class="toggle-row-desc">Stop forwarding on repeated failures</div>
-        </div>
-        <div class="toggle" id="edit-tog-cb"></div>
-      </div>
-      <div id="cb-fields" style="display:none">
-        <div style="display:flex;gap:8px;margin-top:4px">
-          <div class="form-group" style="flex:1">
-            <label class="form-label">Threshold</label>
-            <input type="number" id="edit-cb-threshold" placeholder="5" style="width:100%">
-          </div>
-          <div class="form-group" style="flex:1">
-            <label class="form-label">Timeout (s)</label>
-            <input type="number" id="edit-cb-timeout" placeholder="30" style="width:100%">
-          </div>
-        </div>
-      </div>`;
-    await showModal('#modal-edit-route');
-    await wait(400);
+  // 1. Start on Dashboard
+  renderDashboard();
+  setActiveNav('scene-dashboard');
+  setProgress(1);
+  await wait(1500);
 
-    // Turn on monitoring
-    await moveTo('#edit-tog-monitoring');
-    await click();
-    setToggle('#edit-tog-monitoring', true);
-    await wait(400);
+  // 2. Move to Peers nav
+  setProgress(2);
+  await clickEl('#scene-peers', 700);
+  setActiveNav('scene-peers');
+  renderPeers();
+  await wait(1200);
 
-    // Turn on circuit breaker
-    await moveTo('#edit-tog-cb');
-    await click();
-    setToggle('#edit-tog-cb', true);
-    $('#cb-fields').style.display = 'block';
-    await wait(300);
+  // 3. Click the search input
+  setProgress(3);
+  await clickEl('#peer-search', 500);
+  await typeInto($('#peer-search'), 'NAS', 60);
+  await wait(800);
 
-    // Type threshold
-    await moveTo('#edit-cb-threshold');
-    await click();
-    await typeInto('#edit-cb-threshold', '5');
+  // 4. Clear search
+  setProgress(4);
+  $('#peer-search').value = '';
+  await wait(400);
 
-    // Type timeout
-    await moveTo('#edit-cb-timeout');
-    await click();
-    await typeInto('#edit-cb-timeout', '30');
-
-    // Save
-    await moveTo('#btn-save-edit');
-    await click();
-    await hideModal('#modal-edit-route');
-    flash('Route updated — Monitoring & Circuit Breaker enabled');
-    await wait(400);
-
-    // Update badges
-    const badges = $('#monitoring-badges');
-    badges.innerHTML += `
-      <span class="tag tag-green" id="badge-monitoring"><span class="tag-dot"></span>Monitoring</span>
-      <span class="tag tag-green" id="badge-status"><span class="tag-dot"></span>UP</span>
-      <span class="tag tag-green" id="badge-cb"><span class="tag-dot"></span>CB: Closed</span>`;
-    await wait(1500);
-
-    // Simulate failure: UP → DOWN, CB: Open
-    const statusBadge = $('#badge-status');
-    const cbBadge = $('#badge-cb');
-    statusBadge.className = 'tag tag-red';
-    statusBadge.innerHTML = '<span class="tag-dot"></span>DOWN';
-    cbBadge.className = 'tag tag-red';
-    cbBadge.innerHTML = '<span class="tag-dot"></span>CB: Open';
+  // 5. Click QR button on first peer
+  setProgress(5);
+  const qrBtns = $$('[data-qr]');
+  if (qrBtns[0]) {
+    await clickEl(qrBtns[0], 600);
+    showQRModal(0);
     await wait(2000);
-
-    // Recovery: DOWN → UP, CB: Closed
-    statusBadge.className = 'tag tag-green';
-    statusBadge.innerHTML = '<span class="tag-dot"></span>UP';
-    cbBadge.className = 'tag tag-green';
-    cbBadge.innerHTML = '<span class="tag-dot"></span>CB: Closed';
-    await wait(800);
   }
 
-  /* ── SCENE 4: Security (Route Auth + 2FA) ── */
-  async function scene4() {
-    await switchScene('#scene-security', '#nav-security', 'Security & Authentication', 4);
-    await wait(600);
-
-    // Click edit
-    await moveTo('#btn-edit-security');
-    await click();
-
-    const body = $('#edit-modal-body');
-    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
-    body.innerHTML = `
-      <div class="form-group">
-        <label class="form-label">Auth Type</label>
-        <div class="toggle-group" id="edit-auth-group">
-          <button type="button" class="toggle-btn on" id="auth-none">None</button>
-          <button type="button" class="toggle-btn" id="auth-basic">Basic</button>
-          <button type="button" class="toggle-btn" id="auth-route">Route Auth</button>
-        </div>
-      </div>
-      <div id="route-auth-fields" style="display:none">
-        <div class="form-group">
-          <label class="form-label">Method</label>
-          <div class="toggle-group" id="edit-ra-method-group" style="width:100%">
-            <button type="button" class="toggle-btn on" id="ra-email-pw" style="flex:1">Email &amp; Password</button>
-            <button type="button" class="toggle-btn" id="ra-email-code" style="flex:1">Email &amp; Code</button>
-            <button type="button" class="toggle-btn" id="ra-totp" style="flex:1">TOTP</button>
-          </div>
-        </div>
-        <div class="form-group" id="ra-email-group">
-          <label class="form-label">Email</label>
-          <input type="email" id="edit-ra-email" placeholder="name@example.com">
-        </div>
-        <div class="form-group" id="ra-password-group">
-          <label class="form-label">Password</label>
-          <input type="password" id="edit-ra-password" placeholder="••••••••">
-        </div>
-        <div class="toggle-row" style="margin-top:4px">
-          <div class="toggle-row-text">
-            <div class="toggle-row-title">Two-Factor Authentication</div>
-            <div class="toggle-row-desc">Require a second factor after login</div>
-          </div>
-          <div class="toggle" id="edit-tog-2fa"></div>
-        </div>
-        <div id="twofa-fields" style="display:none;margin-top:8px">
-          <div class="form-group">
-            <label class="form-label">2FA Method</label>
-            <div class="toggle-group" id="edit-2fa-method-group" style="width:100%">
-              <button type="button" class="toggle-btn on" id="twofa-email" style="flex:1">Email Code</button>
-              <button type="button" class="toggle-btn" id="twofa-totp" style="flex:1">TOTP</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    await showModal('#modal-edit-route');
-    await wait(400);
-
-    // Click "Route Auth"
-    await moveTo('#auth-route');
-    await click();
-    $('#auth-none').classList.remove('on');
-    $('#auth-route').classList.add('on');
-    $('#route-auth-fields').style.display = 'flex';
-    $('#route-auth-fields').style.flexDirection = 'column';
-    $('#route-auth-fields').style.gap = '12px';
-    await wait(400);
-
-    // Email & Password is already selected
-    // Type email
-    await moveTo('#edit-ra-email');
-    await click();
-    await typeInto('#edit-ra-email', 'admin@example.com');
-
-    // Type password
-    await moveTo('#edit-ra-password');
-    await click();
-    await typePassword('#edit-ra-password', 10);
-    await wait(300);
-
-    // Enable 2FA
-    await moveTo('#edit-tog-2fa');
-    await click();
-    setToggle('#edit-tog-2fa', true);
-    $('#twofa-fields').style.display = 'block';
-    await wait(400);
-
-    // Select TOTP
-    await moveTo('#twofa-totp');
-    await click();
-    $('#twofa-email').classList.remove('on');
-    $('#twofa-totp').classList.add('on');
-    await wait(400);
-
-    // Save
-    await moveTo('#btn-save-edit');
-    await click();
-    await hideModal('#modal-edit-route');
-    flash('Route Auth enabled — Email & Password + 2FA TOTP');
-    await wait(400);
-
-    // Update badges
-    const badges = $('#security-badges');
-    badges.innerHTML += `
-      <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
-      <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>`;
-    await wait(800);
+  // 6. Close QR modal
+  setProgress(6);
+  const closeBtn = $('#modal-qr-close');
+  if (closeBtn) {
+    await clickEl('#modal-qr-close', 400);
+    $('#modal-container').innerHTML = '';
   }
+  await wait(500);
 
-  /* ── SCENE 5: Request Mirroring ── */
-  async function scene5() {
-    await switchScene('#scene-mirroring', '#nav-mirroring', 'Request Mirroring', 5);
-    await wait(600);
+  // 7. Navigate to Routes
+  setProgress(7);
+  await clickEl('#scene-routes', 700);
+  setActiveNav('scene-routes');
+  renderRoutes();
+  await wait(1200);
 
-    // Click edit
-    await moveTo('#btn-edit-mirroring');
-    await click();
+  // 8. Type a domain in the form
+  setProgress(8);
+  await clickEl('#create-route-domain', 500);
+  await typeInto($('#create-route-domain'), 'app.example.com', 50);
+  await wait(600);
 
-    const body = $('#edit-modal-body');
-    $('#edit-modal-title').textContent = 'Edit Route — nas.example.com';
-    body.innerHTML = `
-      <div class="toggle-row">
-        <div class="toggle-row-text">
-          <div class="toggle-row-title">Request Mirroring</div>
-          <div class="toggle-row-desc">Duplicate traffic to additional targets</div>
-        </div>
-        <div class="toggle" id="edit-tog-mirror"></div>
-      </div>
-      <div id="mirror-fields" style="display:none">
-        <div id="mirror-targets" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-        <button type="button" class="btn btn-ghost" id="btn-add-mirror-target" style="font-size:12px">+ Add Target</button>
-      </div>`;
-    await showModal('#modal-edit-route');
-    await wait(400);
+  // 9. Type a port
+  setProgress(9);
+  await clickEl('#route-port', 400);
+  await typeInto($('#route-port'), '3000', 70);
+  await wait(800);
 
-    // Turn on mirroring
-    await moveTo('#edit-tog-mirror');
-    await click();
-    setToggle('#edit-tog-mirror', true);
-    $('#mirror-fields').style.display = 'block';
-    await wait(400);
-
-    // Click Add Target
-    await moveTo('#btn-add-mirror-target');
-    await click();
-    const targets = $('#mirror-targets');
-    targets.innerHTML = `
-      <div style="display:flex;gap:6px;align-items:center" id="mirror-t1">
-        <div class="form-group" style="flex:2">
-          <label class="form-label">IP / Host</label>
-          <input type="text" id="mirror-ip-1" placeholder="IP or hostname">
-        </div>
-        <div class="form-group" style="flex:1">
-          <label class="form-label">Port</label>
-          <input type="text" id="mirror-port-1" placeholder="Port">
-        </div>
-      </div>`;
-    await wait(300);
-
-    // Type first target
-    await moveTo('#mirror-ip-1');
-    await click();
-    await typeInto('#mirror-ip-1', '203.0.113.10');
-    await moveTo('#mirror-port-1');
-    await click();
-    await typeInto('#mirror-port-1', '8080');
-
-    // Click Add Target again
-    await moveTo('#btn-add-mirror-target');
-    await click();
-    targets.innerHTML += `
-      <div style="display:flex;gap:6px;align-items:center" id="mirror-t2">
-        <div class="form-group" style="flex:2">
-          <label class="form-label">IP / Host</label>
-          <input type="text" id="mirror-ip-2" placeholder="IP or hostname">
-        </div>
-        <div class="form-group" style="flex:1">
-          <label class="form-label">Port</label>
-          <input type="text" id="mirror-port-2" placeholder="Port">
-        </div>
-      </div>`;
-    await wait(300);
-
-    // Type second target
-    await moveTo('#mirror-ip-2');
-    await click();
-    await typeInto('#mirror-ip-2', '203.0.113.11');
-    await moveTo('#mirror-port-2');
-    await click();
-    await typeInto('#mirror-port-2', '9090');
-
-    // Save
-    await moveTo('#btn-save-edit');
-    await click();
-    await hideModal('#modal-edit-route');
-    flash('Mirroring enabled — 2 targets configured');
-    await wait(400);
-
-    // Update badges
-    const badges = $('#mirroring-badges');
-    badges.innerHTML += `
-      <span class="tag tag-blue"><span class="tag-dot"></span>Mirror: 2 targets</span>`;
-    await wait(800);
-
-    // Finish
-    $('#progress-fill').style.width = '100%';
-    $('#progress-label').textContent = 'Demo Complete';
-    $('#progress-step').textContent = 'Done';
-    await wait(1000);
-
-    // Show replay hint
-    const hint = document.createElement('div');
-    hint.style.cssText = 'position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 20px;font-size:13px;color:var(--text-2);box-shadow:var(--shadow-md);z-index:300;cursor:pointer';
-    hint.textContent = 'Demo complete. Click to replay.';
-    hint.onclick = () => { hint.remove(); runDemo(); };
-    document.body.appendChild(hint);
-
-    // Hide cursor
-    cursor.style.left = '-40px';
-    cursor.style.top = '-40px';
-    document.body.classList.remove('hide-cursor');
-  }
-
-  /* ── Main Runner ── */
-  async function runDemo() {
-    document.body.classList.add('hide-cursor');
-    // Reset state
-    $('#progress-fill').style.width = '0%';
-
-    // Reset peer table
-    const tbody = $('#peers-tbody');
-    tbody.innerHTML = '<tr id="peers-empty"><td colspan="7" class="empty-state">No peers configured yet. Click "Add Peer" to get started.</td></tr>';
-    $('#peers-count-label').textContent = '0 peers';
-    $('#nav-peers-badge').textContent = '0';
-
-    // Reset route list
-    const routesList = $('#routes-list');
-    routesList.innerHTML = '<div class="empty-state" id="routes-empty">No routes configured yet.</div>';
-    $('#routes-count').textContent = '0';
-    $('#routes-subtitle').textContent = '0 active routes';
-    $('#nav-routes-badge').textContent = '0';
-
-    // Reset route form inputs
-    ['#route-domain','#route-desc','#route-port'].forEach(s => { if ($(s)) $(s).value = ''; });
-    const peerSelect = $('#route-peer');
-    // Remove previously added options
-    while (peerSelect.options.length > 1) peerSelect.remove(1);
-    peerSelect.value = '';
-    setToggle('#tog-backend-https', false);
-    setToggle('#tog-compress', false);
-    setToggle('#tog-https', true);
-    const dnsHint = $('#dns-hint');
-    if (dnsHint) { dnsHint.style.display = 'none'; dnsHint.innerHTML = ''; }
-
-    // Reset add peer modal inputs
-    ['#add-peer-name','#add-peer-desc','#add-peer-tags'].forEach(s => { if ($(s)) $(s).value = ''; });
-    if ($('#add-peer-group')) $('#add-peer-group').value = '';
-    if ($('#add-peer-expires')) $('#add-peer-expires').value = '';
-
-    // Reset monitoring badges
-    $('#monitoring-badges').innerHTML = `
-      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-      <span class="tag tag-green"><span class="tag-dot"></span>Backend HTTPS</span>
-      <span class="tag tag-blue"><span class="tag-dot"></span>Compression</span>`;
-
-    // Reset security badges
-    $('#security-badges').innerHTML = `
-      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-      <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
-      <span class="tag tag-green"><span class="tag-dot"></span>UP</span>`;
-
-    // Reset mirroring badges
-    $('#mirroring-badges').innerHTML = `
-      <span class="tag tag-green"><span class="tag-dot"></span>HTTPS</span>
-      <span class="tag tag-green"><span class="tag-dot"></span>Monitoring</span>
-      <span class="tag tag-amber"><span class="tag-dot"></span>Email &amp; Password</span>
-      <span class="tag tag-blue"><span class="tag-dot"></span>2FA: TOTP</span>`;
-
-    // Close any open modals
-    $$('.modal-overlay').forEach(m => m.classList.remove('open'));
-
-    // Reset scroll
-    $('#main-content').scrollTop = 0;
-
+  // 10. Click a toggle in the form
+  setProgress(10);
+  const toggles = $$('.two-col .toggle');
+  if (toggles[3]) {
+    await clickEl(toggles[3], 500);
+    toggles[3].classList.toggle('on');
     await wait(500);
-    await scene1();
-    await scene2();
-    await scene3();
-    await scene4();
-    await scene5();
   }
 
-  // Start demo on load
-  window.addEventListener('load', () => {
-    setTimeout(runDemo, 600);
-  });
+  // 11. Navigate to Monitoring
+  setProgress(11);
+  await clickEl('#scene-monitoring', 700);
+  setActiveNav('scene-monitoring');
+  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Monitoring</div><div class="page-sub">Uptime checks and health monitoring</div></div></div>';
+  showSettingsModal('Monitoring Configuration', [
+    { type: 'toggle', label: 'Enable Uptime Monitoring', desc: 'Periodically check all routes', on: true },
+    { type: 'input', label: 'Check Interval (seconds)', value: '60' },
+    { type: 'toggle', label: 'Notify on Downtime', desc: 'Send alerts when routes go down', on: true },
+    { type: 'input', label: 'Webhook URL', value: 'https://hooks.example.com/alerts' },
+  ]);
+  await wait(2000);
+
+  // 12. Close modal
+  setProgress(12);
+  await clickEl('#modal-settings-close', 400);
+  $('#modal-container').innerHTML = '';
+  await wait(500);
+
+  // 13. Navigate to Security
+  setProgress(13);
+  await clickEl('#scene-security', 700);
+  setActiveNav('scene-security');
+  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Security</div><div class="page-sub">Login protection and rate limiting</div></div></div>';
+  showSettingsModal('Security Settings', [
+    { type: 'toggle', label: 'Brute-Force Protection', desc: 'Lock accounts after failed attempts', on: true },
+    { type: 'input', label: 'Max Login Attempts', value: '5' },
+    { type: 'input', label: 'Lockout Duration (minutes)', value: '15' },
+    { type: 'toggle', label: 'Two-Factor Authentication', desc: 'Require TOTP for admin login', on: false },
+  ]);
+  await wait(2000);
+
+  // 14. Close modal
+  setProgress(14);
+  await clickEl('#modal-settings-cancel', 400);
+  $('#modal-container').innerHTML = '';
+  await wait(500);
+
+  // 15. Navigate to Mirroring
+  setProgress(15);
+  await clickEl('#scene-mirroring', 700);
+  setActiveNav('scene-mirroring');
+  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Mirroring</div><div class="page-sub">Duplicate traffic to mirror targets</div></div></div>';
+  showSettingsModal('Mirroring Configuration', [
+    { type: 'toggle', label: 'Enable Traffic Mirroring', desc: 'Duplicate traffic to secondary targets', on: false },
+    { type: 'input', label: 'Mirror Target URL', value: '' },
+    { type: 'toggle', label: 'Mirror Headers', desc: 'Include original request headers', on: true },
+    { type: 'toggle', label: 'Async Mode', desc: 'Do not wait for mirror response', on: true },
+  ]);
+  await wait(2000);
+
+  // 16. Close modal
+  setProgress(16);
+  await clickEl('#modal-settings-close', 400);
+  $('#modal-container').innerHTML = '';
+  await wait(500);
+
+  // 17. Return to Dashboard
+  setProgress(17);
+  await clickEl('#scene-dashboard', 700);
+  setActiveNav('scene-dashboard');
+  renderDashboard();
+  await wait(1000);
+
+  // 18. Done
+  setProgress(18);
+  hideCursor();
+  await wait(1500);
+
+  // Loop
+  setProgress(0);
+  progressBar.style.width = '0%';
+  runDemo();
+}
+
+// Start
+renderDashboard();
+setActiveNav('scene-dashboard');
+setTimeout(runDemo, 800);
+
 })();
 </script>
 </body>
