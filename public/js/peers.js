@@ -100,7 +100,7 @@
   // following the same pattern used throughout the existing codebase.
   function renderPeers(peers) {
     // Safe: colSpan is a number derived from boolean, no user input
-    var colSpan = batchMode ? 8 : 7;
+    var colSpan = batchMode ? 7 : 6;
     if (!peers.length) {
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
       return;
@@ -130,7 +130,6 @@
           (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
         '</td>' +
         '<td><span style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(ip) + '</span></td>' +
-        '<td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">' + escapeHtml(pubKey) + '</span></td>' +
         '<td><span style="font-size:12px;color:var(--text-2)">' + lastContact + '</span></td>' +
         '<td>' +
           '<span style="font-family:var(--font-mono);font-size:11px">\u2193' + rx + ' \u2191' + tx + '</span>' +

@@ -40,7 +40,6 @@
         <th class="batch-col" style="display:none;width:40px"><input type="checkbox" id="batch-select-all-peers" title="{{ t('batch.select_all') }}"></th>
         <th>{{ t('peers.name_device') }}</th>
         <th>{{ t('peers.wg_ip') }}</th>
-        <th>{{ t('peers.pub_key') }}</th>
         <th>{{ t('peers.last_contact') }}</th>
         <th>{{ t('peers.traffic') }}</th>
         <th>{{ t('peers.status') }}</th>
@@ -48,7 +47,7 @@
       </tr>
     </thead>
     <tbody id="peers-tbody">
-      <tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:40px">{{ t('common.loading') }}</td></tr>
+      <tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:40px">{{ t('common.loading') }}</td></tr>
     </tbody>
   </table>
   </div>
