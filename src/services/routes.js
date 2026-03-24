@@ -101,10 +101,24 @@ function buildCaddyConfig() {
       targetIp = route.allowed_ips.split('/')[0];
     }
 
-    // Parse backends for load balancing
+    // Parse backends for load balancing — resolve peer IPs from peer_id
     let backends = null;
     if (route.backends) {
-      try { backends = JSON.parse(route.backends); } catch {}
+      try {
+        const rawBackends = JSON.parse(route.backends);
+        if (Array.isArray(rawBackends)) {
+          backends = rawBackends.map(b => {
+            if (b.peer_id) {
+              const bPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(b.peer_id);
+              if (bPeer && bPeer.enabled) {
+                return { ip: bPeer.allowed_ips.split('/')[0], port: b.port, weight: b.weight || 1 };
+              }
+              return null; // peer not found or disabled
+            }
+            return b.ip ? b : null; // legacy format fallback
+          }).filter(Boolean);
+        }
+      } catch {}
     }
     const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
 

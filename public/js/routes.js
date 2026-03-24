@@ -1546,6 +1546,16 @@
   // ─── Backends helpers ─────────────────────────────────
   var editBackendsList = [];
 
+  function buildBackendPeerOptions(selectedPeerId) {
+    var opts = '<option value="">\u2014</option>';
+    allPeers.forEach(function (p) {
+      var sel = (p.id === selectedPeerId || String(p.id) === String(selectedPeerId)) ? ' selected' : '';
+      var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '';
+      opts += '<option value="' + p.id + '"' + sel + '>' + escapeHtml(p.name) + ' (' + escapeHtml(ip) + ')</option>';
+    });
+    return opts;
+  }
+
   function renderBackendsList() {
     var list = document.getElementById('edit-backends-list');
     if (!list) return;
@@ -1554,13 +1564,11 @@
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs);font-size:12px';
 
-      var ipInput = document.createElement('input');
-      ipInput.type = 'text';
-      ipInput.value = b.ip || '';
-      ipInput.placeholder = GC.t['routes.backends_ip'] || 'IP';
-      ipInput.style.cssText = 'flex:2;padding:4px 8px;font-size:12px';
-      ipInput.addEventListener('change', function() { editBackendsList[idx].ip = this.value; });
-      row.appendChild(ipInput);
+      var peerSelect = document.createElement('select');
+      peerSelect.innerHTML = buildBackendPeerOptions(b.peer_id);
+      peerSelect.style.cssText = 'flex:2;padding:4px 8px;font-size:12px';
+      peerSelect.addEventListener('change', function() { editBackendsList[idx].peer_id = parseInt(this.value, 10) || null; });
+      row.appendChild(peerSelect);
 
       var portInput = document.createElement('input');
       portInput.type = 'number';
@@ -1596,7 +1604,7 @@
   var backendsAddBtn = document.getElementById('edit-backends-add');
   if (backendsAddBtn) {
     backendsAddBtn.addEventListener('click', function() {
-      editBackendsList.push({ ip: '', port: 8080, weight: 1 });
+      editBackendsList.push({ peer_id: null, port: 8080, weight: 1 });
       renderBackendsList();
     });
   }

@@ -631,7 +631,7 @@
   "routes.mirror_conflict": "Mirror target cannot be the same as the primary backend",
   "routes.backends": "Multiple Backends",
   "routes.backends_desc": "Distribute traffic across multiple backend servers",
-  "routes.backends_ip": "IP",
+  "routes.backends_peer": "Peer",
   "routes.backends_port": "Port",
   "routes.backends_weight": "Weight",
   "routes.backends_add": "Add Backend",
