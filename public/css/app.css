@@ -1137,8 +1137,20 @@ input[type="file"] {
   z-index: 100;
   font-size: 13px;
   font-weight: 500;
+  max-width: calc(100vw - 24px);
 }
 .batch-bar span { white-space: nowrap; }
+@media (max-width: 900px) {
+  .batch-bar {
+    bottom: 76px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px;
+    width: calc(100vw - 24px);
+  }
+  .batch-bar > div { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .batch-bar .btn { font-size: 12px; padding: 6px 10px; }
+}
 .batch-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .batch-col { text-align: center; }
 .route-item.batch-mode { cursor: pointer; }

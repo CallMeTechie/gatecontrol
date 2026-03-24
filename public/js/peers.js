@@ -174,8 +174,12 @@
         var peerTags = parseTags(p.tags);
         var tagsHtml = peerTags.map(function(t) { return '<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">' + escapeHtml(t) + '</span>'; }).join('');
 
+        var mobileChecked = batchSelected.has(String(p.id)) ? ' checked' : '';
+        var mobileBatchCb = batchMode ? '<input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + mobileChecked + ' style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent)">' : '';
+
         return '<div class="peer-card" data-peer-id="' + p.id + '">' +
           '<div class="peer-card-top">' +
+            mobileBatchCb +
             '<div class="peer-card-info">' +
               '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + '</div>' +
               (p.description ? '<div class="peer-meta">' + escapeHtml(p.description) + '</div>' : '') +
@@ -781,6 +785,9 @@
         document.getElementById('batch-delete-peers').disabled = false;
       } else {
         batchCountEl.textContent = GC.t['batch.none_selected'] || 'Select items...';
+        document.getElementById('batch-enable-peers').textContent = (GC.t['batch.enable'] || 'Enable').replace(' ({{count}})', '').replace('({{count}})', '');
+        document.getElementById('batch-disable-peers').textContent = (GC.t['batch.disable'] || 'Disable').replace(' ({{count}})', '').replace('({{count}})', '');
+        document.getElementById('batch-delete-peers').textContent = (GC.t['batch.delete'] || 'Delete').replace(' ({{count}})', '').replace('({{count}})', '');
         document.getElementById('batch-enable-peers').disabled = true;
         document.getElementById('batch-disable-peers').disabled = true;
         document.getElementById('batch-delete-peers').disabled = true;
@@ -793,15 +800,17 @@
   if (batchBtn) batchBtn.addEventListener('click', enterBatchMode);
   document.getElementById('batch-cancel-peers').addEventListener('click', exitBatchMode);
 
-  // Checkbox delegation
-  tbody.addEventListener('change', function(e) {
+  // Checkbox delegation (desktop table + mobile cards)
+  function handleBatchCheckbox(e) {
     var cb = e.target.closest('.batch-checkbox');
     if (!cb) return;
     var id = String(cb.dataset.batchId);
     if (cb.checked) batchSelected.add(id);
     else batchSelected.delete(id);
     updateBatchBar();
-  });
+  }
+  tbody.addEventListener('change', handleBatchCheckbox);
+  if (peersMobile) peersMobile.addEventListener('change', handleBatchCheckbox);
 
   if (batchSelectAll) {
     batchSelectAll.addEventListener('change', function() {
