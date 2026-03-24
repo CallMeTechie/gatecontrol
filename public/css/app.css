@@ -975,7 +975,7 @@ input[type="file"] {
 .peer-actions { display: flex; gap: 4px; }
 
 /* ─── Table responsive wrapper ─────────────────────────── */
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap { overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; max-width: 100%; }
 
 /* ─── Hamburger Toggle Button ──────────────────────────── */
 .sidebar-toggle {
@@ -1054,7 +1054,7 @@ input[type="file"] {
   .page-header { flex-direction: column; }
   .page-header .btn { align-self: flex-start; }
   .three-col { grid-template-columns: 1fr; }
-  .peer-table { min-width: 700px; }
+  .peer-table { min-width: 580px; }
   .modal { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .topbar-lang { display: none; }
 
