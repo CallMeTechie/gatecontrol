@@ -1723,41 +1723,165 @@ input[type=search] { padding-left: 32px; width: 200px; }
           <div class="toggle-row-text"><div class="toggle-row-title">Compression</div><div class="toggle-row-desc">Enable gzip/zstd compression</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="auth-type-group">
           <label class="form-label">Authentication</label>
-          <div class="toggle-group">
-            <button type="button" class="toggle-btn on">None</button>
-            <button type="button" class="toggle-btn">Basic</button>
-            <button type="button" class="toggle-btn">Route Auth</button>
+          <div class="toggle-group" id="auth-toggle-group">
+            <button type="button" class="toggle-btn on" data-auth="none">None</button>
+            <button type="button" class="toggle-btn" data-auth="basic">Basic</button>
+            <button type="button" class="toggle-btn" data-auth="route">Route Auth</button>
+          </div>
+        </div>
+        <div id="basic-auth-fields" style="display:none;margin-bottom:14px">
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">USERNAME</label>
+            <input type="text" placeholder="admin" style="width:100%;padding:8px 12px">
+          </div>
+          <div>
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">PASSWORD</label>
+            <input type="password" placeholder="••••••••" style="width:100%;padding:8px 12px">
+          </div>
+        </div>
+        <div id="route-auth-fields" style="display:none;margin-bottom:14px">
+          <div class="form-group">
+            <label class="form-label">Method</label>
+            <div class="toggle-group" style="width:100%">
+              <button type="button" class="toggle-btn on" style="flex:1">Email & Password</button>
+              <button type="button" class="toggle-btn" style="flex:1">Email & Code</button>
+              <button type="button" class="toggle-btn" style="flex:1">TOTP</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" placeholder="name@example.com" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" style="width:100%">
+            <small class="form-hint">Minimum 8 characters</small>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">Two-Factor Authentication</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">Require a second factor after password login</div>
+            </div>
+            <div class="toggle"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Session Duration</label>
+            <select class="form-select" style="width:100%">
+              <option>1 Hour</option>
+              <option>12 Hours</option>
+              <option selected>24 Hours</option>
+              <option>7 Days</option>
+              <option>30 Days</option>
+            </select>
           </div>
         </div>
         <div class="toggle-row">
           <div class="toggle-row-text"><div class="toggle-row-title">Uptime Monitoring</div><div class="toggle-row-desc">Check target availability</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div class="toggle-row" data-expand="acl-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">Peer Access Control</div><div class="toggle-row-desc">Restrict to specific peers</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div id="acl-fields" style="display:none;margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">SELECT PEERS</label>
+          <div style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" checked> NAS Zuhause (10.8.0.2)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox"> MacBook Pro (10.8.0.3)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox"> Office Server (10.8.0.4)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox"> iPhone (10.8.0.5)</label>
+          </div>
+        </div>
+        <div class="toggle-row" data-expand="ip-filter-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">IP Access Control</div><div class="toggle-row-desc">Allow/deny specific IPs</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div id="ip-filter-fields" style="display:none;margin-bottom:14px">
+          <div class="toggle-group" style="margin-bottom:8px">
+            <button type="button" class="toggle-btn on">Whitelist</button>
+            <button type="button" class="toggle-btn">Blacklist</button>
+          </div>
+          <div style="display:flex;gap:6px">
+            <input type="text" placeholder="IP, CIDR, or country code (DE)" style="flex:1;padding:6px 10px;font-size:12px">
+            <select style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option>IP</option>
+              <option>CIDR</option>
+              <option>Country</option>
+            </select>
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-expand="rate-limit-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">Rate Limiting</div><div class="toggle-row-desc">Limit requests per client</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div id="rate-limit-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">REQUESTS</label>
+              <input type="number" value="100" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">WINDOW</label>
+              <select style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option>1 Second</option>
+                <option selected>1 Minute</option>
+                <option>5 Minutes</option>
+                <option>1 Hour</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="toggle-row" data-expand="retry-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">Retry on Error</div><div class="toggle-row-desc">Automatically retry failed requests</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div id="retry-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">RETRY COUNT</label>
+              <input type="number" value="3" min="1" max="10" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">STATUS CODES</label>
+              <input type="text" value="502,503,504" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+          </div>
+        </div>
+        <div class="toggle-row" data-expand="cb-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">Circuit Breaker</div><div class="toggle-row-desc">Stop routing on repeated failures</div></div>
           <div class="toggle"></div>
         </div>
-        <div class="toggle-row">
+        <div id="cb-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">THRESHOLD</label>
+              <input type="number" value="5" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">TIMEOUT (SEC)</label>
+              <input type="number" value="30" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+          </div>
+        </div>
+        <div class="toggle-row" data-expand="mirror-fields">
           <div class="toggle-row-text"><div class="toggle-row-title">Request Mirroring</div><div class="toggle-row-desc">Duplicate traffic to a secondary target</div></div>
           <div class="toggle"></div>
+        </div>
+        <div id="mirror-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+            <select style="flex:2;padding:6px 10px;font-size:12px">
+              <option>— Select Peer —</option>
+              <option>NAS Zuhause (10.8.0.2)</option>
+              <option>MacBook Pro (10.8.0.3)</option>
+              <option>Office Server (10.8.0.4)</option>
+            </select>
+            <input type="number" placeholder="Port" value="8080" style="flex:1;padding:6px 10px;font-size:12px">
+            <button class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">&#x2715;</button>
+          </div>
+          <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px">+ Add Target</button>
         </div>
         <button class="btn btn-primary" style="align-self:flex-start;margin-top:8px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -2373,6 +2497,34 @@ input[type=search] { padding-left: 32px; width: 200px; }
   </div>
 </div>
 
+<!-- Traffic Modal -->
+<div class="modal-overlay" id="modal-traffic" style="display:none">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <span class="modal-title" id="traffic-modal-title">Traffic</span>
+      <button class="modal-close" onclick="closeModal('modal-traffic')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="traffic-total" style="font-family:var(--font-mono);font-size:13px;color:var(--text-2);margin-bottom:12px"></div>
+      <div class="tabs" style="margin-bottom:12px">
+        <button class="tab active" onclick="switchTrafficTab(this)">24h</button>
+        <button class="tab" onclick="switchTrafficTab(this)">7d</button>
+        <button class="tab" onclick="switchTrafficTab(this)">30d</button>
+      </div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;overflow:hidden">
+        <svg id="traffic-chart-svg" viewBox="0 0 520 120" style="width:100%;height:120px"></svg>
+      </div>
+      <div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:11px;color:var(--text-3)">
+        <span><span style="display:inline-block;width:10px;height:3px;background:#0a6e4f;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Upload</span>
+        <span><span style="display:inline-block;width:10px;height:3px;background:#1d4ed8;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Download</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-traffic')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════ -->
 <!-- JAVASCRIPT                                             -->
 <!-- ═══════════════════════════════════════════════════════ -->
@@ -2481,6 +2633,85 @@ function showLogin() {
 function hideLogin() {
   document.getElementById('login-page').style.display = 'none';
 }
+
+// ─── Traffic Modal ─────────────────────────────────────
+var peerTrafficData = [
+  { name: 'NAS Zuhause', down: '48 MB', up: '12 MB', totalDown: 48, totalUp: 12 },
+  { name: 'MacBook Pro', down: '1.2 GB', up: '340 MB', totalDown: 1200, totalUp: 340 },
+  { name: 'Office Server', down: '2.4 GB', up: '890 MB', totalDown: 2400, totalUp: 890 },
+  { name: 'iPhone', down: '120 MB', up: '28 MB', totalDown: 120, totalUp: 28 }
+];
+
+function generateTrafficChart() {
+  var svg = document.getElementById('traffic-chart-svg');
+  var uploadPoints = [];
+  var downloadPoints = [];
+  for (var i = 0; i <= 12; i++) {
+    var x = Math.round(i * (520 / 12));
+    uploadPoints.push(x + ',' + Math.round(30 + Math.random() * 70));
+    downloadPoints.push(x + ',' + Math.round(10 + Math.random() * 60));
+  }
+  // Note: innerHTML used here is safe -- all values are generated from hardcoded numeric data, no user input
+  svg.innerHTML =  // eslint-disable-line no-unsanitized/property
+    '<line x1="0" y1="30" x2="520" y2="30" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>' +
+    '<line x1="0" y1="60" x2="520" y2="60" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>' +
+    '<line x1="0" y1="90" x2="520" y2="90" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>' +
+    '<polyline fill="none" stroke="#0a6e4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="' + uploadPoints.join(' ') + '"/>' +
+    '<polyline fill="#0a6e4f" opacity="0.08" points="0,120 ' + uploadPoints.join(' ') + ' 520,120"/>' +
+    '<polyline fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="' + downloadPoints.join(' ') + '"/>' +
+    '<polyline fill="#1d4ed8" opacity="0.06" points="0,120 ' + downloadPoints.join(' ') + ' 520,120"/>';
+}
+
+function openTrafficModal(peerIndex) {
+  var peer = peerTrafficData[peerIndex];
+  var total = peer.totalDown + peer.totalUp;
+  var unit = total >= 1000 ? 'GB' : 'MB';
+  var totalVal = total >= 1000 ? (total / 1000).toFixed(1) : total;
+  document.getElementById('traffic-modal-title').textContent = peer.name + ' \u2014 Traffic';
+  document.getElementById('traffic-total').textContent = '\u03A3 Total: ' + totalVal + ' ' + unit + ' (\u2193' + peer.down + ' \u2191' + peer.up + ')';
+  generateTrafficChart();
+  openModal('modal-traffic');
+}
+
+function switchTrafficTab(btn) {
+  var tabs = btn.parentElement.querySelectorAll('.tab');
+  tabs.forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  generateTrafficChart();
+}
+
+// Wire up traffic buttons on peer rows
+document.addEventListener('DOMContentLoaded', function() {
+  var peerRows = document.querySelectorAll('#page-peers .peer-table tbody tr');
+  peerRows.forEach(function(row, idx) {
+    var trafficBtn = row.querySelector('.icon-btn[title="Traffic"]');
+    if (trafficBtn) {
+      trafficBtn.onclick = function() { openTrafficModal(idx); };
+    }
+  });
+});
+
+// ─── Auth Type Toggle ──────────────────────────────────
+document.addEventListener('click', function(e) {
+  if (e.target.dataset && e.target.dataset.auth) {
+    var authType = e.target.dataset.auth;
+    document.getElementById('basic-auth-fields').style.display = authType === 'basic' ? '' : 'none';
+    document.getElementById('route-auth-fields').style.display = authType === 'route' ? '' : 'none';
+  }
+});
+
+// ─── Expandable Toggle Rows ────────────────────────────
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('toggle')) {
+    var row = e.target.closest('.toggle-row');
+    if (row && row.dataset.expand) {
+      var fields = document.getElementById(row.dataset.expand);
+      if (fields) {
+        fields.style.display = e.target.classList.contains('on') ? '' : 'none';
+      }
+    }
+  }
+});
 </script>
 
 </body>
