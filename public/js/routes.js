@@ -1634,8 +1634,17 @@
     });
   }
 
-  // NOTE: Mirror target rows use innerHTML with escapeHtml-sanitized values only,
-  // following the same pattern as the existing backends editor in this file.
+  // Mirror target rows use peer dropdown + port input
+  function buildMirrorPeerOptions(selectedPeerId) {
+    var opts = '<option value="">\u2014</option>';
+    allPeers.forEach(function (p) {
+      var sel = (p.id === selectedPeerId || String(p.id) === String(selectedPeerId)) ? ' selected' : '';
+      var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '';
+      opts += '<option value="' + p.id + '"' + sel + '>' + escapeHtml(p.name) + ' (' + escapeHtml(ip) + ')</option>';
+    });
+    return opts;
+  }
+
   function renderCreateMirrorTargets() {
     var list = document.getElementById('create-mirror-targets-list');
     var hint = document.getElementById('create-mirror-max-hint');
@@ -1645,12 +1654,13 @@
     createMirrorTargets.forEach(function (t, i) {
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;align-items:center';
-      row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
+      row.innerHTML = '<select style="flex:2;padding:6px 10px;font-size:12px">' + buildMirrorPeerOptions(t.peer_id) + '</select>'
         + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (parseInt(t.port, 10) || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
         + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
-      var inputs = row.querySelectorAll('input');
-      inputs[0].addEventListener('input', function () { createMirrorTargets[i].ip = this.value; });
-      inputs[1].addEventListener('input', function () { createMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
+      var sel = row.querySelector('select');
+      var portInput = row.querySelector('input');
+      sel.addEventListener('change', function () { createMirrorTargets[i].peer_id = parseInt(this.value, 10) || null; });
+      portInput.addEventListener('input', function () { createMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
       row.querySelector('button').addEventListener('click', function () {
         createMirrorTargets.splice(i, 1);
         renderCreateMirrorTargets();
@@ -1665,7 +1675,7 @@
   if (createMirrorAddBtn) {
     createMirrorAddBtn.addEventListener('click', function () {
       if (createMirrorTargets.length < 5) {
-        createMirrorTargets.push({ ip: '', port: 8080 });
+        createMirrorTargets.push({ peer_id: null, port: 8080 });
         renderCreateMirrorTargets();
       }
     });
@@ -1680,12 +1690,13 @@
     editMirrorTargets.forEach(function (t, i) {
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;align-items:center';
-      row.innerHTML = '<input type="text" placeholder="' + (GC.t['routes.mirror_target_ip'] || 'Target IP') + '" value="' + escapeHtml(t.ip || '') + '" style="flex:2;padding:6px 10px;font-size:12px">'
+      row.innerHTML = '<select style="flex:2;padding:6px 10px;font-size:12px">' + buildMirrorPeerOptions(t.peer_id) + '</select>'
         + '<input type="number" placeholder="' + (GC.t['routes.mirror_target_port'] || 'Port') + '" value="' + (parseInt(t.port, 10) || 8080) + '" min="1" max="65535" style="flex:1;padding:6px 10px;font-size:12px">'
         + '<button type="button" class="btn btn-ghost" style="padding:4px 8px;font-size:12px;color:var(--red)">\u2715</button>';
-      var inputs = row.querySelectorAll('input');
-      inputs[0].addEventListener('input', function () { editMirrorTargets[i].ip = this.value; });
-      inputs[1].addEventListener('input', function () { editMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
+      var sel = row.querySelector('select');
+      var portInput = row.querySelector('input');
+      sel.addEventListener('change', function () { editMirrorTargets[i].peer_id = parseInt(this.value, 10) || null; });
+      portInput.addEventListener('input', function () { editMirrorTargets[i].port = parseInt(this.value, 10) || 8080; });
       row.querySelector('button').addEventListener('click', function () {
         editMirrorTargets.splice(i, 1);
         renderEditMirrorTargets();
@@ -1700,7 +1711,7 @@
   if (editMirrorAddBtn) {
     editMirrorAddBtn.addEventListener('click', function () {
       if (editMirrorTargets.length < 5) {
-        editMirrorTargets.push({ ip: '', port: 8080 });
+        editMirrorTargets.push({ peer_id: null, port: 8080 });
         renderEditMirrorTargets();
       }
     });

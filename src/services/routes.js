@@ -122,10 +122,24 @@ function buildCaddyConfig() {
       try { customHeaders = JSON.parse(route.custom_headers); } catch {}
     }
 
-    // Parse mirror targets
+    // Parse mirror targets — resolve peer IPs from peer_id
     let mirrorTargets = null;
     if (route.mirror_enabled && route.mirror_targets) {
-      try { mirrorTargets = JSON.parse(route.mirror_targets); } catch {}
+      try {
+        const rawMirrorTargets = JSON.parse(route.mirror_targets);
+        if (Array.isArray(rawMirrorTargets)) {
+          mirrorTargets = rawMirrorTargets.map(t => {
+            if (t.peer_id) {
+              const mirrorPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(t.peer_id);
+              if (mirrorPeer && mirrorPeer.enabled) {
+                return { ip: mirrorPeer.allowed_ips.split('/')[0], port: t.port };
+              }
+              return null; // peer not found or disabled
+            }
+            return t.ip ? t : null; // legacy format fallback
+          }).filter(Boolean);
+        }
+      } catch {}
     }
 
     const reverseProxy = {

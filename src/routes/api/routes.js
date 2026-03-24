@@ -246,7 +246,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Validate mirror targets
+    // Validate mirror targets (peer_id + port format)
     if (mirror_targets) {
       if (!Array.isArray(mirror_targets)) {
         return res.status(400).json({ ok: false, error: req.t('routes.mirror_invalid_array') || 'Mirror targets must be an array' });
@@ -258,22 +258,11 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ ok: false, error: req.t('routes.mirror_max') || 'Maximum 5 mirror targets' });
       }
       for (const t of mirror_targets) {
-        if (!t || !t.ip || t.port === undefined || t.port === null) {
-          return res.status(400).json({ ok: false, error: req.t('routes.mirror_invalid_target') || 'Each mirror target must have ip and port' });
+        if (!t || !t.peer_id || t.port === undefined || t.port === null) {
+          return res.status(400).json({ ok: false, error: req.t('routes.mirror_invalid_target') || 'Each mirror target must have a peer and port' });
         }
-        const ipErr = validateIp(t.ip);
-        if (ipErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + ipErr });
         const pErr = validatePort(t.port);
         if (pErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + pErr });
-        // Block private/loopback/link-local IPs for mirror targets (SSRF protection)
-        const parts = t.ip.split('.').map(Number);
-        if (parts[0] === 127 || parts[0] === 10 ||
-            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-            (parts[0] === 192 && parts[1] === 168) ||
-            (parts[0] === 169 && parts[1] === 254) ||
-            parts[0] === 0) {
-          return res.status(400).json({ ok: false, error: req.t('routes.mirror_private_ip') || 'Mirror targets cannot use private or loopback IP addresses' });
-        }
       }
     }
 
@@ -367,22 +356,11 @@ router.put('/:id', async (req, res) => {
         return res.status(400).json({ ok: false, error: req.t('routes.mirror_max') || 'Maximum 5 mirror targets' });
       }
       for (const t of mirror_targets) {
-        if (!t || !t.ip || t.port === undefined || t.port === null) {
-          return res.status(400).json({ ok: false, error: req.t('routes.mirror_invalid_target') || 'Each mirror target must have ip and port' });
+        if (!t || !t.peer_id || t.port === undefined || t.port === null) {
+          return res.status(400).json({ ok: false, error: req.t('routes.mirror_invalid_target') || 'Each mirror target must have a peer and port' });
         }
-        const ipErr = validateIp(t.ip);
-        if (ipErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + ipErr });
         const pErr = validatePort(t.port);
         if (pErr) return res.status(400).json({ ok: false, error: 'Mirror target: ' + pErr });
-        // Block private/loopback/link-local IPs for mirror targets (SSRF protection)
-        const parts = t.ip.split('.').map(Number);
-        if (parts[0] === 127 || parts[0] === 10 ||
-            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-            (parts[0] === 192 && parts[1] === 168) ||
-            (parts[0] === 169 && parts[1] === 254) ||
-            parts[0] === 0) {
-          return res.status(400).json({ ok: false, error: req.t('routes.mirror_private_ip') || 'Mirror targets cannot use private or loopback IP addresses' });
-        }
       }
     }
 
