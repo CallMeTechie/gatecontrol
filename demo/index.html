@@ -1019,9 +1019,17 @@ function moveTo(x, y, dur=600) {
   });
 }
 
-function moveToEl(selector, dur) {
+async function moveToEl(selector, dur) {
   const el = typeof selector === 'string' ? $(selector) : selector;
-  if (!el) return Promise.resolve();
+  if (!el) return;
+  // Scroll element into view if not visible
+  const rect = el.getBoundingClientRect();
+  const mainEl = $('#main-content');
+  const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+  if (!inView) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await wait(450);
+  }
   const r = el.getBoundingClientRect();
   return moveTo(r.left + r.width/2, r.top + r.height/2, dur);
 }
