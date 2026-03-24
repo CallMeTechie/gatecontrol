@@ -226,8 +226,12 @@ Protocol: UDP, TLS: None
 | Uptime Monitoring | HTTP Check | TCP Check |
 | Mehrere Backends | Ja (Load Balancing) | Nein |
 | Sticky Sessions | Ja | Nein |
-| WebSocket | Ja (Upgrade) | Ja (als TCP) |
+| WebSocket | Ja (automatisch) | Ja (als TCP) |
 | Protokoll | HTTP/HTTPS | TCP / UDP |
+
+**WebSocket bei HTTP-Routen:** WebSocket-Verbindungen starten als normaler HTTP-Request mit einem speziellen `Connection: Upgrade` Header. Caddy erkennt diesen Header automatisch und schaltet die Verbindung auf eine persistente WebSocket-Verbindung um. Es ist keine zusätzliche Konfiguration nötig — das funktioniert out-of-the-box bei jeder HTTP-Route.
+
+**WebSocket bei L4-Routen:** Da L4 den rohen TCP-Stream weiterleitet ohne den Inhalt zu inspizieren, funktioniert WebSocket hier ebenfalls — Caddy sieht nur TCP-Pakete und leitet sie 1:1 weiter.
 
 ## Einrichtung
 
