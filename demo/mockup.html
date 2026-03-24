@@ -1,0 +1,2487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f0eb">
+  <title>GateControl — Interactive Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+/* ─── Variables ─────────────────────────────────────────── */
+:root {
+  --bg-base:    #f2f0eb;
+  --bg-panel:   #ffffff;
+  --bg-card:    #fdfcf9;
+  --bg-hover:   #f5f3ee;
+  --bg-input:   #f8f7f3;
+  --border:     #e4e0d6;
+  --border-hi:  #c8c3b5;
+  --shadow:     0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --text-1:     #1c1917;
+  --text-2:     #6b6460;
+  --text-3:     #a8a099;
+  --accent:     #0a6e4f;
+  --accent-lt:  #0a6e4f12;
+  --accent-md:  #0a6e4f22;
+  --green:      #16a34a;
+  --green-lt:   #16a34a14;
+  --green-bd:   #16a34a30;
+  --amber:      #b45309;
+  --amber-lt:   #b4530914;
+  --amber-bd:   #b4530930;
+  --red:        #dc2626;
+  --red-lt:     #dc262614;
+  --red-bd:     #dc262630;
+  --blue:       #1d4ed8;
+  --blue-lt:    #1d4ed814;
+  --blue-bd:    #1d4ed830;
+  --font-ui:    'Outfit', sans-serif;
+  --font-display:'DM Serif Display', serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --nav-h:      58px;
+  --sidebar-w:  232px;
+  --radius:     10px;
+  --radius-sm:  6px;
+  --radius-xs:  4px;
+}
+
+/* ─── Reset & Base ──────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; -webkit-font-smoothing: antialiased; }
+body {
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ─── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 5px; }
+
+/* ─── Top Bar ───────────────────────────────────────────── */
+.topbar {
+  height: var(--nav-h);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 14px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
+  box-shadow: var(--shadow);
+}
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.logo-icon {
+  width: 30px; height: 30px;
+  background: var(--accent);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.logo-icon svg { width: 16px; height: 16px; }
+.logo-wordmark {
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--text-1);
+  letter-spacing: 0;
+  line-height: 1;
+}
+.topbar-spacer { flex: 1; }
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--green-lt);
+  border: 1px solid var(--green-bd);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 500;
+}
+.pulse-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2.5s ease infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.topbar-divider {
+  width: 1px; height: 24px;
+  background: var(--border);
+}
+
+.topbar-profile { position: relative; }
+.topbar-avatar {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  border: none;
+}
+.topbar-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 300;
+  animation: fadeIn 0.12s;
+}
+.topbar-dropdown.open { display: block; }
+.topbar-dropdown-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  font-family: var(--font-ui);
+}
+.topbar-dropdown-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.topbar-dropdown-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.topbar-dropdown-logout { color: var(--red); }
+.topbar-dropdown-logout:hover { background: var(--red-lt); color: var(--red); }
+.topbar-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* ─── Shell ─────────────────────────────────────────────── */
+.shell {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 16px 0 0;
+}
+
+.nav-section-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding: 16px 16px 5px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  margin: 1px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.13s;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.nav-item.active {
+  background: var(--accent-lt);
+  color: var(--accent);
+  font-weight: 600;
+}
+.nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+.nav-badge {
+  margin-left: auto;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.nav-badge.green {
+  background: var(--green-lt);
+  border-color: var(--green-bd);
+  color: var(--green);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-gateway-info {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.gw-label { font-family: var(--font-mono); font-size: 9px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.gw-host { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 600; }
+.gw-wg { font-size: 11px; color: var(--text-2); margin-top: 3px; font-family: var(--font-mono); }
+
+/* ─── Main Content ──────────────────────────────────────── */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ─── Page Header ───────────────────────────────────────── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.page-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+}
+.page-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  color: var(--text-1);
+  line-height: 1.1;
+}
+.page-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; font-weight: 400; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.13s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(10,110,79,0.3), 0 1px 1px rgba(10,110,79,0.2);
+}
+.btn-primary:hover {
+  background: #085f43;
+  box-shadow: 0 3px 10px rgba(10,110,79,0.3);
+  transform: translateY(-1px);
+}
+.btn-ghost {
+  background: var(--bg-panel);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
+.btn svg { width: 14px; height: 14px; }
+.btn-secondary {
+  background: var(--bg-base);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hi);
+}
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(220,38,38,0.3);
+}
+.btn-danger:hover { background: #b91c1c; }
+
+/* ─── Stats Grid ────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.stat-card-stripe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px;
+  height: 100%;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.stat-icon {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  margin-bottom: 10px;
+}
+.stat-icon svg { width: 14px; height: 14px; }
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ─── Two / Three Column ────────────────────────────────── */
+.two-col   { display: grid; grid-template-columns: 1fr 360px; gap: 14px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+/* ─── Card ──────────────────────────────────────────────── */
+.card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.card-head {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+.card-body { padding: 16px 20px; }
+
+/* ─── Traffic Chart ─────────────────────────────────────── */
+.chart-wrap {
+  height: 120px;
+  position: relative;
+  margin-top: 10px;
+}
+.chart-svg { width: 100%; height: 100%; }
+.chart-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-3);
+}
+
+/* ─── Tags ──────────────────────────────────────────────── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+.tag-green { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-bd); }
+.tag-red   { background: var(--red-lt);   color: var(--red);   border: 1px solid var(--red-bd); }
+.tag-amber { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
+.tag-blue  { background: var(--blue-lt);  color: var(--blue);  border: 1px solid var(--blue-bd); }
+.tag-info  { background: var(--bg-hover);    color: var(--text-2); border: 1px solid var(--border); margin-left: 4px; }
+.tag-grey  { background: var(--bg-base);  color: var(--text-2);border: 1px solid var(--border); }
+.tag-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* ─── Peer Table ────────────────────────────────────────── */
+.peer-table { width: 100%; border-collapse: collapse; }
+.peer-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.peer-table td {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.peer-table tr:last-child td { border-bottom: none; }
+.peer-table tr:hover td { background: var(--bg-hover); }
+.peer-name { font-weight: 600; font-size: 13px; }
+.peer-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* ─── Route Items ───────────────────────────────────────── */
+.route-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.route-item:last-child { border-bottom: none; }
+.route-icon {
+  width: 34px; height: 34px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+.route-icon svg { width: 15px; height: 15px; }
+.route-domain { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.route-target { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.route-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.route-actions { margin-left: auto; display: flex; gap: 5px; }
+
+.icon-btn {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.13s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--border-hi); }
+.icon-btn svg { width: 12px; height: 12px; }
+
+/* ─── Activity Feed ─────────────────────────────────────── */
+.activity-item {
+  display: flex;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+}
+.activity-item:last-child { border-bottom: none; }
+.activity-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.activity-text { font-size: 12.5px; line-height: 1.5; color: var(--text-1); }
+.activity-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+
+/* ─── WireGuard Config ──────────────────────────────────── */
+.wg-config {
+  background: #faf9f5;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text-2);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.04);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.wg-section { color: #0a6e4f; font-weight: 700; }
+.wg-key { color: #1d4ed8; }
+.wg-val { color: var(--text-1); }
+.wg-comment { color: var(--text-3); font-style: italic; }
+
+/* ─── Toggle Switch ─────────────────────────────────────── */
+.toggle {
+  width: 36px; height: 20px;
+  background: var(--border-hi);
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--accent); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle.on::after { transform: translateX(16px); }
+
+/* ─── Toggle Button Group ──────────────────────────────── */
+.toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.toggle-btn {
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  outline: none;
+}
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.toggle-btn:hover {
+  background: var(--bg-hover);
+}
+.toggle-btn.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Form Select & Hint ───────────────────────────────── */
+.form-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-select:focus {
+  border-color: var(--accent);
+}
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ─── Tabs ──────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+.tab {
+  padding: 5px 13px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-2);
+  transition: all 0.13s;
+  border: none;
+  background: none;
+}
+.tab.active {
+  background: var(--bg-panel);
+  color: var(--text-1);
+  box-shadow: var(--shadow);
+}
+.tab:hover:not(.active) { color: var(--text-1); }
+
+/* ─── Input ─────────────────────────────────────────────── */
+.input-wrap { position: relative; }
+.input-wrap svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+input[type=text], input[type=search], input[type=password], input[type=email], input[type=number], select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.13s, box-shadow 0.13s;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+}
+input[type=text]:focus, input[type=search]:focus, input[type=password]:focus, input[type=email]:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-lt), inset 0 1px 2px rgba(0,0,0,0.04);
+}
+input[type=search] { padding-left: 32px; width: 200px; }
+
+/* ─── Meter Bar ─────────────────────────────────────────── */
+.meter-bar {
+  height: 5px;
+  background: var(--bg-base);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.meter-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+
+/* ─── Animations ────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stat-card { animation: fadeUp 0.35s ease backwards; }
+.stat-card:nth-child(1) { animation-delay: 0.05s; }
+.stat-card:nth-child(2) { animation-delay: 0.10s; }
+.stat-card:nth-child(3) { animation-delay: 0.15s; }
+.stat-card:nth-child(4) { animation-delay: 0.20s; }
+.stat-card:nth-child(5) { animation-delay: 0.25s; }
+
+/* ─── Modal ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--bg-panel);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+.modal.modal-wide {
+  width: 1000px;
+  animation: slideUp 0.2s ease;
+}
+.modal.modal-wide .modal-body {
+  min-height: 420px;
+}
+.form-row {
+  display: flex;
+  gap: 14px;
+}
+.form-row > .form-group {
+  flex: 1;
+  min-width: 0;
+}
+.modal-sm { width: 380px; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.modal-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title { font-weight: 700; font-size: 15px; }
+.modal-close {
+  width: 28px; height: 28px;
+  border: none; background: none;
+  font-size: 20px; cursor: pointer;
+  color: var(--text-3);
+  display: grid; place-items: center;
+  border-radius: var(--radius-xs);
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-foot {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.form-group { margin-bottom: 14px; }
+.form-group:last-child { margin-bottom: 0; }
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 5px;
+}
+.form-group input[type=text], .form-group input[type=email], .form-group input[type=password] { width: 100%; }
+
+/* ─── Peer Action Buttons ──────────────────────────────── */
+.peer-actions { display: flex; gap: 4px; }
+
+/* ─── Table responsive wrapper ─────────────────────────── */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ─── Settings tabs ────────────────────────────────────── */
+.settings-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 20px;
+  overflow: visible;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 10;
+  flex-shrink: 0;
+}
+.settings-tabs .tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  border-radius: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.settings-tabs .tab:hover {
+  color: var(--text-1);
+}
+.settings-tabs .tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: none;
+  box-shadow: none;
+}
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 700px;
+}
+
+/* ─── Toggle row (settings) ────────────────────────────── */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.toggle-row-text { flex: 1; }
+.toggle-row-title { font-size: 13px; font-weight: 600; }
+.toggle-row-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* ─── Log table ────────────────────────────────────────── */
+.log-table { width: 100%; border-collapse: collapse; }
+.log-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.log-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  vertical-align: middle;
+}
+.log-table tr:last-child td { border-bottom: none; }
+.log-table tr:hover td { background: var(--bg-hover); }
+
+/* ─── Cert item ────────────────────────────────────────── */
+.cert-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cert-item:last-child { border-bottom: none; }
+.cert-icon {
+  width: 36px; height: 36px;
+  background: var(--green-lt);
+  border: 1px solid var(--green-bd);
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  color: var(--green);
+  flex-shrink: 0;
+}
+.cert-icon svg { width: 16px; height: 16px; }
+.cert-domain { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.cert-meta { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* ─── Login page styles ────────────────────────────────── */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+  background: var(--bg-base);
+  z-index: 1000;
+}
+.login-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 380px;
+}
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+.login-field {
+  margin-bottom: 16px;
+}
+.login-field label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+.login-field input {
+  width: 100%;
+  padding: 10px 14px;
+}
+.login-submit {
+  width: 100%;
+  margin-top: 8px;
+  padding: 11px 16px;
+  justify-content: center;
+}
+
+/* ─── Token item ───────────────────────────────────────── */
+.token-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.token-info { flex: 1; }
+.token-name { font-size: 13px; font-weight: 600; }
+.token-meta { font-size: 11px; color: var(--text-2); margin-top: 2px; font-family: var(--font-mono); }
+
+/* ─── JSON viewer ──────────────────────────────────────── */
+.json-view {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 18px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+.json-key { color: #89b4fa; }
+.json-string { color: #a6e3a1; }
+.json-number { color: #fab387; }
+.json-bracket { color: #f9e2af; }
+
+/* ─── Page visibility ──────────────────────────────────── */
+.page { display: none; flex-direction: column; gap: 20px; }
+.page.active { display: flex; }
+
+/* ─── Responsive ────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .two-col { grid-template-columns: 1fr; }
+  .three-col { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LOGIN PAGE (hidden by default, toggle with nav)       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="login-page" id="login-page" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+        </svg>
+      </div>
+      <div>
+        <div class="logo-wordmark">GateControl</div>
+      </div>
+    </div>
+    <div class="login-field">
+      <label for="login-username">Username</label>
+      <input type="text" id="login-username" placeholder="admin" autocomplete="username" autofocus>
+    </div>
+    <div class="login-field">
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button type="button" class="btn btn-primary login-submit" onclick="hideLogin()">Sign in</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TOP BAR                                                -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <a href="#" class="topbar-logo" onclick="navigateTo('dashboard');return false;">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-wordmark">GateControl</div>
+    </div>
+  </a>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-status">
+    <div class="pulse-dot"></div>
+    <span>WireGuard Active</span>
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">vpn.example.com</div>
+
+  <div class="topbar-divider"></div>
+
+  <div style="display:flex;gap:2px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px">
+    <button style="padding:3px 8px;border:none;background:var(--bg-panel);border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:var(--text-1);text-transform:uppercase;box-shadow:var(--shadow)">en</button>
+    <button style="padding:3px 8px;border:none;background:transparent;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:var(--text-3);text-transform:uppercase">de</button>
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-profile" id="topbar-profile">
+    <button class="topbar-avatar" onclick="toggleDropdown()">A</button>
+    <div class="topbar-dropdown" id="topbar-dropdown">
+      <div class="topbar-dropdown-header">
+        <div style="font-size:13px;font-weight:600;color:var(--text-1)">Admin</div>
+        <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">admin</div>
+      </div>
+      <a href="#" class="topbar-dropdown-item" onclick="navigateTo('profile');toggleDropdown();return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Profile
+      </a>
+      <a href="#" class="topbar-dropdown-item" onclick="navigateTo('settings');toggleDropdown();return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </a>
+      <div class="topbar-dropdown-divider"></div>
+      <button class="topbar-dropdown-item topbar-dropdown-logout" onclick="showLogin()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SIDEBAR                                                -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <span class="nav-section-label">Overview</span>
+  <a href="#" class="nav-item active" data-nav="dashboard" onclick="navigateTo('dashboard');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+    Dashboard
+  </a>
+
+  <span class="nav-section-label">VPN</span>
+  <a href="#" class="nav-item" data-nav="peers" onclick="navigateTo('peers');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
+    Peers
+    <span class="nav-badge green">4</span>
+  </a>
+  <a href="#" class="nav-item" data-nav="config" onclick="navigateTo('config');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    WG Config
+  </a>
+
+  <span class="nav-section-label">Routing</span>
+  <a href="#" class="nav-item" data-nav="routes" onclick="navigateTo('routes');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+    Routes
+    <span class="nav-badge">3</span>
+  </a>
+  <a href="#" class="nav-item" data-nav="caddy" onclick="navigateTo('caddy');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+    Caddy Config
+  </a>
+  <a href="#" class="nav-item" data-nav="certificates" onclick="navigateTo('certificates');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    Certificates
+  </a>
+
+  <span class="nav-section-label">System</span>
+  <a href="#" class="nav-item" data-nav="logs" onclick="navigateTo('logs');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Logs & Monitoring
+  </a>
+  <a href="#" class="nav-item" data-nav="settings" onclick="navigateTo('settings');return false;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+    Settings
+  </a>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-gateway-info">
+      <div class="gw-label">Gateway Host</div>
+      <div class="gw-host">vpn.example.com</div>
+      <div class="gw-wg">wg0 &middot; 10.8.0.1/24 &middot; :51820</div>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- MAIN CONTENT                                           -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<main class="main" id="main-content">
+
+<!-- ─── PAGE: Dashboard ───────────────────────────────── -->
+<div class="page active" id="page-dashboard">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">Overview</div>
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">System status and network overview</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn btn-ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Reload
+      </button>
+      <button class="btn btn-primary" onclick="navigateTo('peers')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Peer
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-card-stripe" style="background:var(--green)"></div>
+      <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+      <div class="stat-value" style="color:var(--green)">4</div>
+      <div class="stat-label">Peers Connected</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-stripe" style="background:var(--accent)"></div>
+      <div class="stat-icon" style="background:var(--accent-lt);color:var(--accent)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <div class="stat-value" style="color:var(--accent)">3</div>
+      <div class="stat-label">Active Subdomains</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-stripe" style="background:var(--blue)"></div>
+      <div class="stat-icon" style="background:var(--blue-lt);color:var(--blue)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="stat-value" style="color:var(--blue)">1.4 <span style="font-size:14px;font-weight:400">MB</span></div>
+      <div class="stat-label">Traffic Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-stripe" style="background:var(--amber)"></div>
+      <div class="stat-icon" style="background:var(--amber-lt);color:var(--amber)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <div class="stat-value" style="color:var(--amber)">12 <span style="font-size:14px;font-weight:400">ms</span></div>
+      <div class="stat-label">Avg Latency</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-stripe" style="background:var(--green)"></div>
+      <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="stat-value" style="color:var(--green)">3/3</div>
+      <div class="stat-label">Uptime</div>
+    </div>
+  </div>
+
+  <!-- Traffic + Activity -->
+  <div class="two-col">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span class="card-title">Network Traffic</span>
+        <div class="tabs" style="margin-left:auto">
+          <div class="tab active">1h</div>
+          <div class="tab">24h</div>
+          <div class="tab">7d</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:20px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div>
+            <div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">UPLOAD</div>
+              <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--accent)">24.3 KB/s</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--blue)"></div>
+            <div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">DOWNLOAD</div>
+              <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--blue)">142.7 KB/s</div>
+            </div>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart-svg" viewBox="0 0 560 120" preserveAspectRatio="none">
+            <!-- Grid lines -->
+            <line x1="0" y1="30" x2="560" y2="30" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+            <line x1="0" y1="60" x2="560" y2="60" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+            <line x1="0" y1="90" x2="560" y2="90" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+            <!-- Upload line (green) -->
+            <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              points="0,90 40,85 80,70 120,75 160,60 200,65 240,50 280,55 320,40 360,45 400,35 440,30 480,40 520,35 560,30"/>
+            <polyline fill="var(--accent)" opacity="0.08"
+              points="0,120 0,90 40,85 80,70 120,75 160,60 200,65 240,50 280,55 320,40 360,45 400,35 440,30 480,40 520,35 560,30 560,120"/>
+            <!-- Download line (blue) -->
+            <polyline fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              points="0,80 40,70 80,55 120,60 160,45 200,50 240,35 280,40 320,25 360,30 400,20 440,15 480,25 520,20 560,15"/>
+            <polyline fill="var(--blue)" opacity="0.06"
+              points="0,120 0,80 40,70 80,55 120,60 160,45 200,50 240,35 280,40 320,25 360,30 400,20 440,15 480,25 520,20 560,15 560,120"/>
+            <!-- Labels -->
+            <text x="0" y="118" class="chart-label">-60m</text>
+            <text x="270" y="118" class="chart-label">-30m</text>
+            <text x="540" y="118" class="chart-label">now</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span class="card-title">Recent Events</span>
+        <span class="card-sub">Realtime</span>
+      </div>
+      <div class="card-body">
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--green)"></div>
+          <div>
+            <div class="activity-text"><strong>NAS Zuhause</strong> connected</div>
+            <div class="activity-time">just now</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--blue)"></div>
+          <div>
+            <div class="activity-text">Route <strong>nas.example.com</strong> created</div>
+            <div class="activity-time">5 min ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--accent)"></div>
+          <div>
+            <div class="activity-text">Caddy configuration reloaded</div>
+            <div class="activity-time">12 min ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--amber)"></div>
+          <div>
+            <div class="activity-text"><strong>Office Server</strong> went offline</div>
+            <div class="activity-time">2h ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--green)"></div>
+          <div>
+            <div class="activity-text">Backup created successfully</div>
+            <div class="activity-time">6h ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Resources -->
+  <div class="three-col">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">CPU Usage</span>
+        <span class="card-sub" style="color:var(--green)">12%</span>
+      </div>
+      <div class="card-body">
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px">2 Cores &middot; x86_64</div>
+        <div class="meter-bar"><div class="meter-fill" style="width:12%;background:var(--green)"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">RAM Usage</span>
+        <span class="card-sub" style="color:var(--blue)">38%</span>
+      </div>
+      <div class="card-body">
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px">768 MB / 2048 MB</div>
+        <div class="meter-bar"><div class="meter-fill" style="width:38%;background:var(--blue)"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Uptime</span>
+        <span class="card-sub" style="color:var(--accent)">99.9%</span>
+      </div>
+      <div class="card-body">
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)">14d 7h</div>
+        <div class="meter-bar" style="margin-top:8px"><div class="meter-fill" style="width:99.9%;background:linear-gradient(90deg,var(--accent),#22c55e)"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Peers ───────────────────────────────────── -->
+<div class="page" id="page-peers">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">VPN</div>
+      <div class="page-title">Peers / Clients</div>
+      <div class="page-sub">Manage WireGuard peers and their configurations</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+      <div class="input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" placeholder="Search peers...">
+      </div>
+      <select style="padding:7px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-1);min-width:140px">
+        <option value="">All Groups</option>
+        <option>Homelab</option>
+        <option>Office</option>
+      </select>
+      <button class="btn btn-ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Batch Select
+      </button>
+      <button class="btn btn-primary" onclick="openModal('modal-add-peer')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Peer
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">All Peers</span>
+      <span class="card-sub">4 total</span>
+    </div>
+    <div class="table-wrap">
+    <table class="peer-table">
+      <thead>
+        <tr>
+          <th>Name / Device</th>
+          <th>WG IP</th>
+          <th>Public Key</th>
+          <th>Last Contact</th>
+          <th>Traffic</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="peer-name">NAS Zuhause</div>
+            <div class="peer-meta">
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">homelab</span>
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">nas</span>
+            </div>
+          </td>
+          <td><span style="font-family:var(--font-mono);font-size:12px">10.8.0.2</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">a8Kf3m2x...</span></td>
+          <td><span style="font-size:12px;color:var(--text-2)">just now</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">&darr;48 MB &uarr;12 MB</span></td>
+          <td><span class="tag tag-green"><span class="tag-dot"></span>Online</span></td>
+          <td>
+            <div class="peer-actions">
+              <button class="icon-btn" title="Traffic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>
+              <button class="icon-btn" title="QR Code" onclick="openModal('modal-qr-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="17"/><line x1="14" y1="21" x2="17" y2="21"/></svg></button>
+              <button class="icon-btn" title="Edit" onclick="openModal('modal-edit-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+              <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="peer-name">MacBook Pro</div>
+            <div class="peer-meta">
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">dev</span>
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">mobile</span>
+            </div>
+          </td>
+          <td><span style="font-family:var(--font-mono);font-size:12px">10.8.0.3</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">p2Lw9nK4...</span></td>
+          <td><span style="font-size:12px;color:var(--text-2)">3 min ago</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">&darr;1.2 GB &uarr;340 MB</span></td>
+          <td><span class="tag tag-green"><span class="tag-dot"></span>Online</span></td>
+          <td>
+            <div class="peer-actions">
+              <button class="icon-btn" title="Traffic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>
+              <button class="icon-btn" title="QR Code" onclick="openModal('modal-qr-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="17"/><line x1="14" y1="21" x2="17" y2="21"/></svg></button>
+              <button class="icon-btn" title="Edit" onclick="openModal('modal-edit-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+              <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="peer-name">Office Server</div>
+            <div class="peer-meta">
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">prod</span>
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">server</span>
+            </div>
+          </td>
+          <td><span style="font-family:var(--font-mono);font-size:12px">10.8.0.4</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">mX7j5Kq2...</span></td>
+          <td><span style="font-size:12px;color:var(--text-2)">2h ago</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">&darr;2.4 GB &uarr;890 MB</span></td>
+          <td><span class="tag tag-red"><span class="tag-dot"></span>Offline</span></td>
+          <td>
+            <div class="peer-actions">
+              <button class="icon-btn" title="Traffic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>
+              <button class="icon-btn" title="QR Code" onclick="openModal('modal-qr-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="17"/><line x1="14" y1="21" x2="17" y2="21"/></svg></button>
+              <button class="icon-btn" title="Edit" onclick="openModal('modal-edit-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+              <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="peer-name">iPhone</div>
+            <div class="peer-meta">
+              <span class="tag tag-grey" style="font-size:10px;padding:1px 5px">mobile</span>
+            </div>
+          </td>
+          <td><span style="font-family:var(--font-mono);font-size:12px">10.8.0.5</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">kR4wN8x2...</span></td>
+          <td><span style="font-size:12px;color:var(--text-2)">15 min ago</span></td>
+          <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">&darr;120 MB &uarr;28 MB</span></td>
+          <td><span class="tag tag-green"><span class="tag-dot"></span>Online</span></td>
+          <td>
+            <div class="peer-actions">
+              <button class="icon-btn" title="Traffic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>
+              <button class="icon-btn" title="QR Code" onclick="openModal('modal-qr-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="17"/><line x1="14" y1="21" x2="17" y2="21"/></svg></button>
+              <button class="icon-btn" title="Edit" onclick="openModal('modal-edit-peer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+              <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Peer Groups -->
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      <span class="card-title">Peer Groups</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--text-3)">Organize peers into groups for easier management</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div style="width:12px;height:12px;border-radius:50%;background:#16a34a"></div>
+          <div style="font-size:13px;font-weight:600;flex:1">Homelab</div>
+          <span class="tag tag-grey" style="font-size:10px">2 peers</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div style="width:12px;height:12px;border-radius:50%;background:#1d4ed8"></div>
+          <div style="font-size:13px;font-weight:600;flex:1">Office</div>
+          <span class="tag tag-grey" style="font-size:10px">2 peers</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <div style="display:flex;gap:8px">
+          <input type="text" placeholder="Group name..." style="flex:1;padding:8px 12px;font-size:12px">
+          <input type="color" value="#6b7280" style="width:40px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+        </div>
+        <input type="text" placeholder="Description (optional)" style="width:100%;padding:8px 12px;font-size:12px">
+        <button class="btn btn-primary" style="align-self:flex-start">Add Group</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: WG Config ───────────────────────────────── -->
+<div class="page" id="page-config">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">VPN</div>
+      <div class="page-title">WireGuard Configuration</div>
+      <div class="page-sub">Current wg0.conf configuration file</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy
+      </button>
+      <button class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      <span class="card-title">wg0.conf</span>
+      <span class="card-sub">/etc/wireguard/wg0.conf</span>
+    </div>
+    <div class="card-body">
+      <div class="wg-config"><span class="wg-section">[Interface]</span>
+<span class="wg-key">PrivateKey</span> = <span class="wg-val">(hidden)</span>
+<span class="wg-key">Address</span> = <span class="wg-val">10.8.0.1/24</span>
+<span class="wg-key">ListenPort</span> = <span class="wg-val">51820</span>
+<span class="wg-key">PostUp</span> = <span class="wg-val">iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE</span>
+<span class="wg-key">PostDown</span> = <span class="wg-val">iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE</span>
+
+<span class="wg-section">[Peer]</span> <span class="wg-comment"># NAS Zuhause</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">a8Kf3m2x7Q4R...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">(hidden)</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">10.8.0.2/32</span>
+
+<span class="wg-section">[Peer]</span> <span class="wg-comment"># MacBook Pro</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">p2Lw9nK4vR8X...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">(hidden)</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">10.8.0.3/32</span>
+
+<span class="wg-section">[Peer]</span> <span class="wg-comment"># Office Server</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">mX7j5Kq2rT6W...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">(hidden)</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">10.8.0.4/32</span>
+
+<span class="wg-section">[Peer]</span> <span class="wg-comment"># iPhone</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">kR4wN8x2pL5Y...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">(hidden)</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">10.8.0.5/32</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Routes ──────────────────────────────────── -->
+<div class="page" id="page-routes">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">Routing</div>
+      <div class="page-title">Routes / Domains</div>
+      <div class="page-sub">3 active routes configured</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+      <div class="input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" placeholder="Search routes...">
+      </div>
+      <button class="btn btn-ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Batch Select
+      </button>
+      <button class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Route
+      </button>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <!-- Active Routes -->
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">Active Routes</span>
+        <span class="card-sub">3</span>
+      </div>
+      <div class="card-body">
+        <!-- Route 1 -->
+        <div class="route-item">
+          <div class="route-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="route-domain">nas.example.com</div>
+            <div class="route-target">NAS Zuhause (10.8.0.2:5001)</div>
+            <div class="route-tags" style="margin-top:6px">
+              <span class="tag tag-green" style="font-size:10px;padding:2px 6px"><span class="tag-dot"></span>Active</span>
+              <span class="tag tag-blue" style="font-size:10px;padding:2px 6px">HTTPS</span>
+              <span class="tag tag-info" style="font-size:10px;padding:2px 6px;margin-left:0">Backend HTTPS</span>
+              <span class="tag tag-info" style="font-size:10px;padding:2px 6px;margin-left:0">Compress</span>
+              <span class="tag tag-green" style="font-size:10px;padding:2px 6px">Monitoring UP</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="icon-btn" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+            <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          </div>
+        </div>
+        <!-- Route 2 -->
+        <div class="route-item">
+          <div class="route-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="route-domain">app.example.com</div>
+            <div class="route-target">MacBook Pro (10.8.0.3:3000)</div>
+            <div class="route-tags" style="margin-top:6px">
+              <span class="tag tag-green" style="font-size:10px;padding:2px 6px"><span class="tag-dot"></span>Active</span>
+              <span class="tag tag-blue" style="font-size:10px;padding:2px 6px">HTTPS</span>
+              <span class="tag tag-amber" style="font-size:10px;padding:2px 6px">Rate Limit: 100/min</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="icon-btn" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+            <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          </div>
+        </div>
+        <!-- Route 3 -->
+        <div class="route-item">
+          <div class="route-icon" style="color:var(--amber)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="route-domain" style="color:var(--text-3)">git.example.com</div>
+            <div class="route-target">Office Server (10.8.0.4:3000)</div>
+            <div class="route-tags" style="margin-top:6px">
+              <span class="tag tag-amber" style="font-size:10px;padding:2px 6px"><span class="tag-dot"></span>Disabled</span>
+              <span class="tag tag-blue" style="font-size:10px;padding:2px 6px">HTTPS</span>
+            </div>
+          </div>
+          <div class="route-actions">
+            <button class="icon-btn" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="icon-btn" title="Toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+            <button class="icon-btn" title="Delete" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- New Route Form -->
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span class="card-title">New Route</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <div class="toggle-group">
+            <button type="button" class="toggle-btn on">HTTP</button>
+            <button type="button" class="toggle-btn">L4</button>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">Domain</label>
+          <input type="text" placeholder="sub.example.com" style="width:100%;padding:8px 12px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">Description</label>
+          <input type="text" placeholder="Optional description" style="width:100%;padding:8px 12px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">Target Peer</label>
+          <select style="width:100%">
+            <option value="">---</option>
+            <option>NAS Zuhause (10.8.0.2)</option>
+            <option>MacBook Pro (10.8.0.3)</option>
+            <option>Office Server (10.8.0.4)</option>
+            <option>iPhone (10.8.0.5)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">Target Port</label>
+          <input type="text" placeholder="8080" style="width:100%;padding:8px 12px">
+        </div>
+        <!-- Toggle rows -->
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Force HTTPS</div><div class="toggle-row-desc">Redirect HTTP to HTTPS</div></div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Backend HTTPS</div><div class="toggle-row-desc">Backend uses HTTPS (e.g. Synology DSM Port 5001)</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Compression</div><div class="toggle-row-desc">Enable gzip/zstd compression</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Authentication</label>
+          <div class="toggle-group">
+            <button type="button" class="toggle-btn on">None</button>
+            <button type="button" class="toggle-btn">Basic</button>
+            <button type="button" class="toggle-btn">Route Auth</button>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Uptime Monitoring</div><div class="toggle-row-desc">Check target availability</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Peer Access Control</div><div class="toggle-row-desc">Restrict to specific peers</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">IP Access Control</div><div class="toggle-row-desc">Allow/deny specific IPs</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Rate Limiting</div><div class="toggle-row-desc">Limit requests per client</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Retry on Error</div><div class="toggle-row-desc">Automatically retry failed requests</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Circuit Breaker</div><div class="toggle-row-desc">Stop routing on repeated failures</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-row-text"><div class="toggle-row-title">Request Mirroring</div><div class="toggle-row-desc">Duplicate traffic to a secondary target</div></div>
+          <div class="toggle"></div>
+        </div>
+        <button class="btn btn-primary" style="align-self:flex-start;margin-top:8px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save &amp; Reload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Caddy Config ────────────────────────────── -->
+<div class="page" id="page-caddy">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">Routing</div>
+      <div class="page-title">Caddy Configuration</div>
+      <div class="page-sub">Current reverse proxy configuration (JSON)</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Reload Caddy
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span class="card-title">Caddy JSON Config</span>
+      <span class="card-sub">admin API</span>
+    </div>
+    <div class="card-body">
+      <div class="json-view"><span class="json-bracket">{</span>
+  <span class="json-key">"apps"</span>: <span class="json-bracket">{</span>
+    <span class="json-key">"http"</span>: <span class="json-bracket">{</span>
+      <span class="json-key">"servers"</span>: <span class="json-bracket">{</span>
+        <span class="json-key">"srv0"</span>: <span class="json-bracket">{</span>
+          <span class="json-key">"listen"</span>: [<span class="json-string">":443"</span>],
+          <span class="json-key">"routes"</span>: [
+            <span class="json-bracket">{</span>
+              <span class="json-key">"match"</span>: [<span class="json-bracket">{</span><span class="json-key">"host"</span>: [<span class="json-string">"nas.example.com"</span>]<span class="json-bracket">}</span>],
+              <span class="json-key">"handle"</span>: [<span class="json-bracket">{</span>
+                <span class="json-key">"handler"</span>: <span class="json-string">"reverse_proxy"</span>,
+                <span class="json-key">"upstreams"</span>: [<span class="json-bracket">{</span><span class="json-key">"dial"</span>: <span class="json-string">"10.8.0.2:5001"</span><span class="json-bracket">}</span>]
+              <span class="json-bracket">}</span>]
+            <span class="json-bracket">}</span>,
+            <span class="json-bracket">{</span>
+              <span class="json-key">"match"</span>: [<span class="json-bracket">{</span><span class="json-key">"host"</span>: [<span class="json-string">"app.example.com"</span>]<span class="json-bracket">}</span>],
+              <span class="json-key">"handle"</span>: [<span class="json-bracket">{</span>
+                <span class="json-key">"handler"</span>: <span class="json-string">"reverse_proxy"</span>,
+                <span class="json-key">"upstreams"</span>: [<span class="json-bracket">{</span><span class="json-key">"dial"</span>: <span class="json-string">"10.8.0.3:3000"</span><span class="json-bracket">}</span>]
+              <span class="json-bracket">}</span>]
+            <span class="json-bracket">}</span>
+          ]
+        <span class="json-bracket">}</span>
+      <span class="json-bracket">}</span>
+    <span class="json-bracket">}</span>
+  <span class="json-bracket">}</span>
+<span class="json-bracket">}</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Certificates ────────────────────────────── -->
+<div class="page" id="page-certificates">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">Routing</div>
+      <div class="page-title">Certificates</div>
+      <div class="page-sub">TLS certificates managed by Caddy via ACME</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="card-title">Active Certificates</span>
+      <span class="card-sub">3 certificates</span>
+    </div>
+    <div class="card-body">
+      <div class="cert-item">
+        <div class="cert-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="cert-domain">nas.example.com</div>
+          <div class="cert-meta">Issued by Let's Encrypt &middot; Expires in 82 days</div>
+        </div>
+        <span class="tag tag-green"><span class="tag-dot"></span>Valid</span>
+      </div>
+      <div class="cert-item">
+        <div class="cert-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="cert-domain">app.example.com</div>
+          <div class="cert-meta">Issued by Let's Encrypt &middot; Expires in 79 days</div>
+        </div>
+        <span class="tag tag-green"><span class="tag-dot"></span>Valid</span>
+      </div>
+      <div class="cert-item">
+        <div class="cert-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="cert-domain">git.example.com</div>
+          <div class="cert-meta">Issued by Let's Encrypt &middot; Expires in 45 days</div>
+        </div>
+        <span class="tag tag-green"><span class="tag-dot"></span>Valid</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Logs ────────────────────────────────────── -->
+<div class="page" id="page-logs">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">System</div>
+      <div class="page-title">Logs &amp; Monitoring</div>
+      <div class="page-sub">Activity and access logs</div>
+    </div>
+  </div>
+
+  <div class="tabs" id="log-tabs" style="align-self:flex-start">
+    <button class="tab active" onclick="switchLogTab('activity')">Activity Log</button>
+    <button class="tab" onclick="switchLogTab('access')">Access Log</button>
+  </div>
+
+  <!-- Activity Log -->
+  <div class="card" id="log-activity">
+    <div class="card-head">
+      <span class="card-title">Activity Log</span>
+      <span class="card-sub">Last 24h</span>
+    </div>
+    <div class="table-wrap">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>Message</th>
+          <th>Source</th>
+          <th>Severity</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">peer_created</span></td><td>Peer "iPhone" created</td><td>admin</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 09:42</td></tr>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">route_created</span></td><td>Route "nas.example.com" created</td><td>admin</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 09:38</td></tr>
+        <tr><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">user_login</span></td><td>User "admin" logged in from 192.168.1.10</td><td>auth</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 09:30</td></tr>
+        <tr><td><span class="tag tag-accent" style="font-size:10px;padding:2px 6px;background:var(--accent-lt);color:var(--accent);border:1px solid var(--accent-md)">caddy_reloaded</span></td><td>Caddy configuration reloaded successfully</td><td>system</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 09:38</td></tr>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">backup_created</span></td><td>Automatic backup created (2.4 MB)</td><td>scheduler</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 06:00</td></tr>
+        <tr><td><span class="tag tag-amber" style="font-size:10px;padding:2px 6px">peer_offline</span></td><td>Peer "Office Server" went offline</td><td>monitor</td><td><span class="tag tag-amber" style="font-size:10px;padding:2px 6px">warning</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-24 07:22</td></tr>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">peer_created</span></td><td>Peer "MacBook Pro" created</td><td>admin</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-23 16:05</td></tr>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">route_created</span></td><td>Route "app.example.com" created</td><td>admin</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-23 16:10</td></tr>
+        <tr><td><span class="tag tag-red" style="font-size:10px;padding:2px 6px">login_failed</span></td><td>Failed login attempt for "admin" from 203.0.113.5</td><td>auth</td><td><span class="tag tag-red" style="font-size:10px;padding:2px 6px">error</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-23 14:22</td></tr>
+        <tr><td><span class="tag tag-green" style="font-size:10px;padding:2px 6px">wg_restart</span></td><td>WireGuard interface restarted</td><td>system</td><td><span class="tag tag-blue" style="font-size:10px;padding:2px 6px">info</span></td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">2026-03-23 12:00</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Access Log -->
+  <div class="card" id="log-access" style="display:none">
+    <div class="card-head">
+      <span class="card-title">Access Log</span>
+      <span class="card-sub">HTTP requests</span>
+    </div>
+    <div class="table-wrap">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Host</th>
+          <th>Method</th>
+          <th>URI</th>
+          <th>Status</th>
+          <th>IP</th>
+          <th>Response Time</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">nas.example.com</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">GET</span></td><td style="font-family:var(--font-mono);font-size:11px">/</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">200</span></td><td style="font-family:var(--font-mono);font-size:11px">192.168.1.10</td><td style="font-family:var(--font-mono);font-size:11px">23ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:42:15</td></tr>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">app.example.com</td><td><span class="tag tag-blue" style="font-size:10px;padding:1px 5px">POST</span></td><td style="font-family:var(--font-mono);font-size:11px">/api/data</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">201</span></td><td style="font-family:var(--font-mono);font-size:11px">10.0.0.5</td><td style="font-family:var(--font-mono);font-size:11px">145ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:41:58</td></tr>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">nas.example.com</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">GET</span></td><td style="font-family:var(--font-mono);font-size:11px">/api/v2/system</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">200</span></td><td style="font-family:var(--font-mono);font-size:11px">192.168.1.10</td><td style="font-family:var(--font-mono);font-size:11px">18ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:41:30</td></tr>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">git.example.com</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">GET</span></td><td style="font-family:var(--font-mono);font-size:11px">/</td><td><span class="tag tag-red" style="font-size:10px;padding:1px 5px">502</span></td><td style="font-family:var(--font-mono);font-size:11px">203.0.113.5</td><td style="font-family:var(--font-mono);font-size:11px">5012ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:40:22</td></tr>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">app.example.com</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">GET</span></td><td style="font-family:var(--font-mono);font-size:11px">/assets/app.js</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">200</span></td><td style="font-family:var(--font-mono);font-size:11px">10.0.0.5</td><td style="font-family:var(--font-mono);font-size:11px">4ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:39:55</td></tr>
+        <tr><td style="font-family:var(--font-mono);font-size:11px">nas.example.com</td><td><span class="tag tag-amber" style="font-size:10px;padding:1px 5px">PUT</span></td><td style="font-family:var(--font-mono);font-size:11px">/api/v2/files</td><td><span class="tag tag-green" style="font-size:10px;padding:1px 5px">200</span></td><td style="font-family:var(--font-mono);font-size:11px">192.168.1.10</td><td style="font-family:var(--font-mono);font-size:11px">342ms</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">09:38:10</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Settings ────────────────────────────────── -->
+<div class="page" id="page-settings">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">System</div>
+      <div class="page-title">Settings</div>
+      <div class="page-sub">Application configuration and preferences</div>
+    </div>
+  </div>
+
+  <div class="card" style="overflow:visible">
+    <div class="settings-tabs" id="settings-tabs">
+      <button class="tab active" onclick="switchSettingsTab('general',this)">General</button>
+      <button class="tab" onclick="switchSettingsTab('security',this)">Security</button>
+      <button class="tab" onclick="switchSettingsTab('backup',this)">Backup</button>
+      <button class="tab" onclick="switchSettingsTab('email',this)">Email</button>
+      <button class="tab" onclick="switchSettingsTab('monitoring',this)">Monitoring</button>
+      <button class="tab" onclick="switchSettingsTab('api',this)">API</button>
+      <button class="tab" onclick="switchSettingsTab('advanced',this)">Advanced</button>
+    </div>
+
+    <!-- General -->
+    <div class="card-body settings-panel" id="settings-general">
+      <div class="form-group">
+        <label class="form-label">Application Name</label>
+        <input type="text" value="GateControl" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Language</label>
+        <select style="width:100%">
+          <option>English</option>
+          <option>Deutsch</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Theme</label>
+        <select style="width:100%">
+          <option>Light</option>
+          <option>Dark (coming soon)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Save Changes</button>
+    </div>
+
+    <!-- Security -->
+    <div class="card-body settings-panel" id="settings-security" style="display:none">
+      <div class="toggle-row">
+        <div class="toggle-row-text"><div class="toggle-row-title">Account Lockout</div><div class="toggle-row-desc">Lock account after failed login attempts</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max Failed Attempts</label>
+        <input type="number" value="5" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Lockout Duration (minutes)</label>
+        <input type="number" value="15" style="width:100%">
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Save Changes</button>
+    </div>
+
+    <!-- Backup -->
+    <div class="card-body settings-panel" id="settings-backup" style="display:none">
+      <div class="toggle-row">
+        <div class="toggle-row-text"><div class="toggle-row-title">Automatic Backups</div><div class="toggle-row-desc">Schedule automatic database backups</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Backup Schedule</label>
+        <select style="width:100%">
+          <option>Every 6 hours</option>
+          <option>Every 12 hours</option>
+          <option selected>Daily</option>
+          <option>Weekly</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Retention (days)</label>
+        <input type="number" value="30" style="width:100%">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary">Save Changes</button>
+        <button class="btn btn-ghost">Create Backup Now</button>
+      </div>
+    </div>
+
+    <!-- Email -->
+    <div class="card-body settings-panel" id="settings-email" style="display:none">
+      <div class="form-group">
+        <label class="form-label">SMTP Host</label>
+        <input type="text" placeholder="smtp.example.com" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">SMTP Port</label>
+        <input type="number" value="587" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">SMTP Username</label>
+        <input type="text" placeholder="noreply@example.com" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">SMTP Password</label>
+        <input type="password" placeholder="••••••••" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">From Address</label>
+        <input type="email" placeholder="noreply@example.com" style="width:100%">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary">Save Changes</button>
+        <button class="btn btn-ghost">Send Test Email</button>
+      </div>
+    </div>
+
+    <!-- Monitoring -->
+    <div class="card-body settings-panel" id="settings-monitoring" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Check Interval (seconds)</label>
+        <input type="number" value="60" style="width:100%">
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text"><div class="toggle-row-title">Email Alerts</div><div class="toggle-row-desc">Send email notifications when services go down</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text"><div class="toggle-row-title">Webhook Alerts</div><div class="toggle-row-desc">Send webhook notifications on status changes</div></div>
+        <div class="toggle"></div>
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Save Changes</button>
+    </div>
+
+    <!-- API -->
+    <div class="card-body settings-panel" id="settings-api" style="display:none">
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:8px">API tokens for external integrations</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="token-item">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <div class="token-info">
+            <div class="token-name">CI/CD Pipeline</div>
+            <div class="token-meta">Created: 2026-02-15 &middot; Last used: 2h ago &middot; Scopes: peers, routes</div>
+          </div>
+          <button class="btn btn-danger" style="font-size:11px;padding:4px 10px">Revoke</button>
+        </div>
+        <div class="token-item">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <div class="token-info">
+            <div class="token-name">Monitoring Script</div>
+            <div class="token-meta">Created: 2026-03-01 &middot; Last used: 5 min ago &middot; Scopes: read-only</div>
+          </div>
+          <button class="btn btn-danger" style="font-size:11px;padding:4px 10px">Revoke</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start;margin-top:12px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Create Token
+      </button>
+    </div>
+
+    <!-- Advanced -->
+    <div class="card-body settings-panel" id="settings-advanced" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Log Retention (days)</label>
+        <input type="number" value="90" style="width:100%">
+        <span class="form-hint">Activity and access logs older than this will be automatically deleted</span>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-row-text"><div class="toggle-row-title">L4 Proxy Support</div><div class="toggle-row-desc">Enable TCP/UDP layer 4 proxy routes</div></div>
+        <div class="toggle on"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">L4 Listen Range</label>
+        <input type="text" value="10000-20000" style="width:100%">
+        <span class="form-hint">Port range for L4 proxy listeners</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary">Save Changes</button>
+        <button class="btn btn-danger">Clear All Logs</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PAGE: Profile ─────────────────────────────────── -->
+<div class="page" id="page-profile">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">Account</div>
+      <div class="page-title">Profile</div>
+      <div class="page-sub">Manage your account settings</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Account Details</span>
+    </div>
+    <div class="card-body settings-panel">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input type="text" value="admin" disabled style="width:100%;opacity:0.6;cursor:not-allowed">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Name</label>
+        <input type="text" value="Admin" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" value="admin@example.com" style="width:100%">
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Save Changes</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Change Password</span>
+    </div>
+    <div class="card-body settings-panel">
+      <div class="form-group">
+        <label class="form-label">Current Password</label>
+        <input type="password" placeholder="••••••••" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="password" placeholder="••••••••" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm New Password</label>
+        <input type="password" placeholder="••••••••" style="width:100%">
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Update Password</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Language</span>
+    </div>
+    <div class="card-body settings-panel">
+      <div class="form-group">
+        <label class="form-label">Preferred Language</label>
+        <select style="width:100%">
+          <option selected>English</option>
+          <option>Deutsch</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start">Save</button>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- MODALS                                                 -->
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<!-- Add Peer Modal -->
+<div class="modal-overlay" id="modal-add-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Add Peer</span>
+      <button class="modal-close" onclick="closeModal('modal-add-peer')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" placeholder="e.g. MacBook Pro, Office Server" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" placeholder="Optional description" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Group</label>
+        <select style="width:100%">
+          <option value="">No Group</option>
+          <option>Homelab</option>
+          <option>Office</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tags</label>
+        <input type="text" placeholder="e.g. server, production" style="width:100%">
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">Comma-separated tags for grouping</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expires</label>
+        <select style="width:100%">
+          <option value="">Never</option>
+          <option>1 Day</option>
+          <option>7 Days</option>
+          <option>30 Days</option>
+          <option>90 Days</option>
+          <option>Custom</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-peer')">Cancel</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-add-peer')">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR Code Modal -->
+<div class="modal-overlay" id="modal-qr-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">QR Code &mdash; NAS Zuhause</span>
+      <button class="modal-close" onclick="closeModal('modal-qr-peer')">&times;</button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <!-- Simulated QR Code -->
+      <div style="width:200px;height:200px;margin:0 auto 16px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);display:grid;place-items:center">
+        <svg viewBox="0 0 100 100" width="160" height="160">
+          <rect x="5" y="5" width="25" height="25" fill="var(--text-1)" rx="2"/>
+          <rect x="8" y="8" width="19" height="19" fill="var(--bg-panel)" rx="1"/>
+          <rect x="11" y="11" width="13" height="13" fill="var(--text-1)" rx="1"/>
+          <rect x="70" y="5" width="25" height="25" fill="var(--text-1)" rx="2"/>
+          <rect x="73" y="8" width="19" height="19" fill="var(--bg-panel)" rx="1"/>
+          <rect x="76" y="11" width="13" height="13" fill="var(--text-1)" rx="1"/>
+          <rect x="5" y="70" width="25" height="25" fill="var(--text-1)" rx="2"/>
+          <rect x="8" y="73" width="19" height="19" fill="var(--bg-panel)" rx="1"/>
+          <rect x="11" y="76" width="13" height="13" fill="var(--text-1)" rx="1"/>
+          <rect x="35" y="5" width="5" height="5" fill="var(--text-1)"/><rect x="45" y="5" width="5" height="5" fill="var(--text-1)"/><rect x="55" y="5" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="15" width="5" height="5" fill="var(--text-1)"/><rect x="50" y="15" width="5" height="5" fill="var(--text-1)"/><rect x="60" y="15" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="25" width="5" height="5" fill="var(--text-1)"/><rect x="45" y="25" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="5" y="35" width="5" height="5" fill="var(--text-1)"/><rect x="15" y="35" width="5" height="5" fill="var(--text-1)"/><rect x="25" y="40" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="5" y="45" width="5" height="5" fill="var(--text-1)"/><rect x="20" y="45" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="35" width="5" height="5" fill="var(--text-1)"/><rect x="45" y="40" width="5" height="5" fill="var(--text-1)"/><rect x="55" y="35" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="50" width="5" height="5" fill="var(--text-1)"/><rect x="50" y="50" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="65" y="35" width="5" height="5" fill="var(--text-1)"/><rect x="75" y="40" width="5" height="5" fill="var(--text-1)"/><rect x="85" y="35" width="5" height="5" fill="var(--text-1)"/><rect x="90" y="45" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="65" width="5" height="5" fill="var(--text-1)"/><rect x="45" y="70" width="5" height="5" fill="var(--text-1)"/><rect x="55" y="65" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="65" y="65" width="5" height="5" fill="var(--text-1)"/><rect x="75" y="70" width="5" height="5" fill="var(--text-1)"/><rect x="85" y="65" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="35" y="80" width="5" height="5" fill="var(--text-1)"/><rect x="50" y="80" width="5" height="5" fill="var(--text-1)"/><rect x="60" y="85" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="70" y="80" width="5" height="5" fill="var(--text-1)"/><rect x="80" y="80" width="5" height="5" fill="var(--text-1)"/><rect x="90" y="85" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="5" y="55" width="5" height="5" fill="var(--text-1)"/><rect x="15" y="60" width="5" height="5" fill="var(--text-1)"/><rect x="25" y="55" width="5" height="5" fill="var(--text-1)"/>
+          <rect x="65" y="50" width="5" height="5" fill="var(--text-1)"/><rect x="80" y="55" width="5" height="5" fill="var(--text-1)"/><rect x="90" y="55" width="5" height="5" fill="var(--text-1)"/>
+        </svg>
+      </div>
+      <div class="wg-config" style="text-align:left;max-height:200px;overflow-y:auto;font-size:11px"><span class="wg-section">[Interface]</span>
+<span class="wg-key">PrivateKey</span> = <span class="wg-val">yNz8K2mR7Q4xP...</span>
+<span class="wg-key">Address</span> = <span class="wg-val">10.8.0.2/24</span>
+<span class="wg-key">DNS</span> = <span class="wg-val">1.1.1.1, 8.8.8.8</span>
+
+<span class="wg-section">[Peer]</span>
+<span class="wg-key">PublicKey</span> = <span class="wg-val">sRvX9pLw2K7m...</span>
+<span class="wg-key">PresharedKey</span> = <span class="wg-val">fT3nQ8x2rW5y...</span>
+<span class="wg-key">Endpoint</span> = <span class="wg-val">vpn.example.com:51820</span>
+<span class="wg-key">AllowedIPs</span> = <span class="wg-val">0.0.0.0/0</span>
+<span class="wg-key">PersistentKeepalive</span> = <span class="wg-val">25</span></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-qr-peer')">Close</button>
+      <button class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy
+      </button>
+      <button class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download .conf
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Peer Modal -->
+<div class="modal-overlay" id="modal-edit-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Edit Peer</span>
+      <button class="modal-close" onclick="closeModal('modal-edit-peer')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" value="NAS Zuhause" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" value="Synology NAS im Heimnetzwerk" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Group</label>
+        <select style="width:100%">
+          <option value="">No Group</option>
+          <option selected>Homelab</option>
+          <option>Office</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tags</label>
+        <input type="text" value="homelab, nas" style="width:100%">
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">Comma-separated tags for grouping</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expires</label>
+        <select style="width:100%">
+          <option value="" selected>Never</option>
+          <option>1 Day</option>
+          <option>7 Days</option>
+          <option>30 Days</option>
+          <option>90 Days</option>
+          <option>Custom</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-peer')">Cancel</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-edit-peer')">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                             -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<script>
+// ─── Navigation ────────────────────────────────────────
+function navigateTo(page) {
+  // Hide all pages
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // Show target page
+  const target = document.getElementById('page-' + page);
+  if (target) target.classList.add('active');
+  // Update sidebar active state
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navItem = document.querySelector('.nav-item[data-nav="' + page + '"]');
+  if (navItem) navItem.classList.add('active');
+  // Close dropdown
+  document.getElementById('topbar-dropdown').classList.remove('open');
+}
+
+// ─── Avatar Dropdown ───────────────────────────────────
+function toggleDropdown() {
+  document.getElementById('topbar-dropdown').classList.toggle('open');
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  const profile = document.getElementById('topbar-profile');
+  if (profile && !profile.contains(e.target)) {
+    document.getElementById('topbar-dropdown').classList.remove('open');
+  }
+});
+
+// ─── Modals ────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).style.display = 'flex';
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      overlay.style.display = 'none';
+    }
+  });
+});
+
+// Close modal on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+  }
+});
+
+// ─── Log Tabs ──────────────────────────────────────────
+function switchLogTab(tab) {
+  const tabs = document.querySelectorAll('#log-tabs .tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  if (tab === 'activity') {
+    tabs[0].classList.add('active');
+    document.getElementById('log-activity').style.display = '';
+    document.getElementById('log-access').style.display = 'none';
+  } else {
+    tabs[1].classList.add('active');
+    document.getElementById('log-activity').style.display = 'none';
+    document.getElementById('log-access').style.display = '';
+  }
+}
+
+// ─── Settings Tabs ─────────────────────────────────────
+const settingsPanels = ['general','security','backup','email','monitoring','api','advanced'];
+function switchSettingsTab(tab, btn) {
+  // Update tab buttons
+  document.querySelectorAll('#settings-tabs .tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  // Show/hide panels
+  settingsPanels.forEach(p => {
+    const el = document.getElementById('settings-' + p);
+    if (el) el.style.display = (p === tab) ? '' : 'none';
+  });
+}
+
+// ─── Toggle Switches ───────────────────────────────────
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('toggle')) {
+    e.target.classList.toggle('on');
+  }
+});
+
+// ─── Toggle Button Groups ──────────────────────────────
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('toggle-btn')) {
+    const group = e.target.parentElement;
+    group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('on'));
+    e.target.classList.add('on');
+  }
+});
+
+// ─── Login Page ────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('topbar-dropdown').classList.remove('open');
+}
+function hideLogin() {
+  document.getElementById('login-page').style.display = 'none';
+}
+</script>
+
+</body>
+</html>
