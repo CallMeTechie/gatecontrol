@@ -1226,7 +1226,7 @@ function dashboardHTML(peers, routes, traffic) {
           <div class="activity-item">
             <div class="activity-dot" style="background:var(--green)"></div>
             <div>
-              <div class="activity-text">Peer <strong>Home NAS</strong> connected</div>
+              <div class="activity-text">Peer <strong>NAS Zuhause</strong> connected</div>
               <div class="activity-time">2 min ago</div>
             </div>
           </div>
@@ -1305,7 +1305,7 @@ function renderDashboard() {
    SCENE: Peers
    ════════════════════════════════════════════════════════════ */
 const PEERS = [
-  { name: 'Home NAS', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '1.2 MB', ul: '340 KB', status: 'Online', statusTag: 'tag-green' },
+  { name: 'NAS Zuhause', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '1.2 MB', ul: '340 KB', status: 'Online', statusTag: 'tag-green' },
   { name: 'MacBook Pro', meta: 'Apple M2 Max', tags: ['dev','mobile'], ip: '10.8.0.3', key: 'p2Lw9nK4vR8X', contact: '3 min ago', dl: '48.3 MB', ul: '12.1 MB', status: 'Online', statusTag: 'tag-green' },
   { name: 'Office Server', meta: 'Ubuntu 22.04 LTS', tags: ['prod','server'], ip: '10.8.0.4', key: 'mX7j5Kq2w9Rn', contact: '2 hours ago', dl: '2.4 GB', ul: '890 MB', status: 'Offline', statusTag: 'tag-red' },
 ];
@@ -1550,7 +1550,7 @@ function renderRoutes() {
             <label style="${labelStyle}">Target Peer</label>
             <select style="width:100%">
               <option value="">—</option>
-              <option>Home NAS (10.8.0.2)</option>
+              <option>NAS Zuhause (10.8.0.2)</option>
               <option>MacBook Pro (10.8.0.3)</option>
               <option>Office Server (10.8.0.4)</option>
             </select>
@@ -1559,9 +1559,9 @@ function renderRoutes() {
             <label style="${labelStyle}">Target Port</label>
             <input type="text" id="route-port" placeholder="8080" style="width:100%;padding:8px 12px">
           </div>
-          ${toggleRow('Force HTTPS', 'HTTP &rarr; HTTPS Redirect', true)}
+          ${toggleRow('HTTPS erzwingen', 'HTTP &rarr; HTTPS Redirect', true)}
           ${toggleRow('Backend HTTPS', 'Backend uses HTTPS', false)}
-          ${toggleRow('Compression', 'gzip/zstd Compression', false)}
+          ${toggleRow('Komprimierung', 'gzip/zstd Compression', false)}
           <div class="form-group">
             <label class="form-label">Auth Type</label>
             <div class="toggle-group" id="create-auth-type-group">
@@ -1817,7 +1817,7 @@ function renderRoutesScene(existingRoutes) {
             <label style="${labelStyle}">Target Peer</label>
             <select id="create-route-peer" style="width:100%">
               <option value="">&mdash;</option>
-              <option value="10.8.0.2">Home NAS (10.8.0.2)</option>
+              <option value="10.8.0.2">NAS Zuhause (10.8.0.2)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1825,9 +1825,9 @@ function renderRoutesScene(existingRoutes) {
             <input type="text" id="create-route-port" placeholder="8080" style="width:100%;padding:8px 12px">
           </div>
 
-          ${toggleRow('toggle-https', 'Force HTTPS', 'Let&#39;s Encrypt via Caddy')}
+          ${toggleRow('toggle-https', 'HTTPS erzwingen', 'Let&#39;s Encrypt via Caddy')}
           ${toggleRow('toggle-backend-https', 'Backend HTTPS', 'Backend uses HTTPS (e.g. Synology DSM Port 5001)')}
-          ${toggleRow('toggle-compress', 'Compression', 'Enable Gzip/Zstd compression')}
+          ${toggleRow('toggle-compress', 'Komprimierung', 'Gzip/Zstd Komprimierung aktivieren')}
 
           <div class="form-group">
             <label class="form-label">Auth Type</label>
@@ -1839,8 +1839,8 @@ function renderRoutesScene(existingRoutes) {
           </div>
 
           ${toggleRow('toggle-monitoring', 'Uptime Monitoring', 'Periodically check if route is reachable')}
-          ${toggleRow('toggle-acl', 'Peer Access Control (ACL)', 'Restrict access to specific WireGuard peers')}
-          ${toggleRow('toggle-ip-acl', 'IP Access Control', 'Restrict by IP, CIDR range or country')}
+          ${toggleRow('toggle-acl', 'Peer-Zugriffskontrolle (ACL)', 'Restrict access to specific WireGuard peers')}
+          ${toggleRow('toggle-ip-acl', 'IP-Zugriffskontrolle', 'Restrict by IP, CIDR range or country')}
 
           ${toggleRow('toggle-ratelimit', 'Rate Limiting', 'Limit requests per IP address')}
           <div id="ratelimit-fields" style="display:none;margin-bottom:14px;margin-top:-8px;padding:0 12px">
@@ -1850,7 +1850,7 @@ function renderRoutesScene(existingRoutes) {
             </div>
           </div>
 
-          ${toggleRow('toggle-retry', 'Retry on Error', 'Retry on backend error status')}
+          ${toggleRow('toggle-retry', 'Wiederholung bei Fehler', 'Retry on backend error status')}
 
           ${toggleRow('toggle-cb', 'Circuit Breaker', 'Block requests to failed backends (requires Monitoring)')}
           <div id="cb-fields" style="display:none;margin-bottom:14px;margin-top:-8px;padding:0 12px">
@@ -1940,7 +1940,7 @@ async function runDemo() {
   // 4. Type Name
   setProgress(4);
   await clickEl('#add-peer-name', 400);
-  await typeInto($('#add-peer-name'), 'Home NAS', 55);
+  await typeInto($('#add-peer-name'), 'NAS Zuhause', 55);
   await wait(400);
 
   // 5. Type Description
@@ -1963,7 +1963,7 @@ async function runDemo() {
 
   // Show success flash and add peer to table
   showFlash('Peer created successfully');
-  const peerData = { name: 'Home NAS', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '0 B', ul: '0 B', status: 'Online', statusTag: 'tag-green' };
+  const peerData = { name: 'NAS Zuhause', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '0 B', ul: '0 B', status: 'Online', statusTag: 'tag-green' };
   PEERS.length = 0;
   PEERS.push(peerData);
 
