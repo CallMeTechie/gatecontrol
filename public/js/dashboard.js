@@ -72,7 +72,7 @@
 
       // Sidebar badges
       const peerBadge = document.getElementById('peer-count-badge');
-      if (peerBadge) peerBadge.textContent = data.peers.online;
+      if (peerBadge) peerBadge.textContent = data.peers.total;
 
       const routeBadge = document.getElementById('route-count-badge');
       if (routeBadge) routeBadge.textContent = data.routes.active;
