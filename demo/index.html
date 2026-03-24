@@ -912,7 +912,7 @@ body.playing * { cursor: none !important; }
     <a class="nav-item" id="scene-peers">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
       Peers / Clients
-      <span class="nav-badge green">3</span>
+      <span class="nav-badge" id="peer-count-badge">0</span>
     </a>
     <a class="nav-item" style="opacity:0.4;pointer-events:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -923,7 +923,7 @@ body.playing * { cursor: none !important; }
     <a class="nav-item" id="scene-routes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
       Routes
-      <span class="nav-badge">4</span>
+      <span class="nav-badge" id="route-count-badge">0</span>
     </a>
     <a class="nav-item" style="opacity:0.4;pointer-events:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -935,17 +935,13 @@ body.playing * { cursor: none !important; }
     </a>
 
     <span class="nav-section-label">SYSTEM</span>
-    <a class="nav-item" id="scene-monitoring">
+    <a class="nav-item" style="opacity:0.4;pointer-events:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Monitoring
+      Logs &amp; Monitoring
     </a>
-    <a class="nav-item" id="scene-security">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      Security
-    </a>
-    <a class="nav-item" id="scene-mirroring">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
-      Mirroring
+    <a class="nav-item" style="opacity:0.4;pointer-events:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
     </a>
 
     <div class="sidebar-footer">
@@ -1417,53 +1413,360 @@ function renderRoutes() {
 }
 
 /* ════════════════════════════════════════════════════════════
-   SCENE: Generic settings modal (Monitoring/Security/Mirroring)
+   ANIMATION PLAYBOOK
    ════════════════════════════════════════════════════════════ */
-function showSettingsModal(title, fields) {
-  const mc = $('#modal-container');
-  const rows = fields.map(f => {
-    if (f.type === 'toggle') {
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-        <div>
-          <div style="font-size:13px;font-weight:600">${f.label}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:2px">${f.desc||''}</div>
-        </div>
-        <div class="toggle${f.on?' on':''}"></div>
-      </div>`;
-    }
-    return `<div class="form-group">
-      <label class="form-label">${f.label}</label>
-      <input type="text" value="${f.value||''}" style="width:100%;padding:8px 12px">
-    </div>`;
-  }).join('');
 
+/* ── Add Peer Modal ── */
+function showAddPeerModal() {
+  const mc = $('#modal-container');
   mc.innerHTML = `
-    <div class="modal-overlay" id="modal-settings">
+    <div class="modal-overlay" id="modal-add-peer">
       <div class="modal">
         <div class="modal-head">
-          <span class="modal-title">${title}</span>
-          <button class="modal-close" id="modal-settings-close">&times;</button>
+          <span class="modal-title">Add Peer</span>
+          <button class="modal-close" id="modal-add-close">&times;</button>
         </div>
-        <div class="modal-body">${rows}</div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input type="text" id="add-peer-name" placeholder="e.g. Home Server" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <input type="text" id="add-peer-desc" placeholder="Optional description" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Group</label>
+            <select id="add-peer-group" style="width:100%"><option value="">None</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags</label>
+            <input type="text" id="add-peer-tags" placeholder="e.g. server, production" style="width:100%">
+            <div style="font-size:11px;color:var(--text-3);margin-top:4px">Comma-separated tags for grouping</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expires</label>
+            <select id="add-peer-expires" style="width:100%">
+              <option value="">Never</option>
+              <option>1 Day</option>
+              <option>7 Days</option>
+              <option>30 Days</option>
+              <option>90 Days</option>
+              <option>Custom</option>
+            </select>
+          </div>
+        </div>
         <div class="modal-foot">
-          <button class="btn btn-ghost" id="modal-settings-cancel">Cancel</button>
-          <button class="btn btn-primary">Save</button>
+          <button class="btn btn-ghost" id="modal-add-cancel">Cancel</button>
+          <button class="btn btn-primary" id="modal-add-save">Save</button>
         </div>
       </div>
     </div>
   `;
-
-  $('#modal-settings-close').onclick = () => mc.innerHTML = '';
-  $('#modal-settings-cancel').onclick = () => mc.innerHTML = '';
-  $('#modal-settings').onclick = e => { if (e.target.id === 'modal-settings') mc.innerHTML = ''; };
+  $('#modal-add-close').onclick = () => mc.innerHTML = '';
+  $('#modal-add-cancel').onclick = () => mc.innerHTML = '';
+  $('#modal-add-peer').onclick = e => { if (e.target.id === 'modal-add-peer') mc.innerHTML = ''; };
 }
 
-/* ════════════════════════════════════════════════════════════
-   ANIMATION PLAYBOOK
-   ════════════════════════════════════════════════════════════ */
+/* ── Edit Route Auth Modal ── */
+function showEditRouteModal() {
+  const mc = $('#modal-container');
+  mc.innerHTML = `
+    <div class="modal-overlay" id="modal-edit-route">
+      <div class="modal" style="width:520px">
+        <div class="modal-head">
+          <span class="modal-title">Edit Route — nas.example.com</span>
+          <button class="modal-close" id="modal-edit-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Auth Type</label>
+            <div class="toggle-group" id="edit-auth-type-group">
+              <button type="button" class="toggle-btn" data-value="none">None</button>
+              <button type="button" class="toggle-btn" data-value="basic">Basic</button>
+              <button type="button" class="toggle-btn on" data-value="route" id="edit-auth-route-btn">Route Auth</button>
+            </div>
+          </div>
+          <div id="edit-route-auth-fields">
+            <div class="form-group">
+              <label class="form-label">Method</label>
+              <div class="toggle-group" id="edit-auth-method-group">
+                <button type="button" class="toggle-btn on" data-value="email_password">Email &amp; Password</button>
+                <button type="button" class="toggle-btn" data-value="email_code">Email &amp; Code</button>
+                <button type="button" class="toggle-btn" data-value="totp">TOTP</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" id="edit-auth-email" placeholder="user@example.com" style="width:100%">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input type="password" id="edit-auth-password" placeholder="Enter password" style="width:100%">
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+              <div>
+                <div style="font-size:13px;font-weight:600">Two-Factor Authentication</div>
+                <div style="font-size:11px;color:var(--text-2);margin-top:2px">Require 2FA for this route</div>
+              </div>
+              <div class="toggle" id="edit-2fa-toggle"></div>
+            </div>
+            <div id="edit-2fa-options" style="display:none">
+              <div class="form-group">
+                <label class="form-label">2FA Method</label>
+                <div class="toggle-group" id="edit-2fa-method-group">
+                  <button type="button" class="toggle-btn on" data-value="totp">TOTP</button>
+                  <button type="button" class="toggle-btn" data-value="webauthn">WebAuthn</button>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Session Duration</label>
+              <select id="edit-session-duration" style="width:100%">
+                <option>1 Hour</option>
+                <option selected>24 Hours</option>
+                <option>7 Days</option>
+                <option>30 Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="modal-edit-cancel">Cancel</button>
+          <button class="btn btn-primary" id="modal-edit-save">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+  $('#modal-edit-close').onclick = () => mc.innerHTML = '';
+  $('#modal-edit-cancel').onclick = () => mc.innerHTML = '';
+  $('#modal-edit-route').onclick = e => { if (e.target.id === 'modal-edit-route') mc.innerHTML = ''; };
+}
+
+/* ── Flash message helper ── */
+function showFlash(text, type='success') {
+  const flash = el('div', { className: `flash flash-${type}`, style: { marginBottom: '10px' } }, text);
+  mainContent.insertBefore(flash, mainContent.firstChild);
+  setTimeout(() => flash.remove(), 2500);
+}
+
+/* ── Toggle click helper ── */
+async function clickToggle(toggleEl) {
+  await clickEl(toggleEl, 400);
+  toggleEl.classList.add('on');
+  await wait(300);
+}
+
+/* ── Scroll main content to element ── */
+async function scrollToEl(target) {
+  const el = typeof target === 'string' ? $(target) : target;
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  await wait(400);
+}
+
+/* ── Render Routes with ALL toggle rows ── */
+function renderRoutesScene(existingRoutes) {
+  const routeItems = (existingRoutes || []).map((r, i) => `
+    <div class="route-item" id="route-item-${i}">
+      <div class="route-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="route-domain">${r.domain}</div>
+        <div class="route-target">&rarr; ${r.target}</div>
+        <div class="route-tags" style="margin-top:6px">${r.tags.map(t => `<span class="tag ${t.cls}" style="font-size:10px;padding:2px 6px"><span class="tag-dot"></span>${t.text}</span>`).join('')}</div>
+      </div>
+      <div class="route-actions">
+        <button class="icon-btn" title="Edit" id="route-edit-${i}">${svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',12,12)}</button>
+        <button class="icon-btn" title="Delete" style="color:var(--red)">${svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',12,12)}</button>
+      </div>
+    </div>
+  `).join('');
+
+  const labelStyle = 'font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600';
+
+  const toggleRow = (id, title, desc) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" id="${id}-row">
+      <div>
+        <div style="font-size:13px;font-weight:600">${title}</div>
+        <div style="font-size:11px;color:var(--text-2);margin-top:2px">${desc}</div>
+      </div>
+      <div class="toggle" id="${id}"></div>
+    </div>
+  `;
+
+  const count = existingRoutes ? existingRoutes.length : 0;
+
+  mainContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Routing</div>
+        <div class="page-title">Routes</div>
+        <div class="page-sub">${count} active route${count !== 1 ? 's' : ''} configured</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <span class="card-title">Active Routes</span>
+          <span class="card-sub">${count}</span>
+        </div>
+        <div class="card-body" id="routes-list">${routeItems || '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:20px 0">No routes configured yet</div>'}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="card-title">New Route</span>
+        </div>
+        <div class="card-body" id="route-form" style="display:flex;flex-direction:column;gap:0">
+          <div class="form-group">
+            <div class="toggle-group" id="route-type-group">
+              <button type="button" class="toggle-btn on" data-value="http">HTTP</button>
+              <button type="button" class="toggle-btn" data-value="l4">L4</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="${labelStyle}">Domain</label>
+            <div style="position:relative">
+              <input type="text" id="create-route-domain" placeholder="app.example.com" style="width:100%;padding:8px 12px;padding-right:36px">
+              <span id="dns-check-indicator" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:14px;display:none"></span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="${labelStyle}">Description</label>
+            <input type="text" id="create-route-desc" placeholder="Optional description" style="width:100%;padding:8px 12px">
+          </div>
+          <div class="form-group">
+            <label style="${labelStyle}">Target Peer</label>
+            <select id="create-route-peer" style="width:100%">
+              <option value="">&mdash;</option>
+              <option value="10.8.0.2">NAS Zuhause (10.8.0.2)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="${labelStyle}">Target Port</label>
+            <input type="text" id="create-route-port" placeholder="8080" style="width:100%;padding:8px 12px">
+          </div>
+
+          ${toggleRow('toggle-https', 'HTTPS erzwingen', 'Let&#39;s Encrypt via Caddy')}
+          ${toggleRow('toggle-backend-https', 'Backend HTTPS', 'Backend uses HTTPS (e.g. Synology DSM Port 5001)')}
+          ${toggleRow('toggle-compress', 'Komprimierung', 'Gzip/Zstd Komprimierung aktivieren')}
+
+          <div class="form-group">
+            <label class="form-label">Auth Type</label>
+            <div class="toggle-group" id="create-auth-type-group">
+              <button type="button" class="toggle-btn on" data-value="none">None</button>
+              <button type="button" class="toggle-btn" data-value="basic">Basic</button>
+              <button type="button" class="toggle-btn" data-value="route">Route Auth</button>
+            </div>
+          </div>
+
+          ${toggleRow('toggle-monitoring', 'Uptime Monitoring', 'Periodically check if route is reachable')}
+          ${toggleRow('toggle-acl', 'Peer-Zugriffskontrolle (ACL)', 'Restrict access to specific WireGuard peers')}
+          ${toggleRow('toggle-ip-acl', 'IP-Zugriffskontrolle', 'Restrict by IP, CIDR range or country')}
+
+          ${toggleRow('toggle-ratelimit', 'Rate Limiting', 'Limit requests per IP address')}
+          <div id="ratelimit-fields" style="display:none;margin-bottom:14px;margin-top:-8px;padding:0 12px">
+            <div style="display:flex;gap:10px">
+              <div style="flex:1"><label style="${labelStyle}">Requests</label><input type="number" id="ratelimit-requests" placeholder="100" style="width:100%;padding:8px 12px"></div>
+              <div style="flex:1"><label style="${labelStyle}">Window (sec)</label><input type="number" id="ratelimit-window" placeholder="60" style="width:100%;padding:8px 12px"></div>
+            </div>
+          </div>
+
+          ${toggleRow('toggle-retry', 'Wiederholung bei Fehler', 'Retry on backend error status')}
+
+          ${toggleRow('toggle-cb', 'Circuit Breaker', 'Block requests to failed backends (requires Monitoring)')}
+          <div id="cb-fields" style="display:none;margin-bottom:14px;margin-top:-8px;padding:0 12px">
+            <div style="display:flex;gap:10px">
+              <div style="flex:1"><label style="${labelStyle}">Threshold</label><input type="number" id="cb-threshold" placeholder="5" style="width:100%;padding:8px 12px"></div>
+              <div style="flex:1"><label style="${labelStyle}">Timeout (sec)</label><input type="number" id="cb-timeout" placeholder="30" style="width:100%;padding:8px 12px"></div>
+            </div>
+          </div>
+
+          ${toggleRow('toggle-mirror', 'Request Mirroring', 'Duplicate requests to secondary backends')}
+          <div id="mirror-fields" style="display:none;margin-bottom:14px;margin-top:-8px;padding:0 12px">
+            <div id="mirror-targets"></div>
+            <button class="btn btn-ghost" id="btn-add-mirror-target" style="width:100%;justify-content:center;margin-top:8px">
+              ${svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>')}
+              Add Target
+            </button>
+          </div>
+
+          <button class="btn btn-primary" id="btn-save-route" style="width:100%;justify-content:center;padding:10px 16px;margin-top:8px">
+            Save &amp; Reload
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ── Updated Dashboard with dynamic stats ── */
+function renderDashboardUpdated(peers, routes) {
+  mainContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Overview</div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">System status and quick overview</div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--green)"></div>
+        <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
+          ${svgIcon('<circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/>')}
+        </div>
+        <div class="stat-value">${peers}</div>
+        <div class="stat-label">Peers Online</div>
+        <div class="stat-delta" style="background:var(--green-lt);color:var(--green)">+${peers}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--accent)"></div>
+        <div class="stat-icon" style="background:var(--accent-lt);color:var(--accent)">
+          ${svgIcon('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>')}
+        </div>
+        <div class="stat-value">${routes}</div>
+        <div class="stat-label">Active Routes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--blue)"></div>
+        <div class="stat-icon" style="background:var(--blue-lt);color:var(--blue)">
+          ${svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>')}
+        </div>
+        <div class="stat-value">${routes}</div>
+        <div class="stat-label">Certificates</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--amber)"></div>
+        <div class="stat-icon" style="background:var(--amber-lt);color:var(--amber)">
+          ${svgIcon('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>')}
+        </div>
+        <div class="stat-value">99.8%</div>
+        <div class="stat-label">Uptime (30d)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-stripe" style="background:var(--text-2)"></div>
+        <div class="stat-icon" style="background:var(--bg-base);color:var(--text-2)">
+          ${svgIcon('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>')}
+        </div>
+        <div class="stat-value">14d</div>
+        <div class="stat-label">System Uptime</div>
+      </div>
+    </div>
+  `;
+}
+
 async function runDemo() {
-  totalSteps = 18;
+  totalSteps = 32;
   showCursor();
+
+  /* ═══════════════════════════════════════════════════════════
+     SCENE 1: PEERS
+     ═══════════════════════════════════════════════════════════ */
 
   // 1. Start on Dashboard
   renderDashboard();
@@ -1471,140 +1774,354 @@ async function runDemo() {
   setProgress(1);
   await wait(1500);
 
-  // 2. Move to Peers nav
+  // 2. Click Peers / Clients in sidebar
   setProgress(2);
   await clickEl('#scene-peers', 700);
   setActiveNav('scene-peers');
-  renderPeers();
-  await wait(1200);
+  // Render empty peers page initially
+  mainContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">VPN</div>
+        <div class="page-title">Peers / Clients</div>
+        <div class="page-sub">Manage WireGuard peers and their configurations</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+        <button class="btn btn-primary" id="btn-add-peer">
+          ${svgIcon('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>')}
+          Add Peer
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">All Peers</span>
+        <span class="card-sub" style="margin-left:auto">0 peers</span>
+      </div>
+      <div class="table-wrap">
+        <table class="peer-table">
+          <thead><tr><th>Name &amp; Device</th><th>WG IP</th><th>Public Key</th><th>Last Contact</th><th>Traffic</th><th>Status</th><th></th></tr></thead>
+          <tbody id="peer-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:24px">No peers configured yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  await wait(1000);
 
-  // 3. Click the search input
+  // 3. Click Add Peer button
   setProgress(3);
-  await clickEl('#peer-search', 500);
-  await typeInto($('#peer-search'), 'NAS', 60);
-  await wait(800);
+  await clickEl('#btn-add-peer', 600);
+  showAddPeerModal();
+  await wait(600);
 
-  // 4. Clear search
+  // 4. Type Name
   setProgress(4);
-  $('#peer-search').value = '';
+  await clickEl('#add-peer-name', 400);
+  await typeInto($('#add-peer-name'), 'NAS Zuhause', 55);
   await wait(400);
 
-  // 5. Click QR button on first peer
+  // 5. Type Description
   setProgress(5);
-  const qrBtns = $$('[data-qr]');
-  if (qrBtns[0]) {
-    await clickEl(qrBtns[0], 600);
+  await clickEl('#add-peer-desc', 400);
+  await typeInto($('#add-peer-desc'), 'Synology DS220+', 55);
+  await wait(400);
+
+  // 6. Type Tags
+  setProgress(6);
+  await clickEl('#add-peer-tags', 400);
+  await typeInto($('#add-peer-tags'), 'homelab, nas', 55);
+  await wait(400);
+
+  // 7. Click Save
+  setProgress(7);
+  await clickEl('#modal-add-save', 500);
+  $('#modal-container').innerHTML = '';
+  await wait(200);
+
+  // Show success flash and add peer to table
+  showFlash('Peer created successfully');
+  const peerData = { name: 'NAS Zuhause', meta: 'Synology DS220+', tags: ['homelab','nas'], ip: '10.8.0.2', key: 'a8Kf3m2x7Q4R', contact: 'just now', dl: '0 B', ul: '0 B', status: 'Online', statusTag: 'tag-green' };
+  PEERS.length = 0;
+  PEERS.push(peerData);
+
+  // Update the table
+  const tbody = $('#peer-tbody');
+  if (tbody) {
+    tbody.innerHTML = `<tr>
+      <td>
+        <div class="peer-name">${peerData.name}</div>
+        <div class="peer-meta">${peerData.meta}</div>
+        <div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">${peerData.tags.map(t => `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${t}</span>`).join('')}</div>
+      </td>
+      <td><span style="font-family:var(--font-mono);font-size:12px">${peerData.ip}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${peerData.key}&hellip;</span></td>
+      <td><span style="font-size:12px;color:var(--text-2)">${peerData.contact}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:11px">&darr;${peerData.dl} &uarr;${peerData.ul}</span></td>
+      <td><span class="tag ${peerData.statusTag}"><span class="tag-dot"></span>${peerData.status}</span></td>
+      <td>
+        <div class="peer-actions">
+          <button class="icon-btn" title="QR Code" data-qr="0">${svgIcon('<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4" rx="0.5"/><line x1="22" y1="14" x2="22" y2="22"/>',12,12)}</button>
+          <button class="icon-btn" title="Edit">${svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',12,12)}</button>
+          <button class="icon-btn" title="Delete" style="color:var(--red)">${svgIcon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',12,12)}</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+  // Update card header
+  const cardSub = mainContent.querySelector('.card-sub');
+  if (cardSub) cardSub.textContent = '1 peer';
+
+  // Update badge
+  const peerBadge = $('#peer-count-badge');
+  if (peerBadge) { peerBadge.textContent = '1'; peerBadge.classList.add('green'); }
+  await wait(1200);
+
+  // 8. Click QR button
+  setProgress(8);
+  const qrBtn = $('[data-qr="0"]');
+  if (qrBtn) {
+    await clickEl(qrBtn, 600);
     showQRModal(0);
-    await wait(2000);
+    await wait(3000);
   }
 
-  // 6. Close QR modal
-  setProgress(6);
-  const closeBtn = $('#modal-qr-close');
-  if (closeBtn) {
+  // 9. Close QR modal
+  setProgress(9);
+  if ($('#modal-qr-close')) {
     await clickEl('#modal-qr-close', 400);
     $('#modal-container').innerHTML = '';
   }
   await wait(500);
 
-  // 7. Navigate to Routes
-  setProgress(7);
+  /* ═══════════════════════════════════════════════════════════
+     SCENE 2: ROUTES (with ALL features)
+     ═══════════════════════════════════════════════════════════ */
+
+  // 10. Click Routes in sidebar
+  setProgress(10);
   await clickEl('#scene-routes', 700);
   setActiveNav('scene-routes');
-  renderRoutes();
-  await wait(1200);
-
-  // 8. Type a domain in the form
-  setProgress(8);
-  await clickEl('#create-route-domain', 500);
-  await typeInto($('#create-route-domain'), 'app.example.com', 50);
-  await wait(600);
-
-  // 9. Type a port
-  setProgress(9);
-  await clickEl('#route-port', 400);
-  await typeInto($('#route-port'), '3000', 70);
+  renderRoutesScene([]);
   await wait(800);
 
-  // 10. Click a toggle in the form
-  setProgress(10);
-  const toggles = $$('.two-col .toggle');
-  if (toggles[3]) {
-    await clickEl(toggles[3], 500);
-    toggles[3].classList.toggle('on');
+  // 11. Type domain
+  setProgress(11);
+  await clickEl('#create-route-domain', 400);
+  await typeInto($('#create-route-domain'), 'nas.example.com', 50);
+  // DNS check animation
+  const dnsIndicator = $('#dns-check-indicator');
+  if (dnsIndicator) {
+    dnsIndicator.style.display = 'inline';
+    dnsIndicator.innerHTML = '<span style="animation:btn-spin 0.5s linear infinite;display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%"></span>';
+    await wait(800);
+    dnsIndicator.innerHTML = '<span style="color:var(--green)">&#10003;</span>';
+  }
+  await wait(400);
+
+  // 12. Type description
+  setProgress(12);
+  await clickEl('#create-route-desc', 400);
+  await typeInto($('#create-route-desc'), 'Synology NAS Web UI', 50);
+  await wait(300);
+
+  // 13. Select peer
+  setProgress(13);
+  await clickEl('#create-route-peer', 400);
+  const peerSelect = $('#create-route-peer');
+  if (peerSelect) { peerSelect.value = '10.8.0.2'; peerSelect.dispatchEvent(new Event('change')); }
+  await wait(500);
+
+  // 14. Type port
+  setProgress(14);
+  await clickEl('#create-route-port', 400);
+  await typeInto($('#create-route-port'), '5001', 70);
+  await wait(400);
+
+  // 15. HTTPS toggle ON
+  setProgress(15);
+  await scrollToEl('#toggle-https');
+  await clickToggle($('#toggle-https'));
+
+  // 16. Backend HTTPS toggle ON
+  setProgress(16);
+  await clickToggle($('#toggle-backend-https'));
+
+  // 17. Compress toggle ON
+  setProgress(17);
+  await clickToggle($('#toggle-compress'));
+  await wait(200);
+
+  // 18. Monitoring toggle ON
+  setProgress(18);
+  await scrollToEl('#toggle-monitoring');
+  await clickToggle($('#toggle-monitoring'));
+
+  // 19. Circuit Breaker toggle ON (shows fields)
+  setProgress(19);
+  await scrollToEl('#toggle-cb');
+  await clickToggle($('#toggle-cb'));
+  const cbFields = $('#cb-fields');
+  if (cbFields) cbFields.style.display = 'block';
+  await wait(300);
+  // Type threshold
+  const cbThreshold = $('#cb-threshold');
+  if (cbThreshold) { await clickEl(cbThreshold, 300); await typeInto(cbThreshold, '5', 70); }
+  await wait(200);
+  // Type timeout
+  const cbTimeout = $('#cb-timeout');
+  if (cbTimeout) { await clickEl(cbTimeout, 300); await typeInto(cbTimeout, '30', 70); }
+  await wait(300);
+
+  // 20. ACL toggle ON
+  setProgress(20);
+  await scrollToEl('#toggle-acl');
+  await clickToggle($('#toggle-acl'));
+
+  // 21. Rate Limiting toggle ON (shows fields)
+  setProgress(21);
+  await scrollToEl('#toggle-ratelimit');
+  await clickToggle($('#toggle-ratelimit'));
+  const rlFields = $('#ratelimit-fields');
+  if (rlFields) rlFields.style.display = 'block';
+  await wait(300);
+  const rlRequests = $('#ratelimit-requests');
+  if (rlRequests) { await clickEl(rlRequests, 300); await typeInto(rlRequests, '100', 70); }
+  await wait(300);
+
+  // 22. Retry toggle ON
+  setProgress(22);
+  await scrollToEl('#toggle-retry');
+  await clickToggle($('#toggle-retry'));
+
+  // 23. Mirror toggle ON (shows target editor)
+  setProgress(23);
+  await scrollToEl('#toggle-mirror');
+  await clickToggle($('#toggle-mirror'));
+  const mirrorFields = $('#mirror-fields');
+  if (mirrorFields) mirrorFields.style.display = 'block';
+  await wait(300);
+  // Click Add Target
+  const addTargetBtn = $('#btn-add-mirror-target');
+  if (addTargetBtn) {
+    await clickEl(addTargetBtn, 400);
+    const mirrorTargets = $('#mirror-targets');
+    if (mirrorTargets) {
+      mirrorTargets.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:6px">
+        <input type="text" id="mirror-ip" placeholder="IP / Host" style="flex:2;padding:8px 12px">
+        <input type="text" id="mirror-port" placeholder="Port" style="flex:1;padding:8px 12px">
+      </div>`;
+    }
+    await wait(300);
+    const mirrorIp = $('#mirror-ip');
+    if (mirrorIp) { await clickEl(mirrorIp, 300); await typeInto(mirrorIp, '203.0.113.10', 50); }
+    const mirrorPort = $('#mirror-port');
+    if (mirrorPort) { await clickEl(mirrorPort, 300); await typeInto(mirrorPort, '8080', 70); }
+  }
+  await wait(400);
+
+  // 24. Click Save & Reload
+  setProgress(24);
+  await scrollToEl('#btn-save-route');
+  await clickEl('#btn-save-route', 500);
+  await wait(300);
+
+  // Route appears in left card with ALL badges
+  const newRoute = {
+    domain: 'nas.example.com',
+    target: '10.8.0.2:5001',
+    tags: [
+      { text: 'Active', cls: 'tag-green' },
+      { text: 'Monitoring', cls: 'tag-blue' },
+      { text: 'CB: Closed', cls: 'tag-green' },
+      { text: 'ACL', cls: 'tag-amber' },
+      { text: 'Rate Limit: 100/min', cls: 'tag-blue' },
+      { text: 'Retry: 3x', cls: 'tag-blue' },
+      { text: 'Mirror: 1 targets', cls: 'tag-blue' },
+      { text: 'HTTPS', cls: 'tag-blue' },
+      { text: 'Backend HTTPS', cls: 'tag-blue' },
+      { text: 'Compress', cls: 'tag-blue' },
+    ]
+  };
+
+  renderRoutesScene([newRoute]);
+  showFlash('Route created — Caddy reloaded');
+
+  // Update badge
+  const routeBadge = $('#route-count-badge');
+  if (routeBadge) { routeBadge.textContent = '1'; routeBadge.classList.add('green'); }
+  await wait(1500);
+
+  // 25. Click Edit on the route
+  setProgress(25);
+  const editBtn = $('#route-edit-0');
+  if (editBtn) {
+    await clickEl(editBtn, 600);
+    showEditRouteModal();
+    await wait(600);
+  }
+
+  // 26. Route Auth is already selected, type email
+  setProgress(26);
+  await clickEl('#edit-auth-email', 400);
+  await typeInto($('#edit-auth-email'), 'admin@example.com', 45);
+  await wait(300);
+
+  // 27. Type password
+  setProgress(27);
+  await clickEl('#edit-auth-password', 400);
+  await typeInto($('#edit-auth-password'), 'supersecret', 45);
+  await wait(300);
+
+  // 28. Toggle 2FA ON
+  setProgress(28);
+  const twoFaToggle = $('#edit-2fa-toggle');
+  if (twoFaToggle) {
+    await clickToggle(twoFaToggle);
+    const twoFaOpts = $('#edit-2fa-options');
+    if (twoFaOpts) twoFaOpts.style.display = 'block';
     await wait(500);
   }
 
-  // 11. Navigate to Monitoring
-  setProgress(11);
-  await clickEl('#scene-monitoring', 700);
-  setActiveNav('scene-monitoring');
-  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Monitoring</div><div class="page-sub">Uptime checks and health monitoring</div></div></div>';
-  showSettingsModal('Monitoring Configuration', [
-    { type: 'toggle', label: 'Enable Uptime Monitoring', desc: 'Periodically check all routes', on: true },
-    { type: 'input', label: 'Check Interval (seconds)', value: '60' },
-    { type: 'toggle', label: 'Notify on Downtime', desc: 'Send alerts when routes go down', on: true },
-    { type: 'input', label: 'Webhook URL', value: 'https://hooks.example.com/alerts' },
-  ]);
-  await wait(2000);
-
-  // 12. Close modal
-  setProgress(12);
-  await clickEl('#modal-settings-close', 400);
+  // 29. Click Save in edit modal
+  setProgress(29);
+  await clickEl('#modal-edit-save', 500);
   $('#modal-container').innerHTML = '';
-  await wait(500);
+  await wait(200);
 
-  // 13. Navigate to Security
-  setProgress(13);
-  await clickEl('#scene-security', 700);
-  setActiveNav('scene-security');
-  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Security</div><div class="page-sub">Login protection and rate limiting</div></div></div>';
-  showSettingsModal('Security Settings', [
-    { type: 'toggle', label: 'Brute-Force Protection', desc: 'Lock accounts after failed attempts', on: true },
-    { type: 'input', label: 'Max Login Attempts', value: '5' },
-    { type: 'input', label: 'Lockout Duration (minutes)', value: '15' },
-    { type: 'toggle', label: 'Two-Factor Authentication', desc: 'Require TOTP for admin login', on: false },
-  ]);
-  await wait(2000);
-
-  // 14. Close modal
-  setProgress(14);
-  await clickEl('#modal-settings-cancel', 400);
-  $('#modal-container').innerHTML = '';
-  await wait(500);
-
-  // 15. Navigate to Mirroring
-  setProgress(15);
-  await clickEl('#scene-mirroring', 700);
-  setActiveNav('scene-mirroring');
-  mainContent.innerHTML = '<div class="page-header"><div><div class="page-eyebrow">System</div><div class="page-title">Mirroring</div><div class="page-sub">Duplicate traffic to mirror targets</div></div></div>';
-  showSettingsModal('Mirroring Configuration', [
-    { type: 'toggle', label: 'Enable Traffic Mirroring', desc: 'Duplicate traffic to secondary targets', on: false },
-    { type: 'input', label: 'Mirror Target URL', value: '' },
-    { type: 'toggle', label: 'Mirror Headers', desc: 'Include original request headers', on: true },
-    { type: 'toggle', label: 'Async Mode', desc: 'Do not wait for mirror response', on: true },
-  ]);
-  await wait(2000);
-
-  // 16. Close modal
-  setProgress(16);
-  await clickEl('#modal-settings-close', 400);
-  $('#modal-container').innerHTML = '';
-  await wait(500);
-
-  // 17. Return to Dashboard
-  setProgress(17);
-  await clickEl('#scene-dashboard', 700);
-  setActiveNav('scene-dashboard');
-  renderDashboard();
-  await wait(1000);
-
-  // 18. Done
-  setProgress(18);
-  hideCursor();
+  // Update route badges with auth info
+  newRoute.tags.push({ text: 'Route Auth', cls: 'tag-amber' });
+  newRoute.tags.push({ text: '2FA: TOTP', cls: 'tag-blue' });
+  renderRoutesScene([newRoute]);
+  showFlash('Route authentication updated');
   await wait(1500);
 
-  // Loop
+  // 30. Return to Dashboard
+  setProgress(30);
+  await clickEl('#scene-dashboard', 700);
+  setActiveNav('scene-dashboard');
+  renderDashboardUpdated(1, 1);
+  await wait(1200);
+
+  // 31. Show completion
+  setProgress(31);
+  const doneFlash = el('div', {
+    className: 'flash flash-success',
+    style: { textAlign: 'center', fontSize: '15px', fontWeight: '600', padding: '16px 20px' }
+  }, 'Demo complete — GateControl is ready to secure your network');
+  mainContent.appendChild(doneFlash);
+  await wait(2500);
+
+  // 32. Done, hide cursor and loop
+  setProgress(32);
+  hideCursor();
+  await wait(2000);
+
+  // Reset and loop
+  PEERS.length = 0;
+  const pBadge = $('#peer-count-badge');
+  if (pBadge) { pBadge.textContent = '0'; pBadge.classList.remove('green'); }
+  const rBadge = $('#route-count-badge');
+  if (rBadge) { rBadge.textContent = '0'; rBadge.classList.remove('green'); }
   setProgress(0);
   progressBar.style.width = '0%';
   runDemo();
