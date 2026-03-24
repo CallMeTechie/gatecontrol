@@ -1,14 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="Segoe UI, system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 680" font-family="Segoe UI, system-ui, sans-serif">
 
   <!-- Docker Container border -->
-  <rect x="10" y="14" width="960" height="536" rx="12" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="8,4"/>
+  <rect x="10" y="14" width="960" height="656" rx="12" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="8,4"/>
 
   <!-- Container label -->
   <rect x="34" y="2" width="180" height="26" rx="6" fill="#2563eb"/>
   <text x="124" y="20" text-anchor="middle" fill="#fff" font-size="12" font-weight="700" letter-spacing="0.5">DOCKER CONTAINER</text>
 
   <!-- === Caddy Box === -->
-  <rect x="30" y="44" width="280" height="232" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+  <rect x="30" y="44" width="280" height="310" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
   <rect x="137" y="56" width="40" height="40" rx="9" fill="#dcfce7"/>
   <polygon points="157,63 145,70 145,84 157,91 169,84 169,70" fill="none" stroke="#16a34a" stroke-width="1.3"/>
   <line x1="157" y1="91" x2="157" y2="77" stroke="#16a34a" stroke-width="1.3"/>
@@ -16,80 +16,118 @@
   <line x1="169" y1="70" x2="157" y2="77" stroke="#16a34a" stroke-width="1.3"/>
   <text x="157" y="116" text-anchor="middle" fill="#16a34a" font-size="16" font-weight="700">Caddy</text>
   <text x="157" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:80 / :443</text>
-  <text x="70" y="164" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>HTTPS</text>
-  <text x="70" y="186" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Reverse Proxy</text>
-  <text x="70" y="208" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Let's Encrypt</text>
-  <text x="70" y="230" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Auto Certificates</text>
-  <text x="70" y="252" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">› </tspan>Forward Auth</text>
+  <text x="70" y="164" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>HTTPS &amp; Let's Encrypt</text>
+  <text x="70" y="186" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Reverse Proxy</text>
+  <text x="70" y="208" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Forward Auth</text>
+  <text x="70" y="230" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Rate Limiting</text>
+  <text x="70" y="252" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Gzip/Zstd Compression</text>
+  <text x="70" y="274" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Load Balancing / Sticky</text>
+  <text x="70" y="296" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Request Mirroring</text>
+  <text x="70" y="318" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>L4 TCP/UDP Proxy</text>
+  <text x="70" y="340" fill="#374151" font-size="13"><tspan fill="#16a34a" font-weight="700">&#x203A; </tspan>Circuit Breaker (503)</text>
 
   <!-- === WireGuard Box === -->
-  <rect x="350" y="44" width="280" height="232" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <rect x="350" y="44" width="280" height="310" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
   <rect x="462" y="56" width="40" height="40" rx="9" fill="#f3e8ff"/>
   <circle cx="482" cy="76" r="12" fill="none" stroke="#9333ea" stroke-width="1.3"/>
   <polyline points="476,76 480,80 488,70" fill="none" stroke="#9333ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <text x="482" y="116" text-anchor="middle" fill="#9333ea" font-size="16" font-weight="700">WireGuard</text>
   <text x="482" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:51820 (UDP)</text>
-  <text x="390" y="164" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>VPN Tunnel</text>
-  <text x="390" y="186" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Peer Management</text>
-  <text x="390" y="208" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Key Exchange</text>
-  <text x="390" y="230" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">› </tspan>Hot Reload</text>
+  <text x="390" y="164" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>VPN Tunnel</text>
+  <text x="390" y="186" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Peer Management</text>
+  <text x="390" y="208" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Key Generation</text>
+  <text x="390" y="230" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Hot Reload (syncconf)</text>
+  <text x="390" y="252" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Peer Expiry</text>
+  <text x="390" y="274" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Peer Groups &amp; Tags</text>
+  <text x="390" y="296" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>QR Code &amp; Config Export</text>
+  <text x="390" y="318" fill="#374151" font-size="13"><tspan fill="#9333ea" font-weight="700">&#x203A; </tspan>Traffic Monitoring</text>
 
   <!-- === Node.js Box === -->
-  <rect x="670" y="44" width="280" height="232" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="670" y="44" width="280" height="310" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
   <rect x="782" y="56" width="40" height="40" rx="9" fill="#dbeafe"/>
   <rect x="790" y="64" width="24" height="24" rx="4" fill="none" stroke="#2563eb" stroke-width="1.3"/>
   <line x1="796" y1="76" x2="808" y2="76" stroke="#2563eb" stroke-width="1.3" stroke-linecap="round"/>
   <line x1="802" y1="70" x2="802" y2="82" stroke="#2563eb" stroke-width="1.3" stroke-linecap="round"/>
   <text x="802" y="116" text-anchor="middle" fill="#2563eb" font-size="16" font-weight="700">Node.js</text>
   <text x="802" y="134" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">:3000 (Express)</text>
-  <text x="710" y="164" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Web UI</text>
-  <text x="710" y="186" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>REST API</text>
-  <text x="710" y="208" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Route Auth (OTP/TOTP)</text>
-  <text x="710" y="230" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>SMTP &amp; Email Service</text>
-  <text x="710" y="252" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">› </tspan>Auth &amp; Security</text>
+  <text x="710" y="164" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Web UI</text>
+  <text x="710" y="186" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>REST API &amp; Tokens</text>
+  <text x="710" y="208" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Route Auth (OTP/TOTP)</text>
+  <text x="710" y="230" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Uptime Monitoring</text>
+  <text x="710" y="252" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Prometheus Metrics</text>
+  <text x="710" y="274" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Backup &amp; Restore</text>
+  <text x="710" y="296" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>Webhooks &amp; Alerts</text>
+  <text x="710" y="318" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>SMTP &amp; Email</text>
+  <text x="710" y="340" fill="#374151" font-size="13"><tspan fill="#2563eb" font-weight="700">&#x203A; </tspan>ACL &amp; IP Filter</text>
 
-  <!-- Flow arrows: Caddy ↔ WireGuard -->
-  <line x1="310" y1="149" x2="345" y2="149" stroke="#9ca3af" stroke-width="2"/>
-  <polygon points="315,145 307,149 315,153" fill="#9ca3af"/>
+  <!-- Flow arrows: Caddy <-> WireGuard -->
+  <line x1="310" y1="190" x2="345" y2="190" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="315,186 307,190 315,194" fill="#9ca3af"/>
 
-  <!-- Flow arrows: WireGuard ← Node.js -->
-  <line x1="630" y1="149" x2="665" y2="149" stroke="#9ca3af" stroke-width="2"/>
-  <polygon points="635,145 627,149 635,153" fill="#9ca3af"/>
+  <!-- Flow arrows: WireGuard <- Node.js -->
+  <line x1="630" y1="190" x2="665" y2="190" stroke="#9ca3af" stroke-width="2"/>
+  <polygon points="635,186 627,190 635,194" fill="#9ca3af"/>
 
-  <!-- Forward Auth arrow: Caddy → Node.js (curved, below main boxes) -->
-  <path d="M170,276 L170,298 Q170,308 180,308 L790,308 Q800,308 800,298 L800,276" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6,3"/>
-  <polygon points="796,280 800,272 804,280" fill="#f59e0b"/>
-  <polygon points="166,280 170,272 174,280" fill="#f59e0b"/>
-  <rect x="400" y="297" width="160" height="22" rx="4" fill="#fffbeb" stroke="#f59e0b" stroke-width="1"/>
-  <text x="480" y="313" text-anchor="middle" fill="#d97706" font-size="11" font-weight="600">Forward Auth Subrequest</text>
+  <!-- Forward Auth arrow: Caddy -> Node.js (curved, below main boxes) -->
+  <path d="M170,354 L170,380 Q170,390 180,390 L790,390 Q800,390 800,380 L800,354" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6,3"/>
+  <polygon points="796,358 800,350 804,358" fill="#f59e0b"/>
+  <polygon points="166,358 170,350 174,358" fill="#f59e0b"/>
+  <rect x="400" y="379" width="160" height="22" rx="4" fill="#fffbeb" stroke="#f59e0b" stroke-width="1"/>
+  <text x="480" y="395" text-anchor="middle" fill="#d97706" font-size="11" font-weight="600">Forward Auth Subrequest</text>
 
-  <!-- Connection line Node → SQLite -->
-  <line x1="802" y1="276" x2="802" y2="338" stroke="#9ca3af" stroke-width="2" stroke-dasharray="4,3"/>
-  <polygon points="798,336 802,346 806,336" fill="#d97706"/>
+  <!-- Connection line Node -> SQLite -->
+  <line x1="802" y1="354" x2="802" y2="418" stroke="#9ca3af" stroke-width="2" stroke-dasharray="4,3"/>
+  <polygon points="798,416 802,426 806,416" fill="#d97706"/>
 
   <!-- === SQLite Box === -->
-  <rect x="690" y="348" width="240" height="68" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
-  <rect x="714" y="360" width="36" height="36" rx="8" fill="#fef3c7"/>
-  <ellipse cx="732" cy="370" rx="10" ry="4" fill="none" stroke="#d97706" stroke-width="1.2"/>
-  <path d="M722,370 v14 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4 v-14" fill="none" stroke="#d97706" stroke-width="1.2"/>
-  <path d="M722,378 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4" fill="none" stroke="#d97706" stroke-width="1.2"/>
-  <text x="810" y="378" text-anchor="middle" fill="#d97706" font-size="16" font-weight="700">SQLite</text>
-  <text x="810" y="398" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">(WAL · 11 Tables)</text>
+  <rect x="690" y="428" width="240" height="68" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+  <rect x="714" y="440" width="36" height="36" rx="8" fill="#fef3c7"/>
+  <ellipse cx="732" cy="450" rx="10" ry="4" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <path d="M722,450 v14 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4 v-14" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <path d="M722,458 c0,2.2 4.5,4 10,4 s10,-1.8 10,-4" fill="none" stroke="#d97706" stroke-width="1.2"/>
+  <text x="810" y="458" text-anchor="middle" fill="#d97706" font-size="16" font-weight="700">SQLite</text>
+  <text x="810" y="478" text-anchor="middle" fill="#6b7280" font-size="11" font-family="monospace">(WAL &#xB7; 17 Tables)</text>
+
+  <!-- Caddy Plugins label -->
+  <rect x="42" y="362" width="256" height="46" rx="6" fill="#f0fdf4" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="170" y="380" text-anchor="middle" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="0.5">CADDY PLUGINS</text>
+  <text x="170" y="396" text-anchor="middle" fill="#16a34a" font-size="11" font-family="monospace">caddy-l4 &#xB7; caddy-ratelimit &#xB7; caddy-mirror</text>
 
   <!-- === Volume Section === -->
-  <rect x="30" y="432" width="930" height="108" rx="9" fill="#f9fafb" stroke="#d1d5db" stroke-width="1" stroke-dasharray="5,3"/>
-  <path d="M48,450 h8 l2,-3 h10 a2,2 0 0 1 2,2 v12 a2,2 0 0 1 -2,2 h-20 a2,2 0 0 1 -2,-2 v-9 a2,2 0 0 1 2,-2z" fill="none" stroke="#6b7280" stroke-width="1.2"/>
-  <text x="76" y="461" fill="#6b7280" font-size="12" font-weight="700" letter-spacing="0.5">VOLUME: /data</text>
+  <rect x="30" y="552" width="930" height="108" rx="9" fill="#f9fafb" stroke="#d1d5db" stroke-width="1" stroke-dasharray="5,3"/>
+  <path d="M48,570 h8 l2,-3 h10 a2,2 0 0 1 2,2 v12 a2,2 0 0 1 -2,2 h-20 a2,2 0 0 1 -2,-2 v-9 a2,2 0 0 1 2,-2z" fill="none" stroke="#6b7280" stroke-width="1.2"/>
+  <text x="76" y="581" fill="#6b7280" font-size="12" font-weight="700" letter-spacing="0.5">VOLUME: /data</text>
 
-  <text x="50" y="490" fill="#d97706" font-size="13" font-family="monospace">gatecontrol.db</text>
-  <text x="195" y="490" fill="#6b7280" font-size="12">── database (11 tables)</text>
+  <text x="50" y="610" fill="#d97706" font-size="13" font-family="monospace">gatecontrol.db</text>
+  <text x="195" y="610" fill="#6b7280" font-size="12">&#x2500;&#x2500; database (17 tables)</text>
 
-  <text x="50" y="514" fill="#d97706" font-size="13" font-family="monospace">wireguard/</text>
-  <text x="195" y="514" fill="#6b7280" font-size="12">── WireGuard configs &amp; keys</text>
+  <text x="50" y="634" fill="#d97706" font-size="13" font-family="monospace">wireguard/</text>
+  <text x="195" y="634" fill="#6b7280" font-size="12">&#x2500;&#x2500; WireGuard configs &amp; keys</text>
 
-  <text x="500" y="490" fill="#d97706" font-size="13" font-family="monospace">caddy/</text>
-  <text x="645" y="490" fill="#6b7280" font-size="12">── certificates &amp; cache</text>
+  <text x="500" y="610" fill="#d97706" font-size="13" font-family="monospace">caddy/</text>
+  <text x="645" y="610" fill="#6b7280" font-size="12">&#x2500;&#x2500; certificates &amp; cache</text>
 
-  <text x="500" y="514" fill="#d97706" font-size="13" font-family="monospace">.encryption_key</text>
-  <text x="645" y="514" fill="#6b7280" font-size="12">── AES-256 key</text>
+  <text x="500" y="634" fill="#d97706" font-size="13" font-family="monospace">backups/</text>
+  <text x="645" y="634" fill="#6b7280" font-size="12">&#x2500;&#x2500; scheduled backups</text>
+
+  <text x="50" y="650" fill="#d97706" font-size="13" font-family="monospace">.encryption_key</text>
+  <text x="195" y="650" fill="#6b7280" font-size="12">&#x2500;&#x2500; AES-256-GCM key</text>
+
+  <text x="500" y="650" fill="#d97706" font-size="13" font-family="monospace">branding/</text>
+  <text x="645" y="650" fill="#6b7280" font-size="12">&#x2500;&#x2500; custom logos &amp; assets</text>
+
+  <!-- Connection lines to volume -->
+  <line x1="170" y1="410" x2="170" y2="552" stroke="#d1d5db" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="482" y1="354" x2="482" y2="552" stroke="#d1d5db" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Supervisord label -->
+  <rect x="350" y="428" width="280" height="68" rx="10" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="490" y="456" text-anchor="middle" fill="#6b7280" font-size="14" font-weight="700">Supervisord</text>
+  <text x="490" y="478" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="monospace">3 processes &#xB7; auto-restart</text>
+
+  <!-- Supervisord arrows -->
+  <line x1="350" y1="462" x2="310" y2="350" stroke="#d1d5db" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <line x1="490" y1="428" x2="490" y2="354" stroke="#d1d5db" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <line x1="630" y1="462" x2="670" y2="350" stroke="#d1d5db" stroke-width="1.2" stroke-dasharray="3,2"/>
+
 </svg>
