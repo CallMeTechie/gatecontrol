@@ -352,8 +352,8 @@
   // ─── Search ──────────────────────────────────────────────
   searchInput.addEventListener('input', function() { applyFilters(); });
 
-  // ─── Table action delegation ─────────────────────────────
-  tbody.addEventListener('click', function(e) {
+  // ─── Action delegation (desktop table + mobile cards) ────
+  function handlePeerAction(e) {
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
 
@@ -367,7 +367,9 @@
       case 'toggle': togglePeer(id); break;
       case 'delete': showConfirmDelete(id, btn.dataset.name); break;
     }
-  });
+  }
+  tbody.addEventListener('click', handlePeerAction);
+  if (peersMobile) peersMobile.addEventListener('click', handlePeerAction);
 
   // ─── Add peer ────────────────────────────────────────────
   document.getElementById('btn-add-peer').addEventListener('click', function() {
