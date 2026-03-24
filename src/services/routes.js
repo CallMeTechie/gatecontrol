@@ -108,14 +108,10 @@ function buildCaddyConfig() {
         const rawBackends = JSON.parse(route.backends);
         if (Array.isArray(rawBackends)) {
           backends = rawBackends.map(b => {
-            if (b.peer_id) {
-              const bPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(b.peer_id);
-              if (bPeer && bPeer.enabled) {
-                return { ip: bPeer.allowed_ips.split('/')[0], port: b.port, weight: b.weight || 1 };
-              }
-              return null; // peer not found or disabled
-            }
-            return b.ip ? b : null; // legacy format fallback
+            if (!b.peer_id) return null;
+            const bPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(b.peer_id);
+            if (!bPeer || !bPeer.enabled) return null;
+            return { ip: bPeer.allowed_ips.split('/')[0], port: b.port, weight: b.weight || 1 };
           }).filter(Boolean);
         }
       } catch {}
@@ -143,14 +139,10 @@ function buildCaddyConfig() {
         const rawMirrorTargets = JSON.parse(route.mirror_targets);
         if (Array.isArray(rawMirrorTargets)) {
           mirrorTargets = rawMirrorTargets.map(t => {
-            if (t.peer_id) {
-              const mirrorPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(t.peer_id);
-              if (mirrorPeer && mirrorPeer.enabled) {
-                return { ip: mirrorPeer.allowed_ips.split('/')[0], port: t.port };
-              }
-              return null; // peer not found or disabled
-            }
-            return t.ip ? t : null; // legacy format fallback
+            if (!t.peer_id) return null;
+            const mirrorPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(t.peer_id);
+            if (!mirrorPeer || !mirrorPeer.enabled) return null;
+            return { ip: mirrorPeer.allowed_ips.split('/')[0], port: t.port };
           }).filter(Boolean);
         }
       } catch {}
