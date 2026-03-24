@@ -490,6 +490,38 @@ a { color: inherit; text-decoration: none; }
 .peer-name { font-weight: 600; font-size: 13px; }
 .peer-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-top: 2px; }
 
+/* ─── Peer Mobile Cards ────────────────────────────────── */
+.peers-mobile { display: none; }
+.peer-card {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.peer-card:last-child { border-bottom: none; }
+.peer-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.peer-card-info { flex: 1; min-width: 0; }
+.peer-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.peer-card-meta span { white-space: nowrap; }
+.peer-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 /* ─── Route Items ───────────────────────────────────────── */
 .route-item {
   display: flex;
@@ -1054,7 +1086,8 @@ input[type="file"] {
   .page-header { flex-direction: column; }
   .page-header .btn { align-self: flex-start; }
   .three-col { grid-template-columns: 1fr; }
-  .peer-table { min-width: 580px; }
+  .peers-desktop { display: none; }
+  .peers-mobile { display: block; }
   .modal { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .topbar-lang { display: none; }
 

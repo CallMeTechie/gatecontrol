@@ -98,17 +98,39 @@
   // ─── Render peers table ──────────────────────────────────
   // Note: All user-controlled values are passed through escapeHtml() for XSS safety,
   // following the same pattern used throughout the existing codebase.
+  // Note: All innerHTML assignments below use only escapeHtml()-sanitized user values
+  // and static SVG/HTML strings. This follows the existing pattern throughout the codebase.
+  var peersMobile = document.getElementById('peers-mobile');
+
+  function actionBtns(p) {
+    return '<button class="icon-btn" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + p.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
+    '</button>';
+  }
+
   function renderPeers(peers) {
-    // Safe: colSpan is a number derived from boolean, no user input
     var colSpan = batchMode ? 7 : 6;
     if (!peers.length) {
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
+      if (peersMobile) peersMobile.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</div>';
       return;
     }
 
+    // Desktop table
     tbody.innerHTML = peers.map(function(p) {
       var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '\u2014';
-      var pubKey = p.public_key ? p.public_key.substring(0, 12) + '\u2026' : '\u2014';
       var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
       var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
       var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
@@ -118,7 +140,6 @@
       var peerTags = parseTags(p.tags);
       var tagsHtml = peerTags.map(function(t) { return '<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">' + escapeHtml(t) + '</span>'; }).join('');
       var totalTraffic = (p.total_rx || p.total_tx) ? '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">\u03A3 ' + formatBytes((p.total_rx || 0) + (p.total_tx || 0)) + '</div>' : '';
-      // p.id is a numeric DB id, safe for attribute use; checked is a static string
       var checked = batchSelected.has(String(p.id)) ? ' checked' : '';
       var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
 
@@ -136,27 +157,41 @@
           totalTraffic +
         '</td>' +
         '<td>' + statusTag + '</td>' +
-        '<td>' +
-          '<div class="peer-actions">' +
-            '<button class="icon-btn" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
-            '</button>' +
-            '<button class="icon-btn" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
-            '</button>' +
-            '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + p.id + '">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
-            '</button>' +
-            '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
-            '</button>' +
-            '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
-            '</button>' +
-          '</div>' +
-        '</td>' +
+        '<td><div class="peer-actions">' + actionBtns(p) + '</div></td>' +
       '</tr>';
     }).join('');
+
+    // Mobile cards
+    if (peersMobile) {
+      peersMobile.innerHTML = peers.map(function(p) {
+        var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '\u2014';
+        var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
+        var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
+        var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
+        var statusTag = getStatusTag(p);
+        var expiryTag = getExpiryTag(p);
+        var groupBadge = getGroupBadge(p);
+        var peerTags = parseTags(p.tags);
+        var tagsHtml = peerTags.map(function(t) { return '<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">' + escapeHtml(t) + '</span>'; }).join('');
+
+        return '<div class="peer-card" data-peer-id="' + p.id + '">' +
+          '<div class="peer-card-top">' +
+            '<div class="peer-card-info">' +
+              '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + '</div>' +
+              (p.description ? '<div class="peer-meta">' + escapeHtml(p.description) + '</div>' : '') +
+              (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
+            '</div>' +
+            statusTag +
+          '</div>' +
+          '<div class="peer-card-meta">' +
+            '<span>' + escapeHtml(ip) + '</span>' +
+            '<span>\u2193' + rx + ' \u2191' + tx + '</span>' +
+            '<span>' + lastContact + '</span>' +
+          '</div>' +
+          '<div class="peer-card-actions">' + actionBtns(p) + '</div>' +
+        '</div>';
+      }).join('');
+    }
   }
 
   // ─── Group badge ─────────────────────────────────────────
