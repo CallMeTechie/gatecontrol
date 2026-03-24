@@ -51,10 +51,10 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Benutzerdefinierte Request/Response-Header** — Key-Value-Editor pro Route mit CORS- und Security-Header-Presets
 - **Per-Route Rate Limiting** — Konfigurierbare Requests/Zeitfenster pro Route via caddy-ratelimit Plugin
 - **Retry mit Backoff** — Automatische Wiederholungen bei Backend-Fehler mit konfigurierbarer Anzahl und Status-Code-Matching
-- **Mehrere Backends / Load Balancing** — Weighted Round Robin über mehrere Backend-Ziele pro Route
+- **Mehrere Backends / Load Balancing** — Weighted Round Robin über mehrere Backend-Ziele pro Route. Backends werden über Peer-Dropdown ausgewählt — IPs werden automatisch aus der WireGuard-Peer-Konfiguration aufgelöst
 - **Sticky Sessions** — Cookie-basierte Session-Affinität bei Multi-Backend-Routen mit konfigurierbarem Cookie-Name und TTL
 - **Circuit Breaker** — Per-Route Circuit Breaker (Closed/Open/Half-Open) der 503 zurückgibt wenn Backends wiederholt ausfallen, mit automatischer Wiederherstellung über Monitoring-Checks
-- **Request Mirroring** — Requests asynchron an bis zu 5 sekundäre Backends duplizieren für Testing, Debugging oder Shadow Deployments. Custom Caddy Go-Modul mit async Goroutines, 10 MB Body-Buffer mit sync.Pool und 10s Timeout. Client-Response wird nie von Mirror-Targets beeinflusst
+- **Request Mirroring** — Requests asynchron an bis zu 5 sekundäre Backends (über Peer-Dropdown ausgewählt) duplizieren für Testing, Debugging oder Shadow Deployments. Custom Caddy Go-Modul mit async Goroutines, 10 MB Body-Buffer mit sync.Pool und 10s Timeout. Client-Response wird nie von Mirror-Targets beeinflusst
 - **Batch-Operationen** — Mehrere Routen gleichzeitig aktivieren, deaktivieren oder löschen
 - Backend-HTTPS-Unterstützung für Ziele mit selbstsignierten Zertifikaten (z.B. Synology DSM auf Port 5001)
 - Routen direkt mit VPN-Peers verknüpfen — die Route zielt automatisch auf die WireGuard-IP des Peers

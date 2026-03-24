@@ -4,6 +4,24 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
+## [1.5.2] — 2026-03-24
+
+### Improvements
+- **Multiple Backends — Peer Selection** — Backend targets now use a peer dropdown instead of manual IP input. Peer IPs are resolved at Caddy config build time, so backend configs automatically update when a peer's IP changes. Disabled peers are skipped.
+- **Mirror Targets — Peer Selection** — Same improvement for Request Mirroring targets. Peer dropdown instead of IP input, automatic IP resolution, disabled peers skipped.
+
+### UI
+- Dashboard stat cards: 5 columns layout, compact padding and font sizes
+- Dashboard: Fixed missing green stripe on Monitoring card
+- Sidebar: Peer badge now consistently shows total peer count (was showing online count on dashboard, total on other pages)
+- Sidebar: Removed peer group count badge (redundant)
+
+### Documentation
+- `documentation/USER-GUIDE.md` — Complete user guide covering DNS setup, peer/client configuration, WireGuard clients (including docker-wireguard-go), all route features, authentication methods, 2FA/TOTP setup
+- `demo/index.html` — Interactive animated demo with pixel-accurate GateControl UI, 2 walkthrough scenes (Peer creation with QR code, Route creation with all feature toggles), auto-scrolling cursor
+
+---
+
 ## [1.5.1] — 2026-03-23
 
 ### Security — Critical
