@@ -1088,6 +1088,7 @@ input[type="file"] {
   .three-col { grid-template-columns: 1fr; }
   .peers-desktop { display: none; }
   .peers-mobile { display: block; }
+  .card { overflow: visible; }
   .modal { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .topbar-lang { display: none; }
 
