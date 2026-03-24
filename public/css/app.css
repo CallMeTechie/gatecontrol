@@ -999,27 +999,9 @@ input[type="file"] {
   outline-offset: 2px;
 }
 
-.hamburger-line {
-  display: block;
-  width: 20px;
-  height: 2px;
-  background: var(--text-1);
-  border-radius: 2px;
-  transition: transform 0.3s ease, opacity 0.3s ease;
-  margin: 4px auto;
-}
-
-/* Hamburger → X animation */
-.sidebar-toggle[aria-expanded="true"] .hamburger-line:nth-child(1) {
-  transform: translateY(6px) rotate(45deg);
-}
-.sidebar-toggle[aria-expanded="true"] .hamburger-line:nth-child(2) {
-  opacity: 0;
-  transform: scaleX(0);
-}
-.sidebar-toggle[aria-expanded="true"] .hamburger-line:nth-child(3) {
-  transform: translateY(-6px) rotate(-45deg);
-}
+.sidebar-toggle svg { color: var(--text-1); }
+.sidebar-toggle[aria-expanded="true"] .hamburger-icon { display: none; }
+.sidebar-toggle[aria-expanded="true"] .hamburger-close { display: block !important; }
 
 /* ─── Sidebar Overlay ──────────────────────────────────── */
 .sidebar-overlay {
