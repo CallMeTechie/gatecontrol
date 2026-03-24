@@ -28,12 +28,6 @@
 
   <div class="topbar-divider"></div>
 
-  <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">
-    {{ wgHost }}
-  </div>
-
-  <div class="topbar-divider"></div>
-
   <div class="topbar-lang" id="lang-switcher" style="display:flex;gap:2px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px">
     {% for lang in availableLanguages %}
     <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}" style="padding:3px 8px;border:none;background:{{ 'var(--bg-panel)' if lang == language else 'transparent' }};border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:600;cursor:pointer;color:{{ 'var(--text-1)' if lang == language else 'var(--text-3)' }};text-transform:uppercase;{{ 'box-shadow:var(--shadow)' if lang == language else '' }}">{{ lang }}</button>
