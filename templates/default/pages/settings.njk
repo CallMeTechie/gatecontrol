@@ -145,6 +145,7 @@
     <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
     <div class="tab" data-settings-tab="api">{{ t('settings.tab_api') }}</div>
     <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
+    <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
   </div>
   <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
   <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
@@ -153,6 +154,7 @@
   <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
   <div class="tab" data-settings-tab="api">{{ t('settings.tab_api') }}</div>
   <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
+  <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
 </div>
 
 {# ─── General Tab ─────────────────────────────────────── #}
@@ -659,6 +661,83 @@
       </div>
       <div id="ip2location-result" style="display:none"></div>
     </div>
+  </div>
+</div>
+
+{# ─── License Tab ─────────────────────────────────────── #}
+<div class="settings-panel" data-settings-panel="license" style="display:none">
+  <!-- Status Card -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <h3 style="margin:0">{{ t('license.status') }}</h3>
+      <span class="badge {% if license.plan == 'pro' %}badge-green{% elif license.plan == 'lifetime' %}badge-blue{% else %}badge-grey{% endif %}">
+        {{ t('license.plan_' + license.plan) }}
+      </span>
+    </div>
+    {% if license.expires_at %}
+      <p style="margin:4px 0;color:var(--text-2)">{{ t('license.valid_until') }}: {{ license.expires_at }}</p>
+    {% endif %}
+    {% if license.activations %}
+      <p style="margin:4px 0;color:var(--text-2)">{{ t('license.activations') }}: {{ license.activations }} / {{ license.max_activations }}</p>
+    {% endif %}
+    {% if license.plan == 'community' %}
+      <p style="margin:12px 0 0;color:var(--text-2)">{{ t('license.community_hint') }}</p>
+    {% endif %}
+  </div>
+
+  <!-- Activate / Key Input -->
+  <div class="card" style="margin-bottom:20px">
+    <h3 style="margin:0 0 16px">{% if license.license_key_masked %}{{ t('license.key_label') }}: {{ license.license_key_masked }}{% else %}{{ t('license.activate') }}{% endif %}</h3>
+    <form id="license-form">
+      <div style="margin-bottom:12px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">{{ t('license.key_label') }}</label>
+        <input type="text" name="license_key" placeholder="{{ t('license.key_placeholder') }}" class="input" style="width:100%">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">{{ t('license.signing_key_label') }}</label>
+        <input type="password" name="signing_key" placeholder="{{ t('license.signing_key_placeholder') }}" class="input" style="width:100%">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary">{{ t('license.activate') }}</button>
+        {% if license.license_key_masked %}
+          <button type="button" class="btn btn-secondary" id="license-refresh-btn">{{ t('license.refresh') }}</button>
+          <button type="button" class="btn btn-danger" id="license-remove-btn">{{ t('license.remove') }}</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <!-- Feature Overview -->
+  <div class="card">
+    <h3 style="margin:0 0 16px">{{ t('license.features') }}</h3>
+    <table style="width:100%;font-size:13px">
+      <thead>
+        <tr style="text-align:left;border-bottom:1px solid var(--border)">
+          <th style="padding:8px 0">Feature</th>
+          <th style="padding:8px 0">{{ t('license.status') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, value in license.features %}
+        <tr style="border-bottom:1px solid var(--border-light)">
+          <td style="padding:8px 0">{{ key | replace("_", " ") | capitalize }}</td>
+          <td style="padding:8px 0">
+            {% if value == true %}
+              <span style="color:var(--green)">{{ t('license.feature_enabled') }}</span>
+            {% elif value == false %}
+              <span style="color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
+            {% elif value == -1 %}
+              <span style="color:var(--green)">{{ t('license.unlimited') }}</span>
+            {% elif value == 0 %}
+              <span style="color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
+            {% else %}
+              <span>{{ value }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

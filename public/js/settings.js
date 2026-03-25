@@ -928,3 +928,72 @@
   loadMetricsSettings();
   setInterval(loadLockedAccounts, 30000);
 })();
+
+// ─── License Tab ─────────────────────────────────
+(function () {
+  var licenseForm = document.getElementById('license-form');
+  var refreshBtn = document.getElementById('license-refresh-btn');
+  var removeBtn = document.getElementById('license-remove-btn');
+
+  if (licenseForm) {
+    licenseForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fd = new FormData(licenseForm);
+      fetch('/api/v1/license/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken },
+        body: JSON.stringify({
+          license_key: fd.get('license_key'),
+          signing_key: fd.get('signing_key'),
+        }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showToast(window.t ? window.t('license.activated') : 'License activated');
+            setTimeout(function () { location.reload(); }, 1000);
+          } else {
+            showToast(data.error, 'error');
+          }
+        })
+        .catch(function () { showToast('Error', 'error'); });
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      fetch('/api/v1/license/refresh', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': window.csrfToken },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showToast(window.t ? window.t('license.refresh_success') : 'License refreshed');
+            setTimeout(function () { location.reload(); }, 1000);
+          } else {
+            showToast(data.error, 'error');
+          }
+        });
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener('click', function () {
+      if (!confirm(window.t ? window.t('license.remove_confirm') : 'Remove license?')) return;
+      fetch('/api/v1/license', {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': window.csrfToken },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showToast(window.t ? window.t('license.removed') : 'License removed');
+            setTimeout(function () { location.reload(); }, 1000);
+          } else {
+            showToast(data.error, 'error');
+          }
+        });
+    });
+  }
+})();
