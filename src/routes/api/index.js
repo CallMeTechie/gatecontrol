@@ -30,5 +30,6 @@ router.use('/wg', require('./wireguard'));
 router.use('/caddy', require('./caddy'));
 router.use('/webhooks', require('./webhooks'));
 router.use('/tokens', require('./tokens'));
+router.use('/license', require('./license'));
 
 module.exports = router;
