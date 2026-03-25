@@ -9,7 +9,10 @@ const logger = require('../utils/logger');
 
 const PRODUCT_SLUG = 'gatecontrol';
 
-const COMMUNITY_FEATURES = {
+// Hardcodierter Community-Fallback für den unlizenzierten Modus.
+// Wird verwendet wenn KEIN Lizenzschlüssel konfiguriert ist.
+// Nutzer mit Community-Lizenzschlüssel erhalten aktuelle Werte vom Server.
+const COMMUNITY_FALLBACK = {
   vpn_peers: 5,
   http_routes: 3,
   l4_routes: 0,
@@ -36,11 +39,12 @@ const COMMUNITY_FEATURES = {
 };
 
 let cachedPlan = 'community';
-let cachedFeatures = { ...COMMUNITY_FEATURES };
+let cachedFeatures = { ...COMMUNITY_FALLBACK };
 let cachedLicenseInfo = null;
 let previousPlan = null;
 let refreshInterval = null;
 let enforcingLimits = false;
+let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 
 // ─── Hardware Fingerprint ────────────────────────
 
@@ -135,15 +139,20 @@ async function validateOnline(fingerprint) {
 // ─── Main Validation ────────────────────────────
 
 async function validateLicense() {
-  // 1. No license key → Community mode
+  // 1. No license key → Unlicensed community mode
   if (!config.license.key) {
+    unlicensed = true;
     setCommunityMode();
-    logger.info('No license key configured — running in Community mode');
+    logger.info('No license key configured — running in unlicensed Community mode');
+    logger.info('Register at https://callmetechie.de for a free Community license');
     await enforceLimitsInternal();
     return getLicenseInfo();
   }
 
-  // 2. No signing key → Community mode with warning
+  // From here on, a license key is present
+  unlicensed = false;
+
+  // 2. No signing key → Licensed but can't validate
   if (!config.license.signingKey) {
     setCommunityMode();
     logger.warn('GC_LICENSE_SIGNING_KEY not set — running in Community mode');
@@ -188,12 +197,14 @@ async function validateLicense() {
 function setCommunityMode() {
   previousPlan = cachedPlan;
   cachedPlan = 'community';
-  cachedFeatures = { ...COMMUNITY_FEATURES };
+  cachedFeatures = { ...COMMUNITY_FALLBACK };
   cachedLicenseInfo = null;
+  // Note: unlicensed flag is NOT set here — caller decides
 }
 
 function applyLicense(data) {
   previousPlan = cachedPlan;
+  unlicensed = false;
   cachedPlan = data.plan;
   cachedFeatures = data.features;
   cachedLicenseInfo = {
@@ -352,11 +363,16 @@ function getLicenseInfo() {
     plan: cachedPlan,
     features: cachedFeatures,
     valid: cachedPlan !== 'community' || !config.license.key,
+    unlicensed,
     expires_at: cachedLicenseInfo?.expires_at || null,
     activations: cachedLicenseInfo?.activations || null,
     max_activations: cachedLicenseInfo?.max_activations || null,
     license_key_masked: masked,
   };
+}
+
+function isUnlicensedMode() {
+  return unlicensed;
 }
 
 // ─── Remove License ─────────────────────────────
@@ -365,6 +381,7 @@ async function removeLicense() {
   deleteToken();
   stopLicenseRefresh();
   setCommunityMode();
+  unlicensed = true;
 
   // Clear runtime config
   config.license.key = '';
@@ -398,8 +415,9 @@ module.exports = {
   getFeatures,
   getPlan,
   getLicenseInfo,
+  isUnlicensedMode,
   removeLicense,
-  COMMUNITY_FEATURES,
+  COMMUNITY_FALLBACK,
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
 };

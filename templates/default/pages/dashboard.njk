@@ -1,6 +1,12 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
+{% if license.unlicensed %}
+<div style="padding:12px 16px;margin-bottom:16px;background:var(--accent-lt);border:1px solid var(--accent-bd);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+  <span style="font-size:13px;color:var(--text-1)">{{ t('license.unlicensed_banner') }}</span>
+  <a href="https://callmetechie.de/products/gatecontrol/pricing" class="btn btn-primary" style="font-size:12px;padding:6px 14px;white-space:nowrap">{{ t('license.get_free_license') }}</a>
+</div>
+{% endif %}
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('dashboard.eyebrow') }}</div>

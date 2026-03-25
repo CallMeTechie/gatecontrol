@@ -121,7 +121,7 @@ describe('License API Integration', () => {
     before(() => {
       // Save current (unlocked) features and reset to community defaults
       savedFeatures = license.getFeatures();
-      license._overrideForTest({ ...license.COMMUNITY_FEATURES });
+      license._overrideForTest({ ...license.COMMUNITY_FALLBACK });
     });
 
     after(() => {

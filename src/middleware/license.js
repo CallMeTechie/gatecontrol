@@ -1,11 +1,12 @@
 'use strict';
 
-const { getPlan, getFeatures, hasFeature, getFeatureLimit, isWithinLimit } = require('../services/license');
+const { getPlan, getFeatures, hasFeature, getFeatureLimit, isWithinLimit, isUnlicensedMode } = require('../services/license');
 
 function injectLicense(req, res, next) {
   res.locals.license = {
     plan: getPlan(),
     features: getFeatures(),
+    unlicensed: isUnlicensedMode(),
     hasFeature,
     isWithinLimit,
   };
