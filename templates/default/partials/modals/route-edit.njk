@@ -93,6 +93,7 @@
             </div>
             <div class="toggle" id="edit-route-backend-https"></div>
           </div>
+          {% if license.features.compression %}
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
             <div>
               <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
@@ -100,6 +101,15 @@
             </div>
             <div class="toggle" id="edit-route-compress"></div>
           </div>
+          {% else %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)" class="feature-locked" title="{{ t('license.requires_pro') }}">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }} <span class="lock-icon"></span></div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-compress"></div>
+          </div>
+          {% endif %}
         </div>
         {# ─── Multiple Backends ─── #}
         {% if license.features.load_balancing %}

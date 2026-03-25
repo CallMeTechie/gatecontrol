@@ -58,7 +58,11 @@
         <div class="form-group">
           <div class="toggle-group" id="route-type-group">
             <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
+            {% if license.features.l4_routes is defined and license.features.l4_routes != 0 %}
             <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
+            {% else %}
+            <button type="button" class="toggle-btn" disabled style="opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('routes.type_l4') }} <span class="lock-icon"></span></button>
+            {% endif %}
           </div>
           <input type="hidden" name="route_type" id="route-type" value="http">
         </div>
@@ -122,6 +126,7 @@
             </div>
             <div class="toggle" data-field="backend_https"></div>
           </div>
+          {% if license.features.compression %}
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
             <div>
               <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
@@ -129,6 +134,15 @@
             </div>
             <div class="toggle" id="create-route-compress"></div>
           </div>
+          {% else %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }} <span class="lock-icon"></span></div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-compress"></div>
+          </div>
+          {% endif %}
           <!-- Auth type selection -->
           <div class="form-group">
             <label class="form-label">{{ t('route_auth.auth_type') }}</label>
