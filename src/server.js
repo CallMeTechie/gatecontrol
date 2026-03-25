@@ -12,6 +12,7 @@ const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAut
 const { startMonitor, stopMonitor } = require('./services/monitor');
 const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = require('./services/autobackup');
 const activity = require('./services/activity');
+const { validateLicense, startLicenseRefresh, stopLicenseRefresh } = require('./services/license');
 
 let server;
 
@@ -24,6 +25,10 @@ async function start() {
   // Initialize database
   runMigrations();
   await seedAdminUser();
+
+  // Validate license (never throws — falls back to Community mode internally)
+  const licenseInfo = await validateLicense();
+  logger.info(`License: ${licenseInfo.plan} plan`);
 
   // Create and start Express app
   const app = createApp();
@@ -55,6 +60,7 @@ async function start() {
     startSessionCleanup();  // Route auth session cleanup every 15 min
     startMonitor();         // Uptime monitoring checks
     startAutoBackup();      // Automatic backup scheduler
+    startLicenseRefresh();
 
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
@@ -146,6 +152,7 @@ function shutdown(signal) {
   stopSessionCleanup();
   stopMonitor();
   stopAutoBackup();
+  stopLicenseRefresh();
 
   const closeAndExit = () => {
     const { closeDb } = require('./db/connection');
