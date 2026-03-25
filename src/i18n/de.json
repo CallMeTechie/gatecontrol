@@ -733,7 +733,7 @@
   "license.remove_confirm": "Lizenz entfernen und auf Community-Modus zurücksetzen?",
   "license.community_mode": "Community-Modus",
   "license.community_hint": "Community-Modus aktiv. Upgrade für unbegrenzte Peers, Routen und alle Features.",
-  "license.unlicensed_banner": "Sie nutzen GateControl ohne Lizenzschlüssel. Registrieren Sie sich für eine kostenlose Community-Lizenz, um dynamische Community Features freizuschalten und Feature-Updates zu erhalten.",
+  "license.unlicensed_banner": "Sie nutzen GateControl ohne Lizenzschlüssel. Registrieren Sie sich für eine kostenlose Community-Lizenz, um Community Features freizuschalten und dynamische Feature-Updates zu erhalten.",
   "license.get_free_license": "Kostenlose Lizenz holen",
   "license.upgrade_feature_hint": "Diese Funktion ist mit einer Pro- oder Lifetime-Lizenz verfügbar.",
   "license.requires_pro": "Erfordert Pro- oder Lifetime-Lizenz",
