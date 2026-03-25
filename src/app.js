@@ -84,6 +84,10 @@ function createApp() {
   // ─── Template locals ─────────────────────────────
   app.use(injectLocals);
 
+  // ─── License locals ──────────────────────────────
+  const { injectLicense } = require('./middleware/license');
+  app.use(injectLicense);
+
   // ─── CSRF token injection ────────────────────────
   app.use(injectCsrfToken);
 
