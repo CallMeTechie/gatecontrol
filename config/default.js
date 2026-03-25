@@ -100,6 +100,13 @@ const config = {
     monitorHttp: envInt('GC_MONITOR_HTTP_TIMEOUT', 10000),         // HTTP health check timeout (ms)
     monitorTcp: envInt('GC_MONITOR_TCP_TIMEOUT', 5000),            // TCP health check timeout (ms)
   },
+
+  license: {
+    key: env('GC_LICENSE_KEY', ''),
+    signingKey: env('GC_LICENSE_SIGNING_KEY', ''),
+    server: env('GC_LICENSE_SERVER', 'https://callmetechie.de/api/licenses/validate'),
+    tokenPath: path.join(env('GC_DATA_PATH', '/data'), '.license-token'),
+  },
 };
 
 // In test environment, auto-generate secret; in production, fail loudly
