@@ -8,6 +8,8 @@ const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
 const { validateDomain, validatePort, validateDescription, validateIp } = require('../../utils/validate');
 const config = require('../../../config/default');
+const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
+const { getDb } = require('../../db/connection');
 const multer = require('multer');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -32,6 +34,9 @@ const logoUpload = multer({
 });
 
 const router = Router();
+
+const httpRouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'http' OR route_type IS NULL").get().count;
+const l4RouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4'").get().count;
 
 const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash']);
 
@@ -199,7 +204,23 @@ router.get('/:id', (req, res) => {
 /**
  * POST /api/routes — Create new route
  */
-router.post('/', async (req, res) => {
+router.post('/',
+  (req, res, next) => {
+    const rt = req.body.route_type || 'http';
+    if (rt === 'l4') return requireLimit('l4_routes', l4RouteCountFn)(req, res, next);
+    return requireLimit('http_routes', httpRouteCountFn)(req, res, next);
+  },
+  requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('ip_filter_enabled', 'ip_access_control'),
+  requireFeatureField('rate_limit_enabled', 'rate_limiting'),
+  requireFeatureField('custom_headers', 'custom_headers'),
+  requireFeatureField('retry_enabled', 'retry_on_error'),
+  requireFeatureField('circuit_breaker_enabled', 'circuit_breaker'),
+  requireFeatureField('mirror_enabled', 'request_mirroring'),
+  requireFeatureField('monitoring_enabled', 'uptime_monitoring'),
+  requireFeatureField('backends', 'load_balancing'),
+  requireFeatureField('branding_title', 'custom_branding'),
+  async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password,
@@ -296,7 +317,18 @@ router.post('/', async (req, res) => {
 /**
  * PUT /api/routes/:id — Update route
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id',
+  requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('ip_filter_enabled', 'ip_access_control'),
+  requireFeatureField('rate_limit_enabled', 'rate_limiting'),
+  requireFeatureField('custom_headers', 'custom_headers'),
+  requireFeatureField('retry_enabled', 'retry_on_error'),
+  requireFeatureField('circuit_breaker_enabled', 'circuit_breaker'),
+  requireFeatureField('mirror_enabled', 'request_mirroring'),
+  requireFeatureField('monitoring_enabled', 'uptime_monitoring'),
+  requireFeatureField('backends', 'load_balancing'),
+  requireFeatureField('branding_title', 'custom_branding'),
+  async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password, enabled,
@@ -440,7 +472,7 @@ router.post('/:id/check', async (req, res) => {
 /**
  * POST /api/routes/:id/branding/logo — Upload branding logo
  */
-router.post('/:id/branding/logo', logoUpload.single('logo'), (req, res) => {
+router.post('/:id/branding/logo', requireFeature('custom_branding'), logoUpload.single('logo'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
 

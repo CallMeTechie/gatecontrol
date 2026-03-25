@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
+const { requireFeature } = require('../../middleware/license');
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/', (req, res) => {
  * POST /api/v1/tokens — Create a new token
  * Token auth CANNOT create tokens (escalation prevention)
  */
-router.post('/', (req, res) => {
+router.post('/', requireFeature('api_tokens'), (req, res) => {
   // Block token-based auth from creating tokens
   if (req.tokenAuth) {
     return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });

@@ -376,6 +376,10 @@ async function removeLicense() {
   await enforceLimitsInternal();
 }
 
+function _overrideForTest(features) {
+  Object.assign(cachedFeatures, features);
+}
+
 module.exports = {
   validateLicense,
   refreshLicenseInBackground,
@@ -391,4 +395,5 @@ module.exports = {
   removeLicense,
   COMMUNITY_FEATURES,
   _getHardwareFingerprint: getHardwareFingerprint,
+  _overrideForTest,
 };

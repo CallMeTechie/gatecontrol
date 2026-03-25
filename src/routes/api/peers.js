@@ -7,8 +7,12 @@ const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
 const stripFields = require('../../utils/stripFields');
 const { validatePeerName, validateDescription } = require('../../utils/validate');
+const { requireLimit } = require('../../middleware/license');
+const { getDb } = require('../../db/connection');
 
 const router = Router();
+
+const peerCountFn = () => getDb().prepare('SELECT COUNT(*) as count FROM peers').get().count;
 
 const stripPeer = (p) => stripFields(p, ['private_key_encrypted', 'preshared_key_encrypted']);
 
@@ -76,7 +80,7 @@ router.get('/:id', (req, res) => {
 /**
  * POST /api/peers — Create new peer
  */
-router.post('/', async (req, res) => {
+router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
     const { name, description, tags, expires_at, group_id } = req.body;
 

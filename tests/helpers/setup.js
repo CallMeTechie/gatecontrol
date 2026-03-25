@@ -21,6 +21,7 @@ const { runMigrations } = require('../../src/db/migrations');
 const { seedAdminUser } = require('../../src/db/seed');
 const { createApp } = require('../../src/app');
 const { closeDb } = require('../../src/db/connection');
+const license = require('../../src/services/license');
 
 let app = null;
 let agent = null;
@@ -32,6 +33,31 @@ let csrfToken = null;
 async function setup() {
   runMigrations();
   await seedAdminUser();
+
+  // Unlock all features for API tests
+  license._overrideForTest({
+    vpn_peers: -1,
+    http_routes: -1,
+    l4_routes: -1,
+    route_auth: true,
+    custom_branding: true,
+    ip_access_control: true,
+    peer_acl: true,
+    rate_limiting: true,
+    custom_headers: true,
+    load_balancing: true,
+    retry_on_error: true,
+    circuit_breaker: true,
+    request_mirroring: true,
+    uptime_monitoring: true,
+    prometheus_metrics: true,
+    log_export: true,
+    scheduled_backups: true,
+    email_alerts: true,
+    webhooks: true,
+    api_tokens: true,
+  });
+
   app = createApp();
   agent = supertest.agent(app);
 

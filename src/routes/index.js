@@ -5,6 +5,7 @@ const { requireAuth, guestOnly } = require('../middleware/auth');
 const { csrfProtection } = require('../middleware/csrf');
 const { loginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
+const { hasFeature } = require('../services/license');
 
 const express = require('express');
 const router = Router();
@@ -19,6 +20,10 @@ router.get('/metrics', async (req, res) => {
   // Check if metrics are enabled
   if (settings.get('metrics_enabled', 'false') !== 'true') {
     return res.status(404).json({ ok: false, error: 'Not found' });
+  }
+
+  if (!hasFeature('prometheus_metrics')) {
+    return res.status(403).json({ ok: false, error: 'Prometheus metrics requires a Pro or Lifetime license' });
   }
 
   // Authenticate: session, Bearer token, or ?token= query param

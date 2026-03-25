@@ -5,6 +5,7 @@ const webhooks = require('../../services/webhook');
 const { validateWebhookUrl } = webhooks;
 const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
+const { requireFeature } = require('../../middleware/license');
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get('/', (req, res) => {
 /**
  * POST /api/webhooks — Create webhook
  */
-router.post('/', (req, res) => {
+router.post('/', requireFeature('webhooks'), (req, res) => {
   try {
     const { url, events, description } = req.body;
     const wh = webhooks.create({ url, events, description });

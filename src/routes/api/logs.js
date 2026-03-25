@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const activity = require('../../services/activity');
 const accessLog = require('../../services/accessLog');
+const { requireFeature } = require('../../middleware/license');
 
 const router = Router();
 
@@ -83,7 +84,7 @@ function formatDateForFilename() {
  * GET /api/logs/activity/export?format=csv|json
  * Export full activity log as file download
  */
-router.get('/activity/export', (req, res) => {
+router.get('/activity/export', requireFeature('log_export'), (req, res) => {
   try {
     const format = (req.query.format || 'json').toLowerCase();
     if (format !== 'csv' && format !== 'json') {
@@ -128,7 +129,7 @@ router.get('/activity/export', (req, res) => {
  * GET /api/logs/access/export?format=csv|json&domain=&status=&method=
  * Export access log as file download
  */
-router.get('/access/export', async (req, res) => {
+router.get('/access/export', requireFeature('log_export'), async (req, res) => {
   try {
     const format = (req.query.format || 'json').toLowerCase();
     if (format !== 'csv' && format !== 'json') {

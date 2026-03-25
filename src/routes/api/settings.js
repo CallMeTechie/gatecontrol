@@ -11,6 +11,7 @@ const activity = require('../../services/activity');
 const backup = require('../../services/backup');
 const config = require('../../../config/default');
 const logger = require('../../utils/logger');
+const { requireFeature } = require('../../middleware/license');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -462,7 +463,7 @@ router.get('/alerts', (req, res) => {
 /**
  * PUT /api/settings/alerts — Update email alert settings
  */
-router.put('/alerts', (req, res) => {
+router.put('/alerts', requireFeature('email_alerts'), (req, res) => {
   try {
     const { email, email_events, backup_reminder_days, resource_cpu_threshold, resource_ram_threshold } = req.body;
     if (email !== undefined) settings.set('alerts.email', String(email));
@@ -521,7 +522,7 @@ router.get('/autobackup', (req, res) => {
 /**
  * PUT /api/settings/autobackup — Update auto-backup settings
  */
-router.put('/autobackup', (req, res) => {
+router.put('/autobackup', requireFeature('scheduled_backups'), (req, res) => {
   try {
     const autobackup = require('../../services/autobackup');
     const { enabled, schedule, retention } = req.body;
@@ -546,7 +547,7 @@ router.put('/autobackup', (req, res) => {
 /**
  * POST /api/settings/autobackup/run — Trigger immediate backup
  */
-router.post('/autobackup/run', (req, res) => {
+router.post('/autobackup/run', requireFeature('scheduled_backups'), (req, res) => {
   try {
     const autobackup = require('../../services/autobackup');
     const filename = autobackup.runBackup();

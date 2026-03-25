@@ -12,6 +12,7 @@ const {
 } = require('../../services/routeAuth');
 const { isSmtpConfigured } = require('../../services/email');
 const { encrypt } = require('../../utils/crypto');
+const { requireFeature } = require('../../middleware/license');
 
 // Mounted at /api/routes/:id/auth with mergeParams: true
 const router = Router({ mergeParams: true });
@@ -39,7 +40,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/routes/:id/auth — create or update auth config
-router.post('/', (req, res) => {
+router.post('/', requireFeature('route_auth'), (req, res) => {
   (async () => {
     const routeId = req.params.id;
     const db = getDb();
