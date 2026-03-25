@@ -13,15 +13,15 @@ const PRODUCT_SLUG = 'gatecontrol';
 // Wird verwendet wenn KEIN Lizenzschlüssel konfiguriert ist.
 // Nutzer mit Community-Lizenzschlüssel erhalten aktuelle Werte vom Server.
 const COMMUNITY_FALLBACK = {
-  vpn_peers: 5,
-  http_routes: 3,
+  vpn_peers: 3,
+  http_routes: 1,
   l4_routes: 0,
   route_auth: false,
   custom_branding: false,
   ip_access_control: false,
   peer_acl: false,
   rate_limiting: false,
-  compression: true,
+  compression: false,
   custom_headers: false,
   load_balancing: false,
   retry_on_error: false,

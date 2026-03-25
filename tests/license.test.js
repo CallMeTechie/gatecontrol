@@ -29,13 +29,13 @@ describe('License Service', () => {
 
     it('should have community feature limits', () => {
       const features = license.getFeatures();
-      assert.equal(features.vpn_peers, 5);
-      assert.equal(features.http_routes, 3);
+      assert.equal(features.vpn_peers, 3);
+      assert.equal(features.http_routes, 1);
       assert.equal(features.l4_routes, 0);
     });
 
-    it('should have compression enabled (community feature)', () => {
-      assert.equal(license.hasFeature('compression'), true);
+    it('should have compression disabled (unlicensed fallback)', () => {
+      assert.equal(license.hasFeature('compression'), false);
     });
 
     it('should have webhooks disabled', () => {
@@ -43,15 +43,15 @@ describe('License Service', () => {
     });
 
     it('should report correct limits', () => {
-      assert.equal(license.getFeatureLimit('vpn_peers'), 5);
-      assert.equal(license.getFeatureLimit('http_routes'), 3);
+      assert.equal(license.getFeatureLimit('vpn_peers'), 3);
+      assert.equal(license.getFeatureLimit('http_routes'), 1);
       assert.equal(license.getFeatureLimit('l4_routes'), 0);
     });
 
     it('should check isWithinLimit correctly', () => {
-      assert.equal(license.isWithinLimit('vpn_peers', 3), true);
-      assert.equal(license.isWithinLimit('vpn_peers', 5), false);
-      assert.equal(license.isWithinLimit('vpn_peers', 6), false);
+      assert.equal(license.isWithinLimit('vpn_peers', 2), true);
+      assert.equal(license.isWithinLimit('vpn_peers', 3), false);
+      assert.equal(license.isWithinLimit('vpn_peers', 4), false);
       assert.equal(license.isWithinLimit('l4_routes', 0), false);
     });
 
@@ -59,7 +59,7 @@ describe('License Service', () => {
       const info = license.getLicenseInfo();
       assert.equal(info.plan, 'community');
       assert.equal(info.valid, true);
-      assert.equal(info.features.vpn_peers, 5);
+      assert.equal(info.features.vpn_peers, 3);
     });
   });
 
