@@ -1135,10 +1135,14 @@
   // ─── Toggle ──────────────────────────────────────────────
   async function toggleRoute(id) {
     try {
-      await api.put('/api/routes/' + id + '/toggle');
+      var data = await api.put('/api/routes/' + id + '/toggle');
+      if (data && !data.ok) {
+        showToast(data.error || 'Error', 'error');
+        return;
+      }
       loadRoutes();
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      showToast(err.message, 'error');
     }
   }
 

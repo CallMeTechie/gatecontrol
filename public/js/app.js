@@ -70,6 +70,9 @@ window.api = {
     if (res.status === 400) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
     }
+    if (res.status === 403) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -88,6 +91,9 @@ window.api = {
     if (res.status === 400) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
     }
+    if (res.status === 403) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -101,6 +107,9 @@ window.api = {
         'X-CSRF-Token': window.GC.csrfToken,
       },
     });
+    if (res.status === 403) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -468,5 +477,22 @@ window.showMessage = function(containerId, message, type) {
     history.replaceState(null, '', window.location.pathname);
   }
 })();
+
+// ─── Toast Notifications ─────────────────────────
+window.showToast = function(message, type) {
+  type = type || 'success';
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  // Trigger animation
+  requestAnimationFrame(function() {
+    toast.classList.add('toast-visible');
+  });
+  setTimeout(function() {
+    toast.classList.remove('toast-visible');
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 4000);
+};
 
 console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');

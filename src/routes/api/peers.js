@@ -161,6 +161,23 @@ router.delete('/:id', async (req, res) => {
  */
 router.put('/:id/toggle', async (req, res) => {
   try {
+    // Check if trying to enable and limit would be exceeded
+    const existing = peers.getById(req.params.id);
+    if (existing && !existing.enabled) {
+      const { isWithinLimit, getFeatureLimit } = require('../../services/license');
+      const count = getDb().prepare('SELECT COUNT(*) as count FROM peers WHERE enabled = 1').get().count;
+      if (!isWithinLimit('vpn_peers', count)) {
+        const limit = getFeatureLimit('vpn_peers');
+        return res.status(403).json({
+          ok: false,
+          error: req.t ? req.t('error.license.limit_reached') : 'Peer limit reached',
+          feature: 'vpn_peers',
+          current: count,
+          limit,
+          upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+        });
+      }
+    }
     const peer = await peers.toggle(req.params.id);
     res.json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {

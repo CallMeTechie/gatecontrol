@@ -521,10 +521,14 @@
   // ─── Toggle ──────────────────────────────────────────────
   async function togglePeer(id) {
     try {
-      await api.put('/api/peers/' + id + '/toggle');
+      var data = await api.put('/api/peers/' + id + '/toggle');
+      if (data && !data.ok) {
+        showToast(data.error || 'Error', 'error');
+        return;
+      }
       loadPeers();
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      showToast(err.message, 'error');
     }
   }
 

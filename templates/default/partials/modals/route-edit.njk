@@ -102,6 +102,7 @@
           </div>
         </div>
         {# ─── Multiple Backends ─── #}
+        {% if license.features.load_balancing %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('routes.backends') }}</div>
@@ -138,6 +139,15 @@
             </div>
           </div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.backends') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backends_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-backends"></div>
+        </div>
+        {% endif %}
       </div>
 
       {# ═══ TAB: Auth ══════════════════════════════════ #}
@@ -274,6 +284,7 @@
 
       {# ═══ TAB: Security ══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="security" style="display:none">
+        {% if license.features.peer_acl %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('acl.title') }}</div>
@@ -287,6 +298,16 @@
           </div>
           <div id="edit-acl-hint" style="font-size:11px;color:var(--text-3);margin-top:6px"></div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-acl" data-managed="true"></div>
+        </div>
+        {% endif %}
+        {% if license.features.uptime_monitoring %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
@@ -294,6 +315,16 @@
           </div>
           <div class="toggle" id="edit-route-monitoring"></div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+          </div>
+          <div class="toggle" id="edit-route-monitoring"></div>
+        </div>
+        {% endif %}
+        {% if license.features.ip_access_control %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
@@ -320,6 +351,16 @@
             <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
           </div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+          </div>
+          <div class="toggle" id="edit-route-ip-filter"></div>
+        </div>
+        {% endif %}
+        {% if license.features.rate_limiting %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }}</div>
@@ -344,6 +385,16 @@
             </div>
           </div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-rate-limit"></div>
+        </div>
+        {% endif %}
+        {% if license.features.retry_on_error %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }}</div>
@@ -364,7 +415,17 @@
             </div>
           </div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-retry"></div>
+        </div>
+        {% endif %}
         {# ─── Circuit Breaker ─── #}
+        {% if license.features.circuit_breaker %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }}</div>
@@ -391,6 +452,16 @@
           <div id="edit-cb-status-indicator" style="display:none;padding:6px 10px;border-radius:var(--radius-xs);font-size:12px;font-weight:600;text-align:center;margin-bottom:4px">
           </div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-circuit-breaker"></div>
+        </div>
+        {% endif %}
+        {% if license.features.request_mirroring %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }}</div>
@@ -403,6 +474,15 @@
           <button type="button" class="btn btn-ghost" id="edit-mirror-add-target" style="font-size:12px">+ {{ t('routes.mirror_add_target') }}</button>
           <div id="edit-mirror-max-hint" style="display:none;font-size:11px;color:var(--text-3);margin-top:4px">{{ t('routes.mirror_max') }}</div>
         </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-mirror"></div>
+        </div>
+        {% endif %}
       </div>
 
       {# ═══ TAB: Headers ═══════════════════════════════ #}

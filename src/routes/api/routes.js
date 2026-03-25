@@ -446,6 +446,28 @@ router.delete('/:id', async (req, res) => {
  */
 router.put('/:id/toggle', async (req, res) => {
   try {
+    // Check if trying to enable and limit would be exceeded
+    const existing = routes.getById(req.params.id);
+    if (existing && !existing.enabled) {
+      const { isWithinLimit, getFeatureLimit } = require('../../services/license');
+      const routeType = existing.route_type || 'http';
+      const limitKey = routeType === 'l4' ? 'l4_routes' : 'http_routes';
+      const countQuery = routeType === 'l4'
+        ? "SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4' AND enabled = 1"
+        : "SELECT COUNT(*) as count FROM routes WHERE (route_type = 'http' OR route_type IS NULL) AND enabled = 1";
+      const count = getDb().prepare(countQuery).get().count;
+      if (!isWithinLimit(limitKey, count)) {
+        const limit = getFeatureLimit(limitKey);
+        return res.status(403).json({
+          ok: false,
+          error: req.t ? req.t('error.license.limit_reached') : 'Route limit reached',
+          feature: limitKey,
+          current: count,
+          limit,
+          upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+        });
+      }
+    }
     const route = await routes.toggle(req.params.id);
     res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
