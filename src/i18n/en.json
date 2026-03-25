@@ -733,7 +733,7 @@
   "license.remove_confirm": "Remove license and revert to Community mode?",
   "license.community_mode": "Community Mode",
   "license.community_hint": "Running in Community mode. Upgrade for unlimited peers, routes, and all features.",
-  "license.unlicensed_banner": "You are running without a license key. Register for a free Community license to unlock dynamic feature updates.",
+  "license.unlicensed_banner": "You are running GateControl without a license key. Register for a free Community license to unlock Community features and receive dynamic feature updates.",
   "license.get_free_license": "Get Free License",
   "license.upgrade_feature_hint": "This feature is available with a Pro or Lifetime license.",
   "license.requires_pro": "Requires Pro or Lifetime license",
