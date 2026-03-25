@@ -699,7 +699,7 @@
       {% if license.unlicensed %}
       <div style="padding:12px 14px;background:var(--accent-lt);border-radius:var(--radius-xs);border:1px solid var(--accent-bd);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--text-1)">{{ t('license.unlicensed_banner') }}</span>
-        <a href="https://callmetechie.de/products/gatecontrol/pricing" class="btn btn-primary" style="font-size:12px;padding:6px 14px;white-space:nowrap">{{ t('license.get_free_license') }}</a>
+        <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:12px;padding:6px 14px;white-space:nowrap">{{ t('license.get_free_license') }}</a>
       </div>
       {% elif license.plan == 'community' %}
       <div style="padding:10px 14px;background:var(--bg-2);border-radius:var(--radius-xs);border:1px solid var(--border)">
