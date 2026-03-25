@@ -1,4 +1,4 @@
-const { describe, it, before, after, beforeEach } = require('node:test');
+const { describe, it, before, after, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
@@ -75,6 +75,71 @@ describe('License Service', () => {
       const fp1 = license._getHardwareFingerprint();
       const fp2 = license._getHardwareFingerprint();
       assert.equal(fp1, fp2);
+    });
+  });
+});
+
+describe('License API Integration', () => {
+  const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+  const license = require('../src/services/license');
+
+  before(async () => {
+    await setup();
+  });
+
+  after(() => {
+    teardown();
+  });
+
+  describe('GET /api/v1/license', () => {
+    it('should return community plan info', async () => {
+      const agent = getAgent();
+      const res = await agent.get('/api/v1/license').expect(200);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.plan, 'community');
+      assert.equal(res.body.valid, true);
+      assert.ok(res.body.features, 'should include features');
+    });
+  });
+
+  describe('POST /api/v1/license/activate', () => {
+    it('should return 400 when license key is missing', async () => {
+      const agent = getAgent();
+      const csrf = getCsrf();
+      const res = await agent
+        .post('/api/v1/license/activate')
+        .set('x-csrf-token', csrf)
+        .send({ signing_key: 'some-key' })
+        .expect(400);
+      assert.equal(res.body.ok, false);
+    });
+  });
+
+  describe('Feature guard — webhooks blocked in community mode', () => {
+    let savedFeatures;
+
+    before(() => {
+      // Save current (unlocked) features and reset to community defaults
+      savedFeatures = license.getFeatures();
+      license._overrideForTest({ ...license.COMMUNITY_FEATURES });
+    });
+
+    after(() => {
+      // Restore unlocked features for other tests
+      license._overrideForTest(savedFeatures);
+    });
+
+    it('should return 403 when creating a webhook in community mode', async () => {
+      const agent = getAgent();
+      const csrf = getCsrf();
+      const res = await agent
+        .post('/api/v1/webhooks')
+        .set('x-csrf-token', csrf)
+        .send({ url: 'https://example.com/hook', events: ['peer.created'] })
+        .expect(403);
+      assert.equal(res.body.ok, false);
+      assert.equal(res.body.feature, 'webhooks');
+      assert.ok(res.body.upgrade_url, 'should include upgrade URL');
     });
   });
 });
