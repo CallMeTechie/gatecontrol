@@ -139,6 +139,7 @@ async function validateLicense() {
   if (!config.license.key) {
     setCommunityMode();
     logger.info('No license key configured — running in Community mode');
+    await enforceLimitsInternal();
     return getLicenseInfo();
   }
 
@@ -146,6 +147,7 @@ async function validateLicense() {
   if (!config.license.signingKey) {
     setCommunityMode();
     logger.warn('GC_LICENSE_SIGNING_KEY not set — running in Community mode');
+    await enforceLimitsInternal();
     return getLicenseInfo();
   }
 
@@ -178,6 +180,7 @@ async function validateLicense() {
     // 6. All failed → Community mode
     setCommunityMode();
     logger.warn(`License validation failed: ${err.message} — running in Community mode`);
+    await enforceLimitsInternal();
     return getLicenseInfo();
   }
 }
@@ -237,12 +240,12 @@ async function enforceLimitsInternal() {
 
   try {
     const { getDb } = require('../db/connection');
-    const activity = require('./activity');
     const db = getDb();
+    const activity = require('./activity');
 
     const limitKeys = [
       { feature: 'vpn_peers', table: 'peers', type: 'peer' },
-      { feature: 'http_routes', table: 'routes', type: 'route', where: "route_type = 'http'" },
+      { feature: 'http_routes', table: 'routes', type: 'route', where: "(route_type = 'http' OR route_type IS NULL)" },
       { feature: 'l4_routes', table: 'routes', type: 'route', where: "route_type = 'l4'" },
     ];
 
@@ -299,6 +302,9 @@ async function enforceLimitsInternal() {
         }
       }
     }
+  } catch (err) {
+    // DB not available (tests, first boot) or other error — skip enforcement
+    logger.debug?.('License limit enforcement skipped: ' + err.message);
   } finally {
     enforcingLimits = false;
   }
