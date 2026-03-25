@@ -244,12 +244,12 @@ async function enforceLimitsInternal() {
     const activity = require('./activity');
 
     const limitKeys = [
-      { feature: 'vpn_peers', table: 'peers', type: 'peer' },
-      { feature: 'http_routes', table: 'routes', type: 'route', where: "(route_type = 'http' OR route_type IS NULL)" },
-      { feature: 'l4_routes', table: 'routes', type: 'route', where: "route_type = 'l4'" },
+      { feature: 'vpn_peers', table: 'peers', type: 'peer', nameCol: 'name' },
+      { feature: 'http_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "(route_type = 'http' OR route_type IS NULL)" },
+      { feature: 'l4_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "route_type = 'l4'" },
     ];
 
-    for (const { feature, table, type, where } of limitKeys) {
+    for (const { feature, table, type, nameCol, where } of limitKeys) {
       const limit = getFeatureLimit(feature);
       if (limit === -1) continue;
 
@@ -259,12 +259,12 @@ async function enforceLimitsInternal() {
       if (count > limit) {
         const excess = count - limit;
         const rows = db.prepare(
-          `SELECT id, name FROM ${table} ${whereClause} ORDER BY created_at ASC LIMIT ?`
+          `SELECT id, ${nameCol} as label FROM ${table} ${whereClause} ORDER BY created_at ASC LIMIT ?`
         ).all(excess);
 
         for (const row of rows) {
           db.prepare(`UPDATE ${table} SET enabled = 0, updated_at = datetime('now') WHERE id = ?`).run(row.id);
-          activity.log(`${type}_license_disabled`, `${type === 'peer' ? 'Peer' : 'Route'} "${row.name}" disabled — license limit (${limit})`, { severity: 'warning' });
+          activity.log(`${type}_license_disabled`, `${type === 'peer' ? 'Peer' : 'Route'} "${row.label}" disabled — license limit (${limit})`, { severity: 'warning' });
         }
 
         logger.warn(`License limit: disabled ${excess} ${type}(s) for ${feature} (limit: ${limit})`);
