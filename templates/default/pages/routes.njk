@@ -6,6 +6,18 @@
     <div class="page-eyebrow">{{ t('routes.eyebrow') }}</div>
     <div class="page-title">{{ t('routes.title') }}</div>
     <div class="page-sub" id="routes-subtitle">{{ t('routes.subtitle', { count: '0' }) }}</div>
+    <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
+      {% if license.features.http_routes is defined and license.features.http_routes != -1 %}
+        <span class="limit-badge {% if httpRouteCount >= license.features.http_routes %}at-limit{% endif %}">
+          {{ t('routes.type_http') }}: {{ httpRouteCount }} / {{ license.features.http_routes }}
+        </span>
+      {% endif %}
+      {% if license.features.l4_routes is defined and license.features.l4_routes != -1 %}
+        <span class="limit-badge {% if l4RouteCount >= license.features.l4_routes %}at-limit{% endif %}">
+          {{ t('routes.type_l4') }}: {{ l4RouteCount }} / {{ license.features.l4_routes }}
+        </span>
+      {% endif %}
+    </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
     <div class="input-wrap">

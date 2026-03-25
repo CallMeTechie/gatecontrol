@@ -4,7 +4,14 @@
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('peers.eyebrow') }}</div>
-    <div class="page-title">{{ t('peers.title') }}</div>
+    <div class="page-title">
+      {{ t('peers.title') }}
+      {% if license.features.vpn_peers is defined and license.features.vpn_peers != -1 %}
+        <span class="limit-badge {% if peerCount >= license.features.vpn_peers %}at-limit{% endif %}">
+          {{ peerCount }} / {{ license.features.vpn_peers }}
+        </span>
+      {% endif %}
+    </div>
     <div class="page-sub">{{ t('peers.subtitle') }}</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
