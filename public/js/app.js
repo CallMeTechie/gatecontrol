@@ -73,6 +73,9 @@ window.api = {
     if (res.status === 403) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
     }
+    if (res.status === 429) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
@@ -93,6 +96,9 @@ window.api = {
     }
     if (res.status === 403) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
+    }
+    if (res.status === 429) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
     }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }

@@ -934,66 +934,58 @@
   var licenseForm = document.getElementById('license-form');
   var refreshBtn = document.getElementById('license-refresh-btn');
   var removeBtn = document.getElementById('license-remove-btn');
+  var t = window.GC && window.GC.t || {};
 
   if (licenseForm) {
-    licenseForm.addEventListener('submit', function (e) {
+    licenseForm.addEventListener('submit', async function (e) {
       e.preventDefault();
-      var fd = new FormData(licenseForm);
-      fetch('/api/v1/license/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.GC.csrfToken },
-        body: JSON.stringify({
-          license_key: fd.get('license_key'),
-          signing_key: fd.get('signing_key'),
-        }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            showToast(window.t ? window.t('license.activated') : 'License activated');
-            setTimeout(function () { location.reload(); }, 1000);
-          } else {
-            showToast(data.error, 'error');
-          }
-        })
-        .catch(function () { showToast('Error', 'error'); });
+      try {
+        var data = await api.post('/api/v1/license/activate', {
+          license_key: licenseForm.querySelector('[name="license_key"]').value,
+          signing_key: licenseForm.querySelector('[name="signing_key"]').value,
+        });
+        if (data.ok) {
+          showToast(t['license.activated'] || 'License activated');
+          setTimeout(function () { location.reload(); }, 1000);
+        } else {
+          showToast(data.error || 'Activation failed', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      }
     });
   }
 
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', function () {
-      fetch('/api/v1/license/refresh', {
-        method: 'POST',
-        headers: { 'X-CSRF-Token': window.GC.csrfToken },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            showToast(window.t ? window.t('license.refresh_success') : 'License refreshed');
-            setTimeout(function () { location.reload(); }, 1000);
-          } else {
-            showToast(data.error, 'error');
-          }
-        });
+    refreshBtn.addEventListener('click', async function () {
+      try {
+        var data = await api.post('/api/v1/license/refresh', {});
+        if (data.ok) {
+          showToast(t['license.refresh_success'] || 'License refreshed');
+          setTimeout(function () { location.reload(); }, 1000);
+        } else {
+          showToast(data.error || 'Refresh failed', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      }
     });
   }
 
   if (removeBtn) {
-    removeBtn.addEventListener('click', function () {
-      if (!confirm(window.t ? window.t('license.remove_confirm') : 'Remove license?')) return;
-      fetch('/api/v1/license', {
-        method: 'DELETE',
-        headers: { 'X-CSRF-Token': window.GC.csrfToken },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            showToast(window.t ? window.t('license.removed') : 'License removed');
-            setTimeout(function () { location.reload(); }, 1000);
-          } else {
-            showToast(data.error, 'error');
-          }
-        });
+    removeBtn.addEventListener('click', async function () {
+      if (!confirm(t['license.remove_confirm'] || 'Remove license?')) return;
+      try {
+        var data = await api.del('/api/v1/license');
+        if (data.ok) {
+          showToast(t['license.removed'] || 'License removed');
+          setTimeout(function () { location.reload(); }, 1000);
+        } else {
+          showToast(data.error || 'Remove failed', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      }
     });
   }
 })();
