@@ -941,7 +941,7 @@
       var fd = new FormData(licenseForm);
       fetch('/api/v1/license/activate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.GC.csrfToken },
         body: JSON.stringify({
           license_key: fd.get('license_key'),
           signing_key: fd.get('signing_key'),
@@ -964,7 +964,7 @@
     refreshBtn.addEventListener('click', function () {
       fetch('/api/v1/license/refresh', {
         method: 'POST',
-        headers: { 'X-CSRF-Token': window.csrfToken },
+        headers: { 'X-CSRF-Token': window.GC.csrfToken },
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -983,7 +983,7 @@
       if (!confirm(window.t ? window.t('license.remove_confirm') : 'Remove license?')) return;
       fetch('/api/v1/license', {
         method: 'DELETE',
-        headers: { 'X-CSRF-Token': window.csrfToken },
+        headers: { 'X-CSRF-Token': window.GC.csrfToken },
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
