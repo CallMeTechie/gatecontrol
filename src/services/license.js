@@ -139,6 +139,25 @@ async function validateOnline(fingerprint) {
 // ─── Main Validation ────────────────────────────
 
 async function validateLicense() {
+  // 0. Load keys from DB if not set via env vars (UI-activated licenses)
+  if (!config.license.key) {
+    try {
+      const settings = require('./settings');
+      const { decrypt } = require('../utils/crypto');
+      const dbKey = settings.get('license_key');
+      const dbSigningKeyEnc = settings.get('license_signing_key_encrypted');
+      if (dbKey) {
+        config.license.key = dbKey;
+        if (dbSigningKeyEnc) {
+          try { config.license.signingKey = decrypt(dbSigningKeyEnc); } catch { /* invalid encryption key */ }
+        }
+        logger.info('License key loaded from database');
+      }
+    } catch {
+      // DB not ready or settings not available
+    }
+  }
+
   // 1. No license key → Unlicensed community mode
   if (!config.license.key) {
     unlicensed = true;
