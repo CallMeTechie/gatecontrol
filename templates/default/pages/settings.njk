@@ -745,16 +745,16 @@
       {% for key, value in license.features %}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
         <span style="font-size:13px;color:var(--text-1)">{{ key | replace("_", " ") | capitalize }}</span>
-        {% if value == true %}
+        {% if value is number and value == -1 %}
+          <span style="font-size:12px;color:var(--green);font-weight:600">{{ t('license.unlimited') }}</span>
+        {% elif value is number and value == 0 %}
+          <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
+        {% elif value is number %}
+          <code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ value }}</code>
+        {% elif value == true %}
           <span style="font-size:12px;color:var(--green);font-weight:600">{{ t('license.feature_enabled') }}</span>
         {% elif value == false %}
           <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
-        {% elif value == -1 %}
-          <span style="font-size:12px;color:var(--green);font-weight:600">{{ t('license.unlimited') }}</span>
-        {% elif value == 0 %}
-          <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
-        {% else %}
-          <code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ value }}</code>
         {% endif %}
       </div>
       {% endfor %}
