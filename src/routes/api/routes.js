@@ -603,8 +603,8 @@ router.delete('/:id/branding/bg-image', (req, res) => {
 router.get('/:id/trace', asyncHandler(async (req, res) => {
   const routeId = req.params.id;
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const since = parseFloat(req.query.since) || 0;
-  const logPath = '/data/caddy/trace.log';
+  const since = req.query.since || '';
+  const logPath = '/data/caddy/caddy-stdout.log';
 
   const entries = [];
   try {
@@ -614,25 +614,38 @@ router.get('/:id/trace', asyncHandler(async (req, res) => {
     }
     const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
 
-    for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+    // Merge incoming+outgoing pairs by request_id
+    const requests = new Map();
+    for (let i = 0; i < lines.length; i++) {
       try {
         const parsed = JSON.parse(lines[i]);
         if (parsed.tag !== `route-${routeId}`) continue;
-        const ts = parsed.ts || 0;
-        if (since > 0 && ts <= since) continue;
-        entries.push({
-          timestamp: new Date(ts * 1000).toISOString(),
-          ts,
-          method: parsed.request_method || parsed.method || '',
-          uri: parsed.request_uri || parsed.uri || '',
-          status: parsed.status || 0,
-          latency_ms: parsed.latency ? Math.round(parsed.latency * 1000) : 0,
-          remote_ip: parsed.remote_addr || parsed.remote_ip || '',
-          host: parsed.request_host || parsed.host || '',
-          user_agent: parsed.user_agent || '',
-        });
+        if (!parsed.request_id) continue;
+        const rid = parsed.request_id;
+        if (!requests.has(rid)) requests.set(rid, {});
+        const entry = requests.get(rid);
+        if (parsed.direction === 'incoming') {
+          entry.timestamp = parsed.time || '';
+          entry.method = parsed.method || '';
+          entry.uri = parsed.uri || '';
+          entry.remote_ip = parsed.remote_addr || '';
+          entry.host = parsed.host || '';
+          entry.user_agent = parsed.user_agent || '';
+        } else if (parsed.direction === 'outgoing') {
+          entry.status = parsed.status_code || 0;
+          entry.response_size = parsed.response_size || 0;
+        }
       } catch { /* skip unparseable lines */ }
     }
+
+    // Convert to array, filter by since, sort newest first, limit
+    for (const [, entry] of requests) {
+      if (!entry.timestamp || !entry.method) continue;
+      if (since && entry.timestamp <= since) continue;
+      entries.push(entry);
+    }
+    entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    entries.splice(limit);
   } catch { /* log file not readable */ }
 
   res.json({ ok: true, data: { entries } });

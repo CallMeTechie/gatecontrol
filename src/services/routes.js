@@ -443,7 +443,6 @@ function buildCaddyConfig() {
   }
 
   // Build full Caddy config
-  const hasDebugRoutes = routes.some(r => r.debug_enabled);
   const caddyConfig = {
     admin: {
       listen: '127.0.0.1:2019',
@@ -460,19 +459,6 @@ function buildCaddyConfig() {
           encoder: { format: 'json' },
           include: ['http.log.access'],
         },
-        ...(hasDebugRoutes ? {
-          trace: {
-            writer: {
-              output: 'file',
-              filename: '/data/caddy/trace.log',
-              roll_size_mb: 5,
-              roll_keep: 2,
-            },
-            encoder: { format: 'json' },
-            level: 'DEBUG',
-            include: ['http.handlers.trace'],
-          },
-        } : {}),
       },
     },
     apps: {

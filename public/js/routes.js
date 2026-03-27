@@ -2024,13 +2024,17 @@
 
   // Trace polling system
   var traceInterval = null;
-  var lastTraceTs = 0;
+  var lastTraceSince = '';
   var currentTraceRouteId = null;
 
   function startTracePolling(routeId) {
     stopTracePolling();
     currentTraceRouteId = routeId;
-    lastTraceTs = 0;
+    lastTraceSince = '';
+    var log = document.getElementById('edit-debug-log');
+    if (log) log.querySelectorAll('.trace-entry').forEach(function(el) { el.remove(); });
+    var empty = document.getElementById('edit-debug-empty');
+    if (empty) empty.style.display = '';
     fetchTraceEntries(routeId);
     traceInterval = setInterval(function() { fetchTraceEntries(routeId); }, 3000);
   }
@@ -2042,7 +2046,7 @@
 
   function fetchTraceEntries(routeId) {
     var url = '/api/v1/routes/' + routeId + '/trace?limit=50';
-    if (lastTraceTs > 0) url += '&since=' + lastTraceTs;
+    if (lastTraceSince) url += '&since=' + encodeURIComponent(lastTraceSince);
     window.api.get(url).then(function(res) {
       if (res.ok && res.data && res.data.entries) {
         renderTraceEntries(res.data.entries);
@@ -2058,7 +2062,7 @@
     if (empty) empty.style.display = entries.length > 0 || log.querySelector('.trace-entry') ? 'none' : '';
 
     entries.forEach(function(e) {
-      if (e.ts > lastTraceTs) lastTraceTs = e.ts;
+      if (e.timestamp && e.timestamp > lastTraceSince) lastTraceSince = e.timestamp;
       var statusColor = e.status >= 500 ? 'var(--red, #f87171)' : e.status >= 400 ? 'var(--yellow, #facc15)' : 'var(--green, #4ade80)';
 
       var div = document.createElement('div');
@@ -2079,11 +2083,7 @@
 
       var statusSpan = document.createElement('span');
       statusSpan.style.cssText = 'color:' + statusColor + ';font-weight:600;min-width:30px';
-      statusSpan.textContent = e.status;
-
-      var latencySpan = document.createElement('span');
-      latencySpan.style.cssText = 'color:var(--text-3);min-width:50px';
-      latencySpan.textContent = (e.latency_ms || 0) + 'ms';
+      statusSpan.textContent = e.status || '-';
 
       var ipSpan = document.createElement('span');
       ipSpan.style.cssText = 'color:var(--text-3);min-width:80px';
@@ -2093,7 +2093,6 @@
       div.appendChild(methodSpan);
       div.appendChild(uriSpan);
       div.appendChild(statusSpan);
-      div.appendChild(latencySpan);
       div.appendChild(ipSpan);
 
       log.insertBefore(div, log.firstChild);
@@ -2110,7 +2109,7 @@
         var empty = document.getElementById('edit-debug-empty');
         if (empty) empty.style.display = '';
       }
-      lastTraceTs = 0;
+      lastTraceSince = '';
     });
   }
 
