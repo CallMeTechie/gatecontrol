@@ -230,7 +230,7 @@ function buildCaddyConfig() {
       routeHandlers.push({
         handler: 'trace',
         tag: `route-${route.id}`,
-        response_debug: true,
+        response_debug_enabled: true,
       });
     }
 
@@ -387,7 +387,7 @@ function buildCaddyConfig() {
         authHandlers.unshift({
           handler: 'trace',
           tag: `route-${route.id}`,
-          response_debug: true,
+          response_debug_enabled: true,
         });
       }
       // Request custom headers
