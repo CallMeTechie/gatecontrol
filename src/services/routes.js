@@ -267,7 +267,7 @@ function buildCaddyConfig() {
     if (route.compress_enabled) {
       routeHandlers.push({
         handler: 'encode',
-        encodings: { zstd: {}, gzip: {} },
+        encodings: { zstd: {}, brotli: {}, gzip: {} },
       });
     }
 
@@ -407,7 +407,7 @@ function buildCaddyConfig() {
         });
       }
       if (route.compress_enabled) {
-        authHandlers.push({ handler: 'encode', encodings: { zstd: {}, gzip: {} } });
+        authHandlers.push({ handler: 'encode', encodings: { zstd: {}, brotli: {}, gzip: {} } });
       }
       authHandlers.push(reverseProxy);
       routeConfig.handle = authHandlers;

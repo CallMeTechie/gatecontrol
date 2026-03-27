@@ -6,6 +6,7 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
     --output /usr/bin/caddy \
     --with github.com/mholt/caddy-l4 \
     --with github.com/mholt/caddy-ratelimit \
+    --with github.com/ueffel/caddy-brotli \
     --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies
