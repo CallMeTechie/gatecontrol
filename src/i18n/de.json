@@ -151,7 +151,7 @@
   "routes.backend_https": "Backend HTTPS",
   "routes.backend_https_desc": "Backend nutzt HTTPS (z.B. Synology DSM Port 5001)",
   "routes.compress": "Komprimierung",
-  "routes.compress_desc": "Gzip/Zstd-Antwortkomprimierung über Caddy aktivieren",
+  "routes.compress_desc": "Gzip/Zstd/Brotli-Antwortkomprimierung über Caddy aktivieren",
   "routes.compress_badge": "Komprimierung",
 
   "config.eyebrow": "WireGuard Interface",
