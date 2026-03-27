@@ -446,6 +446,23 @@
           <div class="toggle" id="create-route-mirror"></div>
         </div>
         {% endif %}
+        {% if license.features.request_debugging %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-debug"></div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-debug"></div>
+        </div>
+        {% endif %}
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>

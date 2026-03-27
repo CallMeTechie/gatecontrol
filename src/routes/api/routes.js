@@ -6,6 +6,7 @@ const routes = require('../../services/routes');
 const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
+const asyncHandler = require('../../utils/asyncHandler');
 const { validateDomain, validatePort, validateDescription, validateIp } = require('../../utils/validate');
 const config = require('../../../config/default');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
@@ -221,6 +222,7 @@ router.post('/',
   requireFeatureField('monitoring_enabled', 'uptime_monitoring'),
   requireFeatureField('backends', 'load_balancing'),
   requireFeatureField('branding_title', 'custom_branding'),
+  requireFeatureField('debug_enabled', 'request_debugging'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -233,7 +235,7 @@ router.post('/',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets } = req.body;
+      mirror_enabled, mirror_targets, debug_enabled } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -301,7 +303,7 @@ router.post('/',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets,
+      mirror_enabled, mirror_targets, debug_enabled,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -330,6 +332,7 @@ router.put('/:id',
   requireFeatureField('monitoring_enabled', 'uptime_monitoring'),
   requireFeatureField('backends', 'load_balancing'),
   requireFeatureField('branding_title', 'custom_branding'),
+  requireFeatureField('debug_enabled', 'request_debugging'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -342,7 +345,7 @@ router.put('/:id',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets } = req.body;
+      mirror_enabled, mirror_targets, debug_enabled } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -411,7 +414,7 @@ router.put('/:id',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets,
+      mirror_enabled, mirror_targets, debug_enabled,
     });
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {
@@ -595,5 +598,44 @@ router.delete('/:id/branding/bg-image', (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+// GET /routes/:id/trace — read trace log entries for a route
+router.get('/:id/trace', asyncHandler(async (req, res) => {
+  const routeId = req.params.id;
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const since = parseFloat(req.query.since) || 0;
+  const logPath = '/data/caddy/trace.log';
+
+  const entries = [];
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(logPath)) {
+      return res.json({ ok: true, data: { entries: [] } });
+    }
+    const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+
+    for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+      try {
+        const parsed = JSON.parse(lines[i]);
+        if (parsed.tag !== `route-${routeId}`) continue;
+        const ts = parsed.ts || 0;
+        if (since > 0 && ts <= since) continue;
+        entries.push({
+          timestamp: new Date(ts * 1000).toISOString(),
+          ts,
+          method: parsed.request_method || parsed.method || '',
+          uri: parsed.request_uri || parsed.uri || '',
+          status: parsed.status || 0,
+          latency_ms: parsed.latency ? Math.round(parsed.latency * 1000) : 0,
+          remote_ip: parsed.remote_addr || parsed.remote_ip || '',
+          host: parsed.request_host || parsed.host || '',
+          user_agent: parsed.user_agent || '',
+        });
+      } catch { /* skip unparseable lines */ }
+    }
+  } catch { /* log file not readable */ }
+
+  res.json({ ok: true, data: { entries } });
+}));
 
 module.exports = router;

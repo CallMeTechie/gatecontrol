@@ -14,6 +14,7 @@
         <button class="tab" data-edit-tab="security">{{ t('routes.tab_security') or 'Security' }}</button>
         <button class="tab" data-edit-tab="headers">{{ t('headers.title') or 'Headers' }}</button>
         <button class="tab" data-edit-tab="branding">{{ t('routes.tab_branding') or 'Branding' }}</button>
+        <button class="tab" data-edit-tab="debug">{{ t('debug.tab') }}</button>
       </div>
 
       {# ═══ TAB: General ═══════════════════════════════ #}
@@ -563,6 +564,36 @@
             <button type="button" class="btn btn-ghost" id="edit-branding-bg-remove" style="font-size:11px;padding:3px 8px;color:var(--red);display:none">{{ t('common.delete') or 'Delete' }}</button>
           </div>
         </div>
+      </div>
+
+      {# ═══ TAB: Debug ═══════════════════════════════ #}
+      <div class="edit-route-panel" data-panel="debug" style="display:none">
+        {% if license.features.request_debugging %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-debug"></div>
+        </div>
+        <div id="edit-debug-container" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ t('debug.auto_refresh') }}</div>
+            <button type="button" class="btn btn-ghost" id="edit-debug-clear" style="font-size:11px;padding:4px 8px">{{ t('debug.clear') }}</button>
+          </div>
+          <div id="edit-debug-log" style="max-height:400px;overflow-y:auto;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-family:var(--font-mono);font-size:11px">
+            <div id="edit-debug-empty" style="color:var(--text-3);text-align:center;padding:20px 0">{{ t('debug.no_entries') }}</div>
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-debug"></div>
+        </div>
+        {% endif %}
       </div>
 
       <div id="edit-route-error" class="form-error" style="display:none"></div>
