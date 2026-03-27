@@ -225,6 +225,15 @@ function buildCaddyConfig() {
 
     const routeHandlers = [];
 
+    // Request tracing — must be first handler to capture full lifecycle
+    if (route.debug_enabled) {
+      routeHandlers.push({
+        handler: 'trace',
+        tag: `route-${route.id}`,
+        response_debug: true,
+      });
+    }
+
     // Request custom headers — added BEFORE reverse_proxy
     if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
       const requestSet = {};
@@ -373,6 +382,14 @@ function buildCaddyConfig() {
 
       // The main route: auth subrequest → (optional headers/rate limit/encode) → proxy to backend
       const authHandlers = [forwardAuthSubrequest];
+      // Request tracing for auth routes
+      if (route.debug_enabled) {
+        authHandlers.unshift({
+          handler: 'trace',
+          tag: `route-${route.id}`,
+          response_debug: true,
+        });
+      }
       // Request custom headers
       if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
         const requestSet = {};
@@ -426,6 +443,7 @@ function buildCaddyConfig() {
   }
 
   // Build full Caddy config
+  const hasDebugRoutes = routes.some(r => r.debug_enabled);
   const caddyConfig = {
     admin: {
       listen: '127.0.0.1:2019',
@@ -442,6 +460,19 @@ function buildCaddyConfig() {
           encoder: { format: 'json' },
           include: ['http.log.access'],
         },
+        ...(hasDebugRoutes ? {
+          trace: {
+            writer: {
+              output: 'file',
+              filename: '/data/caddy/trace.log',
+              roll_size_mb: 5,
+              roll_keep: 2,
+            },
+            encoder: { format: 'json' },
+            level: 'DEBUG',
+            include: ['http.handlers.trace'],
+          },
+        } : {}),
       },
     },
     apps: {
@@ -705,8 +736,8 @@ async function create(data) {
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-                        mirror_enabled, mirror_targets, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        mirror_enabled, mirror_targets, debug_enabled, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -748,6 +779,7 @@ async function create(data) {
     data.circuit_breaker_timeout ? parseInt(data.circuit_breaker_timeout, 10) : 30,
     data.mirror_enabled ? 1 : 0,
     mirrorTargetsJson,
+    data.debug_enabled ? 1 : 0,
   );
 
   const routeId = result.lastInsertRowid;
@@ -963,6 +995,7 @@ async function update(id, data) {
       circuit_breaker_timeout = COALESCE(?, circuit_breaker_timeout),
       mirror_enabled = COALESCE(?, mirror_enabled),
       mirror_targets = ?,
+      debug_enabled = COALESCE(?, debug_enabled),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -1008,6 +1041,7 @@ async function update(id, data) {
     data.circuit_breaker_timeout !== undefined ? parseInt(data.circuit_breaker_timeout, 10) : null,
     data.mirror_enabled !== undefined ? (data.mirror_enabled ? 1 : 0) : null,
     updateMirrorTargets,
+    data.debug_enabled !== undefined ? (data.debug_enabled ? 1 : 0) : null,
     id
   );
 

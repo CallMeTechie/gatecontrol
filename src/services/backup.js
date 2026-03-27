@@ -86,6 +86,9 @@ function createBackup() {
       circuit_breaker_enabled: r.circuit_breaker_enabled || 0,
       circuit_breaker_threshold: r.circuit_breaker_threshold || 5,
       circuit_breaker_timeout: r.circuit_breaker_timeout || 30,
+      mirror_enabled: r.mirror_enabled || 0,
+      mirror_targets: r.mirror_targets || null,
+      debug_enabled: r.debug_enabled || 0,
       created_at: r.created_at,
       updated_at: r.updated_at,
     };
@@ -320,8 +323,9 @@ async function restoreBackup(backup) {
                           retry_enabled, retry_count, retry_match_status,
                           backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                           circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout, circuit_breaker_status,
+                          mirror_enabled, mirror_targets, debug_enabled,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -360,6 +364,9 @@ async function restoreBackup(backup) {
         r.circuit_breaker_enabled ? 1 : 0,
         r.circuit_breaker_threshold || 5,
         r.circuit_breaker_timeout || 30,
+        r.mirror_enabled ? 1 : 0,
+        r.mirror_targets || null,
+        r.debug_enabled ? 1 : 0,
         r.created_at || null,
         r.updated_at || null,
       );
