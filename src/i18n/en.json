@@ -46,6 +46,18 @@
   "dashboard.restart_date": "Restart: {{date}}",
   "dashboard.swap_used": "Swap: {{value}} used",
 
+  "debug.auto_refresh": "Auto-refresh",
+  "debug.badge": "Debug",
+  "debug.clear": "Clear",
+  "debug.latency": "Latency",
+  "debug.method": "Method",
+  "debug.no_entries": "No trace entries yet. Send a request to this route to see results.",
+  "debug.remote_ip": "Remote IP",
+  "debug.status": "Status",
+  "debug.tab": "Debug",
+  "debug.title": "Request Tracing",
+  "debug.toggle_desc": "Log detailed request/response information for debugging",
+
   "peers.eyebrow": "WireGuard",
   "peers.title": "Peers & Clients",
   "peers.subtitle": "Manage connections",

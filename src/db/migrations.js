@@ -450,6 +450,12 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'mirror_enabled'),
   },
+  {
+    version: 27,
+    name: 'add_debug_enabled',
+    sql: 'ALTER TABLE routes ADD COLUMN debug_enabled INTEGER DEFAULT 0;',
+    detect: (db) => hasColumn(db, 'routes', 'debug_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
