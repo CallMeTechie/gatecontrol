@@ -463,6 +463,50 @@
           <div class="toggle" id="create-route-debug"></div>
         </div>
         {% endif %}
+        {% if license.features.bot_blocking %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-bot-blocker"></div>
+        </div>
+        <div id="create-bot-blocker-fields" style="display:none;margin-bottom:14px">
+          <div style="margin-bottom:8px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.mode') }}</label>
+            <select id="create-bot-blocker-mode" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option value="block">{{ t('bot_blocker.mode_block') }}</option>
+              <option value="tarpit">{{ t('bot_blocker.mode_tarpit') }}</option>
+              <option value="drop">{{ t('bot_blocker.mode_drop') }}</option>
+              <option value="garbage">{{ t('bot_blocker.mode_garbage') }}</option>
+              <option value="redirect">{{ t('bot_blocker.mode_redirect') }}</option>
+              <option value="custom">{{ t('bot_blocker.mode_custom') }}</option>
+            </select>
+          </div>
+          <div id="create-bot-blocker-redirect" style="display:none;margin-bottom:8px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.url') }}</label>
+            <input type="url" id="create-bot-blocker-url" placeholder="https://example.com" style="width:100%;padding:6px 10px;font-size:12px">
+          </div>
+          <div id="create-bot-blocker-custom" style="display:none">
+            <div style="margin-bottom:8px">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.message') }}</label>
+              <input type="text" id="create-bot-blocker-message" placeholder="Access denied" maxlength="500" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div>
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.status_code') }}</label>
+              <input type="number" id="create-bot-blocker-status" value="403" min="100" max="599" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-bot-blocker"></div>
+        </div>
+        {% endif %}
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
           {{ t('routes.save_reload') }}
         </button>

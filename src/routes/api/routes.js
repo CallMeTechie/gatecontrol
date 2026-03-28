@@ -223,6 +223,7 @@ router.post('/',
   requireFeatureField('backends', 'load_balancing'),
   requireFeatureField('branding_title', 'custom_branding'),
   requireFeatureField('debug_enabled', 'request_debugging'),
+  requireFeatureField('bot_blocker_enabled', 'bot_blocking'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -235,7 +236,8 @@ router.post('/',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets, debug_enabled } = req.body;
+      mirror_enabled, mirror_targets, debug_enabled,
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -304,6 +306,7 @@ router.post('/',
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -333,6 +336,7 @@ router.put('/:id',
   requireFeatureField('backends', 'load_balancing'),
   requireFeatureField('branding_title', 'custom_branding'),
   requireFeatureField('debug_enabled', 'request_debugging'),
+  requireFeatureField('bot_blocker_enabled', 'bot_blocking'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -345,7 +349,8 @@ router.put('/:id',
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-      mirror_enabled, mirror_targets, debug_enabled } = req.body;
+      mirror_enabled, mirror_targets, debug_enabled,
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -415,6 +420,7 @@ router.put('/:id',
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
     });
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {
