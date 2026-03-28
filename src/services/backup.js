@@ -89,6 +89,9 @@ function createBackup() {
       mirror_enabled: r.mirror_enabled || 0,
       mirror_targets: r.mirror_targets || null,
       debug_enabled: r.debug_enabled || 0,
+      bot_blocker_enabled: r.bot_blocker_enabled || 0,
+      bot_blocker_mode: r.bot_blocker_mode || 'block',
+      bot_blocker_config: r.bot_blocker_config || null,
       created_at: r.created_at,
       updated_at: r.updated_at,
     };
@@ -324,8 +327,9 @@ async function restoreBackup(backup) {
                           backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                           circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout, circuit_breaker_status,
                           mirror_enabled, mirror_targets, debug_enabled,
+                          bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
                           created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
     `);
 
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -367,6 +371,9 @@ async function restoreBackup(backup) {
         r.mirror_enabled ? 1 : 0,
         r.mirror_targets || null,
         r.debug_enabled ? 1 : 0,
+        r.bot_blocker_enabled ? 1 : 0,
+        r.bot_blocker_mode || 'block',
+        r.bot_blocker_config || null,
         r.created_at || null,
         r.updated_at || null,
       );

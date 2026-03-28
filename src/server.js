@@ -131,6 +131,54 @@ async function start() {
       }
     }, 60 * 60 * 1000); // Every hour
 
+    // ─── Bot blocker counter (every 60s) ──────────────
+    let lastBotCountTs = 0;
+    setInterval(() => {
+      try {
+        const fs = require('fs');
+        const logPath = '/data/caddy/access.log';
+        if (!fs.existsSync(logPath)) return;
+
+        const db = require('./db/connection')();
+        const enabledRoutes = db.prepare(
+          'SELECT id, domain FROM routes WHERE bot_blocker_enabled = 1'
+        ).all();
+        if (enabledRoutes.length === 0) return;
+
+        const domainMap = new Map();
+        for (const r of enabledRoutes) {
+          domainMap.set(r.domain.toLowerCase(), r.id);
+        }
+
+        const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+        const counts = new Map();
+
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.status !== 403) continue;
+            const ts = entry.ts || 0;
+            if (ts <= lastBotCountTs) continue;
+            if (ts > lastBotCountTs) lastBotCountTs = ts;
+
+            const host = (entry.request?.host || '').split(':')[0].toLowerCase();
+            const routeId = domainMap.get(host);
+            if (!routeId) continue;
+            counts.set(routeId, (counts.get(routeId) || 0) + 1);
+          } catch { /* skip */ }
+        }
+
+        const update = db.prepare(
+          'UPDATE routes SET bot_blocker_count = bot_blocker_count + ? WHERE id = ?'
+        );
+        for (const [routeId, count] of counts) {
+          update.run(count, routeId);
+        }
+      } catch (err) {
+        require('./utils/logger').warn('Bot counter error: ' + err.message);
+      }
+    }, 60000);
+
     // Log startup
     activity.log('system_start', `${config.app.name} started`, {
       source: 'system',

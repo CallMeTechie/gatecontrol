@@ -225,6 +225,20 @@ function buildCaddyConfig() {
 
     const routeHandlers = [];
 
+    // Bot blocker — must be first handler to block bots before any processing
+    if (route.bot_blocker_enabled) {
+      const defenderConfig = {
+        handler: 'defender',
+        raw_responder: route.bot_blocker_mode || 'block',
+        ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
+      };
+      const bbConfig = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {};
+      if (bbConfig.message) defenderConfig.message = bbConfig.message;
+      if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
+      if (bbConfig.url) defenderConfig.url = bbConfig.url;
+      routeHandlers.push(defenderConfig);
+    }
+
     // Request tracing — must be first handler to capture full lifecycle
     if (route.debug_enabled) {
       routeHandlers.push({
@@ -389,6 +403,19 @@ function buildCaddyConfig() {
           tag: `route-${route.id}`,
           response_debug_enabled: true,
         });
+      }
+      // Bot blocker for auth routes
+      if (route.bot_blocker_enabled) {
+        const defenderConfig = {
+          handler: 'defender',
+          raw_responder: route.bot_blocker_mode || 'block',
+          ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
+        };
+        const bbConfig = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {};
+        if (bbConfig.message) defenderConfig.message = bbConfig.message;
+        if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
+        if (bbConfig.url) defenderConfig.url = bbConfig.url;
+        authHandlers.unshift(defenderConfig);
       }
       // Request custom headers
       if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
@@ -712,6 +739,26 @@ async function create(data) {
     ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets))
     : null;
 
+  const VALID_BOT_MODES = ['block', 'tarpit', 'drop', 'garbage', 'redirect', 'custom'];
+  if (data.bot_blocker_mode && !VALID_BOT_MODES.includes(data.bot_blocker_mode)) {
+    throw new Error('Invalid bot blocker mode');
+  }
+  if (data.bot_blocker_config) {
+    const bbCfg = typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config;
+    if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
+      throw new Error('Redirect mode requires a valid URL');
+    }
+    if (data.bot_blocker_mode === 'custom') {
+      if (bbCfg.status_code && (bbCfg.status_code < 100 || bbCfg.status_code > 599)) {
+        throw new Error('Invalid status code');
+      }
+      if (bbCfg.message && bbCfg.message.length > 500) {
+        throw new Error('Message too long');
+      }
+    }
+    data.bot_blocker_config = typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config);
+  }
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
@@ -722,8 +769,8 @@ async function create(data) {
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-                        mirror_enabled, mirror_targets, debug_enabled, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -766,6 +813,7 @@ async function create(data) {
     data.mirror_enabled ? 1 : 0,
     mirrorTargetsJson,
     data.debug_enabled ? 1 : 0,
+    data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
   );
 
   const routeId = result.lastInsertRowid;
@@ -937,6 +985,26 @@ async function update(id, data) {
     ? (data.mirror_targets ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets)) : null)
     : route.mirror_targets;
 
+  const VALID_BOT_MODES = ['block', 'tarpit', 'drop', 'garbage', 'redirect', 'custom'];
+  if (data.bot_blocker_mode && !VALID_BOT_MODES.includes(data.bot_blocker_mode)) {
+    throw new Error('Invalid bot blocker mode');
+  }
+  if (data.bot_blocker_config) {
+    const bbCfg = typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config;
+    if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
+      throw new Error('Redirect mode requires a valid URL');
+    }
+    if (data.bot_blocker_mode === 'custom') {
+      if (bbCfg.status_code && (bbCfg.status_code < 100 || bbCfg.status_code > 599)) {
+        throw new Error('Invalid status code');
+      }
+      if (bbCfg.message && bbCfg.message.length > 500) {
+        throw new Error('Message too long');
+      }
+    }
+    data.bot_blocker_config = typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config);
+  }
+
   db.prepare(`
     UPDATE routes SET
       domain = COALESCE(?, domain),
@@ -982,6 +1050,9 @@ async function update(id, data) {
       mirror_enabled = COALESCE(?, mirror_enabled),
       mirror_targets = ?,
       debug_enabled = COALESCE(?, debug_enabled),
+      bot_blocker_enabled = COALESCE(?, bot_blocker_enabled),
+      bot_blocker_mode = COALESCE(?, bot_blocker_mode),
+      bot_blocker_config = COALESCE(?, bot_blocker_config),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -1028,6 +1099,9 @@ async function update(id, data) {
     data.mirror_enabled !== undefined ? (data.mirror_enabled ? 1 : 0) : null,
     updateMirrorTargets,
     data.debug_enabled !== undefined ? (data.debug_enabled ? 1 : 0) : null,
+    data.bot_blocker_enabled !== undefined ? (data.bot_blocker_enabled ? 1 : 0) : null,
+    data.bot_blocker_mode !== undefined ? data.bot_blocker_mode : null,
+    data.bot_blocker_config !== undefined ? (typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config)) : null,
     id
   );
 
