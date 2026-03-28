@@ -51,13 +51,28 @@ let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 // ─── Hardware Fingerprint ────────────────────────
 
 function getHardwareFingerprint() {
+  const fpPath = '/data/.fingerprint';
+  // Use persistent fingerprint from data volume (survives container recreates)
+  try {
+    const existing = fs.readFileSync(fpPath, 'utf8').trim();
+    if (existing.length === 64) return existing;
+  } catch { /* not yet created */ }
+
+  // Generate new fingerprint from machine-id or hostname+cpu
   let raw;
   try {
     raw = fs.readFileSync('/etc/machine-id', 'utf8').trim();
   } catch {
     raw = os.hostname() + JSON.stringify(os.cpus().map(c => c.model));
   }
-  return crypto.createHash('sha256').update(raw).digest('hex');
+  const fingerprint = crypto.createHash('sha256').update(raw).digest('hex');
+
+  // Persist to data volume
+  try {
+    fs.writeFileSync(fpPath, fingerprint, { mode: 0o600 });
+  } catch { /* data dir may not exist yet */ }
+
+  return fingerprint;
 }
 
 // ─── Token Management ────────────────────────────
