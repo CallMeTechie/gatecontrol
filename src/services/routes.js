@@ -744,7 +744,7 @@ async function create(data) {
     throw new Error('Invalid bot blocker mode');
   }
   if (data.bot_blocker_config) {
-    const bbCfg = typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config;
+    const bbCfg = (typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config) || {};
     if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
       throw new Error('Redirect mode requires a valid URL');
     }
@@ -990,7 +990,7 @@ async function update(id, data) {
     throw new Error('Invalid bot blocker mode');
   }
   if (data.bot_blocker_config) {
-    const bbCfg = typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config;
+    const bbCfg = (typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config) || {};
     if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
       throw new Error('Redirect mode requires a valid URL');
     }
