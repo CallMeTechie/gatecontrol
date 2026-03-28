@@ -51,26 +51,37 @@ let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 // ─── Hardware Fingerprint ────────────────────────
 
 function getHardwareFingerprint() {
-  const fpPath = '/data/.fingerprint';
-  // Use persistent fingerprint from data volume (survives container recreates)
-  try {
-    const existing = fs.readFileSync(fpPath, 'utf8').trim();
-    if (existing.length === 64) return existing;
-  } catch { /* not yet created */ }
+  // Build fingerprint from host hardware identifiers (not copyable between machines)
+  const parts = [];
 
-  // Generate new fingerprint from machine-id or hostname+cpu
-  let raw;
+  // 1. DMI product UUID — unique per physical/virtual machine (BIOS/mainboard)
   try {
-    raw = fs.readFileSync('/etc/machine-id', 'utf8').trim();
-  } catch {
-    raw = os.hostname() + JSON.stringify(os.cpus().map(c => c.model));
+    const uuid = fs.readFileSync('/sys/class/dmi/id/product_uuid', 'utf8').trim();
+    if (uuid && uuid !== 'Not Settable') parts.push(uuid);
+  } catch { /* not available or no permission */ }
+
+  // 2. CPU model — stable across restarts
+  try {
+    parts.push(os.cpus().map(c => c.model).join(','));
+  } catch { /* unlikely */ }
+
+  // 3. Total RAM — stable hardware identifier
+  try {
+    const meminfo = fs.readFileSync('/proc/meminfo', 'utf8');
+    const match = meminfo.match(/MemTotal:\s+(\d+)/);
+    if (match) parts.push(match[1]);
+  } catch { /* not available */ }
+
+  // Fallback if nothing hardware-specific was found
+  if (parts.length === 0) {
+    try {
+      parts.push(fs.readFileSync('/etc/machine-id', 'utf8').trim());
+    } catch {
+      parts.push(os.hostname());
+    }
   }
-  const fingerprint = crypto.createHash('sha256').update(raw).digest('hex');
 
-  // Persist to data volume
-  try {
-    fs.writeFileSync(fpPath, fingerprint, { mode: 0o600 });
-  } catch { /* data dir may not exist yet */ }
+  const fingerprint = crypto.createHash('sha256').update(parts.join('|')).digest('hex');
 
   return fingerprint;
 }
