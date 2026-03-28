@@ -712,10 +712,11 @@
   <div class="card">
     <div class="card-head">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <span class="card-title">{{ t('license.activate') }}</span>
+      <span class="card-title">{% if license.license_key_masked %}{{ t('license.manage') or 'Manage License' }}{% else %}{{ t('license.activate') }}{% endif %}</span>
     </div>
     <div class="card-body">
       <form id="license-form" autocomplete="off">
+        {% if not license.license_key_masked %}
         <div class="form-group">
           <label class="form-label" for="license-key-input">{{ t('license.key_label') }}</label>
           <input type="text" id="license-key-input" name="license_key" placeholder="{{ t('license.key_placeholder') }}" autocomplete="off">
@@ -726,12 +727,18 @@
         </div>
         <div id="license-message" style="display:none"></div>
         <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-          {% if license.license_key_masked %}
-            <button type="button" class="btn btn-ghost" style="color:var(--red);border-color:var(--red-bd)" id="license-remove-btn">{{ t('license.remove') }}</button>
-            <button type="button" class="btn btn-secondary" id="license-refresh-btn">{{ t('license.refresh') }}</button>
-          {% endif %}
           <button type="submit" class="btn btn-primary">{{ t('license.activate') }}</button>
         </div>
+        {% else %}
+        <div id="license-message" style="display:none"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+          <button type="button" class="btn btn-ghost" style="color:var(--red);border-color:var(--red-bd)" id="license-remove-btn">{{ t('license.deactivate') or 'Deactivate' }}</button>
+          <button type="button" class="btn btn-primary" id="license-refresh-btn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            {{ t('license.refresh') or 'Refresh' }}
+          </button>
+        </div>
+        {% endif %}
       </form>
     </div>
   </div>
