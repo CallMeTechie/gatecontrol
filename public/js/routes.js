@@ -939,7 +939,7 @@
     var bbModeSelect = document.getElementById('edit-bot-blocker-mode');
     if (bbModeSelect) bbModeSelect.value = route.bot_blocker_mode || 'block';
     var bbCfg = {};
-    try { bbCfg = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {}; } catch {}
+    try { var _parsed = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null; if (_parsed && typeof _parsed === 'object') bbCfg = _parsed; } catch {}
     var bbUrl = document.getElementById('edit-bot-blocker-url');
     if (bbUrl) bbUrl.value = bbCfg.url || '';
     var bbMsg = document.getElementById('edit-bot-blocker-message');
