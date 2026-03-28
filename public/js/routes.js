@@ -900,9 +900,7 @@
     renderHeadersList('edit', 'request', editHeadersRequest);
     renderHeadersList('edit', 'response', editHeadersResponse);
 
-    // Show/hide headers tab based on route type
-    var headersTab = document.querySelector('.edit-route-tabs .tab[data-edit-tab="headers"]');
-    if (headersTab) headersTab.style.display = (route.route_type === 'l4') ? 'none' : '';
+    // Tab/feature visibility for L4 is handled by updateEditFieldVisibility()
 
     // Monitoring toggle
     const monitorToggle = document.getElementById('edit-route-monitoring');
@@ -1312,10 +1310,19 @@
 
   function updateEditFieldVisibility() {
     const routeType = document.getElementById('edit-route-type')?.value || 'http';
+    const isL4 = routeType === 'l4';
     const l4Fields = document.getElementById('edit-l4-fields');
     const httpFields = document.getElementById('edit-http-fields');
-    if (l4Fields) l4Fields.style.display = routeType === 'l4' ? 'block' : 'none';
-    if (httpFields) httpFields.style.display = routeType === 'http' ? 'block' : 'none';
+    const httpOnlyFeatures = document.getElementById('edit-http-only-features');
+    if (l4Fields) l4Fields.style.display = isL4 ? 'block' : 'none';
+    if (httpFields) httpFields.style.display = isL4 ? 'none' : 'block';
+    if (httpOnlyFeatures) httpOnlyFeatures.style.display = isL4 ? 'none' : '';
+
+    // Hide HTTP-only tabs for L4 routes
+    ['headers', 'auth', 'security', 'branding', 'debug'].forEach(function(tab) {
+      var tabBtn = document.querySelector('.edit-route-tabs .tab[data-edit-tab="' + tab + '"]');
+      if (tabBtn) tabBtn.style.display = isL4 ? 'none' : '';
+    });
 
     updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
   }
