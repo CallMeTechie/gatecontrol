@@ -232,7 +232,7 @@ function buildCaddyConfig() {
         raw_responder: route.bot_blocker_mode || 'block',
         ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
       };
-      const bbConfig = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {};
+      const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
       if (bbConfig.message) defenderConfig.message = bbConfig.message;
       if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
       if (bbConfig.url) defenderConfig.url = bbConfig.url;
@@ -411,7 +411,7 @@ function buildCaddyConfig() {
           raw_responder: route.bot_blocker_mode || 'block',
           ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
         };
-        const bbConfig = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {};
+        const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
         if (bbConfig.message) defenderConfig.message = bbConfig.message;
         if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
         if (bbConfig.url) defenderConfig.url = bbConfig.url;

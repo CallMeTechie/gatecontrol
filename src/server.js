@@ -139,7 +139,8 @@ async function start() {
         const logPath = '/data/caddy/access.log';
         if (!fs.existsSync(logPath)) return;
 
-        const db = require('./db/connection')();
+        const { getDb } = require('./db/connection');
+        const db = getDb();
         const enabledRoutes = db.prepare(
           'SELECT id, domain FROM routes WHERE bot_blocker_enabled = 1'
         ).all();

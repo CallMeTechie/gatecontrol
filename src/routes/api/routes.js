@@ -432,7 +432,7 @@ router.put('/:id',
     }
     res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
-    logger.error({ error: err.message }, 'Failed to update route');
+    logger.error({ error: err.message, stack: err.stack }, 'Failed to update route');
     const { status, error } = resolveError(req, err, 'error.routes.update');
     res.status(status).json({ ok: false, error });
   }
