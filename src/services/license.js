@@ -37,6 +37,7 @@ const COMMUNITY_FALLBACK = {
   webhooks: false,
   api_tokens: false,
   request_debugging: false,
+  bot_blocking: false,
 };
 
 let cachedPlan = 'community';

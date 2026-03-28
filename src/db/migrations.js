@@ -456,6 +456,17 @@ const migrations = [
     sql: 'ALTER TABLE routes ADD COLUMN debug_enabled INTEGER DEFAULT 0;',
     detect: (db) => hasColumn(db, 'routes', 'debug_enabled'),
   },
+  {
+    version: 28,
+    name: 'add_bot_blocker',
+    sql: `
+      ALTER TABLE routes ADD COLUMN bot_blocker_enabled INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN bot_blocker_mode TEXT DEFAULT 'block';
+      ALTER TABLE routes ADD COLUMN bot_blocker_count INTEGER DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN bot_blocker_config TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'bot_blocker_enabled'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
