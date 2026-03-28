@@ -116,7 +116,7 @@ async function validateOnline(fingerprint) {
     body: JSON.stringify({
       license_key: config.license.key,
       hardware_fingerprint: fingerprint,
-      device_name: os.hostname(),
+      device_name: (() => { try { return new URL(config.app.baseUrl).hostname; } catch { return os.hostname(); } })(),
       product_slug: PRODUCT_SLUG,
     }),
   });
