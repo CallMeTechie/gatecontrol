@@ -140,12 +140,9 @@
       let botTag = '';
       if (r.bot_blocker_enabled && r.route_type !== 'l4') {
         var botCount = r.bot_blocker_count || 0;
-        var botSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="11"/><line x1="8" y1="16" x2="8" y2="16.01"/><line x1="16" y1="16" x2="16" y2="16.01"/></svg>';
-        if (botCount > 0) {
-          botTag = '<span class="tag tag-orange" style="margin-left:4px">' + botSvg + ' ' + botCount + '</span>';
-        } else {
-          botTag = '<span class="tag tag-orange" style="margin-left:4px;opacity:0.6">' + botSvg + '</span>';
-        }
+        var botSvg = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="11"/><line x1="8" y1="16" x2="8" y2="16.01"/><line x1="16" y1="16" x2="16" y2="16.01"/></svg>';
+        var botLabel = escapeHtml(GC.t['bot_blocker.badge'] || 'bots blocked');
+        botTag = '<span class="tag tag-orange" style="margin-left:4px">' + botSvg + ' ' + botCount + ' ' + botLabel + '</span>';
       }
       let mirrorTag = '';
       if (r.mirror_enabled && r.route_type !== 'l4') {
