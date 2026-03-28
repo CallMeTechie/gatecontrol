@@ -137,6 +137,16 @@
       if (r.debug_enabled && r.route_type !== 'l4') {
         debugTag = '<span class="tag tag-orange" style="margin-left:4px">' + escapeHtml(GC.t['debug.badge'] || 'Debug') + '</span>';
       }
+      let botTag = '';
+      if (r.bot_blocker_enabled && r.route_type !== 'l4') {
+        var botCount = r.bot_blocker_count || 0;
+        var botSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="11"/><line x1="8" y1="16" x2="8" y2="16.01"/><line x1="16" y1="16" x2="16" y2="16.01"/></svg>';
+        if (botCount > 0) {
+          botTag = '<span class="tag tag-orange" style="margin-left:4px">' + botSvg + ' ' + botCount + '</span>';
+        } else {
+          botTag = '<span class="tag tag-orange" style="margin-left:4px;opacity:0.6">' + botSvg + '</span>';
+        }
+      }
       let mirrorTag = '';
       if (r.mirror_enabled && r.route_type !== 'l4') {
         try {
@@ -222,7 +232,7 @@
           ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div class="route-tags">
-          ${statusTag}${monitorTag}${cbTag}${debugTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
+          ${statusTag}${monitorTag}${cbTag}${debugTag}${botTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -310,6 +320,17 @@
       const createRetry = document.getElementById('create-route-retry')?.classList.contains('on') || false;
       const createCb = document.getElementById('create-route-circuit-breaker')?.classList.contains('on') || false;
       const createDebug = document.getElementById('create-route-debug')?.classList.contains('on') || false;
+      const createBotBlocker = document.getElementById('create-route-bot-blocker')?.classList.contains('on') || false;
+      const createBotMode = document.getElementById('create-bot-blocker-mode')?.value || 'block';
+      let createBotConfig = null;
+      if (createBotMode === 'redirect') {
+        createBotConfig = JSON.stringify({ url: document.getElementById('create-bot-blocker-url')?.value || '' });
+      } else if (createBotMode === 'custom') {
+        createBotConfig = JSON.stringify({
+          message: document.getElementById('create-bot-blocker-message')?.value || '',
+          status_code: parseInt(document.getElementById('create-bot-blocker-status')?.value) || 403,
+        });
+      }
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         compress_enabled: createCompress,
@@ -329,6 +350,9 @@
         circuit_breaker_threshold: createCb ? parseInt(document.getElementById('create-cb-threshold')?.value || '5', 10) : 5,
         circuit_breaker_timeout: createCb ? parseInt(document.getElementById('create-cb-timeout')?.value || '30', 10) : 30,
         debug_enabled: createDebug,
+        bot_blocker_enabled: createBotBlocker,
+        bot_blocker_mode: createBotBlocker ? createBotMode : 'block',
+        bot_blocker_config: createBotBlocker ? createBotConfig : null,
         mirror_enabled: document.getElementById('create-route-mirror')?.classList.contains('on') ? 1 : 0,
         mirror_targets: createMirrorTargets.length > 0 ? createMirrorTargets : null,
       };
@@ -904,6 +928,25 @@
       debugToggle.setAttribute('aria-checked', route.debug_enabled ? 'true' : 'false');
       if (debugContainer) debugContainer.style.display = route.debug_enabled ? '' : 'none';
     }
+    // Bot blocker toggle + mode
+    var bbToggle = document.getElementById('edit-route-bot-blocker');
+    var bbFields = document.getElementById('edit-bot-blocker-fields');
+    if (bbToggle) {
+      if (route.bot_blocker_enabled) bbToggle.classList.add('on'); else bbToggle.classList.remove('on');
+      bbToggle.setAttribute('aria-checked', route.bot_blocker_enabled ? 'true' : 'false');
+      if (bbFields) bbFields.style.display = route.bot_blocker_enabled ? '' : 'none';
+    }
+    var bbModeSelect = document.getElementById('edit-bot-blocker-mode');
+    if (bbModeSelect) bbModeSelect.value = route.bot_blocker_mode || 'block';
+    var bbCfg = {};
+    try { bbCfg = route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : {}; } catch {}
+    var bbUrl = document.getElementById('edit-bot-blocker-url');
+    if (bbUrl) bbUrl.value = bbCfg.url || '';
+    var bbMsg = document.getElementById('edit-bot-blocker-message');
+    if (bbMsg) bbMsg.value = bbCfg.message || '';
+    var bbStatus = document.getElementById('edit-bot-blocker-status');
+    if (bbStatus) bbStatus.value = bbCfg.status_code || 403;
+    updateBotBlockerFields('edit');
     var cbThreshold = document.getElementById('edit-cb-threshold');
     if (cbThreshold) cbThreshold.value = route.circuit_breaker_threshold || 5;
     var cbTimeout = document.getElementById('edit-cb-timeout');
@@ -1044,6 +1087,17 @@
         const stickyEnabled = document.getElementById('edit-route-sticky')?.classList.contains('on') || false;
         const cbEnabled = document.getElementById('edit-route-circuit-breaker')?.classList.contains('on') || false;
         const debugEnabled = document.getElementById('edit-route-debug')?.classList.contains('on') || false;
+        const botBlockerEnabled = document.getElementById('edit-route-bot-blocker')?.classList.contains('on') || false;
+        const botBlockerMode = document.getElementById('edit-bot-blocker-mode')?.value || 'block';
+        let botBlockerConfig = null;
+        if (botBlockerMode === 'redirect') {
+          botBlockerConfig = JSON.stringify({ url: document.getElementById('edit-bot-blocker-url')?.value || '' });
+        } else if (botBlockerMode === 'custom') {
+          botBlockerConfig = JSON.stringify({
+            message: document.getElementById('edit-bot-blocker-message')?.value || '',
+            status_code: parseInt(document.getElementById('edit-bot-blocker-status')?.value) || 403,
+          });
+        }
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
           compress_enabled: compressEnabled,
@@ -1071,6 +1125,9 @@
           circuit_breaker_threshold: cbEnabled ? parseInt(document.getElementById('edit-cb-threshold')?.value || '5', 10) : 5,
           circuit_breaker_timeout: cbEnabled ? parseInt(document.getElementById('edit-cb-timeout')?.value || '30', 10) : 30,
           debug_enabled: debugEnabled,
+          bot_blocker_enabled: botBlockerEnabled,
+          bot_blocker_mode: botBlockerEnabled ? botBlockerMode : undefined,
+          bot_blocker_config: botBlockerEnabled ? botBlockerConfig : undefined,
           mirror_enabled: document.getElementById('edit-route-mirror')?.classList.contains('on') ? 1 : 0,
           mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
         };
@@ -2021,6 +2078,44 @@
       }, 0);
     });
   }
+
+  // Bot blocker toggle (create)
+  var createBbToggle = document.getElementById('create-route-bot-blocker');
+  var createBbFields = document.getElementById('create-bot-blocker-fields');
+  if (createBbToggle) {
+    createBbToggle.classList.remove('on');
+    createBbToggle.addEventListener('click', function() {
+      setTimeout(function() {
+        if (createBbFields) createBbFields.style.display = createBbToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
+    });
+  }
+
+  // Bot blocker toggle (edit)
+  var editBbToggle = document.getElementById('edit-route-bot-blocker');
+  var editBbFields = document.getElementById('edit-bot-blocker-fields');
+  if (editBbToggle && editBbFields) {
+    editBbToggle.addEventListener('click', function() {
+      setTimeout(function() {
+        editBbFields.style.display = editBbToggle.classList.contains('on') ? '' : 'none';
+      }, 0);
+    });
+  }
+
+  // Mode-switch field visibility helper
+  function updateBotBlockerFields(prefix) {
+    var mode = document.getElementById(prefix + '-bot-blocker-mode')?.value || 'block';
+    var redirectDiv = document.getElementById(prefix + '-bot-blocker-redirect');
+    var customDiv = document.getElementById(prefix + '-bot-blocker-custom');
+    if (redirectDiv) redirectDiv.style.display = mode === 'redirect' ? '' : 'none';
+    if (customDiv) customDiv.style.display = mode === 'custom' ? '' : 'none';
+  }
+
+  // Mode change listeners
+  var createBbMode = document.getElementById('create-bot-blocker-mode');
+  if (createBbMode) createBbMode.addEventListener('change', function() { updateBotBlockerFields('create'); });
+  var editBbMode = document.getElementById('edit-bot-blocker-mode');
+  if (editBbMode) editBbMode.addEventListener('change', function() { updateBotBlockerFields('edit'); });
 
   // Trace polling system
   var traceInterval = null;
