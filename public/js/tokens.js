@@ -6,6 +6,23 @@
   var tokensList = document.getElementById('tokens-list');
   if (!tokensList) return;
 
+  // ─── Full-access master toggle ─────────────────────────
+  var fullAccessCb = document.getElementById('scope-full-access');
+  var resourceCbs = document.querySelectorAll('.token-scope-resource');
+  var resourceSection = document.getElementById('token-scope-resources');
+
+  if (fullAccessCb) {
+    fullAccessCb.addEventListener('change', function () {
+      resourceCbs.forEach(function (cb) {
+        cb.checked = fullAccessCb.checked;
+        cb.disabled = fullAccessCb.checked;
+      });
+      if (resourceSection) {
+        resourceSection.style.opacity = fullAccessCb.checked ? '0.5' : '1';
+      }
+    });
+  }
+
   // ─── Expiry select toggle ──────────────────────────────
   var expiresSelect = document.getElementById('token-expires');
   var expiresCustom = document.getElementById('token-expires-custom');
@@ -145,11 +162,15 @@
         return;
       }
 
-      // Collect scopes
+      // Collect scopes — full-access alone is sufficient
       var scopes = [];
-      document.querySelectorAll('.token-scope-cb:checked').forEach(function (cb) {
-        scopes.push(cb.value);
-      });
+      if (fullAccessCb && fullAccessCb.checked) {
+        scopes.push('full-access');
+      } else {
+        document.querySelectorAll('.token-scope-cb:checked').forEach(function (cb) {
+          scopes.push(cb.value);
+        });
+      }
       if (scopes.length === 0) {
         showMessage('tokens-message', GC.t['error.tokens.scopes_required'] || 'At least one scope is required', 'error');
         return;
@@ -220,7 +241,8 @@
 
           // Reset form
           document.getElementById('token-name').value = '';
-          document.querySelectorAll('.token-scope-cb:checked').forEach(function (cb) { cb.checked = false; });
+          document.querySelectorAll('.token-scope-cb').forEach(function (cb) { cb.checked = false; cb.disabled = false; });
+          if (resourceSection) resourceSection.style.opacity = '1';
           expiresSelect.value = '';
           expiresCustom.style.display = 'none';
 

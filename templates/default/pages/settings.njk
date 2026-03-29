@@ -588,43 +588,65 @@
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label">{{ t('tokens.scopes') }}</label>
-          <div id="token-scopes" style="display:flex;flex-wrap:wrap;gap:6px">
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="read-only" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_read_only') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="full-access" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_full_access') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="peers" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_peers') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="routes" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_routes') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="settings" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_settings') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="webhooks" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_webhooks') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="logs" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_logs') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="system" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_system') }}
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              <input type="checkbox" value="backup" class="token-scope-cb" style="accent-color:var(--accent)">
-              {{ t('tokens.scope_backup') }}
-            </label>
+          <div id="token-scopes" style="display:flex;flex-direction:column;gap:8px">
+            {# ── Access Level ── #}
+            <div>
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_access') }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="full-access" class="token-scope-cb" id="scope-full-access" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_full_access') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="read-only" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_read_only') }}
+                </label>
+              </div>
+            </div>
+            {# ── Resources ── #}
+            <div id="token-scope-resources">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_resources') }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="peers" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_peers') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="routes" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_routes') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="settings" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_settings') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="webhooks" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_webhooks') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="logs" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_logs') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="system" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_system') }}
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="backup" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_backup') }}
+                </label>
+              </div>
+            </div>
+            {# ── Integration ── #}
+            <div>
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_integration') }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                  <input type="checkbox" value="client" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
+                  {{ t('tokens.scope_client') }}
+                </label>
+              </div>
+            </div>
           </div>
         </div>
         <div class="form-group" style="margin-bottom:0">

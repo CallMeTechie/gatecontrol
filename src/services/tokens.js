@@ -8,7 +8,7 @@ const activity = require('./activity');
 const TOKEN_PREFIX = 'gc_';
 const TOKEN_BYTES = 48;
 
-const VALID_SCOPES = ['read-only', 'full-access', 'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup'];
+const VALID_SCOPES = ['read-only', 'full-access', 'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup', 'client'];
 
 /**
  * Map API path prefixes to required scopes
@@ -24,7 +24,7 @@ const SCOPE_MAP = {
   '/api/v1/wg': 'system',
   '/api/v1/caddy': 'system',
   '/api/v1/smtp': 'settings',
-  '/api/v1/client': 'peers',
+  '/api/v1/client': 'client',
 };
 
 /**
