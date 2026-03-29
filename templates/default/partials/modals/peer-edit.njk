@@ -25,6 +25,13 @@
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
         <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>
       </div>
+      {% if license.features.custom_dns %}
+      <div class="form-group">
+        <label class="form-label">{{ t('peers.dns_override') }}</label>
+        <input type="text" id="edit-peer-dns" placeholder="{{ t('peers.dns_placeholder') }}" style="font-family:var(--font-mono)">
+        <small class="form-hint">{{ t('peers.dns_override_hint') }}</small>
+      </div>
+      {% endif %}
       <div class="form-group">
         <label class="form-label" for="edit-peer-expires">{{ t('peers.expires') }}</label>
         <select id="edit-peer-expires">

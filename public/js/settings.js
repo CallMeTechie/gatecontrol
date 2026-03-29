@@ -989,3 +989,34 @@
     });
   }
 })();
+
+// ─── DNS Settings ─────────────────────────────
+(function () {
+  var dnsInput = document.getElementById('settings-dns-input');
+  var dnsSaveBtn = document.getElementById('btn-dns-save');
+
+  if (dnsInput) {
+    api.get('/api/v1/settings/dns').then(function(data) {
+      if (data.ok) dnsInput.value = data.data.dns || '';
+    }).catch(function() {});
+  }
+
+  if (dnsSaveBtn) {
+    dnsSaveBtn.addEventListener('click', async function() {
+      var btn = this;
+      btnLoading(btn);
+      try {
+        var data = await api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() });
+        if (data.ok) {
+          showToast(GC.t['settings.dns_saved'] || 'DNS settings saved');
+        } else {
+          showToast(data.error || 'Error', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      } finally {
+        btnReset(btn);
+      }
+    });
+  }
+})();

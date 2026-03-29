@@ -401,8 +401,9 @@
 
     btnLoading(btn);
     try {
+      var dns = document.getElementById('add-peer-dns') ? document.getElementById('add-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('add-peer-expires', 'add-peer-expires-date');
-      var data = await api.post('/api/peers', { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id });
+      var data = await api.post('/api/peers', { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined });
       if (data.ok) {
         clearFieldErrors();
         closeModal('modal-add-peer');
@@ -446,6 +447,9 @@
       editExpiresDate.value = '';
     }
 
+    var editDns = document.getElementById('edit-peer-dns');
+    if (editDns) editDns.value = peer.dns || '';
+
     hideError('edit-peer-error');
     clearFieldErrors();
     openModal('modal-edit-peer');
@@ -467,8 +471,9 @@
 
     btnLoading(btn);
     try {
+      var dns = document.getElementById('edit-peer-dns') ? document.getElementById('edit-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('edit-peer-expires', 'edit-peer-expires-date');
-      var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id });
+      var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined });
       if (data.ok) {
         clearFieldErrors();
         closeModal('modal-edit-peer');

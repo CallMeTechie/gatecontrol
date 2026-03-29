@@ -652,4 +652,45 @@ router.put('/metrics', (req, res) => {
   }
 });
 
+// GET /settings/dns — read custom DNS setting
+router.get('/dns', (req, res) => {
+  const config = require('../../../config/default');
+  res.json({
+    ok: true,
+    data: {
+      dns: settings.get('custom_dns') || config.wireguard.dns.join(','),
+      is_custom: !!settings.get('custom_dns'),
+      default_dns: config.wireguard.dns.join(','),
+    },
+  });
+});
+
+// PUT /settings/dns — update custom DNS setting
+router.put('/dns', requireFeature('custom_dns'), (req, res) => {
+  try {
+    const { dns } = req.body;
+    if (dns !== undefined) {
+      const value = String(dns).trim();
+      if (value) {
+        const ips = value.split(',').map(s => s.trim()).filter(Boolean);
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        for (const ip of ips) {
+          if (!ipv4Regex.test(ip)) {
+            return res.status(400).json({ ok: false, error: 'Invalid IP address: ' + ip });
+          }
+        }
+        settings.set('custom_dns', ips.join(','));
+      } else {
+        settings.set('custom_dns', '');
+      }
+    }
+    activity.log('dns_settings_updated', 'DNS settings updated', {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 module.exports = router;

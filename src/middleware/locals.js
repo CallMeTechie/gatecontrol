@@ -13,6 +13,7 @@ function injectLocals(req, res, next) {
   res.locals.wgSubnet = config.wireguard.subnet;
   res.locals.wgGatewayIp = config.wireguard.gatewayIp;
   res.locals.wgInterface = config.wireguard.interface;
+  res.locals.wgDns = config.wireguard.dns.join(',');
   res.locals.currentPath = req.path;
   res.locals.theme = config.theme.defaultTheme;
 
