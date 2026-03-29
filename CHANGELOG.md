@@ -4,6 +4,20 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Features
+- **Client Scope for API Tokens** — New dedicated `client` scope restricts tokens to `/api/v1/client/*` endpoints only. Windows/Desktop clients no longer need the overly broad `peers` scope.
+- **Token Permissions UI Restructured** — Scopes are now grouped into three sections: Access Level, Resources, and Integration. Full-access acts as a master toggle that auto-selects and disables all other checkboxes — no more manually checking every option.
+
+### Tests
+- **Token Scope Tests** — New `tests/tokens.test.js` with 33 tests covering scope validation, `checkScope` logic (full-access, read-only, client, resource scopes, edge cases), token CRUD API, and token-based auth enforcement.
+
+### Chore
+- Removed `LizenzDokumentation/`, `demo/`, `docs/superpowers/` from repository (added to `.gitignore`)
+
+---
+
 ## [1.5.2] — 2026-03-24
 
 ### Improvements
