@@ -20,6 +20,7 @@ All API endpoints are available at `/api/v1/*` with a backward-compatible `/api/
 - [System](#system)
 - [Webhooks](#webhooks)
 - [API Tokens](#api-tokens)
+- [Desktop Client API](#desktop-client-api)
 - [Health Check](#health-check)
 
 ---
@@ -55,6 +56,10 @@ curl -H "Authorization: Bearer gc_your_token_here" \
 # Using X-API-Token header
 curl -H "X-API-Token: gc_your_token_here" \
   https://gate.example.com/api/v1/peers
+
+# Using X-API-Key header (used by desktop clients)
+curl -H "X-API-Key: gc_your_token_here" \
+  https://gate.example.com/api/v1/client/ping
 ```
 
 Token-authenticated requests **do not require CSRF tokens**.
@@ -803,6 +808,89 @@ DELETE /api/v1/tokens/:id
 ```
 
 **Auth:** Token management endpoints require **session authentication only**. API tokens cannot create or revoke other tokens (prevents privilege escalation).
+
+---
+
+## Desktop Client API
+
+Endpoints for the GateControl Windows/macOS/Linux desktop client. All endpoints require an API token with `peers` scope.
+
+For full documentation see [documentation/CLIENT-API.md](documentation/CLIENT-API.md).
+
+### Ping
+
+```
+GET /api/v1/client/ping
+```
+
+Returns server version and timestamp. Used to verify token and connectivity.
+
+### Register Client
+
+```
+POST /api/v1/client/register
+```
+
+```json
+{
+  "hostname": "DESKTOP-ABC123",
+  "platform": "win32 10.0.22631",
+  "clientVersion": "1.0.0"
+}
+```
+
+Creates a new peer from the hostname and returns the peer ID, WireGuard config, and config hash. The peer ID must be stored and sent with all subsequent requests.
+
+### Fetch Config
+
+```
+GET /api/v1/client/config?peerId=5
+```
+
+Returns the current WireGuard configuration and SHA-256 hash.
+
+### Check Config Update
+
+```
+GET /api/v1/client/config/check?peerId=5&hash=a1b2c3...
+```
+
+Returns `{ updated: false }` if unchanged, or `{ updated: true, config, hash }` if the config has been modified server-side.
+
+### Heartbeat
+
+```
+POST /api/v1/client/heartbeat
+```
+
+```json
+{
+  "peerId": 5,
+  "connected": true,
+  "rxBytes": 1048576,
+  "txBytes": 524288,
+  "uptime": 3600,
+  "hostname": "DESKTOP-ABC123"
+}
+```
+
+### Report Status
+
+```
+POST /api/v1/client/status
+```
+
+```json
+{
+  "peerId": 5,
+  "status": "connected",
+  "timestamp": "2026-03-29T15:30:00.000Z"
+}
+```
+
+Status values: `connected`, `disconnected`, `reconnecting`, `error`.
+
+**Token scope:** `peers`
 
 ---
 
