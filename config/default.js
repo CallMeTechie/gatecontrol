@@ -53,7 +53,7 @@ const config = {
     persistentKeepalive: envInt('GC_WG_PERSISTENT_KEEPALIVE', 25),
     postUp: env('GC_WG_POST_UP', ''),
     postDown: env('GC_WG_POST_DOWN', ''),
-    mtu: env('GC_WG_MTU', ''),
+    mtu: env('GC_WG_MTU', '1420'),
   },
 
   caddy: {

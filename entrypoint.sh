@@ -59,9 +59,11 @@ if [ ! -f "$WG_DATA_CONF" ]; then
 
   if [ -z "$POST_UP" ]; then
     POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_UP_MSS="iptables -t mangle -A FORWARD -i ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; iptables -t mangle -A FORWARD -o ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
   fi
   if [ -z "$POST_DOWN" ]; then
     POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_DOWN_MSS="iptables -t mangle -D FORWARD -i ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; iptables -t mangle -D FORWARD -o ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
   fi
 
   echo "» Writing WireGuard config to ${WG_DATA_CONF}..."
@@ -71,12 +73,13 @@ Address = ${GC_WG_GATEWAY_IP}/$(echo "$GC_WG_SUBNET" | cut -d'/' -f2)
 ListenPort = ${GC_WG_PORT}
 PrivateKey = ${PRIVATE_KEY}
 PostUp = ${POST_UP}
+PostUp = ${POST_UP_MSS:-}
 PostDown = ${POST_DOWN}
+PostDown = ${POST_DOWN_MSS:-}
 EOF
 
-  if [ -n "$GC_WG_MTU" ]; then
-    echo "MTU = ${GC_WG_MTU}" >> "$WG_DATA_CONF"
-  fi
+  WG_MTU="${GC_WG_MTU:-1420}"
+  echo "MTU = ${WG_MTU}" >> "$WG_DATA_CONF"
 
   chmod 600 "$WG_DATA_CONF"
   echo "» WireGuard config generated (pubkey: ${PUBLIC_KEY})"
