@@ -7,3 +7,5 @@ docs/
 *.log
 .DS_Store
 gatecontrol-image.tar.gz
+LizenzDokumentation/
+demo/
