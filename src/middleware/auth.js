@@ -23,6 +23,10 @@ function extractToken(req) {
   const apiToken = req.headers['x-api-token'];
   if (apiToken && apiToken.startsWith('gc_')) return apiToken;
 
+  // Check X-API-Key: gc_xxx (used by GateControl Windows/Desktop clients)
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey && apiKey.startsWith('gc_')) return apiKey;
+
   return null;
 }
 

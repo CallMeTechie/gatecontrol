@@ -369,6 +369,11 @@
   "error.peers.name_exists": "Ein Peer mit diesem Namen existiert bereits",
   "error.peers.no_ips": "Keine verfügbaren IP-Adressen im Subnetz",
 
+  "error.client.hostname_required": "Hostname ist erforderlich",
+  "error.client.invalid_hostname": "Ungültiger Hostname für Peer-Name",
+  "error.client.register_failed": "Client-Registrierung fehlgeschlagen",
+  "error.client.peer_id_required": "Peer-ID ist erforderlich",
+
   "error.routes.list": "Routen konnten nicht geladen werden",
   "error.routes.get": "Route konnte nicht geladen werden",
   "error.routes.domain_invalid": "Ungültiges Domain-Format",

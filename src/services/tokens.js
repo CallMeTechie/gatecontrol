@@ -24,6 +24,7 @@ const SCOPE_MAP = {
   '/api/v1/wg': 'system',
   '/api/v1/caddy': 'system',
   '/api/v1/smtp': 'settings',
+  '/api/v1/client': 'peers',
 };
 
 /**

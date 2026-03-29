@@ -31,5 +31,6 @@ router.use('/caddy', require('./caddy'));
 router.use('/webhooks', require('./webhooks'));
 router.use('/tokens', require('./tokens'));
 router.use('/license', require('./license'));
+router.use('/client', require('./client'));
 
 module.exports = router;
