@@ -40,6 +40,17 @@ async function start() {
       url: config.app.baseUrl,
     }, 'Server listening');
 
+    // Sync WireGuard config from DB on startup (ensures peers survive manual config edits)
+    setTimeout(async () => {
+      try {
+        const { rewriteWgConfig } = require('./services/peers');
+        await rewriteWgConfig();
+        logger.info('WireGuard config synced from database on startup');
+      } catch (err) {
+        logger.warn({ error: err.message }, 'Could not sync WireGuard config on startup');
+      }
+    }, 2000);
+
     // Sync routes to Caddy on startup (with delay to let Caddy start)
     setTimeout(async () => {
       try {
