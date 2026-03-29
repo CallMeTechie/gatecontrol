@@ -13,9 +13,6 @@ All notable changes to GateControl are documented in this file.
 ### Tests
 - **Token Scope Tests** — New `tests/tokens.test.js` with 33 tests covering scope validation, `checkScope` logic (full-access, read-only, client, resource scopes, edge cases), token CRUD API, and token-based auth enforcement.
 
-### Chore
-- Removed `LizenzDokumentation/`, `demo/`, `docs/superpowers/` from repository (added to `.gitignore`)
-
 ---
 
 ## [1.5.2] — 2026-03-24
