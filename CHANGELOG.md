@@ -4,7 +4,7 @@ All notable changes to GateControl are documented in this file.
 
 ---
 
-## [Unreleased]
+## [1.6.0] — 2026-03-29
 
 ### Features
 - **Client Scope for API Tokens** — New dedicated `client` scope restricts tokens to `/api/v1/client/*` endpoints only. Windows/Desktop clients no longer need the overly broad `peers` scope.
