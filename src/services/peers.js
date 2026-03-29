@@ -283,7 +283,9 @@ async function getClientConfig(id) {
   } catch {}
 
   const ip = peer.allowed_ips.split('/')[0];
-  const dns = peer.dns || config.wireguard.dns.join(',');
+  const settings = require('./settings');
+  const customDns = settings.get('custom_dns');
+  const dns = peer.dns || customDns || config.wireguard.dns.join(',');
 
   let conf = `[Interface]
 PrivateKey = ${privateKey}

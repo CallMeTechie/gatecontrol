@@ -82,7 +82,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id } = req.body;
+    const { name, description, tags, expires_at, group_id, dns } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -94,7 +94,7 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null });
+    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null, dns });
     res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
