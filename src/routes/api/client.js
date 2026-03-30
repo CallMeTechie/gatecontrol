@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { Router } = require('express');
+const config = require('../../../config/default');
 const peers = require('../../services/peers');
 const routes = require('../../services/routes');
 const logger = require('../../utils/logger');
