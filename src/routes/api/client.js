@@ -468,6 +468,7 @@ router.get('/update/check', async (req, res) => {
       version: latestVersion,
       downloadUrl,
       fileName: installerAsset?.name || `GateControl-Setup-${latestVersion}.exe`,
+      fileSize: installerAsset?.size || null,
       releaseNotes: release.body || '',
     });
   } catch (err) {
