@@ -221,4 +221,175 @@ router.post('/status', (req, res) => {
   }
 });
 
+// ── Auto-Update ──────────────────────────────────────────────
+
+const https = require('node:https');
+const http = require('node:http');
+
+// Cache: { data, fetchedAt }
+let releaseCache = null;
+const CACHE_TTL = 3600000; // 1 hour
+
+const CLIENT_REPO = process.env.GC_CLIENT_REPO || 'CallMeTechie/GateControl-Windows-Client';
+const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
+
+/**
+ * Fetch latest release from GitHub API (cached 1h)
+ */
+async function fetchLatestRelease() {
+  if (releaseCache && (Date.now() - releaseCache.fetchedAt) < CACHE_TTL) {
+    return releaseCache.data;
+  }
+
+  const url = `https://api.github.com/repos/${CLIENT_REPO}/releases/latest`;
+  const headers = {
+    'User-Agent': 'GateControl-Server',
+    'Accept': 'application/vnd.github+json',
+  };
+  if (CLIENT_GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${CLIENT_GITHUB_TOKEN}`;
+  }
+
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers }, (res) => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          logger.warn({ statusCode: res.statusCode }, 'GitHub release API error');
+          return resolve(null);
+        }
+        try {
+          const data = JSON.parse(body);
+          releaseCache = { data, fetchedAt: Date.now() };
+          resolve(data);
+        } catch {
+          resolve(null);
+        }
+      });
+    }).on('error', (err) => {
+      logger.warn({ error: err.message }, 'GitHub release fetch failed');
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * GET /api/v1/client/update/check
+ * Query: ?version=1.2.1&platform=windows
+ * Returns: { ok, available, version?, downloadUrl?, releaseNotes? }
+ */
+router.get('/update/check', async (req, res) => {
+  try {
+    const clientVersion = req.query.version;
+    if (!clientVersion) {
+      return res.status(400).json({ ok: false, error: 'Version parameter required' });
+    }
+
+    const release = await fetchLatestRelease();
+    if (!release || !release.tag_name) {
+      return res.json({ ok: true, available: false });
+    }
+
+    const latestVersion = release.tag_name.replace(/^v/, '');
+
+    // Compare versions
+    if (!isNewerVersion(latestVersion, clientVersion)) {
+      return res.json({ ok: true, available: false });
+    }
+
+    // Find installer asset (.exe with "Setup" in name)
+    const installerAsset = (release.assets || []).find(a =>
+      a.name.endsWith('.exe') && a.name.includes('Setup')
+    );
+
+    // For private repos, proxy the download through the server
+    let downloadUrl = null;
+    if (installerAsset) {
+      downloadUrl = `${config.app.baseUrl}/api/v1/client/update/download`;
+    }
+
+    res.json({
+      ok: true,
+      available: true,
+      version: latestVersion,
+      downloadUrl,
+      fileName: installerAsset?.name || `GateControl-Setup-${latestVersion}.exe`,
+      releaseNotes: release.body || '',
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Update check failed');
+    res.status(500).json({ ok: false, error: 'Update check failed' });
+  }
+});
+
+/**
+ * GET /api/v1/client/update/download
+ * Proxies the installer download from GitHub (needed for private repos)
+ */
+router.get('/update/download', async (req, res) => {
+  try {
+    const release = await fetchLatestRelease();
+    if (!release) {
+      return res.status(404).json({ ok: false, error: 'No release found' });
+    }
+
+    const asset = (release.assets || []).find(a =>
+      a.name.endsWith('.exe') && a.name.includes('Setup')
+    );
+    if (!asset) {
+      return res.status(404).json({ ok: false, error: 'No installer asset found' });
+    }
+
+    // Redirect to browser_download_url for public repos
+    if (!CLIENT_GITHUB_TOKEN) {
+      return res.redirect(asset.browser_download_url);
+    }
+
+    // For private repos, proxy through GitHub API
+    const headers = {
+      'User-Agent': 'GateControl-Server',
+      'Accept': 'application/octet-stream',
+      'Authorization': `Bearer ${CLIENT_GITHUB_TOKEN}`,
+    };
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${asset.name}"`);
+    if (asset.size) res.setHeader('Content-Length', asset.size);
+
+    const proxyUrl = asset.url; // api.github.com URL (requires auth)
+
+    https.get(proxyUrl, { headers }, (ghRes) => {
+      // GitHub returns 302 redirect to S3
+      if (ghRes.statusCode === 302 && ghRes.headers.location) {
+        const redirectUrl = new URL(ghRes.headers.location);
+        const transport = redirectUrl.protocol === 'https:' ? https : http;
+        transport.get(ghRes.headers.location, (dlRes) => {
+          dlRes.pipe(res);
+        }).on('error', () => res.status(502).end());
+      } else if (ghRes.statusCode === 200) {
+        ghRes.pipe(res);
+      } else {
+        res.status(502).json({ ok: false, error: 'Download failed' });
+      }
+    }).on('error', () => res.status(502).end());
+  } catch (err) {
+    logger.error({ error: err.message }, 'Update download failed');
+    res.status(500).json({ ok: false, error: 'Download failed' });
+  }
+});
+
+/**
+ * Compare semver: returns true if latest > current
+ */
+function isNewerVersion(latest, current) {
+  const l = latest.split('.').map(Number);
+  const c = current.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((l[i] || 0) > (c[i] || 0)) return true;
+    if ((l[i] || 0) < (c[i] || 0)) return false;
+  }
+  return false;
+}
+
 module.exports = router;

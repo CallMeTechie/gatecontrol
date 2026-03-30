@@ -101,6 +101,11 @@ const config = {
     monitorTcp: envInt('GC_MONITOR_TCP_TIMEOUT', 5000),            // TCP health check timeout (ms)
   },
 
+  client: {
+    repo: env('GC_CLIENT_REPO', 'CallMeTechie/GateControl-Windows-Client'),
+    githubToken: env('GC_CLIENT_GITHUB_TOKEN', ''),
+  },
+
   license: {
     key: env('GC_LICENSE_KEY', ''),
     signingKey: env('GC_LICENSE_SIGNING_KEY', ''),
