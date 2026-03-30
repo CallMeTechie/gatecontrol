@@ -381,7 +381,7 @@ const http = require('node:http');
 
 // Cache: { data, fetchedAt }
 let releaseCache = null;
-const CACHE_TTL = 600000; // 10 minutes
+const CACHE_TTL = 120000; // 2 minutes
 
 const CLIENT_REPO = process.env.GC_CLIENT_REPO || 'CallMeTechie/GateControl-Windows-Client';
 const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
