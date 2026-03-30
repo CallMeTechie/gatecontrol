@@ -223,6 +223,41 @@ router.post('/status', (req, res) => {
   }
 });
 
+// ── Peer-Info ───────────────────────────────────────────────
+
+/**
+ * GET /api/v1/client/peer-info
+ * Returns peer details including expiry date
+ * Query: ?peerId=123
+ */
+router.get('/peer-info', (req, res) => {
+  try {
+    const peerId = req.query.peerId || req.headers['x-peer-id'];
+    if (!peerId) {
+      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
+    }
+
+    const peer = peers.getById(Number(peerId));
+    if (!peer) {
+      return res.status(404).json({ ok: false, error: 'Peer not found' });
+    }
+
+    res.json({
+      ok: true,
+      peer: {
+        id: peer.id,
+        name: peer.name,
+        enabled: peer.enabled === 1,
+        expiresAt: peer.expires_at || null,
+        createdAt: peer.created_at,
+      },
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get peer info');
+    res.status(500).json({ ok: false, error: 'Failed to get peer info' });
+  }
+});
+
 // ── Erreichbare Dienste ─────────────────────────────────────
 
 /**
