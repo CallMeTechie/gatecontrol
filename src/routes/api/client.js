@@ -280,6 +280,58 @@ router.get('/peer-info', (req, res) => {
   }
 });
 
+// ── Traffic-Verbrauch ───────────────────────────────────────
+
+/**
+ * GET /api/v1/client/traffic
+ * Returns traffic stats for a peer (total, 30d, 7d, 24h)
+ * Query: ?peerId=123
+ */
+router.get('/traffic', (req, res) => {
+  try {
+    const peerId = req.query.peerId || req.headers['x-peer-id'];
+    if (!peerId) {
+      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
+    }
+
+    const peer = peers.getById(Number(peerId));
+    if (!peer) {
+      return res.status(404).json({ ok: false, error: 'Peer not found' });
+    }
+
+    const db = getDb();
+
+    // Total from peers table
+    const totalRx = peer.total_rx || 0;
+    const totalTx = peer.total_tx || 0;
+
+    // Aggregated from snapshots for time periods
+    const periods = [
+      { key: 'last24h', interval: '-24 hours' },
+      { key: 'last7d', interval: '-7 days' },
+      { key: 'last30d', interval: '-30 days' },
+    ];
+
+    const traffic = {
+      total: { rx: totalRx, tx: totalTx },
+    };
+
+    for (const { key, interval } of periods) {
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(download_bytes), 0) as rx, COALESCE(SUM(upload_bytes), 0) as tx
+        FROM peer_traffic_snapshots
+        WHERE peer_id = ? AND recorded_at >= datetime('now', ?)
+      `).get(Number(peerId), interval);
+      traffic[key] = { rx: row.rx, tx: row.tx };
+    }
+
+    res.json({ ok: true, traffic });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get traffic stats');
+    res.status(500).json({ ok: false, error: 'Failed to get traffic stats' });
+  }
+});
+
 // ── Erreichbare Dienste ─────────────────────────────────────
 
 /**
