@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { Router } = require('express');
 const peers = require('../../services/peers');
+const routes = require('../../services/routes');
 const logger = require('../../utils/logger');
 const activity = require('../../services/activity');
 const { validatePeerName } = require('../../utils/validate');
@@ -219,6 +220,48 @@ router.post('/status', (req, res) => {
     logger.error({ error: err.message }, 'Status report failed');
     res.status(500).json({ ok: false, error: 'Status processing failed' });
   }
+});
+
+// ── Erreichbare Dienste ─────────────────────────────────────
+
+/**
+ * GET /api/v1/client/services
+ * Returns list of configured HTTP routes (services) the client can access
+ */
+router.get('/services', (req, res) => {
+  try {
+    const allRoutes = routes.getAll({ type: 'http' });
+
+    const services = allRoutes
+      .filter(r => r.enabled !== 0)
+      .map(r => ({
+        id: r.id,
+        name: r.name || r.domain,
+        domain: r.domain,
+        url: `https://${r.domain}`,
+        target: r.target_host && r.target_port ? `${r.target_host}:${r.target_port}` : null,
+        hasAuth: r.route_auth_enabled === 1,
+        tls: r.tls_mode || 'auto',
+      }));
+
+    res.json({ ok: true, services });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list services');
+    res.status(500).json({ ok: false, error: 'Failed to list services' });
+  }
+});
+
+/**
+ * GET /api/v1/client/dns-check
+ * Returns the server's public IP so the client can verify DNS goes through VPN
+ */
+router.get('/dns-check', (req, res) => {
+  const clientIp = req.ip || req.connection?.remoteAddress;
+  res.json({
+    ok: true,
+    serverIp: clientIp,
+    vpnSubnet: config.wireguard.subnet,
+  });
 });
 
 // ── Auto-Update ──────────────────────────────────────────────
