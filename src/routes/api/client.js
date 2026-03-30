@@ -39,53 +39,75 @@ router.get('/ping', (req, res) => {
  */
 router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { hostname, platform, clientVersion } = req.body;
+    const { hostname, platform, clientVersion, peerId: existingPeerId } = req.body;
 
     if (!hostname || typeof hostname !== 'string') {
       return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.hostname_required') : 'Hostname is required' });
     }
 
-    // Generate a unique peer name from hostname
-    const baseName = hostname.replace(/[^\w.\-]/g, '_').substring(0, 50);
-    let peerName = baseName;
     const db = getDb();
-    let attempt = 0;
+    let peer = null;
+    let isNew = false;
 
-    // Ensure unique name
-    while (db.prepare('SELECT id FROM peers WHERE name = ?').get(peerName)) {
-      attempt++;
-      peerName = `${baseName}-${attempt}`;
+    // 1. Check if client already has a registered peerId
+    if (existingPeerId) {
+      peer = peers.getById(Number(existingPeerId));
+      if (peer) {
+        logger.info({ peerId: peer.id, hostname }, 'Client reconnected with existing peer');
+      }
     }
 
-    const nameErr = validatePeerName(peerName);
-    if (nameErr) {
-      return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.invalid_hostname') : 'Invalid hostname for peer name' });
+    // 2. Check if a peer with same hostname already exists
+    if (!peer) {
+      const baseName = hostname.replace(/[^\w.\-]/g, '_').substring(0, 50);
+      const existing = db.prepare('SELECT * FROM peers WHERE name = ?').get(baseName);
+      if (existing) {
+        peer = existing;
+        logger.info({ peerId: peer.id, hostname }, 'Client matched existing peer by hostname');
+      }
     }
 
-    // Create the peer
-    const peer = await peers.create({
-      name: peerName,
-      description: `Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`,
-      tags: 'desktop-client',
-    });
+    // 3. Create new peer only if none found
+    if (!peer) {
+      const baseName = hostname.replace(/[^\w.\-]/g, '_').substring(0, 50);
+      const nameErr = validatePeerName(baseName);
+      if (nameErr) {
+        return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.invalid_hostname') : 'Invalid hostname for peer name' });
+      }
+
+      peer = await peers.create({
+        name: baseName,
+        description: `Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`,
+        tags: 'desktop-client',
+      });
+      isNew = true;
+
+      activity.log('client_registered', `Desktop client "${baseName}" registered`, {
+        source: 'api',
+        severity: 'info',
+        details: { peerId: peer.id, hostname, platform, clientVersion },
+      });
+
+      logger.info({ peerId: peer.id, hostname, platform }, 'New desktop client registered');
+    }
+
+    // Update description with latest client version
+    if (!isNew) {
+      try {
+        db.prepare('UPDATE peers SET description = ? WHERE id = ?')
+          .run(`Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`, peer.id);
+      } catch {}
+    }
 
     // Generate client config
-    const config = await peers.getClientConfig(peer.id);
-    const hash = hashConfig(config);
+    const peerConfig = await peers.getClientConfig(peer.id);
+    const hash = hashConfig(peerConfig);
 
-    activity.log('client_registered', `Desktop client "${peerName}" registered`, {
-      source: 'api',
-      severity: 'info',
-      details: { peerId: peer.id, hostname, platform, clientVersion },
-    });
-
-    logger.info({ peerId: peer.id, hostname, platform }, 'Desktop client registered');
-
-    res.status(201).json({
+    res.status(isNew ? 201 : 200).json({
       ok: true,
       peerId: peer.id,
-      peerName,
-      config,
+      peerName: peer.name,
+      config: peerConfig,
       hash,
     });
   } catch (err) {
