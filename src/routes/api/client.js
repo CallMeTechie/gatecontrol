@@ -32,6 +32,25 @@ router.get('/ping', (req, res) => {
 });
 
 /**
+ * GET /api/v1/client/permissions
+ * Returns the scopes/permissions of the current token
+ */
+router.get('/permissions', (req, res) => {
+  const scopes = req.tokenScopes || [];
+  const hasScope = (s) => scopes.includes('full-access') || scopes.includes(s);
+
+  res.json({
+    ok: true,
+    permissions: {
+      services: hasScope('client:services'),
+      traffic: hasScope('client:traffic'),
+      dns: hasScope('client:dns'),
+    },
+    scopes,
+  });
+});
+
+/**
  * POST /api/v1/client/register
  * Register a desktop client as a new peer
  * Body: { hostname, platform, clientVersion }

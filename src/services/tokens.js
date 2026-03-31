@@ -8,24 +8,35 @@ const activity = require('./activity');
 const TOKEN_PREFIX = 'gc_';
 const TOKEN_BYTES = 48;
 
-const VALID_SCOPES = ['read-only', 'full-access', 'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup', 'client'];
+const VALID_SCOPES = [
+  'read-only', 'full-access',
+  'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup',
+  'client', 'client:services', 'client:traffic', 'client:dns',
+];
 
 /**
  * Map API path prefixes to required scopes
+ * Order matters: more specific paths must come first
  */
-const SCOPE_MAP = {
-  '/api/v1/peers': 'peers',
-  '/api/v1/routes': 'routes',
-  '/api/v1/settings': 'settings',
-  '/api/v1/webhooks': 'webhooks',
-  '/api/v1/logs': 'logs',
-  '/api/v1/system': 'system',
-  '/api/v1/dashboard': 'read-only',
-  '/api/v1/wg': 'system',
-  '/api/v1/caddy': 'system',
-  '/api/v1/smtp': 'settings',
-  '/api/v1/client': 'client',
-};
+const SCOPE_MAP = [
+  // Client sub-scopes (specific paths first)
+  ['/api/v1/client/services', 'client:services'],
+  ['/api/v1/client/traffic', 'client:traffic'],
+  ['/api/v1/client/dns-check', 'client:dns'],
+  // Client base (ping, register, config, heartbeat, status, peer-info, update)
+  ['/api/v1/client', 'client'],
+  // Server resource scopes
+  ['/api/v1/peers', 'peers'],
+  ['/api/v1/routes', 'routes'],
+  ['/api/v1/settings', 'settings'],
+  ['/api/v1/webhooks', 'webhooks'],
+  ['/api/v1/logs', 'logs'],
+  ['/api/v1/system', 'system'],
+  ['/api/v1/dashboard', 'read-only'],
+  ['/api/v1/wg', 'system'],
+  ['/api/v1/caddy', 'system'],
+  ['/api/v1/smtp', 'settings'],
+];
 
 /**
  * Hash a raw token string with SHA-256
@@ -68,8 +79,8 @@ function checkScope(scopes, path, method) {
   // read-only allows GET on any endpoint
   if (scopes.includes('read-only') && method === 'GET') return true;
 
-  // Check per-resource scopes
-  for (const [prefix, scope] of Object.entries(SCOPE_MAP)) {
+  // Check per-resource scopes (ordered: specific paths first)
+  for (const [prefix, scope] of SCOPE_MAP) {
     if (path.startsWith(prefix)) {
       return scopes.includes(scope);
     }

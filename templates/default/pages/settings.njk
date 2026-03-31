@@ -607,44 +607,70 @@
             <div id="token-scope-resources">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_resources') }}</div>
               <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_peers_desc') }}">
                   <input type="checkbox" value="peers" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_peers') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_routes_desc') }}">
                   <input type="checkbox" value="routes" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_routes') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_settings_desc') }}">
                   <input type="checkbox" value="settings" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_settings') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_webhooks_desc') }}">
                   <input type="checkbox" value="webhooks" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_webhooks') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_logs_desc') }}">
                   <input type="checkbox" value="logs" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_logs') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_system_desc') }}">
                   <input type="checkbox" value="system" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_system') }}
                 </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_backup_desc') }}">
                   <input type="checkbox" value="backup" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
                   {{ t('tokens.scope_backup') }}
                 </label>
               </div>
             </div>
-            {# ── Integration ── #}
+            {# ── Client App ── #}
             <div>
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_integration') }}</div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <label style="display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-                  <input type="checkbox" value="client" class="token-scope-cb token-scope-resource" style="accent-color:var(--accent)">
-                  {{ t('tokens.scope_client') }}
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">{{ t('tokens.scope_group_client') }}</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_client_desc') }}">
+                  <input type="checkbox" value="client" class="token-scope-cb token-scope-resource" id="scope-client" style="accent-color:var(--accent);margin-top:2px">
+                  <div>
+                    <div>{{ t('tokens.scope_client') }}</div>
+                    <div style="font-size:9px;color:var(--text-3);margin-top:1px">{{ t('tokens.scope_client_desc') }}</div>
+                  </div>
                 </label>
+                <div id="client-sub-scopes" style="margin-left:20px;display:flex;flex-direction:column;gap:4px">
+                  <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_client_services_desc') }}">
+                    <input type="checkbox" value="client:services" class="token-scope-cb token-scope-resource token-scope-client-sub" style="accent-color:var(--accent);margin-top:2px">
+                    <div>
+                      <div>{{ t('tokens.scope_client_services') }}</div>
+                      <div style="font-size:9px;color:var(--text-3);margin-top:1px">{{ t('tokens.scope_client_services_desc') }}</div>
+                    </div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_client_traffic_desc') }}">
+                    <input type="checkbox" value="client:traffic" class="token-scope-cb token-scope-resource token-scope-client-sub" style="accent-color:var(--accent);margin-top:2px">
+                    <div>
+                      <div>{{ t('tokens.scope_client_traffic') }}</div>
+                      <div style="font-size:9px;color:var(--text-3);margin-top:1px">{{ t('tokens.scope_client_traffic_desc') }}</div>
+                    </div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" title="{{ t('tokens.scope_client_dns_desc') }}">
+                    <input type="checkbox" value="client:dns" class="token-scope-cb token-scope-resource token-scope-client-sub" style="accent-color:var(--accent);margin-top:2px">
+                    <div>
+                      <div>{{ t('tokens.scope_client_dns') }}</div>
+                      <div style="font-size:9px;color:var(--text-3);margin-top:1px">{{ t('tokens.scope_client_dns_desc') }}</div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           </div>

@@ -20,7 +20,32 @@
       if (resourceSection) {
         resourceSection.style.opacity = fullAccessCb.checked ? '0.5' : '1';
       }
+      updateClientSubScopes();
     });
+  }
+
+  // ─── Client scope → sub-scopes toggle ─────────────────
+  var clientCb = document.getElementById('scope-client');
+  var clientSubScopes = document.getElementById('client-sub-scopes');
+  var clientSubCbs = document.querySelectorAll('.token-scope-client-sub');
+
+  function updateClientSubScopes() {
+    if (!clientCb || !clientSubScopes) return;
+    var enabled = clientCb.checked && !clientCb.disabled;
+    clientSubScopes.style.display = clientCb.checked ? '' : 'none';
+    clientSubCbs.forEach(function (cb) {
+      if (!enabled) {
+        cb.checked = false;
+        cb.disabled = true;
+      } else {
+        cb.disabled = false;
+      }
+    });
+  }
+
+  if (clientCb) {
+    clientCb.addEventListener('change', updateClientSubScopes);
+    updateClientSubScopes();
   }
 
   // ─── Expiry select toggle ──────────────────────────────
