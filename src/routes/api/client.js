@@ -74,7 +74,12 @@ function verifyMachineBinding(req, res) {
   const stored = token?.machine_fingerprint;
 
   if (!stored) {
-    res.status(403).json({ ok: false, error: req.t ? req.t('error.client.binding_not_registered') : 'Token is not bound. Register first.' });
+    // First request with binding active — bind the fingerprint now
+    if (fingerprint && FINGERPRINT_RE.test(fingerprint)) {
+      tokens.bindMachineFingerprint(req.tokenId, fingerprint);
+      return true;
+    }
+    res.status(403).json({ ok: false, error: req.t ? req.t('error.client.fingerprint_required') : 'Machine fingerprint required' });
     return false;
   }
 
@@ -157,7 +162,19 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
         return res.status(404).json({ ok: false, error: 'Bound peer no longer exists' });
       }
 
-      if (!verifyMachineBinding(req, res)) return;
+      // Bind machine fingerprint on re-registration if not yet bound
+      if (isBindingActive(req)) {
+        const token = tokens.getById(req.tokenId);
+        if (!token.machine_fingerprint) {
+          const fp = req.headers['x-machine-fingerprint'];
+          if (!fp || !FINGERPRINT_RE.test(fp)) {
+            return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.fingerprint_invalid') : 'Valid machine fingerprint required for binding' });
+          }
+          tokens.bindMachineFingerprint(req.tokenId, fp);
+        } else {
+          if (!verifyMachineBinding(req, res)) return;
+        }
+      }
 
       // Update description with latest client version
       const db = getDb();
