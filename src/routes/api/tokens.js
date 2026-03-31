@@ -4,6 +4,7 @@ const { Router } = require('express');
 const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
 const { requireFeature } = require('../../middleware/license');
+const activity = require('../../services/activity');
 
 const router = Router();
 
@@ -31,7 +32,7 @@ router.post('/', requireFeature('api_tokens'), (req, res) => {
   }
 
   try {
-    const { name, scopes, expires_at } = req.body;
+    const { name, scopes, expires_at, machine_binding_enabled } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ ok: false, error: req.t('error.tokens.name_required') });
@@ -50,6 +51,7 @@ router.post('/', requireFeature('api_tokens'), (req, res) => {
       name: name.trim(),
       scopes,
       expiresAt: expires_at || null,
+      machineBindingEnabled: machine_binding_enabled || false,
     }, req.ip);
 
     res.status(201).json({
@@ -84,6 +86,38 @@ router.delete('/:id', (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
     }
     res.status(500).json({ ok: false, error: req.t('error.tokens.delete') });
+  }
+});
+
+/**
+ * DELETE /api/v1/tokens/:id/binding — Reset machine binding
+ */
+router.delete('/:id/binding', requireFeature('machine_binding'), (req, res) => {
+  if (req.tokenAuth) {
+    return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
+  }
+
+  try {
+    const id = parseInt(req.params.id, 10);
+    const token = tokens.getById(id);
+    if (!token) {
+      return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
+    }
+
+    tokens.resetMachineBinding(id);
+
+    activity.log('machine_binding_reset', `Machine binding for token "${token.name}" reset`, {
+      tokenId: id,
+    }, {
+      source: 'user',
+      ipAddress: req.ip,
+      severity: 'warning',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to reset machine binding');
+    res.status(500).json({ ok: false, error: req.t('error.tokens.binding_reset_failed') });
   }
 });
 
