@@ -7,6 +7,7 @@ const activity = require('./activity');
 
 const TOKEN_PREFIX = 'gc_';
 const TOKEN_BYTES = 48;
+const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
 
 const VALID_SCOPES = [
   'read-only', 'full-access',
@@ -64,6 +65,15 @@ function validateScopes(scopes) {
       return `Invalid scope: ${s}`;
     }
   }
+  return null;
+}
+
+/**
+ * Validate a machine fingerprint (SHA256 hex string)
+ */
+function validateFingerprint(fp) {
+  if (!fp || typeof fp !== 'string') return 'Fingerprint is required';
+  if (!FINGERPRINT_RE.test(fp)) return 'Invalid fingerprint format (expected SHA256 hex)';
   return null;
 }
 
@@ -221,6 +231,35 @@ function getBoundPeerId(tokenId) {
 }
 
 /**
+ * Store a machine fingerprint on a token (one-time binding)
+ * Returns true if bound, false if already bound to a different machine
+ */
+function bindMachineFingerprint(tokenId, fingerprint) {
+  const db = getDb();
+  const row = db.prepare('SELECT machine_fingerprint FROM api_tokens WHERE id = ?').get(tokenId);
+  if (!row) return false;
+
+  if (row.machine_fingerprint === fingerprint) return true;
+  if (row.machine_fingerprint != null) return false;
+
+  db.prepare('UPDATE api_tokens SET machine_fingerprint = ? WHERE id = ?').run(fingerprint, tokenId);
+  logger.info({ tokenId, fingerprint: fingerprint.substring(0, 8) }, 'Token bound to machine');
+  return true;
+}
+
+/**
+ * Clear machine fingerprint (admin reset)
+ */
+function resetMachineBinding(tokenId) {
+  const db = getDb();
+  const row = db.prepare('SELECT machine_fingerprint, name FROM api_tokens WHERE id = ?').get(tokenId);
+  if (!row) throw new Error('Token not found');
+  db.prepare('UPDATE api_tokens SET machine_fingerprint = NULL WHERE id = ?').run(tokenId);
+  logger.info({ tokenId }, 'Machine binding reset');
+  return true;
+}
+
+/**
  * Delete/revoke a token
  */
 function revoke(id, ipAddress) {
@@ -251,6 +290,8 @@ function formatToken(row) {
     name: row.name,
     scopes: typeof row.scopes === 'string' ? JSON.parse(row.scopes) : row.scopes,
     peer_id: row.peer_id || null,
+    machine_fingerprint: row.machine_fingerprint || null,
+    machine_binding_enabled: row.machine_binding_enabled === 1,
     created_at: row.created_at,
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
@@ -265,6 +306,9 @@ module.exports = {
   revoke,
   bindPeer,
   getBoundPeerId,
+  bindMachineFingerprint,
+  resetMachineBinding,
+  validateFingerprint,
   checkScope,
   validateScopes,
   hashToken,
