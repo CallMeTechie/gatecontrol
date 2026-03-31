@@ -473,6 +473,15 @@ const migrations = [
     sql: 'ALTER TABLE api_tokens ADD COLUMN peer_id INTEGER REFERENCES peers(id) ON DELETE SET NULL;',
     detect: (db) => hasColumn(db, 'api_tokens', 'peer_id'),
   },
+  {
+    version: 30,
+    name: 'add_machine_binding',
+    sql: `
+      ALTER TABLE api_tokens ADD COLUMN machine_fingerprint TEXT;
+      ALTER TABLE api_tokens ADD COLUMN machine_binding_enabled INTEGER DEFAULT 0;
+    `,
+    detect: (db) => hasColumn(db, 'api_tokens', 'machine_fingerprint'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
