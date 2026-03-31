@@ -335,6 +335,46 @@ router.put('/security', (req, res) => {
   }
 });
 
+// ─── Machine Binding Settings ──────────────────────────
+
+/**
+ * GET /api/settings/machine-binding — Get machine binding settings
+ */
+router.get('/machine-binding', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      mode: settings.get('machine_binding.mode', 'off'),
+    },
+  });
+});
+
+/**
+ * PUT /api/settings/machine-binding — Update machine binding settings
+ */
+router.put('/machine-binding', requireFeature('machine_binding'), (req, res) => {
+  try {
+    const { mode } = req.body;
+
+    if (mode !== undefined) {
+      if (!['off', 'global', 'individual'].includes(mode)) {
+        return res.status(400).json({ ok: false, error: req.t('error.settings.machine_binding_mode_invalid') });
+      }
+      settings.set('machine_binding.mode', mode);
+    }
+
+    activity.log('machine_binding_settings_updated', `Machine binding mode set to "${mode}"`, {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 // ─── Monitoring Settings ────────────────────────────────
 
 /**
