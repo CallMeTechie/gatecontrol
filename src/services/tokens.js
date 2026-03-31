@@ -249,6 +249,18 @@ function bindMachineFingerprint(tokenId, fingerprint) {
 }
 
 /**
+ * Toggle machine_binding_enabled on an existing token
+ */
+function setMachineBindingEnabled(tokenId, enabled) {
+  const db = getDb();
+  const row = db.prepare('SELECT id FROM api_tokens WHERE id = ?').get(tokenId);
+  if (!row) throw new Error('Token not found');
+  db.prepare('UPDATE api_tokens SET machine_binding_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, tokenId);
+  logger.info({ tokenId, enabled }, 'Machine binding toggled');
+  return true;
+}
+
+/**
  * Clear machine fingerprint (admin reset)
  */
 function resetMachineBinding(tokenId) {
@@ -309,6 +321,7 @@ module.exports = {
   getBoundPeerId,
   bindMachineFingerprint,
   resetMachineBinding,
+  setMachineBindingEnabled,
   validateFingerprint,
   checkScope,
   validateScopes,

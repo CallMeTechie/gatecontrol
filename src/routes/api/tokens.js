@@ -90,6 +90,44 @@ router.delete('/:id', (req, res) => {
 });
 
 /**
+ * PUT /api/v1/tokens/:id/binding — Toggle machine_binding_enabled
+ */
+router.put('/:id/binding', requireFeature('machine_binding'), (req, res) => {
+  if (req.tokenAuth) {
+    return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
+  }
+
+  try {
+    const id = parseInt(req.params.id, 10);
+    const token = tokens.getById(id);
+    if (!token) {
+      return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
+    }
+
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ ok: false, error: 'enabled must be a boolean' });
+    }
+
+    tokens.setMachineBindingEnabled(id, enabled);
+
+    activity.log('machine_binding_toggled', `Machine binding for token "${token.name}" ${enabled ? 'enabled' : 'disabled'}`, {
+      tokenId: id,
+      enabled,
+    }, {
+      source: 'user',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to toggle machine binding');
+    res.status(500).json({ ok: false, error: req.t('error.tokens.binding_toggle_failed') || 'Failed to toggle machine binding' });
+  }
+});
+
+/**
  * DELETE /api/v1/tokens/:id/binding — Reset machine binding
  */
 router.delete('/:id/binding', requireFeature('machine_binding'), (req, res) => {

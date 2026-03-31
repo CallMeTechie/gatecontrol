@@ -607,6 +607,8 @@
   "tokens.scope_group_resources": "Server-Verwaltung",
   "tokens.scope_group_client": "Client-App",
   "tokens.machine_binding": "An Maschine binden",
+  "tokens.enable_binding": "Maschinen-Bindung aktivieren",
+  "tokens.disable_binding": "Maschinen-Bindung deaktivieren",
   "tokens.bound": "Gebunden",
   "tokens.unbound": "Ungebunden",
   "tokens.reset_binding": "Binding zurücksetzen",

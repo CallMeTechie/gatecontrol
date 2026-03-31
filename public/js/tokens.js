@@ -149,6 +149,48 @@
         row.appendChild(unboundTag);
       }
 
+      // Machine binding toggle button (only in individual mode)
+      if (window._mbMode === 'individual') {
+        var toggleBtn = document.createElement('button');
+        toggleBtn.className = 'icon-btn';
+        toggleBtn.title = tk.machine_binding_enabled
+          ? (GC.t['tokens.disable_binding'] || 'Disable Machine Binding')
+          : (GC.t['tokens.enable_binding'] || 'Enable Machine Binding');
+        toggleBtn.dataset.tokenAction = 'toggle-binding';
+        toggleBtn.dataset.tokenId = tk.id;
+        toggleBtn.dataset.currentState = tk.machine_binding_enabled ? '1' : '0';
+        toggleBtn.style.cssText = 'width:24px;height:24px;flex-shrink:0' + (tk.machine_binding_enabled ? '' : ';opacity:0.4');
+        var tSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        tSvg.setAttribute('viewBox', '0 0 24 24');
+        tSvg.setAttribute('width', '14');
+        tSvg.setAttribute('height', '14');
+        tSvg.setAttribute('fill', 'none');
+        tSvg.setAttribute('stroke', 'currentColor');
+        tSvg.setAttribute('stroke-width', '2');
+        var tPath;
+        if (tk.machine_binding_enabled) {
+          tPath = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          tPath.setAttribute('x', '3'); tPath.setAttribute('y', '11');
+          tPath.setAttribute('width', '18'); tPath.setAttribute('height', '11');
+          tPath.setAttribute('rx', '2'); tPath.setAttribute('ry', '2');
+          tSvg.appendChild(tPath);
+          var tPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          tPath2.setAttribute('d', 'M7 11V7a5 5 0 0110 0v4');
+          tSvg.appendChild(tPath2);
+        } else {
+          tPath = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          tPath.setAttribute('x', '3'); tPath.setAttribute('y', '11');
+          tPath.setAttribute('width', '18'); tPath.setAttribute('height', '11');
+          tPath.setAttribute('rx', '2'); tPath.setAttribute('ry', '2');
+          tSvg.appendChild(tPath);
+          var tPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          tPath2.setAttribute('d', 'M7 11V7a5 5 0 019.9-1');
+          tSvg.appendChild(tPath2);
+        }
+        toggleBtn.appendChild(tSvg);
+        row.appendChild(toggleBtn);
+      }
+
       // Reset binding button
       if (tk.machine_fingerprint) {
         var resetBtn = document.createElement('button');
@@ -207,6 +249,20 @@
     if (!btn) return;
     var action = btn.dataset.tokenAction;
     var id = btn.dataset.tokenId;
+
+    var toggleAction = e.target.closest('[data-token-action="toggle-binding"]');
+    if (toggleAction) {
+      var id = toggleAction.dataset.tokenId;
+      var currentlyEnabled = toggleAction.dataset.currentState === '1';
+
+      try {
+        await api.put('/api/v1/tokens/' + id + '/binding', { enabled: !currentlyEnabled });
+        loadTokens();
+      } catch (err) {
+        alert(err.message || 'Failed to toggle binding');
+      }
+      return;
+    }
 
     var resetAction = e.target.closest('[data-token-action="reset-binding"]');
     if (resetAction) {
@@ -348,13 +404,16 @@
 })();
 
 // Show machine_binding checkbox in token create form when mode is 'individual'
+// Also cache mode for toggle button visibility
 (async function () {
   var mbWrap = document.getElementById('token-mb-wrap');
-  if (!mbWrap) return;
   try {
     var res = await api.get('/api/v1/settings/machine-binding');
-    if (res.ok && res.data.mode === 'individual') {
-      mbWrap.style.display = '';
+    if (res.ok) {
+      window._mbMode = res.data.mode;
+      if (mbWrap && res.data.mode === 'individual') {
+        mbWrap.style.display = '';
+      }
     }
   } catch {}
 })();
