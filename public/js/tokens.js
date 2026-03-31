@@ -133,6 +133,47 @@
         row.appendChild(expTag);
       }
 
+      // Machine binding badge
+      if (tk.machine_fingerprint) {
+        var boundTag = document.createElement('span');
+        boundTag.className = 'tag tag-green';
+        boundTag.style.fontSize = '10px';
+        boundTag.title = tk.machine_fingerprint;
+        boundTag.textContent = (GC.t['tokens.bound'] || 'Bound') + ' ' + tk.machine_fingerprint.substring(0, 8);
+        row.appendChild(boundTag);
+      } else if (tk.machine_binding_enabled) {
+        var unboundTag = document.createElement('span');
+        unboundTag.className = 'tag tag-yellow';
+        unboundTag.style.fontSize = '10px';
+        unboundTag.textContent = GC.t['tokens.unbound'] || 'Unbound';
+        row.appendChild(unboundTag);
+      }
+
+      // Reset binding button
+      if (tk.machine_fingerprint) {
+        var resetBtn = document.createElement('button');
+        resetBtn.className = 'icon-btn';
+        resetBtn.title = GC.t['tokens.reset_binding'] || 'Reset Binding';
+        resetBtn.dataset.tokenAction = 'reset-binding';
+        resetBtn.dataset.tokenId = tk.id;
+        resetBtn.style.cssText = 'width:24px;height:24px;flex-shrink:0';
+        var rSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        rSvg.setAttribute('viewBox', '0 0 24 24');
+        rSvg.setAttribute('width', '14');
+        rSvg.setAttribute('height', '14');
+        rSvg.setAttribute('fill', 'none');
+        rSvg.setAttribute('stroke', 'currentColor');
+        rSvg.setAttribute('stroke-width', '2');
+        var rPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        rPath.setAttribute('d', 'M1 4v6h6M23 20v-6h-6');
+        rSvg.appendChild(rPath);
+        var rPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        rPath2.setAttribute('d', 'M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15');
+        rSvg.appendChild(rPath2);
+        resetBtn.appendChild(rSvg);
+        row.appendChild(resetBtn);
+      }
+
       var delBtn = document.createElement('button');
       delBtn.className = 'icon-btn';
       delBtn.title = GC.t['tokens.revoke'] || 'Revoke';
@@ -166,6 +207,21 @@
     if (!btn) return;
     var action = btn.dataset.tokenAction;
     var id = btn.dataset.tokenId;
+
+    var resetAction = e.target.closest('[data-token-action="reset-binding"]');
+    if (resetAction) {
+      var id = resetAction.dataset.tokenId;
+      var confirmMsg = GC.t['tokens.reset_binding_confirm'] || 'The binding will be released. The next client request will bind the new machine.';
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        await api.del('/api/v1/tokens/' + id + '/binding');
+        loadTokens();
+      } catch (err) {
+        alert(err.message || 'Failed to reset binding');
+      }
+      return;
+    }
 
     if (action === 'delete') {
       try {
@@ -219,12 +275,16 @@
         expiresAt = new Date(customDate + 'T23:59:59').toISOString();
       }
 
+      var mbCheckbox = document.getElementById('token-machine-binding');
+      var machineBindingEnabled = mbCheckbox ? mbCheckbox.checked : false;
+
       btnLoading(btnCreate);
       try {
         var data = await api.post('/api/v1/tokens', {
           name: name,
           scopes: scopes,
           expires_at: expiresAt,
+          machine_binding_enabled: machineBindingEnabled,
         });
 
         if (data.ok) {
@@ -285,4 +345,16 @@
 
   // ─── Init ────────────────────────────────────────────────
   loadTokens();
+})();
+
+// Show machine_binding checkbox in token create form when mode is 'individual'
+(async function () {
+  var mbWrap = document.getElementById('token-mb-wrap');
+  if (!mbWrap) return;
+  try {
+    var res = await api.get('/api/v1/settings/machine-binding');
+    if (res.ok && res.data.mode === 'individual') {
+      mbWrap.style.display = '';
+    }
+  } catch {}
 })();

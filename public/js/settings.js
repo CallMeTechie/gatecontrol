@@ -1020,3 +1020,29 @@
     });
   }
 })();
+
+
+// ── Machine Binding Settings ──────────────────────────
+(async function () {
+  var modeSelect = document.getElementById('mb-mode');
+  var saveBtn = document.getElementById('mb-save');
+  var msg = document.getElementById('mb-msg');
+  if (!modeSelect) return;
+
+  try {
+    var res = await api.get('/api/v1/settings/machine-binding');
+    if (res.ok) modeSelect.value = res.data.mode;
+  } catch {}
+
+  saveBtn.addEventListener('click', async function () {
+    try {
+      await api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value });
+      msg.textContent = GC.t['security.machine_binding.saved'] || 'Saved';
+      msg.style.color = 'var(--success)';
+      setTimeout(function () { msg.textContent = ''; }, 3000);
+    } catch (err) {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = err.message || 'Error';
+    }
+  });
+})();
