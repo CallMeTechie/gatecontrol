@@ -611,6 +611,7 @@
   "tokens.disable_binding": "Maschinen-Bindung deaktivieren",
   "tokens.bound": "Gebunden",
   "tokens.unbound": "Ungebunden",
+  "tokens.awaiting_binding": "Wartet auf Bindung",
   "tokens.reset_binding": "Binding zurücksetzen",
   "tokens.reset_binding_confirm": "Das Binding wird gelöst. Beim nächsten Client-Request wird die neue Maschine gebunden.",
   "tokens.binding_reset_success": "Maschinen-Binding zurückgesetzt",

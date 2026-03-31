@@ -611,6 +611,7 @@
   "tokens.disable_binding": "Disable Machine Binding",
   "tokens.bound": "Bound",
   "tokens.unbound": "Unbound",
+  "tokens.awaiting_binding": "Awaiting binding",
   "tokens.reset_binding": "Reset Binding",
   "tokens.reset_binding_confirm": "The binding will be released. The next client request will bind the new machine.",
   "tokens.binding_reset_success": "Machine binding reset",

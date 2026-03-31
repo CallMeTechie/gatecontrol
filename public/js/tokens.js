@@ -143,9 +143,9 @@
         row.appendChild(boundTag);
       } else if (tk.machine_binding_enabled) {
         var unboundTag = document.createElement('span');
-        unboundTag.className = 'tag tag-yellow';
+        unboundTag.className = 'tag tag-amber';
         unboundTag.style.fontSize = '10px';
-        unboundTag.textContent = GC.t['tokens.unbound'] || 'Unbound';
+        unboundTag.textContent = GC.t['tokens.awaiting_binding'] || 'Awaiting binding';
         row.appendChild(unboundTag);
       }
 
