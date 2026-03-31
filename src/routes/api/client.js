@@ -5,11 +5,41 @@ const { Router } = require('express');
 const config = require('../../../config/default');
 const peers = require('../../services/peers');
 const routes = require('../../services/routes');
+const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
 const activity = require('../../services/activity');
 const { validatePeerName } = require('../../utils/validate');
 const { requireLimit } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
+
+/**
+ * Verify the requesting token owns the given peerId.
+ * Returns the validated peerId or sends an error response.
+ */
+function requirePeerOwnership(req, res) {
+  const peerId = req.query.peerId || req.headers['x-peer-id'] || req.body?.peerId;
+  if (!peerId) {
+    res.status(400).json({ ok: false, error: 'Peer ID is required' });
+    return null;
+  }
+
+  // Session-based auth (admin UI) can access any peer
+  if (!req.tokenAuth) return Number(peerId);
+
+  const boundPeerId = req.tokenPeerId;
+  if (boundPeerId == null) {
+    res.status(403).json({ ok: false, error: 'Token is not bound to a peer. Register first.' });
+    return null;
+  }
+
+  if (boundPeerId !== Number(peerId)) {
+    logger.warn({ tokenId: req.tokenId, requestedPeerId: peerId, boundPeerId }, 'Peer ownership mismatch');
+    res.status(403).json({ ok: false, error: 'Token is not authorized for this peer' });
+    return null;
+  }
+
+  return Number(peerId);
+}
 
 const router = Router();
 
@@ -64,6 +94,25 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.hostname_required') : 'Hostname is required' });
     }
 
+    // If token is already bound to a peer, only allow re-registration for that peer
+    if (req.tokenAuth && req.tokenPeerId != null) {
+      const boundPeer = peers.getById(req.tokenPeerId);
+      if (!boundPeer) {
+        return res.status(404).json({ ok: false, error: 'Bound peer no longer exists' });
+      }
+
+      // Update description with latest client version
+      const db = getDb();
+      try {
+        db.prepare('UPDATE peers SET description = ? WHERE id = ?')
+          .run(`Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`, boundPeer.id);
+      } catch {}
+
+      const peerConfig = await peers.getClientConfig(boundPeer.id);
+      const hash = hashConfig(peerConfig);
+      return res.json({ ok: true, peerId: boundPeer.id, peerName: boundPeer.name, config: peerConfig, hash });
+    }
+
     const db = getDb();
     let peer = null;
     let isNew = false;
@@ -110,6 +159,15 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       logger.info({ peerId: peer.id, hostname, platform }, 'New desktop client registered');
     }
 
+    // Bind token to peer (one-time)
+    if (req.tokenAuth) {
+      const bound = tokens.bindPeer(req.tokenId, peer.id);
+      if (!bound) {
+        return res.status(403).json({ ok: false, error: 'Token is already bound to a different peer' });
+      }
+      logger.info({ tokenId: req.tokenId, peerId: peer.id }, 'Token bound to peer on registration');
+    }
+
     // Update description with latest client version
     if (!isNew) {
       try {
@@ -150,12 +208,10 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
  */
 router.get('/config', async (req, res) => {
   try {
-    const peerId = req.query.peerId || req.headers['x-peer-id'];
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.peer_id_required') : 'Peer ID is required' });
-    }
+    const peerId = requirePeerOwnership(req, res);
+    if (peerId == null) return;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(peerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: req.t ? req.t('error.peers.not_found') : 'Peer not found' });
     }
@@ -177,12 +233,10 @@ router.get('/config', async (req, res) => {
  */
 router.get('/config/check', async (req, res) => {
   try {
-    const peerId = req.query.peerId || req.headers['x-peer-id'];
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.peer_id_required') : 'Peer ID is required' });
-    }
+    const peerId = requirePeerOwnership(req, res);
+    if (peerId == null) return;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(peerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: req.t ? req.t('error.peers.not_found') : 'Peer not found' });
     }
@@ -209,13 +263,12 @@ router.get('/config/check', async (req, res) => {
  */
 router.post('/heartbeat', (req, res) => {
   try {
-    const { peerId, connected, rxBytes, txBytes, uptime, hostname } = req.body;
+    const validatedPeerId = requirePeerOwnership(req, res);
+    if (validatedPeerId == null) return;
 
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
-    }
+    const { connected, rxBytes, txBytes, uptime, hostname } = req.body;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(validatedPeerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }
@@ -224,7 +277,7 @@ router.post('/heartbeat', (req, res) => {
     const db = getDb();
     db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
 
-    logger.debug({ peerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
+    logger.debug({ peerId: validatedPeerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
 
     res.json({ ok: true });
   } catch (err) {
@@ -240,13 +293,12 @@ router.post('/heartbeat', (req, res) => {
  */
 router.post('/status', (req, res) => {
   try {
-    const { peerId, status, timestamp } = req.body;
+    const validatedPeerId = requirePeerOwnership(req, res);
+    if (validatedPeerId == null) return;
 
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
-    }
+    const { status, timestamp } = req.body;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(validatedPeerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }
@@ -254,7 +306,7 @@ router.post('/status', (req, res) => {
     activity.log('client_status', `Client "${peer.name}" reported: ${status}`, {
       source: 'api',
       severity: 'info',
-      details: { peerId, status, timestamp },
+      details: { peerId: validatedPeerId, status, timestamp },
     });
 
     res.json({ ok: true });
@@ -273,12 +325,10 @@ router.post('/status', (req, res) => {
  */
 router.get('/peer-info', (req, res) => {
   try {
-    const peerId = req.query.peerId || req.headers['x-peer-id'];
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
-    }
+    const peerId = requirePeerOwnership(req, res);
+    if (peerId == null) return;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(peerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }
@@ -308,12 +358,10 @@ router.get('/peer-info', (req, res) => {
  */
 router.get('/traffic', (req, res) => {
   try {
-    const peerId = req.query.peerId || req.headers['x-peer-id'];
-    if (!peerId) {
-      return res.status(400).json({ ok: false, error: 'Peer ID is required' });
-    }
+    const peerId = requirePeerOwnership(req, res);
+    if (peerId == null) return;
 
-    const peer = peers.getById(Number(peerId));
+    const peer = peers.getById(peerId);
     if (!peer) {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }

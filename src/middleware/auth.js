@@ -58,6 +58,7 @@ function requireAuth(req, res, next) {
         req.tokenAuth = true;
         req.tokenId = tokenRecord.id;
         req.tokenScopes = tokenRecord.scopes;
+        req.tokenPeerId = tokenRecord.peer_id || null;
         return next();
       }
     }

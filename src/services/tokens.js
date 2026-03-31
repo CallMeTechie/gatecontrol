@@ -192,6 +192,35 @@ function authenticate(rawToken) {
 }
 
 /**
+ * Bind a token to a specific peer (one-time after registration)
+ * Returns true if bound, false if already bound to a different peer
+ */
+function bindPeer(tokenId, peerId) {
+  const db = getDb();
+  const row = db.prepare('SELECT peer_id FROM api_tokens WHERE id = ?').get(tokenId);
+  if (!row) return false;
+
+  // Already bound to this peer — ok
+  if (row.peer_id === peerId) return true;
+
+  // Already bound to a different peer — reject
+  if (row.peer_id != null) return false;
+
+  db.prepare('UPDATE api_tokens SET peer_id = ? WHERE id = ?').run(peerId, tokenId);
+  logger.info({ tokenId, peerId }, 'API token bound to peer');
+  return true;
+}
+
+/**
+ * Get the bound peer ID for a token (null if unbound)
+ */
+function getBoundPeerId(tokenId) {
+  const db = getDb();
+  const row = db.prepare('SELECT peer_id FROM api_tokens WHERE id = ?').get(tokenId);
+  return row ? row.peer_id : null;
+}
+
+/**
  * Delete/revoke a token
  */
 function revoke(id, ipAddress) {
@@ -221,6 +250,7 @@ function formatToken(row) {
     id: row.id,
     name: row.name,
     scopes: typeof row.scopes === 'string' ? JSON.parse(row.scopes) : row.scopes,
+    peer_id: row.peer_id || null,
     created_at: row.created_at,
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
@@ -233,6 +263,8 @@ module.exports = {
   getById,
   authenticate,
   revoke,
+  bindPeer,
+  getBoundPeerId,
   checkScope,
   validateScopes,
   hashToken,

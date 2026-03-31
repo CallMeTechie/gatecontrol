@@ -467,6 +467,12 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'bot_blocker_enabled'),
   },
+  {
+    version: 29,
+    name: 'add_token_peer_binding',
+    sql: 'ALTER TABLE api_tokens ADD COLUMN peer_id INTEGER REFERENCES peers(id) ON DELETE SET NULL;',
+    detect: (db) => hasColumn(db, 'api_tokens', 'peer_id'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
