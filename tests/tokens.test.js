@@ -31,6 +31,27 @@ describe('Token Scope Logic', () => {
     });
   });
 
+  describe('validateFingerprint', () => {
+    it('should accept valid SHA256 hex', () => {
+      assert.equal(tokens.validateFingerprint('a'.repeat(64)), null);
+      assert.equal(tokens.validateFingerprint('0123456789abcdef'.repeat(4)), null);
+    });
+
+    it('should reject empty/null', () => {
+      assert.notEqual(tokens.validateFingerprint(''), null);
+      assert.notEqual(tokens.validateFingerprint(null), null);
+      assert.notEqual(tokens.validateFingerprint(undefined), null);
+    });
+
+    it('should reject invalid format', () => {
+      assert.notEqual(tokens.validateFingerprint('tooshort'), null);
+      assert.notEqual(tokens.validateFingerprint('g'.repeat(64)), null);
+      assert.notEqual(tokens.validateFingerprint('A'.repeat(64)), null);
+      assert.notEqual(tokens.validateFingerprint('a'.repeat(63)), null);
+      assert.notEqual(tokens.validateFingerprint('a'.repeat(65)), null);
+    });
+  });
+
   describe('validateScopes', () => {
     it('should accept valid scopes', () => {
       assert.equal(tokens.validateScopes(['client']), null);
