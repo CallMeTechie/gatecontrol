@@ -400,20 +400,18 @@
   }
 
   // ─── Init ────────────────────────────────────────────────
-  loadTokens();
-})();
-
-// Show machine_binding checkbox in token create form when mode is 'individual'
-// Also cache mode for toggle button visibility
-(async function () {
-  var mbWrap = document.getElementById('token-mb-wrap');
-  try {
-    var res = await api.get('/api/v1/settings/machine-binding');
-    if (res.ok) {
-      window._mbMode = res.data.mode;
-      if (mbWrap && res.data.mode === 'individual') {
-        mbWrap.style.display = '';
+  // Fetch machine binding mode BEFORE loading tokens (toggle buttons need it)
+  (async function () {
+    var mbWrap = document.getElementById('token-mb-wrap');
+    try {
+      var res = await api.get('/api/v1/settings/machine-binding');
+      if (res.ok) {
+        window._mbMode = res.data.mode;
+        if (mbWrap && res.data.mode === 'individual') {
+          mbWrap.style.display = '';
+        }
       }
-    }
-  } catch {}
+    } catch {}
+    loadTokens();
+  })();
 })();
