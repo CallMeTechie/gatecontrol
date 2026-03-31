@@ -7,7 +7,7 @@ const peers = require('../../services/peers');
 const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
 const asyncHandler = require('../../utils/asyncHandler');
-const { validateDomain, validatePort, validateDescription, validateIp } = require('../../utils/validate');
+const { validateDomain, validatePort, validateDescription, validateIp, validateCssColor, validateCssBg } = require('../../utils/validate');
 const config = require('../../../config/default');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
@@ -256,6 +256,14 @@ router.post('/',
       const ipErr = validateIp(target_ip);
       if (ipErr) fields.target_ip = req.t('error.routes.ip_invalid') || ipErr;
     }
+    if (branding_color) {
+      const colorErr = validateCssColor(branding_color);
+      if (colorErr) fields.branding_color = req.t('error.routes.branding_color_invalid') || colorErr;
+    }
+    if (branding_bg) {
+      const bgErr = validateCssBg(branding_bg);
+      if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
+    }
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
@@ -369,6 +377,14 @@ router.put('/:id',
     if (target_ip !== undefined && !peer_id) {
       const ipErr = validateIp(target_ip);
       if (ipErr) fields.target_ip = req.t('error.routes.ip_invalid') || ipErr;
+    }
+    if (branding_color !== undefined && branding_color) {
+      const colorErr = validateCssColor(branding_color);
+      if (colorErr) fields.branding_color = req.t('error.routes.branding_color_invalid') || colorErr;
+    }
+    if (branding_bg !== undefined && branding_bg) {
+      const bgErr = validateCssBg(branding_bg);
+      if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
     }
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });

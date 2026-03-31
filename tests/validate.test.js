@@ -10,6 +10,8 @@ const {
   validateDescription,
   validateBasicAuthUser,
   validateBasicAuthPassword,
+  validateCssColor,
+  validateCssBg,
   sanitize,
 } = require('../src/utils/validate');
 
@@ -144,6 +146,62 @@ describe('validateBasicAuthPassword', () => {
 
   it('rejects passwords exceeding 128 chars', () => {
     assert.notEqual(validateBasicAuthPassword('a'.repeat(129)), null);
+  });
+});
+
+describe('validateCssColor', () => {
+  it('accepts valid colors', () => {
+    assert.equal(validateCssColor('#fff'), null);
+    assert.equal(validateCssColor('#FF5733'), null);
+    assert.equal(validateCssColor('#aabbccdd'), null);
+    assert.equal(validateCssColor('red'), null);
+    assert.equal(validateCssColor('dodgerblue'), null);
+    assert.equal(validateCssColor('rgb(255, 0, 0)'), null);
+    assert.equal(validateCssColor('rgba(255, 0, 0, 0.5)'), null);
+    assert.equal(validateCssColor('hsl(120, 100%, 50%)'), null);
+    assert.equal(validateCssColor('hsla(120, 100%, 50%, 0.8)'), null);
+  });
+
+  it('allows null/empty (optional field)', () => {
+    assert.equal(validateCssColor(null), null);
+    assert.equal(validateCssColor(''), null);
+    assert.equal(validateCssColor(undefined), null);
+  });
+
+  it('rejects CSS injection payloads', () => {
+    assert.notEqual(validateCssColor('red; } body { background: url(https://evil.com)'), null);
+    assert.notEqual(validateCssColor('red; } </style><script>alert(1)</script>'), null);
+    assert.notEqual(validateCssColor('url(https://evil.com/exfil)'), null);
+    assert.notEqual(validateCssColor('expression(alert(1))'), null);
+  });
+
+  it('rejects values exceeding 120 chars', () => {
+    assert.notEqual(validateCssColor('#' + 'a'.repeat(121)), null);
+  });
+});
+
+describe('validateCssBg', () => {
+  it('accepts valid backgrounds', () => {
+    assert.equal(validateCssBg('#fff'), null);
+    assert.equal(validateCssBg('darkblue'), null);
+    assert.equal(validateCssBg('rgb(10, 20, 30)'), null);
+    assert.equal(validateCssBg('linear-gradient(90deg, #fff, #000)'), null);
+    assert.equal(validateCssBg('radial-gradient(circle, red, blue)'), null);
+  });
+
+  it('allows null/empty (optional field)', () => {
+    assert.equal(validateCssBg(null), null);
+    assert.equal(validateCssBg(''), null);
+  });
+
+  it('rejects CSS injection payloads', () => {
+    assert.notEqual(validateCssBg('red; } body::after { content: url(https://evil.com) }'), null);
+    assert.notEqual(validateCssBg('url(https://evil.com/exfil?v=1)'), null);
+    assert.notEqual(validateCssBg('red; } </style><script>alert(1)</script>'), null);
+  });
+
+  it('rejects values exceeding 200 chars', () => {
+    assert.notEqual(validateCssBg('a'.repeat(201)), null);
   });
 });
 

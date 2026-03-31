@@ -380,6 +380,8 @@
   "error.routes.port_invalid": "Port must be between 1 and 65535",
   "error.routes.description_invalid": "Description too long (max 255 chars)",
   "error.routes.ip_invalid": "Invalid IP address format",
+  "error.routes.branding_color_invalid": "Invalid CSS color (hex, named or rgb/hsl allowed)",
+  "error.routes.branding_bg_invalid": "Invalid CSS background (hex, named, rgb/hsl or gradient allowed)",
   "error.routes.create": "Failed to create route",
   "error.routes.update": "Failed to update route",
   "error.routes.delete": "Failed to delete route",

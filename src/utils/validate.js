@@ -108,6 +108,27 @@ function isPortBlocked(port) {
   return blocked.includes(port);
 }
 
+const CSS_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,30}|(rgb|hsl)a?\(\s*[\d.,\s%]+\))$/;
+const CSS_GRADIENT_RE = /^(linear|radial|conic)-gradient\(\s*[a-zA-Z0-9#.,\s%()deg]+\)$/;
+
+function validateCssColor(value) {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed.length > 120) return 'CSS color value too long (max 120 chars)';
+  if (!CSS_COLOR_RE.test(trimmed)) return 'Invalid CSS color (hex, named, rgb/hsl allowed)';
+  return null;
+}
+
+function validateCssBg(value) {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed.length > 200) return 'CSS background value too long (max 200 chars)';
+  if (!CSS_COLOR_RE.test(trimmed) && !CSS_GRADIENT_RE.test(trimmed)) {
+    return 'Invalid CSS background (hex, named, rgb/hsl, gradient allowed)';
+  }
+  return null;
+}
+
 function sanitize(str) {
   if (!str) return '';
   return String(str).trim();
@@ -154,6 +175,8 @@ module.exports = {
   validateBasicAuthUser,
   validateBasicAuthPassword,
   validatePasswordComplexity,
+  validateCssColor,
+  validateCssBg,
   sanitize,
   validateL4Protocol,
   validateL4ListenPort,
