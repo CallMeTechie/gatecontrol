@@ -11,6 +11,8 @@ const activity = require('../../services/activity');
 const { validatePeerName } = require('../../utils/validate');
 const { requireLimit } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
+const settings = require('../../services/settings');
+const { hasFeature } = require('../../services/license');
 
 /**
  * Verify the requesting token owns the given peerId.
@@ -39,6 +41,60 @@ function requirePeerOwnership(req, res) {
   }
 
   return Number(peerId);
+}
+
+const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
+
+/**
+ * Check if machine binding is active for a token.
+ */
+function isBindingActive(req) {
+  if (!req.tokenAuth) return false;
+  if (!hasFeature('machine_binding')) return false;
+
+  const mode = settings.get('machine_binding.mode', 'off');
+  if (mode === 'off') return false;
+  if (mode === 'global') return true;
+  if (mode === 'individual') {
+    const token = tokens.getById(req.tokenId);
+    return token && token.machine_binding_enabled;
+  }
+  return false;
+}
+
+/**
+ * Verify machine fingerprint for bound tokens.
+ * Returns true if OK to proceed, false if response was sent (error).
+ */
+function verifyMachineBinding(req, res) {
+  if (!isBindingActive(req)) return true;
+
+  const fingerprint = req.headers['x-machine-fingerprint'];
+  const token = tokens.getById(req.tokenId);
+  const stored = token?.machine_fingerprint;
+
+  if (!stored) {
+    res.status(403).json({ ok: false, error: req.t ? req.t('error.client.binding_not_registered') : 'Token is not bound. Register first.' });
+    return false;
+  }
+
+  if (!fingerprint) {
+    res.status(403).json({ ok: false, error: req.t ? req.t('error.client.fingerprint_required') : 'Machine fingerprint required' });
+    return false;
+  }
+
+  if (!FINGERPRINT_RE.test(fingerprint)) {
+    res.status(400).json({ ok: false, error: req.t ? req.t('error.client.fingerprint_invalid') : 'Invalid machine fingerprint format' });
+    return false;
+  }
+
+  if (fingerprint !== stored) {
+    logger.warn({ tokenId: req.tokenId, stored: stored.substring(0, 8), received: fingerprint.substring(0, 8) }, 'Machine fingerprint mismatch');
+    res.status(403).json({ ok: false, error: req.t ? req.t('error.client.binding_mismatch') : 'Token is bound to a different machine' });
+    return false;
+  }
+
+  return true;
 }
 
 const router = Router();
@@ -100,6 +156,8 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       if (!boundPeer) {
         return res.status(404).json({ ok: false, error: 'Bound peer no longer exists' });
       }
+
+      if (!verifyMachineBinding(req, res)) return;
 
       // Update description with latest client version
       const db = getDb();
@@ -166,6 +224,15 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
         return res.status(403).json({ ok: false, error: 'Token is already bound to a different peer' });
       }
       logger.info({ tokenId: req.tokenId, peerId: peer.id }, 'Token bound to peer on registration');
+
+      // Bind machine fingerprint if binding is active
+      if (isBindingActive(req)) {
+        const fingerprint = req.headers['x-machine-fingerprint'];
+        if (!fingerprint || !FINGERPRINT_RE.test(fingerprint)) {
+          return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.fingerprint_invalid') : 'Valid machine fingerprint required for binding' });
+        }
+        tokens.bindMachineFingerprint(req.tokenId, fingerprint);
+      }
     }
 
     // Update description with latest client version
@@ -210,6 +277,7 @@ router.get('/config', async (req, res) => {
   try {
     const peerId = requirePeerOwnership(req, res);
     if (peerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const peer = peers.getById(peerId);
     if (!peer) {
@@ -235,6 +303,7 @@ router.get('/config/check', async (req, res) => {
   try {
     const peerId = requirePeerOwnership(req, res);
     if (peerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const peer = peers.getById(peerId);
     if (!peer) {
@@ -265,6 +334,7 @@ router.post('/heartbeat', (req, res) => {
   try {
     const validatedPeerId = requirePeerOwnership(req, res);
     if (validatedPeerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const { connected, rxBytes, txBytes, uptime, hostname } = req.body;
 
@@ -295,6 +365,7 @@ router.post('/status', (req, res) => {
   try {
     const validatedPeerId = requirePeerOwnership(req, res);
     if (validatedPeerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const { status, timestamp } = req.body;
 
@@ -327,6 +398,7 @@ router.get('/peer-info', (req, res) => {
   try {
     const peerId = requirePeerOwnership(req, res);
     if (peerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const peer = peers.getById(peerId);
     if (!peer) {
@@ -360,6 +432,7 @@ router.get('/traffic', (req, res) => {
   try {
     const peerId = requirePeerOwnership(req, res);
     if (peerId == null) return;
+    if (!verifyMachineBinding(req, res)) return;
 
     const peer = peers.getById(peerId);
     if (!peer) {
