@@ -13,6 +13,9 @@ const { requireLimit } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
 const settings = require('../../services/settings');
 const { hasFeature } = require('../../services/license');
+const rdpService = require('../../services/rdp');
+const rdpMonitor = require('../../services/rdpMonitor');
+const rdpSessions = require('../../services/rdpSessions');
 
 /**
  * Verify the requesting token owns the given peerId.
@@ -529,6 +532,203 @@ router.get('/dns-check', (req, res) => {
     serverIp: clientIp,
     vpnSubnet: config.wireguard.subnet,
   });
+});
+
+// -- RDP (Remote Desktop) ---------------------------------------
+
+/**
+ * GET /api/v1/client/rdp
+ * Returns RDP routes available for the current token
+ */
+router.get('/rdp', (req, res) => {
+  try {
+    if (!hasFeature('remote_desktop')) {
+      return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
+    }
+
+    const tokenId = req.tokenId;
+    const routes = rdpService.getForToken(tokenId);
+
+    // Attach online status
+    const statuses = rdpMonitor.getAllStatus();
+    const enriched = routes.map(r => ({
+      ...r,
+      status: statuses[r.id] || { online: false, lastCheck: null },
+    }));
+
+    res.json({ ok: true, routes: enriched });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list client RDP routes');
+    res.status(500).json({ ok: false, error: 'Failed to list RDP services' });
+  }
+});
+
+/**
+ * GET /api/v1/client/rdp/:id/connect
+ * Get connection data + credentials (E2EE) for an RDP route
+ * Query: ?publicKey=<base64-encoded-client-public-key>
+ */
+router.get('/rdp/:id/connect', (req, res) => {
+  try {
+    if (!hasFeature('remote_desktop')) {
+      return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    const route = rdpService.getById(id, true);
+    if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
+
+    // Check token access
+    if (route.token_ids) {
+      try {
+        const allowed = JSON.parse(route.token_ids);
+        if (Array.isArray(allowed) && !allowed.includes(req.tokenId)) {
+          return res.status(403).json({ ok: false, error: 'Not authorized for this RDP route' });
+        }
+      } catch {}
+    }
+
+    // Build connection info
+    const connection = {
+      id: route.id,
+      name: route.name,
+      host: route.host,
+      port: route.port,
+      external_hostname: route.external_hostname,
+      external_port: route.external_port,
+      access_mode: route.access_mode,
+      gateway_host: route.gateway_host,
+      gateway_port: route.gateway_port,
+      credential_mode: route.credential_mode,
+      domain: route.domain,
+      resolution_mode: route.resolution_mode,
+      resolution_width: route.resolution_width,
+      resolution_height: route.resolution_height,
+      multi_monitor: route.multi_monitor,
+      color_depth: route.color_depth,
+      redirect_clipboard: route.redirect_clipboard,
+      redirect_printers: route.redirect_printers,
+      redirect_drives: route.redirect_drives,
+      redirect_usb: route.redirect_usb,
+      redirect_smartcard: route.redirect_smartcard,
+      audio_mode: route.audio_mode,
+      network_profile: route.network_profile,
+      nla_enabled: route.nla_enabled,
+      disable_wallpaper: route.disable_wallpaper,
+      disable_themes: route.disable_themes,
+      disable_animations: route.disable_animations,
+      bandwidth_limit: route.bandwidth_limit,
+      session_timeout: route.session_timeout,
+      admin_session: route.admin_session,
+      remote_app: route.remote_app,
+      start_program: route.start_program,
+      wol_enabled: route.wol_enabled,
+      maintenance_enabled: route.maintenance_enabled,
+      maintenance_schedule: route.maintenance_schedule,
+    };
+
+    // Include credentials if applicable
+    if (route.credential_mode !== 'none') {
+      const clientPubKey = req.query.publicKey;
+      if (clientPubKey) {
+        // Re-encrypt credentials for client using their public key
+        const { publicKeyEncrypt } = require('../../utils/crypto');
+        try {
+          const pubKeyPem = Buffer.from(clientPubKey, 'base64').toString('utf8');
+          if (route.username) {
+            connection.username_encrypted = publicKeyEncrypt(route.username, pubKeyPem);
+          }
+          if (route.credential_mode === 'full' && route.password) {
+            connection.password_encrypted = publicKeyEncrypt(route.password, pubKeyPem);
+          }
+        } catch (err) {
+          logger.warn({ error: err.message }, 'Failed to re-encrypt credentials for client');
+          // Fall back to sending without E2EE (credential_mode: none behavior)
+        }
+      } else {
+        // No client public key -- send plain (only over HTTPS)
+        connection.username = route.username || null;
+        if (route.credential_mode === 'full') {
+          connection.password = route.password || null;
+        }
+      }
+    }
+
+    const status = rdpMonitor.getStatus(id);
+    connection.online = status.online;
+
+    res.json({ ok: true, connection });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get RDP connection info');
+    res.status(500).json({ ok: false, error: 'Failed to get connection info' });
+  }
+});
+
+/**
+ * POST /api/v1/client/rdp/:id/session -- Start RDP session (audit)
+ */
+router.post('/rdp/:id/session', (req, res) => {
+  try {
+    if (!hasFeature('remote_desktop')) {
+      return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    const token = req.tokenAuth ? tokens.getById(req.tokenId) : null;
+
+    const session = rdpSessions.startSession(id, {
+      tokenId: req.tokenId || null,
+      tokenName: token?.name || null,
+      peerId: req.tokenPeerId || null,
+      clientIp: req.ip,
+    });
+
+    res.status(201).json({ ok: true, session });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to start RDP session');
+    if (err.message === 'RDP route not found') {
+      return res.status(404).json({ ok: false, error: 'RDP route not found' });
+    }
+    res.status(500).json({ ok: false, error: 'Failed to start session' });
+  }
+});
+
+/**
+ * PATCH /api/v1/client/rdp/:id/session -- Session heartbeat
+ * Body: { sessionId }
+ */
+router.patch('/rdp/:id/session', (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId required' });
+
+    rdpSessions.heartbeatSession(parseInt(sessionId, 10));
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'Session not found' || err.message === 'Session is not active') {
+      return res.status(404).json({ ok: false, error: err.message });
+    }
+    res.status(500).json({ ok: false, error: 'Heartbeat failed' });
+  }
+});
+
+/**
+ * DELETE /api/v1/client/rdp/:id/session -- End RDP session
+ * Body: { sessionId, endReason }
+ */
+router.delete('/rdp/:id/session', (req, res) => {
+  try {
+    const { sessionId, endReason } = req.body || {};
+    if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId required' });
+
+    const result = rdpSessions.endSession(parseInt(sessionId, 10), endReason || 'normal');
+    res.json({ ok: true, session: result });
+  } catch (err) {
+    if (err.message === 'Session not found') {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+    res.status(500).json({ ok: false, error: 'Failed to end session' });
+  }
 });
 
 // ── Auto-Update ──────────────────────────────────────────────
