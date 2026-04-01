@@ -208,7 +208,7 @@
   "settings.tab_backup": "Backup",
   "settings.tab_email": "Email & SMTP",
   "settings.tab_monitoring": "Monitoring",
-  "settings.tab_api": "API & Webhooks",
+  "settings.tab_api": "API-Tokens",
   "settings.tab_advanced": "Advanced",
 
   "profile.title": "User Profile",
@@ -575,6 +575,8 @@
 
   "tokens.title": "API Tokens",
   "tokens.subtitle": "Manage tokens for automation & API access",
+  "tokens.create_title": "Create Token",
+  "tokens.active_title": "Active Tokens",
   "tokens.add": "Create Token",
   "tokens.name": "Token Name",
   "tokens.name_placeholder": "e.g. CI/CD Pipeline",

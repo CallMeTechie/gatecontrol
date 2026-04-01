@@ -472,36 +472,47 @@
     }
   }
 
+  async function saveSecuritySettings(triggerBtn, messageId) {
+    btnLoading(triggerBtn);
+    try {
+      var payload = {
+        lockout: {
+          enabled: document.getElementById('security-lockout-enabled').classList.contains('on'),
+          max_attempts: document.getElementById('security-lockout-attempts').value,
+          duration: document.getElementById('security-lockout-duration').value,
+        },
+        password: {
+          complexity_enabled: document.getElementById('security-password-enabled').classList.contains('on'),
+          min_length: document.getElementById('security-password-min-length').value,
+          require_uppercase: document.getElementById('security-password-uppercase').classList.contains('on'),
+          require_number: document.getElementById('security-password-number').classList.contains('on'),
+          require_special: document.getElementById('security-password-special').classList.contains('on'),
+        },
+      };
+      var data = await api.put('/api/settings/security', payload);
+      if (data.ok) {
+        showMessage(messageId, GC.t['security.saved'] || 'Security settings saved', 'success');
+      } else {
+        showMessage(messageId, data.error || 'Failed to save', 'error');
+      }
+    } catch (err) {
+      showMessage(messageId, err.message, 'error');
+    } finally {
+      btnReset(triggerBtn);
+    }
+  }
+
   var btnSecuritySave = document.getElementById('btn-security-save');
   if (btnSecuritySave) {
-    btnSecuritySave.addEventListener('click', async function() {
-      btnLoading(btnSecuritySave);
-      try {
-        var payload = {
-          lockout: {
-            enabled: document.getElementById('security-lockout-enabled').classList.contains('on'),
-            max_attempts: document.getElementById('security-lockout-attempts').value,
-            duration: document.getElementById('security-lockout-duration').value,
-          },
-          password: {
-            complexity_enabled: document.getElementById('security-password-enabled').classList.contains('on'),
-            min_length: document.getElementById('security-password-min-length').value,
-            require_uppercase: document.getElementById('security-password-uppercase').classList.contains('on'),
-            require_number: document.getElementById('security-password-number').classList.contains('on'),
-            require_special: document.getElementById('security-password-special').classList.contains('on'),
-          },
-        };
-        var data = await api.put('/api/settings/security', payload);
-        if (data.ok) {
-          showMessage('security-message', GC.t['security.saved'] || 'Security settings saved', 'success');
-        } else {
-          showMessage('security-message', data.error || 'Failed to save', 'error');
-        }
-      } catch (err) {
-        showMessage('security-message', err.message, 'error');
-      } finally {
-        btnReset(btnSecuritySave);
-      }
+    btnSecuritySave.addEventListener('click', function() {
+      saveSecuritySettings(btnSecuritySave, 'security-message');
+    });
+  }
+
+  var btnPasswordSave = document.getElementById('btn-password-save');
+  if (btnPasswordSave) {
+    btnPasswordSave.addEventListener('click', function() {
+      saveSecuritySettings(btnPasswordSave, 'security-message-2');
     });
   }
 
