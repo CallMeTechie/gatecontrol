@@ -106,6 +106,16 @@ const config = {
     githubToken: env('GC_CLIENT_GITHUB_TOKEN', ''),
   },
 
+  rdp: {
+    healthCheckInterval: envInt('GC_RDP_HEALTH_CHECK_INTERVAL', 60000),
+    healthCheckTimeout: envInt('GC_RDP_HEALTH_CHECK_TIMEOUT', 5000),
+    wolTimeout: envInt('GC_RDP_WOL_TIMEOUT', 60000),
+    wolPollInterval: envInt('GC_RDP_WOL_POLL_INTERVAL', 3000),
+    maxSessionDuration: envInt('GC_RDP_MAX_SESSION_DURATION', 86400),
+    sessionHeartbeatTimeout: envInt('GC_RDP_HEARTBEAT_TIMEOUT', 300),
+    wolBroadcastAddress: env('GC_RDP_WOL_BROADCAST', '255.255.255.255'),
+  },
+
   license: {
     key: env('GC_LICENSE_KEY', ''),
     signingKey: env('GC_LICENSE_SIGNING_KEY', ''),
