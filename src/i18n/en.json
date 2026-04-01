@@ -958,6 +958,9 @@
   "rdp.filter_all": "All",
   "rdp.filter_online": "Online",
   "rdp.filter_offline": "Offline",
+  "rdp.modal_subtitle": "Configure Remote Desktop Connection",
+  "rdp.e2ee_note": "Credentials are transmitted end-to-end encrypted and stored with AES-256-GCM",
+  "rdp.section_access_control": "Access Control & Tags",
 
   "error.rdp.list": "Failed to load RDP routes",
   "error.rdp.get": "Failed to load RDP route",

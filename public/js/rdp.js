@@ -329,19 +329,6 @@
   document.getElementById('rdp-modal-cancel').addEventListener('click', closeRdpModal);
   modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeRdpModal(); });
 
-  // Tab switching
-  var tabNav = document.getElementById('rdp-form-tabs');
-  if (tabNav) {
-    tabNav.addEventListener('click', function (e) {
-      var btn = e.target.closest('.tab');
-      if (!btn) return;
-      tabNav.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      document.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = 'none'; });
-      document.querySelector('[data-panel="' + btn.dataset.panel + '"]').style.display = 'block';
-    });
-  }
-
   // Credential mode toggle
   var credMode = document.getElementById('rdp-credential-mode');
   if (credMode) {
@@ -366,8 +353,6 @@
     modalTitle.textContent = GC.t['rdp.add'] || 'Add RDP Route';
     document.getElementById('rdp-form').reset();
     document.getElementById('rdp-edit-id').value = '';
-    // Reset tabs to first
-    tabNav.querySelector('.tab').click();
     openModal('rdp-modal-overlay');
   }
 
@@ -424,7 +409,6 @@
       credMode.dispatchEvent(new Event('change'));
       resMode.dispatchEvent(new Event('change'));
 
-      tabNav.querySelector('.tab').click();
       openModal('rdp-modal-overlay');
     } catch (err) {
       alert(err.message || 'Failed to load route');

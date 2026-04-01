@@ -958,6 +958,9 @@
   "rdp.filter_all": "Alle",
   "rdp.filter_online": "Online",
   "rdp.filter_offline": "Offline",
+  "rdp.modal_subtitle": "Remote Desktop Verbindung konfigurieren",
+  "rdp.e2ee_note": "Credentials werden Ende-zu-Ende verschluesselt uebertragen und mit AES-256-GCM gespeichert",
+  "rdp.section_access_control": "Zugriffskontrolle & Tags",
 
   "error.rdp.list": "RDP-Routen konnten nicht geladen werden",
   "error.rdp.get": "RDP-Route konnte nicht geladen werden",
