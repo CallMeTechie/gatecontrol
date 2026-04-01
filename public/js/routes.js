@@ -2324,4 +2324,54 @@
   loadRoutes();
   loadPeers();
   setInterval(loadRoutes, 30000);
+
+  // -- RDP Port Hint ----------------------------------------------
+  (function () {
+    var portInput = document.getElementById('route-target-port') || document.getElementById('l4-listen-port');
+    var hintBanner = document.createElement('div');
+    hintBanner.id = 'rdp-port-hint';
+    hintBanner.className = 'alert alert-info';
+    hintBanner.style.cssText = 'display:none;margin-top:8px;font-size:12px';
+
+    var hintSpan = document.createElement('span');
+    hintSpan.textContent = GC.t['rdp.port_hint'] || 'This port is commonly used for Remote Desktop (RDP). Would you like to create an RDP route instead?';
+    hintBanner.appendChild(hintSpan);
+
+    var rdpLink = document.createElement('a');
+    rdpLink.href = '/rdp';
+    rdpLink.style.cssText = 'font-weight:600;margin-left:8px';
+    rdpLink.textContent = GC.t['rdp.create_rdp_route'] || 'Create RDP Route';
+    hintBanner.appendChild(rdpLink);
+
+    var dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.className = 'btn-link';
+    dismissBtn.style.cssText = 'margin-left:8px;font-size:11px';
+    dismissBtn.textContent = GC.t['rdp.continue_l4'] || 'Continue as L4';
+    dismissBtn.addEventListener('click', function () { hintBanner.style.display = 'none'; });
+    hintBanner.appendChild(dismissBtn);
+
+    function checkRdpPort() {
+      if (!portInput) return;
+      var routeType = document.querySelector('[name="route_type"]:checked');
+      var isL4 = routeType && routeType.value === 'l4';
+      var val = parseInt(portInput.value, 10);
+      if (isL4 && (val === 3389 || val === 3392)) {
+        hintBanner.style.display = '';
+      } else {
+        hintBanner.style.display = 'none';
+      }
+    }
+
+    if (portInput) {
+      portInput.parentElement.appendChild(hintBanner);
+      portInput.addEventListener('input', checkRdpPort);
+      portInput.addEventListener('change', checkRdpPort);
+    }
+
+    var typeRadios = document.querySelectorAll('[name="route_type"]');
+    typeRadios.forEach(function (radio) {
+      radio.addEventListener('change', checkRdpPort);
+    });
+  })();
 })();
