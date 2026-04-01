@@ -325,20 +325,20 @@
   var addBtn = document.getElementById('btn-add-rdp');
   if (addBtn) addBtn.addEventListener('click', function () { openCreateModal(); });
 
-  document.getElementById('rdp-modal-close').addEventListener('click', closeModal);
-  document.getElementById('rdp-modal-cancel').addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeModal(); });
+  document.getElementById('rdp-modal-close').addEventListener('click', closeRdpModal);
+  document.getElementById('rdp-modal-cancel').addEventListener('click', closeRdpModal);
+  modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeRdpModal(); });
 
   // Tab switching
   var tabNav = document.getElementById('rdp-form-tabs');
   if (tabNav) {
     tabNav.addEventListener('click', function (e) {
-      var btn = e.target.closest('.tab-btn');
+      var btn = e.target.closest('.tab');
       if (!btn) return;
-      tabNav.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      tabNav.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      document.querySelectorAll('#rdp-modal .tab-pane').forEach(function (p) { p.classList.remove('active'); });
-      document.getElementById(btn.dataset.tab).classList.add('active');
+      document.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = 'none'; });
+      document.querySelector('[data-panel="' + btn.dataset.panel + '"]').style.display = 'block';
     });
   }
 
@@ -367,8 +367,8 @@
     document.getElementById('rdp-form').reset();
     document.getElementById('rdp-edit-id').value = '';
     // Reset tabs to first
-    tabNav.querySelector('.tab-btn').click();
-    modalOverlay.classList.add('active');
+    tabNav.querySelector('.tab').click();
+    openModal('rdp-modal-overlay');
   }
 
   async function openEditModal(id) {
@@ -424,15 +424,15 @@
       credMode.dispatchEvent(new Event('change'));
       resMode.dispatchEvent(new Event('change'));
 
-      tabNav.querySelector('.tab-btn').click();
-      modalOverlay.classList.add('active');
+      tabNav.querySelector('.tab').click();
+      openModal('rdp-modal-overlay');
     } catch (err) {
       alert(err.message || 'Failed to load route');
     }
   }
 
-  function closeModal() {
-    modalOverlay.classList.remove('active');
+  function closeRdpModal() {
+    closeModal('rdp-modal-overlay');
     editingId = null;
   }
 
@@ -489,7 +489,7 @@
       } else {
         await api.post('/api/v1/rdp', data);
       }
-      closeModal();
+      closeRdpModal();
       loadRoutes();
     } catch (err) {
       alert(err.message || 'Failed to save RDP route');

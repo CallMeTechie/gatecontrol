@@ -99,22 +99,22 @@
     </div>
     <div class="modal-body" id="rdp-modal-body">
       {# Tabs #}
-      <div class="tab-nav" id="rdp-form-tabs" style="margin-bottom:16px">
-        <button class="tab-btn active" data-tab="rdp-tab-connection">{{ t('rdp.tab_connection') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-auth">{{ t('rdp.tab_auth') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-display">{{ t('rdp.tab_display') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-resources">{{ t('rdp.tab_resources') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-performance">{{ t('rdp.tab_performance') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-session">{{ t('rdp.tab_session') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-wol">{{ t('rdp.tab_wol') }}</button>
-        <button class="tab-btn" data-tab="rdp-tab-advanced">{{ t('rdp.tab_advanced') }}</button>
+      <div class="tabs" id="rdp-form-tabs" style="margin-bottom:16px">
+        <button class="tab active" data-panel="rdp-tab-connection">{{ t('rdp.tab_connection') }}</button>
+        <button class="tab" data-panel="rdp-tab-auth">{{ t('rdp.tab_auth') }}</button>
+        <button class="tab" data-panel="rdp-tab-display">{{ t('rdp.tab_display') }}</button>
+        <button class="tab" data-panel="rdp-tab-resources">{{ t('rdp.tab_resources') }}</button>
+        <button class="tab" data-panel="rdp-tab-performance">{{ t('rdp.tab_performance') }}</button>
+        <button class="tab" data-panel="rdp-tab-session">{{ t('rdp.tab_session') }}</button>
+        <button class="tab" data-panel="rdp-tab-wol">{{ t('rdp.tab_wol') }}</button>
+        <button class="tab" data-panel="rdp-tab-advanced">{{ t('rdp.tab_advanced') }}</button>
       </div>
 
       <form id="rdp-form">
         <input type="hidden" id="rdp-edit-id">
 
         {# Connection Tab #}
-        <div class="tab-pane active" id="rdp-tab-connection">
+        <div class="edit-route-panel" id="rdp-tab-connection">
           <div class="form-group"><label>{{ t('rdp.name') }} *</label><input type="text" id="rdp-name" required maxlength="100"></div>
           <div class="form-group"><label>{{ t('rdp.description') }}</label><input type="text" id="rdp-description"></div>
           <div class="form-row">
@@ -140,7 +140,7 @@
         </div>
 
         {# Auth Tab #}
-        <div class="tab-pane" id="rdp-tab-auth">
+        <div class="edit-route-panel" id="rdp-tab-auth">
           <div class="form-group">
             <label>{{ t('rdp.credentials') }}</label>
             <select id="rdp-credential-mode">
@@ -157,7 +157,7 @@
         </div>
 
         {# Display Tab #}
-        <div class="tab-pane" id="rdp-tab-display">
+        <div class="edit-route-panel" id="rdp-tab-display">
           <div class="form-group">
             <label>{{ t('rdp.resolution') }}</label>
             <select id="rdp-resolution-mode">
@@ -184,7 +184,7 @@
         </div>
 
         {# Resources Tab #}
-        <div class="tab-pane" id="rdp-tab-resources">
+        <div class="edit-route-panel" id="rdp-tab-resources">
           <div class="form-group"><label><input type="checkbox" id="rdp-redirect-clipboard" checked> {{ t('rdp.clipboard') }}</label></div>
           <div class="form-group"><label><input type="checkbox" id="rdp-redirect-printers"> {{ t('rdp.printers') }}</label></div>
           <div class="form-group"><label><input type="checkbox" id="rdp-redirect-drives"> {{ t('rdp.drives') }}</label></div>
@@ -201,7 +201,7 @@
         </div>
 
         {# Performance Tab #}
-        <div class="tab-pane" id="rdp-tab-performance">
+        <div class="edit-route-panel" id="rdp-tab-performance">
           <div class="form-group">
             <label>{{ t('rdp.network_profile') }}</label>
             <select id="rdp-network-profile">
@@ -219,7 +219,7 @@
         </div>
 
         {# Session Tab #}
-        <div class="tab-pane" id="rdp-tab-session">
+        <div class="edit-route-panel" id="rdp-tab-session">
           <div class="form-group"><label>{{ t('rdp.session_timeout') }} (s)</label><input type="number" id="rdp-session-timeout" min="0"></div>
           <div class="form-group"><label><input type="checkbox" id="rdp-admin-session"> {{ t('rdp.admin_session') }}</label></div>
           <div class="form-group"><label>{{ t('rdp.remote_app') }}</label><input type="text" id="rdp-remote-app"></div>
@@ -227,13 +227,13 @@
         </div>
 
         {# WoL Tab #}
-        <div class="tab-pane" id="rdp-tab-wol">
+        <div class="edit-route-panel" id="rdp-tab-wol">
           <div class="form-group"><label><input type="checkbox" id="rdp-wol-enabled"> {{ t('rdp.wol') }}</label></div>
           <div class="form-group"><label>{{ t('rdp.wol_mac') }}</label><input type="text" id="rdp-wol-mac" placeholder="AA:BB:CC:DD:EE:FF"></div>
         </div>
 
         {# Advanced Tab #}
-        <div class="tab-pane" id="rdp-tab-advanced">
+        <div class="edit-route-panel" id="rdp-tab-advanced">
           <div class="form-group"><label><input type="checkbox" id="rdp-maintenance-enabled"> {{ t('rdp.maintenance') }}</label></div>
           <div class="form-group"><label><input type="checkbox" id="rdp-health-check" checked> {{ t('rdp.health_check') }}</label></div>
           <div class="form-group"><label><input type="checkbox" id="rdp-credential-rotation-enabled"> {{ t('rdp.credential_rotation') }}</label></div>

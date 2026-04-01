@@ -2327,7 +2327,7 @@
 
   // -- RDP Port Hint ----------------------------------------------
   (function () {
-    var portInput = document.getElementById('route-target-port') || document.getElementById('l4-listen-port');
+    var portInput = document.getElementById('route-port') || document.getElementById('l4-listen-port') || document.getElementById('edit-l4-listen-port');
     var hintBanner = document.createElement('div');
     hintBanner.id = 'rdp-port-hint';
     hintBanner.className = 'alert alert-info';
@@ -2353,8 +2353,8 @@
 
     function checkRdpPort() {
       if (!portInput) return;
-      var routeType = document.querySelector('[name="route_type"]:checked');
-      var isL4 = routeType && routeType.value === 'l4';
+      var routeType = document.querySelector('[name="route_type"]:checked') || document.getElementById('edit-route-type');
+      var isL4 = routeType && (routeType.value === 'l4');
       var val = parseInt(portInput.value, 10);
       if (isL4 && (val === 3389 || val === 3392)) {
         hintBanner.style.display = '';
