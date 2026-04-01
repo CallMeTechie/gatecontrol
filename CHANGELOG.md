@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0] — 2026-04-01
+
+### Features
+- register RDP health check and session cleanup in background tasks
+
+---
+
 ## [1.7.0] — 2026-04-01
 
 ### Features
