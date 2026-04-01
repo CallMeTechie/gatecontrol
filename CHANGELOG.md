@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1] — 2026-04-01
+
+### Fixes
+- fix modal CSS classes, show/hide mechanism, and port hint element IDs
+
+---
+
 ## [1.8.0] — 2026-04-01
 
 ### Features
