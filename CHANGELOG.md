@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0] — 2026-04-01
+
+### Features
+- add i18n keys for EN and DE -- RDP dashboard, routes, errors
+
+---
+
 ## [1.6.1] — 2026-04-01
 
 ### Änderungen
