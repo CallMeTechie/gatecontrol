@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3] — 2026-04-01
+
+### Fixes
+- fix script load order, add api.patch(), stats 6-column layout, filter bar under stats
+
+---
+
 ## [1.8.2] — 2026-04-01
 
 ### Fixes
