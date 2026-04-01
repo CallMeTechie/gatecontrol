@@ -97,10 +97,63 @@ function decrypt(ciphertext) {
   return decrypted;
 }
 
+// --- Asymmetric Encryption (RSA-OAEP) -------------------------
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+const KEYPAIR_DIR = '/data';
+const PUBKEY_PATH = path.join(KEYPAIR_DIR, '.rdp-pubkey.pem');
+const PRIVKEY_PATH = path.join(KEYPAIR_DIR, '.rdp-privkey.pem');
+
+function getOrCreateKeypair() {
+  if (fs.existsSync(PUBKEY_PATH) && fs.existsSync(PRIVKEY_PATH)) {
+    return {
+      publicKey: fs.readFileSync(PUBKEY_PATH, 'utf8'),
+      privateKey: fs.readFileSync(PRIVKEY_PATH, 'utf8'),
+    };
+  }
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  if (!fs.existsSync(KEYPAIR_DIR)) fs.mkdirSync(KEYPAIR_DIR, { recursive: true });
+  fs.writeFileSync(PUBKEY_PATH, publicKey, { mode: 0o644 });
+  fs.writeFileSync(PRIVKEY_PATH, privateKey, { mode: 0o600 });
+  return { publicKey, privateKey };
+}
+
+function getServerPublicKey() {
+  const { publicKey } = getOrCreateKeypair();
+  return publicKey;
+}
+
+function publicKeyEncrypt(plaintext, publicKeyPem) {
+  const encrypted = crypto.publicEncrypt(
+    { key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(plaintext, 'utf8')
+  );
+  return encrypted.toString('base64');
+}
+
+function privateKeyDecrypt(ciphertext) {
+  const { privateKey } = getOrCreateKeypair();
+  const decrypted = crypto.privateDecrypt(
+    { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(ciphertext, 'base64')
+  );
+  return decrypted.toString('utf8');
+}
+
 module.exports = {
   generateKeyPair,
   generatePresharedKey,
   derivePublicKey,
   encrypt,
   decrypt,
+  getServerPublicKey,
+  publicKeyEncrypt,
+  privateKeyDecrypt,
+  getOrCreateKeypair,
 };
