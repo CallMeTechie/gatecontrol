@@ -17,6 +17,11 @@
           {{ t('routes.type_l4') }}: {{ l4RouteCount }} / {{ license.features.l4_routes }}
         </span>
       {% endif %}
+      {% if license.hasFeature('remote_desktop') %}
+        <a href="/rdp" class="limit-badge" style="text-decoration:none;cursor:pointer">
+          RDP: {{ rdpRouteCount or 0 }}
+        </a>
+      {% endif %}
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
