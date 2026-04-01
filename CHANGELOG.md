@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2] — 2026-04-01
+
+### Fixes
+- rewrite modal to section-based scrollable layout matching mockup
+
+---
+
 ## [1.8.1] — 2026-04-01
 
 ### Fixes
