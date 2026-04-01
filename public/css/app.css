@@ -466,6 +466,28 @@ a { color: inherit; text-decoration: none; }
 .tag-grey  { background: var(--bg-base);  color: var(--text-2);border: 1px solid var(--border); }
 .tag-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
+/* ─── Feature Grid ─────────────────────────────────────── */
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+.feature-cell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.feature-cell:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+.feature-cell:nth-last-child(1),
+.feature-cell:nth-last-child(2) {
+  border-bottom: none;
+}
+
 /* ─── Peer Table ────────────────────────────────────────── */
 .peer-table { width: 100%; border-collapse: collapse; }
 .peer-table th {
@@ -1118,6 +1140,8 @@ input[type="file"] {
     right: 0;
     top: 12px;
   }
+  .feature-grid { grid-template-columns: 1fr; }
+  .feature-cell:nth-child(odd) { border-right: none; }
 }
 @media (max-width: 600px) {
   .stats-grid { grid-template-columns: 1fr 1fr; }
