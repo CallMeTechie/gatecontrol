@@ -122,13 +122,26 @@ const pages = [
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
+  { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
 ];
 
 pages.forEach(({ path, template, titleKey }) => {
   router.get(path, requireAuth, (req, res) => {
+    const extraLocals = {};
+
+    // Inject RDP route count for routes page
+    if (template === 'routes') {
+      try {
+        const rdpService = require('../services/rdp');
+        const counts = rdpService.getCount();
+        extraLocals.rdpRouteCount = counts.total;
+      } catch {}
+    }
+
     res.render(`${config.theme.defaultTheme}/pages/${template}.njk`, {
       title: res.locals.t(titleKey),
       activeNav: template,
+      ...extraLocals,
     });
   });
 });
