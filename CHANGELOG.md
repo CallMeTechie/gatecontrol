@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1] — 2026-04-01
+
+### Änderungen
+- unified Build & Release workflow with auto-versioning
+
+---
+
 All notable changes to GateControl are documented in this file.
 
 ---
