@@ -1,6 +1,7 @@
 node_modules/
 data/
 docs/
+documentation/
 .env
 .env.*
 !.env.example
