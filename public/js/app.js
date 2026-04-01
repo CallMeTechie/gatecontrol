@@ -104,6 +104,30 @@ window.api = {
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
+  async patch(url, data) {
+    url = apiUrl(url);
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': window.GC.csrfToken,
+      },
+      body: JSON.stringify(data),
+    });
+    if (res.status === 400) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
+    }
+    if (res.status === 403) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
+    }
+    if (res.status === 429) {
+      try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
+    }
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
+  },
+
   async del(url) {
     url = apiUrl(url);
     const res = await fetch(url, {
