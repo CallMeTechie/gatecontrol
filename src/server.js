@@ -10,6 +10,8 @@ const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
 const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAuth');
 const { startMonitor, stopMonitor } = require('./services/monitor');
+const { startMonitor: startRdpMonitor, stopMonitor: stopRdpMonitor } = require('./services/rdpMonitor');
+const { cleanupStaleSessions: cleanupStaleRdpSessions } = require('./services/rdpSessions');
 const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = require('./services/autobackup');
 const activity = require('./services/activity');
 const { validateLicense, startLicenseRefresh, stopLicenseRefresh } = require('./services/license');
@@ -72,6 +74,7 @@ async function start() {
     startMonitor();         // Uptime monitoring checks
     startAutoBackup();      // Automatic backup scheduler
     startLicenseRefresh();
+    startRdpMonitor();     // RDP health check monitor
 
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
@@ -82,6 +85,15 @@ async function start() {
         logger.error({ error: err.message }, 'Peer expiry check failed');
       }
     }, 60 * 1000);
+
+    // RDP stale session cleanup (every 2 minutes)
+    setInterval(() => {
+      try {
+        cleanupStaleRdpSessions();
+      } catch (err) {
+        logger.warn({ error: err.message }, 'RDP session cleanup failed');
+      }
+    }, 120000);
 
     // Periodic cleanup (every 6 hours)
     setInterval(() => {
@@ -211,6 +223,7 @@ function shutdown(signal) {
   stopPoller();
   stopSessionCleanup();
   stopMonitor();
+  stopRdpMonitor();
   stopAutoBackup();
   stopLicenseRefresh();
 
