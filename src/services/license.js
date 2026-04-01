@@ -40,6 +40,7 @@ const COMMUNITY_FALLBACK = {
   bot_blocking: false,
   custom_dns: false,
   machine_binding: false,
+  remote_desktop: false,
 };
 
 let cachedPlan = 'community';
