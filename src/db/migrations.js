@@ -482,6 +482,121 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'api_tokens', 'machine_fingerprint'),
   },
+  {
+    version: 31,
+    name: 'create_rdp_routes',
+    sql: `
+      CREATE TABLE IF NOT EXISTS rdp_routes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- Connection
+        name TEXT NOT NULL,
+        description TEXT,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 3389,
+        external_hostname TEXT,
+        external_port INTEGER,
+        access_mode TEXT NOT NULL DEFAULT 'internal',
+        gateway_host TEXT,
+        gateway_port INTEGER DEFAULT 443,
+        enabled INTEGER NOT NULL DEFAULT 1,
+
+        -- Authentication (encrypted via AES-256-GCM)
+        credential_mode TEXT NOT NULL DEFAULT 'none',
+        username_encrypted TEXT,
+        password_encrypted TEXT,
+        domain TEXT,
+
+        -- Display
+        resolution_mode TEXT DEFAULT 'fullscreen',
+        resolution_width INTEGER,
+        resolution_height INTEGER,
+        multi_monitor INTEGER DEFAULT 0,
+        color_depth INTEGER DEFAULT 32,
+
+        -- Resource Redirect
+        redirect_clipboard INTEGER DEFAULT 1,
+        redirect_printers INTEGER DEFAULT 0,
+        redirect_drives INTEGER DEFAULT 0,
+        redirect_usb INTEGER DEFAULT 0,
+        redirect_smartcard INTEGER DEFAULT 0,
+        audio_mode TEXT DEFAULT 'local',
+
+        -- Performance
+        network_profile TEXT DEFAULT 'auto',
+        nla_enabled INTEGER DEFAULT 1,
+        disable_wallpaper INTEGER DEFAULT 0,
+        disable_themes INTEGER DEFAULT 0,
+        disable_animations INTEGER DEFAULT 0,
+        bandwidth_limit INTEGER,
+
+        -- Session
+        session_timeout INTEGER,
+        admin_session INTEGER DEFAULT 0,
+        remote_app TEXT,
+        start_program TEXT,
+
+        -- Wake-on-LAN
+        wol_enabled INTEGER DEFAULT 0,
+        wol_mac_address TEXT,
+
+        -- Maintenance Window
+        maintenance_enabled INTEGER DEFAULT 0,
+        maintenance_schedule TEXT,
+
+        -- Session Sharing (Phase 2, prepared)
+        sharing_enabled INTEGER DEFAULT 0,
+        sharing_mode TEXT DEFAULT 'view',
+        sharing_require_consent INTEGER DEFAULT 1,
+
+        -- Screenshot Preview
+        screenshot_enabled INTEGER DEFAULT 0,
+        screenshot_data TEXT,
+
+        -- Credential Rotation
+        credential_rotation_enabled INTEGER DEFAULT 0,
+        credential_rotation_days INTEGER DEFAULT 90,
+        credential_rotation_last TEXT,
+
+        -- Access Control
+        token_ids TEXT,
+
+        -- Notes & Tags
+        notes TEXT,
+        tags TEXT,
+
+        -- Monitoring
+        health_check_enabled INTEGER DEFAULT 1,
+
+        -- Meta
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rdp_routes_enabled ON rdp_routes(enabled);
+      CREATE INDEX IF NOT EXISTS idx_rdp_routes_access_mode ON rdp_routes(access_mode);
+
+      CREATE TABLE IF NOT EXISTS rdp_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rdp_route_id INTEGER NOT NULL,
+        token_id INTEGER,
+        token_name TEXT,
+        peer_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'active',
+        started_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_heartbeat TEXT,
+        ended_at TEXT,
+        duration_seconds INTEGER,
+        end_reason TEXT,
+        client_ip TEXT,
+        FOREIGN KEY (rdp_route_id) REFERENCES rdp_routes(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rdp_sessions_route ON rdp_sessions(rdp_route_id);
+      CREATE INDEX IF NOT EXISTS idx_rdp_sessions_status ON rdp_sessions(status);
+      CREATE INDEX IF NOT EXISTS idx_rdp_sessions_started ON rdp_sessions(started_at DESC);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
