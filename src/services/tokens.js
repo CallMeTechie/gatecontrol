@@ -12,7 +12,7 @@ const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
 const VALID_SCOPES = [
   'read-only', 'full-access',
   'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup',
-  'client', 'client:services', 'client:traffic', 'client:dns',
+  'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
 ];
 
 /**
@@ -24,6 +24,7 @@ const SCOPE_MAP = [
   ['/api/v1/client/services', 'client:services'],
   ['/api/v1/client/traffic', 'client:traffic'],
   ['/api/v1/client/dns-check', 'client:dns'],
+  ['/api/v1/client/rdp', 'client:rdp'],
   // Client base (ping, register, config, heartbeat, status, peer-info, update)
   ['/api/v1/client', 'client'],
   // Server resource scopes
