@@ -139,6 +139,7 @@ router.get('/permissions', (req, res) => {
       services: hasScope('client:services'),
       traffic: hasScope('client:traffic'),
       dns: hasScope('client:dns'),
+      rdp: hasScope('client:rdp'),
     },
     scopes,
   });
@@ -544,6 +545,12 @@ router.get('/rdp', (req, res) => {
   try {
     if (!hasFeature('remote_desktop')) {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
+    }
+
+    const scopes = req.tokenScopes || [];
+    const hasRdpScope = scopes.includes('full-access') || scopes.includes('client:rdp');
+    if (!hasRdpScope) {
+      return res.status(403).json({ ok: false, error: 'Token does not have client:rdp permission' });
     }
 
     const tokenId = req.tokenId;

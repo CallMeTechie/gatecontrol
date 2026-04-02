@@ -599,6 +599,8 @@
   "tokens.scope_client_traffic_desc": "Traffic-Statistiken und Bandbreiten-Graph",
   "tokens.scope_client_dns": "DNS-Leak-Test",
   "tokens.scope_client_dns_desc": "DNS-Prüfung in der Client-App",
+  "tokens.scope_client_rdp": "Remote Desktop",
+  "tokens.scope_client_rdp_desc": "Zugriff auf RDP-Routen im Pro Client",
   "tokens.scope_peers_desc": "VPN-Peers erstellen, bearbeiten, löschen",
   "tokens.scope_routes_desc": "Reverse-Proxy-Routen erstellen, bearbeiten, löschen",
   "tokens.scope_settings_desc": "Server-Einstellungen und SMTP konfigurieren",
