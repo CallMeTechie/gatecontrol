@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0] — 2026-04-02
+
+### Features
+- add CodeQL, npm audit, ESLint security, Dependabot, and security gate for releases
+
+---
+
 ## [1.8.3] — 2026-04-01
 
 ### Fixes
