@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0] — 2026-04-02
+
+### Features
+- add client:rdp token scope for RDP access control
+
+---
+
 ## [1.10.0] — 2026-04-02
 
 ### Features
