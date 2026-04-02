@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.3] — 2026-04-02
+
+### Fixes
+- use GC_DATA_DIR for keypair path, set in test setup
+
+---
+
 ## [1.9.2] — 2026-04-02
 
 ### Fixes
