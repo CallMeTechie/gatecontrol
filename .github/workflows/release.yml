@@ -1,7 +1,9 @@
 name: Build & Release
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Security & Quality"]
+    types: [completed]
     branches: [master]
 
 env:
@@ -16,7 +18,7 @@ jobs:
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    if: "github.event.workflow_run.conclusion == 'success' && !startsWith(github.event.workflow_run.head_commit.message, 'chore: bump version')"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -44,7 +46,7 @@ jobs:
     needs: [test, security-gate]
     runs-on: ubuntu-latest
     # Skip version-bump commits to prevent infinite loop
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    if: "github.event.workflow_run.conclusion == 'success' && !startsWith(github.event.workflow_run.head_commit.message, 'chore: bump version')"
 
     steps:
       - uses: actions/checkout@v6
