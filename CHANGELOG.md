@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2] — 2026-04-02
+
+### Fixes
+- revert to push trigger for releases
+
+---
+
 ## [1.11.1] — 2026-04-02
 
 ### Fixes
