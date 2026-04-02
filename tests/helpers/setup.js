@@ -56,6 +56,7 @@ async function setup() {
     email_alerts: true,
     webhooks: true,
     api_tokens: true,
+    remote_desktop: true,
   });
 
   app = createApp();
