@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1] — 2026-04-02
+
+### Fixes
+- skip CodeQL on dependabot PRs (insufficient token permissions)
+
+---
+
 ## [1.9.0] — 2026-04-02
 
 ### Features
