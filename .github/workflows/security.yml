@@ -1,0 +1,113 @@
+name: Security & Quality
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high || true
+
+      - name: Check for critical vulnerabilities
+        run: |
+          RESULT=$(npm audit --json 2>/dev/null | node -e "
+            const data=require('fs').readFileSync('/dev/stdin','utf8');
+            try {
+              const audit=JSON.parse(data);
+              const critical=(audit.metadata?.vulnerabilities?.critical||0)+(audit.metadata?.vulnerabilities?.high||0);
+              console.log(critical);
+            } catch { console.log('0'); }
+          ")
+          echo "High/Critical vulnerabilities: $RESULT"
+          if [ "$RESULT" -gt 0 ] 2>/dev/null; then
+            echo "::warning::Found $RESULT high/critical vulnerabilities"
+          fi
+
+  eslint-security:
+    name: ESLint Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install ESLint with security plugin
+        run: npm install --no-save eslint@8 eslint-plugin-security
+
+      - name: Create security ESLint config
+        run: |
+          cat > .eslintrc.security.json << 'ESLINTEOF'
+          {
+            "plugins": ["security"],
+            "extends": ["plugin:security/recommended"],
+            "env": { "node": true, "es2022": true },
+            "parserOptions": { "ecmaVersion": 2022 },
+            "rules": {
+              "security/detect-eval-with-expression": "error",
+              "security/detect-non-literal-fs-filename": "warn",
+              "security/detect-non-literal-require": "warn",
+              "security/detect-possible-timing-attacks": "warn",
+              "security/detect-child-process": "warn"
+            }
+          }
+          ESLINTEOF
+
+      - name: Run ESLint security scan
+        run: npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc --format stylish || true
+
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t gatecontrol:security-scan .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'gatecontrol:security-scan'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true

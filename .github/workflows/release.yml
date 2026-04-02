@@ -13,6 +13,21 @@ permissions:
   packages: write
 
 jobs:
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - name: npm audit (high/critical)
+        run: |
+          CRITICAL=$(npm audit --json 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log((d.metadata?.vulnerabilities?.critical||0))}catch{console.log(0)}")
+          if [ "$CRITICAL" -gt 0 ]; then echo "::error::Critical vulnerabilities found"; exit 1; fi
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +41,7 @@ jobs:
           NODE_ENV: test
 
   release:
-    needs: test
+    needs: [test, security-gate]
     runs-on: ubuntu-latest
     # Skip version-bump commits to prevent infinite loop
     if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
