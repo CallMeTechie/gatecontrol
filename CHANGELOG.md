@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2] — 2026-04-02
+
+### Fixes
+- update deprecated actions to latest, fix npm audit vulnerabilities
+
+---
+
 ## [1.9.1] — 2026-04-02
 
 ### Fixes
