@@ -102,7 +102,7 @@ function decrypt(ciphertext) {
 const fs = require('node:fs');
 const path = require('node:path');
 
-const KEYPAIR_DIR = '/data';
+const KEYPAIR_DIR = process.env.GC_DATA_DIR || '/data';
 const PUBKEY_PATH = path.join(KEYPAIR_DIR, '.rdp-pubkey.pem');
 const PRIVKEY_PATH = path.join(KEYPAIR_DIR, '.rdp-privkey.pem');
 

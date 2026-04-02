@@ -15,6 +15,7 @@ process.env.GC_ADMIN_USER = 'admin';
 process.env.GC_WG_HOST = 'test.example.com';
 process.env.GC_BASE_URL = 'http://localhost:3000';
 process.env.GC_LOG_LEVEL = 'silent';
+process.env.GC_DATA_DIR = tmpDir;
 
 // Now import app modules
 const { runMigrations } = require('../../src/db/migrations');
