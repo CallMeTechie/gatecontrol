@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0] — 2026-04-02
+
+### Features
+- add host autocomplete with peer search, access mode field dependencies
+
+---
+
 ## [1.9.3] — 2026-04-02
 
 ### Fixes
