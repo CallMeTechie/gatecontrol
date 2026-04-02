@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1] — 2026-04-02
+
+### Fixes
+- register client:rdp as valid token scope
+
+---
+
 ## [1.11.0] — 2026-04-02
 
 ### Features
