@@ -348,6 +348,127 @@
     });
   }
 
+  // -- Access mode field dependencies -----------------------------
+  var accessMode = document.getElementById('rdp-access-mode');
+  var externalFields = document.getElementById('rdp-external-fields');
+  var externalHostInput = document.getElementById('rdp-external-hostname');
+  var externalHostLabel = document.getElementById('rdp-external-hostname-label');
+
+  function updateAccessModeFields() {
+    if (!accessMode || !externalFields) return;
+    var labelBase = GC.t['rdp.external_hostname'] || 'External Hostname';
+    if (accessMode.value === 'internal') {
+      externalFields.style.display = 'none';
+      externalHostInput.removeAttribute('required');
+      if (externalHostLabel) externalHostLabel.textContent = labelBase;
+    } else {
+      externalFields.style.display = '';
+      externalHostInput.setAttribute('required', '');
+      if (externalHostLabel) externalHostLabel.textContent = labelBase + ' *';
+    }
+  }
+
+  if (accessMode) {
+    accessMode.addEventListener('change', updateAccessModeFields);
+    updateAccessModeFields();
+  }
+
+  // -- Peer autocomplete for Host field ---------------------------
+  var cachedPeers = null;
+  var hostInput = document.getElementById('rdp-host');
+  var suggestions = document.getElementById('rdp-host-suggestions');
+
+  async function fetchPeers() {
+    if (cachedPeers) return cachedPeers;
+    try {
+      var res = await api.get('/api/v1/peers');
+      if (res.ok && res.peers) {
+        cachedPeers = res.peers;
+        return cachedPeers;
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  }
+
+  function extractIp(allowedIps) {
+    if (!allowedIps) return '';
+    return allowedIps.replace(/\/\d+$/, '');
+  }
+
+  function showSuggestions(peers) {
+    suggestions.textContent = '';
+    if (peers.length === 0) {
+      suggestions.style.display = 'none';
+      return;
+    }
+    peers.forEach(function (p) {
+      var ip = extractIp(p.allowed_ips);
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between';
+      item.addEventListener('mouseenter', function () { item.style.background = 'var(--bg-hover)'; });
+      item.addEventListener('mouseleave', function () { item.style.background = ''; });
+
+      var nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'font-weight:600;color:var(--text-1)';
+      nameSpan.textContent = p.name;
+
+      var ipSpan = document.createElement('span');
+      ipSpan.style.cssText = 'font-family:var(--font-mono);color:var(--text-3);font-size:11px';
+      ipSpan.textContent = ip;
+
+      item.appendChild(nameSpan);
+      item.appendChild(ipSpan);
+
+      item.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        hostInput.value = ip;
+        suggestions.style.display = 'none';
+      });
+
+      suggestions.appendChild(item);
+    });
+    suggestions.style.display = '';
+  }
+
+  function filterPeers(peers, query) {
+    if (!query) return peers.slice(0, 10);
+    var q = query.toLowerCase();
+    return peers.filter(function (p) {
+      var ip = extractIp(p.allowed_ips);
+      return (p.name || '').toLowerCase().indexOf(q) === 0 ||
+        ip.toLowerCase().indexOf(q) === 0;
+    }).slice(0, 10);
+  }
+
+  if (hostInput && suggestions) {
+    hostInput.addEventListener('input', async function () {
+      var peers = await fetchPeers();
+      var filtered = filterPeers(peers, this.value);
+      showSuggestions(filtered);
+    });
+
+    hostInput.addEventListener('focus', async function () {
+      if (this.value) {
+        var peers = await fetchPeers();
+        var filtered = filterPeers(peers, this.value);
+        showSuggestions(filtered);
+      }
+    });
+
+    hostInput.addEventListener('blur', function () {
+      setTimeout(function () { suggestions.style.display = 'none'; }, 150);
+    });
+
+    hostInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        suggestions.style.display = 'none';
+      }
+    });
+  }
+
+  // Pre-fetch peers on page load
+  fetchPeers();
+
   function openCreateModal() {
     editingId = null;
     modalTitle.textContent = GC.t['rdp.add'] || 'Add RDP Route';
@@ -408,6 +529,7 @@
       // Trigger change events
       credMode.dispatchEvent(new Event('change'));
       resMode.dispatchEvent(new Event('change'));
+      accessMode.dispatchEvent(new Event('change'));
 
       openModal('rdp-modal-overlay');
     } catch (err) {

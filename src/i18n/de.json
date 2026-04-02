@@ -854,6 +854,7 @@
   "rdp.no_routes": "Keine RDP-Routen konfiguriert",
   "rdp.name": "Name",
   "rdp.host": "Host",
+  "rdp.host_placeholder": "IP-Adresse oder Peer-Name eingeben...",
   "rdp.port": "Port",
   "rdp.access_mode": "Zugriffsmodus",
   "rdp.access_internal": "Intern",

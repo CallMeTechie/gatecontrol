@@ -128,7 +128,12 @@
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.host') }} *</label>
-              <input type="text" id="rdp-host" required style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              <div style="position:relative">
+                <input type="text" id="rdp-host" required placeholder="{{ t('rdp.host_placeholder') }}" autocomplete="off"
+                  style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-host-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-panel);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-xs) var(--radius-xs);z-index:10;box-shadow:var(--shadow)">
+                </div>
+              </div>
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.port') }}</label>
@@ -142,13 +147,17 @@
                 <option value="both">{{ t('rdp.access_both') }}</option>
               </select>
             </div>
-            <div>
-              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_hostname') }}</label>
-              <input type="text" id="rdp-external-hostname" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
-            </div>
-            <div>
-              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_port') }}</label>
-              <input type="number" id="rdp-external-port" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            <div id="rdp-external-fields" style="display:none;grid-column:1/-1">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <label id="rdp-external-hostname-label" style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_hostname') }}</label>
+                  <input type="text" id="rdp-external-hostname" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_port') }}</label>
+                  <input type="number" id="rdp-external-port" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                </div>
+              </div>
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.gateway_host') }}</label>
