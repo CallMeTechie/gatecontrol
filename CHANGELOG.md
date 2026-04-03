@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.4] — 2026-04-03
+
+### Fixes
+- RDP session disconnect — fallback lookup by routeId when sessionId missing
+
+---
+
 ## [1.12.3] — 2026-04-03
 
 ### Fixes
