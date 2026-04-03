@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.3] — 2026-04-03
+
+### Fixes
+- rewrite RDP dashboard to match mockup design exactly
+
+---
+
 ## [1.12.2] — 2026-04-03
 
 ### Fixes
