@@ -37,6 +37,14 @@
     }
   }
 
+  function setStatValue(id, value) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var dot = el.querySelector('.stat-dot');
+    el.textContent = value;
+    if (dot) el.prepend(dot);
+  }
+
   function updateStats() {
     var total = allRoutes.length;
     var online = allRoutes.filter(function (r) { return r.status && r.status.online; }).length;
@@ -44,11 +52,11 @@
     var sessions = allRoutes.reduce(function (sum, r) { return sum + (r.active_sessions || 0); }, 0);
     var maintenance = allRoutes.filter(function (r) { return r.maintenance_enabled; }).length;
 
-    document.getElementById('rdp-stat-total').textContent = total;
-    document.getElementById('rdp-stat-online').textContent = online;
-    document.getElementById('rdp-stat-offline').textContent = offline;
-    document.getElementById('rdp-stat-sessions').textContent = sessions;
-    document.getElementById('rdp-stat-maintenance').textContent = maintenance;
+    setStatValue('rdp-stat-total', total);
+    setStatValue('rdp-stat-online', online);
+    setStatValue('rdp-stat-offline', offline);
+    setStatValue('rdp-stat-sessions', sessions);
+    setStatValue('rdp-stat-maintenance', maintenance);
   }
 
   function filterRoutes() {
@@ -84,109 +92,204 @@
   }
 
   function renderGrid(routes) {
-    // Clear and build via DOM
     grid.textContent = '';
     var container = document.createElement('div');
-    container.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px';
+    container.className = 'vm-grid';
 
     routes.forEach(function (r) {
       var isOnline = r.status && r.status.online;
-      var statusColor = isOnline ? 'var(--success)' : 'var(--danger)';
-      var statusText = isOnline ? (GC.t['rdp.online'] || 'Online') : (GC.t['rdp.offline'] || 'Offline');
-      var tags = '';
-      try { var parsed = JSON.parse(r.tags || '[]'); if (Array.isArray(parsed)) tags = parsed.join(', '); } catch {}
+      var isMaintenance = r.maintenance_enabled;
+      var tags = [];
+      try { tags = JSON.parse(r.tags || '[]'); } catch {}
+      if (!Array.isArray(tags)) tags = [];
 
       var card = document.createElement('div');
-      card.className = 'card';
-      card.style.cssText = 'padding:14px;cursor:pointer';
-      card.dataset.rdpId = r.id;
+      card.className = 'vm-card';
+      if (isMaintenance) card.style.borderLeft = '3px solid var(--amber)';
 
+      // Header: name + host + status tag
       var header = document.createElement('div');
-      header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px';
-      var nameEl = document.createElement('strong');
-      nameEl.style.fontSize = '14px';
+      header.className = 'vm-card-header';
+
+      var nameBlock = document.createElement('div');
+      var nameEl = document.createElement('div');
+      nameEl.className = 'vm-name';
       nameEl.textContent = r.name;
-      var statusEl = document.createElement('span');
-      statusEl.style.cssText = 'font-size:11px;color:' + statusColor;
-      statusEl.textContent = statusText;
-      header.appendChild(nameEl);
-      header.appendChild(statusEl);
-      card.appendChild(header);
+      nameBlock.appendChild(nameEl);
 
       var hostEl = document.createElement('div');
-      hostEl.style.cssText = 'font-size:12px;color:var(--text-3)';
-      hostEl.textContent = r.host + ':' + r.port;
-      card.appendChild(hostEl);
+      hostEl.className = 'vm-host';
+      hostEl.textContent = r.host + ':' + (r.port || 3389);
+      nameBlock.appendChild(hostEl);
+      header.appendChild(nameBlock);
 
-      if (r.description) {
-        var descEl = document.createElement('div');
-        descEl.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:4px';
-        descEl.textContent = r.description;
-        card.appendChild(descEl);
+      var statusTag = document.createElement('span');
+      statusTag.className = 'tag';
+      if (isOnline) {
+        statusTag.classList.add('tag-green');
+        statusTag.textContent = GC.t['rdp.online'] || 'Online';
+      } else if (isMaintenance) {
+        statusTag.classList.add('tag-amber');
+        statusTag.textContent = GC.t['rdp.maintenance'] || 'Wartung';
+      } else {
+        statusTag.classList.add('tag-red');
+        statusTag.textContent = GC.t['rdp.offline'] || 'Offline';
+      }
+      header.appendChild(statusTag);
+      card.appendChild(header);
+
+      // Tags
+      if (tags.length > 0) {
+        var tagsRow = document.createElement('div');
+        tagsRow.className = 'vm-tags';
+        tags.forEach(function (tg) {
+          var tagEl = document.createElement('span');
+          tagEl.className = 'tag tag-neutral';
+          tagEl.textContent = tg;
+          tagsRow.appendChild(tagEl);
+        });
+        card.appendChild(tagsRow);
       }
 
-      if (tags) {
-        var tagsEl = document.createElement('div');
-        tagsEl.style.cssText = 'margin-top:6px;font-size:10px;color:var(--text-3)';
-        tagsEl.textContent = tags;
-        card.appendChild(tagsEl);
+      // Meta rows
+      var meta = document.createElement('div');
+      meta.className = 'vm-meta';
+
+      // Access mode row
+      var accessRow = document.createElement('div');
+      accessRow.className = 'vm-meta-row';
+      var accessLabel = document.createElement('span');
+      accessLabel.textContent = GC.t['rdp.access_mode'] || 'Zugriff';
+      accessRow.appendChild(accessLabel);
+      var accessTag = document.createElement('span');
+      accessTag.className = 'tag';
+      accessTag.style.fontSize = '10px';
+      if (r.access_mode === 'external' || r.access_mode === 'both') {
+        accessTag.classList.add('tag-purple');
+        accessTag.textContent = r.access_mode === 'both' ? (GC.t['rdp.access_both'] || 'Extern + Intern') : (GC.t['rdp.access_external'] || 'Extern');
+      } else {
+        accessTag.classList.add('tag-blue');
+        accessTag.textContent = GC.t['rdp.access_internal'] || 'Intern';
+      }
+      accessRow.appendChild(accessTag);
+      meta.appendChild(accessRow);
+
+      // External hostname (if applicable)
+      if (r.external_hostname && (r.access_mode === 'external' || r.access_mode === 'both')) {
+        var extHostRow = document.createElement('div');
+        extHostRow.className = 'vm-meta-row';
+        var extHostLabel = document.createElement('span');
+        extHostLabel.textContent = 'Hostname';
+        extHostRow.appendChild(extHostLabel);
+        var extHostVal = document.createElement('span');
+        extHostVal.style.cssText = 'font-family:var(--font-mono);font-size:11px';
+        extHostVal.textContent = r.external_hostname;
+        extHostRow.appendChild(extHostVal);
+        meta.appendChild(extHostRow);
       }
 
+      // Credentials row
+      var credRow = document.createElement('div');
+      credRow.className = 'vm-meta-row';
+      var credLabel = document.createElement('span');
+      credLabel.textContent = GC.t['rdp.credentials'] || 'Credentials';
+      credRow.appendChild(credLabel);
+      var credVal = document.createElement('span');
+      if (r.credential_mode === 'full') credVal.textContent = GC.t['rdp.credential_full'] || 'Vollständig';
+      else if (r.credential_mode === 'user_only') credVal.textContent = GC.t['rdp.credential_user'] || 'Nur Username';
+      else credVal.textContent = GC.t['rdp.credential_none'] || 'Keine';
+      credRow.appendChild(credVal);
+      meta.appendChild(credRow);
+
+      // Active sessions row
+      var sessRow = document.createElement('div');
+      sessRow.className = 'vm-meta-row';
+      var sessLabel = document.createElement('span');
+      sessLabel.textContent = GC.t['rdp.stat_active_sessions'] || 'Aktive Sessions';
+      sessRow.appendChild(sessLabel);
+      var sessVal = document.createElement('span');
+      if (r.active_sessions > 0) {
+        sessVal.style.cssText = 'font-weight:600;color:var(--blue)';
+        sessVal.textContent = r.active_sessions;
+      } else {
+        sessVal.textContent = '-';
+      }
+      sessRow.appendChild(sessVal);
+      meta.appendChild(sessRow);
+
+      // WoL row (if enabled)
+      if (r.wol_enabled && r.wol_mac_address) {
+        var wolRow = document.createElement('div');
+        wolRow.className = 'vm-meta-row';
+        var wolLabel = document.createElement('span');
+        wolLabel.textContent = 'WoL';
+        wolRow.appendChild(wolLabel);
+        var wolVal = document.createElement('span');
+        wolVal.style.cssText = 'font-family:var(--font-mono);font-size:11px';
+        wolVal.textContent = r.wol_mac_address;
+        wolRow.appendChild(wolVal);
+        meta.appendChild(wolRow);
+      }
+
+      // Maintenance row (if enabled)
+      if (r.maintenance_enabled) {
+        var maintRow = document.createElement('div');
+        maintRow.className = 'vm-meta-row';
+        var maintLabel = document.createElement('span');
+        maintLabel.textContent = GC.t['rdp.maintenance'] || 'Wartung';
+        maintRow.appendChild(maintLabel);
+        var maintVal = document.createElement('span');
+        maintVal.style.cssText = 'color:var(--amber);font-weight:600';
+        maintVal.textContent = GC.t['rdp.maintenance_active'] || 'Aktiv';
+        maintRow.appendChild(maintVal);
+        meta.appendChild(maintRow);
+      }
+
+      card.appendChild(meta);
+
+      // Actions
       var actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:6px;margin-top:10px';
+      actions.className = 'vm-actions';
 
-      if (r.wol_enabled && r.wol_mac_address && !isOnline) {
+      if (!isOnline && r.wol_enabled && r.wol_mac_address) {
         var wolBtn = document.createElement('button');
-        wolBtn.className = 'btn btn-ghost btn-sm';
+        wolBtn.className = 'btn btn-sm btn-green';
         wolBtn.dataset.wol = r.id;
-        wolBtn.textContent = GC.t['rdp.wol_send'] || 'WoL';
+        wolBtn.textContent = GC.t['rdp.wol_send'] || 'WoL senden';
         actions.appendChild(wolBtn);
       }
 
-      var checkBtn = document.createElement('button');
-      checkBtn.className = 'btn btn-ghost btn-sm';
-      checkBtn.dataset.check = r.id;
-      checkBtn.textContent = GC.t['rdp.connect_test'] || 'Test';
-      actions.appendChild(checkBtn);
-
       var editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.className = 'btn btn-sm btn-ghost';
       editBtn.dataset.edit = r.id;
-      editBtn.style.marginLeft = 'auto';
-      editBtn.textContent = 'Edit';
+      editBtn.textContent = GC.t['rdp.edit'] || 'Bearbeiten';
       actions.appendChild(editBtn);
 
-      var toggleBtn = document.createElement('button');
-      toggleBtn.className = 'btn btn-ghost btn-sm';
-      toggleBtn.dataset.toggle = r.id;
-      toggleBtn.textContent = r.enabled ? (GC.t['rdp.enabled'] || 'On') : (GC.t['rdp.disabled'] || 'Off');
-      actions.appendChild(toggleBtn);
-
-      var deleteBtn = document.createElement('button');
-      deleteBtn.className = 'btn btn-ghost btn-sm';
-      deleteBtn.style.color = 'var(--danger)';
-      deleteBtn.dataset.delete = r.id;
-      deleteBtn.textContent = '\u00d7';
-      actions.appendChild(deleteBtn);
+      var checkBtn = document.createElement('button');
+      checkBtn.className = 'btn btn-sm btn-ghost';
+      checkBtn.dataset.check = r.id;
+      checkBtn.textContent = GC.t['rdp.connect_test'] || 'Verbindungstest';
+      actions.appendChild(checkBtn);
 
       card.appendChild(actions);
       container.appendChild(card);
     });
+
     grid.appendChild(container);
   }
 
   function renderList(routes) {
     grid.textContent = '';
     var table = document.createElement('table');
-    table.className = 'table';
+    table.className = 'history-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
     var headers = [
       GC.t['rdp.name'] || 'Name',
       GC.t['rdp.host'] || 'Host',
-      GC.t['rdp.access_mode'] || 'Access',
-      GC.t['rdp.credentials'] || 'Creds',
+      GC.t['rdp.access_mode'] || 'Zugriff',
+      GC.t['rdp.credentials'] || 'Credentials',
       GC.t['rdp.status'] || 'Status',
       GC.t['rdp.sessions'] || 'Sessions',
       ''
@@ -202,50 +305,95 @@
     var tbody = document.createElement('tbody');
     routes.forEach(function (r) {
       var isOnline = r.status && r.status.online;
+      var isMaintenance = r.maintenance_enabled;
       var tr = document.createElement('tr');
 
-      var cells = [
-        r.name,
-        r.host + ':' + r.port,
-        r.access_mode,
-        r.has_credentials ? 'Yes' : 'No',
-        isOnline ? 'Online' : 'Offline',
-        String(r.active_sessions || 0)
-      ];
-      cells.forEach(function (text, i) {
-        var td = document.createElement('td');
-        if (i === 0) { var strong = document.createElement('strong'); strong.textContent = text; td.appendChild(strong); }
-        else { td.textContent = text; }
-        if (i === 4) td.style.color = isOnline ? 'var(--success)' : 'var(--danger)';
-        tr.appendChild(td);
-      });
+      // Name
+      var tdName = document.createElement('td');
+      tdName.style.cssText = 'font-weight:600;color:var(--text-1)';
+      tdName.textContent = r.name;
+      tr.appendChild(tdName);
 
-      var actionTd = document.createElement('td');
-      actionTd.style.cssText = 'display:flex;gap:4px';
+      // Host
+      var tdHost = document.createElement('td');
+      tdHost.style.cssText = 'font-family:var(--font-mono);font-size:11px';
+      tdHost.textContent = r.host + ':' + (r.port || 3389);
+      tr.appendChild(tdHost);
+
+      // Access mode
+      var tdAccess = document.createElement('td');
+      var accessTag = document.createElement('span');
+      accessTag.className = 'tag';
+      accessTag.style.fontSize = '10px';
+      if (r.access_mode === 'external' || r.access_mode === 'both') {
+        accessTag.classList.add('tag-purple');
+        accessTag.textContent = r.access_mode === 'both' ? (GC.t['rdp.access_both'] || 'Extern + Intern') : (GC.t['rdp.access_external'] || 'Extern');
+      } else {
+        accessTag.classList.add('tag-blue');
+        accessTag.textContent = GC.t['rdp.access_internal'] || 'Intern';
+      }
+      tdAccess.appendChild(accessTag);
+      tr.appendChild(tdAccess);
+
+      // Credentials
+      var tdCred = document.createElement('td');
+      if (r.credential_mode === 'full') tdCred.textContent = GC.t['rdp.credential_full'] || 'Vollständig';
+      else if (r.credential_mode === 'user_only') tdCred.textContent = GC.t['rdp.credential_user'] || 'Nur Username';
+      else tdCred.textContent = GC.t['rdp.credential_none'] || 'Keine';
+      tr.appendChild(tdCred);
+
+      // Status
+      var tdStatus = document.createElement('td');
+      var statusTag = document.createElement('span');
+      statusTag.className = 'tag';
+      if (isOnline) {
+        statusTag.classList.add('tag-green');
+        statusTag.textContent = GC.t['rdp.online'] || 'Online';
+      } else if (isMaintenance) {
+        statusTag.classList.add('tag-amber');
+        statusTag.textContent = GC.t['rdp.maintenance'] || 'Wartung';
+      } else {
+        statusTag.classList.add('tag-red');
+        statusTag.textContent = GC.t['rdp.offline'] || 'Offline';
+      }
+      tdStatus.appendChild(statusTag);
+      tr.appendChild(tdStatus);
+
+      // Sessions
+      var tdSess = document.createElement('td');
+      if (r.active_sessions > 0) {
+        tdSess.style.cssText = 'font-weight:600;color:var(--blue)';
+        tdSess.textContent = r.active_sessions;
+      } else {
+        tdSess.textContent = '-';
+      }
+      tr.appendChild(tdSess);
+
+      // Actions
+      var tdActions = document.createElement('td');
+      tdActions.style.cssText = 'display:flex;gap:4px';
+
+      if (!isOnline && r.wol_enabled && r.wol_mac_address) {
+        var wolBtn = document.createElement('button');
+        wolBtn.className = 'btn btn-sm btn-green';
+        wolBtn.dataset.wol = r.id;
+        wolBtn.textContent = GC.t['rdp.wol_send'] || 'WoL senden';
+        tdActions.appendChild(wolBtn);
+      }
 
       var editBtn = document.createElement('button');
-      editBtn.className = 'icon-btn';
+      editBtn.className = 'btn btn-sm btn-ghost';
       editBtn.dataset.edit = r.id;
-      editBtn.title = 'Edit';
-      editBtn.textContent = '\u270e';
-      actionTd.appendChild(editBtn);
+      editBtn.textContent = GC.t['rdp.edit'] || 'Bearbeiten';
+      tdActions.appendChild(editBtn);
 
-      var toggleBtn = document.createElement('button');
-      toggleBtn.className = 'icon-btn';
-      toggleBtn.dataset.toggle = r.id;
-      toggleBtn.title = 'Toggle';
-      toggleBtn.textContent = r.enabled ? '\u2714' : '\u2716';
-      actionTd.appendChild(toggleBtn);
+      var checkBtn = document.createElement('button');
+      checkBtn.className = 'btn btn-sm btn-ghost';
+      checkBtn.dataset.check = r.id;
+      checkBtn.textContent = GC.t['rdp.connect_test'] || 'Verbindungstest';
+      tdActions.appendChild(checkBtn);
 
-      var deleteBtn = document.createElement('button');
-      deleteBtn.className = 'icon-btn';
-      deleteBtn.dataset.delete = r.id;
-      deleteBtn.title = 'Delete';
-      deleteBtn.style.color = 'var(--danger)';
-      deleteBtn.textContent = '\u00d7';
-      actionTd.appendChild(deleteBtn);
-
-      tr.appendChild(actionTd);
+      tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -605,12 +753,14 @@
   // -- History --------------------------------------------------
   async function loadHistory() {
     try {
-      var res = await api.get('/api/v1/rdp/history?limit=20');
+      var periodSelect = document.getElementById('rdp-history-period');
+      var period = periodSelect ? periodSelect.value : '24h';
+      var res = await api.get('/api/v1/rdp/history?limit=50&period=' + period);
       if (!res.ok) return;
       var history = res.history || [];
 
       if (history.length === 0) {
-        historyList.textContent = 'No session history';
+        historyList.textContent = GC.t['rdp.no_history'] || 'Keine Verbindungshistorie';
         historyList.style.cssText = 'font-size:13px;color:var(--text-3);padding:12px;text-align:center';
         return;
       }
@@ -618,17 +768,17 @@
       historyList.textContent = '';
 
       var table = document.createElement('table');
-      table.className = 'table';
+      table.className = 'history-table';
 
       var thead = document.createElement('thead');
       var headerRow = document.createElement('tr');
       var headers = [
-        GC.t['rdp.name'] || 'Route',
-        GC.t['rdp.history_token'] || 'Token',
-        GC.t['rdp.history_started'] || 'Started',
-        GC.t['rdp.history_duration'] || 'Duration',
-        GC.t['rdp.status'] || 'Status',
-        GC.t['rdp.history_reason'] || 'Reason'
+        GC.t['rdp.history_time'] || 'Zeitpunkt',
+        GC.t['rdp.history_token'] || 'User / Token',
+        GC.t['rdp.name'] || 'VM',
+        GC.t['rdp.host'] || 'Host',
+        GC.t['rdp.history_duration'] || 'Dauer',
+        GC.t['rdp.status'] || 'Status'
       ];
       headers.forEach(function (h) {
         var th = document.createElement('th');
@@ -641,19 +791,67 @@
       var tbody = document.createElement('tbody');
       history.forEach(function (s) {
         var tr = document.createElement('tr');
-        var cells = [
-          s.route_name || '',
-          s.token_name || '-',
-          s.started_at || '-',
-          s.duration_seconds ? formatDuration(s.duration_seconds) : '-',
-          s.status,
-          s.end_reason || '-'
-        ];
-        cells.forEach(function (text) {
-          var td = document.createElement('td');
-          td.textContent = text;
-          tr.appendChild(td);
-        });
+
+        // Timestamp
+        var tdTime = document.createElement('td');
+        tdTime.style.cssText = 'font-family:var(--font-mono);font-size:11px';
+        tdTime.textContent = s.started_at ? formatTimestamp(s.started_at) : '-';
+        tr.appendChild(tdTime);
+
+        // User / Token
+        var tdToken = document.createElement('td');
+        var tokenText = s.token_name || '-';
+        tdToken.textContent = tokenText;
+        if (s.peer_name) {
+          var peerSpan = document.createElement('span');
+          peerSpan.style.color = 'var(--text-3)';
+          peerSpan.textContent = ' (' + s.peer_name + ')';
+          tdToken.appendChild(peerSpan);
+        }
+        tr.appendChild(tdToken);
+
+        // VM name
+        var tdVm = document.createElement('td');
+        tdVm.style.cssText = 'font-weight:600;color:var(--text-1)';
+        tdVm.textContent = s.route_name || '-';
+        tr.appendChild(tdVm);
+
+        // Host
+        var tdHost = document.createElement('td');
+        tdHost.style.cssText = 'font-family:var(--font-mono);font-size:11px';
+        tdHost.textContent = s.route_host ? (s.route_host + ':' + (s.route_port || 3389)) : '-';
+        tr.appendChild(tdHost);
+
+        // Duration
+        var tdDur = document.createElement('td');
+        if (s.status === 'active' || s.status === 'connected') {
+          var durTag = document.createElement('span');
+          durTag.className = 'tag tag-blue';
+          durTag.style.fontSize = '10px';
+          durTag.textContent = (GC.t['rdp.active'] || 'Aktiv') + (s.duration_seconds ? ' (' + formatDuration(s.duration_seconds) + ')' : '');
+          tdDur.appendChild(durTag);
+        } else {
+          tdDur.textContent = s.duration_seconds ? formatDuration(s.duration_seconds) : '-';
+        }
+        tr.appendChild(tdDur);
+
+        // Status
+        var tdStatus = document.createElement('td');
+        var statusTag = document.createElement('span');
+        statusTag.className = 'tag';
+        if (s.status === 'active' || s.status === 'connected') {
+          statusTag.classList.add('tag-green');
+          statusTag.textContent = GC.t['rdp.connected'] || 'Verbunden';
+        } else if (s.status === 'timeout') {
+          statusTag.classList.add('tag-amber');
+          statusTag.textContent = 'Timeout';
+        } else {
+          statusTag.classList.add('tag-neutral');
+          statusTag.textContent = GC.t['rdp.disconnected'] || 'Getrennt';
+        }
+        tdStatus.appendChild(statusTag);
+        tr.appendChild(tdStatus);
+
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
@@ -662,6 +860,18 @@
       historyList.textContent = 'Error loading history';
       historyList.style.cssText = 'color:var(--danger);padding:12px;text-align:center';
     }
+  }
+
+  function formatTimestamp(iso) {
+    try {
+      var d = new Date(iso);
+      var dd = String(d.getDate()).padStart(2, '0');
+      var mm = String(d.getMonth() + 1).padStart(2, '0');
+      var yyyy = d.getFullYear();
+      var hh = String(d.getHours()).padStart(2, '0');
+      var min = String(d.getMinutes()).padStart(2, '0');
+      return dd + '.' + mm + '.' + yyyy + ' ' + hh + ':' + min;
+    } catch { return iso; }
   }
 
   function formatDuration(seconds) {
@@ -675,6 +885,12 @@
   var jsonBtn = document.getElementById('rdp-history-export-json');
   if (csvBtn) csvBtn.addEventListener('click', function () { window.open('/api/v1/rdp/history/export?format=csv', '_blank'); });
   if (jsonBtn) jsonBtn.addEventListener('click', function () { window.open('/api/v1/rdp/history/export?format=json', '_blank'); });
+
+  // History period filter
+  var historyPeriod = document.getElementById('rdp-history-period');
+  if (historyPeriod) {
+    historyPeriod.addEventListener('change', function () { loadHistory(); });
+  }
 
   // -- Rotation stats -------------------------------------------
   async function loadRotationCount() {

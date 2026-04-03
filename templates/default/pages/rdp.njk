@@ -24,23 +24,23 @@
     <div class="stat-label">{{ t('rdp.stat_total') }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="rdp-stat-online" style="color:var(--success)">0</div>
+    <div class="stat-value" id="rdp-stat-online"><span class="stat-dot stat-dot-green"></span>0</div>
     <div class="stat-label">{{ t('rdp.stat_online') }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="rdp-stat-offline" style="color:var(--danger)">0</div>
+    <div class="stat-value" id="rdp-stat-offline"><span class="stat-dot stat-dot-red"></span>0</div>
     <div class="stat-label">{{ t('rdp.stat_offline') }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="rdp-stat-sessions" style="color:var(--accent)">0</div>
+    <div class="stat-value" id="rdp-stat-sessions"><span class="stat-dot stat-dot-blue"></span>0</div>
     <div class="stat-label">{{ t('rdp.stat_active_sessions') }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="rdp-stat-maintenance">0</div>
+    <div class="stat-value" id="rdp-stat-maintenance"><span class="stat-dot stat-dot-amber"></span>0</div>
     <div class="stat-label">{{ t('rdp.stat_maintenance') }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="rdp-stat-rotation" style="color:var(--warning)">0</div>
+    <div class="stat-value" id="rdp-stat-rotation"><span class="stat-dot stat-dot-purple"></span>0</div>
     <div class="stat-label">{{ t('rdp.stat_rotation_due') }}</div>
   </div>
 </div>
@@ -73,17 +73,20 @@
 </div>
 
 {# -- VM Grid / List ----------------------------------------- #}
-<div class="card">
-  <div class="card-body" id="rdp-grid">
-    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
-  </div>
+<div id="rdp-grid">
+  <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
 </div>
 
 {# -- Connection History ------------------------------------- #}
 <div class="card" style="margin-top:20px">
   <div class="card-head">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     <span class="card-title">{{ t('rdp.history') }}</span>
+    <select class="filter-select" id="rdp-history-period" style="font-size:11px;padding:4px 8px">
+      <option value="24h">Letzte 24 Stunden</option>
+      <option value="7d">Letzte 7 Tage</option>
+      <option value="30d">Letzte 30 Tage</option>
+    </select>
     <div style="margin-left:auto;display:flex;gap:8px">
       <button class="btn btn-ghost btn-sm" id="rdp-history-export-csv">CSV</button>
       <button class="btn btn-ghost btn-sm" id="rdp-history-export-json">JSON</button>
