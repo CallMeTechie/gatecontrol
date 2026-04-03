@@ -747,11 +747,11 @@ const http = require('node:http');
 let releaseCache = null;
 const CACHE_TTL = 120000; // 2 minutes
 
-const CLIENT_REPO = process.env.GC_CLIENT_REPO || 'CallMeTechie/GateControl-Windows-Client';
+const CLIENT_REPO = process.env.GC_CLIENT_REPO || 'CallMeTechie/GateControl-Pro-Client';
 const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
 
 /**
- * Fetch latest release from GitHub API (cached 1h)
+ * Fetch latest release from GitHub API (cached 2min, follows redirects)
  */
 async function fetchLatestRelease() {
   if (releaseCache && (Date.now() - releaseCache.fetchedAt) < CACHE_TTL) {
@@ -767,13 +767,22 @@ async function fetchLatestRelease() {
     headers['Authorization'] = `Bearer ${CLIENT_GITHUB_TOKEN}`;
   }
 
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers }, (res) => {
+  if (!CLIENT_GITHUB_TOKEN) {
+    logger.warn('GC_CLIENT_GITHUB_TOKEN nicht gesetzt — Update-Check für private Repos nicht möglich');
+  }
+
+  const fetchUrl = (targetUrl, redirectCount = 0) => new Promise((resolve) => {
+    if (redirectCount > 3) return resolve(null);
+    https.get(targetUrl, { headers }, (res) => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        return resolve(fetchUrl(res.headers.location, redirectCount + 1));
+      }
       let body = '';
       res.on('data', chunk => { body += chunk; });
       res.on('end', () => {
         if (res.statusCode !== 200) {
-          logger.warn({ statusCode: res.statusCode }, 'GitHub release API error');
+          logger.warn({ statusCode: res.statusCode, repo: CLIENT_REPO }, 'GitHub release API error');
           return resolve(null);
         }
         try {
@@ -789,6 +798,8 @@ async function fetchLatestRelease() {
       resolve(null);
     });
   });
+
+  return fetchUrl(url);
 }
 
 /**

@@ -102,7 +102,7 @@ const config = {
   },
 
   client: {
-    repo: env('GC_CLIENT_REPO', 'CallMeTechie/GateControl-Windows-Client'),
+    repo: env('GC_CLIENT_REPO', 'CallMeTechie/GateControl-Pro-Client'),
     githubToken: env('GC_CLIENT_GITHUB_TOKEN', ''),
   },
 
