@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1] — 2026-04-03
+
+### Fixes
+- robust client type detection via version range and X-Client-Name
+
+---
+
 ## [1.12.0] — 2026-04-03
 
 ### Features
