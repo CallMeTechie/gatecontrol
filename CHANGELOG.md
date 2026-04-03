@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0] — 2026-04-03
+
+### Features
+- support separate update repos for Community and Pro client
+
+---
+
 ## [1.11.3] — 2026-04-03
 
 ### Fixes
