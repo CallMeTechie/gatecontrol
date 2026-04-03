@@ -69,6 +69,14 @@ function getGlobalHistory({ limit = 50, offset = 0, status, since, until } = {})
   return db.prepare(query).all(...params);
 }
 
+function findActiveSession(routeId, tokenId) {
+  const db = getDb();
+  if (tokenId) {
+    return db.prepare("SELECT * FROM rdp_sessions WHERE rdp_route_id = ? AND token_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1").get(routeId, tokenId);
+  }
+  return db.prepare("SELECT * FROM rdp_sessions WHERE rdp_route_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1").get(routeId);
+}
+
 function getActiveSessionCounts() {
   const db = getDb();
   return db.prepare("SELECT rdp_route_id, COUNT(*) as count FROM rdp_sessions WHERE status = 'active' GROUP BY rdp_route_id").all();
@@ -103,4 +111,4 @@ function exportCsv({ since, until, routeId } = {}) {
   return header + lines.join('\n');
 }
 
-module.exports = { startSession, heartbeatSession, endSession, getHistory, getGlobalHistory, getActiveSessionCounts, cleanupStaleSessions, exportCsv };
+module.exports = { startSession, heartbeatSession, endSession, findActiveSession, getHistory, getGlobalHistory, getActiveSessionCounts, cleanupStaleSessions, exportCsv };

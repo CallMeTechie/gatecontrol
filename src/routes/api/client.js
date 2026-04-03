@@ -730,9 +730,19 @@ router.patch('/rdp/:id/session', (req, res) => {
 router.delete('/rdp/:id/session', (req, res) => {
   try {
     const { sessionId, endReason } = req.body || {};
-    if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId required' });
+    const routeId = parseInt(req.params.id, 10);
+    let resolvedSessionId = sessionId ? parseInt(sessionId, 10) : null;
 
-    const result = rdpSessions.endSession(parseInt(sessionId, 10), endReason || 'normal');
+    // Fallback: find active session by routeId + tokenId if no sessionId provided
+    if (!resolvedSessionId) {
+      const tokenId = req.tokenRecord?.id;
+      const activeSession = rdpSessions.findActiveSession(routeId, tokenId);
+      if (activeSession) resolvedSessionId = activeSession.id;
+    }
+
+    if (!resolvedSessionId) return res.status(400).json({ ok: false, error: 'No active session found' });
+
+    const result = rdpSessions.endSession(resolvedSessionId, endReason || 'normal');
     res.json({ ok: true, session: result });
   } catch (err) {
     if (err.message === 'Session not found') {
