@@ -756,14 +756,26 @@ const CLIENT_REPOS = {
 
 /**
  * Client-Typ aus Query/Header ermitteln
+ * Prüft mehrere Quellen für robuste Erkennung (auch ältere Clients ohne client-Param)
  */
 function resolveClientType(req) {
+  // 1. Expliziter Parameter (neue Clients)
   const param = (req.query.client || req.headers['x-client-type'] || '').toLowerCase().trim();
   if (param === 'pro' || param === 'gatecontrol-pro') return 'pro';
   if (param === 'community' || param === 'gatecontrol-community') return 'community';
-  // Fallback: Header X-Client-Platform + productName in User-Agent
-  const ua = req.headers['user-agent'] || '';
-  if (ua.includes('Pro')) return 'pro';
+
+  // 2. App-Name Header (ab Core v1.2.4+)
+  const clientName = (req.headers['x-client-name'] || '').toLowerCase();
+  if (clientName.includes('pro')) return 'pro';
+
+  // 3. API-Token basiert: Pro-Client Versionen sind 1.x.x (< 2.0), Community ist 1.1x.x (>= 1.10)
+  const clientVersion = req.query.version || '';
+  const parts = clientVersion.split('.').map(Number);
+  if (parts.length >= 2 && parts[0] === 1 && parts[1] < 10) {
+    // Version 1.0.x - 1.9.x → Pro Client (Community ist bei 1.10+)
+    return 'pro';
+  }
+
   return 'community';
 }
 
