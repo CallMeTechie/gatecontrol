@@ -524,14 +524,18 @@ router.get('/services', (req, res) => {
 
 /**
  * GET /api/v1/client/dns-check
- * Returns the server's public IP so the client can verify DNS goes through VPN
+ * Returns VPN DNS config so the client can verify DNS goes through VPN
  */
 router.get('/dns-check', (req, res) => {
-  const clientIp = req.ip || req.connection?.remoteAddress;
+  const settings = require('../../services/settings');
+  const customDns = settings.get('custom_dns');
+  const vpnDns = customDns || config.wireguard.dns.join(',');
+
   res.json({
     ok: true,
-    serverIp: clientIp,
     vpnSubnet: config.wireguard.subnet,
+    vpnDns,
+    gatewayIp: config.wireguard.gatewayIp,
   });
 });
 
