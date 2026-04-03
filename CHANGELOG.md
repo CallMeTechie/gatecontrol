@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.2] — 2026-04-03
+
+### Fixes
+- DNS-Leak-Test Endpoint gibt VPN-DNS-Config zurück statt req.ip
+
+---
+
 ## [1.12.1] — 2026-04-03
 
 ### Fixes
