@@ -743,32 +743,47 @@ router.delete('/rdp/:id/session', (req, res) => {
 const https = require('node:https');
 const http = require('node:http');
 
-// Cache: { data, fetchedAt }
-let releaseCache = null;
+// Pro-rata Cache pro Client-Typ: { [clientType]: { data, fetchedAt } }
+const releaseCache = {};
 const CACHE_TTL = 120000; // 2 minutes
 
-const CLIENT_REPO = process.env.GC_CLIENT_REPO || 'CallMeTechie/GateControl-Pro-Client';
 const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
 
+const CLIENT_REPOS = {
+  community: process.env.GC_CLIENT_REPO_COMMUNITY || 'CallMeTechie/GateControl-Community-Client',
+  pro:       process.env.GC_CLIENT_REPO_PRO       || 'CallMeTechie/GateControl-Pro-Client',
+};
+
 /**
- * Fetch latest release from GitHub API (cached 2min, follows redirects)
+ * Client-Typ aus Query/Header ermitteln
  */
-async function fetchLatestRelease() {
-  if (releaseCache && (Date.now() - releaseCache.fetchedAt) < CACHE_TTL) {
-    return releaseCache.data;
+function resolveClientType(req) {
+  const param = (req.query.client || req.headers['x-client-type'] || '').toLowerCase().trim();
+  if (param === 'pro' || param === 'gatecontrol-pro') return 'pro';
+  if (param === 'community' || param === 'gatecontrol-community') return 'community';
+  // Fallback: Header X-Client-Platform + productName in User-Agent
+  const ua = req.headers['user-agent'] || '';
+  if (ua.includes('Pro')) return 'pro';
+  return 'community';
+}
+
+/**
+ * Fetch latest release from GitHub API (cached 2min per client type, follows redirects)
+ */
+async function fetchLatestRelease(clientType = 'community') {
+  const cached = releaseCache[clientType];
+  if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
+    return cached.data;
   }
 
-  const url = `https://api.github.com/repos/${CLIENT_REPO}/releases/latest`;
+  const repo = CLIENT_REPOS[clientType] || CLIENT_REPOS.community;
+  const url = `https://api.github.com/repos/${repo}/releases/latest`;
   const headers = {
     'User-Agent': 'GateControl-Server',
     'Accept': 'application/vnd.github+json',
   };
   if (CLIENT_GITHUB_TOKEN) {
     headers['Authorization'] = `Bearer ${CLIENT_GITHUB_TOKEN}`;
-  }
-
-  if (!CLIENT_GITHUB_TOKEN) {
-    logger.warn('GC_CLIENT_GITHUB_TOKEN nicht gesetzt — Update-Check für private Repos nicht möglich');
   }
 
   const fetchUrl = (targetUrl, redirectCount = 0) => new Promise((resolve) => {
@@ -782,12 +797,12 @@ async function fetchLatestRelease() {
       res.on('data', chunk => { body += chunk; });
       res.on('end', () => {
         if (res.statusCode !== 200) {
-          logger.warn({ statusCode: res.statusCode, repo: CLIENT_REPO }, 'GitHub release API error');
+          logger.warn({ statusCode: res.statusCode, repo }, 'GitHub release API error');
           return resolve(null);
         }
         try {
           const data = JSON.parse(body);
-          releaseCache = { data, fetchedAt: Date.now() };
+          releaseCache[clientType] = { data, fetchedAt: Date.now() };
           resolve(data);
         } catch {
           resolve(null);
@@ -804,7 +819,7 @@ async function fetchLatestRelease() {
 
 /**
  * GET /api/v1/client/update/check
- * Query: ?version=1.2.1&platform=windows
+ * Query: ?version=1.2.1&platform=windows&client=pro|community
  * Returns: { ok, available, version?, downloadUrl?, releaseNotes? }
  */
 router.get('/update/check', async (req, res) => {
@@ -814,7 +829,8 @@ router.get('/update/check', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Version parameter required' });
     }
 
-    const release = await fetchLatestRelease();
+    const clientType = resolveClientType(req);
+    const release = await fetchLatestRelease(clientType);
     if (!release || !release.tag_name) {
       return res.json({ ok: true, available: false });
     }
@@ -834,7 +850,7 @@ router.get('/update/check', async (req, res) => {
     // For private repos, proxy the download through the server
     let downloadUrl = null;
     if (installerAsset) {
-      downloadUrl = `${config.app.baseUrl}/api/v1/client/update/download`;
+      downloadUrl = `${config.app.baseUrl}/api/v1/client/update/download?client=${clientType}`;
     }
 
     res.json({
@@ -853,12 +869,13 @@ router.get('/update/check', async (req, res) => {
 });
 
 /**
- * GET /api/v1/client/update/download
+ * GET /api/v1/client/update/download?client=pro|community
  * Proxies the installer download from GitHub (needed for private repos)
  */
 router.get('/update/download', async (req, res) => {
   try {
-    const release = await fetchLatestRelease();
+    const clientType = resolveClientType(req);
+    const release = await fetchLatestRelease(clientType);
     if (!release) {
       return res.status(404).json({ ok: false, error: 'No release found' });
     }

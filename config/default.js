@@ -102,8 +102,9 @@ const config = {
   },
 
   client: {
-    repo: env('GC_CLIENT_REPO', 'CallMeTechie/GateControl-Pro-Client'),
-    githubToken: env('GC_CLIENT_GITHUB_TOKEN', ''),
+    repoCommunity: env('GC_CLIENT_REPO_COMMUNITY', 'CallMeTechie/GateControl-Community-Client'),
+    repoPro:       env('GC_CLIENT_REPO_PRO', 'CallMeTechie/GateControl-Pro-Client'),
+    githubToken:   env('GC_CLIENT_GITHUB_TOKEN', ''),
   },
 
   rdp: {
