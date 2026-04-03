@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.3] — 2026-04-03
+
+### Fixes
+- update check uses wrong repo, add redirect support and token docs
+
+---
+
 ## [1.11.2] — 2026-04-02
 
 ### Fixes
