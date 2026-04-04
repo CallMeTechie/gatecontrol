@@ -121,6 +121,7 @@ const pages = [
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
+  { path: '/users', template: 'users', titleKey: 'nav.users' },
 ];
 
 pages.forEach(({ path, template, titleKey }) => {
