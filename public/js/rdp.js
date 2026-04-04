@@ -256,7 +256,7 @@
         meta.appendChild(wolRow);
       }
 
-      // Maintenance row (if enabled)
+      // Maintenance row
       if (r.maintenance_enabled) {
         var maintRow = document.createElement('div');
         maintRow.className = 'vm-meta-row';
@@ -264,8 +264,13 @@
         maintLabel.textContent = GC.t['rdp.maintenance'] || 'Wartung';
         maintRow.appendChild(maintLabel);
         var maintVal = document.createElement('span');
-        maintVal.style.cssText = 'color:var(--amber);font-weight:600';
-        maintVal.textContent = GC.t['rdp.maintenance_active'] || 'Aktiv';
+        if (r.maintenance_schedule) {
+          maintVal.style.cssText = 'font-family:var(--font-mono);font-size:10px';
+          maintVal.textContent = r.maintenance_schedule;
+        } else {
+          maintVal.style.cssText = 'color:var(--amber);font-weight:600';
+          maintVal.textContent = GC.t['rdp.maintenance_active'] || 'Aktiv';
+        }
         maintRow.appendChild(maintVal);
         meta.appendChild(maintRow);
       }

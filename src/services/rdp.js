@@ -143,6 +143,59 @@ function decryptCredentials(row) {
   return result;
 }
 
+/**
+ * Check if an RDP route is currently in its maintenance window.
+ * Schedule format: "Mo-Fr 08:00-18:00" or multiple lines separated by \n or ;
+ * Supports German day names: Mo,Di,Mi,Do,Fr,Sa,So and English: Mon,Tue,Wed,Thu,Fri,Sat,Sun
+ */
+function isInMaintenanceWindow(routeId) {
+  const db = getDb();
+  const route = db.prepare('SELECT maintenance_enabled, maintenance_schedule FROM rdp_routes WHERE id = ?').get(routeId);
+  if (!route || !route.maintenance_enabled || !route.maintenance_schedule) return false;
+  return parseMaintenanceActive(route.maintenance_schedule);
+}
+
+function parseMaintenanceActive(schedule) {
+  if (!schedule) return false;
+
+  const now = new Date();
+  const dayIndex = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const dayMap = {
+    'Mo': 1, 'Di': 2, 'Mi': 3, 'Do': 4, 'Fr': 5, 'Sa': 6, 'So': 0,
+    'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 0,
+  };
+
+  const lines = schedule.split(/[\n;]+/).map(l => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    const match = line.match(/^(\w{2,3})(?:-(\w{2,3}))?\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+    if (!match) continue;
+
+    const [, dayStart, dayEnd, h1, m1, h2, m2] = match;
+    const startDay = dayMap[dayStart];
+    const endDay = dayEnd ? dayMap[dayEnd] : startDay;
+    const startMin = parseInt(h1) * 60 + parseInt(m1);
+    const endMin = parseInt(h2) * 60 + parseInt(m2);
+
+    if (startDay === undefined) continue;
+
+    let dayInRange = false;
+    if (startDay <= endDay) {
+      dayInRange = dayIndex >= startDay && dayIndex <= endDay;
+    } else {
+      dayInRange = dayIndex >= startDay || dayIndex <= endDay;
+    }
+
+    if (dayInRange && currentMinutes >= startMin && currentMinutes < endMin) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // --- Strip encrypted fields from response ----------------------
 
 function stripSensitive(row) {
@@ -575,4 +628,5 @@ module.exports = {
   getForToken,
   decryptCredentials,
   validateRdpRoute,
+  isInMaintenanceWindow,
 };

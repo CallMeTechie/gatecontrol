@@ -599,6 +599,16 @@ router.get('/rdp/:id/connect', (req, res) => {
       } catch {}
     }
 
+    // Maintenance window check
+    if (route.maintenance_enabled && rdpService.isInMaintenanceWindow(id)) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Route is in maintenance window',
+        maintenance: true,
+        maintenance_schedule: route.maintenance_schedule,
+      });
+    }
+
     // Build connection info
     const connection = {
       id: route.id,
