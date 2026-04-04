@@ -11,8 +11,7 @@
     'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'
   ];
   var userScopes = [
-    'read-only', 'peers', 'client',
-    'client:services', 'client:traffic', 'client:dns', 'client:rdp'
+    'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'
   ];
 
   function getAllowedScopes(role) {
@@ -39,12 +38,11 @@
       var data = await api.get('/api/v1/users');
       renderUsersTable(data.users || []);
     } catch (err) {
-      console.error('Failed to load users:', err);
       tbody.textContent = '';
       var tr = document.createElement('tr');
       var td = document.createElement('td');
       td.colSpan = 7;
-      td.style.cssText = 'text-align:center;color:var(--text-3);font-size:13px;padding:20px 0';
+      td.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
       td.textContent = GC.t['error.users.list'] || 'Failed to load users';
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -58,7 +56,7 @@
       var tr = document.createElement('tr');
       var td = document.createElement('td');
       td.colSpan = 7;
-      td.style.cssText = 'text-align:center;color:var(--text-3);font-size:13px;padding:20px 0';
+      td.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
       td.textContent = 'No users found';
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -85,10 +83,9 @@
       // Role
       var tdRole = document.createElement('td');
       var roleBadge = document.createElement('span');
-      roleBadge.className = 'badge';
       roleBadge.style.cssText = u.role === 'admin'
         ? 'background:var(--accent);color:#fff;font-size:11px;padding:2px 8px;border-radius:var(--radius-sm)'
-        : 'background:var(--green, #22c55e);color:#fff;font-size:11px;padding:2px 8px;border-radius:var(--radius-sm)';
+        : 'background:var(--green);color:#fff;font-size:11px;padding:2px 8px;border-radius:var(--radius-sm)';
       roleBadge.textContent = u.role === 'admin'
         ? (GC.t['users.role_admin'] || 'Admin')
         : (GC.t['users.role_user'] || 'User');
@@ -97,19 +94,19 @@
 
       // Tokens
       var tdTokens = document.createElement('td');
-      tdTokens.textContent = u.token_count != null ? u.token_count : 0;
+      tdTokens.textContent = u.tokenCount != null ? u.tokenCount : 0;
       tr.appendChild(tdTokens);
 
       // Peers
       var tdPeers = document.createElement('td');
-      tdPeers.textContent = u.peer_count != null ? u.peer_count : 0;
+      tdPeers.textContent = u.peerCount != null ? u.peerCount : 0;
       tr.appendChild(tdPeers);
 
       // Status
       var tdStatus = document.createElement('td');
       var statusBadge = document.createElement('span');
       statusBadge.style.cssText = u.enabled
-        ? 'color:var(--green, #22c55e);font-size:12px;font-weight:500'
+        ? 'color:var(--green);font-size:12px;font-weight:500'
         : 'color:var(--text-3);font-size:12px;font-weight:500';
       statusBadge.textContent = u.enabled
         ? (GC.t['users.enabled'] || 'Enabled')
@@ -120,7 +117,7 @@
       // Last access
       var tdLast = document.createElement('td');
       tdLast.style.cssText = 'font-size:12px;color:var(--text-3)';
-      tdLast.textContent = relativeTime(u.last_login);
+      tdLast.textContent = relativeTime(u.lastAccess);
       tr.appendChild(tdLast);
 
       // Actions
@@ -128,22 +125,25 @@
       tdActions.style.cssText = 'text-align:right;white-space:nowrap';
 
       var btnEdit = document.createElement('button');
-      btnEdit.className = 'btn btn-ghost btn-sm';
-      btnEdit.textContent = 'Edit';
+      btnEdit.className = 'icon-btn';
+      btnEdit.title = 'Edit';
+      btnEdit.textContent = '\u270E';
       btnEdit.addEventListener('click', function () { openEditModal(u.id); });
       tdActions.appendChild(btnEdit);
 
       var btnToggle = document.createElement('button');
-      btnToggle.className = 'btn btn-ghost btn-sm';
-      btnToggle.textContent = u.enabled ? 'Disable' : 'Enable';
+      btnToggle.className = 'icon-btn';
+      btnToggle.title = u.enabled ? 'Disable' : 'Enable';
       btnToggle.style.cssText = 'margin-left:4px';
+      btnToggle.textContent = u.enabled ? '\u23F8' : '\u25B6';
       btnToggle.addEventListener('click', function () { toggleUser(u.id, u.enabled); });
       tdActions.appendChild(btnToggle);
 
       var btnDelete = document.createElement('button');
-      btnDelete.className = 'btn btn-ghost btn-sm';
-      btnDelete.textContent = 'Delete';
-      btnDelete.style.cssText = 'margin-left:4px;color:var(--red, #ef4444)';
+      btnDelete.className = 'icon-btn';
+      btnDelete.title = 'Delete';
+      btnDelete.style.cssText = 'margin-left:4px;color:var(--red)';
+      btnDelete.textContent = '\u2715';
       btnDelete.addEventListener('click', function () { deleteUser(u.id); });
       tdActions.appendChild(btnDelete);
 
@@ -160,8 +160,20 @@
   var userPasswordGroup = document.getElementById('user-password-group');
   var userTokensSection = document.getElementById('user-tokens-section');
   var userRoleSelect = document.getElementById('user-role');
+  var userFormError = document.getElementById('user-form-error');
+
+  function showError(el, msg) {
+    el.textContent = msg;
+    el.style.display = '';
+  }
+
+  function hideError(el) {
+    el.style.display = 'none';
+    el.textContent = '';
+  }
 
   function openUserModal() {
+    hideError(userFormError);
     userOverlay.style.display = '';
   }
 
@@ -196,7 +208,7 @@
       document.getElementById('user-password').value = '';
       updatePasswordVisibility();
       userTokensSection.style.display = '';
-      loadUserTokens(userId);
+      renderUserTokens(data.tokens || []);
       openUserModal();
     } catch (err) {
       alert((GC.t['error.users.get'] || 'Failed to load user') + ': ' + err.message);
@@ -214,13 +226,14 @@
     var btn = document.getElementById('user-modal-save');
     var body = {
       username: document.getElementById('user-username').value.trim(),
-      display_name: document.getElementById('user-display-name').value.trim(),
+      displayName: document.getElementById('user-display-name').value.trim(),
       email: document.getElementById('user-email').value.trim(),
       role: userRoleSelect.value,
     };
     var pw = document.getElementById('user-password').value;
     if (pw) body.password = pw;
 
+    hideError(userFormError);
     btnLoading(btn);
     try {
       if (editId) {
@@ -231,8 +244,7 @@
       closeUserModal();
       loadUsers();
     } catch (err) {
-      var key = editId ? 'error.users.update' : 'error.users.create';
-      alert((GC.t[key] || 'Failed to save user') + ': ' + err.message);
+      showError(userFormError, err.message || 'Failed to save user');
     } finally {
       btnReset(btn);
     }
@@ -262,73 +274,77 @@
     }
   }
 
-  // ─── Token management in edit modal ───────────────────────
+  // ─── Token list in edit modal ─────────────────────────────
   var tokensList = document.getElementById('user-tokens-list');
 
-  async function loadUserTokens(userId) {
+  function renderUserTokens(tokens) {
     tokensList.textContent = '';
-    try {
-      var data = await api.get('/api/v1/users/' + userId + '/tokens');
-      var tokens = data.tokens || [];
-      if (!tokens.length) {
-        var empty = document.createElement('div');
-        empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
-        empty.textContent = 'No tokens';
-        tokensList.appendChild(empty);
-        return;
-      }
-      tokens.forEach(function (tk) {
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
-
-        var info = document.createElement('div');
-        info.style.cssText = 'flex:1;min-width:0';
-
-        var nameEl = document.createElement('div');
-        nameEl.style.cssText = 'font-size:12px;font-weight:600';
-        nameEl.textContent = tk.name;
-        info.appendChild(nameEl);
-
-        var meta = document.createElement('div');
-        meta.style.cssText = 'font-size:11px;color:var(--text-3);display:flex;gap:6px;flex-wrap:wrap;margin-top:2px';
-
-        if (tk.scopes && tk.scopes.length) {
-          tk.scopes.forEach(function (s) {
-            var badge = document.createElement('span');
-            badge.style.cssText = 'background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 5px;font-size:10px';
-            badge.textContent = s;
-            meta.appendChild(badge);
-          });
-        }
-
-        if (tk.last_used) {
-          var lastUsed = document.createElement('span');
-          lastUsed.textContent = 'Used ' + relativeTime(tk.last_used);
-          meta.appendChild(lastUsed);
-        }
-
-        info.appendChild(meta);
-        row.appendChild(info);
-
-        var revokeBtn = document.createElement('button');
-        revokeBtn.className = 'btn btn-ghost btn-sm';
-        revokeBtn.textContent = 'Revoke';
-        revokeBtn.style.cssText = 'color:var(--red, #ef4444);flex-shrink:0';
-        revokeBtn.addEventListener('click', function () { revokeToken(tk.id); });
-        row.appendChild(revokeBtn);
-
-        tokensList.appendChild(row);
-      });
-    } catch (err) {
-      console.error('Failed to load tokens:', err);
+    if (!tokens.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
+      empty.textContent = 'No tokens';
+      tokensList.appendChild(empty);
+      return;
     }
+    tokens.forEach(function (tk) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
+
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0';
+
+      var nameEl = document.createElement('div');
+      nameEl.style.cssText = 'font-size:12px;font-weight:600';
+      nameEl.textContent = tk.name;
+      info.appendChild(nameEl);
+
+      var meta = document.createElement('div');
+      meta.style.cssText = 'font-size:11px;color:var(--text-3);display:flex;gap:6px;flex-wrap:wrap;margin-top:2px';
+
+      if (tk.scopes && tk.scopes.length) {
+        tk.scopes.forEach(function (s) {
+          var badge = document.createElement('span');
+          badge.className = 'tag-grey';
+          badge.style.cssText = 'font-size:10px;padding:1px 5px';
+          badge.textContent = s;
+          meta.appendChild(badge);
+        });
+      }
+
+      if (tk.last_used_at) {
+        var lastUsed = document.createElement('span');
+        lastUsed.textContent = 'Used ' + relativeTime(tk.last_used_at);
+        meta.appendChild(lastUsed);
+      }
+
+      info.appendChild(meta);
+      row.appendChild(info);
+
+      var revokeBtn = document.createElement('button');
+      revokeBtn.className = 'icon-btn';
+      revokeBtn.title = 'Revoke';
+      revokeBtn.style.cssText = 'color:var(--red);flex-shrink:0';
+      revokeBtn.textContent = '\u2715';
+      revokeBtn.addEventListener('click', function () { revokeToken(tk.id); });
+      row.appendChild(revokeBtn);
+
+      tokensList.appendChild(row);
+    });
+  }
+
+  async function reloadEditTokens() {
+    if (!editId) return;
+    try {
+      var data = await api.get('/api/v1/users/' + editId);
+      renderUserTokens(data.tokens || []);
+    } catch {}
   }
 
   async function revokeToken(tokenId) {
     if (!confirm('Revoke this token?')) return;
     try {
       await api.delete('/api/v1/tokens/' + tokenId);
-      if (editId) loadUserTokens(editId);
+      reloadEditTokens();
     } catch (err) {
       alert('Failed to revoke token: ' + err.message);
     }
@@ -338,6 +354,7 @@
   var tokenOverlay = document.getElementById('token-modal-overlay');
   var tokenResult = document.getElementById('token-created-result');
   var tokenValue = document.getElementById('token-created-value');
+  var tokenFormError = document.getElementById('token-form-error');
 
   function renderScopeCheckboxes() {
     var container = document.getElementById('new-token-scopes');
@@ -361,6 +378,7 @@
 
   function openTokenModal() {
     tokenResult.style.display = 'none';
+    hideError(tokenFormError);
     document.getElementById('new-token-name').value = '';
     document.getElementById('new-token-expiry').value = '';
     renderScopeCheckboxes();
@@ -374,12 +392,19 @@
   async function createToken() {
     var btn = document.getElementById('btn-create-token');
     var name = document.getElementById('new-token-name').value.trim();
-    if (!name) return;
+    if (!name) {
+      showError(tokenFormError, 'Token name is required');
+      return;
+    }
 
     var scopes = [];
     document.querySelectorAll('.new-token-scope-cb:checked').forEach(function (cb) {
       scopes.push(cb.value);
     });
+    if (!scopes.length) {
+      showError(tokenFormError, 'Select at least one scope');
+      return;
+    }
 
     var expiryDays = document.getElementById('new-token-expiry').value;
     var body = { name: name, scopes: scopes };
@@ -389,14 +414,15 @@
       body.expires_at = d.toISOString();
     }
 
+    hideError(tokenFormError);
     btnLoading(btn);
     try {
       var data = await api.post('/api/v1/users/' + editId + '/tokens', body);
-      tokenValue.textContent = data.raw_token || data.token;
+      tokenValue.textContent = data.token || '';
       tokenResult.style.display = '';
-      if (editId) loadUserTokens(editId);
+      reloadEditTokens();
     } catch (err) {
-      alert('Failed to create token: ' + err.message);
+      showError(tokenFormError, err.message || 'Failed to create token');
     } finally {
       btnReset(btn);
     }
@@ -406,14 +432,12 @@
   async function loadUnassigned() {
     try {
       var data = await api.get('/api/v1/users/unassigned-tokens');
-      var count = data.count || 0;
-      if (count > 0) {
-        document.getElementById('unassigned-count').textContent = count;
-        document.getElementById('unassigned-banner').style.display = '';
+      var tokens = data.tokens || [];
+      if (tokens.length > 0) {
+        document.getElementById('unassigned-count').textContent = tokens.length;
+        document.getElementById('unassigned-banner').style.display = 'flex';
       }
-    } catch (err) {
-      // Silently ignore if endpoint not available
-    }
+    } catch {}
   }
 
   // ─── Modal close handlers ─────────────────────────────────
