@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1] — 2026-04-04
+
+### Fixes
+- remove WG/Caddy config pages, move service cards to settings
+
+---
+
 ## [1.14.0] — 2026-04-04
 
 ### Features
