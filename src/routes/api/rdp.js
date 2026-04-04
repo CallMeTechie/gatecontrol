@@ -27,16 +27,24 @@ router.get('/', (req, res) => {
 
     // Attach status from cache
     const statuses = rdpMonitor.getAllStatus();
-    const activeCounts = rdpSessions.getActiveSessionCounts();
+    const activeDetails = rdpSessions.getActiveSessionDetails();
     const activeMap = {};
-    for (const ac of activeCounts) {
-      activeMap[ac.rdp_route_id] = ac.count;
+    for (const ad of activeDetails) {
+      activeMap[ad.rdp_route_id] = { count: ad.count, users: ad.user_names || '' };
+    }
+
+    const lastAccessList = rdpSessions.getLastAccess();
+    const lastAccessMap = {};
+    for (const la of lastAccessList) {
+      lastAccessMap[la.rdp_route_id] = la.last_access;
     }
 
     const enriched = list.map(r => ({
       ...r,
       status: statuses[r.id] || { online: false, lastCheck: null },
-      active_sessions: activeMap[r.id] || 0,
+      active_sessions: activeMap[r.id]?.count || 0,
+      active_session_users: activeMap[r.id]?.users || '',
+      last_access: lastAccessMap[r.id] || null,
     }));
 
     res.json({ ok: true, routes: enriched, limit, offset });

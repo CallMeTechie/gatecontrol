@@ -82,6 +82,27 @@ function getActiveSessionCounts() {
   return db.prepare("SELECT rdp_route_id, COUNT(*) as count FROM rdp_sessions WHERE status = 'active' GROUP BY rdp_route_id").all();
 }
 
+function getActiveSessionDetails() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT rdp_route_id,
+           COUNT(*) as count,
+           GROUP_CONCAT(token_name, ', ') as user_names
+    FROM rdp_sessions
+    WHERE status = 'active'
+    GROUP BY rdp_route_id
+  `).all();
+}
+
+function getLastAccess() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT rdp_route_id, MAX(started_at) as last_access
+    FROM rdp_sessions
+    GROUP BY rdp_route_id
+  `).all();
+}
+
 function cleanupStaleSessions() {
   const db = getDb();
   const timeoutSeconds = config.rdp.sessionHeartbeatTimeout;
@@ -111,4 +132,4 @@ function exportCsv({ since, until, routeId } = {}) {
   return header + lines.join('\n');
 }
 
-module.exports = { startSession, heartbeatSession, endSession, findActiveSession, getHistory, getGlobalHistory, getActiveSessionCounts, cleanupStaleSessions, exportCsv };
+module.exports = { startSession, heartbeatSession, endSession, findActiveSession, getHistory, getGlobalHistory, getActiveSessionCounts, getActiveSessionDetails, getLastAccess, cleanupStaleSessions, exportCsv };

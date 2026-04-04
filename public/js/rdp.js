@@ -8,6 +8,16 @@
   var allRoutes = [];
   var editingId = null;
 
+  function formatRelativeTime(isoDate) {
+    if (!isoDate) return '-';
+    var diff = (Date.now() - new Date(isoDate + 'Z').getTime()) / 1000;
+    if (diff < 0) return '-';
+    if (diff < 60) return GC.t['rdp.just_now'] || 'gerade eben';
+    if (diff < 3600) return Math.floor(diff / 60) + ' Min';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+    return Math.floor(diff / 86400) + 'd';
+  }
+
   // -- DOM References -------------------------------------------
   var grid = document.getElementById('rdp-grid');
   var searchInput = document.getElementById('rdp-search');
@@ -210,12 +220,27 @@
       var sessVal = document.createElement('span');
       if (r.active_sessions > 0) {
         sessVal.style.cssText = 'font-weight:600;color:var(--blue)';
-        sessVal.textContent = r.active_sessions;
+        sessVal.textContent = r.active_session_users
+          ? r.active_sessions + ' (' + r.active_session_users + ')'
+          : String(r.active_sessions);
       } else {
         sessVal.textContent = '-';
       }
       sessRow.appendChild(sessVal);
       meta.appendChild(sessRow);
+
+      // Last access row
+      if (r.last_access) {
+        var lastAccessRow = document.createElement('div');
+        lastAccessRow.className = 'vm-meta-row';
+        var lastAccessLabel = document.createElement('span');
+        lastAccessLabel.textContent = GC.t['rdp.last_access'] || 'Letzter Zugriff';
+        lastAccessRow.appendChild(lastAccessLabel);
+        var lastAccessVal = document.createElement('span');
+        lastAccessVal.textContent = formatRelativeTime(r.last_access);
+        lastAccessRow.appendChild(lastAccessVal);
+        meta.appendChild(lastAccessRow);
+      }
 
       // WoL row (if enabled)
       if (r.wol_enabled && r.wol_mac_address) {
