@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0] — 2026-04-04
+
+### Features
+- add users page with token management, remove settings API tab
+
+---
+
 ## [1.16.0] — 2026-04-04
 
 ### Features
