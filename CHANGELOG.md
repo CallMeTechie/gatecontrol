@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1] — 2026-04-04
+
+### Fixes
+- users page CSS — use correct modal/table classes, fix JS field names
+
+---
+
 ## [1.17.0] — 2026-04-04
 
 ### Features
