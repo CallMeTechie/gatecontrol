@@ -440,10 +440,7 @@
     } catch {}
   }
 
-  // ─── Modal close handlers ─────────────────────────────────
-  userOverlay.addEventListener('click', function (e) {
-    if (e.target === userOverlay) closeUserModal();
-  });
+  // ─── Modal close handlers (no backdrop click — prevent accidental data loss) ──
   document.getElementById('user-modal-close').addEventListener('click', closeUserModal);
   document.getElementById('user-modal-cancel').addEventListener('click', closeUserModal);
   document.getElementById('user-modal-save').addEventListener('click', function (e) {
@@ -451,9 +448,6 @@
     saveUser();
   });
 
-  tokenOverlay.addEventListener('click', function (e) {
-    if (e.target === tokenOverlay) closeTokenModal();
-  });
   document.getElementById('token-modal-close').addEventListener('click', closeTokenModal);
   document.getElementById('token-modal-cancel').addEventListener('click', closeTokenModal);
   document.getElementById('btn-create-token').addEventListener('click', function (e) {
