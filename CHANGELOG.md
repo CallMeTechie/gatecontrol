@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1] — 2026-04-04
+
+### Fixes
+- show RDP route count badge on all pages, not just /routes
+
+---
+
 ## [1.13.0] — 2026-04-04
 
 ### Features
