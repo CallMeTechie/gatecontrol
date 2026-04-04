@@ -1024,6 +1024,7 @@
   "users.col_last_access": "Last Access",
   "users.confirm_delete": "Delete this user? All their tokens will be revoked.",
   "users.confirm_disable": "Disable this user? All their tokens will stop working.",
+  "users.assign": "Assign",
   "users.enabled": "Enabled",
   "users.disabled": "Disabled",
   "error.users.list": "Failed to load users",

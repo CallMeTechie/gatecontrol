@@ -429,15 +429,91 @@
   }
 
   // ─── Unassigned tokens ────────────────────────────────────
+  var unassignedBanner = document.getElementById('unassigned-banner');
+  var unassignedList = document.getElementById('unassigned-list');
+  var cachedUsers = [];
+
   async function loadUnassigned() {
     try {
       var data = await api.get('/api/v1/users/unassigned-tokens');
       var tokens = data.tokens || [];
       if (tokens.length > 0) {
         document.getElementById('unassigned-count').textContent = tokens.length;
-        document.getElementById('unassigned-banner').style.display = 'flex';
+        unassignedBanner.style.display = '';
+
+        // Cache user list for dropdowns
+        var userData = await api.get('/api/v1/users');
+        cachedUsers = userData.users || [];
+
+        renderUnassignedTokens(tokens);
+      } else {
+        unassignedBanner.style.display = 'none';
       }
     } catch {}
+  }
+
+  function renderUnassignedTokens(tokens) {
+    unassignedList.textContent = '';
+    tokens.forEach(function (tk) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:6px';
+
+      // Token info
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0';
+      var nameEl = document.createElement('span');
+      nameEl.style.cssText = 'font-size:12px;font-weight:600';
+      nameEl.textContent = tk.name;
+      info.appendChild(nameEl);
+      if (tk.scopes && tk.scopes.length) {
+        tk.scopes.forEach(function (s) {
+          var badge = document.createElement('span');
+          badge.className = 'tag-grey';
+          badge.style.cssText = 'font-size:10px;padding:1px 5px;margin-left:4px';
+          badge.textContent = s;
+          info.appendChild(badge);
+        });
+      }
+      row.appendChild(info);
+
+      // User select dropdown
+      var select = document.createElement('select');
+      select.style.cssText = 'padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-panel);flex-shrink:0';
+      var defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = '\u2014 User \u2014';
+      select.appendChild(defaultOpt);
+      cachedUsers.forEach(function (u) {
+        var opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.username + (u.display_name ? ' (' + u.display_name + ')' : '');
+        select.appendChild(opt);
+      });
+      row.appendChild(select);
+
+      // Assign button
+      var assignBtn = document.createElement('button');
+      assignBtn.className = 'btn btn-primary';
+      assignBtn.style.cssText = 'font-size:11px;padding:4px 10px;flex-shrink:0';
+      assignBtn.textContent = GC.t['users.assign'] || 'Assign';
+      assignBtn.addEventListener('click', async function () {
+        var userId = select.value;
+        if (!userId) return;
+        btnLoading(assignBtn);
+        try {
+          await api.put('/api/v1/tokens/' + tk.id + '/assign', { userId: parseInt(userId, 10) });
+          loadUnassigned();
+          loadUsers();
+        } catch (err) {
+          alert(err.message || 'Failed to assign token');
+        } finally {
+          btnReset(assignBtn);
+        }
+      });
+      row.appendChild(assignBtn);
+
+      unassignedList.appendChild(row);
+    });
   }
 
   // ─── Modal close handlers (no backdrop click — prevent accidental data loss) ──

@@ -1024,6 +1024,7 @@
   "users.col_last_access": "Letzter Zugriff",
   "users.confirm_delete": "Benutzer löschen? Alle Tokens werden widerrufen.",
   "users.confirm_disable": "Benutzer deaktivieren? Alle Tokens werden ungültig.",
+  "users.assign": "Zuordnen",
   "users.enabled": "Aktiviert",
   "users.disabled": "Deaktiviert",
   "error.users.list": "Benutzer konnten nicht geladen werden",
