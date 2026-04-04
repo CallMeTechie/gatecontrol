@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0] — 2026-04-04
+
+### Features
+- add user API routes and token user_id support
+
+---
+
 ## [1.15.0] — 2026-04-04
 
 ### Features
