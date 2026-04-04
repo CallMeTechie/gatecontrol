@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.2] — 2026-04-04
+
+### Fixes
+- prevent modal backdrop click from closing user/token modals
+
+---
+
 ## [1.17.1] — 2026-04-04
 
 ### Fixes
