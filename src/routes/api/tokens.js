@@ -69,6 +69,30 @@ router.post('/', requireFeature('api_tokens'), (req, res) => {
 });
 
 /**
+ * PUT /api/v1/tokens/:id/assign — Assign token to a user
+ */
+router.put('/:id/assign', (req, res) => {
+  if (req.tokenAuth) {
+    return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
+  }
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ ok: false, error: 'userId is required' });
+    const token = tokens.assignToUser(parseInt(req.params.id, 10), parseInt(userId, 10));
+    res.json({ ok: true, token });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to assign token');
+    if (err.message === 'Token not found') {
+      return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
+    }
+    if (err.message.includes('already assigned')) {
+      return res.status(400).json({ ok: false, error: err.message });
+    }
+    res.status(500).json({ ok: false, error: 'Failed to assign token' });
+  }
+});
+
+/**
  * DELETE /api/v1/tokens/:id — Revoke a token
  */
 router.delete('/:id', (req, res) => {

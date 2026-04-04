@@ -105,7 +105,7 @@ function checkScope(scopes, path, method) {
  * Create a new API token
  * Returns the raw token (shown once) and the stored record
  */
-function create({ name, scopes, expiresAt, machineBindingEnabled }, ipAddress) {
+function create({ name, scopes, expiresAt, machineBindingEnabled, userId }, ipAddress) {
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     throw new Error('Token name is required');
   }
@@ -128,14 +128,15 @@ function create({ name, scopes, expiresAt, machineBindingEnabled }, ipAddress) {
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled, user_id)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     name.trim(),
     tokenHash,
     JSON.stringify(scopes),
     expiresAt || null,
-    machineBindingEnabled ? 1 : 0
+    machineBindingEnabled ? 1 : 0,
+    userId || null
   );
 
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(result.lastInsertRowid);
@@ -305,11 +306,42 @@ function formatToken(row) {
     scopes: typeof row.scopes === 'string' ? JSON.parse(row.scopes) : row.scopes,
     peer_id: row.peer_id || null,
     machine_fingerprint: row.machine_fingerprint || null,
+    user_id: row.user_id || null,
     machine_binding_enabled: row.machine_binding_enabled === 1,
     created_at: row.created_at,
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
   };
+}
+
+/**
+ * List tokens belonging to a specific user
+ */
+function listByUserId(userId) {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+  return rows.map(formatToken);
+}
+
+/**
+ * List tokens not assigned to any user
+ */
+function listUnassigned() {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM api_tokens WHERE user_id IS NULL ORDER BY created_at DESC').all();
+  return rows.map(formatToken);
+}
+
+/**
+ * Assign an unassigned token to a user
+ */
+function assignToUser(tokenId, userId) {
+  const db = getDb();
+  const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(tokenId);
+  if (!token) throw new Error('Token not found');
+  if (token.user_id !== null) throw new Error('Token is already assigned to a user');
+  db.prepare('UPDATE api_tokens SET user_id = ? WHERE id = ?').run(userId, tokenId);
+  return formatToken(db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(tokenId));
 }
 
 module.exports = {
@@ -327,5 +359,8 @@ module.exports = {
   checkScope,
   validateScopes,
   hashToken,
+  listByUserId,
+  listUnassigned,
+  assignToUser,
   VALID_SCOPES,
 };
