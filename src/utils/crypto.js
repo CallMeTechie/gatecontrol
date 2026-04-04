@@ -97,6 +97,85 @@ function decrypt(ciphertext) {
   return decrypted;
 }
 
+// --- ECDH + AES-256-GCM (E2EE for RDP credentials) ------------
+
+/**
+ * Encrypt plaintext for a client using ephemeral ECDH key agreement.
+ *
+ * Flow:
+ *  1. Server generates ephemeral ECDH keypair (prime256v1)
+ *  2. Derives shared secret with client's public key
+ *  3. Derives AES-256 key via HKDF-SHA256
+ *  4. Encrypts plaintext with AES-256-GCM
+ *
+ * @param {string} plaintext - Data to encrypt (typically JSON string)
+ * @param {string} clientPublicKeyBase64 - Client's ephemeral ECDH public key (base64, uncompressed P-256 point)
+ * @returns {{ data: string, iv: string, authTag: string, serverPublicKey: string }} All base64-encoded
+ */
+function ecdhEncrypt(plaintext, clientPublicKeyBase64) {
+  const clientPubBuf = Buffer.from(clientPublicKeyBase64, 'base64');
+
+  // Validate: uncompressed P-256 point = 65 bytes (0x04 prefix + 32 X + 32 Y)
+  if (clientPubBuf.length !== 65 || clientPubBuf[0] !== 0x04) {
+    throw new Error('Invalid ECDH public key: expected 65-byte uncompressed P-256 point');
+  }
+
+  // 1. Ephemeral server ECDH keypair
+  const serverEcdh = crypto.createECDH('prime256v1');
+  serverEcdh.generateKeys();
+
+  // 2. Shared secret
+  const sharedSecret = serverEcdh.computeSecret(clientPubBuf);
+
+  // 3. Derive AES-256 key via HKDF
+  //    salt = clientPub || serverPub  (binds both parties)
+  //    info = protocol identifier     (domain separation)
+  const salt = Buffer.concat([clientPubBuf, serverEcdh.getPublicKey()]);
+  const aesKey = crypto.hkdfSync('sha256', sharedSecret, salt, 'gatecontrol-rdp-e2ee-v1', 32);
+
+  // 4. AES-256-GCM encrypt
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(aesKey), iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    data: encrypted.toString('base64'),
+    iv: iv.toString('base64'),
+    authTag: authTag.toString('base64'),
+    serverPublicKey: serverEcdh.getPublicKey('base64'),
+  };
+}
+
+/**
+ * Decrypt data that was encrypted with ecdhEncrypt (for testing / server-side use).
+ *
+ * @param {{ data: string, iv: string, authTag: string, serverPublicKey: string }} encrypted
+ * @param {object} clientEcdh - The client's ECDH object (from crypto.createECDH)
+ * @returns {string} Decrypted plaintext
+ */
+function ecdhDecrypt(encrypted, clientEcdh) {
+  const serverPubBuf = Buffer.from(encrypted.serverPublicKey, 'base64');
+  const sharedSecret = clientEcdh.computeSecret(serverPubBuf);
+
+  const clientPubBuf = clientEcdh.getPublicKey();
+  const salt = Buffer.concat([clientPubBuf, serverPubBuf]);
+  const aesKey = crypto.hkdfSync('sha256', sharedSecret, salt, 'gatecontrol-rdp-e2ee-v1', 32);
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    Buffer.from(aesKey),
+    Buffer.from(encrypted.iv, 'base64')
+  );
+  decipher.setAuthTag(Buffer.from(encrypted.authTag, 'base64'));
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(encrypted.data, 'base64')),
+    decipher.final(),
+  ]);
+
+  return decrypted.toString('utf8');
+}
+
 // --- Asymmetric Encryption (RSA-OAEP) -------------------------
 
 const fs = require('node:fs');
@@ -152,6 +231,8 @@ module.exports = {
   derivePublicKey,
   encrypt,
   decrypt,
+  ecdhEncrypt,
+  ecdhDecrypt,
   getServerPublicKey,
   publicKeyEncrypt,
   privateKeyDecrypt,

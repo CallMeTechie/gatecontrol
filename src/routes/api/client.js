@@ -650,12 +650,27 @@ router.get('/rdp/:id/connect', (req, res) => {
 
     // Include credentials if applicable
     if (route.credential_mode !== 'none') {
-      const clientPubKey = req.query.publicKey;
-      if (clientPubKey) {
-        // Re-encrypt credentials for client using their public key
+      const ecdhPubKey = req.query.ecdhPublicKey;
+      const rsaPubKey = req.query.publicKey;
+
+      if (ecdhPubKey) {
+        // ECDH E2EE (preferred) — encrypt all credentials as single JSON blob
+        const { ecdhEncrypt } = require('../../utils/crypto');
+        try {
+          const credentialsJson = JSON.stringify({
+            username: route.username || null,
+            password: route.credential_mode === 'full' ? (route.password || null) : null,
+            domain: route.domain || null,
+          });
+          connection.credentials_e2ee = ecdhEncrypt(credentialsJson, ecdhPubKey);
+        } catch (err) {
+          logger.warn({ error: err.message }, 'ECDH E2EE encryption failed');
+        }
+      } else if (rsaPubKey) {
+        // RSA-OAEP E2EE (legacy fallback)
         const { publicKeyEncrypt } = require('../../utils/crypto');
         try {
-          const pubKeyPem = Buffer.from(clientPubKey, 'base64').toString('utf8');
+          const pubKeyPem = Buffer.from(rsaPubKey, 'base64').toString('utf8');
           if (route.username) {
             connection.username_encrypted = publicKeyEncrypt(route.username, pubKeyPem);
           }
@@ -663,8 +678,7 @@ router.get('/rdp/:id/connect', (req, res) => {
             connection.password_encrypted = publicKeyEncrypt(route.password, pubKeyPem);
           }
         } catch (err) {
-          logger.warn({ error: err.message }, 'Failed to re-encrypt credentials for client');
-          // Fall back to sending without E2EE (credential_mode: none behavior)
+          logger.warn({ error: err.message }, 'RSA E2EE encryption failed');
         }
       } else {
         // No client public key -- send plain (only over HTTPS)
