@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0] — 2026-04-04
+
+### Features
+- maintenance window enforcement — block client connect during scheduled maintenance
+
+---
+
 ## [1.12.4] — 2026-04-03
 
 ### Fixes
