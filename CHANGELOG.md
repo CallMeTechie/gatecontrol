@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0] — 2026-04-04
+
+### Features
+- add token assignment UI for unassigned tokens in users page
+
+---
+
 ## [1.17.2] — 2026-04-04
 
 ### Fixes
