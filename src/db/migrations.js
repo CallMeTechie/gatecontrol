@@ -597,6 +597,16 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_rdp_sessions_started ON rdp_sessions(started_at DESC);
     `,
   },
+  {
+    version: 32,
+    name: 'unified_user_model',
+    sql: `
+      ALTER TABLE users ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE api_tokens ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
+    `,
+    detect: (db) => hasColumn(db, 'api_tokens', 'user_id'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
