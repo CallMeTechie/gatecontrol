@@ -129,14 +129,12 @@ pages.forEach(({ path, template, titleKey }) => {
   router.get(path, requireAuth, (req, res) => {
     const extraLocals = {};
 
-    // Inject RDP route count for routes page
-    if (template === 'routes') {
-      try {
-        const rdpService = require('../services/rdp');
-        const counts = rdpService.getCount();
-        extraLocals.rdpRouteCount = counts.total;
-      } catch {}
-    }
+    // Inject RDP route count for sidebar badge (all pages)
+    try {
+      const rdpService = require('../services/rdp');
+      const counts = rdpService.getCount();
+      extraLocals.rdpRouteCount = counts.total;
+    } catch {}
 
     res.render(`${config.theme.defaultTheme}/pages/${template}.njk`, {
       title: res.locals.t(titleKey),
