@@ -1,6 +1,8 @@
 'use strict';
 
 const { Router } = require('express');
+const argon2 = require('argon2');
+const { getDb } = require('../../db/connection');
 const wg = require('../../services/wireguard');
 const activity = require('../../services/activity');
 
@@ -15,20 +17,6 @@ router.get('/status', async (req, res) => {
     res.json({ ok: true, ...status });
   } catch (err) {
     res.status(500).json({ ok: false, error: req.t('error.wireguard.status') });
-  }
-});
-
-/**
- * GET /api/wg/config
- * Returns masked wg0.conf content
- */
-router.get('/config', async (req, res) => {
-  try {
-    const config = await wg.getConfig();
-    if (!config) return res.status(404).json({ ok: false, error: req.t('error.wireguard.config_not_found') });
-    res.json({ ok: true, config });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: req.t('error.wireguard.config_read') });
   }
 });
 
@@ -51,11 +39,28 @@ router.post('/restart', async (req, res) => {
 
 /**
  * POST /api/wg/stop
+ * Requires admin password confirmation (destructive action — disconnects all peers)
  */
 router.post('/stop', async (req, res) => {
   try {
+    const { password } = req.body || {};
+    if (!password) {
+      return res.status(400).json({ ok: false, error: req.t('error.wireguard.password_required') });
+    }
+
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ ok: false, error: req.t('error.settings.user_not_found') });
+    }
+
+    const valid = await argon2.verify(user.password_hash, password);
+    if (!valid) {
+      return res.status(403).json({ ok: false, error: req.t('error.wireguard.password_incorrect') });
+    }
+
     const success = await wg.stop();
-    activity.log('wg_stop', 'WireGuard interface stopped', {
+    activity.log('wg_stop', 'WireGuard interface stopped (password confirmed)', {
       source: 'admin',
       ipAddress: req.ip,
       severity: 'warning',

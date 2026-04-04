@@ -1057,3 +1057,141 @@
     }
   });
 })();
+
+// ─── Service Management (WireGuard + Caddy) ────────────
+(function () {
+  // ── WG Restart ──
+  var btnRestart = document.getElementById('btn-svc-wg-restart');
+  if (btnRestart) {
+    btnRestart.addEventListener('click', async function () {
+      if (!confirm(GC.t['config.restart'] + ' WireGuard?')) return;
+      btnLoading(btnRestart);
+      try {
+        var data = await api.post('/api/wg/restart');
+        if (!data.success) alert('Failed to restart WireGuard');
+      } catch (err) {
+        alert(err.message || 'Error');
+      } finally {
+        btnReset(btnRestart);
+      }
+    });
+  }
+
+  // ── WG Stop (with password modal) ──
+  var btnStop = document.getElementById('btn-svc-wg-stop');
+  var modal = document.getElementById('wg-stop-modal');
+  var pwdInput = document.getElementById('wg-stop-password');
+  var errDiv = document.getElementById('wg-stop-error');
+  var btnCancel = document.getElementById('wg-stop-cancel');
+  var btnConfirm = document.getElementById('wg-stop-confirm');
+
+  function openModal() {
+    if (!modal) return;
+    modal.style.display = 'flex';
+    pwdInput.value = '';
+    errDiv.style.display = 'none';
+    setTimeout(function () { pwdInput.focus(); }, 100);
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.style.display = 'none';
+    pwdInput.value = '';
+    errDiv.style.display = 'none';
+  }
+
+  if (btnStop) btnStop.addEventListener('click', openModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+
+  if (modal) {
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  if (pwdInput) {
+    pwdInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') btnConfirm.click();
+    });
+  }
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener('click', async function () {
+      var password = pwdInput.value.trim();
+      if (!password) {
+        errDiv.textContent = GC.t['error.wireguard.password_required'] || 'Password required';
+        errDiv.style.display = 'block';
+        return;
+      }
+      btnLoading(btnConfirm);
+      try {
+        await api.post('/api/wg/stop', { password: password });
+        closeModal();
+      } catch (err) {
+        errDiv.textContent = err.message || 'Error';
+        errDiv.style.display = 'block';
+      } finally {
+        btnReset(btnConfirm);
+      }
+    });
+  }
+
+  // ── Caddy Status ──
+  var caddyStatus = document.getElementById('svc-caddy-status');
+  var caddyInfo = document.getElementById('svc-caddy-info');
+
+  function setCaddyState(color, text) {
+    if (!caddyStatus) return;
+    caddyStatus.textContent = '';
+    var dot = document.createElement('div');
+    if (color === 'green') {
+      dot.className = 'pulse-dot';
+    } else {
+      dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--' + color + ')';
+    }
+    var label = document.createElement('span');
+    label.style.cssText = 'font-size:13px;color:var(--' + color + ');font-weight:600';
+    label.textContent = text;
+    caddyStatus.appendChild(dot);
+    caddyStatus.appendChild(label);
+  }
+
+  async function loadCaddyStatus() {
+    if (!caddyStatus) return;
+    try {
+      var data = await api.get('/api/caddy/status');
+      if (data.running) {
+        setCaddyState('green', GC.t['config.caddy_running'] || 'Caddy running');
+        var parts = [];
+        if (data.httpRoutes) parts.push(data.httpRoutes + ' HTTP');
+        if (data.l4Routes) parts.push(data.l4Routes + ' L4');
+        caddyInfo.textContent = (parts.length ? parts.join(' \u00b7 ') + ' routes \u00b7 ' : '') + 'HTTPS \u00b7 Let\'s Encrypt';
+      } else {
+        setCaddyState('red', GC.t['config.caddy_stopped'] || 'Caddy stopped');
+        caddyInfo.textContent = '';
+      }
+    } catch {
+      setCaddyState('amber', 'Unknown');
+      caddyInfo.textContent = '';
+    }
+  }
+
+  // ── Caddy Reload ──
+  var btnReload = document.getElementById('btn-svc-caddy-reload');
+  if (btnReload) {
+    btnReload.addEventListener('click', async function () {
+      btnLoading(btnReload);
+      try {
+        var data = await api.post('/api/caddy/reload');
+        if (data.success) loadCaddyStatus();
+        else alert('Failed to reload Caddy');
+      } catch (err) {
+        alert(err.message || 'Error');
+      } finally {
+        btnReset(btnReload);
+      }
+    });
+  }
+
+  loadCaddyStatus();
+})();

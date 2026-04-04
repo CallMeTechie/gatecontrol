@@ -8,17 +8,27 @@ const router = Router();
 
 /**
  * GET /api/caddy/status
+ * Returns running state and route counts (no full config to avoid information disclosure)
  */
 router.get('/status', async (req, res) => {
   try {
     const caddyConfig = await caddyApi('/config/');
-    res.json({
-      ok: true,
-      running: caddyConfig !== null,
-      config: caddyConfig,
-    });
+    const running = caddyConfig !== null;
+    let httpRoutes = 0;
+    let l4Routes = 0;
+    if (running && caddyConfig.apps) {
+      if (caddyConfig.apps.http && caddyConfig.apps.http.servers) {
+        for (const srv of Object.values(caddyConfig.apps.http.servers)) {
+          if (srv.routes) httpRoutes += srv.routes.length;
+        }
+      }
+      if (caddyConfig.apps.layer4 && caddyConfig.apps.layer4.servers) {
+        l4Routes = Object.keys(caddyConfig.apps.layer4.servers).length;
+      }
+    }
+    res.json({ ok: true, running, httpRoutes, l4Routes });
   } catch (err) {
-    res.json({ ok: true, running: false, config: null });
+    res.json({ ok: true, running: false, httpRoutes: 0, l4Routes: 0 });
   }
 });
 
