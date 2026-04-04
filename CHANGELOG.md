@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0] — 2026-04-04
+
+### Features
+- implement ECDH E2EE for RDP credential transmission
+
+---
+
 ## [1.13.1] — 2026-04-04
 
 ### Fixes
