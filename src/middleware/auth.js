@@ -48,17 +48,36 @@ function requireAuth(req, res, next) {
     if (rawToken) {
       const tokenRecord = getTokens().authenticate(rawToken);
       if (tokenRecord) {
+        // If token is assigned to a user, check user is enabled
+        if (tokenRecord.user_id) {
+          const users = require('../services/users');
+          if (!users.isEnabled(tokenRecord.user_id)) {
+            return res.status(403).json({ ok: false, error: 'User account is disabled' });
+          }
+        }
+
+        // Filter scopes by user role (if assigned)
+        let effectiveScopes = tokenRecord.scopes;
+        if (tokenRecord.user_id) {
+          const users = require('../services/users');
+          const user = users.getById(tokenRecord.user_id);
+          if (user) {
+            effectiveScopes = users.filterScopesForRole(tokenRecord.scopes, user.role);
+          }
+        }
+
         // Check scope for this request
         const fullPath = req.baseUrl + req.path;
-        if (!getTokens().checkScope(tokenRecord.scopes, fullPath, req.method)) {
+        if (!getTokens().checkScope(effectiveScopes, fullPath, req.method)) {
           return res.status(403).json({ ok: false, error: 'Token does not have permission for this resource' });
         }
 
         // Mark request as token-authenticated
         req.tokenAuth = true;
         req.tokenId = tokenRecord.id;
-        req.tokenScopes = tokenRecord.scopes;
+        req.tokenScopes = effectiveScopes;
         req.tokenPeerId = tokenRecord.peer_id || null;
+        req.tokenUserId = tokenRecord.user_id || null;
         return next();
       }
     }
