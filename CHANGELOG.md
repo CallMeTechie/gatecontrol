@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0] — 2026-04-04
+
+### Features
+- add user service with CRUD, role validation, and tests
+
+---
+
 ## [1.14.1] — 2026-04-04
 
 ### Fixes
