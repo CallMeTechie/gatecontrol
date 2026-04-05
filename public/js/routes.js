@@ -69,10 +69,13 @@
       allUsers = data.users || [];
     } catch (e) { /* ignore */ }
   }
-  fetchUsers();
+  fetchUsers().then(function () {
+    renderUserCheckboxes('create-route-user-ids', [], 'create-route-user-cb');
+  });
 
-  function renderUserCheckboxes(containerId, selectedIds) {
+  function renderUserCheckboxes(containerId, selectedIds, cbClass) {
     var container = document.getElementById(containerId);
+    if (!container) return;
     container.textContent = '';
     allUsers.forEach(function (u) {
       var label = document.createElement('label');
@@ -80,7 +83,7 @@
       var cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = u.id;
-      cb.className = 'route-user-cb';
+      cb.className = cbClass || 'route-user-cb';
       cb.checked = selectedIds.includes(u.id);
       cb.style.cssText = 'accent-color:var(--accent)';
       label.appendChild(cb);
@@ -386,6 +389,12 @@
         mirror_enabled: document.getElementById('create-route-mirror')?.classList.contains('on') ? 1 : 0,
         mirror_targets: createMirrorTargets.length > 0 ? createMirrorTargets : null,
       };
+      // User visibility
+      var createUserIds = [];
+      document.querySelectorAll('.create-route-user-cb:checked').forEach(function (cb) {
+        createUserIds.push(parseInt(cb.value, 10));
+      });
+      if (createUserIds.length > 0) payload.user_ids = createUserIds;
       const routeType = document.getElementById('route-type').value;
       payload.route_type = routeType;
       if (routeType === 'l4') {
@@ -461,6 +470,7 @@
         if (cmrFields) cmrFields.style.display = 'none';
         createMirrorTargets.length = 0;
         renderCreateMirrorTargets();
+        renderUserCheckboxes('create-route-user-ids', [], 'create-route-user-cb');
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
