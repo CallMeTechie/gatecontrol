@@ -607,6 +607,15 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'api_tokens', 'user_id'),
   },
+  {
+    version: 33,
+    name: 'user_visibility_on_routes',
+    sql: `
+      ALTER TABLE routes ADD COLUMN user_ids TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN user_ids TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'user_ids'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

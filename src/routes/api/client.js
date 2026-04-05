@@ -501,19 +501,17 @@ router.get('/traffic', (req, res) => {
  */
 router.get('/services', (req, res) => {
   try {
-    const allRoutes = routes.getAll({ type: 'http' });
+    const userId = req.tokenUserId || null;
+    const filtered = routes.getForUser(userId);
 
-    const services = allRoutes
-      .filter(r => r.enabled !== 0)
-      .map(r => ({
-        id: r.id,
-        name: r.name || r.domain,
-        domain: r.domain,
-        url: `https://${r.domain}`,
-        target: r.target_host && r.target_port ? `${r.target_host}:${r.target_port}` : null,
-        hasAuth: r.route_auth_enabled === 1,
-        tls: r.tls_mode || 'auto',
-      }));
+    const services = filtered.map(r => ({
+      id: r.id,
+      name: r.name || r.domain,
+      domain: r.domain,
+      url: `https://${r.domain}`,
+      hasAuth: r.route_auth_enabled === 1,
+      tls: r.tls_mode || 'auto',
+    }));
 
     res.json({ ok: true, services });
   } catch (err) {
@@ -558,7 +556,8 @@ router.get('/rdp', (req, res) => {
     }
 
     const tokenId = req.tokenId;
-    const routes = rdpService.getForToken(tokenId);
+    const userId = req.tokenUserId || null;
+    const routes = rdpService.getForToken(tokenId, userId);
 
     // Attach online status
     const statuses = rdpMonitor.getAllStatus();
