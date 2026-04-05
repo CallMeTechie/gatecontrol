@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2] — 2026-04-05
+
+### Fixes
+- add user visibility checkboxes to create route form
+
+---
+
 ## [1.18.1] — 2026-04-05
 
 ### Fixes
