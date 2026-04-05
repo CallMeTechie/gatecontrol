@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1] — 2026-04-05
+
+### Fixes
+- add migration 33 for user_ids column + filter services/RDP by user
+
+---
+
 ## [1.18.0] — 2026-04-04
 
 ### Features
