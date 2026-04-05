@@ -256,7 +256,7 @@ function create(data) {
       sharing_enabled, sharing_mode, sharing_require_consent,
       screenshot_enabled,
       credential_rotation_enabled, credential_rotation_days,
-      token_ids, notes, tags,
+      token_ids, user_ids, notes, tags,
       health_check_enabled
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
@@ -271,7 +271,7 @@ function create(data) {
       ?, ?, ?,
       ?,
       ?, ?,
-      ?, ?, ?,
+      ?, ?, ?, ?,
       ?
     )
   `).run(
@@ -321,6 +321,7 @@ function create(data) {
     data.credential_rotation_enabled ? 1 : 0,
     parseInt(data.credential_rotation_days, 10) || 90,
     data.token_ids ? JSON.stringify(data.token_ids) : null,
+    data.user_ids ? JSON.stringify(data.user_ids) : null,
     data.notes || null,
     data.tags ? JSON.stringify(data.tags) : null,
     data.health_check_enabled !== undefined ? (data.health_check_enabled ? 1 : 0) : 1
@@ -417,6 +418,10 @@ function update(id, data) {
   if (data.token_ids !== undefined) {
     sets.push('token_ids = ?');
     values.push(data.token_ids ? JSON.stringify(data.token_ids) : null);
+  }
+  if (data.user_ids !== undefined) {
+    sets.push('user_ids = ?');
+    values.push(data.user_ids ? JSON.stringify(data.user_ids) : null);
   }
   if (data.tags !== undefined) {
     sets.push('tags = ?');
@@ -599,17 +604,30 @@ function clearCredentials(id) {
 
 // --- Token-filtered access -------------------------------------
 
-function getForToken(tokenId) {
+function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
   return routes.filter(r => {
-    if (!r.token_ids) return true;
-    try {
-      const allowed = JSON.parse(r.token_ids);
-      return Array.isArray(allowed) && allowed.includes(tokenId);
-    } catch {
-      return true;
+    // 1. user_ids set → user-level access control (priority)
+    if (r.user_ids) {
+      try {
+        const allowed = JSON.parse(r.user_ids);
+        if (Array.isArray(allowed) && allowed.length > 0) {
+          return userId ? allowed.includes(userId) : false;
+        }
+      } catch {}
     }
+    // 2. token_ids set → legacy token-level access control
+    if (r.token_ids) {
+      try {
+        const allowed = JSON.parse(r.token_ids);
+        if (Array.isArray(allowed) && allowed.length > 0) {
+          return allowed.includes(tokenId);
+        }
+      } catch {}
+    }
+    // 3. No restrictions → visible to all
+    return true;
   }).map(stripSensitive);
 }
 

@@ -61,6 +61,39 @@
     }
   }
 
+  // ─── Load users for visibility control ───────────────────
+  var allUsers = [];
+  async function fetchUsers() {
+    try {
+      var data = await api.get('/api/v1/users');
+      allUsers = data.users || [];
+    } catch (e) { /* ignore */ }
+  }
+  fetchUsers();
+
+  function renderUserCheckboxes(containerId, selectedIds) {
+    var container = document.getElementById(containerId);
+    container.textContent = '';
+    allUsers.forEach(function (u) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = u.id;
+      cb.className = 'route-user-cb';
+      cb.checked = selectedIds.includes(u.id);
+      cb.style.cssText = 'accent-color:var(--accent)';
+      label.appendChild(cb);
+      var txt = document.createTextNode(u.display_name || u.username);
+      label.appendChild(txt);
+      container.appendChild(label);
+    });
+    if (!allUsers.length) {
+      container.textContent = 'No users available';
+      container.style.cssText = 'font-size:12px;color:var(--text-3)';
+    }
+  }
+
   // ─── Render route list ───────────────────────────────────
   function renderRoutes(routes) {
     if (!routes.length) {
@@ -1026,6 +1059,11 @@
     if (bgCurrent) bgCurrent.textContent = route.branding_bg_image || '';
     if (bgRemove) bgRemove.style.display = route.branding_bg_image ? '' : 'none';
 
+    // User visibility
+    var userIds = [];
+    try { userIds = JSON.parse(route.user_ids || '[]'); } catch (e) { /* ignore */ }
+    renderUserCheckboxes('route-user-ids', Array.isArray(userIds) ? userIds : []);
+
     hideError('edit-route-error');
     clearFieldErrors();
     // Reset to first tab
@@ -1126,6 +1164,12 @@
           mirror_enabled: document.getElementById('edit-route-mirror')?.classList.contains('on') ? 1 : 0,
           mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
         };
+        // User visibility
+        var selectedUserIds = [];
+        document.querySelectorAll('.route-user-cb:checked').forEach(function (cb) {
+          selectedUserIds.push(parseInt(cb.value, 10));
+        });
+        payload.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
         // Custom headers
         var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
         payload.custom_headers = hasCustomHeaders ? { request: editHeadersRequest, response: editHeadersResponse } : null;

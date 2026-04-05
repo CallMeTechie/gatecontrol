@@ -769,8 +769,8 @@ async function create(data) {
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-                        mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -814,6 +814,7 @@ async function create(data) {
     mirrorTargetsJson,
     data.debug_enabled ? 1 : 0,
     data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
+    data.user_ids ? JSON.stringify(data.user_ids) : null,
   );
 
   const routeId = result.lastInsertRowid;
@@ -1053,6 +1054,7 @@ async function update(id, data) {
       bot_blocker_enabled = COALESCE(?, bot_blocker_enabled),
       bot_blocker_mode = COALESCE(?, bot_blocker_mode),
       bot_blocker_config = COALESCE(?, bot_blocker_config),
+      user_ids = COALESCE(?, user_ids),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -1102,6 +1104,7 @@ async function update(id, data) {
     data.bot_blocker_enabled !== undefined ? (data.bot_blocker_enabled ? 1 : 0) : null,
     data.bot_blocker_mode !== undefined ? data.bot_blocker_mode : null,
     data.bot_blocker_config !== undefined ? (typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config)) : null,
+    data.user_ids !== undefined ? (data.user_ids ? JSON.stringify(data.user_ids) : null) : null,
     id
   );
 
@@ -1299,6 +1302,27 @@ async function batch(action, ids) {
   return ids.length;
 }
 
+/**
+ * Get HTTP routes filtered by user_ids for client API.
+ * If user_ids is set on a route, only matching users see it.
+ * If not set, route is visible to all.
+ */
+function getForUser(userId) {
+  const db = getDb();
+  const routes = db.prepare("SELECT * FROM routes WHERE enabled = 1 AND (route_type = 'http' OR route_type IS NULL)").all();
+  return routes.filter(r => {
+    if (r.user_ids) {
+      try {
+        const allowed = JSON.parse(r.user_ids);
+        if (Array.isArray(allowed) && allowed.length > 0) {
+          return userId ? allowed.includes(userId) : false;
+        }
+      } catch {}
+    }
+    return true;
+  });
+}
+
 module.exports = {
   getAll,
   getById,
@@ -1313,4 +1337,5 @@ module.exports = {
   getAclPeers,
   setAclPeers,
   batch,
+  getForUser,
 };

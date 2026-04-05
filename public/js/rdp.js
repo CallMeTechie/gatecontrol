@@ -647,11 +647,45 @@
   // Pre-fetch peers on page load
   fetchPeers();
 
+  // -- Fetch users for visibility control ---------------------------
+  var allUsers = [];
+  async function fetchUsers() {
+    try {
+      var data = await api.get('/api/v1/users');
+      allUsers = data.users || [];
+    } catch (e) { /* ignore */ }
+  }
+  fetchUsers();
+
+  function renderUserCheckboxes(containerId, selectedIds) {
+    var container = document.getElementById(containerId);
+    container.textContent = '';
+    allUsers.forEach(function (u) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = u.id;
+      cb.className = 'rdp-user-cb';
+      cb.checked = selectedIds.includes(u.id);
+      cb.style.cssText = 'accent-color:var(--accent)';
+      label.appendChild(cb);
+      var txt = document.createTextNode(u.display_name || u.username);
+      label.appendChild(txt);
+      container.appendChild(label);
+    });
+    if (!allUsers.length) {
+      container.textContent = 'No users available';
+      container.style.cssText = 'font-size:12px;color:var(--text-3)';
+    }
+  }
+
   function openCreateModal() {
     editingId = null;
     modalTitle.textContent = GC.t['rdp.add'] || 'Add RDP Route';
     document.getElementById('rdp-form').reset();
     document.getElementById('rdp-edit-id').value = '';
+    renderUserCheckboxes('rdp-user-ids', []);
     openModal('rdp-modal-overlay');
   }
 
@@ -703,6 +737,11 @@
       document.getElementById('rdp-rotation-days').value = r.credential_rotation_days || 90;
       document.getElementById('rdp-notes').value = r.notes || '';
       try { var t = JSON.parse(r.tags || '[]'); document.getElementById('rdp-tags').value = Array.isArray(t) ? t.join(', ') : ''; } catch { document.getElementById('rdp-tags').value = ''; }
+
+      // User visibility
+      var userIds = [];
+      try { userIds = JSON.parse(r.user_ids || '[]'); } catch (e) { /* ignore */ }
+      renderUserCheckboxes('rdp-user-ids', Array.isArray(userIds) ? userIds : []);
 
       // Trigger change events
       credMode.dispatchEvent(new Event('change'));
@@ -766,6 +805,13 @@
       notes: document.getElementById('rdp-notes').value || null,
       tags: document.getElementById('rdp-tags').value ? document.getElementById('rdp-tags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean) : null,
     };
+
+    // User visibility
+    var selectedUserIds = [];
+    document.querySelectorAll('.rdp-user-cb:checked').forEach(function (cb) {
+      selectedUserIds.push(parseInt(cb.value, 10));
+    });
+    data.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
 
     try {
       if (editingId) {

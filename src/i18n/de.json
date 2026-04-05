@@ -727,6 +727,8 @@
   "routes.sticky_ttl_24h": "24 Stunden",
   "routes.sticky_ttl_7d": "7 Tage",
   "routes.sticky_badge": "Sticky",
+  "routes.visible_to_users": "Sichtbar für Benutzer",
+  "routes.visible_to_users_hint": "Leer lassen für alle Benutzer sichtbar. Bestimmte Benutzer auswählen um Zugriff einzuschränken.",
 
   "metrics.title": "Prometheus Metriken",
   "metrics.subtitle": "Metriken-Endpunkt für Prometheus/Grafana-Abfragen bereitstellen",
