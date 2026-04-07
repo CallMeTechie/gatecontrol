@@ -789,6 +789,7 @@ const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
 const CLIENT_REPOS = {
   community: process.env.GC_CLIENT_REPO_COMMUNITY || 'CallMeTechie/GateControl-Community-Client',
   pro:       process.env.GC_CLIENT_REPO_PRO       || 'CallMeTechie/GateControl-Pro-Client',
+  android:   process.env.GC_CLIENT_REPO_ANDROID   || 'CallMeTechie/GateControl-Android-Client',
 };
 
 /**
@@ -798,14 +799,19 @@ const CLIENT_REPOS = {
 function resolveClientType(req) {
   // 1. Expliziter Parameter (neue Clients)
   const param = (req.query.client || req.headers['x-client-type'] || '').toLowerCase().trim();
+  if (param === 'android' || param === 'gatecontrol-android') return 'android';
   if (param === 'pro' || param === 'gatecontrol-pro') return 'pro';
   if (param === 'community' || param === 'gatecontrol-community') return 'community';
 
-  // 2. App-Name Header (ab Core v1.2.4+)
+  // 2. Platform header / query (Android client sends X-Client-Platform: android)
+  const platform = (req.query.platform || req.headers['x-client-platform'] || '').toLowerCase();
+  if (platform === 'android') return 'android';
+
+  // 3. App-Name Header (ab Core v1.2.4+)
   const clientName = (req.headers['x-client-name'] || '').toLowerCase();
   if (clientName.includes('pro')) return 'pro';
 
-  // 3. API-Token basiert: Pro-Client Versionen sind 1.x.x (< 2.0), Community ist 1.1x.x (>= 1.10)
+  // 4. API-Token basiert: Pro-Client Versionen sind 1.x.x (< 2.0), Community ist 1.1x.x (>= 1.10)
   const clientVersion = req.query.version || '';
   const parts = clientVersion.split('.').map(Number);
   if (parts.length >= 2 && parts[0] === 1 && parts[1] < 10) {
@@ -891,10 +897,17 @@ router.get('/update/check', async (req, res) => {
       return res.json({ ok: true, available: false });
     }
 
-    // Find installer asset (.exe with "Setup" in name)
-    const installerAsset = (release.assets || []).find(a =>
-      a.name.endsWith('.exe') && a.name.includes('Setup')
-    );
+    // Find installer asset based on client type
+    let installerAsset;
+    if (clientType === 'android') {
+      installerAsset = (release.assets || []).find(a =>
+        a.name.endsWith('.apk') && !a.name.includes('debug')
+      );
+    } else {
+      installerAsset = (release.assets || []).find(a =>
+        a.name.endsWith('.exe') && a.name.includes('Setup')
+      );
+    }
 
     // For private repos, proxy the download through the server
     let downloadUrl = null;
@@ -902,12 +915,16 @@ router.get('/update/check', async (req, res) => {
       downloadUrl = `${config.app.baseUrl}/api/v1/client/update/download?client=${clientType}`;
     }
 
+    const defaultFileName = clientType === 'android'
+      ? `GateControl-Android-${latestVersion}.apk`
+      : `GateControl-Setup-${latestVersion}.exe`;
+
     res.json({
       ok: true,
       available: true,
       version: latestVersion,
       downloadUrl,
-      fileName: installerAsset?.name || `GateControl-Setup-${latestVersion}.exe`,
+      fileName: installerAsset?.name || defaultFileName,
       fileSize: installerAsset?.size || null,
       releaseNotes: release.body || '',
     });
@@ -929,9 +946,16 @@ router.get('/update/download', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'No release found' });
     }
 
-    const asset = (release.assets || []).find(a =>
-      a.name.endsWith('.exe') && a.name.includes('Setup')
-    );
+    let asset;
+    if (clientType === 'android') {
+      asset = (release.assets || []).find(a =>
+        a.name.endsWith('.apk') && !a.name.includes('debug')
+      );
+    } else {
+      asset = (release.assets || []).find(a =>
+        a.name.endsWith('.exe') && a.name.includes('Setup')
+      );
+    }
     if (!asset) {
       return res.status(404).json({ ok: false, error: 'No installer asset found' });
     }
