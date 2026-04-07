@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0] — 2026-04-07
+
+### Features
+- add Android client support to update check endpoint
+
+---
+
 ## [1.18.3] — 2026-04-07
 
 ### Fixes
