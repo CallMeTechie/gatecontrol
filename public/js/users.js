@@ -254,7 +254,7 @@
   async function deleteUser(id) {
     if (!confirm(GC.t['users.confirm_delete'] || 'Delete this user? All their tokens will be revoked.')) return;
     try {
-      await api.delete('/api/v1/users/' + id);
+      await api.del('/api/v1/users/' + id);
       loadUsers();
     } catch (err) {
       alert((GC.t['error.users.delete'] || 'Failed to delete user') + ': ' + err.message);
@@ -343,7 +343,7 @@
   async function revokeToken(tokenId) {
     if (!confirm('Revoke this token?')) return;
     try {
-      await api.delete('/api/v1/tokens/' + tokenId);
+      await api.del('/api/v1/tokens/' + tokenId);
       reloadEditTokens();
     } catch (err) {
       alert('Failed to revoke token: ' + err.message);
