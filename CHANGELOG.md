@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.3] — 2026-04-07
+
+### Fixes
+- use api.del() instead of api.delete() for token revocation and user deletion
+
+---
+
 ## [1.18.2] — 2026-04-05
 
 ### Fixes
