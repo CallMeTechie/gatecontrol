@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.8] — 2026-04-08
+
+### Fixes
+- update npm to 10.9.2 to fix cross-spawn CVE-2024-21538
+
+---
+
 ## [1.19.7] — 2026-04-08
 
 ### Fixes
