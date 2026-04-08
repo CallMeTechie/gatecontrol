@@ -574,6 +574,27 @@ router.get('/rdp', (req, res) => {
 });
 
 /**
+ * GET /api/v1/client/rdp/:id/status
+ * Server-side TCP reachability check for an RDP route.
+ * Android VPN apps cannot connect to VPN addresses from within
+ * their own process, so the server performs the check on behalf
+ * of the client.
+ */
+router.get('/rdp/:id/status', async (req, res) => {
+  try {
+    if (!hasFeature('remote_desktop')) {
+      return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
+    }
+    const id = parseInt(req.params.id, 10);
+    const result = await rdpMonitor.checkRouteById(id);
+    res.json({ ok: true, status: { online: result.online, responseTime: result.responseTime, lastCheck: result.lastCheck } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Client RDP status check failed');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/v1/client/rdp/:id/connect
  * Get connection data + credentials (E2EE) for an RDP route
  * Query: ?publicKey=<base64-encoded-client-public-key>
