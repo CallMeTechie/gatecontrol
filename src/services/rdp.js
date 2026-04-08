@@ -202,6 +202,13 @@ function stripSensitive(row) {
   if (!row) return row;
   const { username_encrypted, password_encrypted, ...safe } = row;
   safe.has_credentials = !!(username_encrypted || password_encrypted);
+  // SQLite stores booleans as 0/1 — convert to real booleans for JSON clients
+  for (const key of ['multi_monitor', 'redirect_clipboard', 'redirect_printers',
+    'redirect_drives', 'admin_session', 'wol_enabled', 'maintenance_enabled', 'enabled']) {
+    if (key in safe && typeof safe[key] === 'number') {
+      safe[key] = !!safe[key];
+    }
+  }
   return safe;
 }
 
