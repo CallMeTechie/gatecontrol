@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.10] — 2026-04-08
+
+### Änderungen
+- add ESLint Security to PR gate + c8 test coverage
+
+---
+
 ## [1.19.9] — 2026-04-08
 
 ### Fixes
