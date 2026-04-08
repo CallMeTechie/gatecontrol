@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.6] — 2026-04-08
+
+### Fixes
+- add npm overrides for transitive CVEs (picomatch, cross-spawn)
+
+---
+
 ## [1.19.5] — 2026-04-08
 
 ### Fixes
