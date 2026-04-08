@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.7] — 2026-04-08
+
+### Fixes
+- remove global npm update that introduced picomatch CVE
+
+---
+
 ## [1.19.6] — 2026-04-08
 
 ### Fixes
