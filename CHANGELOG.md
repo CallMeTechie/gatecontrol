@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.14] — 2026-04-08
+
+### Fixes
+- RDP toggle test erwartet jetzt Boolean statt SQLite Integer
+
+---
+
 ## [1.19.13] — 2026-04-08
 
 ### Fixes
