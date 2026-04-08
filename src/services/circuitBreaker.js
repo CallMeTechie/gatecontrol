@@ -3,11 +3,44 @@
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
-// In-memory consecutive failure counters per route
-const failureCounters = new Map();
+// Ensure persistence columns exist (migration-safe)
+try {
+  const db = getDb();
+  const cols = db.prepare("PRAGMA table_info(routes)").all().map(c => c.name);
+  if (!cols.includes('cb_failure_count')) {
+    db.prepare('ALTER TABLE routes ADD COLUMN cb_failure_count INTEGER DEFAULT 0').run();
+  }
+  if (!cols.includes('cb_opened_at')) {
+    db.prepare('ALTER TABLE routes ADD COLUMN cb_opened_at TEXT DEFAULT NULL').run();
+  }
+} catch { /* table may not exist yet during initial migration */ }
 
-// Track when circuit was opened (for timeout/half-open logic)
-const circuitOpenedAt = new Map();
+function getFailureCount(routeId) {
+  try {
+    const row = getDb().prepare('SELECT cb_failure_count FROM routes WHERE id = ?').get(routeId);
+    return row?.cb_failure_count || 0;
+  } catch { return 0; }
+}
+
+function setFailureCount(routeId, count) {
+  try {
+    getDb().prepare('UPDATE routes SET cb_failure_count = ? WHERE id = ?').run(count, routeId);
+  } catch { /* ignore */ }
+}
+
+function getOpenedAt(routeId) {
+  try {
+    const row = getDb().prepare('SELECT cb_opened_at FROM routes WHERE id = ?').get(routeId);
+    return row?.cb_opened_at ? new Date(row.cb_opened_at).getTime() : 0;
+  } catch { return 0; }
+}
+
+function setOpenedAt(routeId, timestamp) {
+  try {
+    const val = timestamp ? new Date(timestamp).toISOString() : null;
+    getDb().prepare('UPDATE routes SET cb_opened_at = ? WHERE id = ?').run(val, routeId);
+  } catch { /* ignore */ }
+}
 
 /**
  * Called by monitoring service after each health check.
@@ -39,21 +72,21 @@ function checkAndUpdate(routeId, isHealthy) {
   if (currentStatus === 'closed') {
     if (isHealthy) {
       // Reset failure counter on success
-      failureCounters.set(routeId, 0);
+      setFailureCount(routeId, 0);
     } else {
-      const count = (failureCounters.get(routeId) || 0) + 1;
-      failureCounters.set(routeId, count);
+      const count = getFailureCount(routeId) + 1;
+      setFailureCount(routeId, count);
       if (count >= threshold) {
         newStatus = 'open';
         statusChanged = true;
-        circuitOpenedAt.set(routeId, Date.now());
-        failureCounters.set(routeId, 0);
+        setOpenedAt(routeId, Date.now());
+        setFailureCount(routeId, 0);
         logger.warn({ routeId, failures: count, threshold }, 'Circuit breaker opened');
       }
     }
   } else if (currentStatus === 'open') {
     // Check if timeout has elapsed -> transition to half-open
-    const openedAt = circuitOpenedAt.get(routeId) || 0;
+    const openedAt = getOpenedAt(routeId);
     const elapsed = (Date.now() - openedAt) / 1000;
     if (elapsed >= timeout) {
       newStatus = 'half-open';
@@ -65,13 +98,13 @@ function checkAndUpdate(routeId, isHealthy) {
     if (isHealthy) {
       newStatus = 'closed';
       statusChanged = true;
-      failureCounters.set(routeId, 0);
-      circuitOpenedAt.delete(routeId);
+      setFailureCount(routeId, 0);
+      setOpenedAt(routeId, null);
       logger.info({ routeId }, 'Circuit breaker closed (recovered)');
     } else {
       newStatus = 'open';
       statusChanged = true;
-      circuitOpenedAt.set(routeId, Date.now());
+      setOpenedAt(routeId, Date.now());
       logger.warn({ routeId }, 'Circuit breaker re-opened from half-open');
     }
   }
@@ -110,8 +143,8 @@ function resetStatus(routeId) {
   db.prepare(
     "UPDATE routes SET circuit_breaker_status = 'closed', updated_at = datetime('now') WHERE id = ?"
   ).run(routeId);
-  failureCounters.delete(routeId);
-  circuitOpenedAt.delete(routeId);
+  setFailureCount(routeId, 0);
+  setOpenedAt(routeId, null);
 }
 
 /**
@@ -125,10 +158,10 @@ function checkTimeouts() {
   ).all();
 
   for (const route of openRoutes) {
-    const openedAt = circuitOpenedAt.get(route.id);
+    const openedAt = getOpenedAt(route.id);
     if (!openedAt) {
       // No record of when it was opened (e.g. after restart), set to now
-      circuitOpenedAt.set(route.id, Date.now());
+      setOpenedAt(route.id, Date.now());
       continue;
     }
     const elapsed = (Date.now() - openedAt) / 1000;

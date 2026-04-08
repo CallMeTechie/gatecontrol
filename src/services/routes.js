@@ -589,7 +589,17 @@ function buildCaddyConfig() {
 }
 
 // ─── Push config to Caddy Admin API ─────────────────────
+let lastGoodConfig = null;
+
 async function syncToCaddy() {
+  // Fetch current running config as rollback target
+  let previousConfig = null;
+  try {
+    previousConfig = await caddyApi('/config/');
+  } catch {
+    // No running config yet (first start) — no rollback possible
+  }
+
   const caddyConfig = buildCaddyConfig();
 
   const result = await caddyApi('/load', {
@@ -601,7 +611,28 @@ async function syncToCaddy() {
     throw new Error('Caddy admin API is not reachable — route saved but not deployed. Restart Caddy or retry later.');
   }
 
-  logger.info('Caddy config synced successfully');
+  // Verify config was accepted by querying Caddy status
+  try {
+    const check = await caddyApi('/config/');
+    if (!check) throw new Error('Config verification failed');
+    lastGoodConfig = caddyConfig;
+    logger.info('Caddy config synced and verified');
+  } catch (verifyErr) {
+    logger.error({ error: verifyErr.message }, 'Caddy config verification failed — rolling back');
+    if (previousConfig) {
+      try {
+        await caddyApi('/load', {
+          method: 'POST',
+          body: JSON.stringify(previousConfig),
+        });
+        logger.info('Caddy config rolled back to previous state');
+      } catch (rollbackErr) {
+        logger.error({ error: rollbackErr.message }, 'Caddy rollback also failed');
+      }
+    }
+    throw verifyErr;
+  }
+
   return true;
 }
 

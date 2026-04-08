@@ -15,6 +15,7 @@ const { cleanupStaleSessions: cleanupStaleRdpSessions } = require('./services/rd
 const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = require('./services/autobackup');
 const activity = require('./services/activity');
 const { validateLicense, startLicenseRefresh, stopLicenseRefresh } = require('./services/license');
+const { withRetry } = require('./utils/taskRetry');
 
 let server;
 
@@ -78,42 +79,28 @@ async function start() {
 
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
-    setInterval(async () => {
-      try {
-        await checkExpiredPeers();
-      } catch (err) {
-        logger.error({ error: err.message }, 'Peer expiry check failed');
-      }
-    }, 60 * 1000);
+    const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);
+    setInterval(retryPeerExpiry, 60 * 1000);
 
     // RDP stale session cleanup (every 2 minutes)
-    setInterval(() => {
-      try {
-        cleanupStaleRdpSessions();
-      } catch (err) {
-        logger.warn({ error: err.message }, 'RDP session cleanup failed');
-      }
-    }, 120000);
+    const retryRdpCleanup = withRetry('rdp-session-cleanup', async () => cleanupStaleRdpSessions());
+    setInterval(retryRdpCleanup, 120000);
 
     // Periodic cleanup (every 6 hours)
-    setInterval(() => {
-      try {
-        const settingsSvc = require('./services/settings');
-        const trafficDays = parseInt(settingsSvc.get('data.retention_traffic_days', '30'), 10) || 30;
-        const activityDays = parseInt(settingsSvc.get('data.retention_activity_days', '30'), 10) || 30;
-        const { cleanup: cleanTraffic } = require('./services/traffic');
-        cleanTraffic(trafficDays);
-        activity.cleanup(activityDays);
-        const { cleanup: cleanLoginAttempts } = require('./services/lockout');
-        cleanLoginAttempts(1);
-      } catch (err) {
-        logger.error({ error: err.message }, 'Cleanup task failed');
-      }
-    }, 6 * 60 * 60 * 1000);
+    const retryCleanup = withRetry('periodic-cleanup', async () => {
+      const settingsSvc = require('./services/settings');
+      const trafficDays = parseInt(settingsSvc.get('data.retention_traffic_days', '30'), 10) || 30;
+      const activityDays = parseInt(settingsSvc.get('data.retention_activity_days', '30'), 10) || 30;
+      const { cleanup: cleanTraffic } = require('./services/traffic');
+      cleanTraffic(trafficDays);
+      activity.cleanup(activityDays);
+      const { cleanup: cleanLoginAttempts } = require('./services/lockout');
+      cleanLoginAttempts(1);
+    });
+    setInterval(retryCleanup, 6 * 60 * 60 * 1000);
 
     // Periodic alert checks (every hour)
-    setInterval(async () => {
-      try {
+    const retryAlertChecks = withRetry('alert-checks', async () => {
         const settingsSvc = require('./services/settings');
 
         // Backup reminder
@@ -149,10 +136,8 @@ async function start() {
             });
           }
         }
-      } catch (err) {
-        logger.error({ error: err.message }, 'Periodic alert check failed');
-      }
-    }, 60 * 60 * 1000); // Every hour
+    });
+    setInterval(retryAlertChecks, 60 * 60 * 1000); // Every hour
 
     // ─── Bot blocker counter (every 60s) ──────────────
     let lastBotCountTs = 0;
