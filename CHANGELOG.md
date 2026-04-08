@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.5] — 2026-04-08
+
+### Fixes
+- patch remaining container CVEs (cross-spawn, go-jose/v4)
+
+---
+
 ## [1.19.4] — 2026-04-08
 
 ### Fixes
