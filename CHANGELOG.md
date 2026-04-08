@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0] — 2026-04-08
+
+### Features
+- Server-seitiger TCP-Check-Endpoint für Client RDP
+
+---
+
 ## [1.19.15] — 2026-04-08
 
 ### Fixes
