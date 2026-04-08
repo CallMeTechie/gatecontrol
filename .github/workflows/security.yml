@@ -113,6 +113,6 @@ jobs:
         with:
           image-ref: 'gatecontrol:security-scan'
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
