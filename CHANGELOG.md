@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.11] — 2026-04-08
+
+### Fixes
+- pin eslint-plugin-security@1.7.1 for ESLint 8 compatibility
+
+---
+
 ## [1.19.10] — 2026-04-08
 
 ### Änderungen
