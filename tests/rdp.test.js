@@ -99,7 +99,7 @@ describe('RDP API', () => {
       .set('X-CSRF-Token', csrf)
       .expect(200);
     assert.equal(res.body.ok, true);
-    assert.equal(res.body.route.enabled, 0);
+    assert.equal(res.body.route.enabled, false);
   });
 
   it('GET /api/v1/rdp/status returns bulk status', async () => {
