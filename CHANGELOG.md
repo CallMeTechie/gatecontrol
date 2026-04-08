@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.13] — 2026-04-08
+
+### Fixes
+- permissions endpoint prüft jetzt auch Lizenz-Feature für RDP
+
+---
+
 ## [1.19.12] — 2026-04-08
 
 ### Fixes
