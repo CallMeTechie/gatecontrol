@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.12] — 2026-04-08
+
+### Fixes
+- persist circuit breaker state, add Caddy rollback, add task retry
+
+---
+
 ## [1.19.11] — 2026-04-08
 
 ### Fixes
