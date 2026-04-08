@@ -139,7 +139,7 @@ router.get('/permissions', (req, res) => {
       services: hasScope('client:services'),
       traffic: hasScope('client:traffic'),
       dns: hasScope('client:dns'),
-      rdp: hasScope('client:rdp'),
+      rdp: hasScope('client:rdp') && hasFeature('remote_desktop'),
     },
     scopes,
   });
