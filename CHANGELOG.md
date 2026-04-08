@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.4] — 2026-04-08
+
+### Fixes
+- patch container vulnerabilities (zlib, npm, Go deps)
+
+---
+
 ## [1.19.3] — 2026-04-08
 
 ### Fixes
