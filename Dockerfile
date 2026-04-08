@@ -16,12 +16,14 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production --ignore-scripts && \
-    npm rebuild argon2 better-sqlite3
+    npm rebuild argon2 better-sqlite3 && \
+    npm update cross-spawn minimatch glob tar 2>/dev/null || true
 
 # Stage 3: Runtime
 FROM node:20-alpine
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache \
     wireguard-tools \
     iptables ip6tables \
     supervisor curl procps openssl
