@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.15] — 2026-04-08
+
+### Fixes
+- Update-Download nutzt direkte GitHub-URL für öffentliche Repos
+
+---
+
 ## [1.19.14] — 2026-04-08
 
 ### Fixes
