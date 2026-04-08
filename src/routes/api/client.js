@@ -909,10 +909,12 @@ router.get('/update/check', async (req, res) => {
       );
     }
 
-    // For private repos, proxy the download through the server
+    // For public repos, link directly to GitHub; for private, proxy through server
     let downloadUrl = null;
     if (installerAsset) {
-      downloadUrl = `${config.app.baseUrl}/api/v1/client/update/download?client=${clientType}`;
+      downloadUrl = CLIENT_GITHUB_TOKEN
+        ? `${config.app.baseUrl}/api/v1/client/update/download?client=${clientType}`
+        : installerAsset.browser_download_url;
     }
 
     const defaultFileName = clientType === 'android'
