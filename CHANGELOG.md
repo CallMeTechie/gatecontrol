@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1] — 2026-04-08
+
+### Fixes
+- block releases on critical/high container vulnerabilities
+
+---
+
 ## [1.19.0] — 2026-04-07
 
 ### Features
