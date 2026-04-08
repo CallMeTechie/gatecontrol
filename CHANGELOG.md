@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.9] — 2026-04-08
+
+### Fixes
+- use npm@latest for glob/cross-spawn CVEs, ignore picomatch
+
+---
+
 ## [1.19.8] — 2026-04-08
 
 ### Fixes
