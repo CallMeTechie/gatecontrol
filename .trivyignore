@@ -1,0 +1,4 @@
+# picomatch 4.0.3 in npm's internal glob — not reachable from user input.
+# npm@latest ships with this version; no fix available without downgrading npm.
+# Will be resolved when npm releases a version with picomatch >=4.0.4.
+CVE-2026-33671
