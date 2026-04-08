@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.3] — 2026-04-08
+
+### Fixes
+- update caddy-mirror plugin to Caddy v2.11.2
+
+---
+
 ## [1.19.2] — 2026-04-08
 
 ### Fixes
