@@ -22,6 +22,48 @@ jobs:
 
       - run: npm ci
 
-      - run: npm test
+      - name: Run tests with coverage
+        run: npx c8 --reporter=text --reporter=lcov --lines 40 npm test
         env:
           NODE_ENV: test
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+
+  eslint-security:
+    name: ESLint Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Install ESLint with security plugin
+        run: npm install --no-save eslint@8 eslint-plugin-security
+
+      - name: Create security ESLint config
+        run: |
+          cat > .eslintrc.security.json << 'ESLINTEOF'
+          {
+            "plugins": ["security"],
+            "extends": ["plugin:security/recommended"],
+            "env": { "node": true, "es2022": true },
+            "parserOptions": { "ecmaVersion": 2022 },
+            "rules": {
+              "security/detect-eval-with-expression": "error",
+              "security/detect-non-literal-fs-filename": "warn",
+              "security/detect-non-literal-require": "warn",
+              "security/detect-possible-timing-attacks": "warn",
+              "security/detect-child-process": "warn"
+            }
+          }
+          ESLINTEOF
+
+      - name: Run ESLint security scan
+        run: npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc --format stylish
