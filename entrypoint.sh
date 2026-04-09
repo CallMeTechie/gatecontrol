@@ -101,11 +101,18 @@ if [ ! -f "$WG_DATA_CONF" ]; then
   POST_DOWN="${GC_WG_POST_DOWN}"
 
   if [ -z "$POST_UP" ]; then
-    POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    # -i wg0 -j ACCEPT is a catch-all for the forward path out of the
+    # tunnel: it permits both peer-to-peer (wg0 → wg0) and peer → internet
+    # (wg0 → ens18). Scoping to -d ${GC_WG_SUBNET} here was too narrow —
+    # it only allowed peer-to-peer and silently dropped every packet that
+    # VPN clients sent to the public internet, so the tunnel came up but
+    # no outbound traffic worked. The reply path is covered by the
+    # RELATED,ESTABLISHED rule below.
+    POST_UP="iptables -I FORWARD 1 -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -I FORWARD 2 -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
     POST_UP_MSS="iptables -t mangle -A FORWARD -i ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; iptables -t mangle -A FORWARD -o ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
   fi
   if [ -z "$POST_DOWN" ]; then
-    POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -d ${GC_WG_SUBNET} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
+    POST_DOWN="iptables -D FORWARD -i ${GC_WG_INTERFACE} -j ACCEPT; iptables -D FORWARD -i ${GC_NET_INTERFACE} -o ${GC_WG_INTERFACE} -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${GC_WG_SUBNET} -o ${GC_NET_INTERFACE} -j MASQUERADE"
     POST_DOWN_MSS="iptables -t mangle -D FORWARD -i ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; iptables -t mangle -D FORWARD -o ${GC_WG_INTERFACE} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
   fi
 

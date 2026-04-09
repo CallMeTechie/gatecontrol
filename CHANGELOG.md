@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.20.7] — 2026-04-09
+
+### Fixes
+- wg0 FORWARD rule must be a catch-all `-i wg0 -j ACCEPT`, not scoped to
+  `-d ${GC_WG_SUBNET}`. The narrow scope only permitted peer-to-peer and
+  silently dropped every VPN → internet packet (FORWARD policy DROP),
+  so the tunnel came up but clients had no external connectivity. The
+  reply path stays covered by the existing RELATED,ESTABLISHED rule.
+
+---
+
 ## [1.20.6] — 2026-04-09
 
 ### Fixes
