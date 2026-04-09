@@ -2,3 +2,12 @@
 # npm@latest ships with this version; no fix available without downgrading npm.
 # Will be resolved when npm releases a version with picomatch >=4.0.4.
 CVE-2026-33671
+
+# opentelemetry-go: kenv PATH hijack (BSD-only).
+# CVE-2026-39883 affects go.opentelemetry.io/otel/sdk v1.40.0, pulled in
+# transitively by Caddy's builder via the custom plugin graph. The vulnerable
+# code path only fires on FreeBSD/NetBSD where it invokes the `kenv` command
+# without an absolute path. Our runtime image is Alpine Linux — `kenv` does
+# not exist and the code path is never taken, so this is not exploitable in
+# our deployment. Will be removed once upstream Caddy pulls otel >= 1.43.0.
+CVE-2026-39883
