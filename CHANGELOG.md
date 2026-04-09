@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.5] — 2026-04-09
+
+### Fixes
+- override stale GC_NET_INTERFACE when configured value does not exist
+
+---
+
 ## [1.20.4] — 2026-04-09
 
 ### Fixes
