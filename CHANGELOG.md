@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.6] — 2026-04-09
+
+### Fixes
+- dnsmasq waits for wg0 via interface= directive (listen-address race)
+
+---
+
 ## [1.20.5] — 2026-04-09
 
 ### Fixes
