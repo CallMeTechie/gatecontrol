@@ -11,7 +11,26 @@ GC_DNSMASQ_UPSTREAMS="${GC_DNSMASQ_UPSTREAMS:-1.1.1.1,8.8.8.8}"
 GC_WG_POST_UP="${GC_WG_POST_UP:-}"
 GC_WG_POST_DOWN="${GC_WG_POST_DOWN:-}"
 GC_WG_MTU="${GC_WG_MTU:-}"
-GC_NET_INTERFACE="${GC_NET_INTERFACE:-eth0}"
+# Auto-detect the default-route interface if GC_NET_INTERFACE is not
+# explicitly set. Historically this defaulted to "eth0" which is wrong on
+# many hosts (OVH dedicated/VPS uses ens18, Debian/Ubuntu often uses
+# enpXsY, etc.), producing a silent NAT misconfig: the MASQUERADE rule is
+# installed on a non-existent interface, so VPN peer traffic gets
+# forwarded from wg0 with source IP 10.8.0.x and the reply never finds
+# its way back. Result: VPN clients have no internet, no API access, and
+# no connectivity to anything that isn't terminated on the gatecontrol
+# container itself. Auto-detection fixes this for new deployments while
+# preserving the explicit override for unusual setups (multi-NIC,
+# non-default egress, etc.).
+if [ -z "$GC_NET_INTERFACE" ]; then
+  GC_NET_INTERFACE=$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')
+  if [ -z "$GC_NET_INTERFACE" ]; then
+    echo "WARNING: no default route found — falling back to eth0"
+    GC_NET_INTERFACE="eth0"
+  else
+    echo "» Auto-detected egress interface: ${GC_NET_INTERFACE}"
+  fi
+fi
 GC_DB_PATH="${GC_DB_PATH:-/data/gatecontrol.db}"
 
 # Persistent config lives in the data volume
@@ -43,6 +62,18 @@ echo "╚═══════════════════════�
 echo "» Enabling IP forwarding..."
 sysctl -w net.ipv4.ip_forward=1 > /dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.all.src_valid_mark=1 > /dev/null 2>&1 || true
+
+# ─── Safety-net MASQUERADE for the VPN subnet ────────
+# Even with a correctly-generated wg0.conf, wg-quick PostUp rules are
+# applied when the wg interface comes up — which happens AFTER this
+# entrypoint script returns control to supervisord. If any step of that
+# hand-off is interrupted or the PostUp rule targets the wrong egress
+# interface, VPN peers lose internet. Install an idempotent MASQUERADE
+# rule here so the NAT is in place the moment wg0 is created, regardless
+# of wg-quick's own rule. -C checks before -A to avoid duplicates.
+iptables -t nat -C POSTROUTING -s "${GC_WG_SUBNET}" -o "${GC_NET_INTERFACE}" -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -s "${GC_WG_SUBNET}" -o "${GC_NET_INTERFACE}" -j MASQUERADE
+echo "» MASQUERADE rule active: ${GC_WG_SUBNET} → ${GC_NET_INTERFACE}"
 
 # ─── Ensure data directory ───────────────────────────
 mkdir -p /data/caddy /data/wireguard /data/branding
@@ -86,6 +117,19 @@ EOF
   echo "» WireGuard config generated (pubkey: ${PUBLIC_KEY})"
 else
   echo "» WireGuard config exists at ${WG_DATA_CONF}"
+
+  # Existing deployments may have a wg0.conf whose PostUp MASQUERADEs
+  # on a stale interface name (e.g. baked-in "eth0" on a host that
+  # actually uses "ens18"). Detect that case by scanning the PostUp
+  # lines for "-o <iface>" and rewrite any mismatched interface in-
+  # place. Preserves private key, peer list, address, port — only the
+  # iptables directives are touched.
+  STALE_IF=$(grep -oE '\-o [A-Za-z0-9]+' "$WG_DATA_CONF" | awk '{print $2}' | sort -u | head -1)
+  if [ -n "$STALE_IF" ] && [ "$STALE_IF" != "$GC_NET_INTERFACE" ]; then
+    echo "» Migrating wg0.conf PostUp interface ${STALE_IF} → ${GC_NET_INTERFACE}"
+    # POSIX sed handles every occurrence; -i is GNU/BusyBox-compatible.
+    sed -i "s/-o ${STALE_IF}/-o ${GC_NET_INTERFACE}/g" "$WG_DATA_CONF"
+  fi
 fi
 
 # Symlink persistent config to system path
