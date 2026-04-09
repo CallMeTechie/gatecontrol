@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.8] — 2026-04-09
+
+### Fixes
+- wg0 FORWARD accept all tunnel traffic, not just VPN subnet
+
+---
+
 ## [1.20.7] — 2026-04-09
 
 ### Fixes
