@@ -12,18 +12,28 @@ GC_WG_POST_UP="${GC_WG_POST_UP:-}"
 GC_WG_POST_DOWN="${GC_WG_POST_DOWN:-}"
 GC_WG_MTU="${GC_WG_MTU:-}"
 # Auto-detect the default-route interface if GC_NET_INTERFACE is not
-# explicitly set. Historically this defaulted to "eth0" which is wrong on
-# many hosts (OVH dedicated/VPS uses ens18, Debian/Ubuntu often uses
-# enpXsY, etc.), producing a silent NAT misconfig: the MASQUERADE rule is
+# set, OR if the configured value does not actually exist on the host.
+# Historically the default was "eth0", which is wrong on many hosts
+# (OVH dedicated/VPS uses ens18, Debian/Ubuntu often uses enpXsY, etc.).
+# A stale value produces a silent NAT misconfig: the MASQUERADE rule is
 # installed on a non-existent interface, so VPN peer traffic gets
 # forwarded from wg0 with source IP 10.8.0.x and the reply never finds
 # its way back. Result: VPN clients have no internet, no API access, and
 # no connectivity to anything that isn't terminated on the gatecontrol
-# container itself. Auto-detection fixes this for new deployments while
-# preserving the explicit override for unusual setups (multi-NIC,
-# non-default egress, etc.).
-if [ -z "$GC_NET_INTERFACE" ]; then
-  GC_NET_INTERFACE=$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')
+# container itself. Auto-detection fixes this for both new deployments
+# and upgrades of existing deployments whose .env still carries the old
+# default. Explicit overrides for real, existing interfaces are honored.
+_detect_egress_if() {
+  ip route 2>/dev/null | awk '/^default/ {print $5; exit}'
+}
+_iface_exists() {
+  ip link show "$1" > /dev/null 2>&1
+}
+if [ -z "$GC_NET_INTERFACE" ] || ! _iface_exists "$GC_NET_INTERFACE"; then
+  if [ -n "$GC_NET_INTERFACE" ]; then
+    echo "» Configured GC_NET_INTERFACE='${GC_NET_INTERFACE}' does not exist — auto-detecting"
+  fi
+  GC_NET_INTERFACE=$(_detect_egress_if)
   if [ -z "$GC_NET_INTERFACE" ]; then
     echo "WARNING: no default route found — falling back to eth0"
     GC_NET_INTERFACE="eth0"
@@ -31,6 +41,7 @@ if [ -z "$GC_NET_INTERFACE" ]; then
     echo "» Auto-detected egress interface: ${GC_NET_INTERFACE}"
   fi
 fi
+export GC_NET_INTERFACE
 GC_DB_PATH="${GC_DB_PATH:-/data/gatecontrol.db}"
 
 # Persistent config lives in the data volume
