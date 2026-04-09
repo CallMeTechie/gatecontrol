@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.2] — 2026-04-09
+
+### Fixes
+- trivyignore CVE-2026-39883 (otel-go kenv BSD-only, not exploitable on Alpine)
+
+---
+
 ## [1.20.1] — 2026-04-09
 
 ### Fixes
