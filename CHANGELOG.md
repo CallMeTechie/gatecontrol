@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1] — 2026-04-09
+
+### Fixes
+- split-horizon DNS so VPN peers reach API through tunnel
+
+---
+
 ## [1.20.0] — 2026-04-08
 
 ### Features
