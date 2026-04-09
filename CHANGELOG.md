@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.3] — 2026-04-09
+
+### Fixes
+- use GC_BASE_URL hostname (not GC_WG_HOST) for dnsmasq hijack
+
+---
+
 ## [1.20.2] — 2026-04-09
 
 ### Fixes
