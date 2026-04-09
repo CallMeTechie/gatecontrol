@@ -25,7 +25,8 @@ RUN apk upgrade --no-cache && \
     apk add --no-cache \
     wireguard-tools \
     iptables ip6tables \
-    supervisor curl procps openssl && \
+    supervisor curl procps openssl \
+    dnsmasq && \
     npm install -g npm@latest
 
 COPY --from=caddy-builder /usr/bin/caddy /usr/local/bin/caddy

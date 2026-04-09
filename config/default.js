@@ -48,7 +48,12 @@ const config = {
     port: envInt('GC_WG_PORT', 51820),
     subnet: env('GC_WG_SUBNET', '10.8.0.0/24'),
     gatewayIp: env('GC_WG_GATEWAY_IP', '10.8.0.1'),
-    dns: envList('GC_WG_DNS', ['1.1.1.1', '8.8.8.8']),
+    // Defaults to the internal dnsmasq running on the VPN gateway IP so
+    // peers resolve GC_WG_HOST to the VPN-internal address and reach the
+    // API through the tunnel. Override via GC_WG_DNS if you need a
+    // different resolver (e.g. public DNS for peers that bypass split-
+    // horizon).
+    dns: envList('GC_WG_DNS', ['10.8.0.1']),
     allowedIps: env('GC_WG_ALLOWED_IPS', '0.0.0.0/0'),
     persistentKeepalive: envInt('GC_WG_PERSISTENT_KEEPALIVE', 25),
     postUp: env('GC_WG_POST_UP', ''),
