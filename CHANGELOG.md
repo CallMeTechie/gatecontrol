@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.4] — 2026-04-09
+
+### Fixes
+- auto-detect egress interface so VPN peer internet actually works
+
+---
+
 ## [1.20.3] — 2026-04-09
 
 ### Fixes
