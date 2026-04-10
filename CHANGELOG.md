@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.9] — 2026-04-10
+
+### Fixes
+- make update check/download endpoints public (no auth required)
+
+---
+
 ## [1.20.8] — 2026-04-09
 
 ### Fixes
