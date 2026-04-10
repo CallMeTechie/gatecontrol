@@ -143,6 +143,13 @@ pages.forEach(({ path, template, titleKey }) => {
   });
 });
 
+// ─── Public API routes (no auth required) ─────────
+// Update check returns only public release info (version, download URL)
+// and must work without a token so clients can discover updates before
+// registering or when their token is invalid/expired.
+const clientRoutes = require('./api/client');
+router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Router());
+
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 

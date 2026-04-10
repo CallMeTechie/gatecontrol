@@ -893,12 +893,15 @@ async function fetchLatestRelease(clientType = 'community') {
   return fetchUrl(url);
 }
 
+// ─── Public update routes (mounted WITHOUT auth in routes/index.js) ───
+const updateRouter = Router();
+
 /**
  * GET /api/v1/client/update/check
  * Query: ?version=1.2.1&platform=windows&client=pro|community
  * Returns: { ok, available, version?, downloadUrl?, releaseNotes? }
  */
-router.get('/update/check', async (req, res) => {
+updateRouter.get('/check', async (req, res) => {
   try {
     const clientVersion = req.query.version;
     if (!clientVersion) {
@@ -961,7 +964,7 @@ router.get('/update/check', async (req, res) => {
  * GET /api/v1/client/update/download?client=pro|community
  * Proxies the installer download from GitHub (needed for private repos)
  */
-router.get('/update/download', async (req, res) => {
+updateRouter.get('/download', async (req, res) => {
   try {
     const clientType = resolveClientType(req);
     const release = await fetchLatestRelease(clientType);
@@ -1035,3 +1038,4 @@ function isNewerVersion(latest, current) {
 }
 
 module.exports = router;
+module.exports.updateRouter = updateRouter;
