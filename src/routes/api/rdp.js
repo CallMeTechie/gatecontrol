@@ -352,6 +352,28 @@ router.get('/:id/status', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/rdp/:id/sessions/disconnect-all — End all active sessions for a route
+ */
+router.post('/:id/sessions/disconnect-all', (req, res) => {
+  try {
+    const routeId = parseInt(req.params.id, 10);
+    const db = require('../../db/connection').getDb();
+    const active = db.prepare('SELECT id FROM rdp_sessions WHERE rdp_route_id = ? AND status = ?').all(routeId, 'active');
+    let ended = 0;
+    for (const s of active) {
+      try {
+        rdpSessions.endSession(s.id, 'admin_disconnect');
+        ended++;
+      } catch {}
+    }
+    res.json({ ok: true, ended });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to disconnect all sessions');
+    res.status(500).json({ ok: false, error: req.t ? req.t('error.rdp.disconnect_all') : 'Failed' });
+  }
+});
+
 // --- Session History -------------------------------------------
 
 /**
