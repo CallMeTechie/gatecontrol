@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0] — 2026-04-10
+
+### Features
+- add disconnect-all endpoint for RDP sessions
+
+---
+
 ## [1.20.9] — 2026-04-10
 
 ### Fixes
