@@ -105,7 +105,7 @@ function checkScope(scopes, path, method) {
  * Create a new API token
  * Returns the raw token (shown once) and the stored record
  */
-function create({ name, scopes, expiresAt, machineBindingEnabled, userId }, ipAddress) {
+function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId }, ipAddress) {
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     throw new Error('Token name is required');
   }
@@ -128,15 +128,16 @@ function create({ name, scopes, expiresAt, machineBindingEnabled, userId }, ipAd
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled, user_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled, user_id, peer_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     name.trim(),
     tokenHash,
     JSON.stringify(scopes),
     expiresAt || null,
     machineBindingEnabled ? 1 : 0,
-    userId || null
+    userId || null,
+    peerId || null
   );
 
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(result.lastInsertRowid);

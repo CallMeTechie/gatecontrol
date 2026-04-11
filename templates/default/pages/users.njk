@@ -7,10 +7,16 @@
     <div class="page-title">{{ t('users.title') }}</div>
     <div class="page-sub">{{ t('users.subtitle') }}</div>
   </div>
-  <button class="btn btn-primary" id="btn-add-user">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    {{ t('users.add_user') }}
-  </button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-ghost" id="btn-create-token-standalone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      {{ t('users.create_token') }}
+    </button>
+    <button class="btn btn-primary" id="btn-add-user">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{ t('users.add_user') }}
+    </button>
+  </div>
 </div>
 
 {# -- Unassigned tokens banner -- #}
@@ -108,47 +114,101 @@
   </div>
 </div>
 
-{# -- Create Token Sub-Modal -- #}
+{# -- Token Wizard Modal (4 steps) -- #}
 <div class="modal-overlay" id="token-modal-overlay" style="display:none;z-index:201">
-  <div class="modal" style="width:460px">
+  <div class="modal" style="width:500px;max-width:95vw">
     <div class="modal-head">
-      <span class="modal-title">{{ t('users.create_token') }}</span>
+      <span class="modal-title" id="token-wizard-title">{{ t('users.create_token') }}</span>
+      <span style="font-size:11px;color:var(--text-3);margin-left:auto" id="token-wizard-step">1/4</span>
       <button class="modal-close" id="token-modal-close">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label" for="new-token-name">{{ t('users.token_name') }}</label>
-        <input type="text" id="new-token-name" required maxlength="100">
+      {# Step 1: Name & User #}
+      <div id="tw-step-1" class="tw-step">
+        <div class="form-group">
+          <label class="form-label" for="tw-name">{{ t('users.token_name') }}</label>
+          <input type="text" id="tw-name" required maxlength="100" placeholder="z.B. Familien PC, Pixel Fold">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="tw-user">{{ t('users.assign_to') or 'Zuweisen an' }}</label>
+          <select id="tw-user"></select>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('users.token_scopes') }}</label>
-        <div id="new-token-scopes" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      {# Step 2: Scopes #}
+      <div id="tw-step-2" class="tw-step" style="display:none">
+        <div class="form-group">
+          <label class="form-label">{{ t('users.token_scopes') }}</label>
+          <div id="tw-presets" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="client" checked> <strong>{{ t('users.preset_client') or 'Client-Zugriff' }}</strong> <span style="color:var(--text-3);font-size:11px">VPN + RDP + Services</span></label>
+            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="full-access"> <strong>{{ t('users.preset_full') or 'Vollzugriff' }}</strong> <span style="color:var(--text-3);font-size:11px">{{ t('users.preset_full_desc') or 'Alle Admin-Funktionen' }}</span></label>
+            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="read-only"> <strong>{{ t('users.preset_readonly') or 'Nur Lesen' }}</strong> <span style="color:var(--text-3);font-size:11px">Dashboard + Status</span></label>
+            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="custom"> <strong>{{ t('users.preset_custom') or 'Benutzerdefiniert' }}</strong></label>
+          </div>
+          <div id="tw-custom-scopes" style="display:none;flex-wrap:wrap;gap:6px"></div>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label" for="new-token-expiry">{{ t('users.token_expiry') }}</label>
-        <select id="new-token-expiry">
-          <option value="">{{ t('users.no_expiry') }}</option>
-          <option value="30">30 {{ t('users.days') }}</option>
-          <option value="90">90 {{ t('users.days') }}</option>
-          <option value="365">365 {{ t('users.days') }}</option>
-        </select>
+      {# Step 3: Peer & Expiry #}
+      <div id="tw-step-3" class="tw-step" style="display:none">
+        <div class="form-group">
+          <label class="form-label" for="tw-peer">{{ t('users.bind_peer') or 'An Peer binden' }}</label>
+          <select id="tw-peer"></select>
+          <small class="form-hint">{{ t('users.bind_peer_hint') or 'Token wird beim ersten Connect automatisch gebunden' }}</small>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('users.token_expiry') }}</label>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label><input type="radio" name="tw-expiry" value="" checked> {{ t('users.no_expiry') }}</label>
+            <label><input type="radio" name="tw-expiry" value="30"> 30 {{ t('users.days') }}</label>
+            <label><input type="radio" name="tw-expiry" value="90"> 90 {{ t('users.days') }}</label>
+            <label><input type="radio" name="tw-expiry" value="365"> 1 {{ t('users.year') or 'Jahr' }}</label>
+          </div>
+        </div>
       </div>
 
-      <div id="token-created-result" class="form-error" style="display:none;background:var(--green-lt);border-color:var(--green-bd);color:var(--text-1)">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">{{ t('users.token_created_copy') }}</div>
-        <code id="token-created-value" style="font-size:11px;word-break:break-all;display:block;padding:8px;background:var(--bg-panel);border-radius:var(--radius-xs);user-select:all;font-family:var(--font-mono)"></code>
+      {# Step 4: Token Created #}
+      <div id="tw-step-4" class="tw-step" style="display:none">
+        <div style="padding:12px;background:var(--amber-lt);border:1px solid var(--amber-bd);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px">
+          ⚠️ {{ t('users.token_warning') or 'Diesen Token jetzt kopieren — er wird nur einmal angezeigt!' }}
+        </div>
+        <div style="position:relative">
+          <code id="tw-token-value" style="font-size:12px;word-break:break-all;display:block;padding:12px;padding-right:80px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);user-select:all"></code>
+          <button class="btn btn-primary" id="tw-copy-btn" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 12px">{{ t('common.copy') or 'Kopieren' }}</button>
+        </div>
+        <div id="tw-copy-confirm" style="display:none;color:var(--green);font-size:12px;margin-top:6px;font-weight:500">✓ {{ t('users.token_copied') or 'Kopiert!' }}</div>
       </div>
 
       <div id="token-form-error" class="form-error" style="display:none"></div>
     </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="token-modal-cancel">{{ t('config.cancel') }}</button>
-      <button class="btn btn-primary" id="btn-create-token">{{ t('users.create_token') }}</button>
+    <div class="modal-foot" id="tw-footer">
+      <button class="btn btn-ghost" id="tw-cancel">{{ t('config.cancel') }}</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" id="tw-back" style="display:none">← {{ t('common.back') or 'Zurück' }}</button>
+        <button class="btn btn-primary" id="tw-next">{{ t('common.next') or 'Weiter' }} →</button>
+      </div>
     </div>
   </div>
 </div>
+
+<style>
+  .tw-step { animation: fadeIn .15s ease }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+  .tw-preset-label { display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:13px;transition:border-color .15s }
+  .tw-preset-label:has(input:checked) { border-color:var(--accent);background:var(--accent-lt,rgba(59,130,246,.06)) }
+  .tw-preset-label input { accent-color:var(--accent) }
+
+  {# Mobile responsive: table → cards under 768px #}
+  @media (max-width: 768px) {
+    #users-table thead { display: none }
+    #users-table, #users-table tbody, #users-table tr, #users-table td { display: block; width: 100% }
+    #users-table tr { padding: 12px; border-bottom: 1px solid var(--border); position: relative }
+    #users-table td { padding: 2px 0; border: none; font-size: 13px }
+    #users-table td:first-child { font-size: 14px; margin-bottom: 4px }
+    #users-table td:last-child { display: flex; gap: 8px; margin-top: 8px }
+    .page-header { flex-direction: column; align-items: flex-start; gap: 12px }
+  }
+</style>
 
 {% endblock %}
 

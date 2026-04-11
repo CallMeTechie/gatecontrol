@@ -180,7 +180,7 @@ router.post('/:id/tokens', (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
     }
 
-    const { name, scopes, expires_at, machine_binding_enabled } = req.body;
+    const { name, scopes, expires_at, machine_binding_enabled, peer_id } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ ok: false, error: req.t('error.tokens.name_required') });
@@ -206,6 +206,7 @@ router.post('/:id/tokens', (req, res) => {
       expiresAt: expires_at || null,
       machineBindingEnabled: machine_binding_enabled || false,
       userId: id,
+      peerId: peer_id || null,
     }, req.ip);
 
     res.status(201).json({
