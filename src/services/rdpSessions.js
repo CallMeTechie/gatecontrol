@@ -106,7 +106,17 @@ function getLastAccess() {
 function cleanupStaleSessions() {
   const db = getDb();
   const timeoutSeconds = config.rdp.sessionHeartbeatTimeout;
-  const stale = db.prepare(`SELECT id FROM rdp_sessions WHERE status = 'active' AND last_heartbeat IS NOT NULL AND last_heartbeat < datetime('now', '-' || ? || ' seconds')`).all(timeoutSeconds);
+
+  // 1. Sessions with heartbeat that stopped responding
+  const staleHeartbeat = db.prepare(`SELECT id FROM rdp_sessions WHERE status = 'active' AND last_heartbeat IS NOT NULL AND last_heartbeat < datetime('now', '-' || ? || ' seconds')`).all(timeoutSeconds);
+
+  // 2. Sessions without any heartbeat that have been active too long (client
+  //    crashed or never implemented heartbeat — e.g. Android FreeRDP client).
+  //    Use 5 minutes as timeout for sessions that never sent a heartbeat.
+  const noHeartbeatTimeout = 300;
+  const staleNoHeartbeat = db.prepare(`SELECT id FROM rdp_sessions WHERE status = 'active' AND last_heartbeat IS NULL AND started_at < datetime('now', '-' || ? || ' seconds')`).all(noHeartbeatTimeout);
+
+  const stale = [...staleHeartbeat, ...staleNoHeartbeat];
   for (const session of stale) {
     try { endSession(session.id, 'timeout'); } catch (err) {
       logger.warn({ sessionId: session.id, error: err.message }, 'Failed to cleanup stale RDP session');

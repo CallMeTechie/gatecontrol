@@ -289,6 +289,14 @@
         actions.appendChild(wolBtn);
       }
 
+      if (r.active_sessions > 0) {
+        var disconnBtn = document.createElement('button');
+        disconnBtn.className = 'btn btn-sm btn-amber';
+        disconnBtn.dataset.disconnectAll = r.id;
+        disconnBtn.textContent = GC.t['rdp.disconnect_all'] || 'Alle trennen';
+        actions.appendChild(disconnBtn);
+      }
+
       var editBtn = document.createElement('button');
       editBtn.className = 'btn btn-sm btn-ghost';
       editBtn.dataset.edit = r.id;
@@ -300,6 +308,12 @@
       checkBtn.dataset.check = r.id;
       checkBtn.textContent = GC.t['rdp.connect_test'] || 'Verbindungstest';
       actions.appendChild(checkBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-sm btn-danger';
+      delBtn.dataset.delete = r.id;
+      delBtn.textContent = GC.t['rdp.delete'] || 'Löschen';
+      actions.appendChild(delBtn);
 
       card.appendChild(actions);
       container.appendChild(card);
@@ -445,6 +459,13 @@
     var toggleBtn = e.target.closest('[data-toggle]');
     if (toggleBtn) {
       try { await api.put('/api/v1/rdp/' + toggleBtn.dataset.toggle + '/toggle'); loadRoutes(); } catch {}
+      return;
+    }
+
+    var disconnAllBtn = e.target.closest('[data-disconnect-all]');
+    if (disconnAllBtn) {
+      if (!confirm(GC.t['rdp.confirm_disconnect_all'] || 'Alle aktiven Sessions trennen?')) return;
+      try { await api.post('/api/v1/rdp/' + disconnAllBtn.dataset.disconnectAll + '/sessions/disconnect-all'); loadRoutes(); } catch {}
       return;
     }
 
