@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1] — 2026-04-11
+
+### Fixes
+- user action buttons use flex layout + mobile responsive in app.css
+
+---
+
 ## [1.23.0] — 2026-04-11
 
 ### Features
