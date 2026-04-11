@@ -19,6 +19,16 @@ if ! wg-quick up "$GC_WG_INTERFACE" 2>&1 | grep -vi "privatekey"; then
 fi
 WG_UP=1
 
+# Restart dnsmasq so it binds to the now-available wg0 interface.
+# Alpine dnsmasq 2.91 with bind-dynamic does NOT reliably pick up
+# interfaces that appear after its initial bind phase.
+if command -v pgrep >/dev/null 2>&1 && pgrep -x dnsmasq >/dev/null 2>&1; then
+  echo "» Restarting dnsmasq to bind to ${GC_WG_INTERFACE}..."
+  kill $(pgrep -x dnsmasq) 2>/dev/null
+  sleep 1
+  dnsmasq --keep-in-foreground --conf-file=/app/config/dnsmasq.conf &
+fi
+
 # Keep the process alive until signalled
 sleep infinity &
 wait $!
