@@ -112,25 +112,67 @@ function decrypt(ciphertext) {
  * @param {string} clientPublicKeyBase64 - Client's ephemeral ECDH public key (base64, uncompressed P-256 point)
  * @returns {{ data: string, iv: string, authTag: string, serverPublicKey: string }} All base64-encoded
  */
-function ecdhEncrypt(plaintext, clientPublicKeyBase64) {
-  const clientPubBuf = Buffer.from(clientPublicKeyBase64, 'base64');
+// X.509 SubjectPublicKeyInfo header for P-256 uncompressed point (26 bytes)
+const P256_SPKI_HEADER = Buffer.from(
+  '3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex'
+);
 
-  // Validate: uncompressed P-256 point = 65 bytes (0x04 prefix + 32 X + 32 Y)
-  if (clientPubBuf.length !== 65 || clientPubBuf[0] !== 0x04) {
-    throw new Error('Invalid ECDH public key: expected 65-byte uncompressed P-256 point');
+/**
+ * Convert a raw 65-byte uncompressed P-256 point to X.509 SPKI encoding (91 bytes).
+ * Java/Android KeyFactory.generatePublic() requires X.509 format.
+ */
+function rawToSpki(rawPub) {
+  return Buffer.concat([P256_SPKI_HEADER, rawPub]);
+}
+
+/**
+ * Extract the 65-byte raw uncompressed point from an X.509 SPKI-encoded P-256 key.
+ */
+function spkiToRaw(spkiBuf) {
+  if (spkiBuf.length === 91) {
+    return spkiBuf.subarray(spkiBuf.length - 65);
+  }
+  return spkiBuf; // already raw
+}
+
+function ecdhEncrypt(plaintext, clientPublicKeyBase64) {
+  const clientPubOriginal = Buffer.from(clientPublicKeyBase64, 'base64');
+
+  // Accept both raw uncompressed (65 bytes) and X.509/SPKI-encoded (91 bytes).
+  // Java/Android sends X.509; Node.js clients send raw.
+  let clientPubRaw;
+  let clientIsSpki = false;
+  if (clientPubOriginal.length === 91) {
+    clientPubRaw = spkiToRaw(clientPubOriginal);
+    clientIsSpki = true;
+  } else {
+    clientPubRaw = clientPubOriginal;
+  }
+
+  if (clientPubRaw.length !== 65 || clientPubRaw[0] !== 0x04) {
+    throw new Error(`Invalid ECDH public key: expected 65-byte uncompressed P-256 point, got ${clientPubRaw.length} bytes`);
   }
 
   // 1. Ephemeral server ECDH keypair
   const serverEcdh = crypto.createECDH('prime256v1');
   serverEcdh.generateKeys();
 
-  // 2. Shared secret
-  const sharedSecret = serverEcdh.computeSecret(clientPubBuf);
+  // 2. Shared secret (always uses raw key bytes)
+  const sharedSecret = serverEcdh.computeSecret(clientPubRaw);
 
   // 3. Derive AES-256 key via HKDF
   //    salt = clientPub || serverPub  (binds both parties)
   //    info = protocol identifier     (domain separation)
-  const salt = Buffer.concat([clientPubBuf, serverEcdh.getPublicKey()]);
+  //
+  //    CRITICAL: salt must use the SAME key encoding the client uses.
+  //    - Android (Java) uses X.509/SPKI-encoded keys (.encoded → 91 bytes)
+  //    - Node.js uses raw uncompressed keys (65 bytes)
+  //    If the client sent X.509, we use X.509 for both keys in the salt.
+  //    If the client sent raw, we use raw for both.
+  const serverPubRaw = serverEcdh.getPublicKey();
+  const clientPubForSalt = clientIsSpki ? clientPubOriginal : clientPubRaw;
+  const serverPubForSalt = clientIsSpki ? rawToSpki(serverPubRaw) : serverPubRaw;
+  const salt = Buffer.concat([clientPubForSalt, serverPubForSalt]);
   const aesKey = crypto.hkdfSync('sha256', sharedSecret, salt, 'gatecontrol-rdp-e2ee-v1', 32);
 
   // 4. AES-256-GCM encrypt
@@ -139,11 +181,17 @@ function ecdhEncrypt(plaintext, clientPublicKeyBase64) {
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
+  // Return server public key in the same format the client uses:
+  // X.509/SPKI for Java/Android, raw for Node.js clients.
+  const serverPubKeyForResponse = clientIsSpki
+    ? rawToSpki(serverPubRaw).toString('base64')
+    : serverEcdh.getPublicKey('base64');
+
   return {
     data: encrypted.toString('base64'),
     iv: iv.toString('base64'),
     authTag: authTag.toString('base64'),
-    serverPublicKey: serverEcdh.getPublicKey('base64'),
+    serverPublicKey: serverPubKeyForResponse,
   };
 }
 
