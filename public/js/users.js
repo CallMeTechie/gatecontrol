@@ -123,6 +123,7 @@
 
   function renderUsersCards(users) {
     document.getElementById('users-table').style.display = 'none';
+    tbody.textContent = ''; // clear "Laden..." placeholder
     var mc = document.getElementById('users-mobile-cards');
     if (mc) mc.remove();
 
