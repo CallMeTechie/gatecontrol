@@ -122,7 +122,8 @@
 
       // Actions
       var tdActions = document.createElement('td');
-      tdActions.style.cssText = 'text-align:right;white-space:nowrap';
+      tdActions.className = 'user-actions';
+      tdActions.style.cssText = 'text-align:right';
 
       var btnEdit = document.createElement('button');
       btnEdit.className = 'icon-btn';
@@ -134,7 +135,6 @@
       var btnToggle = document.createElement('button');
       btnToggle.className = 'icon-btn';
       btnToggle.title = u.enabled ? 'Disable' : 'Enable';
-      btnToggle.style.cssText = 'margin-left:4px';
       btnToggle.textContent = u.enabled ? '\u23F8' : '\u25B6';
       btnToggle.addEventListener('click', function () { toggleUser(u.id, u.enabled); });
       tdActions.appendChild(btnToggle);
@@ -142,7 +142,7 @@
       var btnDelete = document.createElement('button');
       btnDelete.className = 'icon-btn';
       btnDelete.title = 'Delete';
-      btnDelete.style.cssText = 'margin-left:4px;color:var(--red)';
+      btnDelete.style.cssText = 'color:var(--red)';
       btnDelete.textContent = '\u2715';
       btnDelete.addEventListener('click', function () { deleteUser(u.id); });
       tdActions.appendChild(btnDelete);

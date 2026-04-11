@@ -197,17 +197,6 @@
   .tw-preset-label { display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:13px;transition:border-color .15s }
   .tw-preset-label:has(input:checked) { border-color:var(--accent);background:var(--accent-lt,rgba(59,130,246,.06)) }
   .tw-preset-label input { accent-color:var(--accent) }
-
-  {# Mobile responsive: table → cards under 768px #}
-  @media (max-width: 768px) {
-    #users-table thead { display: none }
-    #users-table, #users-table tbody, #users-table tr, #users-table td { display: block; width: 100% }
-    #users-table tr { padding: 12px; border-bottom: 1px solid var(--border); position: relative }
-    #users-table td { padding: 2px 0; border: none; font-size: 13px }
-    #users-table td:first-child { font-size: 14px; margin-bottom: 4px }
-    #users-table td:last-child { display: flex; gap: 8px; margin-top: 8px }
-    .page-header { flex-direction: column; align-items: flex-start; gap: 12px }
-  }
 </style>
 
 {% endblock %}
