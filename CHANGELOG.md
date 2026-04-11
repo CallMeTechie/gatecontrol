@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.1] — 2026-04-11
+
+### Fixes
+- load RDP credentials in edit modal + disable browser autocomplete
+
+---
+
 ## [1.22.0] — 2026-04-11
 
 ### Features
