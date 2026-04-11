@@ -728,6 +728,18 @@
       document.getElementById('rdp-gateway-host').value = r.gateway_host || '';
       document.getElementById('rdp-gateway-port').value = r.gateway_port || 443;
       document.getElementById('rdp-credential-mode').value = r.credential_mode || 'none';
+      // Load decrypted credentials from server (separate endpoint for security)
+      document.getElementById('rdp-username').value = '';
+      document.getElementById('rdp-password').value = '';
+      if (r.credential_mode && r.credential_mode !== 'none') {
+        try {
+          var credRes = await api.get('/api/v1/rdp/' + id + '/credentials');
+          if (credRes.ok && credRes.credentials) {
+            document.getElementById('rdp-username').value = credRes.credentials.username || '';
+            document.getElementById('rdp-password').value = credRes.credentials.password || '';
+          }
+        } catch (e) { /* credentials may not be accessible */ }
+      }
       document.getElementById('rdp-domain').value = r.domain || '';
       document.getElementById('rdp-resolution-mode').value = r.resolution_mode || 'fullscreen';
       document.getElementById('rdp-resolution-width').value = r.resolution_width || '';
