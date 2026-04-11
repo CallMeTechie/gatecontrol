@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.4] — 2026-04-11
+
+### Fixes
+- restart dnsmasq after wg0 is up to ensure it binds to VPN interface
+
+---
+
 ## [1.23.3] — 2026-04-11
 
 ### Fixes
