@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0] — 2026-04-11
+
+### Features
+- disconnect-all button, delete button, auto stale-session cleanup
+
+---
+
 ## [1.21.1] — 2026-04-11
 
 ### Fixes
