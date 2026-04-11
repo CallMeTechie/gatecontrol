@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1] — 2026-04-11
+
+### Fixes
+- accept X.509/SPKI-encoded ECDH public keys from Android clients
+
+---
+
 ## [1.21.0] — 2026-04-10
 
 ### Features
