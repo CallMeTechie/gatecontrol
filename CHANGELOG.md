@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.2] — 2026-04-11
+
+### Fixes
+- render user cards with labels on mobile instead of CSS table hack
+
+---
+
 ## [1.23.1] — 2026-04-11
 
 ### Fixes
