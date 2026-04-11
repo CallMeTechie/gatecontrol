@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0] — 2026-04-11
+
+### Features
+- 4-step token wizard + responsive mobile layout for /users
+
+---
+
 ## [1.22.1] — 2026-04-11
 
 ### Fixes
