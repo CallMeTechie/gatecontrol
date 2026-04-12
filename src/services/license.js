@@ -41,6 +41,7 @@ const COMMUNITY_FALLBACK = {
   custom_dns: false,
   machine_binding: false,
   remote_desktop: false,
+  split_tunnel_preset: false,
 };
 
 let cachedPlan = 'community';
