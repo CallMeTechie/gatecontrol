@@ -157,6 +157,28 @@
           <small class="form-hint">{{ t('users.bind_peer_hint') or 'Token wird beim ersten Connect automatisch gebunden' }}</small>
         </div>
         <div class="form-group">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="tw-st-override" style="accent-color:var(--accent)">
+            {{ t('users.split_tunnel_override') }}
+          </label>
+        </div>
+        <div id="tw-st-section" style="display:none;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:12px">
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label" style="font-size:11px">{{ t('settings.split_tunnel_mode') }}</label>
+            <select id="tw-st-mode" style="font-size:12px">
+              <option value="exclude">{{ t('settings.split_tunnel_exclude') }}</option>
+              <option value="include">{{ t('settings.split_tunnel_include') }}</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-private" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_private') }}</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-linklocal" style="accent-color:var(--accent)"> Link-Local</label>
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-locked" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_lock') }}</label>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">{{ t('users.token_expiry') }}</label>
           <div style="display:flex;flex-direction:column;gap:6px">
             <label><input type="radio" name="tw-expiry" value="" checked> {{ t('users.no_expiry') }}</label>

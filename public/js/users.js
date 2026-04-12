@@ -425,6 +425,13 @@
     document.getElementById('tw-copy-confirm').style.display = 'none';
     document.getElementById('tw-token-value').textContent = '';
 
+    // Reset split-tunnel override
+    document.getElementById('tw-st-override').checked = false;
+    document.getElementById('tw-st-section').style.display = 'none';
+    document.getElementById('tw-st-private').checked = false;
+    document.getElementById('tw-st-linklocal').checked = false;
+    document.getElementById('tw-st-locked').checked = false;
+
     // Populate user dropdown
     var sel = document.getElementById('tw-user');
     sel.textContent = '';
@@ -487,6 +494,15 @@
     document.getElementById('tw-custom-scopes').style.display = val === 'custom' ? 'flex' : 'none';
   });
 
+  // Split-tunnel override toggle
+  var stOverride = document.getElementById('tw-st-override');
+  var stSection = document.getElementById('tw-st-section');
+  if (stOverride && stSection) {
+    stOverride.addEventListener('change', function() {
+      stSection.style.display = stOverride.checked ? '' : 'none';
+    });
+  }
+
   function getWizardScopes() {
     var preset = document.querySelector('input[name="tw-preset"]:checked').value;
     if (preset === 'custom') {
@@ -521,6 +537,20 @@
         var d = new Date();
         d.setDate(d.getDate() + parseInt(expiryDays, 10));
         body.expires_at = d.toISOString();
+      }
+      if (document.getElementById('tw-st-override').checked) {
+        var stNets = [];
+        if (document.getElementById('tw-st-private').checked) {
+          stNets.push({cidr:'10.0.0.0/8',label:'Private 10.x'},{cidr:'172.16.0.0/12',label:'Private 172.x'},{cidr:'192.168.0.0/16',label:'Private 192.x'});
+        }
+        if (document.getElementById('tw-st-linklocal').checked) {
+          stNets.push({cidr:'169.254.0.0/16',label:'Link-Local'});
+        }
+        body.split_tunnel_override = {
+          mode: document.getElementById('tw-st-mode').value,
+          networks: stNets,
+          locked: document.getElementById('tw-st-locked').checked,
+        };
       }
       hideError(tokenFormError);
       btnLoading(btn);
