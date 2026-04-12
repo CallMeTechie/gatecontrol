@@ -144,6 +144,7 @@
     <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
     <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
     <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
+    <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
   </div>
   <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
   <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
@@ -152,6 +153,7 @@
   <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
   <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
   <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
+  <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
 </div>
 
 {# ─── General Tab ─────────────────────────────────────── #}
@@ -834,6 +836,46 @@
       </div>
     </div>
   </div>
+  </div>
+</div>
+
+{# ─── Split-Tunnel Tab ───────────────────────────────── #}
+<div class="settings-panel" data-settings-panel="split-tunnel" style="display:none">
+  <div class="settings-section">
+    <h3>{{ t('settings.split_tunnel_title') }}</h3>
+    <p style="font-size:13px;color:var(--text-3);margin-bottom:16px">{{ t('settings.split_tunnel_desc') }}</p>
+
+    <div class="form-group">
+      <label class="form-label">{{ t('settings.split_tunnel_mode') }}</label>
+      <select id="st-mode">
+        <option value="off">{{ t('settings.split_tunnel_off') }}</option>
+        <option value="exclude">{{ t('settings.split_tunnel_exclude') }}</option>
+        <option value="include">{{ t('settings.split_tunnel_include') }}</option>
+      </select>
+    </div>
+
+    <div id="st-networks-section" style="display:none">
+      <div class="form-group">
+        <label class="form-label">{{ t('settings.split_tunnel_presets') }}</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-private-nets" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_private') }} (10/172/192)</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-link-local" style="accent-color:var(--accent)"> Link-Local (169.254.0.0/16)</label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('settings.split_tunnel_custom') }}</label>
+        <div id="st-custom-list"></div>
+        <button class="btn btn-ghost" style="margin-top:8px;font-size:12px" id="st-add-network">+ {{ t('settings.split_tunnel_add_network') }}</button>
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-locked" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_lock') }}</label>
+        <small class="form-hint">{{ t('settings.split_tunnel_lock_hint') }}</small>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="st-save" style="margin-top:12px">{{ t('data.save') }}</button>
   </div>
 </div>
 

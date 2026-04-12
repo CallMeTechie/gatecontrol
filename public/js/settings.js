@@ -1195,3 +1195,90 @@
 
   loadCaddyStatus();
 })();
+
+// Split-Tunnel Preset
+(function () {
+  var modeSelect = document.getElementById('st-mode');
+  var networksSection = document.getElementById('st-networks-section');
+  var privateNets = document.getElementById('st-private-nets');
+  var linkLocal = document.getElementById('st-link-local');
+  var lockedCb = document.getElementById('st-locked');
+  var customList = document.getElementById('st-custom-list');
+  if (!modeSelect) return;
+
+  var PRIVATE_CIDRS = [
+    { cidr: '10.0.0.0/8', label: 'Private 10.x' },
+    { cidr: '172.16.0.0/12', label: 'Private 172.x' },
+    { cidr: '192.168.0.0/16', label: 'Private 192.x' },
+  ];
+  var LINK_LOCAL = { cidr: '169.254.0.0/16', label: 'Link-Local' };
+  var customNets = [];
+
+  modeSelect.addEventListener('change', function () {
+    networksSection.style.display = modeSelect.value === 'off' ? 'none' : '';
+  });
+
+  function renderCustom() {
+    customList.textContent = '';
+    customNets.forEach(function (n, i) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px';
+      var lbl = document.createElement('span');
+      lbl.style.cssText = 'font-size:12px;min-width:100px';
+      lbl.textContent = n.label || '';
+      row.appendChild(lbl);
+      var cidr = document.createElement('code');
+      cidr.style.cssText = 'font-size:12px;color:var(--text-2)';
+      cidr.textContent = n.cidr;
+      row.appendChild(cidr);
+      var del = document.createElement('button');
+      del.className = 'icon-btn';
+      del.style.cssText = 'color:var(--red);margin-left:auto';
+      del.textContent = '\u2715';
+      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); });
+      row.appendChild(del);
+      customList.appendChild(row);
+    });
+  }
+
+  document.getElementById('st-add-network').addEventListener('click', function () {
+    var label = prompt(GC.t['settings.split_tunnel_label_prompt'] || 'Label:');
+    if (!label) return;
+    var cidr = prompt(GC.t['settings.split_tunnel_cidr_prompt'] || 'CIDR (e.g. 172.20.0.0/16):');
+    if (!cidr) return;
+    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(cidr)) {
+      alert('Invalid CIDR format');
+      return;
+    }
+    customNets.push({ label: label, cidr: cidr });
+    renderCustom();
+  });
+
+  async function loadST() {
+    try {
+      var data = await api.get('/api/v1/settings/split-tunnel');
+      if (!data.ok) return;
+      modeSelect.value = data.mode || 'off';
+      networksSection.style.display = modeSelect.value === 'off' ? 'none' : '';
+      lockedCb.checked = !!data.locked;
+      var nets = data.networks || [];
+      var pCidrs = PRIVATE_CIDRS.map(function (p) { return p.cidr; });
+      privateNets.checked = nets.some(function (n) { return pCidrs.indexOf(n.cidr) >= 0; });
+      linkLocal.checked = nets.some(function (n) { return n.cidr === LINK_LOCAL.cidr; });
+      customNets = nets.filter(function (n) { return pCidrs.indexOf(n.cidr) < 0 && n.cidr !== LINK_LOCAL.cidr; });
+      renderCustom();
+    } catch {}
+  }
+
+  document.getElementById('st-save').addEventListener('click', async function () {
+    var networks = customNets.slice();
+    if (privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
+    if (linkLocal.checked) networks.push(LINK_LOCAL);
+    try {
+      await api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb.checked });
+      if (typeof GC.toast === 'function') GC.toast(GC.t['settings.saved'] || 'Saved');
+    } catch (err) { alert(err.message || 'Failed to save'); }
+  });
+
+  loadST();
+})();
