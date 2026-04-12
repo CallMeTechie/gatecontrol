@@ -616,6 +616,12 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'user_ids'),
   },
+  {
+    version: 34,
+    name: 'add_split_tunnel_override',
+    sql: `ALTER TABLE api_tokens ADD COLUMN split_tunnel_override TEXT DEFAULT NULL;`,
+    detect: (db) => hasColumn(db, 'api_tokens', 'split_tunnel_override'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
