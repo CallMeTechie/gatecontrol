@@ -8,6 +8,28 @@ const logger = require('../../utils/logger');
 const router = Router();
 
 /**
+ * Validate a split-tunnel preset object
+ * @param {object} obj - The preset to validate
+ * @returns {string|null} Error message or null if valid
+ */
+function validateSplitTunnelPreset(obj) {
+  if (!obj || typeof obj !== 'object') return 'Invalid preset format';
+  if (obj.mode && !['off', 'exclude', 'include'].includes(obj.mode)) return 'Invalid mode';
+  if (obj.networks) {
+    if (!Array.isArray(obj.networks)) return 'networks must be an array';
+    if (obj.networks.length > 50) return 'Maximum 50 networks';
+    const cidrRe = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+    for (const n of obj.networks) {
+      if (!n.cidr || !cidrRe.test(n.cidr)) return `Invalid CIDR: ${n.cidr}`;
+      const prefix = parseInt(n.cidr.split('/')[1], 10);
+      if (prefix < 0 || prefix > 32) return `Invalid prefix: ${n.cidr}`;
+      if (n.label && n.label.length > 100) return 'Label too long (max 100)';
+    }
+  }
+  return null;
+}
+
+/**
  * Middleware: Block token auth and require admin role
  */
 router.use((req, res, next) => {
@@ -180,7 +202,7 @@ router.post('/:id/tokens', (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
     }
 
-    const { name, scopes, expires_at, machine_binding_enabled, peer_id } = req.body;
+    const { name, scopes, expires_at, machine_binding_enabled, peer_id, split_tunnel_override } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ ok: false, error: req.t('error.tokens.name_required') });
@@ -200,6 +222,13 @@ router.post('/:id/tokens', (req, res) => {
       return res.status(400).json({ ok: false, error: scopeErr });
     }
 
+    if (split_tunnel_override) {
+      const stErr = validateSplitTunnelPreset(split_tunnel_override);
+      if (stErr) {
+        return res.status(400).json({ ok: false, error: stErr });
+      }
+    }
+
     const result = tokens.create({
       name: name.trim(),
       scopes: filteredScopes,
@@ -207,6 +236,7 @@ router.post('/:id/tokens', (req, res) => {
       machineBindingEnabled: machine_binding_enabled || false,
       userId: id,
       peerId: peer_id || null,
+      splitTunnelOverride: split_tunnel_override ? JSON.stringify(split_tunnel_override) : null,
     }, req.ip);
 
     res.status(201).json({
