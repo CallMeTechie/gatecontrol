@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0] — 2026-04-12
+
+### Features
+- i18n strings for split-tunnel settings (en + de)
+
+---
+
 ## [1.23.4] — 2026-04-11
 
 ### Fixes
