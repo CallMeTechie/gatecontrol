@@ -105,7 +105,7 @@ function checkScope(scopes, path, method) {
  * Create a new API token
  * Returns the raw token (shown once) and the stored record
  */
-function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId }, ipAddress) {
+function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId, splitTunnelOverride }, ipAddress) {
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     throw new Error('Token name is required');
   }
@@ -128,8 +128,8 @@ function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled, user_id, peer_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO api_tokens (name, token_hash, scopes, expires_at, machine_binding_enabled, user_id, peer_id, split_tunnel_override)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name.trim(),
     tokenHash,
@@ -137,7 +137,8 @@ function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId
     expiresAt || null,
     machineBindingEnabled ? 1 : 0,
     userId || null,
-    peerId || null
+    peerId || null,
+    splitTunnelOverride || null
   );
 
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(result.lastInsertRowid);
@@ -312,6 +313,7 @@ function formatToken(row) {
     created_at: row.created_at,
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
+    split_tunnel_override: row.split_tunnel_override || null,
   };
 }
 
