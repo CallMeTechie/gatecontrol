@@ -1054,5 +1054,21 @@
   "error.users.toggle": "Failed to toggle user",
   "error.users.not_found": "User not found",
   "error.users.self_delete": "You cannot delete your own account",
-  "error.users.self_disable": "You cannot disable your own account"
+  "error.users.self_disable": "You cannot disable your own account",
+  "settings.tab_split_tunnel": "Split-Tunnel",
+  "settings.split_tunnel_title": "Split-Tunneling Preset",
+  "settings.split_tunnel_desc": "Configure which networks are routed through the VPN. Clients fetch this preset on connect.",
+  "settings.split_tunnel_mode": "Mode",
+  "settings.split_tunnel_off": "Off (no preset)",
+  "settings.split_tunnel_exclude": "Full VPN — define exceptions",
+  "settings.split_tunnel_include": "Only selected networks through VPN",
+  "settings.split_tunnel_presets": "Network Presets",
+  "settings.split_tunnel_private": "Private Networks",
+  "settings.split_tunnel_custom": "Custom Networks",
+  "settings.split_tunnel_add_network": "Add Network",
+  "settings.split_tunnel_lock": "Lock settings (users cannot change network config)",
+  "settings.split_tunnel_lock_hint": "App exceptions are always user-controlled",
+  "settings.split_tunnel_label_prompt": "Label:",
+  "settings.split_tunnel_cidr_prompt": "CIDR (e.g. 172.20.0.0/16):",
+  "users.split_tunnel_override": "Override split-tunnel preset for this token"
 }

@@ -1054,5 +1054,21 @@
   "error.users.toggle": "Benutzer konnte nicht umgeschaltet werden",
   "error.users.not_found": "Benutzer nicht gefunden",
   "error.users.self_delete": "Sie können Ihr eigenes Konto nicht löschen",
-  "error.users.self_disable": "Sie können Ihr eigenes Konto nicht deaktivieren"
+  "error.users.self_disable": "Sie können Ihr eigenes Konto nicht deaktivieren",
+  "settings.tab_split_tunnel": "Split-Tunnel",
+  "settings.split_tunnel_title": "Split-Tunneling Voreinstellung",
+  "settings.split_tunnel_desc": "Konfigurieren Sie, welche Netzwerke durch das VPN geleitet werden. Clients laden diese Einstellung beim Verbinden.",
+  "settings.split_tunnel_mode": "Modus",
+  "settings.split_tunnel_off": "Aus (keine Voreinstellung)",
+  "settings.split_tunnel_exclude": "Alles durch VPN — Ausnahmen definieren",
+  "settings.split_tunnel_include": "Nur ausgewaehlte Netzwerke durch VPN",
+  "settings.split_tunnel_presets": "Netzwerk-Vorauswahl",
+  "settings.split_tunnel_private": "Private Netzwerke",
+  "settings.split_tunnel_custom": "Benutzerdefinierte Netzwerke",
+  "settings.split_tunnel_add_network": "Netzwerk hinzufuegen",
+  "settings.split_tunnel_lock": "Einstellungen sperren (User kann Netzwerke nicht aendern)",
+  "settings.split_tunnel_lock_hint": "App-Ausnahmen sind immer vom User kontrollierbar",
+  "settings.split_tunnel_label_prompt": "Bezeichnung:",
+  "settings.split_tunnel_cidr_prompt": "CIDR (z.B. 172.20.0.0/16):",
+  "users.split_tunnel_override": "Split-Tunnel-Voreinstellung fuer diesen Token ueberschreiben"
 }
