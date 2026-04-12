@@ -12,6 +12,7 @@ const backup = require('../../services/backup');
 const config = require('../../../config/default');
 const logger = require('../../utils/logger');
 const { requireFeature } = require('../../middleware/license');
+const { hasFeature } = require('../../services/license');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -729,6 +730,74 @@ router.put('/dns', requireFeature('custom_dns'), (req, res) => {
     });
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+// ─── Split-Tunnel Preset Settings ──────────────────────
+
+/**
+ * GET /api/settings/split-tunnel — Get global split-tunnel preset
+ */
+router.get('/split-tunnel', (req, res) => {
+  try {
+    let preset;
+    try {
+      preset = JSON.parse(settings.get('split_tunnel_preset', '{}'));
+    } catch {
+      preset = { mode: 'off', networks: [], locked: false };
+    }
+    const { mode = 'off', networks = [], locked = false } = preset;
+    res.json({ ok: true, mode, networks, locked });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get split-tunnel preset');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
+ * PUT /api/settings/split-tunnel — Update global split-tunnel preset (license-gated)
+ */
+router.put('/split-tunnel', (req, res) => {
+  try {
+    if (!hasFeature('split_tunnel_preset')) {
+      return res.status(403).json({ ok: false, error: 'Feature not licensed' });
+    }
+
+    const { mode, networks, locked } = req.body;
+
+    if (!['off', 'exclude', 'include'].includes(mode)) {
+      return res.status(400).json({ ok: false, error: 'Invalid mode. Must be off, exclude, or include.' });
+    }
+
+    if (!Array.isArray(networks) || networks.length > 50) {
+      return res.status(400).json({ ok: false, error: 'networks must be an array with max 50 entries.' });
+    }
+
+    const cidrRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+    for (const net of networks) {
+      if (!cidrRegex.test(net.cidr)) {
+        return res.status(400).json({ ok: false, error: `Invalid CIDR: ${net.cidr}` });
+      }
+      const prefix = parseInt(net.cidr.split('/')[1], 10);
+      if (prefix < 0 || prefix > 32) {
+        return res.status(400).json({ ok: false, error: `Invalid prefix length in ${net.cidr}` });
+      }
+      if (net.label && (typeof net.label !== 'string' || net.label.length > 100)) {
+        return res.status(400).json({ ok: false, error: 'Label must be a string with max 100 characters.' });
+      }
+    }
+
+    const preset = { mode, networks, locked: !!locked };
+    settings.set('split_tunnel_preset', JSON.stringify(preset));
+
+    activity.log('split_tunnel_preset_updated', 'Split-tunnel preset updated', {
+      details: preset,
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to update split-tunnel preset');
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
