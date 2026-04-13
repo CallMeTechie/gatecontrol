@@ -1206,8 +1206,9 @@
   var customList = document.getElementById('st-custom-list');
   if (!modeSelect) return;
 
+  // 10.0.0.0/8 intentionally excluded — the WireGuard VPN subnet (10.8.0.0/24)
+  // lives there. Users who need it can add it as a custom network.
   var PRIVATE_CIDRS = [
-    { cidr: '10.0.0.0/8', label: 'Private 10.x' },
     { cidr: '172.16.0.0/12', label: 'Private 172.x' },
     { cidr: '192.168.0.0/16', label: 'Private 192.x' },
   ];
