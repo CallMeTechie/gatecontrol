@@ -1105,6 +1105,46 @@ a:hover { text-decoration: underline; }
   border-color: var(--border);
 }
 
+.btn-link {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-link:hover {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+.btn-amber {
+  background: var(--amber-light);
+  color: var(--amber-text);
+  border-color: var(--amber-border);
+}
+
+.btn-amber:hover {
+  background: var(--amber);
+  color: #fff;
+  border-color: var(--amber);
+}
+
+.btn-green {
+  background: var(--green-light);
+  color: var(--green-text);
+  border-color: var(--green-border);
+}
+
+.btn-green:hover {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+
 .btn-danger {
   background: var(--red);
   color: var(--text-inverse);
@@ -2710,4 +2750,65 @@ table tbody tr:last-child td { border-bottom: none; }
 
 @media (max-width: 800px) {
   .vm-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── JS-Rendered Component Compatibility ───────────────── */
+
+/* Alert banners (routes.js hint banner) */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.alert-info {
+  background: var(--blue-light);
+  color: var(--blue-text);
+  border-color: var(--blue-border);
+  border-left: 3px solid var(--blue);
+}
+
+.alert-success {
+  background: var(--green-light);
+  color: var(--green-text);
+  border-color: var(--green-border);
+  border-left: 3px solid var(--green);
+}
+
+.alert-error {
+  background: var(--red-light);
+  color: var(--red-text);
+  border-color: var(--red-border);
+  border-left: 3px solid var(--red);
+}
+
+/* Route trace entries (routes.js) */
+.trace-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  border-bottom: 1px dashed var(--border);
+}
+
+.trace-entry:last-child { border-bottom: none; }
+
+/* Checkbox helpers — RDP user picker & TailWire scope picker */
+.rdp-user-cb,
+.tw-scope-cb {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
 }
