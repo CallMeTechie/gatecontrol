@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
+const { withRetry } = require('../utils/taskRetry');
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -108,7 +109,7 @@ function getTransporter() {
 /**
  * Send an email
  */
-async function sendMail({ to, subject, text, html }) {
+async function _sendMail({ to, subject, text, html }) {
   const settings = getSmtpSettings();
   const transporter = getTransporter();
 
@@ -123,6 +124,12 @@ async function sendMail({ to, subject, text, html }) {
   logger.info({ messageId: info.messageId, to, subject }, 'Email sent');
   return info;
 }
+
+const sendMail = withRetry('email-send', _sendMail, {
+  maxRetries: 2,
+  baseDelayMs: 2000,
+  maxDelayMs: 10000,
+});
 
 /**
  * Send a styled OTP email with EN/DE localisation and GateControl branding
@@ -208,7 +215,7 @@ async function sendOtpEmail({ to, code, domain, lang }) {
  * Send a simple test email to verify SMTP configuration
  */
 async function sendTestEmail(to) {
-  return sendMail({
+  return _sendMail({
     to,
     subject: 'GateControl — SMTP Test',
     text: 'This is a test email from GateControl. Your SMTP configuration is working correctly.',
