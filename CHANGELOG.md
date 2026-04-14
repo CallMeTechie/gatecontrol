@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.5] — 2026-04-14
+
+### Fixes
+- reorder Settings General tab in default theme — Theme → WireGuard → Caddy
+
+---
+
 ## [1.28.4] — 2026-04-14
 
 ### Fixes
