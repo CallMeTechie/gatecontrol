@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.3] — 2026-04-14
+
+### Fixes
+- 4 Pro theme issues — scroll, toggles, batch-bar, default theme setting
+
+---
+
 ## [1.28.2] — 2026-04-14
 
 ### Fixes
