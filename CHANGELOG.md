@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.2] — 2026-04-14
+
+### Änderungen
+- extract Caddy config builder from routes.js into caddyConfig.js
+
+---
+
 ## [1.29.1] — 2026-04-14
 
 ### Fixes
