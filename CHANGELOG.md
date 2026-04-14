@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0] — 2026-04-14
+
+### Features
+- add Pro theme pages (settings, certificates, profile)
+
+---
+
 ## [1.27.0] — 2026-04-14
 
 ### Features
