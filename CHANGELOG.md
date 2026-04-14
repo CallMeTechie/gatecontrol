@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.2] — 2026-04-14
+
+### Fixes
+- remove overflow:hidden from body and shell, enable scrolling in main-wrap
+
+---
+
 ## [1.28.1] — 2026-04-14
 
 ### Dokumentation
