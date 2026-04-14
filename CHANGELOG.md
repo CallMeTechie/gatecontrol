@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.0] — 2026-04-14
+
+### Features
+- add retry with exponential backoff for email delivery
+
+---
+
 ## [1.28.8] — 2026-04-14
 
 ### Fixes
