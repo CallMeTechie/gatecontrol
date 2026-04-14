@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.1] — 2026-04-14
+
+### Dokumentation
+- document Pro theme and GC_DEFAULT_THEME configuration
+
+---
+
 ## [1.28.0] — 2026-04-14
 
 ### Features
