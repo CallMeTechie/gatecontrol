@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.8] — 2026-04-14
+
+### Fixes
+- add flex gap to page-content for consistent spacing between dashboard sections
+
+---
+
 ## [1.28.7] — 2026-04-14
 
 ### Fixes
