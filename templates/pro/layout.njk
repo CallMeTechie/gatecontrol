@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#F8FAFC">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ title }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/pro.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="app-layout">
+  {% include theme + "/partials/sidebar.njk" %}
+
+  <div class="main-wrap">
+    {% include theme + "/partials/topbar.njk" %}
+
+    <main class="page-content" id="main-content">
+      {% if flash.success %}
+      <div class="flash flash-success">{{ flash.success }}</div>
+      {% endif %}
+      {% if flash.error %}
+      <div class="flash flash-error">{{ flash.error }}</div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+{% include theme + "/partials/bottomnav.njk" %}
+{% include theme + "/partials/fab.njk" %}
+
+<script nonce="{{ cspNonce }}">
+  window.GC = {
+    csrfToken: '{{ csrfToken }}',
+    language: '{{ language }}',
+    baseUrl: '{{ baseUrl }}',
+    t: {
+      'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
+      'peers.online': {{ t('peers.online') | dump | safe }},
+      'peers.offline': {{ t('peers.offline') | dump | safe }},
+      'peers.disabled': {{ t('peers.disabled') | dump | safe }},
+      'peers.name_required': {{ t('peers.name_required') | dump | safe }},
+      'peers.confirm_delete': {{ t('peers.confirm_delete') | dump | safe }},
+      'routes.no_routes': {{ t('routes.no_routes') | dump | safe }},
+      'routes.active': {{ t('routes.active') | dump | safe }},
+      'routes.disabled': {{ t('routes.disabled') | dump | safe }},
+      'routes.peer_offline': {{ t('routes.peer_offline') | dump | safe }},
+      'routes.confirm_delete': {{ t('routes.confirm_delete') | dump | safe }},
+      'routes.auth_basic_required': {{ t('routes.auth_basic_required') | dump | safe }},
+      'route_auth.method_email_password': {{ t('route_auth.method_email_password') | dump | safe }},
+      'route_auth.method_email_code': {{ t('route_auth.method_email_code') | dump | safe }},
+      'route_auth.method_totp': {{ t('route_auth.method_totp') | dump | safe }},
+      'dashboard.no_events': {{ t('dashboard.no_events') | dump | safe }},
+      'logs.no_entries': {{ t('logs.no_entries') | dump | safe }},
+      'logs.no_access_entries': {{ t('logs.no_access_entries') | dump | safe }},
+      'settings.confirm_clear_logs': {{ t('settings.confirm_clear_logs') | dump | safe }},
+      'settings.logs_cleared': {{ t('settings.logs_cleared') | dump | safe }},
+      'settings.confirm_delete_webhook': {{ t('settings.confirm_delete_webhook') | dump | safe }},
+      'common.error': {{ t('common.error') | dump | safe }},
+      'security.lockout.no_locked': {{ t('security.lockout.no_locked') | dump | safe }},
+      'security.lockout.remaining': {{ t('security.lockout.remaining') | dump | safe }},
+      'security.lockout.unlock': {{ t('security.lockout.unlock') | dump | safe }},
+      'security.saved': {{ t('security.saved') | dump | safe }},
+      'sidebar.toggle_open': {{ t('sidebar.toggle_open') | dump | safe }},
+      'sidebar.toggle_close': {{ t('sidebar.toggle_close') | dump | safe }},
+      'tokens.no_tokens': {{ t('tokens.no_tokens') | dump | safe }},
+      'tokens.created': {{ t('tokens.created') | dump | safe }},
+      'tokens.last_used': {{ t('tokens.last_used') | dump | safe }},
+      'tokens.last_used_never': {{ t('tokens.last_used_never') | dump | safe }},
+      'tokens.expires': {{ t('tokens.expires') | dump | safe }},
+      'tokens.expires_never': {{ t('tokens.expires_never') | dump | safe }},
+      'tokens.revoke': {{ t('tokens.revoke') | dump | safe }},
+      'tokens.confirm_revoke': {{ t('tokens.confirm_revoke') | dump | safe }},
+      'tokens.created_success': {{ t('tokens.created_success') | dump | safe }},
+      'tokens.copy_token': {{ t('tokens.copy_token') | dump | safe }},
+      'tokens.token_copied': {{ t('tokens.token_copied') | dump | safe }},
+      'error.tokens.name_required': {{ t('error.tokens.name_required') | dump | safe }},
+      'error.tokens.scopes_required': {{ t('error.tokens.scopes_required') | dump | safe }}
+    }
+  };
+</script>
+<script src="/js/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

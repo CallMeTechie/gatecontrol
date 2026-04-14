@@ -1,0 +1,71 @@
+<header class="topbar">
+  <button class="sidebar-toggle" id="sidebar-toggle"
+          aria-label="{{ t('sidebar.toggle_open') }}"
+          aria-expanded="false"
+          aria-controls="sidebar">
+    <svg class="hamburger-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+    <svg class="hamburger-close" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  </button>
+
+  <a href="/dashboard" class="topbar-logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+  </a>
+
+  <span class="topbar-title">{{ title }}</span>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-status" id="wg-status">
+    <div class="pulse-dot"></div>
+    <span>{{ t('status.wg_active') }}</span>
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-lang" id="lang-switcher">
+    {% for lang in availableLanguages %}
+    <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}">{{ lang }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="topbar-divider"></div>
+
+  <div class="topbar-profile" id="topbar-profile">
+    <button class="topbar-avatar" title="{{ user.username if user else 'Admin' }}">
+      {{ (user.display_name[0] if user and user.display_name else 'A') | upper }}
+    </button>
+    <div class="topbar-dropdown" id="topbar-dropdown">
+      <div class="topbar-dropdown-header">
+        <div class="topbar-dropdown-name">{% if user and user.display_name %}{{ user.display_name }}{% elif user %}{{ user.username }}{% else %}Admin{% endif %}</div>
+        <div class="topbar-dropdown-username">{% if user %}{{ user.username }}{% else %}admin{% endif %}</div>
+      </div>
+      <a href="/profile" class="topbar-dropdown-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        {{ t('nav.profile') }}
+      </a>
+      <a href="/settings" class="topbar-dropdown-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        {{ t('nav.settings') }}
+      </a>
+      <div class="topbar-dropdown-divider"></div>
+      <form action="/logout" method="POST" style="margin:0">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <button type="submit" class="topbar-dropdown-item topbar-dropdown-logout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          {{ t('nav.logout') }}
+        </button>
+      </form>
+    </div>
+  </div>
+</header>
