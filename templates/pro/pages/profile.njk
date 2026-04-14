@@ -1,0 +1,108 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.account') }}</div>
+    <div class="page-title">{{ t('profile.title') }}</div>
+    <div class="page-sub">{{ t('profile.subtitle') }}</div>
+  </div>
+</div>
+
+<div class="two-col">
+  {# ─── Profile & Password ──────────────────────────────── #}
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span class="card-title">{{ t('settings.profile') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.username') }}</label>
+          <input type="text" id="settings-username" disabled style="width:100%;opacity:0.6">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.display_name') }}</label>
+          <input type="text" id="settings-display-name" placeholder="Administrator" style="width:100%" maxlength="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.email') }}</label>
+          <input type="text" id="settings-email" placeholder="admin@example.com" style="width:100%" maxlength="255">
+        </div>
+        <div id="profile-message" style="display:none"></div>
+        <button class="btn btn-primary" id="btn-save-profile" style="align-self:flex-start">
+          {{ t('common.save') }}
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        <span class="card-title">{{ t('settings.change_password') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.current_password') }}</label>
+          <input type="password" id="settings-current-pw" style="width:100%" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.new_password') }}</label>
+          <input type="password" id="settings-new-pw" style="width:100%" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.confirm_password') }}</label>
+          <input type="password" id="settings-confirm-pw" style="width:100%" autocomplete="new-password">
+        </div>
+        <div id="password-message" style="display:none"></div>
+        <button class="btn btn-primary" id="btn-change-password" style="align-self:flex-start">
+          {{ t('settings.change_password') }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Language & Theme ──────────────────────────────── #}
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">{{ t('settings.language') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:8px" id="language-buttons">
+          {% for lang in availableLanguages %}
+          <button class="btn {{ 'btn-primary' if lang == language else 'btn-ghost' }}" data-lang="{{ lang }}" style="flex:1;justify-content:center">
+            {% if lang == 'de' %}Deutsch{% elif lang == 'en' %}English{% else %}{{ lang }}{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+        <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ t('settings.language_hint') }}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="card-title">{{ t('profile.theme') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:8px" id="theme-buttons">
+          <button class="btn {{ 'btn-primary' if theme == 'default' or not theme else 'btn-ghost' }}" data-theme="default" style="flex:1;justify-content:center">
+            {{ t('profile.theme_classic') }}
+          </button>
+          <button class="btn {{ 'btn-primary' if theme == 'pro' else 'btn-ghost' }}" data-theme="pro" style="flex:1;justify-content:center">
+            {{ t('profile.theme_pro') }}
+          </button>
+        </div>
+        <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ t('profile.theme_hint') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/profile.js"></script>
+{% endblock %}
