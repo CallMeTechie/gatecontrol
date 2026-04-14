@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0] — 2026-04-14
+
+### Features
+- add per-user theme switching via profile page
+
+---
+
 ## [1.24.1] — 2026-04-13
 
 ### Fixes
