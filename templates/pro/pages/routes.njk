@@ -1,0 +1,548 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('routes.eyebrow') }}</div>
+    <div class="page-title">{{ t('routes.title') }}</div>
+    <div class="page-sub" id="routes-subtitle">{{ t('routes.subtitle', { count: '0' }) }}</div>
+    <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
+      {% if license.features.http_routes is defined and license.features.http_routes != -1 %}
+        <span class="limit-badge {% if httpRouteCount >= license.features.http_routes %}at-limit{% endif %}">
+          {{ t('routes.type_http') }}: {{ httpRouteCount }} / {{ license.features.http_routes }}
+        </span>
+      {% endif %}
+      {% if license.features.l4_routes is defined and license.features.l4_routes != -1 %}
+        <span class="limit-badge {% if l4RouteCount >= license.features.l4_routes %}at-limit{% endif %}">
+          {{ t('routes.type_l4') }}: {{ l4RouteCount }} / {{ license.features.l4_routes }}
+        </span>
+      {% endif %}
+      {% if license.hasFeature('remote_desktop') %}
+        <a href="/rdp" class="limit-badge" style="text-decoration:none;cursor:pointer">
+          RDP: {{ rdpRouteCount or 0 }}
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+    <div class="input-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="route-search" placeholder="{{ t('routes.search') or 'Search routes...' }}">
+    </div>
+    <button class="btn btn-ghost" id="btn-batch-routes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      {{ t('batch.select') }}
+    </button>
+    <button class="btn btn-primary" id="btn-add-route">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{ t('routes.add') }}
+    </button>
+  </div>
+</div>
+
+<div class="two-col">
+  <!-- Left: Active Routes -->
+  <div class="card">
+    <div class="card-header">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      <span class="card-header-title">{{ t('routes.active_routes') }}</span>
+      <span style="font-size:12px;color:var(--text-3);margin-left:auto" id="routes-count">0</span>
+    </div>
+    <div class="card-body" id="routes-list">
+      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+    </div>
+  </div>
+
+  <!-- Right: New Route Form -->
+  <div class="card">
+    <div class="card-header">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span class="card-header-title">{{ t('routes.new_route') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+      <form id="route-form">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <div class="form-group">
+          <div class="toggle-group" id="route-type-group">
+            <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
+            {% if license.features.l4_routes is defined and license.features.l4_routes != 0 %}
+            <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
+            {% else %}
+            <button type="button" class="toggle-btn" disabled style="opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('routes.type_l4') }} <span class="lock-icon"></span></button>
+            {% endif %}
+          </div>
+          <input type="hidden" name="route_type" id="route-type" value="http">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.domain') }}</label>
+          <input type="text" id="create-route-domain" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253"
+            data-dns-checking="{{ t('routes.dns_checking') }}"
+            data-dns-ok="{{ t('routes.dns_ok') }}"
+            data-dns-warning="{{ t('routes.dns_warning') }}">
+          <small id="create-route-dns-hint" class="form-hint" style="display:none"></small>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.description') or 'Description' }}</label>
+          <input type="text" name="description" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" style="width:100%;padding:8px 12px" maxlength="255">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_peer') }}</label>
+          <select name="peer_id" style="width:100%" id="route-peer-select">
+            <option value="">—</option>
+          </select>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_port') }}</label>
+          <input type="text" id="route-port" name="target_port" placeholder="{{ t('routes.target_port_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="5">
+        </div>
+        <div id="l4-fields" style="display:none">
+          <div class="form-group">
+            <label>{{ t('routes.l4_protocol') }}</label>
+            <div class="toggle-group" id="l4-protocol-group">
+              <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
+              <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
+            </div>
+            <input type="hidden" name="l4_protocol" id="l4-protocol" value="tcp">
+          </div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_listen_port') }}</label>
+            <input type="text" id="l4-listen-port" name="l4_listen_port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+          </div>
+          <div class="form-group">
+            <label>{{ t('routes.l4_tls_mode') }}</label>
+            <select id="l4-tls-mode" name="l4_tls_mode" class="form-select">
+              <option value="none">{{ t('routes.tls_none') }}</option>
+              <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
+              <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+            </select>
+            <small id="l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+          </div>
+        </div>
+        <div id="http-fields">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+            </div>
+            <div class="toggle on" data-field="https_enabled"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.backend_https') or 'Backend HTTPS' }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backend_https_desc') or 'Backend uses HTTPS (e.g. Synology DSM Port 5001)' }}</div>
+            </div>
+            <div class="toggle" data-field="backend_https"></div>
+          </div>
+          {% if license.features.compression %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-compress"></div>
+          </div>
+          {% else %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }} <span class="lock-icon"></span></div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-compress"></div>
+          </div>
+          {% endif %}
+          {% if license.features.bot_blocking %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-bot-blocker"></div>
+          </div>
+          <div id="create-bot-blocker-fields" style="display:none;margin-bottom:14px">
+            <div style="margin-bottom:8px">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.mode') }}</label>
+              <select id="create-bot-blocker-mode" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option value="block">{{ t('bot_blocker.mode_block') }}</option>
+                <option value="tarpit">{{ t('bot_blocker.mode_tarpit') }}</option>
+                <option value="drop">{{ t('bot_blocker.mode_drop') }}</option>
+                <option value="garbage">{{ t('bot_blocker.mode_garbage') }}</option>
+                <option value="redirect">{{ t('bot_blocker.mode_redirect') }}</option>
+                <option value="custom">{{ t('bot_blocker.mode_custom') }}</option>
+              </select>
+            </div>
+            <div id="create-bot-blocker-redirect" style="display:none;margin-bottom:8px">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.url') }}</label>
+              <input type="url" id="create-bot-blocker-url" placeholder="https://example.com" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div id="create-bot-blocker-custom" style="display:none">
+              <div style="margin-bottom:8px">
+                <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.message') }}</label>
+                <input type="text" id="create-bot-blocker-message" placeholder="Access denied" maxlength="500" style="width:100%;padding:6px 10px;font-size:12px">
+              </div>
+              <div>
+                <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.status_code') }}</label>
+                <input type="number" id="create-bot-blocker-status" value="403" min="100" max="599" style="width:100%;padding:6px 10px;font-size:12px">
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }} <span class="lock-icon"></span></div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="create-route-bot-blocker"></div>
+          </div>
+          {% endif %}
+          <!-- Auth type selection -->
+          <div class="form-group">
+            <label class="form-label">{{ t('route_auth.auth_type') }}</label>
+            <div class="toggle-group" id="create-auth-type-group">
+              <button type="button" class="toggle-btn on" data-value="none">{{ t('route_auth.auth_none') }}</button>
+              <button type="button" class="toggle-btn" data-value="basic">{{ t('route_auth.auth_basic') }}</button>
+              <button type="button" class="toggle-btn" data-value="route">{{ t('route_auth.auth_route') }}</button>
+            </div>
+            <input type="hidden" name="auth_type" id="create-auth-type" value="none">
+          </div>
+
+          <!-- Basic Auth fields -->
+          <div id="create-basic-auth-fields" style="display:none;margin-bottom:14px">
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_user') or 'Username' }}</label>
+              <input type="text" name="basic_auth_user" placeholder="admin" autocomplete="off" style="width:100%;padding:8px 12px" maxlength="64">
+            </div>
+            <div>
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.basic_auth_password') or 'Password' }}</label>
+              <input type="password" name="basic_auth_password" placeholder="••••••••" autocomplete="new-password" style="width:100%;padding:8px 12px" maxlength="128">
+            </div>
+          </div>
+
+          <!-- Route Auth fields -->
+          <div id="create-route-auth-fields" style="display:none;margin-bottom:14px">
+            <input type="hidden" id="create-ra-method" value="email_password">
+
+            <!-- Single Factor view -->
+            <div id="create-ra-single-factor">
+              <div class="form-group">
+                <label class="form-label">{{ t('route_auth.method') }}</label>
+                <div class="toggle-group" id="create-ra-method-group" style="width:100%">
+                  <button type="button" class="toggle-btn on" data-value="email_password" style="flex:1">{{ t('route_auth.method_email_password') }}</button>
+                  <button type="button" class="toggle-btn" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                  <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+                </div>
+              </div>
+
+              <div id="create-ra-sf-email-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.email') }}</label>
+                <input type="email" id="create-ra-email" placeholder="name@example.com" style="width:100%">
+              </div>
+              <div id="create-ra-sf-password-group" class="form-group">
+                <label class="form-label">{{ t('route_auth.password') }}</label>
+                <input type="password" id="create-ra-password" autocomplete="new-password" style="width:100%">
+                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+              </div>
+              <div id="create-ra-sf-totp-group" style="display:none;margin-bottom:14px">
+                <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center">
+                  {{ t('route_auth.totp_setup') }} — {{ t('route_auth.totp_setup_hint') or 'TOTP can be configured after creating the route.' }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 2FA view -->
+            <div id="create-ra-2fa-view" style="display:none">
+              <!-- Factor 1 -->
+              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
+                <div class="form-group">
+                  <label class="form-label">{{ t('route_auth.email') }}</label>
+                  <input type="email" id="create-ra-2fa-email" placeholder="name@example.com" style="width:100%">
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">{{ t('route_auth.password') }}</label>
+                  <input type="password" id="create-ra-2fa-password" autocomplete="new-password" style="width:100%">
+                  <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+                </div>
+              </div>
+              <!-- Factor 2 -->
+              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px" id="create-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
+                <div class="form-group">
+                  <div class="toggle-group" id="create-ra-2fa-method-group" style="width:100%">
+                    <button type="button" class="toggle-btn on" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
+                    <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+                  </div>
+                </div>
+                <div id="create-ra-2fa-email-hint" style="font-size:11px;color:var(--text-3);padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-xs)">
+                  {{ t('route_auth.code_sent_to_same_email') }}
+                </div>
+                <div id="create-ra-2fa-totp-group" style="display:none">
+                  <div style="font-size:12px;color:var(--text-3);padding:10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;margin-top:8px">
+                    {{ t('route_auth.totp_setup_hint') or 'TOTP can be configured after creating the route.' }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2FA toggle -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+              <div>
+                <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
+                <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.two_factor_desc') }}</div>
+              </div>
+              <div class="toggle" id="create-ra-2fa" data-managed="true"></div>
+            </div>
+
+            <!-- Session duration -->
+            <div class="form-group">
+              <label class="form-label">{{ t('route_auth.session_duration') }}</label>
+              <select id="create-ra-session-duration" class="form-select" style="width:100%">
+                <option value="3600000">{{ t('route_auth.session_1h') }}</option>
+                <option value="43200000">{{ t('route_auth.session_12h') }}</option>
+                <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
+                <option value="604800000">{{ t('route_auth.session_7d') }}</option>
+                <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
+              </select>
+            </div>
+          </div>
+        {% if license.features.uptime_monitoring %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+          </div>
+          <div class="toggle" id="create-route-monitoring"></div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+          </div>
+          <div class="toggle" id="create-route-monitoring"></div>
+        </div>
+        {% endif %}
+        {% if license.features.peer_acl %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-acl" data-managed="true"></div>
+        </div>
+        <div id="create-acl-fields" style="display:none;margin-bottom:14px">
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('acl.select_peers') }}</label>
+          <div id="create-acl-peers-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          </div>
+          <div id="create-acl-hint" style="font-size:11px;color:var(--text-3);margin-top:6px"></div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-acl" data-managed="true"></div>
+        </div>
+        {% endif %}
+        {% if license.features.ip_access_control %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+          </div>
+          <div class="toggle" id="create-route-ip-filter"></div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+          </div>
+          <div class="toggle" id="create-route-ip-filter"></div>
+        </div>
+        {% endif %}
+        {% if license.features.ip_access_control %}
+        <div id="create-ip-filter-fields" style="display:none;margin-bottom:14px">
+          <div style="margin-bottom:8px">
+            <div class="toggle-group" id="create-ip-filter-mode-group" style="margin-bottom:8px">
+              <button type="button" class="toggle-btn on" data-value="whitelist">Whitelist</button>
+              <button type="button" class="toggle-btn" data-value="blacklist">Blacklist</button>
+            </div>
+            <input type="hidden" id="create-ip-filter-mode" value="whitelist">
+          </div>
+          <div id="create-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="create-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;padding:6px 10px;font-size:12px">
+            <select id="create-ip-filter-type" style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+              <option value="ip">IP</option>
+              <option value="cidr">CIDR</option>
+              <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
+            </select>
+            <button type="button" class="btn btn-ghost" id="create-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+          </div>
+        </div>
+        {% endif %}
+        {% if license.features.rate_limiting %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-rate-limit"></div>
+        </div>
+        <div id="create-rate-limit-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_requests') }}</label>
+              <input type="number" id="create-rate-limit-requests" value="100" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_window') }}</label>
+              <select id="create-rate-limit-window" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option value="1s">{{ t('routes.rate_limit_window_1s') }}</option>
+                <option value="1m" selected>{{ t('routes.rate_limit_window_1m') }}</option>
+                <option value="5m">{{ t('routes.rate_limit_window_5m') }}</option>
+                <option value="1h">{{ t('routes.rate_limit_window_1h') }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-rate-limit"></div>
+        </div>
+        {% endif %}
+        {% if license.features.retry_on_error %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-retry"></div>
+        </div>
+        <div id="create-retry-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_count') }}</label>
+              <input type="number" id="create-retry-count" value="3" min="1" max="10" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_status_codes') }}</label>
+              <input type="text" id="create-retry-status" value="502,503,504" style="width:100%;padding:6px 10px;font-size:12px" placeholder="502,503,504">
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-retry"></div>
+        </div>
+        {% endif %}
+        {% if license.features.circuit_breaker %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-circuit-breaker"></div>
+        </div>
+        <div id="create-circuit-breaker-fields" style="display:none;margin-bottom:14px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.threshold') }}</label>
+              <input type="number" id="create-cb-threshold" value="5" min="1" max="100" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.timeout') }}</label>
+              <input type="number" id="create-cb-timeout" value="30" min="5" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-circuit-breaker"></div>
+        </div>
+        {% endif %}
+        {% if license.features.request_mirroring %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-mirror"></div>
+        </div>
+        <div id="create-mirror-fields" style="display:none;margin-bottom:14px">
+          <div id="create-mirror-targets-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+          <button type="button" class="btn btn-ghost" id="create-mirror-add-target" style="font-size:12px">+ {{ t('routes.mirror_add_target') }}</button>
+          <div id="create-mirror-max-hint" style="display:none;font-size:11px;color:var(--text-3);margin-top:4px">{{ t('routes.mirror_max') }}</div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-mirror"></div>
+        </div>
+        {% endif %}
+        {% if license.features.request_debugging %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-debug"></div>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }} <span class="lock-icon"></span></div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
+          </div>
+          <div class="toggle" id="create-route-debug"></div>
+        </div>
+        {% endif %}
+        </div>
+
+        <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">{{ t('routes.visible_to_users') }}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">{{ t('routes.visible_to_users_hint') }}</div>
+        <div id="create-route-user-ids" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 16px">
+          {{ t('routes.save_reload') }}
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Batch action bar -->
+<div id="batch-bar-routes" class="batch-bar" style="display:none">
+  <span id="batch-bar-routes-count"></span>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-ghost" id="batch-enable-routes">{{ t('batch.enable') }}</button>
+    <button class="btn btn-ghost" id="batch-disable-routes">{{ t('batch.disable') }}</button>
+    <button class="btn btn-danger" id="batch-delete-routes">{{ t('batch.delete') }}</button>
+    <button class="btn btn-ghost" id="batch-cancel-routes">{{ t('batch.cancel') }}</button>
+  </div>
+</div>
+
+{% include theme + "/partials/modals/route-edit.njk" %}
+{% include theme + "/partials/modals/confirm.njk" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/vendor/qrcode.min.js"></script>
+<script src="/js/routes.js"></script>
+{% endblock %}
