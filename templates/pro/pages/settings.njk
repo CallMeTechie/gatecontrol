@@ -67,20 +67,6 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:14px">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-        <span class="card-title">{{ t('settings.default_theme') }}</span>
-      </div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-        <div style="display:flex;gap:8px" id="default-theme-buttons">
-          <button class="btn {{ 'btn-primary' if theme == 'default' or not theme else 'btn-ghost' }}" data-default-theme="default" style="flex:1;justify-content:center">{{ t('profile.theme_classic') }}</button>
-          <button class="btn {{ 'btn-primary' if theme == 'pro' else 'btn-ghost' }}" data-default-theme="pro" style="flex:1;justify-content:center">{{ t('profile.theme_pro') }}</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-3)">{{ t('settings.default_theme_hint') }}</div>
-      </div>
-    </div>
-
     <div>
       <div class="card">
         <div class="card-head">
@@ -136,52 +122,66 @@
     </div>
   </div>
 
-  {# ─── Service Management ──────────────────────────── #}
-  <div class="two-col">
-    <div class="card">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
-        <span class="card-title">{{ t('config.wg_service') }}</span>
+  {# ─── Default Theme ───────────────────────────────── #}
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="card-title">{{ t('settings.default_theme') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:8px" id="default-theme-buttons">
+        <button class="btn {{ 'btn-primary' if theme == 'default' or not theme else 'btn-ghost' }}" data-default-theme="default" style="flex:1;justify-content:center">{{ t('profile.theme_classic') }}</button>
+        <button class="btn {{ 'btn-primary' if theme == 'pro' else 'btn-ghost' }}" data-default-theme="pro" style="flex:1;justify-content:center">{{ t('profile.theme_pro') }}</button>
       </div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;color:var(--text-2)">{{ t('config.listen_port') }}</span>
-          <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent);background:var(--accent-lt);padding:2px 8px;border-radius:4px;border:1px solid var(--accent-md)">{{ wgPort }} / UDP</code>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;color:var(--text-2)">{{ t('config.gateway_ip') }}</span>
-          <code style="font-family:var(--font-mono);font-size:12px">{{ wgGatewayIp }}</code>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;color:var(--text-2)">{{ t('config.interface') }}</span>
-          <code style="font-family:var(--font-mono);font-size:12px">{{ wgInterface }}</code>
-        </div>
-        <div style="display:flex;gap:8px;padding-top:4px">
-          <button class="btn btn-ghost" style="flex:1;justify-content:center" id="btn-svc-wg-restart">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            {{ t('config.restart') }}
-          </button>
-          <button class="btn btn-ghost" style="flex:1;justify-content:center;color:var(--amber);border-color:var(--amber-bd)" id="btn-svc-wg-stop">{{ t('config.stop') }}</button>
-        </div>
+      <div style="font-size:11px;color:var(--text-3)">{{ t('settings.default_theme_hint') }}</div>
+    </div>
+  </div>
+
+  {# ─── WireGuard Service ──────────────────────────── #}
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
+      <span class="card-title">{{ t('config.wg_service') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--text-2)">{{ t('config.listen_port') }}</span>
+        <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent);background:var(--accent-lt);padding:2px 8px;border-radius:4px;border:1px solid var(--accent-md)">{{ wgPort }} / UDP</code>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--text-2)">{{ t('config.gateway_ip') }}</span>
+        <code style="font-family:var(--font-mono);font-size:12px">{{ wgGatewayIp }}</code>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--text-2)">{{ t('config.interface') }}</span>
+        <code style="font-family:var(--font-mono);font-size:12px">{{ wgInterface }}</code>
+      </div>
+      <div style="display:flex;gap:8px;padding-top:4px">
+        <button class="btn btn-ghost" style="flex:1;justify-content:center" id="btn-svc-wg-restart">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          {{ t('config.restart') }}
+        </button>
+        <button class="btn btn-ghost" style="flex:1;justify-content:center;color:var(--amber);border-color:var(--amber-bd)" id="btn-svc-wg-stop">{{ t('config.stop') }}</button>
       </div>
     </div>
+  </div>
 
-    <div class="card">
-      <div class="card-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        <span class="card-title">{{ t('config.caddy_service') }}</span>
+  {# ─── Caddy Service ─────────────────────────────── #}
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span class="card-title">{{ t('config.caddy_service') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px" id="svc-caddy-status">
+        <div class="pulse-dot"></div>
+        <span style="font-size:13px;color:var(--green);font-weight:600">{{ t('config.caddy_running') }}</span>
       </div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:8px" id="svc-caddy-status">
-          <div class="pulse-dot"></div>
-          <span style="font-size:13px;color:var(--green);font-weight:600">{{ t('config.caddy_running') }}</span>
-        </div>
-        <div style="font-size:12px;color:var(--text-2)" id="svc-caddy-info">{{ t('config.https_active') }} · Let's Encrypt</div>
-        <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px" id="btn-svc-caddy-reload">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-          {{ t('config.caddy_reload') }}
-        </button>
-      </div>
+      <div style="font-size:12px;color:var(--text-2)" id="svc-caddy-info">{{ t('config.https_active') }} · Let's Encrypt</div>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px" id="btn-svc-caddy-reload">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        {{ t('config.caddy_reload') }}
+      </button>
     </div>
   </div>
 
