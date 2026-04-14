@@ -1,0 +1,15 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;padding:var(--space-8) var(--space-4)">
+  <div style="text-align:center;max-width:400px">
+    <div style="font-family:var(--font-mono);font-size:80px;font-weight:var(--weight-bold);color:var(--border);line-height:1;margin-bottom:var(--space-4)">404</div>
+    <div style="font-size:var(--text-lg);font-weight:var(--weight-semibold);color:var(--text-primary);margin-bottom:var(--space-3)">{{ t('error.not_found') }}</div>
+    <div style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:var(--space-8)">{{ t('error.not_found_detail') }}</div>
+    <a href="/dashboard" style="display:inline-flex;align-items:center;gap:var(--space-2);padding:var(--space-3) var(--space-5);font-size:var(--text-sm);font-weight:var(--weight-semibold);font-family:var(--font-sans);color:var(--text-inverse);background:var(--accent);border-radius:var(--radius);text-decoration:none;transition:background 0.15s" onmouseover="this.style.background='var(--accent-hover)'" onmouseout="this.style.background='var(--accent)'">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      {{ t('nav.dashboard') }}
+    </a>
+  </div>
+</div>
+{% endblock %}
