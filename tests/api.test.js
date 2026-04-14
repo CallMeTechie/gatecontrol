@@ -300,3 +300,44 @@ describe('Backup API', () => {
     assert.ok(res.headers['content-disposition']);
   });
 });
+
+// ─── Pro Theme Rendering ─────────────────────────────
+describe('Pro Theme Rendering', () => {
+  before(async () => {
+    await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'pro' })
+      .expect(200);
+  });
+
+  after(async () => {
+    await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'default' })
+      .expect(200);
+  });
+
+  const pages = [
+    'dashboard',
+    'peers',
+    'routes',
+    'rdp',
+    'users',
+    'logs',
+    'settings',
+    'certificates',
+    'profile',
+  ];
+
+  for (const page of pages) {
+    it(`GET /${page} renders with pro.css`, async () => {
+      const res = await agent.get(`/${page}`).expect(200);
+      assert.ok(
+        res.text.includes('pro.css'),
+        `Expected pro.css in /${page} response`
+      );
+    });
+  }
+});
