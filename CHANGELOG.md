@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.7] — 2026-04-14
+
+### Fixes
+- use original sun/star logo icon in Pro theme (Royal Blue background, white strokes)
+
+---
+
 ## [1.28.6] — 2026-04-14
 
 ### Fixes
