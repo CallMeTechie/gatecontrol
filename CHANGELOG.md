@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.6] — 2026-04-14
+
+### Fixes
+- Settings General — two-col layout (left: Theme+Danger, right: WG+Caddy) in both themes
+
+---
+
 ## [1.28.5] — 2026-04-14
 
 ### Fixes
