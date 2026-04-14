@@ -1,0 +1,53 @@
+<div class="modal-overlay" id="modal-add-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">{{ t('peers.add') }}</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="add-peer-name">{{ t('peers.add_name') }}</label>
+        <input class="form-input" type="text" id="add-peer-name" placeholder="{{ t('peers.add_name_placeholder') }}" autocomplete="off" maxlength="63">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-desc">{{ t('peers.add_description') }}</label>
+        <input class="form-input" type="text" id="add-peer-desc" placeholder="{{ t('peers.add_description_placeholder') }}" autocomplete="off" maxlength="255">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-group">{{ t('peer_groups.group') }}</label>
+        <select class="form-select" id="add-peer-group" style="width:100%">
+          <option value="">{{ t('peer_groups.none') }}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
+        <input class="form-input" type="text" id="add-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>
+      </div>
+      {% if license.features.custom_dns %}
+      <div class="form-group">
+        <label class="form-label">{{ t('peers.dns_override') }}</label>
+        <input class="form-input" type="text" id="add-peer-dns" placeholder="{{ t('peers.dns_placeholder') }}" style="font-family:var(--font-mono)">
+        <small class="form-hint">{{ t('peers.dns_override_hint') }}</small>
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label class="form-label" for="add-peer-expires">{{ t('peers.expires') }}</label>
+        <select class="form-select" id="add-peer-expires">
+          <option value="">{{ t('peers.expires_never') }}</option>
+          <option value="1d">{{ t('peers.expires_1d') }}</option>
+          <option value="7d">{{ t('peers.expires_7d') }}</option>
+          <option value="30d">{{ t('peers.expires_30d') }}</option>
+          <option value="90d">{{ t('peers.expires_90d') }}</option>
+          <option value="custom">{{ t('peers.expires_custom') }}</option>
+        </select>
+        <input class="form-input" type="date" id="add-peer-expires-date" style="display:none;margin-top:6px">
+      </div>
+      <div id="add-peer-error" class="form-error" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button class="btn btn-primary" id="btn-add-peer-submit">{{ t('common.save') }}</button>
+    </div>
+  </div>
+</div>
