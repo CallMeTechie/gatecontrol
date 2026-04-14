@@ -4,6 +4,8 @@ const dns = require('node:dns');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
+const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB
+
 /**
  * Validate webhook URL: must be http(s) and not target private/internal networks
  */
@@ -193,12 +195,28 @@ async function notify(eventType, message, details = null) {
 
   if (!webhooks || webhooks.length === 0) return;
 
+  let truncatedDetails = details;
   const payload = JSON.stringify({
     event: eventType,
     message,
     details,
     timestamp: new Date().toISOString(),
   });
+
+  let finalPayload = payload;
+  if (Buffer.byteLength(payload, 'utf8') > MAX_PAYLOAD_BYTES) {
+    // Truncate details to fit within limit
+    truncatedDetails = typeof details === 'object' && details !== null
+      ? { _truncated: true, _originalKeys: Object.keys(details) }
+      : null;
+    finalPayload = JSON.stringify({
+      event: eventType,
+      message,
+      details: truncatedDetails,
+      timestamp: new Date().toISOString(),
+    });
+    logger.warn({ event: eventType, originalSize: Buffer.byteLength(payload, 'utf8') }, 'Webhook payload truncated');
+  }
 
   for (const wh of webhooks) {
     // Check if webhook subscribes to this event
@@ -220,7 +238,7 @@ async function notify(eventType, message, details = null) {
     fetch(wh.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: payload,
+      body: finalPayload,
       signal: AbortSignal.timeout(require('../../config/default').timeouts.webhookDelivery),
     }).then(res => {
       if (!res.ok) {
