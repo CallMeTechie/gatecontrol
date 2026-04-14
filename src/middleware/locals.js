@@ -2,6 +2,12 @@
 
 const config = require('../../config/default');
 const { getDb } = require('../db/connection');
+const settings = require('../services/settings');
+
+function getDefaultTheme() {
+  const dbTheme = settings.get('default_theme');
+  return (dbTheme === 'default' || dbTheme === 'pro') ? dbTheme : config.theme.defaultTheme;
+}
 
 function injectLocals(req, res, next) {
   // App config available in all templates
@@ -15,7 +21,7 @@ function injectLocals(req, res, next) {
   res.locals.wgInterface = config.wireguard.interface;
   res.locals.wgDns = config.wireguard.dns.join(',');
   res.locals.currentPath = req.path;
-  res.locals.theme = config.theme.defaultTheme;
+  res.locals.theme = getDefaultTheme();
 
   // User info and sidebar badge counts if authenticated
   if (req.session && req.session.userId) {
@@ -24,7 +30,7 @@ function injectLocals(req, res, next) {
       .get(req.session.userId);
     if (user) {
       res.locals.user = user;
-      res.locals.theme = user.theme || config.theme.defaultTheme;
+      res.locals.theme = user.theme || getDefaultTheme();
       if (user.language) {
         req.session.language = user.language;
       }

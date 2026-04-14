@@ -173,6 +173,24 @@ router.get('/app', (req, res) => {
 });
 
 /**
+ * PUT /api/settings/default-theme — Set system default theme
+ */
+router.put('/default-theme', (req, res) => {
+  try {
+    const { theme } = req.body;
+    const validThemes = ['default', 'pro'];
+    if (!theme || !validThemes.includes(theme)) {
+      return res.status(400).json({ ok: false, error: 'Invalid theme. Must be: ' + validThemes.join(', ') });
+    }
+    settings.set('default_theme', theme);
+    res.json({ ok: true, theme });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to set default theme');
+    res.status(500).json({ ok: false, error: 'Failed to save theme setting' });
+  }
+});
+
+/**
  * POST /api/settings/clear-logs — Clear activity log
  */
 router.post('/clear-logs', async (req, res) => {

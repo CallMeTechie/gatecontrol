@@ -238,6 +238,8 @@
   "profile.theme_hint": "Change takes effect on next page load",
   "profile.theme_classic": "Classic",
   "profile.theme_pro": "Pro",
+  "settings.default_theme": "Default Theme",
+  "settings.default_theme_hint": "Theme for new users and unauthenticated pages",
   "settings.app_info": "Application Info",
   "settings.app_name": "App Name",
   "settings.version": "Version",

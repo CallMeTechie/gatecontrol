@@ -238,6 +238,8 @@
   "profile.theme_hint": "Änderung wird beim nächsten Seitenaufruf wirksam",
   "profile.theme_classic": "Classic",
   "profile.theme_pro": "Pro",
+  "settings.default_theme": "Standard-Design",
+  "settings.default_theme_hint": "Design für neue Benutzer und unauthentifizierte Seiten",
   "settings.app_info": "Anwendungsinformationen",
   "settings.app_name": "App-Name",
   "settings.version": "Version",

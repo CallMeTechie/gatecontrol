@@ -188,6 +188,20 @@
       </div>
     </div>
 
+    <div class="card" style="margin-top:14px">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="card-title">{{ t('settings.default_theme') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:8px" id="default-theme-buttons">
+          <button class="btn {{ 'btn-primary' if theme == 'default' or not theme else 'btn-ghost' }}" data-default-theme="default" style="flex:1;justify-content:center">{{ t('profile.theme_classic') }}</button>
+          <button class="btn {{ 'btn-primary' if theme == 'pro' else 'btn-ghost' }}" data-default-theme="pro" style="flex:1;justify-content:center">{{ t('profile.theme_pro') }}</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">{{ t('settings.default_theme_hint') }}</div>
+      </div>
+    </div>
+
     <div>
       <div class="card">
         <div class="card-head">

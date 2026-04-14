@@ -1407,6 +1407,37 @@ input[type="file"] {
   height: 22px;
   cursor: pointer;
   flex-shrink: 0;
+  background: var(--border-input);
+  border-radius: var(--radius-full);
+  transition: background var(--transition);
+}
+
+/* CSS-class-based toggle (used by app.js — .toggle.on) */
+.toggle.on { background: var(--accent); }
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+}
+
+.toggle.on::after { transform: translateX(18px); }
+
+/* Input-based toggle (label.toggle > input + .toggle-slider) */
+.toggle:has(input) {
+  background: transparent;
+}
+
+.toggle:has(input)::after {
+  display: none;
 }
 
 .toggle input { display: none; }
@@ -1434,20 +1465,6 @@ input[type="file"] {
 
 .toggle input:checked + .toggle-slider { background: var(--accent); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
-
-/* CSS-class-based toggle (no input) */
-.toggle.on { background: var(--accent); }
-.toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px; left: 2px;
-  width: 16px; height: 16px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-.toggle.on::after { transform: translateX(18px); }
 
 /* Toggle button group */
 .toggle-group {
@@ -2141,7 +2158,6 @@ table tbody tr:last-child td { border-bottom: none; }
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  display: none;
   align-items: center;
   gap: 16px;
   padding: 12px 20px;
@@ -2153,9 +2169,8 @@ table tbody tr:last-child td { border-bottom: none; }
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   max-width: calc(100vw - 24px);
+  /* JS controls visibility via inline style.display — do NOT set display:none here */
 }
-
-.batch-bar.open { display: flex; }
 .batch-bar span { white-space: nowrap; }
 
 .batch-checkbox {
