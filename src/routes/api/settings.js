@@ -37,14 +37,19 @@ router.get('/profile', (req, res) => {
  */
 router.put('/profile', async (req, res) => {
   try {
-    const { display_name, email, language } = req.body;
+    const { display_name, email, language, theme } = req.body;
 
     if (language && !config.i18n.availableLanguages.includes(language)) {
       return res.status(400).json({ ok: false, error: req.t('error.settings.language_unsupported') });
     }
 
+    const availableThemes = ['default', 'pro'];
+    if (theme && !availableThemes.includes(theme)) {
+      return res.status(400).json({ ok: false, error: 'Invalid theme' });
+    }
+
     const profile = settings.updateUserProfile(req.session.userId, {
-      display_name, email, language,
+      display_name, email, language, theme,
     });
 
     if (language) {

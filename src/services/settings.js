@@ -50,12 +50,14 @@ function updateUserProfile(userId, data) {
       display_name = COALESCE(?, display_name),
       email = COALESCE(?, email),
       language = COALESCE(?, language),
+      theme = COALESCE(?, theme),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
     data.display_name !== undefined ? data.display_name : null,
     data.email !== undefined ? data.email : null,
     data.language !== undefined ? data.language : null,
+    data.theme !== undefined ? data.theme : null,
     userId
   );
 

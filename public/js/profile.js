@@ -92,6 +92,22 @@
     });
   }
 
+  // ─── Theme switch ────────────────────────────────────────
+  var themeButtons = document.getElementById('theme-buttons');
+  if (themeButtons) {
+    themeButtons.addEventListener('click', async function(e) {
+      var btn = e.target.closest('[data-theme]');
+      if (!btn) return;
+      var selectedTheme = btn.dataset.theme;
+      try {
+        var data = await api.put('/api/settings/profile', { theme: selectedTheme });
+        if (data.ok) window.location.reload();
+      } catch (err) {
+        console.error('Theme switch error:', err);
+      }
+    });
+  }
+
   // ─── Init ───────────────────────────────────────────────
   loadProfile();
 })();

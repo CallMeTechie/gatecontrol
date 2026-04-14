@@ -169,6 +169,61 @@ describe('Settings API', () => {
   });
 });
 
+// ─── Profile Theme API ─────────────────────────────
+describe('Profile Theme API', () => {
+  it('PUT /api/v1/settings/profile accepts theme field', async () => {
+    const res = await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'pro' })
+      .expect(200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.profile.theme, 'pro');
+  });
+
+  it('GET /api/v1/settings/profile returns updated theme', async () => {
+    const res = await agent.get('/api/v1/settings/profile').expect(200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.profile.theme, 'pro');
+  });
+
+  it('PUT /api/v1/settings/profile switches back to default', async () => {
+    const res = await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'default' })
+      .expect(200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.profile.theme, 'default');
+  });
+
+  it('PUT /api/v1/settings/profile rejects invalid theme', async () => {
+    const res = await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'nonexistent' })
+      .expect(400);
+    assert.equal(res.body.ok, false);
+  });
+
+  it('PUT /api/v1/settings/profile with theme does not affect other fields', async () => {
+    const res = await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'pro', display_name: 'Theme Test' })
+      .expect(200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.profile.theme, 'pro');
+    assert.equal(res.body.profile.display_name, 'Theme Test');
+
+    // Reset
+    await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'default', display_name: 'admin' });
+  });
+});
+
 // ─── Webhooks API ───────────────────────────────────
 describe('Webhooks API', () => {
   let webhookId;
