@@ -13,6 +13,7 @@ const config = require('../../../config/default');
 const logger = require('../../utils/logger');
 const { requireFeature } = require('../../middleware/license');
 const { hasFeature } = require('../../services/license');
+const { uploadLimiter } = require('../../middleware/rateLimit');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -234,7 +235,7 @@ router.get('/backup', (req, res) => {
 /**
  * POST /api/settings/restore/preview — Validate and preview backup
  */
-router.post('/restore/preview', upload.single('backup'), (req, res) => {
+router.post('/restore/preview', uploadLimiter, upload.single('backup'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
@@ -263,7 +264,7 @@ router.post('/restore/preview', upload.single('backup'), (req, res) => {
 /**
  * POST /api/settings/restore — Restore from backup file
  */
-router.post('/restore', upload.single('backup'), async (req, res) => {
+router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });

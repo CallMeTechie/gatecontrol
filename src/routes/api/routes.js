@@ -8,6 +8,7 @@ const logger = require('../../utils/logger');
 const stripFields = require('../../utils/stripFields');
 const asyncHandler = require('../../utils/asyncHandler');
 const { validateDomain, validatePort, validateDescription, validateIp, validateCssColor, validateCssBg } = require('../../utils/validate');
+const { uploadLimiter } = require('../../middleware/rateLimit');
 const config = require('../../../config/default');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
@@ -521,7 +522,7 @@ router.post('/:id/check', async (req, res) => {
 /**
  * POST /api/routes/:id/branding/logo — Upload branding logo
  */
-router.post('/:id/branding/logo', requireFeature('custom_branding'), logoUpload.single('logo'), (req, res) => {
+router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding'), logoUpload.single('logo'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
 
@@ -573,7 +574,7 @@ router.delete('/:id/branding/logo', (req, res) => {
 /**
  * POST /api/routes/:id/branding/bg-image — Upload background image
  */
-router.post('/:id/branding/bg-image', logoUpload.single('bg_image'), (req, res) => {
+router.post('/:id/branding/bg-image', uploadLimiter, logoUpload.single('bg_image'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
 

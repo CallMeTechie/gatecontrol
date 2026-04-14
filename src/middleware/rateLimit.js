@@ -49,4 +49,15 @@ const routeAuthCodeLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter };
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => req.tokenAuth ? `upload:${req.tokenId}` : `upload:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many uploads. Try again later.' });
+  },
+});
+
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter };
