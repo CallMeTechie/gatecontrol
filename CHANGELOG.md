@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.0] — 2026-04-14
+
+### Features
+- add Pro theme layout and partials (sidebar, topbar, bottomnav, fab)
+
+---
+
 ## [1.25.0] — 2026-04-14
 
 ### Features
