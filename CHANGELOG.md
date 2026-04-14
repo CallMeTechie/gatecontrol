@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.4] — 2026-04-14
+
+### Fixes
+- reorder Settings General tab — Theme → WireGuard → Caddy stacked layout
+
+---
+
 ## [1.28.3] — 2026-04-14
 
 ### Fixes
