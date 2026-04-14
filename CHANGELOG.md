@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1] — 2026-04-14
+
+### Fixes
+- add dedicated rate limiting for file upload endpoints
+
+---
+
 ## [1.29.0] — 2026-04-14
 
 ### Features
