@@ -35,6 +35,7 @@ Detailed documentation for all features. For the complete feature overview, see 
 - [Peer Groups](#peer-groups)
 - [Request Mirroring](#request-mirroring)
 - [Mobile Sidebar](#mobile-sidebar)
+- [Themes](#themes)
 
 ---
 
@@ -1527,3 +1528,20 @@ Responsive sidebar for phones and tablets. The navigation sidebar collapses into
 - Hamburger button has `aria-label` and `aria-expanded`
 - Focus trap when sidebar is open (Tab cycles within sidebar)
 - 44px minimum touch targets
+
+---
+
+## Themes
+
+GateControl supports multiple UI themes:
+
+- **Classic** (`default`) — Original design with warm tones (Outfit font, teal accent)
+- **Pro** (`pro`) — Clean corporate design (Inter font, Royal Blue accent, Stripe/Linear aesthetic)
+
+Set the default theme via environment variable:
+
+```
+GC_DEFAULT_THEME=pro
+```
+
+Users can switch themes individually via **Profile → Theme**.
