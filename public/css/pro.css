@@ -773,6 +773,9 @@ a:hover { text-decoration: underline; }
   padding: var(--space-8);
   max-width: 1400px;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
 .page-header {
@@ -871,7 +874,6 @@ a:hover { text-decoration: underline; }
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: var(--space-4);
-  margin-bottom: var(--space-8);
 }
 
 .stat-card {
