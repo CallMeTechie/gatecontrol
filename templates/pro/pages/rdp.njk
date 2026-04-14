@@ -1,0 +1,398 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+{% set rdpLocked = not license.hasFeature('remote_desktop') %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('rdp.eyebrow') }}</div>
+    <div class="page-title">{{ t('rdp.title') }}</div>
+    <div class="page-sub" id="rdp-subtitle">{{ t('rdp.subtitle', { count: '0' }) }}</div>
+  </div>
+</div>
+
+{% if rdpLocked %}
+<div class="alert alert-warning" style="margin-bottom:16px">
+  {{ t('error.license.feature_not_available') }}
+  <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" style="margin-left:8px;font-weight:600">Upgrade</a>
+</div>
+{% endif %}
+
+{# -- Stats Cards (6 in one row) ----------------------------- #}
+<div id="rdp-stats" style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px">
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-total">0</div>
+    <div class="stat-label">{{ t('rdp.stat_total') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-online"><span class="stat-dot stat-dot-green"></span>0</div>
+    <div class="stat-label">{{ t('rdp.stat_online') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-offline"><span class="stat-dot stat-dot-red"></span>0</div>
+    <div class="stat-label">{{ t('rdp.stat_offline') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-sessions"><span class="stat-dot stat-dot-blue"></span>0</div>
+    <div class="stat-label">{{ t('rdp.stat_active_sessions') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-maintenance"><span class="stat-dot stat-dot-amber"></span>0</div>
+    <div class="stat-label">{{ t('rdp.stat_maintenance') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="rdp-stat-rotation"><span class="stat-dot stat-dot-purple"></span>0</div>
+    <div class="stat-label">{{ t('rdp.stat_rotation_due') }}</div>
+  </div>
+</div>
+
+{# -- Filter Bar --------------------------------------------- #}
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+  <div class="input-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="rdp-search" placeholder="{{ t('rdp.search') }}">
+  </div>
+  <div class="btn-group" id="rdp-view-toggle">
+    <button class="btn btn-ghost btn-sm active" data-view="grid" title="{{ t('rdp.view_grid') }}">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    </button>
+    <button class="btn btn-ghost btn-sm" data-view="list" title="{{ t('rdp.view_list') }}">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="btn-group" id="rdp-status-filter">
+    <button class="btn btn-ghost btn-sm active" data-filter="all">{{ t('rdp.filter_all') }}</button>
+    <button class="btn btn-ghost btn-sm" data-filter="online">{{ t('rdp.filter_online') }}</button>
+    <button class="btn btn-ghost btn-sm" data-filter="offline">{{ t('rdp.filter_offline') }}</button>
+  </div>
+  <div style="margin-left:auto">
+    <button class="btn btn-primary" id="btn-add-rdp" {% if rdpLocked %}disabled{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{ t('rdp.add') }}
+    </button>
+  </div>
+</div>
+
+{# -- VM Grid / List ----------------------------------------- #}
+<div id="rdp-grid">
+  <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+</div>
+
+{# -- Connection History ------------------------------------- #}
+<div class="card" style="margin-top:20px">
+  <div class="card-head">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span class="card-title">{{ t('rdp.history') }}</span>
+    <select class="filter-select" id="rdp-history-period" style="font-size:11px;padding:4px 8px">
+      <option value="24h">{{ t('rdp.history_24h') or 'Last 24 Hours' }}</option>
+      <option value="7d">{{ t('rdp.history_7d') or 'Last 7 Days' }}</option>
+      <option value="30d">{{ t('rdp.history_30d') or 'Last 30 Days' }}</option>
+    </select>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" id="rdp-history-export-csv">CSV</button>
+      <button class="btn btn-ghost btn-sm" id="rdp-history-export-json">JSON</button>
+    </div>
+  </div>
+  <div class="card-body" id="rdp-history-list">
+    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+  </div>
+</div>
+
+{# -- Create/Edit Modal -------------------------------------- #}
+<div class="modal-overlay" id="rdp-modal-overlay" style="display:none">
+  <div id="rdp-modal" style="background:var(--bg-panel);border-radius:var(--radius);width:720px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);position:relative">
+
+    {# Sticky Header #}
+    <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-panel);z-index:1">
+      <div>
+        <div style="font-family:var(--font-display);font-size:20px" id="rdp-modal-title">{{ t('rdp.add') }}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">{{ t('rdp.modal_subtitle') }}</div>
+      </div>
+      <button class="icon-btn" id="rdp-modal-close" style="width:32px;height:32px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    {# Scrollable Body #}
+    <form id="rdp-form">
+      <input type="hidden" id="rdp-edit-id">
+      <div style="padding:20px 24px;display:flex;flex-direction:column;gap:20px">
+
+        {# Section 1: Connection #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_connection') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.name') }} *</label>
+              <input type="text" id="rdp-name" required maxlength="100" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.description') }}</label>
+              <input type="text" id="rdp-description" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.host') }} *</label>
+              <div style="position:relative">
+                <input type="text" id="rdp-host" required placeholder="{{ t('rdp.host_placeholder') }}" autocomplete="off"
+                  style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-host-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-panel);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-xs) var(--radius-xs);z-index:10;box-shadow:var(--shadow)">
+                </div>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.port') }}</label>
+              <input type="number" id="rdp-port" value="3389" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.access_mode') }}</label>
+              <select id="rdp-access-mode" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <option value="internal">{{ t('rdp.access_internal') }}</option>
+                <option value="external">{{ t('rdp.access_external') }}</option>
+                <option value="both">{{ t('rdp.access_both') }}</option>
+              </select>
+            </div>
+            <div id="rdp-external-fields" style="display:none;grid-column:1/-1">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <label id="rdp-external-hostname-label" style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_hostname') }}</label>
+                  <input type="text" id="rdp-external-hostname" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.external_port') }}</label>
+                  <input type="number" id="rdp-external-port" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                </div>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.gateway_host') }}</label>
+              <input type="text" id="rdp-gateway-host" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.gateway_port') }}</label>
+              <input type="number" id="rdp-gateway-port" value="443" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+          </div>
+        </div>
+
+        {# Section 2: Auth #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_auth') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.credentials') }}</label>
+              <select id="rdp-credential-mode" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <option value="none">{{ t('rdp.credential_none') }}</option>
+                <option value="user_only">{{ t('rdp.credential_user') }}</option>
+                <option value="full">{{ t('rdp.credential_full') }}</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.domain') }}</label>
+              <input type="text" id="rdp-domain" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+          </div>
+          <div id="rdp-cred-fields" style="display:none;margin-top:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.username') }}</label>
+                <input type="text" id="rdp-username" autocomplete="off" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              </div>
+              <div id="rdp-password-group">
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.password') }}</label>
+                <input type="password" id="rdp-password" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            {{ t('rdp.e2ee_note') }}
+          </div>
+        </div>
+
+        {# Section 3: Display #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_display') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.resolution') }}</label>
+              <select id="rdp-resolution-mode" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <option value="fullscreen">{{ t('rdp.resolution_fullscreen') }}</option>
+                <option value="fixed">{{ t('rdp.resolution_fixed') }}</option>
+                <option value="dynamic">{{ t('rdp.resolution_dynamic') }}</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.color_depth') }}</label>
+              <select id="rdp-color-depth" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <option value="32" selected>32 bit</option>
+                <option value="24">24 bit</option>
+                <option value="16">16 bit</option>
+                <option value="15">15 bit</option>
+                <option value="8">8 bit</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:flex-end;padding-bottom:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-multi-monitor" style="accent-color:var(--accent)"> {{ t('rdp.multi_monitor') }}</label>
+            </div>
+          </div>
+          <div id="rdp-resolution-fields" style="display:none;margin-top:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.resolution_width') }}</label>
+                <input type="number" id="rdp-resolution-width" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.resolution_height') }}</label>
+                <input type="number" id="rdp-resolution-height" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Section 4: Resources #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_resources') }}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-clipboard" checked style="accent-color:var(--accent)"> {{ t('rdp.clipboard') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-printers" style="accent-color:var(--accent)"> {{ t('rdp.printers') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-drives" style="accent-color:var(--accent)"> {{ t('rdp.drives') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-usb" style="accent-color:var(--accent)"> {{ t('rdp.usb') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-smartcard" style="accent-color:var(--accent)"> {{ t('rdp.smartcard') }}</label>
+          </div>
+          <div style="margin-top:10px">
+            <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.audio') }}</label>
+            <select id="rdp-audio-mode" style="width:200px;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui)">
+              <option value="local">{{ t('rdp.audio_local') }}</option>
+              <option value="remote">{{ t('rdp.audio_remote') }}</option>
+              <option value="off">{{ t('rdp.audio_off') }}</option>
+            </select>
+          </div>
+        </div>
+
+        {# Section 5: Performance #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_performance') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.network_profile') }}</label>
+              <select id="rdp-network-profile" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <option value="auto">Auto</option>
+                <option value="lan">LAN</option>
+                <option value="broadband">Broadband</option>
+                <option value="modem">Modem</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.bandwidth_limit') }} (kbps)</label>
+              <input type="number" id="rdp-bandwidth-limit" min="0" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-nla" checked style="accent-color:var(--accent)"> {{ t('rdp.nla') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-disable-wallpaper" style="accent-color:var(--accent)"> {{ t('rdp.wallpaper') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-disable-themes" style="accent-color:var(--accent)"> {{ t('rdp.themes') }}</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-disable-animations" style="accent-color:var(--accent)"> {{ t('rdp.animations') }}</label>
+          </div>
+        </div>
+
+        {# Section 6: Session #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_session') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.session_timeout') }} (s)</label>
+              <input type="number" id="rdp-session-timeout" min="0" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.remote_app') }}</label>
+              <input type="text" id="rdp-remote-app" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.start_program') }}</label>
+              <input type="text" id="rdp-start-program" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+            <div style="display:flex;align-items:flex-end;padding-bottom:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-admin-session" style="accent-color:var(--accent)"> {{ t('rdp.admin_session') }}</label>
+            </div>
+          </div>
+        </div>
+
+        {# Section 7: Wake-on-LAN #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_wol') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="display:flex;align-items:flex-end;padding-bottom:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-wol-enabled" style="accent-color:var(--accent)"> {{ t('rdp.wol') }}</label>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.wol_mac') }}</label>
+              <input type="text" id="rdp-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+            </div>
+          </div>
+        </div>
+
+        {# Section 8: Access Control & Tags #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.section_access_control') }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.maintenance') }}</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="rdp-maintenance-enabled" style="accent-color:var(--accent)"> {{ t('rdp.maintenance') }}</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="rdp-health-check" checked style="accent-color:var(--accent)"> {{ t('rdp.health_check') }}</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-credential-rotation-enabled" style="accent-color:var(--accent)"> {{ t('rdp.credential_rotation') }}</label>
+              <div style="margin-top:8px">
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.rotation_days') }}</label>
+                <input type="number" id="rdp-rotation-days" value="90" min="1" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              </div>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.tags') }}</label>
+              <input type="text" id="rdp-tags" placeholder="tag1, tag2, ..." style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+              <div style="margin-top:8px">
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.notes') }}</label>
+                <textarea id="rdp-notes" rows="4" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);resize:vertical;box-sizing:border-box"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Section: Visibility / User Access #}
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('routes.visible_to_users') }}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">{{ t('routes.visible_to_users_hint') }}</div>
+          <div id="rdp-user-ids" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+
+      </div>
+    </form>
+
+    {# Sticky Footer #}
+    <div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:var(--bg-panel)">
+      <button class="btn btn-ghost" id="rdp-modal-cancel">{{ t('common.cancel') }}</button>
+      <button class="btn btn-primary" id="rdp-modal-save">{{ t('common.save') }}</button>
+    </div>
+
+  </div>
+</div>
+
+{# -- Confirm Modal ------------------------------------------ #}
+<div class="modal-overlay" id="rdp-confirm-overlay" style="display:none">
+  <div class="modal" style="width:400px">
+    <div class="modal-head">
+      <span class="modal-title" id="rdp-confirm-title">{{ t('common.confirm') }}</span>
+      <button class="modal-close" id="rdp-confirm-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="rdp-confirm-message" style="font-size:13px;color:var(--text-1);margin:0"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="rdp-confirm-cancel">{{ t('common.cancel') }}</button>
+      <button class="btn btn-danger" id="rdp-confirm-ok">{{ t('common.delete') }}</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/rdp.js"></script>
+{% endblock %}

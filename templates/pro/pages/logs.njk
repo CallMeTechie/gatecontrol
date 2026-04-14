@@ -1,0 +1,89 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.system') }}</div>
+    <div class="page-title">{{ t('nav.logs') }}</div>
+    <div class="page-sub" id="logs-subtitle">{{ t('dashboard.recent_events') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+    <div class="tabs" id="log-type-tabs">
+      <div class="tab active" data-type="activity">{{ t('logs.activity') }}</div>
+      <div class="tab" data-type="access">{{ t('logs.access') }}</div>
+    </div>
+  </div>
+</div>
+
+{# ─── Activity Log Panel ─── #}
+<div id="activity-panel">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;justify-content:space-between">
+    <div class="tabs" id="log-severity-filter">
+      <div class="tab active" data-severity="all">{{ t('logs.all') }}</div>
+      <div class="tab" data-severity="success">{{ t('logs.success') }}</div>
+      <div class="tab" data-severity="info">Info</div>
+      <div class="tab" data-severity="warning">{{ t('logs.warning') }}</div>
+      <div class="tab" data-severity="error">{{ t('logs.error') }}</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="activity-export-csv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_csv') }}
+      </button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="activity-export-json">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_json') }}
+      </button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="card-title">{{ t('dashboard.recent_events') }}</span>
+      <span class="card-sub" id="logs-count">{{ t('dashboard.realtime') }}</span>
+    </div>
+    <div class="card-body" id="full-activity-log">
+      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+    </div>
+  </div>
+  <div id="activity-pagination" style="margin-top:12px"></div>
+</div>
+
+{# ─── Access Log Panel ─── #}
+<div id="access-panel" style="display:none">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;justify-content:space-between">
+    <div class="tabs" id="access-status-filter">
+      <div class="tab active" data-status="">{{ t('logs.all') }}</div>
+      <div class="tab" data-status="200">2xx</div>
+      <div class="tab" data-status="300">3xx</div>
+      <div class="tab" data-status="400">4xx</div>
+      <div class="tab" data-status="500">5xx</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="access-export-csv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_csv') }}
+      </button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="access-export-json">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        {{ t('logs.export_json') }}
+      </button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
+      <span class="card-title">{{ t('logs.access_title') }}</span>
+      <span class="card-sub" id="access-count">{{ t('dashboard.realtime') }}</span>
+    </div>
+    <div class="card-body" id="access-log-container">
+      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+    </div>
+  </div>
+  <div id="access-pagination" style="margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/logs.js"></script>
+{% endblock %}
