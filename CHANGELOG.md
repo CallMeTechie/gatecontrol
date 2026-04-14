@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0] — 2026-04-14
+
+### Features
+- add Pro theme modal partials (confirm, peer-add/edit/qr/traffic, route-edit)
+
+---
+
 ## [1.26.0] — 2026-04-14
 
 ### Features
