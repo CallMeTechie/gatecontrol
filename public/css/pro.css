@@ -175,9 +175,6 @@ body {
   color: var(--text-primary);
   background: var(--bg-body);
   min-height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 a { color: var(--text-link); text-decoration: none; }
@@ -203,7 +200,6 @@ a:hover { text-decoration: underline; }
 .shell {
   flex: 1;
   display: flex;
-  overflow: hidden;
 }
 
 /* ============================================================
@@ -420,6 +416,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  overflow-y: auto;
 }
 
 .main {
