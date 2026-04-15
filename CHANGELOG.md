@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.6] — 2026-04-15
+
+### Fixes
+- update current user theme when changing system default theme
+
+---
+
 ## [1.32.5] — 2026-04-15
 
 ### Fixes
