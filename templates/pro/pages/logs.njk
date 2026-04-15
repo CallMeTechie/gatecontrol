@@ -82,8 +82,33 @@
   </div>
   <div id="access-pagination" style="margin-top:12px"></div>
 </div>
+{# -- Connection History (RDP Sessions) -------------------- #}
+<div class="card" style="margin-top:20px">
+  <div class="card-head">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span class="card-title">{{ t('rdp.history') }}</span>
+    <select class="filter-select" id="rdp-history-status" style="font-size:11px;padding:4px 8px">
+      <option value="">{{ t('common.all') }}</option>
+      <option value="active">{{ t('rdp.status_active') }}</option>
+      <option value="ended">{{ t('rdp.status_ended') }}</option>
+    </select>
+    <select class="filter-select" id="rdp-history-period" style="font-size:11px;padding:4px 8px">
+      <option value="24h">{{ t('logs.last_24h') }}</option>
+      <option value="7d">{{ t('logs.last_7d') }}</option>
+      <option value="30d">{{ t('logs.last_30d') }}</option>
+    </select>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" id="rdp-history-export-csv">CSV</button>
+      <button class="btn btn-ghost btn-sm" id="rdp-history-export-json">JSON</button>
+    </div>
+  </div>
+  <div class="card-body" id="rdp-history-list">
+    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="/js/logs.js"></script>
+<script src="/js/rdp-history.js" nonce="{{ nonce }}"></script>
 {% endblock %}

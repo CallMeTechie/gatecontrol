@@ -22,8 +22,6 @@
   var grid = document.getElementById('rdp-grid');
   var searchInput = document.getElementById('rdp-search');
   var subtitle = document.getElementById('rdp-subtitle');
-  var historyList = document.getElementById('rdp-history-list');
-  var currentOffset = 0;
   var modalOverlay = document.getElementById('rdp-modal-overlay');
   var modal = document.getElementById('rdp-modal');
   var modalTitle = document.getElementById('rdp-modal-title');
@@ -860,195 +858,6 @@
     }
   });
 
-  // -- History --------------------------------------------------
-  async function loadHistory() {
-    var limit = 50;
-    try {
-      var periodSelect = document.getElementById('rdp-history-period');
-      var period = periodSelect ? periodSelect.value : '24h';
-      var statusFilter = document.getElementById('rdp-history-status');
-      var statusParam = statusFilter ? statusFilter.value : '';
-      var url = '/api/v1/rdp/history?limit=' + limit + '&offset=' + currentOffset + '&period=' + period;
-      if (statusParam) url += '&status=' + statusParam;
-      var res = await api.get(url);
-      if (!res.ok) return;
-      var history = res.history || [];
-
-      if (history.length === 0 && currentOffset === 0) {
-        historyList.textContent = GC.t['rdp.no_history'] || 'Keine Verbindungshistorie';
-        historyList.style.cssText = 'font-size:13px;color:var(--text-3);padding:12px;text-align:center';
-        return;
-      }
-      historyList.style.cssText = '';
-      historyList.textContent = '';
-
-      var table = document.createElement('table');
-      table.className = 'history-table';
-
-      var thead = document.createElement('thead');
-      var headerRow = document.createElement('tr');
-      var headers = [
-        GC.t['rdp.history_time'] || 'Zeitpunkt',
-        GC.t['rdp.history_device'] || 'User / Gerät',
-        GC.t['rdp.name'] || 'VM',
-        GC.t['rdp.host'] || 'Host',
-        GC.t['rdp.history_duration'] || 'Dauer',
-        GC.t['rdp.status'] || 'Status'
-      ];
-      var tbody = document.createElement('tbody');
-      headers.forEach(function (h, idx) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        th.style.cssText = 'cursor:pointer;user-select:none';
-        th.addEventListener('click', function() {
-          var rows = Array.from(tbody.querySelectorAll('tr'));
-          var ascending = th.dataset.sortDir !== 'asc';
-          th.dataset.sortDir = ascending ? 'asc' : 'desc';
-          rows.sort(function(a, b) {
-            var aVal = a.children[idx].textContent;
-            var bVal = b.children[idx].textContent;
-            return ascending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-          });
-          rows.forEach(function(row) { tbody.appendChild(row); });
-        });
-        headerRow.appendChild(th);
-      });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-
-      history.forEach(function (s) {
-        var tr = document.createElement('tr');
-
-        // Timestamp
-        var tdTime = document.createElement('td');
-        tdTime.style.cssText = 'font-family:var(--font-mono);font-size:11px';
-        tdTime.textContent = s.started_at ? formatTimestamp(s.started_at) : '-';
-        tr.appendChild(tdTime);
-
-        // User / Device
-        var tdToken = document.createElement('td');
-        var deviceText = s.peer_name || s.token_name || '-';
-        tdToken.textContent = deviceText;
-        if (s.token_name && s.peer_name) {
-          var tokenSpan = document.createElement('span');
-          tokenSpan.style.cssText = 'display:block;font-size:11px;color:var(--text-3)';
-          tokenSpan.textContent = s.token_name;
-          tdToken.appendChild(tokenSpan);
-        }
-        tr.appendChild(tdToken);
-
-        // VM name
-        var tdVm = document.createElement('td');
-        tdVm.style.cssText = 'font-weight:600;color:var(--text-1)';
-        tdVm.textContent = s.route_name || '-';
-        tr.appendChild(tdVm);
-
-        // Host
-        var tdHost = document.createElement('td');
-        tdHost.style.cssText = 'font-family:var(--font-mono);font-size:11px';
-        tdHost.textContent = s.route_host ? (s.route_host + ':' + (s.route_port || 3389)) : '-';
-        tr.appendChild(tdHost);
-
-        // Duration
-        var tdDur = document.createElement('td');
-        if (s.status === 'active' || s.status === 'connected') {
-          var durTag = document.createElement('span');
-          durTag.className = 'tag tag-blue';
-          durTag.style.fontSize = '10px';
-          durTag.textContent = (GC.t['rdp.active'] || 'Aktiv') + (s.duration_seconds ? ' (' + formatDuration(s.duration_seconds) + ')' : '');
-          tdDur.appendChild(durTag);
-        } else {
-          tdDur.textContent = s.duration_seconds ? formatDuration(s.duration_seconds) : '-';
-        }
-        tr.appendChild(tdDur);
-
-        // Status
-        var tdStatus = document.createElement('td');
-        var statusTag = document.createElement('span');
-        statusTag.className = 'tag';
-        if (s.status === 'active' || s.status === 'connected') {
-          statusTag.classList.add('tag-green');
-          statusTag.textContent = GC.t['rdp.connected'] || 'Verbunden';
-        } else if (s.status === 'timeout') {
-          statusTag.classList.add('tag-amber');
-          statusTag.textContent = 'Timeout';
-        } else {
-          statusTag.classList.add('tag-neutral');
-          statusTag.textContent = GC.t['rdp.disconnected'] || 'Getrennt';
-        }
-        tdStatus.appendChild(statusTag);
-        tr.appendChild(tdStatus);
-
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      historyList.appendChild(table);
-
-      // Pagination
-      if (res.total > limit) {
-        var paginationDiv = document.createElement('div');
-        paginationDiv.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:12px;color:var(--text-2)';
-
-        var info = document.createElement('span');
-        info.textContent = (currentOffset + 1) + '–' + Math.min(currentOffset + limit, res.total) + ' von ' + res.total;
-        paginationDiv.appendChild(info);
-
-        var buttons = document.createElement('div');
-        buttons.style.cssText = 'display:flex;gap:4px';
-
-        if (currentOffset > 0) {
-          var prevBtn = document.createElement('button');
-          prevBtn.className = 'btn btn-ghost btn-sm';
-          prevBtn.textContent = '← Zurück';
-          prevBtn.addEventListener('click', function() { currentOffset -= limit; loadHistory(); });
-          buttons.appendChild(prevBtn);
-        }
-        if (currentOffset + limit < res.total) {
-          var nextBtn = document.createElement('button');
-          nextBtn.className = 'btn btn-ghost btn-sm';
-          nextBtn.textContent = 'Weiter →';
-          nextBtn.addEventListener('click', function() { currentOffset += limit; loadHistory(); });
-          buttons.appendChild(nextBtn);
-        }
-        paginationDiv.appendChild(buttons);
-        historyList.appendChild(paginationDiv);
-      }
-    } catch {
-      historyList.textContent = 'Error loading history';
-      historyList.style.cssText = 'color:var(--danger);padding:12px;text-align:center';
-    }
-  }
-
-  function formatTimestamp(iso) {
-    try {
-      var d = new Date(iso);
-      var dd = String(d.getDate()).padStart(2, '0');
-      var mm = String(d.getMonth() + 1).padStart(2, '0');
-      var yyyy = d.getFullYear();
-      var hh = String(d.getHours()).padStart(2, '0');
-      var min = String(d.getMinutes()).padStart(2, '0');
-      return dd + '.' + mm + '.' + yyyy + ' ' + hh + ':' + min;
-    } catch { return iso; }
-  }
-
-  function formatDuration(seconds) {
-    if (seconds < 60) return seconds + 's';
-    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
-    return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
-  }
-
-  // History export
-  var csvBtn = document.getElementById('rdp-history-export-csv');
-  var jsonBtn = document.getElementById('rdp-history-export-json');
-  if (csvBtn) csvBtn.addEventListener('click', function () { window.open('/api/v1/rdp/history/export?format=csv', '_blank'); });
-  if (jsonBtn) jsonBtn.addEventListener('click', function () { window.open('/api/v1/rdp/history/export?format=json', '_blank'); });
-
-  // History period filter
-  var historyPeriod = document.getElementById('rdp-history-period');
-  if (historyPeriod) {
-    historyPeriod.addEventListener('change', function () { currentOffset = 0; loadHistory(); });
-  }
-
   // -- Rotation stats -------------------------------------------
   async function loadRotationCount() {
     try {
@@ -1061,12 +870,10 @@
 
   // -- Init -----------------------------------------------------
   loadRoutes();
-  loadHistory();
   loadRotationCount();
 
   // Auto-refresh every 60s
   setInterval(function () {
     loadRoutes();
-    loadHistory();
   }, 60000);
 })();

@@ -77,26 +77,6 @@
   <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
 </div>
 
-{# -- Connection History ------------------------------------- #}
-<div class="card" style="margin-top:20px">
-  <div class="card-head">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-    <span class="card-title">{{ t('rdp.history') }}</span>
-    <select class="filter-select" id="rdp-history-period" style="font-size:11px;padding:4px 8px">
-      <option value="24h">Letzte 24 Stunden</option>
-      <option value="7d">Letzte 7 Tage</option>
-      <option value="30d">Letzte 30 Tage</option>
-    </select>
-    <div style="margin-left:auto;display:flex;gap:8px">
-      <button class="btn btn-ghost btn-sm" id="rdp-history-export-csv">CSV</button>
-      <button class="btn btn-ghost btn-sm" id="rdp-history-export-json">JSON</button>
-    </div>
-  </div>
-  <div class="card-body" id="rdp-history-list">
-    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
-  </div>
-</div>
-
 {# -- Create/Edit Modal -------------------------------------- #}
 <div class="modal-overlay" id="rdp-modal-overlay" style="display:none">
   <div id="rdp-modal" style="background:var(--bg-panel);border-radius:var(--radius);width:720px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);position:relative">
