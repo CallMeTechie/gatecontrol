@@ -972,7 +972,7 @@
   "rdp.stat_active_sessions": "Aktive Sitzungen",
   "rdp.stat_maintenance": "In Wartung",
   "rdp.stat_rotation_due": "Rotation faellig",
-  "rdp.history": "Verbindungshistorie",
+  "rdp.history": "RDP Verbindungshistorie",
   "rdp.history_export": "Exportieren",
   "rdp.history_token": "Token",
   "rdp.history_time": "Zeitpunkt",
