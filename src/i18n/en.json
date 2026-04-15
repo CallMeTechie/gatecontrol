@@ -971,6 +971,7 @@
   "rdp.history": "Connection History",
   "rdp.history_export": "Export",
   "rdp.history_token": "Token",
+  "rdp.history_device": "User / Device",
   "rdp.history_started": "Started",
   "rdp.history_ended": "Ended",
   "rdp.history_duration": "Duration",

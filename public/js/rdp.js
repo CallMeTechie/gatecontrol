@@ -23,6 +23,7 @@
   var searchInput = document.getElementById('rdp-search');
   var subtitle = document.getElementById('rdp-subtitle');
   var historyList = document.getElementById('rdp-history-list');
+  var currentOffset = 0;
   var modalOverlay = document.getElementById('rdp-modal-overlay');
   var modal = document.getElementById('rdp-modal');
   var modalTitle = document.getElementById('rdp-modal-title');
@@ -861,14 +862,19 @@
 
   // -- History --------------------------------------------------
   async function loadHistory() {
+    var limit = 50;
     try {
       var periodSelect = document.getElementById('rdp-history-period');
       var period = periodSelect ? periodSelect.value : '24h';
-      var res = await api.get('/api/v1/rdp/history?limit=50&period=' + period);
+      var statusFilter = document.getElementById('rdp-history-status');
+      var statusParam = statusFilter ? statusFilter.value : '';
+      var url = '/api/v1/rdp/history?limit=' + limit + '&offset=' + currentOffset + '&period=' + period;
+      if (statusParam) url += '&status=' + statusParam;
+      var res = await api.get(url);
       if (!res.ok) return;
       var history = res.history || [];
 
-      if (history.length === 0) {
+      if (history.length === 0 && currentOffset === 0) {
         historyList.textContent = GC.t['rdp.no_history'] || 'Keine Verbindungshistorie';
         historyList.style.cssText = 'font-size:13px;color:var(--text-3);padding:12px;text-align:center';
         return;
@@ -883,21 +889,33 @@
       var headerRow = document.createElement('tr');
       var headers = [
         GC.t['rdp.history_time'] || 'Zeitpunkt',
-        GC.t['rdp.history_token'] || 'User / Token',
+        GC.t['rdp.history_device'] || 'User / Gerät',
         GC.t['rdp.name'] || 'VM',
         GC.t['rdp.host'] || 'Host',
         GC.t['rdp.history_duration'] || 'Dauer',
         GC.t['rdp.status'] || 'Status'
       ];
-      headers.forEach(function (h) {
+      var tbody = document.createElement('tbody');
+      headers.forEach(function (h, idx) {
         var th = document.createElement('th');
         th.textContent = h;
+        th.style.cssText = 'cursor:pointer;user-select:none';
+        th.addEventListener('click', function() {
+          var rows = Array.from(tbody.querySelectorAll('tr'));
+          var ascending = th.dataset.sortDir !== 'asc';
+          th.dataset.sortDir = ascending ? 'asc' : 'desc';
+          rows.sort(function(a, b) {
+            var aVal = a.children[idx].textContent;
+            var bVal = b.children[idx].textContent;
+            return ascending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          });
+          rows.forEach(function(row) { tbody.appendChild(row); });
+        });
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
       table.appendChild(thead);
 
-      var tbody = document.createElement('tbody');
       history.forEach(function (s) {
         var tr = document.createElement('tr');
 
@@ -907,15 +925,15 @@
         tdTime.textContent = s.started_at ? formatTimestamp(s.started_at) : '-';
         tr.appendChild(tdTime);
 
-        // User / Token
+        // User / Device
         var tdToken = document.createElement('td');
-        var tokenText = s.token_name || '-';
-        tdToken.textContent = tokenText;
-        if (s.peer_name) {
-          var peerSpan = document.createElement('span');
-          peerSpan.style.color = 'var(--text-3)';
-          peerSpan.textContent = ' (' + s.peer_name + ')';
-          tdToken.appendChild(peerSpan);
+        var deviceText = s.peer_name || s.token_name || '-';
+        tdToken.textContent = deviceText;
+        if (s.token_name && s.peer_name) {
+          var tokenSpan = document.createElement('span');
+          tokenSpan.style.cssText = 'display:block;font-size:11px;color:var(--text-3)';
+          tokenSpan.textContent = s.token_name;
+          tdToken.appendChild(tokenSpan);
         }
         tr.appendChild(tdToken);
 
@@ -965,6 +983,36 @@
       });
       table.appendChild(tbody);
       historyList.appendChild(table);
+
+      // Pagination
+      if (res.total > limit) {
+        var paginationDiv = document.createElement('div');
+        paginationDiv.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:12px;color:var(--text-2)';
+
+        var info = document.createElement('span');
+        info.textContent = (currentOffset + 1) + '–' + Math.min(currentOffset + limit, res.total) + ' von ' + res.total;
+        paginationDiv.appendChild(info);
+
+        var buttons = document.createElement('div');
+        buttons.style.cssText = 'display:flex;gap:4px';
+
+        if (currentOffset > 0) {
+          var prevBtn = document.createElement('button');
+          prevBtn.className = 'btn btn-ghost btn-sm';
+          prevBtn.textContent = '← Zurück';
+          prevBtn.addEventListener('click', function() { currentOffset -= limit; loadHistory(); });
+          buttons.appendChild(prevBtn);
+        }
+        if (currentOffset + limit < res.total) {
+          var nextBtn = document.createElement('button');
+          nextBtn.className = 'btn btn-ghost btn-sm';
+          nextBtn.textContent = 'Weiter →';
+          nextBtn.addEventListener('click', function() { currentOffset += limit; loadHistory(); });
+          buttons.appendChild(nextBtn);
+        }
+        paginationDiv.appendChild(buttons);
+        historyList.appendChild(paginationDiv);
+      }
     } catch {
       historyList.textContent = 'Error loading history';
       historyList.style.cssText = 'color:var(--danger);padding:12px;text-align:center';
@@ -998,7 +1046,7 @@
   // History period filter
   var historyPeriod = document.getElementById('rdp-history-period');
   if (historyPeriod) {
-    historyPeriod.addEventListener('change', function () { loadHistory(); });
+    historyPeriod.addEventListener('change', function () { currentOffset = 0; loadHistory(); });
   }
 
   // -- Rotation stats -------------------------------------------
