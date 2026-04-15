@@ -354,14 +354,14 @@
             <input type="hidden" id="edit-ip-filter-mode" value="whitelist">
           </div>
           <div id="edit-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <select id="edit-ip-filter-type" style="padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;min-width:0;padding:6px 10px;font-size:12px">
+            <select id="edit-ip-filter-type" style="width:90px;flex-shrink:0;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
               <option value="ip">IP</option>
               <option value="cidr">CIDR</option>
               <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
             </select>
-            <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="padding:6px 10px;font-size:12px">+</button>
+            <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="flex-shrink:0;padding:6px 10px;font-size:12px">+</button>
           </div>
         </div>
         {% else %}
