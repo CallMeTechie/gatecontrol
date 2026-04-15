@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0] — 2026-04-15
+
+### Features
+- move connection history from RDP to Logs page with sort, filter, pagination
+
+---
+
 ## [1.30.0] — 2026-04-15
 
 ### Features
