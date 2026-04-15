@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.4] — 2026-04-15
+
+### Fixes
+- add missing auth.sign_in_subtitle i18n key for Pro login page
+
+---
+
 ## [1.32.3] — 2026-04-15
 
 ### Fixes
