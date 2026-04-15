@@ -1298,7 +1298,8 @@
         container.querySelectorAll('[data-default-theme]').forEach(function (b) {
           b.className = b.dataset.defaultTheme === selected ? 'btn btn-primary' : 'btn btn-ghost';
         });
-        if (typeof GC.toast === 'function') GC.toast(GC.t['security.saved'] || 'Saved');
+        // Reload page to apply the new theme (templates are server-rendered)
+        setTimeout(function () { window.location.reload(); }, 300);
       }
     } catch (err) {
       alert(err.message || 'Failed to save');
