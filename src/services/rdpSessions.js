@@ -57,7 +57,7 @@ function getHistory(rdpRouteId, { limit = 50, offset = 0 } = {}) {
 
 function getGlobalHistory({ limit = 50, offset = 0, status, since, until } = {}) {
   const db = getDb();
-  let query = `SELECT s.*, r.name as route_name, r.host as route_host, r.port as route_port, p.name as peer_name FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id LEFT JOIN peers p ON s.peer_id = p.id`;
+  let query = `SELECT s.*, r.name as route_name, r.host as route_host, r.port as route_port, p.name as peer_name, u.display_name as user_display_name FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id LEFT JOIN peers p ON s.peer_id = p.id LEFT JOIN api_tokens t ON s.token_id = t.id LEFT JOIN users u ON t.user_id = u.id`;
   const conditions = [];
   const params = [];
   if (status) { conditions.push('s.status = ?'); params.push(status); }

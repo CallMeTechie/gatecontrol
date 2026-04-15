@@ -86,12 +86,12 @@
         // User / Device
         var tdDevice = document.createElement('td');
         tdDevice.style.cssText = 'padding:8px 10px';
-        var deviceName = s.peer_name || s.token_name || '-';
-        tdDevice.textContent = deviceName;
-        if (s.token_name && s.peer_name) {
+        var userName = s.user_display_name || s.token_name || '-';
+        tdDevice.textContent = userName;
+        if (s.peer_name) {
           var sub = document.createElement('span');
           sub.style.cssText = 'display:block;font-size:11px;color:var(--text-3)';
-          sub.textContent = s.token_name;
+          sub.textContent = s.peer_name;
           tdDevice.appendChild(sub);
         }
         tr.appendChild(tdDevice);
