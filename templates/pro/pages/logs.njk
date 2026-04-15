@@ -11,6 +11,7 @@
     <div class="tabs" id="log-type-tabs">
       <div class="tab active" data-type="activity">{{ t('logs.activity') }}</div>
       <div class="tab" data-type="access">{{ t('logs.access') }}</div>
+      <div class="tab" data-type="history">{{ t('rdp.history') }}</div>
     </div>
   </div>
 </div>
@@ -82,8 +83,9 @@
   </div>
   <div id="access-pagination" style="margin-top:12px"></div>
 </div>
-{# -- Connection History (RDP Sessions) -------------------- #}
-<div class="card" style="margin-top:20px">
+{# ─── Connection History Panel ─── #}
+<div id="history-panel" style="display:none">
+<div class="card">
   <div class="card-head">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     <span class="card-title">{{ t('rdp.history') }}</span>
@@ -105,6 +107,7 @@
   <div class="card-body" id="rdp-history-list">
     <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
   </div>
+</div>
 </div>
 {% endblock %}
 

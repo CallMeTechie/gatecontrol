@@ -22,6 +22,7 @@
   const typeTabs = document.getElementById('log-type-tabs');
   const activityPanel = document.getElementById('activity-panel');
   const accessPanel = document.getElementById('access-panel');
+  const historyPanel = document.getElementById('history-panel');
 
   if (typeTabs) {
     typeTabs.addEventListener('click', (e) => {
@@ -32,6 +33,7 @@
       const type = tab.dataset.type;
       activityPanel.style.display = type === 'activity' ? '' : 'none';
       accessPanel.style.display = type === 'access' ? '' : 'none';
+      if (historyPanel) historyPanel.style.display = type === 'history' ? '' : 'none';
       if (type === 'access' && !accessLoaded) loadAccessLogs(1);
     });
   }
