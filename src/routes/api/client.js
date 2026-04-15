@@ -373,9 +373,16 @@ router.post('/heartbeat', (req, res) => {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }
 
-    // Update last seen timestamp
+    // Update last seen timestamp + description with current client version
     const db = getDb();
-    db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
+    const platform = req.headers['x-client-platform'] || req.body.platform || '';
+    const clientVersion = req.headers['x-client-version'] || '';
+    if (clientVersion) {
+      db.prepare(`UPDATE peers SET description = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion})`, peer.id);
+    } else {
+      db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
+    }
 
     logger.debug({ peerId: validatedPeerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
 
