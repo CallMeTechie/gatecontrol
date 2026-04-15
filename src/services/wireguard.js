@@ -226,6 +226,17 @@ async function getAverageLatency() {
   return Math.round(avg * 10) / 10;
 }
 
+/**
+ * Remove a peer from the running WireGuard interface by public key.
+ * Used when disabling/deleting a peer — wg syncconf does not remove peers.
+ */
+async function removePeer(publicKey) {
+  const iface = config.wireguard.interface;
+  const result = await run('wg', ['set', iface, 'peer', publicKey, 'remove']);
+  logger.info({ iface, publicKey: publicKey.substring(0, 8) + '...' }, 'Peer removed from running interface');
+  return result;
+}
+
 module.exports = {
   getStatus,
   getTransferTotals,
@@ -235,4 +246,5 @@ module.exports = {
   getConfig,
   syncConfig,
   getAverageLatency,
+  removePeer,
 };

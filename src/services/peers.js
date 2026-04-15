@@ -222,12 +222,18 @@ async function remove(id) {
   const peer = db.prepare('SELECT * FROM peers WHERE id = ?').get(id);
   if (!peer) throw new Error('Peer not found');
 
+  const publicKey = peer.public_key;
   db.prepare('DELETE FROM peers WHERE id = ?').run(id);
 
   // Unlink routes pointing to this peer
   db.prepare('UPDATE routes SET peer_id = NULL WHERE peer_id = ?').run(id);
 
   await rewriteWgConfig();
+
+  // Explicitly remove from running interface (syncconf doesn't remove peers)
+  if (publicKey) {
+    try { await wireguard.removePeer(publicKey); } catch {}
+  }
 
   activity.log('peer_deleted', `Peer "${peer.name}" deleted`, {
     source: 'admin',
@@ -250,6 +256,17 @@ async function toggle(id) {
   db.prepare('UPDATE peers SET enabled = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newState, id);
 
   await rewriteWgConfig();
+
+  // wg syncconf does not remove peers that were deleted from the config —
+  // it only adds/updates. Explicitly remove the peer from the running
+  // interface so the client is disconnected immediately.
+  if (!newState && peer.public_key) {
+    try {
+      await wireguard.removePeer(peer.public_key);
+    } catch (err) {
+      logger.warn({ peerId: id, error: err.message }, 'Failed to remove peer from running interface');
+    }
+  }
 
   activity.log(
     newState ? 'peer_enabled' : 'peer_disabled',
@@ -403,6 +420,12 @@ async function checkExpiredPeers() {
 
   if (needSync) {
     await rewriteWgConfig();
+    // Remove expired peers from running interface
+    for (const peer of expired) {
+      if (peer.public_key) {
+        try { await wireguard.removePeer(peer.public_key); } catch {}
+      }
+    }
   }
 }
 
@@ -430,6 +453,10 @@ async function batch(action, ids) {
   }
 
   const names = existing.map(p => p.name);
+  // Collect public keys before deletion for explicit removal from running interface
+  const pubKeys = (action === 'disable' || action === 'delete')
+    ? db.prepare(`SELECT public_key FROM peers WHERE id IN (${placeholders})`).all(...ids).map(p => p.public_key).filter(Boolean)
+    : [];
 
   if (action === 'enable') {
     db.prepare(`UPDATE peers SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
@@ -437,11 +464,15 @@ async function batch(action, ids) {
     db.prepare(`UPDATE peers SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
   } else if (action === 'delete') {
     db.prepare(`DELETE FROM peers WHERE id IN (${placeholders})`).run(...ids);
-    // Unlink routes pointing to deleted peers
     db.prepare(`UPDATE routes SET peer_id = NULL WHERE peer_id IN (${placeholders})`).run(...ids);
   }
 
   await rewriteWgConfig();
+
+  // Explicitly remove peers from running interface (syncconf doesn't remove)
+  for (const pk of pubKeys) {
+    try { await wireguard.removePeer(pk); } catch {}
+  }
 
   const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
   activity.log(
