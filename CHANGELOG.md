@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.3] — 2026-04-15
+
+### Fixes
+- use active theme from DB for all page renders including login
+
+---
+
 ## [1.32.2] — 2026-04-15
 
 ### Fixes
