@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.3] — 2026-04-15
+
+### Fixes
+- show correct client type label based on platform
+
+---
+
 ## [1.29.2] — 2026-04-14
 
 ### Änderungen
