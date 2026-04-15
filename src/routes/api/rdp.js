@@ -74,9 +74,20 @@ router.get('/history', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const { status, since, until } = req.query;
-    const history = rdpSessions.getGlobalHistory({ limit, offset, status, since, until });
-    res.json({ ok: true, history, limit, offset });
+    const { status, since, until, period } = req.query;
+
+    // Convert period shorthand to since timestamp
+    let sinceDate = since;
+    if (!sinceDate && period) {
+      const now = new Date();
+      if (period === '24h') sinceDate = new Date(now - 24*60*60*1000).toISOString();
+      else if (period === '7d') sinceDate = new Date(now - 7*24*60*60*1000).toISOString();
+      else if (period === '30d') sinceDate = new Date(now - 30*24*60*60*1000).toISOString();
+    }
+
+    const history = rdpSessions.getGlobalHistory({ limit, offset, status, since: sinceDate, until });
+    const total = rdpSessions.getGlobalHistoryCount({ status, since: sinceDate, until });
+    res.json({ ok: true, history, total, limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get RDP history');
     res.status(500).json({ ok: false, error: req.t('error.rdp.history') });

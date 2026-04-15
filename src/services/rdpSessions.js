@@ -57,7 +57,7 @@ function getHistory(rdpRouteId, { limit = 50, offset = 0 } = {}) {
 
 function getGlobalHistory({ limit = 50, offset = 0, status, since, until } = {}) {
   const db = getDb();
-  let query = `SELECT s.*, r.name as route_name, r.host, r.port FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id`;
+  let query = `SELECT s.*, r.name as route_name, r.host as route_host, r.port as route_port, p.name as peer_name FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id LEFT JOIN peers p ON s.peer_id = p.id`;
   const conditions = [];
   const params = [];
   if (status) { conditions.push('s.status = ?'); params.push(status); }
@@ -67,6 +67,18 @@ function getGlobalHistory({ limit = 50, offset = 0, status, since, until } = {})
   query += ' ORDER BY s.started_at DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
   return db.prepare(query).all(...params);
+}
+
+function getGlobalHistoryCount({ status, since, until } = {}) {
+  const db = getDb();
+  let query = 'SELECT COUNT(*) as count FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id';
+  const conditions = [];
+  const params = [];
+  if (status) { conditions.push('s.status = ?'); params.push(status); }
+  if (since) { conditions.push('s.started_at >= ?'); params.push(since); }
+  if (until) { conditions.push('s.started_at <= ?'); params.push(until); }
+  if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
+  return db.prepare(query).get(...params).count;
 }
 
 function findActiveSession(routeId, tokenId) {
@@ -128,7 +140,7 @@ function cleanupStaleSessions() {
 
 function exportCsv({ since, until, routeId } = {}) {
   const db = getDb();
-  let query = `SELECT s.*, r.name as route_name, r.host, r.port FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id`;
+  let query = `SELECT s.*, r.name as route_name, r.host as route_host, r.port as route_port FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id`;
   const conditions = [];
   const params = [];
   if (routeId) { conditions.push('s.rdp_route_id = ?'); params.push(routeId); }
@@ -137,9 +149,9 @@ function exportCsv({ since, until, routeId } = {}) {
   if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY s.started_at DESC';
   const rows = db.prepare(query).all(...params);
-  const header = 'id,route_name,host,port,token_name,status,started_at,ended_at,duration_seconds,end_reason,client_ip\n';
-  const lines = rows.map(r => `${r.id},${r.route_name},${r.host},${r.port},${r.token_name || ''},${r.status},${r.started_at},${r.ended_at || ''},${r.duration_seconds || ''},${r.end_reason || ''},${r.client_ip || ''}`);
+  const header = 'id,route_name,route_host,route_port,token_name,status,started_at,ended_at,duration_seconds,end_reason,client_ip\n';
+  const lines = rows.map(r => `${r.id},${r.route_name},${r.route_host},${r.route_port},${r.token_name || ''},${r.status},${r.started_at},${r.ended_at || ''},${r.duration_seconds || ''},${r.end_reason || ''},${r.client_ip || ''}`);
   return header + lines.join('\n');
 }
 
-module.exports = { startSession, heartbeatSession, endSession, findActiveSession, getHistory, getGlobalHistory, getActiveSessionCounts, getActiveSessionDetails, getLastAccess, cleanupStaleSessions, exportCsv };
+module.exports = { startSession, heartbeatSession, endSession, findActiveSession, getHistory, getGlobalHistory, getGlobalHistoryCount, getActiveSessionCounts, getActiveSessionDetails, getLastAccess, cleanupStaleSessions, exportCsv };
