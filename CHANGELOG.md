@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1] — 2026-04-15
+
+### Fixes
+- rename connection history tab to RDP Connection History
+
+---
+
 ## [1.32.0] — 2026-04-15
 
 ### Features
