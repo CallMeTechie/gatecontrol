@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.5] — 2026-04-15
+
+### Fixes
+- auto-update peer description via middleware on all client requests
+
+---
+
 ## [1.29.4] — 2026-04-15
 
 ### Fixes
