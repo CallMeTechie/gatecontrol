@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.7] — 2026-04-15
+
+### Fixes
+- add padding-left to search inputs in Pro theme for search icon visibility
+
+---
+
 ## [1.32.6] — 2026-04-15
 
 ### Fixes
