@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.2] — 2026-04-15
+
+### Fixes
+- show user display name instead of device name in history
+
+---
+
 ## [1.32.1] — 2026-04-15
 
 ### Fixes
