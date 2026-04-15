@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.8] — 2026-04-15
+
+### Fixes
+- immediately disconnect peers on disable/delete/expiry
+
+---
+
 ## [1.32.7] — 2026-04-15
 
 ### Fixes
