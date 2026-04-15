@@ -184,6 +184,12 @@ router.put('/default-theme', (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid theme. Must be: ' + validThemes.join(', ') });
     }
     settings.set('default_theme', theme);
+    // Also update the current user's personal theme so the change is
+    // visible immediately (user.theme overrides system default in locals.js)
+    if (req.session && req.session.userId) {
+      const db = getDb();
+      db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, req.session.userId);
+    }
     res.json({ ok: true, theme });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to set default theme');
