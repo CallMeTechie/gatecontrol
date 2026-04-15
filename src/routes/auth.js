@@ -9,7 +9,7 @@ const lockout = require('../services/lockout');
 
 const authRoutes = {
   loginPage(req, res) {
-    res.render(`${config.theme.defaultTheme}/pages/login.njk`, {
+    res.render(`${res.locals.theme}/pages/login.njk`, {
       title: res.locals.t('auth.login'),
       layout: false,
     });

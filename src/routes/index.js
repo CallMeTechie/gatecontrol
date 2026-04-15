@@ -135,7 +135,7 @@ pages.forEach(({ path, template, titleKey }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch {}
 
-    res.render(`${config.theme.defaultTheme}/pages/${template}.njk`, {
+    res.render(`${res.locals.theme}/pages/${template}.njk`, {
       title: res.locals.t(titleKey),
       activeNav: template,
       ...extraLocals,

@@ -147,7 +147,7 @@ router.get('/login', (req, res) => {
     const db = getDb();
     const routeData = domain ? db.prepare('SELECT branding_title, branding_text, branding_logo, branding_color, branding_bg, branding_bg_image FROM routes WHERE domain = ? AND enabled = 1').get(domain) : null;
 
-    res.render(`${config.theme.defaultTheme}/pages/route-auth-login.njk`, {
+    res.render(`${res.locals.theme}/pages/route-auth-login.njk`, {
       domain,
       redirect: redirectTo || '/',
       authType: authConfig ? authConfig.auth_type : null,
