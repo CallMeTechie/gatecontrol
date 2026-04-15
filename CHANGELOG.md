@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.4] — 2026-04-15
+
+### Fixes
+- update peer description on heartbeat with current client version
+
+---
+
 ## [1.29.3] — 2026-04-15
 
 ### Fixes
