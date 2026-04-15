@@ -116,6 +116,29 @@ function verifyMachineBinding(req, res) {
 
 const router = Router();
 
+// Update peer description with current client version on every authenticated request.
+// Runs at most once per 5 minutes per peer to avoid DB churn.
+const _descriptionUpdated = new Map(); // peerId → timestamp
+router.use((req, res, next) => {
+  if (req.tokenAuth && req.tokenPeerId) {
+    const now = Date.now();
+    const lastUpdate = _descriptionUpdated.get(req.tokenPeerId) || 0;
+    if (now - lastUpdate > 5 * 60 * 1000) {
+      const platform = req.headers['x-client-platform'] || '';
+      const version = req.headers['x-client-version'] || '';
+      if (version) {
+        try {
+          const db = getDb();
+          db.prepare('UPDATE peers SET description = ?, updated_at = datetime(\'now\') WHERE id = ?')
+            .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${version})`, req.tokenPeerId);
+          _descriptionUpdated.set(req.tokenPeerId, now);
+        } catch {}
+      }
+    }
+  }
+  next();
+});
+
 const peerCountFn = () => getDb().prepare('SELECT COUNT(*) as count FROM peers').get().count;
 
 /**
@@ -373,16 +396,9 @@ router.post('/heartbeat', (req, res) => {
       return res.status(404).json({ ok: false, error: 'Peer not found' });
     }
 
-    // Update last seen timestamp + description with current client version
+    // Update last seen timestamp
     const db = getDb();
-    const platform = req.headers['x-client-platform'] || req.body.platform || '';
-    const clientVersion = req.headers['x-client-version'] || '';
-    if (clientVersion) {
-      db.prepare(`UPDATE peers SET description = ?, updated_at = datetime('now') WHERE id = ?`)
-        .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion})`, peer.id);
-    } else {
-      db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
-    }
+    db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
 
     logger.debug({ peerId: validatedPeerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
 
