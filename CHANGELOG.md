@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.0] — 2026-04-15
+
+### Features
+- RDP history — pagination, sort, filter, device column
+
+---
+
 ## [1.29.6] — 2026-04-15
 
 ### Fixes
