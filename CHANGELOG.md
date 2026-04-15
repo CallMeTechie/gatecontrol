@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0] — 2026-04-15
+
+### Features
+- connection history as own tab in logs page
+
+---
+
 ## [1.31.0] — 2026-04-15
 
 ### Features
