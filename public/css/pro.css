@@ -1357,6 +1357,8 @@ input[type=text], input[type=search], input[type=password], input[type=email], i
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+input[type=search] { padding-left: 32px; }
+
 input[type=text]:focus,
 input[type=search]:focus,
 input[type=password]:focus,
