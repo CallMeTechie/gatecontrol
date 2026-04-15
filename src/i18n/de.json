@@ -19,6 +19,7 @@
   "nav.users": "Benutzer",
 
   "auth.login": "Anmelden",
+  "auth.sign_in_subtitle": "Melden Sie sich an, um fortzufahren",
   "auth.username": "Benutzername",
   "auth.password": "Passwort",
   "auth.submit": "Anmelden",

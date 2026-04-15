@@ -19,6 +19,7 @@
   "nav.users": "Users",
 
   "auth.login": "Login",
+  "auth.sign_in_subtitle": "Sign in to continue",
   "auth.username": "Username",
   "auth.password": "Password",
   "auth.submit": "Sign in",
