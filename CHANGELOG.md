@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.6] — 2026-04-15
+
+### Fixes
+- RDP history backend — period filter, column aliases, pagination count, peer name join
+
+---
+
 ## [1.29.5] — 2026-04-15
 
 ### Fixes
