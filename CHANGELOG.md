@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.5] — 2026-04-15
+
+### Fixes
+- reload page after theme change to apply server-rendered layout
+
+---
+
 ## [1.32.4] — 2026-04-15
 
 ### Fixes
