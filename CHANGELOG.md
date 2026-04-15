@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.9] — 2026-04-15
+
+### Fixes
+- IP access control input field too small in route edit modal
+
+---
+
 ## [1.32.8] — 2026-04-15
 
 ### Fixes
