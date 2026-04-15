@@ -17,6 +17,15 @@ const rdpService = require('../../services/rdp');
 const rdpMonitor = require('../../services/rdpMonitor');
 const rdpSessions = require('../../services/rdpSessions');
 
+function clientLabel(platform) {
+  switch ((platform || '').toLowerCase()) {
+    case 'android': return 'Android Client';
+    case 'win32':
+    case 'windows': return 'Desktop Client';
+    default: return 'Client';
+  }
+}
+
 /**
  * Verify the requesting token owns the given peerId.
  * Returns the validated peerId or sends an error response.
@@ -184,7 +193,7 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       const db = getDb();
       try {
         db.prepare('UPDATE peers SET description = ? WHERE id = ?')
-          .run(`Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`, boundPeer.id);
+          .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`, boundPeer.id);
       } catch {}
 
       const peerConfig = await peers.getClientConfig(boundPeer.id);
@@ -224,12 +233,12 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
 
       peer = await peers.create({
         name: baseName,
-        description: `Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`,
-        tags: 'desktop-client',
+        description: `${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`,
+        tags: platform === 'android' ? 'mobile-client' : 'desktop-client',
       });
       isNew = true;
 
-      activity.log('client_registered', `Desktop client "${baseName}" registered`, {
+      activity.log('client_registered', `${clientLabel(platform)} "${baseName}" registered`, {
         source: 'api',
         severity: 'info',
         details: { peerId: peer.id, hostname, platform, clientVersion },
@@ -260,7 +269,7 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
     if (!isNew) {
       try {
         db.prepare('UPDATE peers SET description = ? WHERE id = ?')
-          .run(`Desktop Client (${platform || 'unknown'}, v${clientVersion || '?'})`, peer.id);
+          .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`, peer.id);
       } catch {}
     }
 
