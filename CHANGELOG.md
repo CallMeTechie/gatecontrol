@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0] — 2026-04-16
+
+### Features
+- phase-0 internal DNS preflight and hardening
+
+---
+
 ## [1.33.0] — 2026-04-16
 
 ### Features
