@@ -402,7 +402,10 @@ router.post('/heartbeat', (req, res) => {
 
     logger.debug({ peerId: validatedPeerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
 
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      peerEnabled: peer.enabled === 1,
+    });
   } catch (err) {
     logger.error({ error: err.message }, 'Heartbeat failed');
     res.status(500).json({ ok: false, error: 'Heartbeat processing failed' });
