@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.0] — 2026-04-16
+
+### Features
+- include peer_hostname + peer_fqdn in RDP connect response
+
+---
+
 ## [1.36.0] — 2026-04-16
 
 ### Features
