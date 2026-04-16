@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0] — 2026-04-16
+
+### Features
+- return peerEnabled in heartbeat response
+
+---
+
 ## [1.32.9] — 2026-04-15
 
 ### Fixes
