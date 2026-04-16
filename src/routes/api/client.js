@@ -702,12 +702,39 @@ router.get('/rdp/:id/connect', (req, res) => {
       });
     }
 
+    // If the target host is a VPN IP and a peer with that IP has a
+    // registered hostname (feature: internal_dns), include the FQDN so
+    // the Pro client can use it as the RDP "full address" — this lets
+    // CredSSP validate the server cert against its own hostname instead
+    // of the IP, avoiding the "The credentials that were used to
+    // connect … did not work" dialog on hosts whose cert CN differs
+    // from the IP.
+    let peer_hostname = null;
+    let peer_fqdn = null;
+    try {
+      const { hasFeature: _hasFeature } = require('../../services/license');
+      if (_hasFeature('internal_dns')) {
+        const configDef = require('../../../config/default');
+        const peerRow = getDb().prepare(
+          "SELECT hostname FROM peers WHERE hostname IS NOT NULL AND allowed_ips LIKE ?"
+        ).get(`${route.host}/%`);
+        if (peerRow && peerRow.hostname) {
+          peer_hostname = peerRow.hostname;
+          peer_fqdn = `${peerRow.hostname}.${configDef.dns.domain}`;
+        }
+      }
+    } catch (err) {
+      logger.debug({ err: err.message }, 'peer hostname lookup failed');
+    }
+
     // Build connection info
     const connection = {
       id: route.id,
       name: route.name,
       host: route.host,
       port: route.port,
+      peer_hostname,
+      peer_fqdn,
       external_hostname: route.external_hostname,
       external_port: route.external_port,
       access_mode: route.access_mode,
