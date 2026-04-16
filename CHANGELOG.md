@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.0] — 2026-04-16
+
+### Features
+- phase-1 internal DNS server core
+
+---
+
 ## [1.34.0] — 2026-04-16
 
 ### Features
