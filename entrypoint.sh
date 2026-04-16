@@ -8,6 +8,8 @@ GC_WG_SUBNET="${GC_WG_SUBNET:-10.8.0.0/24}"
 GC_WG_GATEWAY_IP="${GC_WG_GATEWAY_IP:-10.8.0.1}"
 GC_WG_DNS="${GC_WG_DNS:-10.8.0.1}"
 GC_DNSMASQ_UPSTREAMS="${GC_DNSMASQ_UPSTREAMS:-1.1.1.1,8.8.8.8}"
+GC_DNS_DOMAIN="${GC_DNS_DOMAIN:-gc.internal}"
+GC_DNS_HOSTS_FILE="${GC_DNS_HOSTS_FILE:-/data/dns/peers.hosts}"
 GC_WG_POST_UP="${GC_WG_POST_UP:-}"
 GC_WG_POST_DOWN="${GC_WG_POST_DOWN:-}"
 GC_WG_MTU="${GC_WG_MTU:-}"
@@ -89,6 +91,11 @@ echo "» MASQUERADE rule active: ${GC_WG_SUBNET} → ${GC_NET_INTERFACE}"
 # ─── Ensure data directory ───────────────────────────
 mkdir -p /data/caddy /data/wireguard /data/branding
 mkdir -p "$(dirname "$GC_DB_PATH")"
+
+# Internal DNS peer hosts file — managed by services/dns.js at runtime.
+# Touched here so dnsmasq doesn't abort if no peer has a hostname yet.
+mkdir -p "$(dirname "$GC_DNS_HOSTS_FILE")"
+[ -f "$GC_DNS_HOSTS_FILE" ] || : > "$GC_DNS_HOSTS_FILE"
 
 # ─── Generate WireGuard config if not exists ─────────
 # Config is stored persistently in /data/wireguard/ and symlinked to /etc/wireguard/
@@ -226,6 +233,24 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   echo "no-hosts"
   echo "cache-size=1000"
   echo "log-facility=-"
+  # Internal DNS hardening: never forward queries for the internal domain
+  # upstream (prevents leaking internal hostnames to public resolvers and
+  # blocks poisoning via spoofed upstream answers). domain-needed drops
+  # name-only (un-qualified) lookups; bogus-priv drops reverse lookups of
+  # RFC1918 addresses.
+  echo "local=/${GC_DNS_DOMAIN}/"
+  echo "domain=${GC_DNS_DOMAIN}"
+  echo "domain-needed"
+  echo "bogus-priv"
+  # Peer-hostname hosts file. The file is regenerated atomically by
+  # services/dns.js on peer mutations and dnsmasq is reloaded via SIGHUP.
+  # We touch it here to ensure dnsmasq doesn't abort on missing file at
+  # cold-start (before any peer is registered).
+  echo "addn-hosts=${GC_DNS_HOSTS_FILE}"
+  # Static gateway entries — always resolvable regardless of peer state.
+  echo "host-record=gateway.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
+  echo "host-record=server.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
+  echo "host-record=gc-server.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
   # Upstream resolvers (comma-separated env var → one server= line each)
   echo "$GC_DNSMASQ_UPSTREAMS" | tr ',' '\n' | while IFS= read -r upstream; do
     upstream=$(echo "$upstream" | tr -d '[:space:]')
@@ -242,6 +267,28 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   fi
 } > "$DNSMASQ_CONF"
 chmod 644 "$DNSMASQ_CONF"
+
+# ─── Preflight: port 53 must be free on 127.0.0.1 ────
+# dnsmasq binds 127.0.0.1:53 (via interface=lo) in addition to the wg0
+# gateway address. With host-networking, the container shares the host's
+# loopback — any pre-existing listener (NetworkManager-dnsmasq, libvirt
+# dnsmasq, another bind9/unbound) will make dnsmasq enter a restart loop
+# in supervisord with no clear indication why. Fail loudly here instead.
+#
+# systemd-resolved by default binds 127.0.0.53:53 (not 127.0.0.1:53) and
+# does NOT conflict — we only alert when something owns 127.0.0.1:53.
+_port53_holder=""
+if command -v ss >/dev/null 2>&1; then
+  _port53_holder=$(ss -lntu 2>/dev/null | awk '$5 ~ /^127\.0\.0\.1:53$/ {print; exit}')
+fi
+if [ -n "$_port53_holder" ]; then
+  echo "ERROR: 127.0.0.1:53 is already bound — dnsmasq cannot start."
+  echo "       Conflict detected: $_port53_holder"
+  echo "       Common causes: NetworkManager-dnsmasq, libvirt-dnsmasq, bind9."
+  echo "       Inspect with: ss -lntup | grep ':53 '"
+  echo "       Fix the host-side listener, then restart the container."
+  exit 1
+fi
 
 # ─── Generate session secret if not set ──────────────
 SECRET_FILE="/data/.session_secret"
