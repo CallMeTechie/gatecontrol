@@ -7,7 +7,7 @@ const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
 const stripFields = require('../../utils/stripFields');
 const { validatePeerName, validateDescription } = require('../../utils/validate');
-const { requireLimit } = require('../../middleware/license');
+const { requireLimit, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
 
 const router = Router();
@@ -226,6 +226,37 @@ router.get('/:id/qr', async (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to generate QR code');
     res.status(500).json({ ok: false, error: req.t('error.peers.qr') });
+  }
+});
+
+/**
+ * PATCH /api/peers/:id/hostname — Admin-set internal DNS hostname.
+ * License-gated via 'internal_dns'. Empty/null clears the hostname.
+ */
+router.patch('/:id/hostname', requireFeature('internal_dns'), (req, res) => {
+  try {
+    const peer = peers.getById(req.params.id);
+    if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
+
+    const raw = req.body && Object.prototype.hasOwnProperty.call(req.body, 'hostname')
+      ? req.body.hostname
+      : undefined;
+    if (raw === undefined) {
+      return res.status(400).json({ ok: false, error: req.t('error.dns.hostname_required') });
+    }
+
+    const result = peers.setHostname(peer.id, raw || null, 'admin');
+    res.json({ ok: true, peer: stripPeer(peers.getById(peer.id)), assigned: result.assigned, changed: result.changed });
+  } catch (err) {
+    const msg = err.message || '';
+    if (msg.includes('reserved')) {
+      return res.status(400).json({ ok: false, error: req.t('error.dns.hostname_reserved') });
+    }
+    if (msg.includes('invalid characters') || msg.includes('empty') || msg.includes('too long') || msg.includes('disallowed byte')) {
+      return res.status(400).json({ ok: false, error: req.t('error.dns.hostname_invalid') });
+    }
+    logger.error({ error: err.message }, 'Failed to set peer hostname');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

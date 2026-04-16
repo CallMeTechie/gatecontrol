@@ -9,6 +9,7 @@ const { validatePeerName, validateDescription, sanitize } = require('../utils/va
 const wireguard = require('./wireguard');
 const activity = require('./activity');
 const logger = require('../utils/logger');
+const dns = require('./dns');
 
 /**
  * Get all peers with live status from WireGuard
@@ -111,6 +112,8 @@ async function create(data) {
 
   logger.info({ peerId, name: data.name, ip }, 'Peer created');
 
+  dns.scheduleRebuild();
+
   return {
     id: peerId,
     name: sanitize(data.name),
@@ -211,6 +214,8 @@ async function update(id, data) {
     details: { peerId: id },
   });
 
+  dns.scheduleRebuild();
+
   return getById(id);
 }
 
@@ -242,6 +247,8 @@ async function remove(id) {
   });
 
   logger.info({ peerId: id, name: peer.name }, 'Peer deleted');
+
+  dns.scheduleRebuild();
 }
 
 /**
@@ -274,7 +281,111 @@ async function toggle(id) {
     { source: 'admin', severity: 'info', details: { peerId: id } }
   );
 
+  dns.scheduleRebuild();
+
   return { ...peer, enabled: newState };
+}
+
+/**
+ * Set or clear the internal DNS hostname for a peer.
+ *
+ * Policy:
+ *  - source='admin': always wins. Overwrites any prior hostname.
+ *  - source='agent': only writes if the peer currently has no hostname
+ *    OR the existing hostname_source is 'agent' or 'stale'. Sticky-admin
+ *    means agent auto-reports don't clobber an admin-curated value.
+ *  - On hostname collision, auto-appends -2, -3, … inside a transaction
+ *    so concurrent agents can't both claim the same suffix.
+ *  - Logs an activity event on change (old → new) for incident response.
+ *  - Triggers a debounced DNS rebuild.
+ *
+ * @param {number} peerId
+ * @param {string|null} rawHostname Null clears the hostname
+ * @param {'admin'|'agent'} source
+ * @returns {{ peer:object, assigned:string|null, changed:boolean }}
+ */
+function setHostname(peerId, rawHostname, source) {
+  if (source !== 'admin' && source !== 'agent') {
+    throw new Error('invalid hostname source');
+  }
+
+  const db = getDb();
+  const peer = db.prepare('SELECT * FROM peers WHERE id = ?').get(peerId);
+  if (!peer) throw new Error('Peer not found');
+
+  const previous = peer.hostname || null;
+  const previousSource = peer.hostname_source || null;
+
+  // Explicit clear
+  if (rawHostname === null || rawHostname === '') {
+    if (source === 'agent' && previousSource === 'admin') {
+      return { peer, assigned: previous, changed: false };
+    }
+    db.prepare(`
+      UPDATE peers SET hostname = NULL, hostname_source = NULL,
+        hostname_reported_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(peerId);
+    if (previous) {
+      activity.log('peer_hostname_changed',
+        `Peer "${peer.name}" hostname cleared (was "${previous}")`,
+        { source: source === 'admin' ? 'admin' : 'api', severity: 'info',
+          details: { peerId, previous, assigned: null, source } });
+    }
+    dns.scheduleRebuild();
+    return { peer: { ...peer, hostname: null }, assigned: null, changed: !!previous };
+  }
+
+  // Sticky-admin: agent cannot overwrite an admin value.
+  if (source === 'agent' && previousSource === 'admin') {
+    logger.debug({ peerId, previous, attempt: rawHostname },
+      'Hostname report ignored: sticky admin source');
+    return { peer, assigned: previous, changed: false };
+  }
+
+  const normalized = dns.normalizeHostname(rawHostname);
+  dns.strictHostnameAssert(normalized);
+
+  // No-op if unchanged
+  if (previous && previous.toLowerCase() === normalized) {
+    return { peer, assigned: previous, changed: false };
+  }
+
+  const assigned = dns.reserveUniqueHostname(normalized, peerId, (finalHostname) => {
+    db.prepare(`
+      UPDATE peers SET hostname = ?, hostname_source = ?,
+        hostname_reported_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).run(finalHostname, source, peerId);
+  });
+
+  activity.log('peer_hostname_changed',
+    `Peer "${peer.name}" hostname "${previous || '∅'}" → "${assigned}"`,
+    { source: source === 'admin' ? 'admin' : 'api', severity: 'info',
+      details: { peerId, previous, assigned, source } });
+
+  dns.scheduleRebuild();
+
+  return { peer: { ...peer, hostname: assigned, hostname_source: source },
+    assigned, changed: true };
+}
+
+/**
+ * Mark all agent-reported hostnames as 'stale' after a backup restore.
+ * Returns the number of rows affected. Called from services/backup.js.
+ */
+function markHostnamesStale() {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE peers
+    SET hostname_source = 'stale', hostname_reported_at = NULL
+    WHERE hostname_source IN ('agent', 'stale') AND hostname IS NOT NULL
+  `).run();
+  if (result.changes > 0) {
+    logger.info({ changes: result.changes }, 'Post-restore: marked agent hostnames as stale');
+    dns.scheduleRebuild();
+  }
+  return result.changes;
 }
 
 /**
@@ -501,4 +612,6 @@ module.exports = {
   rewriteWgConfig,
   checkExpiredPeers,
   batch,
+  setHostname,
+  markHostnamesStale,
 };

@@ -473,6 +473,11 @@
   "error.rate_limit.api": "Zu viele Anfragen, bitte versuchen Sie es später erneut",
   "error.rate_limit.route_auth_login": "Zu viele Anmeldeversuche. Bitte später erneut versuchen.",
   "error.rate_limit.route_auth_code": "Zu viele Code-Anfragen. Bitte später erneut versuchen.",
+  "error.rate_limit.hostname": "Zu viele Hostname-Meldungen. Bitte später erneut versuchen.",
+
+  "error.dns.hostname_required": "Hostname ist erforderlich",
+  "error.dns.hostname_invalid": "Hostname enthält ungültige Zeichen (nur a-z, 0-9, Bindestrich; max. 63 Zeichen)",
+  "error.dns.hostname_reserved": "Hostname ist reserviert und kann nicht verwendet werden",
 
   "error.dashboard.stats": "Dashboard-Statistiken konnten nicht geladen werden",
   "error.dashboard.traffic": "Traffic-Daten konnten nicht geladen werden",

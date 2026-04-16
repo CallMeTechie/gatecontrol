@@ -9,7 +9,8 @@ const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
 const activity = require('../../services/activity');
 const { validatePeerName } = require('../../utils/validate');
-const { requireLimit } = require('../../middleware/license');
+const { requireLimit, requireFeature } = require('../../middleware/license');
+const { hostnameReportLimiter } = require('../../middleware/rateLimit');
 const { getDb } = require('../../db/connection');
 const settings = require('../../services/settings');
 const { hasFeature } = require('../../services/license');
@@ -383,6 +384,43 @@ router.get('/config/check', async (req, res) => {
  * Receive heartbeat from desktop client
  * Body: { peerId, connected, rxBytes, txBytes, uptime, hostname }
  */
+/**
+ * POST /api/v1/client/peer/hostname
+ * Agent reports its OS hostname for internal DNS resolution. Token-bound:
+ * the target peer is taken from req.tokenPeerId (ignores any body-level
+ * peerId to prevent hostname-hijacking across peers). License-gated and
+ * rate-limited (3/min/token). Respects sticky admin source.
+ */
+router.post('/peer/hostname', hostnameReportLimiter, requireFeature('internal_dns'), (req, res) => {
+  try {
+    if (!req.tokenAuth) {
+      return res.status(401).json({ ok: false, error: 'API token required' });
+    }
+    if (req.tokenPeerId == null) {
+      return res.status(403).json({ ok: false, error: 'Token is not bound to a peer. Register first.' });
+    }
+    if (!verifyMachineBinding(req, res)) return;
+
+    const raw = req.body && req.body.hostname;
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return res.status(400).json({ ok: false, error: req.t ? req.t('error.dns.hostname_required') : 'hostname is required' });
+    }
+
+    const result = peers.setHostname(req.tokenPeerId, raw, 'agent');
+    res.json({ ok: true, assigned: result.assigned, changed: result.changed });
+  } catch (err) {
+    const msg = err.message || '';
+    if (msg.includes('reserved')) {
+      return res.status(400).json({ ok: false, error: req.t ? req.t('error.dns.hostname_reserved') : 'hostname is reserved' });
+    }
+    if (msg.includes('invalid characters') || msg.includes('empty') || msg.includes('too long') || msg.includes('disallowed byte')) {
+      return res.status(400).json({ ok: false, error: req.t ? req.t('error.dns.hostname_invalid') : 'hostname is invalid' });
+    }
+    logger.error({ error: err.message, peerId: req.tokenPeerId }, 'Agent hostname report failed');
+    res.status(500).json({ ok: false, error: 'Hostname report failed' });
+  }
+});
+
 router.post('/heartbeat', (req, res) => {
   try {
     const validatedPeerId = requirePeerOwnership(req, res);

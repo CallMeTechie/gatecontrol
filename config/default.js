@@ -68,6 +68,19 @@ const config = {
     acmeCa: env('GC_CADDY_ACME_CA', ''),
   },
 
+  // Internal DNS — dnsmasq-backed per-peer hostname resolution inside the
+  // VPN subnet. See docs/phase-0-internal-dns-preflight.md and
+  // services/dns.js. The hostsFile is written atomically by the Node
+  // process and reloaded into dnsmasq via SIGHUP.
+  dns: {
+    enabled: env('GC_DNS_ENABLED', 'true') !== 'false',
+    domain: env('GC_DNS_DOMAIN', 'gc.internal'),
+    hostsFile: env('GC_DNS_HOSTS_FILE', '/data/dns/peers.hosts'),
+    // Debounce window for coalescing rapid peer mutations into a single
+    // hosts-file rebuild + SIGHUP.
+    rebuildDebounceMs: envInt('GC_DNS_REBUILD_DEBOUNCE_MS', 1000),
+  },
+
   l4: {
     blockedPorts: (process.env.GC_L4_BLOCKED_PORTS || '80,443,2019,3000,51820')
       .split(',').map(p => parseInt(p.trim(), 10)).filter(Boolean),

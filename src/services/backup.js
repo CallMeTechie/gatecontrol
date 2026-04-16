@@ -454,6 +454,16 @@ async function restoreBackup(backup) {
   // Rebuild WireGuard config from restored peers
   await peersService.rewriteWgConfig();
 
+  // Mark all agent-reported hostnames as 'stale' — the restored values
+  // may no longer match what the agents on those peer IPs actually report,
+  // and blindly rendering them could misdirect RDP/SMB traffic (hostname
+  // targeting). Admin-set hostnames stay authoritative.
+  try {
+    peersService.markHostnamesStale();
+  } catch (err) {
+    logger.warn({ error: err.message }, 'Could not mark hostnames stale after restore');
+  }
+
   // Sync routes to Caddy
   try {
     await routesService.syncToCaddy();

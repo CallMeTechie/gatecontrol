@@ -473,6 +473,11 @@
   "error.rate_limit.api": "Too many requests, please try again later",
   "error.rate_limit.route_auth_login": "Too many login attempts. Try again later.",
   "error.rate_limit.route_auth_code": "Too many code requests. Try again later.",
+  "error.rate_limit.hostname": "Too many hostname reports. Try again later.",
+
+  "error.dns.hostname_required": "Hostname is required",
+  "error.dns.hostname_invalid": "Hostname contains invalid characters (only a-z, 0-9, hyphen; max 63 chars)",
+  "error.dns.hostname_reserved": "Hostname is reserved and cannot be used",
 
   "error.dashboard.stats": "Failed to fetch dashboard stats",
   "error.dashboard.traffic": "Failed to fetch traffic data",

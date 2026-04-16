@@ -60,4 +60,18 @@ const uploadLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter };
+// Peer hostname reporter: a compromised agent token must not be able to
+// flood the hosts-file rebuild. 3 reports per minute per token is ample
+// for legitimate boot/reconnect flows.
+const hostnameReportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => req.tokenAuth ? `hostname:${req.tokenId}` : `hostname:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.hostname') : 'Too many hostname reports.' });
+  },
+});
+
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter };

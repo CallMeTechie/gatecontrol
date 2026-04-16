@@ -622,6 +622,23 @@ const migrations = [
     sql: `ALTER TABLE api_tokens ADD COLUMN split_tunnel_override TEXT DEFAULT NULL;`,
     detect: (db) => hasColumn(db, 'api_tokens', 'split_tunnel_override'),
   },
+  {
+    version: 35,
+    name: 'peer_internal_hostname',
+    // Per-peer DNS hostname for internal resolution (feature: internal_dns).
+    // hostname is lowercase, DNS-label-clean, max 63 chars (RFC 1123).
+    // hostname_source = 'admin' | 'agent' | 'stale' (post-restore marker).
+    // UNIQUE via index with NOCASE collation so 'Foo' and 'foo' dedup.
+    sql: `
+      ALTER TABLE peers ADD COLUMN hostname TEXT;
+      ALTER TABLE peers ADD COLUMN hostname_source TEXT;
+      ALTER TABLE peers ADD COLUMN hostname_reported_at TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_peers_hostname_nocase
+        ON peers(hostname COLLATE NOCASE)
+        WHERE hostname IS NOT NULL;
+    `,
+    detect: (db) => hasColumn(db, 'peers', 'hostname'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
