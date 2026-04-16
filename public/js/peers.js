@@ -143,11 +143,23 @@
       var checked = batchSelected.has(String(p.id)) ? ' checked' : '';
       var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
 
+      var hostnameHtml = '';
+      if (p.hostname) {
+        var srcLabel = '';
+        if (p.hostname_source === 'admin') srcLabel = (GC.t['peers.hostname_source_admin'] || 'manuell');
+        else if (p.hostname_source === 'agent') srcLabel = (GC.t['peers.hostname_source_agent'] || 'auto');
+        else if (p.hostname_source === 'stale') srcLabel = (GC.t['peers.hostname_source_stale'] || 'stale');
+        hostnameHtml = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">'
+          + '\u29C9 ' + escapeHtml(p.hostname)
+          + (srcLabel ? ' <span style="opacity:0.6">(' + escapeHtml(srcLabel) + ')</span>' : '')
+          + '</div>';
+      }
       return '<tr data-peer-id="' + p.id + '">' +
         batchTd +
         '<td>' +
           '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + '</div>' +
           '<div class="peer-meta">' + escapeHtml(p.description || '') + '</div>' +
+          hostnameHtml +
           (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
         '</td>' +
         '<td><span style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(ip) + '</span></td>' +
@@ -450,6 +462,29 @@
     var editDns = document.getElementById('edit-peer-dns');
     if (editDns) editDns.value = peer.dns || '';
 
+    var editHostname = document.getElementById('edit-peer-hostname');
+    if (editHostname) {
+      editHostname.value = peer.hostname || '';
+      var badge = document.getElementById('edit-peer-hostname-badge');
+      if (badge) {
+        if (peer.hostname_source === 'admin') {
+          badge.textContent = GC.t['peers.hostname_source_admin'] || 'manuell';
+          badge.className = 'badge badge-sm badge-info';
+          badge.style.display = '';
+        } else if (peer.hostname_source === 'agent') {
+          badge.textContent = GC.t['peers.hostname_source_agent'] || 'auto';
+          badge.className = 'badge badge-sm badge-success';
+          badge.style.display = '';
+        } else if (peer.hostname_source === 'stale') {
+          badge.textContent = GC.t['peers.hostname_source_stale'] || 'stale';
+          badge.className = 'badge badge-sm badge-warning';
+          badge.style.display = '';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    }
+
     hideError('edit-peer-error');
     clearFieldErrors();
     openModal('modal-edit-peer');
@@ -474,16 +509,35 @@
       var dns = document.getElementById('edit-peer-dns') ? document.getElementById('edit-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('edit-peer-expires', 'edit-peer-expires-date');
       var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined });
-      if (data.ok) {
-        clearFieldErrors();
-        closeModal('modal-edit-peer');
-        loadPeers();
-        loadGroups();
-      } else if (data.fields) {
-        showFieldErrors(data.fields, { name: 'edit-peer-name', description: 'edit-peer-desc' });
-      } else {
-        showError('edit-peer-error', data.error);
+      if (!data.ok) {
+        if (data.fields) {
+          showFieldErrors(data.fields, { name: 'edit-peer-name', description: 'edit-peer-desc' });
+        } else {
+          showError('edit-peer-error', data.error);
+        }
+        return;
       }
+
+      // Hostname is a separate endpoint (license-gated). Only call when the
+      // field is visible AND the value actually changed.
+      var hostnameInput = document.getElementById('edit-peer-hostname');
+      if (hostnameInput) {
+        var currentPeer = allPeers.find(function(p) { return String(p.id) === String(id); }) || {};
+        var newHostname = hostnameInput.value.trim();
+        var prevHostname = currentPeer.hostname || '';
+        if (newHostname !== prevHostname) {
+          var hnRes = await api.patch('/api/peers/' + id + '/hostname', { hostname: newHostname });
+          if (!hnRes.ok) {
+            showError('edit-peer-error', hnRes.error || 'Hostname update failed');
+            return;
+          }
+        }
+      }
+
+      clearFieldErrors();
+      closeModal('modal-edit-peer');
+      loadPeers();
+      loadGroups();
     } catch (err) {
       showError('edit-peer-error', err.message);
     } finally {
