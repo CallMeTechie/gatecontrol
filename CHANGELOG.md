@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.0] — 2026-04-16
+
+### Features
+- phase-2 peer hostname in admin UI
+
+---
+
 ## [1.35.0] — 2026-04-16
 
 ### Features
