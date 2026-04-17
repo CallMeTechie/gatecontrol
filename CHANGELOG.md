@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.1] — 2026-04-17
+
+### Fixes
+- missing i18n + opportunistic hostname capture on heartbeat
+
+---
+
 ## [1.39.0] — 2026-04-17
 
 ### Features
