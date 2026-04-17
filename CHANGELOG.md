@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.0] — 2026-04-17
+
+### Features
+- admin page for internal DNS
+
+---
+
 ## [1.37.2] — 2026-04-17
 
 ### Änderungen
