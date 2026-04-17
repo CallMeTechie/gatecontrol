@@ -377,6 +377,13 @@ async function enforceLimitsInternal() {
 
 function hasFeature(key) {
   if (!cachedFeatures) return false;
+  // internal_dns is a prerequisite for the Pro RDP flow (peer FQDN in
+  // RDP connect response, cmdkey SPN alignment). Every plan that grants
+  // remote_desktop implicitly grants internal_dns so existing license
+  // tokens don't have to be re-issued to enable the hostname feature.
+  if (key === 'internal_dns') {
+    return cachedFeatures.internal_dns === true || cachedFeatures.remote_desktop === true;
+  }
   return cachedFeatures[key] === true;
 }
 
