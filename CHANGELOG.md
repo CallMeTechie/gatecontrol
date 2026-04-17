@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.2] — 2026-04-17
+
+### Änderungen
+- drop implicit internal_dns coupling
+
+---
+
 ## [1.37.1] — 2026-04-17
 
 ### Fixes
