@@ -36,6 +36,12 @@
   </a>
 
   <span class="nav-section-label">{{ t('nav.system') }}</span>
+  {% if license.features.internal_dns %}
+  <a href="/dns" class="nav-item {{ 'active' if activeNav == 'dns' }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+    {{ t('nav.dns') }}
+  </a>
+  {% endif %}
   <a href="/logs" class="nav-item {{ 'active' if activeNav == 'logs' }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     {{ t('nav.logs') }}
