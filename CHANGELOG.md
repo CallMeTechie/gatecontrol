@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.1] — 2026-04-17
+
+### Fixes
+- implicit internal_dns when remote_desktop is licensed
+
+---
+
 ## [1.37.0] — 2026-04-16
 
 ### Features
