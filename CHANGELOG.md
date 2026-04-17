@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.0] — 2026-04-17
+
+### Features
+- mirror internal DNS page into pro theme
+
+---
+
 ## [1.38.0] — 2026-04-17
 
 ### Features
