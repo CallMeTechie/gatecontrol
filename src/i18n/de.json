@@ -308,6 +308,8 @@
   "common.confirm": "Bestätigen",
   "common.all": "Alle",
   "common.loading": "Laden...",
+  "common.reload": "Neu laden",
+  "common.search": "Suchen...",
   "common.no_data": "Keine Daten verfügbar",
   "common.error": "Fehler",
   "common.success": "Erfolg",

@@ -438,6 +438,22 @@ router.post('/heartbeat', (req, res) => {
     const db = getDb();
     db.prepare(`UPDATE peers SET updated_at = datetime('now') WHERE id = ?`).run(peer.id);
 
+    // Opportunistic hostname capture via heartbeat (feature: internal_dns).
+    // Clients ship os.hostname() in the heartbeat body on every beat.
+    // Taking it here means the admin never has to wait for a tunnel
+    // reconnect — any agent that's online will populate the peer
+    // hostname within one heartbeat cycle. Sticky-admin policy stays
+    // enforced server-side (setHostname ignores agent writes when the
+    // source is 'admin').
+    if (hostname && typeof hostname === 'string' && hasFeature('internal_dns')) {
+      try {
+        peers.setHostname(peer.id, hostname, 'agent');
+      } catch (err) {
+        // Malformed hostname — log at debug, never fail the heartbeat.
+        logger.debug({ peerId: peer.id, err: err.message }, 'Heartbeat hostname rejected');
+      }
+    }
+
     logger.debug({ peerId: validatedPeerId, connected, rxBytes, txBytes }, 'Client heartbeat received');
 
     res.json({
