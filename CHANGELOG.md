@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.3] — 2026-04-18
+
+### Dokumentation
+- Home Gateway Companion design (2026-04-18)
+
+---
+
 ## [1.39.2] — 2026-04-18
 
 ### Fixes
