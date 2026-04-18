@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.8] — 2026-04-18
+
+### Dokumentation
+- Home Gateway Plan 3/3 — gatecontrol-gateway Node.js repo
+
+---
+
 ## [1.39.7] — 2026-04-18
 
 ### Dokumentation
