@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.7] — 2026-04-18
+
+### Dokumentation
+- Home Gateway Plan 2/3 — GateControl server changes
+
+---
+
 ## [1.39.6] — 2026-04-18
 
 ### Dokumentation
