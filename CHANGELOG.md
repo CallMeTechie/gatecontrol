@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.5] — 2026-04-18
+
+### Dokumentation
+- Home Gateway v1.2 — second devils-advocate round
+
+---
+
 ## [1.39.4] — 2026-04-18
 
 ### Dokumentation
