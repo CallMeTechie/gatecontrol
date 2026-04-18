@@ -1,12 +1,13 @@
 # Home Gateway Companion — Design Spec
 
 **Datum:** 2026-04-18
-**Status:** Design approved (inkl. Devils-Advocate-Fixes v1.1), ready for implementation plan
+**Status:** Design approved (inkl. Devils-Advocate-Fixes v1.1 + v1.2), ready for implementation plan
 **Supersedes:** `docs/superpowers/plans/home-gateway-companion.md` (2025-03-13)
 **Server-Baseline:** GateControl v1.39.1
 
 **Revisions:**
 - **v1.1 (2026-04-18):** Platform Support Matrix, Canonicalization-Spec, Key-Management, Flap-Hysteresis, Health-Heartbeat, Graceful-TCP-Restart, Docker-Hardening, Log-Rotation, WoL-L2-Requirement
+- **v1.2 (2026-04-18):** Zweite Devils-Advocate-Runde eingearbeitet — Library-Distribution als npm-Paket entschieden, Array-Ordering einheitlich (property-based), Self-Check 4-schichtig (Process + Network + Per-Route + End-to-End-Probe), Hysteresis symmetrisch (Sliding-Window 5 Slots, beidseitiger Cooldown), CAP_NET_BIND_SERVICE für Ports <1024, NET_RAW entfernt, DSM 7.0/7.1 als Tier 3 mit Migration-Doc
 
 ---
 
@@ -69,12 +70,18 @@ Internet ─→ GateControl (VPS + Caddy)
 | Raspberry Pi OS (Bullseye+) | Tier 1 (primary) | wireguard-go | ✅ | docker-compose |
 | Debian/Ubuntu VM (bridged NIC) | Tier 1 | wireguard-go | ✅ | docker-compose |
 | Synology DSM 7.2+ (Container Manager) | Tier 1 | wireguard-go | ✅ | TAR-Import + GUI |
+| Synology DSM 7.0/7.1 (SSH + Docker) | Tier 3 (legacy) | wireguard-go | ✅ | Standalone docker-compose via SSH, kein GUI-Support |
 | Ubuntu Server (bare-metal) | Tier 1 | wireguard-go | ✅ | docker-compose |
 | Unraid | Tier 2 (best-effort) | wireguard-go | ✅ | Community App Template |
 | QNAP Container Station | Tier 2 (best-effort) | wireguard-go | ✅ | GUI-Import |
 | Debian/Ubuntu VM (NAT-mode) | Tier 3 (not recommended) | wireguard-go | ❌ WoL broken | - |
 | TrueNAS Scale | V2 | - | - | Helm-Chart V2 |
 | Home Assistant OS Add-on | V2 | - | - | Add-on V2 |
+
+**Migrations-Path für existierende `docker-wireguard-go`-User:**
+- DSM 7.2+: `gatecontrol-gateway` Image im Container Manager importieren, alte dwg-Instanz stoppen, neue `gateway.env` laden
+- DSM 7.0/7.1: Tier-3-Path via SSH — `docker-wireguard-go` bleibt weiterhin als Fallback verfügbar für User die nicht upgraden können
+- Dokumentation `docs/deployment/migration-from-dwg.md` (MVP-Pflicht, damit Community-Story konsistent bleibt)
 
 **Gemeinsame Requirements (Tier 1+2):**
 - L2-Bridge zum Target-LAN (kein NAT zwischen Gateway und Zielgeräten — sonst scheitert WoL)
@@ -157,14 +164,30 @@ CREATE TABLE gateway_meta (
 1. **Format:** JSON Canonicalization Scheme (RFC 8785 / JCS)
 2. **Key-Ordering:** rekursiv alphabetisch sortiert (tiefen-first)
 3. **Whitespace:** keiner (kein Pretty-Print, keine Trailing-Newlines)
-4. **Array-Ordering:** Routes sortiert nach `id` (aufsteigend), WoL-Einträge nach `mac` (aufsteigend); alle anderen Arrays behalten Input-Order
+4. **Array-Ordering (einheitlich, futureproof):** Jedes Array wird nach der **kanonischen JSON-Repräsentation seiner Elemente** sortiert (lexikografisch). Damit wird die Reihenfolge deterministisch ohne per-Feld-Regeln. Gilt rekursiv für verschachtelte Arrays. Primitive Arrays (nur Strings/Numbers) werden nach natürlicher Ordnung sortiert.
+   - **Property-Based-Test-Pflicht:** Contract-Test erzeugt Input mit zufälliger Array-Reihenfolge und prüft, dass Hash konstant bleibt (mindestens 100 Permutations-Samples pro Fixture)
 5. **Number-Format:** Integers als Integer-Literal (kein `.0`), keine Exponential-Notation, keine NaN/Infinity
 6. **String-Encoding:** UTF-8, Unicode-Escapes nur für non-printable Chars (< U+0020)
 7. **Null vs. Missing:** Felder mit Wert `null` werden **weggelassen** (nicht als `"key":null` serialisiert)
 8. **Hash-Input-Schema:** vorher durch Zod-Schema validieren (siehe `src/schemas/gateway-config.js`) — unerwartete Keys werden gestripped
 9. **Hash-Output:** `sha256:` Prefix + 64-hex, z.B. `sha256:a3f1...`
 
-**Shared Implementation:** Canonicalization-Code liegt in eigenem Package `@gatecontrol/config-hash` (im Server-Monorepo oder als Git-Submodul), damit Server und Gateway **byte-identisches Ergebnis** garantieren.
+**Shared Implementation — ENTSCHIEDEN: npm-Paket in GitHub Package Registry**
+
+Das Canonicalization-Modul wird als privates npm-Paket `@callmetechie/gatecontrol-config-hash` in der GitHub Package Registry publiziert. Beide Repos (`gatecontrol`, `gatecontrol-gateway`) installieren es via `npm install` mit `GH_PACKAGES_TOKEN` in CI.
+
+**Warum npm statt Submodul:**
+- Echte Semver-Versionierung (Server und Gateway können explizit auf `^1.0.0` pinnen)
+- Kein Submodul-Hell in Developer-Workflow (detached-HEAD-Probleme, veraltete Refs)
+- CI-Setup trivial (nur `NODE_AUTH_TOKEN` env-var)
+- Einfachere Vendoring-Story falls später Open-Source
+
+**Release-Flow:**
+- Eigenes Mini-Repo `gatecontrol-config-hash` mit Contract-Test-Fixtures
+- Auf Tag-Push: npm publish in GH Package Registry
+- Schema-Änderungen → Major-Version-Bump → beide Konsumenten-Repos müssen explizit aktualisieren (kein Auto-Upgrade über `^`)
+
+**Fallback falls npm-Package-Registry nicht erreichbar:** beide Repos vendoren kompiliertes Paket unter `vendor/gatecontrol-config-hash/` (pre-built, für offline-Development).
 
 **Contract-Test (CI-Pflicht):** Test-Fixtures mit 10+ Config-Varianten (Edge-Cases: leere Arrays, Unicode, große Numbers, Null-Fields). Server-Repo UND Gateway-Repo führen **gleichen** Test gegen gleiches Fixture aus — gleicher Hash erwartet. Bei Divergenz → CI-Fail in beiden Repos.
 
@@ -250,16 +273,43 @@ Gateway-Heartbeat enthält aktive Health-Informationen (nicht nur „Process leb
 }
 ```
 
-**Self-Check im Gateway** (alle 60s, vor jedem Heartbeat):
-- HTTP-Proxy-Selftest: lokaler Request an `http://127.0.0.1:8080/__self_check` → erwartet 200
-- TCP-Listener-Check: für jeden Listener `net.createConnection` auf `127.0.0.1:<port>` → tests ob Accept funktioniert
-- Ergebnis fließt in Heartbeat-Payload
+**Self-Check im Gateway** (mehrschichtig, nicht nur Localhost):
 
-**Hysteresis gegen Flap** (kritisch gegen Caddy-Reload-Storm):
-- Gateway wird als **offline** markiert nur nach **3 aufeinanderfolgenden Fails** ODER **Heartbeat-Absenz > 180s** (= 6× Heartbeat-Intervall bei 30s)
-- Gateway wird als **online** markiert nur nach **5 aufeinanderfolgenden erfolgreichen Heartbeats** (= 150s stabiler Zustand)
-- Zwischen Offline → Online Transition: **mindestens 5 Minuten** Cooldown, um Flap-Cascade zu verhindern
-- Metric `gateway_status_flap_count_1h` — Alert an Admin wenn >3 Flaps/Stunde
+*Layer 1 — Process-Health (alle 60s):*
+- HTTP-Proxy-Selftest: lokaler Request an `http://127.0.0.1:8080/__self_check` → erwartet 200 (Endpoint ist strikt auf 127.0.0.1 gebunden, nicht über Tunnel erreichbar)
+- TCP-Listener-Check: `net.createConnection` auf `127.0.0.1:<port>` pro Listener
+
+*Layer 2 — Network-Health (alle 60s):*
+- WireGuard-Handshake-Age über `wg show gatecontrol0 dump` parsen → Alert wenn > 180s
+- Default-Route zum Tunnel vorhanden (`ip route get 10.8.0.1`)
+- DNS-Resolver funktioniert (resolve `GC_SERVER_URL` → Antwort erwartet)
+
+*Layer 3 — LAN-Reachability (alle 2 min, per-Route):*
+- Pro konfigurierter Route: TCP-Connect auf `target_lan_host:target_lan_port` mit 2s Timeout
+- Ergebnis pro Route im Heartbeat: `{route_id, reachable, last_checked_at, last_error}`
+- Bei `wol_enabled=true`: auch Targets die aktuell offline sind (damit Server WoL-Trigger-Kandidaten kennt)
+
+*Layer 4 — End-to-End-Probe vom Server aus (alle 5 min):*
+- Server ruft via Tunnel `GET /api/v1/gateway/probe` am Gateway auf
+- Gateway-Probe-Handler connected an einen Known-Good-LAN-Target (z. B. Default-Gateway aus `GC_LAN_PROBE_TARGET` env) und meldet Latenz
+- Dient als unabhängige Verifikation — fängt Fälle wo Gateway-Self-Check grün ist aber Server-zu-Gateway-Tunnel broken ist
+
+**Alle vier Layer** fließen in Heartbeat-Payload und werden vom Server für Status-Entscheidung herangezogen (siehe Hysteresis unten).
+
+**Hysteresis gegen Flap** (symmetrisch, Sliding-Window-basiert):
+
+*Einheitliche Signal-Definition:*
+Jeder Heartbeat ist entweder `success` oder `fail`:
+- `success`: Heartbeat empfangen UND `http_proxy_healthy=true` UND keine `listener_failed`-Einträge
+- `fail`: Heartbeat-Timeout > 30s ODER `http_proxy_healthy=false` ODER Heartbeat fehlt (Server zählt automatisch als `fail` nach 60s Intervall + 30s Grace)
+
+*Sliding-Window-Logik* (Fenster = 5 Heartbeat-Slots, also 5 × 30s = 150s):
+- **Offline-Transition:** ≥ 3 von 5 letzten Slots sind `fail` → `offline`
+- **Online-Transition:** ≥ 4 von 5 letzten Slots sind `success` → `online`
+- **Symmetrischer Cooldown:** Nach JEDER Status-Transition (egal welche Richtung) mindestens **5 Minuten** Cooldown, in dem kein erneuter Status-Wechsel erlaubt ist
+
+*Metric-Definition (eindeutig):*
+`gateway_status_flap_count_1h` = Anzahl aller Status-Transitionen (offline→online + online→offline) in den letzten 60 Minuten. Alert an Admin bei > 4 (entspricht > 2 kompletten Zyklen/Stunde).
 
 **Down-Event triggert:**
 - Activity-Log: `gateway_offline` mit `peer_name`, `last_heartbeat_age_s`, `last_config_hash`
@@ -428,7 +478,10 @@ services:
       - ALL                     # Default-Caps droppen
     cap_add:
       - NET_ADMIN               # für wg-quick + TUN-Device
-      - NET_RAW                 # für ARP/WoL-Broadcast
+      - NET_BIND_SERVICE        # für L4-Routes auf Ports <1024 (DNS:53, HTTP:80, HTTPS:443, SSH:22)
+    # NET_RAW bewusst NICHT enthalten — WoL nutzt SO_BROADCAST auf normalem UDP-Socket
+    # (in NET_ADMIN abgedeckt). ARP-Scan für Device-Discovery (V2) würde NET_RAW benötigen —
+    # dann in V2 ergänzen, nicht proaktiv.
     security_opt:
       - no-new-privileges:true  # verhindert setuid-Escalation
     read_only: true             # Root-FS read-only
@@ -782,5 +835,4 @@ License-Downgrade disabled betroffene Routes statt sie zu löschen (User kann Da
 4. **LAN-Target-Health:** Gateway könnte LAN-Targets pingen und Status an Server melden — MVP verlässt sich auf Server-seitiges Monitoring via Tunnel.
 5. **Kernel-WireGuard-Backend-Fallback:** V2 kann via `GC_WG_BACKEND=kernel` optional Kernel-WG nutzen (für Pi/VM-Performance). Backend-Auswahl + Fallback-Logik zu klären.
 6. **Rate-Limit bei Office-Boot-Szenario:** `/api/wol` limitiert auf 10/min. Für „Alle Geräte beim Morgen-Start aufwecken" könnte Burst-Mode sinnvoll sein (10 instant + 2/min sustained). Im Plan entscheiden.
-7. **Contract-Test-Distribution für Canonicalization:** Die Test-Fixtures für `@gatecontrol/config-hash` müssen in beiden Repos identisch sein. Git-Submodul vs. npm-Paket vs. Monorepo — im Plan entscheiden.
-8. **Migration-Tool von docker-wireguard-go zu Home-Gateway:** Für Synology-User mit bestehendem dwg-Setup — automatischer Migrations-Helfer oder nur Dokumentation? V2-Entscheidung.
+7. **Backup-Encryption für Master-Key:** Key ist im JSON-Backup enthalten. Wenn Backup im Klartext exportiert wird (aktueller Backup-Flow?) und User es auf Cloud ablegt → alle verschlüsselten Secrets readable. Backup-Flow braucht ggf. Passphrase-Encryption für ausgelagerte Backups — im Plan adressieren.
