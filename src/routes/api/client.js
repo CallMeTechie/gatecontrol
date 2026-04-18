@@ -648,9 +648,23 @@ router.get('/rdp', (req, res) => {
     const userId = req.tokenUserId || null;
     const routes = rdpService.getForToken(tokenId, userId);
 
+    // Self-exclusion: you can't RDP into the host you're running on.
+    // Drop any route whose target host matches the requesting peer's
+    // own VPN IP. Only applies to token-bound requests — admin UI
+    // session-auth calls keep seeing the full list so operators can
+    // edit routes for any host.
+    let selfIp = null;
+    if (req.tokenAuth && req.tokenPeerId != null) {
+      const selfPeer = peers.getById(req.tokenPeerId);
+      if (selfPeer && selfPeer.allowed_ips) {
+        selfIp = String(selfPeer.allowed_ips).split(',')[0].split('/')[0].trim();
+      }
+    }
+    const visibleRoutes = selfIp ? routes.filter(r => r.host !== selfIp) : routes;
+
     // Attach online status
     const statuses = rdpMonitor.getAllStatus();
-    const enriched = routes.map(r => ({
+    const enriched = visibleRoutes.map(r => ({
       ...r,
       status: statuses[r.id] || { online: false, lastCheck: null },
     }));
@@ -697,6 +711,19 @@ router.get('/rdp/:id/connect', (req, res) => {
     const id = parseInt(req.params.id, 10);
     const route = rdpService.getById(id, true);
     if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
+
+    // Self-guard: a peer cannot RDP into itself. Mirrors the list
+    // filter in GET /rdp — covers stale client caches that still
+    // remember a self-route id from before the server-side filter.
+    if (req.tokenAuth && req.tokenPeerId != null) {
+      const selfPeer = peers.getById(req.tokenPeerId);
+      const selfIp = selfPeer && selfPeer.allowed_ips
+        ? String(selfPeer.allowed_ips).split(',')[0].split('/')[0].trim()
+        : null;
+      if (selfIp && selfIp === route.host) {
+        return res.status(400).json({ ok: false, error: 'Cannot RDP to the host you are running on' });
+      }
+    }
 
     // Check token access
     if (route.token_ids) {
