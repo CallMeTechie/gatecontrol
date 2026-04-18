@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.4] — 2026-04-18
+
+### Dokumentation
+- Home Gateway v1.1 — platform matrix + devils-advocate fixes
+
+---
+
 ## [1.39.3] — 2026-04-18
 
 ### Dokumentation
