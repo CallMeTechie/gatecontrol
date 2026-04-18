@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.6] — 2026-04-18
+
+### Dokumentation
+- Home Gateway Plan 1/3 — config-hash npm package
+
+---
+
 ## [1.39.5] — 2026-04-18
 
 ### Dokumentation
