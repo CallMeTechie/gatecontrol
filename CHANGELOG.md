@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.2] — 2026-04-18
+
+### Fixes
+- hide self-host routes from client listing
+
+---
+
 ## [1.39.1] — 2026-04-17
 
 ### Fixes
