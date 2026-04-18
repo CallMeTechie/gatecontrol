@@ -1,9 +1,12 @@
 # Home Gateway Companion — Design Spec
 
 **Datum:** 2026-04-18
-**Status:** Design approved, ready for implementation plan
+**Status:** Design approved (inkl. Devils-Advocate-Fixes v1.1), ready for implementation plan
 **Supersedes:** `docs/superpowers/plans/home-gateway-companion.md` (2025-03-13)
 **Server-Baseline:** GateControl v1.39.1
+
+**Revisions:**
+- **v1.1 (2026-04-18):** Platform Support Matrix, Canonicalization-Spec, Key-Management, Flap-Hysteresis, Health-Heartbeat, Graceful-TCP-Restart, Docker-Hardening, Log-Rotation, WoL-L2-Requirement
 
 ---
 
@@ -59,6 +62,39 @@ Internet ─→ GateControl (VPS + Caddy)
 - **Gateway** ist stateless (Config kommt immer vom Server, kein lokales DB)
 - Kommunikation ausschließlich über den Tunnel (Gateway-API bindet NICHT auf `0.0.0.0`)
 
+### Platform Support Matrix
+
+| Plattform | Support-Tier | WG-Backend | WoL | Deployment |
+|---|---|---|---|---|
+| Raspberry Pi OS (Bullseye+) | Tier 1 (primary) | wireguard-go | ✅ | docker-compose |
+| Debian/Ubuntu VM (bridged NIC) | Tier 1 | wireguard-go | ✅ | docker-compose |
+| Synology DSM 7.2+ (Container Manager) | Tier 1 | wireguard-go | ✅ | TAR-Import + GUI |
+| Ubuntu Server (bare-metal) | Tier 1 | wireguard-go | ✅ | docker-compose |
+| Unraid | Tier 2 (best-effort) | wireguard-go | ✅ | Community App Template |
+| QNAP Container Station | Tier 2 (best-effort) | wireguard-go | ✅ | GUI-Import |
+| Debian/Ubuntu VM (NAT-mode) | Tier 3 (not recommended) | wireguard-go | ❌ WoL broken | - |
+| TrueNAS Scale | V2 | - | - | Helm-Chart V2 |
+| Home Assistant OS Add-on | V2 | - | - | Add-on V2 |
+
+**Gemeinsame Requirements (Tier 1+2):**
+- L2-Bridge zum Target-LAN (kein NAT zwischen Gateway und Zielgeräten — sonst scheitert WoL)
+- NET_ADMIN Capability (auf Synology: DSM 7.2+ erforderlich)
+- `network_mode: host` (dynamische TCP-Listener-Ports brauchen direkten Host-Zugriff)
+- Multi-Arch-Image: `linux/amd64` (VM/Unraid), `linux/arm64` (Pi 4/5, Synology DS-J+), `linux/arm/v7` (Pi 3, ältere Synology)
+
+**WireGuard-Backend-Wahl:**
+Spec nutzt durchgängig `wireguard-go` (Userspace), nicht Kernel-WireGuard. Grund: Synology DSM hat kein WireGuard-Kernel-Modul. Trade-off: Auf Pi/VM (wo Kernel-WG verfügbar wäre) gibt's ~2× Performance-Verlust (ca. 200-400 Mbit/s statt 800+ Mbit/s). Das ist für Heimnetz-Szenarien (LAN-Proxy, keine Cloud-Workloads) akzeptabel. Ein Kernel-WG-Modus kann optional in V2 via `GC_WG_BACKEND=kernel` nachgerüstet werden.
+
+**Startup-Warnings** (implementiert im Gateway, informierend):
+- Wenn nicht auf L2-Broadcast-fähigem Interface → Warning „WoL wird wahrscheinlich nicht funktionieren — prüfe Netzwerk-Modus (NAT statt Bridge?)"
+- Wenn Kernel-WireGuard verfügbar, aber wireguard-go läuft → Info „Kernel-WG verfügbar, Gateway nutzt wireguard-go für Kompatibilität"
+- Wenn `network_mode` nicht `host` → Error + Abort (wir binden dynamische Ports)
+
+**Plattform-spezifische Deployment-Docs** (im Gateway-Repo):
+- `docs/deployment/linux-docker.md` — Pi, VM, bare-metal Linux (Standard docker-compose)
+- `docs/deployment/synology.md` — Container Manager TAR-Import + UI-Env-Config mit Screenshots
+- `docs/deployment/unraid.md` — Community App Template (V2, community-maintained)
+
 ---
 
 ## 3. GateControl-Server-Änderungen
@@ -99,16 +135,40 @@ CREATE TABLE gateway_meta (
 
 **Migration ist additiv** — bestehende Routen bekommen `target_kind='peer'` als Default, keine Daten-Wanderung.
 
+**Encryption-Key-Management für `push_token_encrypted`:**
+- **Key-Quelle:** wiederverwendet bestehender Server-Master-Key (gleicher Key, der Route-Auth-Sessions, TOTP-Secrets, SMTP-Credentials verschlüsselt — siehe `src/services/crypto.js`). Key wird beim ersten Server-Start generiert und in `/data/secrets/master.key` (root-only 0600) persistiert, Backup-Flow schließt Key ein.
+- **Key-Rotation:** Wenn Admin Key rotiert (`/api/v1/admin/crypto/rotate`), müssen alle Gateway-Pairings neu erzeugt werden. UI zeigt Re-Pairing-Hinweis pro betroffenem Gateway mit „Neue gateway.env herunterladen"-Button.
+- **Key-Verlust:** Dokumentiert als „Recovery nicht möglich ohne Re-Pairing" (ehrlich, nicht kaschieren). Der Server behält das Recht, alle Gateways als unpaired zu markieren wenn Key-File fehlt/korrupt.
+- **Key-Kompromittierung:** Admin-Workflow: Key rotieren → alle Gateways bekommen forced-unpair-Flag → Admin-Dashboard-Banner zeigt Liste der zu-re-pairenden Gateways.
+
 ### 3.2 Neue Services
 
 **`src/services/gateways.js`** (neu):
 - `createGateway(name, apiPort)` → generiert Peer + Gateway-Meta + beide Tokens, liefert `gateway.env`-Content
 - `getGatewayConfig(peerId)` → baut JSON-Config aller Routen mit `target_peer_id=peerId`
-- `computeConfigHash(config)` → stabile SHA-256 über kanonisierte JSON-Repräsentation
+- `computeConfigHash(config)` → stabile SHA-256, siehe **Canonicalization-Spec** unten
 - `notifyConfigChanged(peerId)` → Best-effort POST an Gateway-Push-Endpoint
 - `notifyWol(routeId)` → POST an Gateway `/api/wol` mit MAC + LAN-Host + Timeout
-- `handleHeartbeat(peerId, stats)` → updated `last_seen_at`
+- `handleHeartbeat(peerId, stats)` → updated `last_seen_at` + Health-Status (siehe 3.9)
 - License-Enforcement: `gateway_peers`, `gateway_http_targets`, `gateway_tcp_routing`, `gateway_wol`
+
+**Config-Hash Canonicalization-Spec** (KRITISCH — muss byte-identisch in Server UND Gateway implementiert sein):
+
+1. **Format:** JSON Canonicalization Scheme (RFC 8785 / JCS)
+2. **Key-Ordering:** rekursiv alphabetisch sortiert (tiefen-first)
+3. **Whitespace:** keiner (kein Pretty-Print, keine Trailing-Newlines)
+4. **Array-Ordering:** Routes sortiert nach `id` (aufsteigend), WoL-Einträge nach `mac` (aufsteigend); alle anderen Arrays behalten Input-Order
+5. **Number-Format:** Integers als Integer-Literal (kein `.0`), keine Exponential-Notation, keine NaN/Infinity
+6. **String-Encoding:** UTF-8, Unicode-Escapes nur für non-printable Chars (< U+0020)
+7. **Null vs. Missing:** Felder mit Wert `null` werden **weggelassen** (nicht als `"key":null` serialisiert)
+8. **Hash-Input-Schema:** vorher durch Zod-Schema validieren (siehe `src/schemas/gateway-config.js`) — unerwartete Keys werden gestripped
+9. **Hash-Output:** `sha256:` Prefix + 64-hex, z.B. `sha256:a3f1...`
+
+**Shared Implementation:** Canonicalization-Code liegt in eigenem Package `@gatecontrol/config-hash` (im Server-Monorepo oder als Git-Submodul), damit Server und Gateway **byte-identisches Ergebnis** garantieren.
+
+**Contract-Test (CI-Pflicht):** Test-Fixtures mit 10+ Config-Varianten (Edge-Cases: leere Arrays, Unicode, große Numbers, Null-Fields). Server-Repo UND Gateway-Repo führen **gleichen** Test gegen gleiches Fixture aus — gleicher Hash erwartet. Bei Divergenz → CI-Fail in beiden Repos.
+
+**Hash-Format-Versionierung:** Response enthält `config_hash_version: 1`. Bei Schema-Änderungen wird Version erhöht; Gateway mit älterer Version macht Full-Reload und loggt Warning.
 
 **Erweiterung `src/services/monitor.js`:**
 - Down→Up-Transition-Hook triggert `gateways.notifyWol(routeId)` wenn `wol_enabled=1`
@@ -175,13 +235,45 @@ gateway_wol: false,             // nur Pro+
 ```
 
 ### 3.9 Monitoring-Integration
-- Gateway als spezielles Target mit Health-Check via Heartbeat-Absenz
-- Down-Event (3 Fails = 3 min) triggert:
-  - Activity-Log: `gateway_offline` mit `peer_name`
-  - Email-Alert (`alert_group: system`)
-  - Webhook-Event `gateway.offline`
-  - Alle abhängigen Routes werden als `degraded` markiert → Caddy liefert Maintenance-Page
-- Recovery triggert Alert `gateway_recovered` + Caddy-Config-Regenerierung
+
+**Health-Signal ≠ bloßes Heartbeat:**
+Gateway-Heartbeat enthält aktive Health-Informationen (nicht nur „Process lebt"):
+```json
+{
+  "uptime_s": 86400,
+  "config_hash": "sha256:a3f1...",
+  "http_proxy_healthy": true,
+  "tcp_listeners": [{"port": 13389, "status": "listening"}, {"port": 5432, "status": "listener_failed"}],
+  "last_successful_upstream_ms": 1234,
+  "wg_handshake_age_s": 45,
+  "rx_bytes": 12345, "tx_bytes": 67890
+}
+```
+
+**Self-Check im Gateway** (alle 60s, vor jedem Heartbeat):
+- HTTP-Proxy-Selftest: lokaler Request an `http://127.0.0.1:8080/__self_check` → erwartet 200
+- TCP-Listener-Check: für jeden Listener `net.createConnection` auf `127.0.0.1:<port>` → tests ob Accept funktioniert
+- Ergebnis fließt in Heartbeat-Payload
+
+**Hysteresis gegen Flap** (kritisch gegen Caddy-Reload-Storm):
+- Gateway wird als **offline** markiert nur nach **3 aufeinanderfolgenden Fails** ODER **Heartbeat-Absenz > 180s** (= 6× Heartbeat-Intervall bei 30s)
+- Gateway wird als **online** markiert nur nach **5 aufeinanderfolgenden erfolgreichen Heartbeats** (= 150s stabiler Zustand)
+- Zwischen Offline → Online Transition: **mindestens 5 Minuten** Cooldown, um Flap-Cascade zu verhindern
+- Metric `gateway_status_flap_count_1h` — Alert an Admin wenn >3 Flaps/Stunde
+
+**Down-Event triggert:**
+- Activity-Log: `gateway_offline` mit `peer_name`, `last_heartbeat_age_s`, `last_config_hash`
+- Email-Alert (`alert_group: system`) — bereits mit Retry-Wrapper seit 14.04.
+- Webhook-Event `gateway.offline` mit Full-Health-Payload
+- Abhängige Routes werden als `degraded` markiert
+
+**Caddy-Reload-Strategie bei Status-Change:**
+Statt bei jedem Status-Change die **gesamte** Caddy-Config neu zu bauen → **partial Patch** via Caddy-Admin-API auf die betroffenen Route-Handler (nur der `handle`-Block wird ersetzt: Proxy ↔ Maintenance-Page). Keine Auswirkung auf andere Routes, kein Caddy-Full-Reload.
+
+**Recovery:** Nach erfüllter Online-Hysteresis → Alert `gateway_recovered` + partial Caddy-Patch zurück auf Proxy-Handler.
+
+**Degradation-Modus bei partieller Health:**
+Wenn Gateway online aber einzelne TCP-Listener gebrochen: nur diese betroffenen Routes auf Maintenance-Page, HTTP-Routes bleiben aktiv.
 
 ### 3.10 UI-Anpassungen (minimal im MVP)
 - **Peer-Create-Dialog:** Checkbox „Home Gateway" schaltet API-Port-Feld + Token-Generierung frei
@@ -290,7 +382,17 @@ gatecontrol-gateway/
 4. **Config-Sync (Hybrid):**
    - Periodic Poll alle 5 min mit `GET /config/check?hash=X` (304 bei unverändert)
    - Push-Trigger auf `/api/config-changed` → 500ms Debounce → sofort Full-Poll
-   - Config-Reload: Router-Map atomar getauscht, TCP-Listener-Diff (nur geänderte Ports restart)
+   - Config-Reload-Strategie nach Change-Typ:
+
+     | Änderungs-Typ | Reload-Verhalten |
+     |---|---|
+     | HTTP-Route add/remove/edit | Router-Map atomar ersetzt (referential swap). Laufende Requests beenden auf alter Map. Zero-Downtime. |
+     | TCP-Route Property-Change (z.B. nur `wol_mac`) | Kein Listener-Restart, nur In-Memory-Map-Update |
+     | TCP-Route Target-Change (gleicher Port, anderes LAN-Ziel) | Neue Connections → neues Ziel. Bestehende Pipes laufen auf altem Ziel bis Close. |
+     | TCP-Route Port-Change | **Dual-Bind-Phase:** neuer Listener bindet Port B, alter Listener hört auf Port A, beide parallel 10s. Nach Grace-Period alter Listener `close()` + wartet bis alle Connections drained (max 5 min). |
+     | TCP-Route neu hinzugefügt | Neuer Listener bindet sofort, keine Downtime |
+     | TCP-Route entfernt | Listener `close()` (kein neues Accept), bestehende Connections drained |
+   - Dokumentation im README: „Port-Changes haben 10s Overlap, neue Connections gehen sofort auf neuen Port"
 
 5. **WoL-Flow (Server-getriggert):**
    - Server `POST /api/wol` mit `{mac, lan_host, timeout_ms}`
@@ -309,11 +411,76 @@ gatecontrol-gateway/
 - Logs enthalten keine Request-Bodies, keine Tokens
 - LAN-Target darf nicht identisch mit Tunnel-IP sein (Loop-Schutz)
 
-### 4.5 Container-Image
+### 4.5 Container-Image & Security-Hardening
+
+**Build:**
 - Multi-stage Alpine + Node 20
 - Finale Image ~80 MB
-- `cap_add: [NET_ADMIN]`, `network_mode: host`
 - Multi-arch: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+
+**Runtime-Security (docker-compose.example.yml):**
+```yaml
+services:
+  gateway:
+    image: ghcr.io/callmetechie/gatecontrol-gateway:latest
+    network_mode: host          # erforderlich für dynamische TCP-Listener
+    cap_drop:
+      - ALL                     # Default-Caps droppen
+    cap_add:
+      - NET_ADMIN               # für wg-quick + TUN-Device
+      - NET_RAW                 # für ARP/WoL-Broadcast
+    security_opt:
+      - no-new-privileges:true  # verhindert setuid-Escalation
+    read_only: true             # Root-FS read-only
+    tmpfs:
+      - /tmp                    # für Temp-Dateien während Runtime
+      - /run                    # für PID-Files
+    volumes:
+      - ./config:/config:ro     # gateway.env + wg-Config (read-only mounted)
+      - gateway-logs:/var/log/gateway   # Log-Volume mit Rotation (siehe 4.6)
+    user: "gateway"             # non-root User im Container (UID 1000)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${GC_API_PORT}/api/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+```
+
+**Dockerfile-Hardening:**
+- `USER gateway` (UID/GID 1000) — NICHT root laufen
+- Binäre `wg-quick` und `wireguard-go` via `setcap cap_net_admin+ep` (statt root)
+- Minimale Package-Base: nur `wireguard-tools`, `iproute2`, Node 20 (kein curl, kein wget in final stage — stattdessen Node-basierter Health-Check)
+
+**Trade-off dokumentieren:** `network_mode: host` bleibt zwingend (wegen dynamischer L4-Ports). Das ist die größte verbleibende Angriffsfläche. Maßnahmen oben mindern den Blast-Radius im Fall einer Compromittierung, aber eliminieren ihn nicht. Für hochsensible Heimnetze: empfohlen auf dediziertem Host (nicht auf Multi-Tenant-Synology neben Familienfoto-Share).
+
+### 4.6 Operational Requirements
+
+**Log-Management (besonders wichtig für SD-Card-basierte Setups wie Raspberry Pi):**
+- Pino-Level default `info`, Heartbeat-Events auf `trace` (default off)
+- Docker-log-driver-Config in `docker-compose.example.yml`:
+  ```yaml
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  ```
+- Application-Logs optional auf `tmpfs` oder externes Volume mounten
+- Dokumentation `docs/deployment/raspberry-pi.md`: Empfehlung für SSD-on-USB oder Read-Only-Root-FS
+- SD-Card-Wearout-Warnung im Deployment-Guide + Link zu SMART-Tools
+
+**WoL L2-Broadcast-Requirement:**
+- Gateway muss im **gleichen L2-Segment** wie Ziel-Geräte sein (kein Router/Firewall zwischen Gateway und Target ohne L2-Broadcast-Forwarding)
+- Startup-Check: Gateway enumeriert Non-WG-Interfaces, loggt Warnings bei:
+  - Keine Non-Loopback-Interfaces (z.B. VM in NAT-Mode) → WoL unmöglich
+  - Kein Broadcast-Flag auf primärem Interface → WoL wird wahrscheinlich fehlschlagen
+- `/api/status` enthält Feld `wol_capable: bool` mit Begründung, das UI-seitig im GateControl-Dashboard angezeigt wird
+
+**Time/NTP:**
+- Container benötigt korrekte Systemzeit (für Heartbeat-Timestamps, Token-Expiry-Checks, TLS)
+- Dockerfile installiert `tzdata`, empfohlen: Host-NTP-Service
+- Startup-Check: Zeit-Delta zu GateControl-Server > 60s → Warning im Log (keine harte Blockade, User könnte Dev-Setup haben)
 
 ---
 
@@ -392,7 +559,7 @@ User RDP → vps.example.com:13389
 | Szenario | Handling |
 |---|---|
 | Push an Gateway fehlschlägt | 2s Timeout, 1 Retry, dann ignore |
-| Gateway-Peer gelöscht | Cascade: `gateway_meta` weg, Routes auf `target_kind='peer'` + disabled, Admin-Warning |
+| Gateway-Peer gelöscht | Cascade: `gateway_meta` weg, Routes behalten `target_kind='gateway'` + `target_lan_host` + `target_lan_port` (Daten nicht verloren), aber `enabled=0` + Admin-Banner „Gateway gelöscht, Routes deaktiviert bis Re-Pairing". Live-TCP-Connections werden mit 5s Grace abgebrochen. |
 | API-Token regeneriert | Alter invalidiert, Admin muss neue `gateway.env` laden |
 | Route mit Gateway-Target aber Non-Gateway-Peer | Validation-Error in Create/Update |
 | Monitor: Gateway down | 3min Threshold → Alert + Degradation, Recovery → `gateway_recovered` |
@@ -401,12 +568,16 @@ User RDP → vps.example.com:13389
 
 ### 6.3 Kritische Invarianten
 
-1. Gateway-API bindet niemals auf `0.0.0.0`, immer auf Tunnel-IP
-2. LAN-Targets sind ausschließlich RFC1918/link-local
-3. WoL-MAC muss in aktueller Route-Config existieren
+1. Gateway-API bindet niemals auf `0.0.0.0`, immer auf Tunnel-IP (Runtime-Assertion, nicht nur Startup)
+2. LAN-Targets sind ausschließlich RFC1918/link-local (und nicht identisch mit Tunnel-IP oder Docker-Bridge-IP)
+3. WoL-MAC muss in aktueller Route-Config existieren (MAC-Whitelist aus Config, kein Free-Form-Input)
 4. Config-Hash-Mismatch → Full-Reload, kein Partial-Merge
 5. Push ist best-effort, Gateway-Zustand darf nie davon abhängen
-6. TCP-Listener: alter muss `close()`-complete sein bevor neuer auf gleichem Port bindet
+6. TCP-Port-Change: Dual-Bind-Overlap (nie Zero-Listener-Gap), alter Listener schließt erst nach Grace-Period
+7. Config-Hash ist byte-identisch zwischen Server und Gateway — garantiert durch shared Canonicalization-Library + Contract-Tests
+8. Gateway-Status-Change triggert **nie** Caddy-Full-Reload — immer partial Patch via Admin-API
+9. Hysteresis: Status-Transitions brauchen sustained-Signal (3 Fails für offline, 5 Success für online, 5min Cooldown)
+10. Container läuft **nie** als root im Final-Image (USER gateway, setcap für binaries)
 
 ### 6.4 Security-Defense-Depth
 - Gateway-API-Token und Push-Token als SHA-256 in DB (separate Secrets)
@@ -455,13 +626,18 @@ User RDP → vps.example.com:13389
 
 ### 7.4 Mutation Testing (Stryker) — kritische Services
 
-**Scope (6 Files):**
+**Scope Gateway-Repo (6 Files):**
 - `src/wol.js` — Magic-Packet-Bytes
 - `src/sync/configStore.js` — Hash + Diff-Logic
 - `src/sync/poller.js` — Backoff, Debounce
 - `src/api/middleware/auth.js` — timing-safe Compare
-- `src/config.js` — RFC1918, Tunnel-IP-Check
+- `src/config.js` — RFC1918, Tunnel-IP-Check, L2-Broadcast-Detection
 - `src/proxy/router.js` — Routing-Matching
+
+**Scope Server-Repo (zusätzlich, neu für dieses Feature):**
+- `src/services/gateways.js` — Config-Build, Hash, License-Limits
+- `src/services/license.js` — Gateway-Feature-Gates (nur die neuen Keys, nicht ganzes File)
+- `@gatecontrol/config-hash` — Canonicalization-Library (100% Mutation-Score gefordert, da byte-identisch zum Gateway)
 
 **Config (`stryker.conf.js`):**
 ```javascript
@@ -604,3 +780,7 @@ License-Downgrade disabled betroffene Routes statt sie zu löschen (User kann Da
 2. **Mehrere Gateways pro GateControl (V2):** Aktuell `gateway_peers: 1/3/∞` im License-Modell — Schema unterstützt Multi-Gateway schon, UI-Erweiterung V2.
 3. **Gateway-Update-Mechanismus:** MVP = manueller `docker pull + restart`. V2: Auto-Update wie Windows-Client (Check-Endpoint im Server).
 4. **LAN-Target-Health:** Gateway könnte LAN-Targets pingen und Status an Server melden — MVP verlässt sich auf Server-seitiges Monitoring via Tunnel.
+5. **Kernel-WireGuard-Backend-Fallback:** V2 kann via `GC_WG_BACKEND=kernel` optional Kernel-WG nutzen (für Pi/VM-Performance). Backend-Auswahl + Fallback-Logik zu klären.
+6. **Rate-Limit bei Office-Boot-Szenario:** `/api/wol` limitiert auf 10/min. Für „Alle Geräte beim Morgen-Start aufwecken" könnte Burst-Mode sinnvoll sein (10 instant + 2/min sustained). Im Plan entscheiden.
+7. **Contract-Test-Distribution für Canonicalization:** Die Test-Fixtures für `@gatecontrol/config-hash` müssen in beiden Repos identisch sein. Git-Submodul vs. npm-Paket vs. Monorepo — im Plan entscheiden.
+8. **Migration-Tool von docker-wireguard-go zu Home-Gateway:** Für Synology-User mit bestehendem dwg-Setup — automatischer Migrations-Helfer oder nur Dokumentation? V2-Entscheidung.
