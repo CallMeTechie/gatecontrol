@@ -639,6 +639,38 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'peers', 'hostname'),
   },
+  {
+    version: 36,
+    name: 'add_gateway_support',
+    // SQLite ALTER TABLE ADD COLUMN silently ignores REFERENCES in some versions;
+    // we add the column WITHOUT inline FK and rely on service-layer validation.
+    // FK cascades for gateway_meta.peer_id work because gateway_meta is CREATE TABLE (not ALTER).
+    detect: (db) => hasColumn(db, 'peers', 'peer_type'),
+    sql: `
+      ALTER TABLE peers ADD COLUMN peer_type TEXT NOT NULL DEFAULT 'regular';
+
+      ALTER TABLE routes ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'peer';
+      ALTER TABLE routes ADD COLUMN target_peer_id INTEGER;
+      ALTER TABLE routes ADD COLUMN target_lan_host TEXT;
+      ALTER TABLE routes ADD COLUMN target_lan_port INTEGER;
+      ALTER TABLE routes ADD COLUMN wol_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN wol_mac TEXT;
+
+      CREATE TABLE IF NOT EXISTS gateway_meta (
+        peer_id INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        api_port INTEGER NOT NULL DEFAULT 9876,
+        api_token_hash TEXT NOT NULL,
+        push_token_encrypted TEXT NOT NULL,
+        needs_repair INTEGER NOT NULL DEFAULT 0,
+        last_seen_at INTEGER,
+        last_config_hash TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_routes_target_peer_id ON routes(target_peer_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_meta_api_token_hash ON gateway_meta(api_token_hash);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
