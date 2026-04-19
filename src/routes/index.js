@@ -151,6 +151,9 @@ pages.forEach(({ path, template, titleKey }) => {
 const clientRoutes = require('./api/client');
 router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Router());
 
+// ─── Gateway API (uses own Bearer-token auth, not admin/session auth) ──
+router.use('/api/v1/gateway', apiLimiter, require('./api/gateway'));
+
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 
