@@ -184,7 +184,9 @@ export default {
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1'
+    // Only rewrite .js imports that are NOT in dist/ — dist imports must resolve
+    // to the built artifact, not be rewritten to .ts source.
+    '^(\\.{1,2}/(?!.*dist).*)\\.js$': '$1'
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', {
