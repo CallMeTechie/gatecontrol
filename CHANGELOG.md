@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.17] — 2026-04-19
+
+### Fixes
+- round-3 — _computeBroadcast tests + no-new-privileges doc consistency
+
+---
+
 ## [1.39.16] — 2026-04-19
 
 ### Fixes
