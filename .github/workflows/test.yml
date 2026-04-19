@@ -47,9 +47,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
 
       - name: Install ESLint with security plugin
         run: npm install --no-save eslint@8 eslint-plugin-security@1.7.1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Create security ESLint config
         run: |
