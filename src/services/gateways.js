@@ -131,4 +131,19 @@ function handleHeartbeat(peerId, health) {
   // Status-Transition-Logik wird in Task 16 hinzugefügt
 }
 
-module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat };
+/**
+ * Record traffic counters reported by a Gateway. Stores latest snapshot in
+ * gateway_meta.last_health JSON. Historisierung erfolgt später über peerStatus.
+ */
+function recordTrafficSnapshot(peerId, { rx_bytes, tx_bytes, active_connections }) {
+  const db = getDb();
+  const existing = db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id=?').get(peerId);
+  const health = existing && existing.last_health ? JSON.parse(existing.last_health) : {};
+  health.rx_bytes = rx_bytes;
+  health.tx_bytes = tx_bytes;
+  health.active_connections = active_connections;
+  health.traffic_updated_at = Date.now();
+  db.prepare('UPDATE gateway_meta SET last_health=? WHERE peer_id=?').run(JSON.stringify(health), peerId);
+}
+
+module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot };

@@ -28,6 +28,25 @@ router.get('/config/check', (req, res) => {
   res.status(200).json({ config_hash: currentHash });
 });
 
+/** POST /api/v1/gateway/status — traffic counters */
+router.post('/status', express.json({ limit: '4kb' }), (req, res) => {
+  const peerId = req.gateway.peer_id;
+  const { rx_bytes, tx_bytes, active_connections } = req.body || {};
+  gateways.recordTrafficSnapshot(peerId, { rx_bytes, tx_bytes, active_connections });
+  res.json({ ok: true });
+});
+
+/** POST /api/v1/gateway/probe — echo for end-to-end health-probe from Server */
+router.post('/probe', express.json({ limit: '4kb' }), (req, res) => {
+  const peerId = req.gateway.peer_id;
+  // Der Gateway ruft diesen Endpoint als Teil seines End-to-End Self-Checks auf
+  res.json({
+    server_timestamp: Date.now(),
+    peer_id: peerId,
+    echo: req.body,
+  });
+});
+
 /** POST /api/v1/gateway/heartbeat */
 router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   const peerId = req.gateway.peer_id;
