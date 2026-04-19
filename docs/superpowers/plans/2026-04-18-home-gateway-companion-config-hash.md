@@ -71,6 +71,7 @@ Create `/root/gatecontrol-config-hash/package.json`:
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --testPathIgnorePatterns=",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -199,6 +200,7 @@ export default {
     }]
   },
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
+  testPathIgnorePatterns: ['/tests/integration/'],  // run only after `npm run build`
   collectCoverageFrom: ['src/**/*.ts'],
   coverageThreshold: {
     global: { branches: 90, functions: 95, lines: 95, statements: 95 }
@@ -281,6 +283,22 @@ describe('canonicalizeString', () => {
   it('escapes backspace and form-feed', () => {
     expect(canonicalizeString('\b\f')).toBe('"\\b\\f"');
   });
+
+  it('escapes non-BMP emoji as surrogate pair \\uXXXX\\uXXXX', () => {
+    // 😀 (U+1F600) is UTF-16 surrogate pair D83D DE00
+    expect(canonicalizeString('😀')).toBe('"\\ud83d\\ude00"');
+  });
+
+  it('escapes lone surrogates as \\uXXXX each', () => {
+    expect(canonicalizeString('\uD83D')).toBe('"\\ud83d"');
+    expect(canonicalizeString('\uDE00')).toBe('"\\ude00"');
+  });
+
+  it('is byte-identical across Node 20 and Node 22 for emoji-bearing strings', () => {
+    // Regression guard: relies on surrogate-escape rule above, not on UTF-8 buffer conversion
+    const result = canonicalizeString('Hallo 😀 Welt');
+    expect(result).toBe('"Hallo \\ud83d\\ude00 Welt"');
+  });
 });
 ```
 
@@ -302,7 +320,9 @@ Create `/root/gatecontrol-config-hash/src/primitives.ts`:
  * - Wrap in double quotes
  * - Escape control chars U+0000–U+001F as \uXXXX (lowercase hex) OR named (\n, \t, \r, \b, \f)
  * - Escape backslash and double quote
- * - Leave other Unicode (≥ U+0020) as-is (UTF-8)
+ * - Escape UTF-16 surrogates (U+D800–U+DFFF) as \uXXXX (preserves surrogate pairs
+ *   byte-identically across Node versions — RFC 8785 compliant for non-BMP chars)
+ * - Leave other BMP Unicode (U+0020–U+D7FF, U+E000–U+FFFF) as-is (UTF-8)
  */
 export function canonicalizeString(s: string): string {
   let out = '"';
@@ -316,6 +336,9 @@ export function canonicalizeString(s: string): string {
     else if (c === 0x0c) out += '\\f';
     else if (c === 0x0d) out += '\\r';
     else if (c < 0x20) {
+      out += '\\u' + c.toString(16).padStart(4, '0');
+    } else if (c >= 0xd800 && c <= 0xdfff) {
+      // UTF-16 surrogate (high or low) — escape to prevent UTF-8 encoding divergence
       out += '\\u' + c.toString(16).padStart(4, '0');
     } else {
       out += s[i];
@@ -735,6 +758,21 @@ describe('canonicalizeArray', () => {
     const reshuffled: unknown[] = ['x', { a: 1 }, 5];
     expect(canonicalizeArray(reshuffled)).toBe(out);
   });
+
+  it('sorts numbers LEXICOGRAPHICALLY not numerically (documented behavior)', () => {
+    // Since array-sort uses canonical-string comparison, number ordering follows
+    // character order: "10" < "9" because "1" < "9". This is permutation-invariant
+    // (what matters for hash stability) but NOT numeric order.
+    expect(canonicalizeArray([10, 9])).toBe('[10,9]');
+    expect(canonicalizeArray([9, 10])).toBe('[10,9]'); // same output — invariance holds
+  });
+
+  it('many-digit id arrays are permutation-stable', () => {
+    // Common case: route IDs up to 3 digits. Confirm hash-stability regardless of order.
+    const a = canonicalizeArray([{ id: 100 }, { id: 9 }, { id: 11 }]);
+    const b = canonicalizeArray([{ id: 11 }, { id: 100 }, { id: 9 }]);
+    expect(a).toBe(b);
+  });
 });
 ```
 
@@ -928,6 +966,14 @@ describe('computeHash', () => {
     // sha256 of "{}" = 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
     expect(computeHash({})).toBe('sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a');
   });
+
+  it('throws on null input (use computeConfigHash for schema-aware usage)', () => {
+    expect(() => computeHash(null)).toThrow(/null|undefined/i);
+  });
+
+  it('throws on undefined input', () => {
+    expect(() => computeHash(undefined)).toThrow(/null|undefined/i);
+  });
 });
 ```
 
@@ -945,14 +991,21 @@ Create `/root/gatecontrol-config-hash/src/hash.ts`:
 
 ```typescript
 import { createHash } from 'node:crypto';
-import { canonicalize } from './index.js';
+import { canonicalizeValue } from './canonicalize.js';
 
 /**
  * Compute canonical hash of a value.
  * Returns "sha256:" + 64 hex chars.
+ *
+ * NOTE: Imports directly from ./canonicalize.js — NOT from ./index.js — to avoid
+ * a circular dependency (index re-exports computeHash, which would import index).
  */
 export function computeHash(value: unknown): string {
-  const canonical = canonicalize(value);
+  if (value === null || value === undefined) {
+    throw new Error('computeHash: null/undefined input not allowed — use computeConfigHash for validated configs');
+  }
+  const result = canonicalizeValue(value);
+  const canonical = result === null ? '' : result;
   const digest = createHash('sha256').update(canonical, 'utf8').digest('hex');
   return `sha256:${digest}`;
 }
@@ -1058,11 +1111,16 @@ describe('GatewayConfigSchema', () => {
     expect('extra' in parsed.routes[0]).toBe(false);
   });
 
-  it('wol_enabled defaults to false when omitted', () => {
+  it('wol_enabled defaults to false when omitted, producing same canonical form', () => {
     const { wol_enabled: _w, wol_mac: _m, ...route } = valid.routes[0];
-    const cfg = { ...valid, routes: [route] };
-    const parsed = GatewayConfigSchema.parse(cfg);
-    expect(parsed.routes[0].wol_enabled).toBe(false);
+    const withoutWol = { ...valid, routes: [route] };
+    const withExplicitFalse = { ...valid, routes: [{ ...route, wol_enabled: false }] };
+    const parsedA = GatewayConfigSchema.parse(withoutWol);
+    const parsedB = GatewayConfigSchema.parse(withExplicitFalse);
+    // Critical: Zod .default(false) MUST produce identical parsed shape so that
+    // canonicalization produces identical hashes. If this test fails, servers/gateways
+    // running different schema versions will diverge.
+    expect(parsedA).toEqual(parsedB);
   });
 
   it('config_hash_version must be integer >= 1', () => {
@@ -1093,6 +1151,13 @@ const MacAddress = z.string().regex(
 );
 
 const Port = z.number().int().min(1).max(65535);
+
+// IMPORTANT: All `.default()` calls must be identical in every consumer version.
+// A schema-version lockstep between Server and Gateway is enforced via
+// `package.json` peer-version pinning and CONFIG_HASH_VERSION bumps.
+// Rationale: A .default() value filled by one consumer but missing in another's
+// schema would produce divergent canonical output. Contract-tests in Task 12 fail fast
+// if default-handling changes without a CONFIG_HASH_VERSION bump.
 
 const HttpRouteSchema = z.object({
   id: z.number().int().positive(),
@@ -1684,11 +1749,47 @@ describe('property: hash is invariant under shuffling', () => {
     const base = loadFixture(filename);
     const baseHash = computeConfigHash(base);
 
+    // Return boolean instead of expect(): gives fast-check clean shrink output
+    // with readable seed in failure message, instead of Jest stack trace.
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 0x7fffffff }), (seed) => {
         const shuffled = deepShuffle(base, makeRng(seed));
-        expect(computeConfigHash(shuffled)).toBe(baseHash);
+        return computeConfigHash(shuffled) === baseHash;
       }),
+      { numRuns: 100 }
+    );
+  });
+
+  it('fast-check-generated Unicode strings canonicalize invariantly under shuffle', () => {
+    // Beyond fixture-permutation: fuzz-test with fast-check-generated random content
+    // so that edge cases (surrogates, very long strings, nested shapes) are exercised.
+    fc.assert(
+      fc.property(
+        fc.record({
+          config_hash_version: fc.constant(1),
+          peer_id: fc.integer({ min: 1, max: 1000 }),
+          routes: fc.array(fc.record({
+            id: fc.integer({ min: 1, max: 10000 }),
+            domain: fc.fullUnicodeString({ minLength: 1, maxLength: 50 }),
+            target_kind: fc.constant('gateway'),
+            target_lan_host: fc.constant('192.168.1.10'),
+            target_lan_port: fc.integer({ min: 1, max: 65535 }),
+            wol_enabled: fc.boolean(),
+          }), { maxLength: 10 }),
+          l4_routes: fc.constant([]),
+        }),
+        fc.integer({ min: 1, max: 0x7fffffff }),
+        (cfg, seed) => {
+          try {
+            const base = computeConfigHash(cfg);
+            const shuffled = deepShuffle(cfg, makeRng(seed));
+            return computeConfigHash(shuffled) === base;
+          } catch {
+            // Zod rejection is fine — we only care about shapes that PASS schema
+            return true;
+          }
+        }
+      ),
       { numRuns: 100 }
     );
   });
@@ -1825,14 +1926,14 @@ jobs:
       - name: Lint (tsc --noEmit)
         run: npm run lint
 
-      - name: Unit + Contract + Property tests
+      - name: Unit + Contract + Property tests (excludes tests/integration/)
         run: npm run test:coverage
 
-      - name: Build
+      - name: Build (required before consumer-integration test)
         run: npm run build
 
-      - name: Consumer-integration test
-        run: npm test -- tests/integration/consumer.test.ts
+      - name: Consumer-integration test (imports from dist/)
+        run: npm run test:integration
 
       - name: Upload coverage
         if: matrix.node == '22'
@@ -1906,9 +2007,11 @@ jobs:
         run: npm run build
 
       - name: Verify package.json version matches tag
+        # Uses jq because node -p "require('./package.json')" fails in ESM projects
+        # ("type": "module" + require is not defined in Node 22 ESM scope).
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_VERSION=$(jq -r .version package.json)
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) != package.json version ($PKG_VERSION)"
             exit 1
@@ -2031,7 +2134,9 @@ git push
 
 ---
 
-## Task 18: Release v1.0.0
+## Task 18: Release v1.0.0 (einmaliger Initial-Bump)
+
+**Note:** Das Projekt-Memory `feedback_no_manual_version_bump.md` verbietet manuelle Version-Bumps — CI bumpt automatisch. Bei der **Erstveröffentlichung (0.0.0 → 1.0.0)** ist der Bump eine bewusste Ausnahme, weil noch kein CI-Release-Lauf existiert, der einen Baseline-Bump durchführen könnte. Alle weiteren Versions (1.0.x / 1.x.0) werden durch den in Task 16 definierten Release-Workflow automatisch gebumpt (gleiches Pattern wie Android-Client: `feat:`→minor, `fix:`→patch).
 
 **Files:**
 - Modify: `/root/gatecontrol-config-hash/package.json`
