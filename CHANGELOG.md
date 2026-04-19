@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.0] — 2026-04-19
+
+### Features
+- migration 36 — gateway peer type, route target discrimination, gateway_meta
+
+---
+
 ## [1.39.17] — 2026-04-19
 
 ### Fixes
