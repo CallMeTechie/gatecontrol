@@ -117,7 +117,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Build Docker image
-        run: docker build -t gatecontrol:security-scan .
+        run: docker build --build-arg NODE_AUTH_TOKEN="$NODE_AUTH_TOKEN" -t gatecontrol:security-scan .
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
