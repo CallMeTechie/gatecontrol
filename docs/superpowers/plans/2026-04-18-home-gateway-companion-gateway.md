@@ -328,6 +328,9 @@ const ConfigSchema = z.object({
   WG_SERVER_PUBLIC_KEY: z.string().min(1),
   WG_ADDRESS: z.string().min(1),
   WG_DNS: z.string().optional(),
+  // Default tunnel-only routing (NOT 0.0.0.0/0 — would break LAN access).
+  // Format: CIDR or comma-separated list. Must include Server-Tunnel-IP-Subnet.
+  WG_ALLOWED_IPS: z.string().default('10.8.0.0/24'),
 });
 
 function parseEnvFile(contents) {
@@ -368,6 +371,7 @@ function loadConfig(path) {
       serverPublicKey: parsed.WG_SERVER_PUBLIC_KEY,
       address: parsed.WG_ADDRESS,
       dns: parsed.WG_DNS || null,
+      allowedIps: parsed.WG_ALLOWED_IPS,
     },
   };
 }
@@ -414,6 +418,8 @@ WG_ENDPOINT=gatecontrol.example.com:51820
 WG_SERVER_PUBLIC_KEY=zzz
 WG_ADDRESS=10.8.0.5/24
 WG_DNS=10.8.0.1
+# Tunnel-only routing — NEVER 0.0.0.0/0 (would break LAN-target access)
+WG_ALLOWED_IPS=10.8.0.0/24
 ```
 
 ```bash
@@ -478,7 +484,14 @@ describe('wireguard', () => {
     assert.match(ini, /\[Peer\]/);
     assert.match(ini, /PublicKey\s*=\s*SERV/);
     assert.match(ini, /Endpoint\s*=\s*host\.example:51820/);
-    assert.match(ini, /AllowedIPs\s*=\s*0\.0\.0\.0\/0/);
+    assert.match(ini, /AllowedIPs\s*=\s*10\.8\.0\.0\/24/, 'default AllowedIPs = tunnel subnet, NOT 0.0.0.0/0');
+  });
+
+  it('buildWgConfFile respects custom allowedIps from config', () => {
+    const cfg = { wg: { privateKey: 'P', address: '10.8.0.5/24',
+      serverPublicKey: 'S', endpoint: 'h:51820', allowedIps: '10.0.0.0/8' } };
+    const ini = buildWgConfFile(cfg);
+    assert.match(ini, /AllowedIPs\s*=\s*10\.0\.0\.0\/8/);
   });
 });
 ```
@@ -542,11 +555,13 @@ function buildWgConfFile(config) {
     `Address = ${config.wg.address}`,
   ];
   if (config.wg.dns) lines.push(`DNS = ${config.wg.dns}`);
+  // AllowedIPs: ONLY the tunnel subnet (default 10.8.0.0/24). NOT 0.0.0.0/0 —
+  // that would hijack LAN routes and break direct access to LAN targets.
   lines.push('',
     '[Peer]',
     `PublicKey = ${config.wg.serverPublicKey}`,
     `Endpoint = ${config.wg.endpoint}`,
-    `AllowedIPs = 0.0.0.0/0`,
+    `AllowedIPs = ${config.wg.allowedIps || '10.8.0.0/24'}`,
     `PersistentKeepalive = 25`,
   );
   return lines.join('\n') + '\n';
@@ -1807,6 +1822,8 @@ async function sendMagicPacket(mac) {
   for (const [name, addrs] of Object.entries(ifaces)) {
     if (name === 'lo' || name.startsWith(WG_INTERFACE)) continue;
     if (name.startsWith('docker') || name.startsWith('br-')) continue;
+    if (name.startsWith('veth') || name.startsWith('tailscale')) continue;
+    if (name.startsWith('zt') || name.startsWith('nebula')) continue; // ZeroTier, Nebula
     for (const addr of addrs) {
       if (addr.family !== 'IPv4' || addr.internal) continue;
       const broadcast = _computeBroadcast(addr.address, addr.netmask);
@@ -1964,25 +1981,32 @@ Create `/root/gatecontrol-gateway/src/api/routes/wol.js`:
 
 const express = require('express');
 const { validateMac } = require('../../wol');
+const { isRfc1918 } = require('../../config');
 const logger = require('../../logger');
+
+const DEFAULT_REACH_PORT = 80;
 
 function createWolRouter({ configStore, sendMagicPacket, waitForReachable }) {
   const router = express.Router();
 
   router.post('/wol', async (req, res) => {
-    const { mac, lan_host, timeout_ms } = req.body || {};
+    const { mac, lan_host, lan_host_port, timeout_ms } = req.body || {};
     if (!mac || !validateMac(mac)) {
       return res.status(400).json({ error: 'invalid_mac' });
     }
-    if (!lan_host || typeof lan_host !== 'string') {
-      return res.status(400).json({ error: 'invalid_lan_host' });
+    if (!lan_host || typeof lan_host !== 'string' || !isRfc1918(lan_host)) {
+      logger.warn({ lan_host }, 'WoL rejected: lan_host not RFC1918');
+      return res.status(400).json({ error: 'lan_host_must_be_rfc1918' });
     }
     if (!configStore.isMacInWolWhitelist(mac)) {
       logger.warn({ mac }, 'WoL request MAC not in whitelist');
       return res.status(403).json({ error: 'mac_not_whitelisted' });
     }
+    const reachPort = Number.isInteger(lan_host_port) && lan_host_port > 0 && lan_host_port < 65536
+      ? lan_host_port
+      : DEFAULT_REACH_PORT;
     const results = await sendMagicPacket(mac);
-    const elapsed_ms = await waitForReachable(lan_host, 80, timeout_ms || 60000);
+    const elapsed_ms = await waitForReachable(lan_host, reachPort, timeout_ms || 60000);
     if (elapsed_ms === null) {
       return res.status(200).json({ success: false, reason: 'timeout', sent_on: results });
     }
@@ -2436,7 +2460,7 @@ async function bootstrap() {
     await tcpMgr.setRoutes(cfg.l4_routes);
   });
 
-  // 4. Poller
+  // 4. Declare Poller (initial fetch runs LATER, after servers listen)
   const poller = new Poller({
     intervalMs: config.pollIntervalS * 1000,
     debounceMs: 500,
@@ -2447,7 +2471,6 @@ async function bootstrap() {
       }
       const data = await fetchConfig({ serverUrl: config.serverUrl, apiToken: config.apiToken });
       const { config_hash, ...cfgBody } = data;
-      // Verify hash matches what we'd compute
       const recomputed = libComputeHash(cfgBody);
       if (config_hash && config_hash !== recomputed) {
         logger.warn({ server_hash: config_hash, our_hash: recomputed }, 'Hash mismatch — this should not happen if shared library is correct');
@@ -2457,11 +2480,8 @@ async function bootstrap() {
     },
   });
 
-  // 5. Initial config-fetch, then start polling
-  await poller._runOnce();
-  poller.start();
-
-  // 6. HTTP Proxy
+  // 5. HTTP Proxy (listen BEFORE first poll — so config-change events during
+  //    initial poll don't hit a non-listening proxy)
   const httpProxyServer = createHttpProxy({
     router,
     onUpstreamUnreachable: ({ domain, target }) => {
@@ -2474,7 +2494,7 @@ async function bootstrap() {
   await new Promise(r => httpProxyServer.listen(config.proxyPort, config.tunnelIp, r));
   logger.info({ bind: `${config.tunnelIp}:${config.proxyPort}` }, 'HTTP proxy listening');
 
-  // 7. Management API
+  // 6. Management API
   const apiApp = createApiServer({
     bindIp: config.tunnelIp,
     port: config.apiPort,
@@ -2520,7 +2540,19 @@ async function bootstrap() {
     logger.info({ bind: `${config.tunnelIp}:${config.apiPort}` }, 'Management API listening');
   });
 
-  // 8. Heartbeat
+  // 7. Initial config-poll NOW (servers are listening). Tolerate first-poll
+  //    failures: gateway can start with empty route-table and fill it on next
+  //    successful poll (exponential backoff handled by Poller).
+  try {
+    await poller._runOnce();
+    logger.info('Initial config poll successful');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Initial config poll failed — gateway starting with empty route table; Poller will retry with backoff');
+  }
+  poller.start();
+
+  // 8. Heartbeat LAST — so if an earlier step throws, the ticker is never
+  //    started and shutdown handler needn't defend against undefined ctx.hb.
   const hb = startHeartbeatTicker({
     serverUrl: config.serverUrl,
     apiToken: config.apiToken,
@@ -2569,15 +2601,16 @@ async function main() {
     process.exit(1);
   }
 
-  // Graceful shutdown
+  // Graceful shutdown — guards against partial init (ctx might be undefined
+  // if bootstrap failed, or individual ctx.* might be undefined for early failures)
   async function shutdown(signal) {
     logger.info({ signal }, 'Shutting down');
     try {
-      ctx.hb?.stop();
-      ctx.poller?.stop();
-      await new Promise(r => ctx.apiServer?.close(r));
-      await new Promise(r => ctx.httpProxyServer?.close(r));
-      await ctx.tcpMgr?.stopAll();
+      ctx?.hb?.stop();
+      ctx?.poller?.stop();
+      if (ctx?.apiServer) await new Promise(r => ctx.apiServer.close(r));
+      if (ctx?.httpProxyServer) await new Promise(r => ctx.httpProxyServer.close(r));
+      if (ctx?.tcpMgr) await ctx.tcpMgr.stopAll();
       await wireguard.bringDown();
     } catch (err) {
       logger.warn({ err: err.message }, 'Shutdown error');
@@ -2696,8 +2729,8 @@ FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS node-build
 WORKDIR /build
 COPY package.json package-lock.json .npmrc ./
 ARG GH_PACKAGES_TOKEN
-ENV NODE_AUTH_TOKEN=${GH_PACKAGES_TOKEN}
-RUN npm ci --omit=dev --ignore-scripts
+# Inline on the RUN line — NOT an ENV layer (would leak token via docker history).
+RUN NODE_AUTH_TOKEN=${GH_PACKAGES_TOKEN} npm ci --omit=dev --ignore-scripts
 COPY src ./src
 
 # --- Stage 3: runtime ---
@@ -2774,8 +2807,10 @@ services:
       - NET_BIND_SERVICE  # for L4 routes on ports <1024 (DNS, HTTP, SSH, HTTPS)
     # NET_RAW NOT added: WoL uses SO_BROADCAST which NET_ADMIN covers.
     # Only enable NET_RAW if Device Discovery (V2) is active.
-    security_opt:
-      - no-new-privileges:true
+    # security_opt.no-new-privileges NOT set: incompatible with non-root-user +
+    # cap_add NET_ADMIN on Linux — wg-quick shell-script calls `ip`/`iptables`
+    # that need ambient NET_ADMIN, which no-new-privileges blocks for UID != 0.
+    # Compensating controls: cap_drop:ALL, read_only, USER gateway, seccomp-default.
     read_only: true
     tmpfs:
       - /tmp
@@ -2958,8 +2993,10 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     needs: unit
+    # Run only when critical files change OR when PR has "mutation-test" label
+    # (prevents feedback loop from chore: bump commits, doc-only pushes)
     if: |
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore: bump version')) ||
       contains(github.event.pull_request.labels.*.name, 'mutation-test')
     steps:
       - uses: actions/checkout@v4
