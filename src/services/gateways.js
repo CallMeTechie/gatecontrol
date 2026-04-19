@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const http = require('node:http');
 const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const license = require('./license');
@@ -10,6 +11,11 @@ const {
   computeConfigHash: libComputeConfigHash,
   CONFIG_HASH_VERSION,
 } = require('@callmetechie/gatecontrol-config-hash');
+
+/** Extract the bare IP (drop CIDR) from peers.allowed_ips. */
+function _peerIp(allowedIps) {
+  return (allowedIps || '').split('/')[0].split(',')[0].trim();
+}
 
 const DEFAULT_API_PORT = 9876;
 
@@ -146,4 +152,45 @@ function recordTrafficSnapshot(peerId, { rx_bytes, tx_bytes, active_connections 
   db.prepare('UPDATE gateway_meta SET last_health=? WHERE peer_id=?').run(JSON.stringify(health), peerId);
 }
 
-module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot };
+/**
+ * Best-effort push to notify a Gateway that its config changed.
+ * Gateway will pull fresh config on receipt (debounced 500ms).
+ * Failures are logged but NOT retried aggressively — next Gateway poll covers it.
+ */
+async function notifyConfigChanged(peerId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return;
+
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+
+  await new Promise((resolve) => {
+    const req = http.request({
+      host: ip,
+      port: row.api_port,
+      path: '/api/config-changed',
+      method: 'POST',
+      timeout: 2000,
+      headers: {
+        'X-Gateway-Token': pushToken,
+        'Content-Length': 0,
+      },
+    }, (res) => {
+      res.resume();
+      res.on('end', resolve);
+    });
+    req.on('error', (err) => {
+      logger.warn({ err: err.message, peerId }, 'Gateway push failed (best-effort)');
+      resolve();
+    });
+    req.on('timeout', () => { req.destroy(); resolve(); });
+    req.end();
+  });
+}
+
+module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot, notifyConfigChanged };
