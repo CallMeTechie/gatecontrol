@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.13] — 2026-04-19
+
+### Fixes
+- round-2 — async/await pervasive + i18n-keys dedicated task
+
+---
+
 ## [1.39.12] — 2026-04-19
 
 ### Fixes
