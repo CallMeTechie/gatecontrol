@@ -283,4 +283,25 @@ router.get('/:id/traffic', (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/peers/:id/gateway-env/rotate — regenerate tokens and return
+ * fresh gateway.env file for a gateway peer. Uses POST (not GET) to prevent
+ * accidental browser-prefetch from invalidating live tokens.
+ */
+router.post('/:id/gateway-env/rotate', (req, res) => {
+  const peerId = parseInt(req.params.id, 10);
+  try {
+    const env = require('../../services/gateways').rotateGatewayTokens(peerId);
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="gateway-${peerId}.env"`);
+    res.send(env);
+  } catch (err) {
+    if (err.message === 'not_a_gateway') {
+      return res.status(404).json({ ok: false, error: 'not_a_gateway' });
+    }
+    logger.error({ error: err.message, peerId }, 'Failed to rotate gateway tokens');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;

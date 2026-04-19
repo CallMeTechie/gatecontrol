@@ -341,6 +341,51 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
   });
 }
 
+/**
+ * Regenerate both api_token and push_token for a gateway. Returns the
+ * full gateway.env content with fresh tokens. Old tokens are invalidated.
+ */
+function rotateGatewayTokens(peerId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.*, gm.api_port FROM peers p
+    JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.id=? AND p.peer_type='gateway'
+  `).get(peerId);
+  if (!row) throw new Error('not_a_gateway');
+
+  const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
+  db.prepare('UPDATE gateway_meta SET api_token_hash=?, push_token_encrypted=?, needs_repair=0 WHERE peer_id=?')
+    .run(apiTokenHash, pushTokenEncrypted, peerId);
+
+  const ip = _peerIp(row.allowed_ips);
+  const privateKey = row.private_key_encrypted ? decrypt(row.private_key_encrypted) : '';
+
+  const envLines = [
+    `# GateControl Home Gateway — Pairing Config`,
+    `# Generated: ${new Date().toISOString()}`,
+    `# Peer: ${row.name} (ID: ${peerId})`,
+    ``,
+    `GC_SERVER_URL=${process.env.GC_BASE_URL || 'https://gatecontrol.example.com'}`,
+    `GC_API_TOKEN=${apiToken}`,
+    `GC_GATEWAY_TOKEN=${pushToken}`,
+    `GC_TUNNEL_IP=${ip}`,
+    `GC_PROXY_PORT=8080`,
+    `GC_API_PORT=${row.api_port}`,
+    `GC_HEARTBEAT_INTERVAL_S=30`,
+    `GC_POLL_INTERVAL_S=300`,
+    ``,
+    `# WireGuard config inline`,
+    `WG_PRIVATE_KEY=${privateKey}`,
+    `WG_PUBLIC_KEY=${row.public_key || ''}`,
+    `WG_ENDPOINT=${process.env.GC_WG_ENDPOINT || ''}`,
+    `WG_SERVER_PUBLIC_KEY=${process.env.GC_WG_SERVER_PUBLIC_KEY || ''}`,
+    `WG_ADDRESS=${ip}/24`,
+    `WG_DNS=10.8.0.1`,
+  ];
+  return envLines.join('\n') + '\n';
+}
+
 module.exports = {
   createGateway,
   getGatewayConfig,
@@ -350,6 +395,7 @@ module.exports = {
   notifyConfigChanged,
   notifyWol,
   getHealthStatus,
+  rotateGatewayTokens,
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
 };
