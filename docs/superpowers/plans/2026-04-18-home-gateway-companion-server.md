@@ -40,7 +40,7 @@ describe('migration 36: gateway support', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-migr-'));
   const dbPath = path.join(tmpDir, 'test.db');
 
-  before(() => {
+  before(async () => {
     process.env.GC_DB_PATH = dbPath;
     delete require.cache[require.resolve('../src/db/connection')];
     delete require.cache[require.resolve('../src/db/migrations')];
@@ -417,7 +417,7 @@ const os = require('node:os');
 describe('gateways.createGateway', () => {
   let gateways, db;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gw-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     delete require.cache[require.resolve('../src/db/connection')];
@@ -428,8 +428,8 @@ describe('gateways.createGateway', () => {
     db = require('../src/db/connection').getDb();
   });
 
-  it('creates peer with peer_type=gateway and gateway_meta row', () => {
-    const result = gateways.createGateway({ name: 'homelab-gw', apiPort: 9876 });
+  it('creates peer with peer_type=gateway and gateway_meta row', async () => {
+    const result = await gateways.createGateway({ name: 'homelab-gw', apiPort: 9876 });
     assert.ok(result.peer.id > 0);
     assert.equal(result.peer.peer_type, 'gateway');
 
@@ -440,27 +440,26 @@ describe('gateways.createGateway', () => {
     assert.ok(meta.push_token_encrypted);
   });
 
-  it('returns plaintext api_token and push_token (for gateway.env)', () => {
-    const result = gateways.createGateway({ name: 'gw2', apiPort: 9876 });
+  it('returns plaintext api_token and push_token (for gateway.env)', async () => {
+    const result = await gateways.createGateway({ name: 'gw2', apiPort: 9876 });
     assert.match(result.apiToken, /^gc_gw_[a-f0-9]{64}$/);
     assert.match(result.pushToken, /^[a-f0-9]{64}$/);
     assert.notEqual(result.apiToken, result.pushToken);
   });
 
-  it('api_token_hash is SHA-256 of api_token (sha256: prefix)', () => {
-    const result = gateways.createGateway({ name: 'gw3', apiPort: 9876 });
+  it('api_token_hash is SHA-256 of api_token (sha256: prefix)', async () => {
+    const result = await gateways.createGateway({ name: 'gw3', apiPort: 9876 });
     const crypto = require('node:crypto');
     const expectedHash = 'sha256:' + crypto.createHash('sha256').update(result.apiToken).digest('hex');
     const meta = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id=?').get(result.peer.id);
     assert.equal(meta.api_token_hash, expectedHash);
   });
 
-  it('enforces license limit gateway_peers', () => {
-    // COMMUNITY_FALLBACK.gateway_peers = 1 → second creation throws unless license overrides
-    // Assumes test-mode uses community fallback
-    assert.throws(() => {
+  it('enforces license limit gateway_peers', async () => {
+    // COMMUNITY_FALLBACK.gateway_peers = 1 → subsequent creations throw
+    await assert.rejects(async () => {
       for (let i = 0; i < 3; i++) {
-        gateways.createGateway({ name: `gw-over-${i}`, apiPort: 9876 });
+        await gateways.createGateway({ name: `gw-over-${i}`, apiPort: 9876 });
       }
     }, /gateway_peers|license/i);
   });
@@ -601,7 +600,7 @@ const { CONFIG_HASH_VERSION } = require('@callmetechie/gatecontrol-config-hash')
 describe('gateways.getGatewayConfig', () => {
   let gateways, db, gwPeerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gw-cfg-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways']
@@ -609,7 +608,7 @@ describe('gateways.getGatewayConfig', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     db = require('../src/db/connection').getDb();
-    const gw = gateways.createGateway({ name: 'gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'gw', apiPort: 9876 });
     gwPeerId = gw.peer.id;
 
     // Insert gateway-typed HTTP route
@@ -638,8 +637,8 @@ describe('gateways.getGatewayConfig', () => {
     assert.equal(route.wol_enabled, false);
   });
 
-  it('omits routes for other gateways', () => {
-    const gw2 = gateways.createGateway({ name: 'gw2', apiPort: 9876 });
+  it('omits routes for other gateways', async () => {
+    const gw2 = await gateways.createGateway({ name: 'gw2', apiPort: 9876 });
     // (ignoring license for test: may throw, skip if so)
     const cfg = gateways.getGatewayConfig(gwPeerId);
     assert.equal(cfg.routes.length, 1, 'should only contain gw1 routes');
@@ -760,14 +759,14 @@ const { computeConfigHash: libHash } = require('@callmetechie/gatecontrol-config
 describe('gateways.computeConfigHash', () => {
   let gateways, gwPeerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gw-hash-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways']
       .forEach(p => delete require.cache[require.resolve(p)]);
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'gw-hash', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'gw-hash', apiPort: 9876 });
     gwPeerId = gw.peer.id;
   });
 
@@ -858,7 +857,7 @@ const os = require('node:os');
 describe('gatewayAuth middleware', () => {
   let auth, gateways, peerId, apiToken;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gwa-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/middleware/gatewayAuth']
@@ -866,7 +865,7 @@ describe('gatewayAuth middleware', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     auth = require('../src/middleware/gatewayAuth');
-    const gw = gateways.createGateway({ name: 'auth-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'auth-gw', apiPort: 9876 });
     peerId = gw.peer.id;
     apiToken = gw.apiToken;
   });
@@ -1086,7 +1085,7 @@ describe('gateway API: /config + /config/check', () => {
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'api-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'api-gw', apiPort: 9876 });
     apiToken = gw.apiToken;
 
     const { createApp } = require('../src/app');
@@ -1233,14 +1232,14 @@ const http = require('node:http');
 describe('gateway API: /heartbeat', () => {
   let server, apiToken, peerId, baseUrl, db;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gwhb-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/app']
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     const gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'hb-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'hb-gw', apiPort: 9876 });
     apiToken = gw.apiToken; peerId = gw.peer.id;
     const { createApp } = require('../src/app');
     server = createApp().listen(0);
@@ -1402,14 +1401,14 @@ const http = require('node:http');
 describe('gateway API: /status and /probe', () => {
   let server, apiToken, baseUrl;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-gws-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/app']
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     const gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'st-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'st-gw', apiPort: 9876 });
     apiToken = gw.apiToken;
     const { createApp } = require('../src/app');
     server = createApp().listen(0);
@@ -1545,7 +1544,7 @@ const http = require('node:http');
 describe('gateways.notifyConfigChanged', () => {
   let gateways, peerId, pushToken, mockGwServer, receivedRequests;
 
-  before(() => {
+  before(async () => {
     receivedRequests = [];
     mockGwServer = http.createServer((req, res) => {
       let body = '';
@@ -1562,7 +1561,7 @@ describe('gateways.notifyConfigChanged', () => {
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'push-gw', apiPort: mockGwServer.address().port });
+    const gw = await gateways.createGateway({ name: 'push-gw', apiPort: mockGwServer.address().port });
     peerId = gw.peer.id;
     pushToken = gw.pushToken;
 
@@ -1687,7 +1686,7 @@ const os = require('node:os');
 describe('routes hooks → notifyConfigChanged', () => {
   let routes, gateways, gwPeerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-rh-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/services/routes']
@@ -1695,7 +1694,7 @@ describe('routes hooks → notifyConfigChanged', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     routes = require('../src/services/routes');
-    const gw = gateways.createGateway({ name: 'hook-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'hook-gw', apiPort: 9876 });
     gwPeerId = gw.peer.id;
   });
 
@@ -1793,7 +1792,7 @@ const os = require('node:os');
 describe('gateways.notifyWol', () => {
   let gateways, peerId, pushToken, mockGwServer, received;
 
-  before(() => {
+  before(async () => {
     received = [];
     mockGwServer = http.createServer((req, res) => {
       let body = '';
@@ -1810,7 +1809,7 @@ describe('gateways.notifyWol', () => {
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
-    const gw = gateways.createGateway({ name: 'wol-gw', apiPort: mockGwServer.address().port });
+    const gw = await gateways.createGateway({ name: 'wol-gw', apiPort: mockGwServer.address().port });
     peerId = gw.peer.id;
     pushToken = gw.pushToken;
     require('../src/db/connection').getDb().prepare('UPDATE peers SET ip_address=? WHERE id=?').run('127.0.0.1', peerId);
@@ -2261,7 +2260,7 @@ const os = require('node:os');
 describe('monitor: auto-WoL on backend down', () => {
   let monitor, gateways, routeId, peerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-awol-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/services/monitor']
@@ -2269,7 +2268,7 @@ describe('monitor: auto-WoL on backend down', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     monitor = require('../src/services/monitor');
-    const gw = gateways.createGateway({ name: 'wm-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'wm-gw', apiPort: 9876 });
     peerId = gw.peer.id;
     const db = require('../src/db/connection').getDb();
     db.prepare(`INSERT INTO routes (domain, target_ip, target_port, type, target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled, wol_mac)
@@ -2782,7 +2781,7 @@ const http = require('node:http');
 describe('GET /api/peers/:id/gateway-env', () => {
   let server, baseUrl, gwPeerId, adminToken;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-env-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/app']
@@ -2790,7 +2789,7 @@ describe('GET /api/peers/:id/gateway-env', () => {
     require('../src/db/migrations').runMigrations();
     const gateways = require('../src/services/gateways');
     const tokens = require('../src/services/tokens');
-    const gw = gateways.createGateway({ name: 'env-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'env-gw', apiPort: 9876 });
     gwPeerId = gw.peer.id;
     const t = tokens.createToken({ name: 'admin', scopes: ['full-access'] });
     adminToken = t.token;
@@ -3210,7 +3209,7 @@ const os = require('node:os');
 describe('crypto: master key rotation marks gateways needs_repair', () => {
   let gateways, crypto, peerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-rot-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/services/crypto']
@@ -3218,7 +3217,7 @@ describe('crypto: master key rotation marks gateways needs_repair', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     crypto = require('../src/services/crypto');
-    const gw = gateways.createGateway({ name: 'rot-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'rot-gw', apiPort: 9876 });
     peerId = gw.peer.id;
   });
 
@@ -3309,6 +3308,114 @@ res.render('dashboard', {
 ```bash
 git add src/services/crypto.js src/services/gateways.js views/dashboard.njk tests/gateway_unpair_on_rotate.test.js
 git commit -m "feat(crypto): mark gateways needs_repair=1 on master key rotation + admin banner"
+git push
+```
+
+---
+
+## Task 25b: i18n-Keys in `de.json` + `en.json` ergänzen
+
+**Files:**
+- Modify: `/root/gatecontrol/locales/de.json`
+- Modify: `/root/gatecontrol/locales/en.json`
+
+Alle in Tasks 19, 22, 23, 24, 25 verwendeten `t('...')`-Keys müssen zu beiden Locale-Dateien hinzugefügt werden. Fehlende Keys führen zu Raw-Key-Anzeige in der UI (Memory-Feedback `feedback_i18n_required.md`).
+
+- [ ] **Step 1: Key-Liste sammeln**
+
+Alle neuen Keys aus den Template-Snippets extrahieren:
+
+```
+gateway_offline_title
+gateway_offline_heading
+gateway_offline_message
+gateway_offline_hint
+gateway_name_label
+gateway_last_seen_label
+peer_is_gateway
+peer_gateway_hint
+peer_gateway_api_port
+gateway_download_env
+gateway_download_warning
+gateway_download_confirm
+route_target_kind
+route_target_peer
+route_target_gateway
+route_gateway_peer
+route_lan_host
+route_lan_port
+route_wol_enabled
+route_wol_mac
+gateway_needs_repair_title
+gateway_needs_repair_msg
+download_new_env
+```
+
+- [ ] **Step 2: Deutsche Übersetzungen in `locales/de.json` ergänzen**
+
+Diese Keys als neue Entries hinzufügen:
+
+```json
+"gateway_offline_title": "Home Gateway offline",
+"gateway_offline_heading": "Home Gateway ist offline",
+"gateway_offline_message": "Der Home-Gateway, über den diese Seite erreichbar ist, antwortet aktuell nicht.",
+"gateway_offline_hint": "Bitte kontaktiere deinen Administrator.",
+"gateway_name_label": "Gateway",
+"gateway_last_seen_label": "Letzter Kontakt",
+"peer_is_gateway": "Home Gateway",
+"peer_gateway_hint": "Aktiviere, wenn dieser Peer ein Home Gateway im Heimnetz ist",
+"peer_gateway_api_port": "Gateway API Port",
+"gateway_download_env": "Gateway-Config herunterladen",
+"gateway_download_warning": "ACHTUNG: Tokens werden regeneriert — alter Gateway wird ungültig",
+"gateway_download_confirm": "Beim Download werden die Gateway-Tokens neu generiert. Der aktuell laufende Gateway verliert dadurch die Verbindung. Fortfahren?",
+"route_target_kind": "Ziel-Typ",
+"route_target_peer": "Direkter Peer (WG-IP)",
+"route_target_gateway": "Home Gateway (LAN)",
+"route_gateway_peer": "Gateway",
+"route_lan_host": "LAN-Host",
+"route_lan_port": "LAN-Port",
+"route_wol_enabled": "Wake-on-LAN aktivieren",
+"route_wol_mac": "MAC-Adresse (AA:BB:CC:DD:EE:FF)",
+"gateway_needs_repair_title": "Gateways benötigen Re-Pairing",
+"gateway_needs_repair_msg": "Nach Master-Key-Rotation müssen folgende Gateways neu gepaart werden:",
+"download_new_env": "Neue Config herunterladen"
+```
+
+- [ ] **Step 3: Englische Übersetzungen in `locales/en.json` ergänzen**
+
+Gleiche Keys mit englischen Strings:
+
+```json
+"gateway_offline_title": "Home Gateway offline",
+"gateway_offline_heading": "Home Gateway is offline",
+"gateway_offline_message": "The Home Gateway routing this page is not responding right now.",
+"gateway_offline_hint": "Please contact your administrator.",
+"gateway_name_label": "Gateway",
+"gateway_last_seen_label": "Last contact",
+"peer_is_gateway": "Home Gateway",
+"peer_gateway_hint": "Enable if this peer is a Home Gateway in your local network",
+"peer_gateway_api_port": "Gateway API Port",
+"gateway_download_env": "Download gateway config",
+"gateway_download_warning": "WARNING: tokens will be regenerated — current gateway will be invalidated",
+"gateway_download_confirm": "Downloading regenerates the gateway tokens. The currently running gateway will lose its connection. Continue?",
+"route_target_kind": "Target type",
+"route_target_peer": "Direct peer (WG-IP)",
+"route_target_gateway": "Home Gateway (LAN)",
+"route_gateway_peer": "Gateway",
+"route_lan_host": "LAN host",
+"route_lan_port": "LAN port",
+"route_wol_enabled": "Enable Wake-on-LAN",
+"route_wol_mac": "MAC address (AA:BB:CC:DD:EE:FF)",
+"gateway_needs_repair_title": "Gateways need re-pairing",
+"gateway_needs_repair_msg": "After master key rotation, the following gateways must be re-paired:",
+"download_new_env": "Download new config"
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add locales/de.json locales/en.json
+git commit -m "i18n(gateway): add 23 new translation keys for home-gateway UI"
 git push
 ```
 
