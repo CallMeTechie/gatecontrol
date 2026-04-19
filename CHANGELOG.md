@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.14] — 2026-04-19
+
+### Fixes
+- round-3 — await createGateway in Task 22 peer-create handler
+
+---
+
 ## [1.39.13] — 2026-04-19
 
 ### Fixes
