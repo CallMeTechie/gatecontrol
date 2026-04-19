@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.16] — 2026-04-19
+
+### Fixes
+- round-2 — WoL tests for RFC1918 + lan_host_port + Dockerfile ARG default
+
+---
+
 ## [1.39.15] — 2026-04-19
 
 ### Fixes
