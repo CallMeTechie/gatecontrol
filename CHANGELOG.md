@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.9] — 2026-04-19
+
+### Fixes
+- address round-1 review findings (crypto + TDD + CI)
+
+---
+
 ## [1.39.8] — 2026-04-18
 
 ### Dokumentation
