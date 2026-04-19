@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.12] — 2026-04-19
+
+### Fixes
+- round-1 review findings (backend + integration)
+
+---
+
 ## [1.39.11] — 2026-04-19
 
 ### Fixes
