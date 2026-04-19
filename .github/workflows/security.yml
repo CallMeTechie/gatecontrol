@@ -30,6 +30,8 @@ jobs:
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
@@ -46,11 +48,17 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Run npm audit
         run: npm audit --audit-level=high || true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Check for critical vulnerabilities
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           RESULT=$(npm audit --json 2>/dev/null | node -e "
             const data=require('fs').readFileSync('/dev/stdin','utf8');
@@ -78,6 +86,8 @@ jobs:
 
       - name: Install ESLint with security plugin
         run: npm install --no-save eslint@8 eslint-plugin-security@1.7.1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Create security ESLint config
         run: |
