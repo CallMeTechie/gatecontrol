@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.11] — 2026-04-19
+
+### Fixes
+- round-3 — moduleNameMapper excludes dist/ (integration test resolves to built artifact)
+
+---
+
 ## [1.39.10] — 2026-04-19
 
 ### Fixes
