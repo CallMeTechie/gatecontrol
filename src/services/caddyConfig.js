@@ -684,10 +684,71 @@ async function syncToCaddy() {
   return true;
 }
 
+// ─── Gateway-aware partial patching of Caddy Admin API ──────
+// Uses @id route markers (added in Task 18) so status transitions can be
+// applied without a full config reload — PATCH /id/gc_route_<id>/handle.
+
+const _caddyApi = {
+  async patch(patchPath, body) {
+    const http = require('node:http');
+    return new Promise((resolve, reject) => {
+      const url = new URL((process.env.GC_CADDY_ADMIN_URL || config.caddy.adminUrl || 'http://127.0.0.1:2019') + patchPath);
+      const payload = body === null || body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body));
+      const req = http.request({
+        host: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          'Origin': 'http://127.0.0.1:2019',
+        },
+      }, (res) => {
+        res.resume();
+        res.on('end', resolve);
+      });
+      req.on('error', reject);
+      if (payload) req.write(payload);
+      req.end();
+    });
+  },
+};
+
+async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSeen }) {
+  const db = getDb();
+  const routes = db.prepare(`
+    SELECT id, domain FROM routes
+    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
+  `).all(peerId);
+
+  for (const route of routes) {
+    const routeId = `gc_route_${route.id}`;
+    const handler = offline
+      ? {
+          handler: 'static_response',
+          status_code: 502,
+          headers: { 'Content-Type': ['text/html; charset=utf-8'] },
+          body: renderMaintenancePage({ gateway_name: gatewayName, gateway_last_seen: lastSeen }),
+        }
+      : null;
+
+    try {
+      // Standard pattern: PATCH /id/gc_route_<id>/handle
+      await module.exports._caddyApi.patch(`/id/${routeId}/handle`, handler || 'revert');
+    } catch (err) {
+      logger.warn({ err: err.message, routeId }, 'Caddy partial patch failed');
+    }
+  }
+}
+
 module.exports = {
   caddyApi,
   buildCaddyConfig,
   syncToCaddy,
   getAclPeers,
   setAclPeers,
+  patchGatewayRouteHandlers,
+  _caddyApi,
+  renderMaintenancePage,
 };
