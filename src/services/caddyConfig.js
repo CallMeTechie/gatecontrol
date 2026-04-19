@@ -13,6 +13,22 @@ const config = require('../../config/default');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
 const { getAuthForRoute } = require('./routeAuth');
 const logger = require('../utils/logger');
+const nunjucks = require('nunjucks');
+const nodePath = require('node:path');
+
+/**
+ * Render the gateway-offline maintenance page. Nunjucks-based so i18n-keys
+ * are picked up via the `t()` helper. Uses a fallback key-lookup if no
+ * request-scoped t() is available (standalone render from caddyConfig builder).
+ */
+function renderMaintenancePage(ctx) {
+  const tmplDir = nodePath.join(__dirname, '..', '..', 'templates');
+  const env = nunjucks.configure(tmplDir, { autoescape: true, noCache: false });
+  // Provide a default `t()` helper that returns the raw key — the gateway-
+  // offline page is rendered server-side at config-build time (no request).
+  env.addGlobal('t', (key) => key);
+  return env.render('gateway-offline.njk', { lang: 'de', ...ctx });
+}
 
 const CADDY_ADMIN = config.caddy.adminUrl;
 
@@ -174,14 +190,32 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       } catch {}
     }
 
-    const reverseProxy = {
-      handler: 'reverse_proxy',
-      upstreams,
-    };
+    // Gateway-offline: serve maintenance page instead of proxying
+    let reverseProxy;
+    if (route.target_kind === 'gateway' && route.gateway_offline) {
+      const html = renderMaintenancePage({
+        gateway_name: route.gateway_name || '',
+        gateway_last_seen: route.gateway_last_seen || '',
+      });
+      reverseProxy = {
+        handler: 'static_response',
+        status_code: 502,
+        headers: { 'Content-Type': ['text/html; charset=utf-8'] },
+        body: html,
+      };
+      // Skip to route config assembly — no upstreams/headers needed
+    } else {
+      reverseProxy = {
+        handler: 'reverse_proxy',
+        upstreams,
+      };
+    }
 
     // Gateway-routing: inject X-Gateway-Target and X-Gateway-Target-Domain headers
     // so the Gateway-HTTP-Proxy knows the LAN target to forward to.
-    if (gatewayPeerIp && (route.target_lan_host || route.target_lan_port)) {
+    // Skip when serving the gateway_offline maintenance page (static_response).
+    if (reverseProxy.handler === 'reverse_proxy'
+        && gatewayPeerIp && (route.target_lan_host || route.target_lan_port)) {
       const lanTarget = `${route.target_lan_host}:${route.target_lan_port}`;
       reverseProxy.headers = reverseProxy.headers || {};
       reverseProxy.headers.request = reverseProxy.headers.request || {};
