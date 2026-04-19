@@ -6,6 +6,10 @@ const { encrypt, decrypt } = require('../utils/crypto');
 const license = require('./license');
 const peers = require('./peers');
 const logger = require('../utils/logger');
+const {
+  computeConfigHash: libComputeConfigHash,
+  CONFIG_HASH_VERSION,
+} = require('@callmetechie/gatecontrol-config-hash');
 
 const DEFAULT_API_PORT = 9876;
 
@@ -54,4 +58,62 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
   return { peer, apiToken, pushToken };
 }
 
-module.exports = { createGateway };
+/**
+ * Build the gateway-config payload sent to a Gateway on poll.
+ * Includes all HTTP + L4 routes with target_peer_id=peerId.
+ */
+function getGatewayConfig(peerId) {
+  const db = getDb();
+
+  const httpRoutes = db.prepare(`
+    SELECT id, domain, target_kind, target_lan_host, target_lan_port,
+           COALESCE(l4_protocol, 'http') AS protocol, wol_enabled, wol_mac
+    FROM routes
+    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
+      AND (route_type = 'http' OR route_type IS NULL)
+    ORDER BY id
+  `).all(peerId);
+
+  const l4Routes = db.prepare(`
+    SELECT id, l4_listen_port AS listen_port, target_lan_host, target_lan_port,
+           wol_enabled, wol_mac
+    FROM routes
+    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
+      AND route_type = 'l4'
+    ORDER BY id
+  `).all(peerId);
+
+  return {
+    config_hash_version: CONFIG_HASH_VERSION,
+    peer_id: peerId,
+    routes: httpRoutes.map(r => ({
+      id: r.id,
+      domain: r.domain,
+      target_kind: r.target_kind,
+      target_lan_host: r.target_lan_host,
+      target_lan_port: r.target_lan_port,
+      protocol: r.protocol,
+      wol_enabled: !!r.wol_enabled,
+      ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
+    })),
+    l4_routes: l4Routes.map(r => ({
+      id: r.id,
+      listen_port: r.listen_port,
+      target_lan_host: r.target_lan_host,
+      target_lan_port: r.target_lan_port,
+      wol_enabled: !!r.wol_enabled,
+      ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
+    })),
+  };
+}
+
+/**
+ * Compute SHA-256 hash of the gateway config for a peer. Delegates to the
+ * shared library for byte-identical results with the Gateway side.
+ */
+function computeConfigHash(peerId) {
+  const cfg = getGatewayConfig(peerId);
+  return libComputeConfigHash(cfg);
+}
+
+module.exports = { createGateway, getGatewayConfig, computeConfigHash };
