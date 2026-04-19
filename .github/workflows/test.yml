@@ -71,3 +71,29 @@ jobs:
 
       - name: Run ESLint security scan
         run: npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc --format stylish
+
+  mutation:
+    name: Mutation tests (gateway)
+    runs-on: ubuntu-latest
+    needs: test
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.labels.*.name, 'mutation-test')
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
+      - name: Install deps
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+      - name: Mutation test
+        run: npx stryker run || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
