@@ -193,4 +193,49 @@ async function notifyConfigChanged(peerId) {
   });
 }
 
-module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot, notifyConfigChanged };
+/**
+ * Push a WoL trigger to a Gateway, which will send the magic packet on LAN.
+ * Returns the Gateway's response body ({ success, elapsed_ms }) or null on error.
+ */
+async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return null;
+
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+  const payload = JSON.stringify({ mac, lan_host, timeout_ms });
+
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: ip,
+      port: row.api_port,
+      path: '/api/wol',
+      method: 'POST',
+      timeout: timeout_ms + 5000,
+      headers: {
+        'X-Gateway-Token': pushToken,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); } catch { resolve(null); }
+      });
+    });
+    req.on('error', (err) => {
+      logger.warn({ err: err.message, peerId, mac }, 'Gateway WoL trigger failed');
+      resolve(null);
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(payload);
+  });
+}
+
+module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot, notifyConfigChanged, notifyWol };
