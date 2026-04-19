@@ -1,13 +1,27 @@
 'use strict';
 
-const { describe, it } = require('node:test');
+const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 
 process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
-const { buildCaddyConfig } = require('../src/services/caddyConfig');
+// Ensure tests have a migrated DB — buildCaddyConfig() does DB lookups even
+// when given explicit `routes` (e.g. getAuthForRoute, getAclPeers).
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-cc-gw-'));
+process.env.GC_DB_PATH = path.join(tmp, 'test.db');
+process.env.GC_DATA_DIR = tmp;
+
+let buildCaddyConfig;
+
+before(() => {
+  require('../src/db/migrations').runMigrations();
+  buildCaddyConfig = require('../src/services/caddyConfig').buildCaddyConfig;
+});
 
 describe('caddyConfig: gateway-typed routes', () => {
   it('route with target_kind=gateway routes to gateway-peer-ip + proxy port + headers', () => {
