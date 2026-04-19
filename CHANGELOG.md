@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.4] — 2026-04-19
+
+### Fixes
+- token modal with copy + download, CSRF via api.post, license fallback merge
+
+---
+
 ## [1.40.3] — 2026-04-19
 
 ### Fixes
