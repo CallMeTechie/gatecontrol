@@ -2988,11 +2988,12 @@ document.getElementById('is_gateway').addEventListener('change', (e) => {
 
 - [ ] **Step 2: Backend-Handler erweitern**
 
-Modify Peer-Create-Handler in `/root/gatecontrol/src/routes/peers.js` (oder wo Peers erstellt werden):
+Modify Peer-Create-Handler in `/root/gatecontrol/src/routes/peers.js` (oder wo Peers erstellt werden). Handler muss `async` sein (createGateway ist async):
 
 ```javascript
+// router.post('/', asyncHandler(async (req, res) => {
 if (req.body.is_gateway) {
-  const { peer, apiToken, pushToken } = require('../services/gateways').createGateway({
+  const { peer, apiToken, pushToken } = await require('../services/gateways').createGateway({
     name: req.body.name,
     apiPort: parseInt(req.body.api_port, 10) || 9876,
   });
