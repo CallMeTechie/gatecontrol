@@ -82,7 +82,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -92,6 +92,21 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
     if (descErr) fields.description = req.t('error.peers.description_invalid') || descErr;
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
+    }
+
+    if (is_gateway) {
+      // Gateway path: create peer + meta + tokens in one go. Return plaintext
+      // tokens ONCE so the admin can download the gateway.env file.
+      const gateways = require('../../services/gateways');
+      const result = await gateways.createGateway({
+        name,
+        apiPort: api_port ? parseInt(api_port, 10) : 9876,
+      });
+      return res.status(201).json({
+        ok: true,
+        peer: stripPeer(result.peer),
+        gateway: { apiToken: result.apiToken, pushToken: result.pushToken },
+      });
     }
 
     const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null, dns });

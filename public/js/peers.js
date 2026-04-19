@@ -384,6 +384,15 @@
   if (peersMobile) peersMobile.addEventListener('click', handlePeerAction);
 
   // ─── Add peer ────────────────────────────────────────────
+  // Toggle gateway-fields visibility on checkbox change
+  var isGatewayCb = document.getElementById('add-peer-is-gateway');
+  if (isGatewayCb) {
+    isGatewayCb.addEventListener('change', function() {
+      var fields = document.getElementById('add-peer-gateway-fields');
+      if (fields) fields.style.display = this.checked ? 'block' : 'none';
+    });
+  }
+
   document.getElementById('btn-add-peer').addEventListener('click', function() {
     document.getElementById('add-peer-name').value = '';
     document.getElementById('add-peer-desc').value = '';
@@ -392,6 +401,11 @@
     document.getElementById('add-peer-expires').value = '';
     document.getElementById('add-peer-expires-date').value = '';
     document.getElementById('add-peer-expires-date').style.display = 'none';
+    if (isGatewayCb) {
+      isGatewayCb.checked = false;
+      var gwFields = document.getElementById('add-peer-gateway-fields');
+      if (gwFields) gwFields.style.display = 'none';
+    }
     hideError('add-peer-error');
     clearFieldErrors();
     renderGroupDropdowns();
@@ -415,10 +429,22 @@
     try {
       var dns = document.getElementById('add-peer-dns') ? document.getElementById('add-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('add-peer-expires', 'add-peer-expires-date');
-      var data = await api.post('/api/peers', { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined });
+      var isGatewayEl = document.getElementById('add-peer-is-gateway');
+      var apiPortEl = document.getElementById('add-peer-api-port');
+      var isGateway = !!(isGatewayEl && isGatewayEl.checked);
+      var apiPort = apiPortEl ? parseInt(apiPortEl.value, 10) || 9876 : 9876;
+      var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined };
+      if (isGateway) {
+        payload.is_gateway = true;
+        payload.api_port = apiPort;
+      }
+      var data = await api.post('/api/peers', payload);
       if (data.ok) {
         clearFieldErrors();
         closeModal('modal-add-peer');
+        if (data.gateway && data.gateway.apiToken && data.gateway.pushToken) {
+          alert('Gateway Tokens (ONE-TIME, save now!):\nAPI: ' + data.gateway.apiToken + '\nPush: ' + data.gateway.pushToken);
+        }
         showQrModal(data.peer.id);
         loadPeers();
         loadGroups();
