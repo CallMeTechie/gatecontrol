@@ -19,8 +19,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
 
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Run tests with coverage
         run: npx c8 --reporter=text --reporter=lcov --lines 40 npm test

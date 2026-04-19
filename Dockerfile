@@ -14,9 +14,11 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
 # Stage 2: Node dependencies
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
+ARG NODE_AUTH_TOKEN
+COPY package*.json .npmrc ./
 RUN npm ci --production --ignore-scripts && \
-    npm rebuild argon2 better-sqlite3
+    npm rebuild argon2 better-sqlite3 && \
+    rm -f .npmrc
 
 # Stage 3: Runtime
 FROM node:20-alpine

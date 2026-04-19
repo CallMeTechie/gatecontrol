@@ -9,6 +9,7 @@
     "test": "node --test --test-force-exit tests/"
   },
   "dependencies": {
+    "@callmetechie/gatecontrol-config-hash": "^1.0.0",
     "argon2": "^0.41.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.7.0",

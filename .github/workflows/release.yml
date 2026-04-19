@@ -22,7 +22,11 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
       - run: npm install --no-audit --no-fund
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
       - name: npm audit (high/critical)
         run: |
           CRITICAL=$(npm audit --json 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log((d.metadata?.vulnerabilities?.critical||0))}catch{console.log(0)}")
@@ -35,7 +39,11 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
       - run: npm test
         env:
           NODE_ENV: test
@@ -171,12 +179,16 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            NODE_AUTH_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump.outputs.new }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       # ─── Release: Offline-Paket ───────────────────────
       - name: Build image for offline package
         if: steps.check_tag.outputs.exists == 'false'
-        run: docker build -t gatecontrol:latest .
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: docker build --build-arg "NODE_AUTH_TOKEN=$NODE_AUTH_TOKEN" -t gatecontrol:latest .
 
       - name: Export image
         if: steps.check_tag.outputs.exists == 'false'
