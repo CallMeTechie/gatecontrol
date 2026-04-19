@@ -103,7 +103,13 @@
   var peersMobile = document.getElementById('peers-mobile');
 
   function actionBtns(p) {
-    return '<button class="icon-btn" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
+    var gatewayBtn = p.peer_type === 'gateway'
+      ? '<button class="icon-btn" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+        '</button>'
+      : '';
+    return gatewayBtn +
+    '<button class="icon-btn" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
     '</button>' +
     '<button class="icon-btn" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
@@ -157,7 +163,7 @@
       return '<tr data-peer-id="' + p.id + '">' +
         batchTd +
         '<td>' +
-          '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + '</div>' +
+          '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + getGatewayBadge(p) + '</div>' +
           '<div class="peer-meta">' + escapeHtml(p.description || '') + '</div>' +
           hostnameHtml +
           (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
@@ -193,7 +199,7 @@
           '<div class="peer-card-top">' +
             mobileBatchCb +
             '<div class="peer-card-info">' +
-              '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + '</div>' +
+              '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + getGatewayBadge(p) + '</div>' +
               (p.description ? '<div class="peer-meta">' + escapeHtml(p.description) + '</div>' : '') +
               (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
             '</div>' +
@@ -208,6 +214,12 @@
         '</div>';
       }).join('');
     }
+  }
+
+  // ─── Gateway badge ───────────────────────────────────────
+  function getGatewayBadge(peer) {
+    if (peer.peer_type !== 'gateway') return '';
+    return ' <span style="display:inline-flex;align-items:center;font-size:10px;padding:1px 6px;border-radius:9999px;background:#0ea5e91a;color:#0ea5e9;border:1px solid #0ea5e940;margin-left:4px;font-weight:600;letter-spacing:0.5px">GATEWAY</span>';
   }
 
   // ─── Group badge ─────────────────────────────────────────
@@ -378,6 +390,41 @@
       case 'edit': showEditModal(id); break;
       case 'toggle': togglePeer(id); break;
       case 'delete': showConfirmDelete(id, btn.dataset.name); break;
+      case 'gateway-env': downloadGatewayEnv(id); break;
+    }
+  }
+
+  // ─── Gateway env download (rotates tokens on server) ─────
+  async function downloadGatewayEnv(peerId) {
+    var confirmMsg = GC.t['gateway_download_confirm']
+      || 'Downloading regenerates the gateway tokens. The currently running gateway will lose its connection. Continue?';
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      var resp = await fetch('/api/v1/peers/' + encodeURIComponent(peerId) + '/gateway-env/rotate', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '',
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      if (!resp.ok) {
+        alert('Download failed (' + resp.status + ')');
+        return;
+      }
+      var text = await resp.text();
+      var blob = new Blob([text], { type: 'text/plain' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'gateway-' + peerId + '.env';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Download error: ' + err.message);
     }
   }
   tbody.addEventListener('click', handlePeerAction);
