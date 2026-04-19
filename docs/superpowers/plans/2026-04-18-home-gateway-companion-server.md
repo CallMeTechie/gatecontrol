@@ -103,11 +103,18 @@ Append to `/root/gatecontrol/src/db/migrations.js` im `migrations`-Array (vor de
   {
     version: 36,
     name: 'add_gateway_support',
+    // SQLite ALTER TABLE ADD COLUMN silently ignores REFERENCES in some versions;
+    // we add the column WITHOUT inline FK and rely on service-layer validation.
+    // FK cascades for gateway_meta.peer_id work because gateway_meta is CREATE TABLE (not ALTER).
+    detect: (db) => {
+      const cols = db.prepare("PRAGMA table_info(peers)").all();
+      return cols.some(c => c.name === 'peer_type');
+    },
     sql: `
       ALTER TABLE peers ADD COLUMN peer_type TEXT NOT NULL DEFAULT 'regular';
 
       ALTER TABLE routes ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'peer';
-      ALTER TABLE routes ADD COLUMN target_peer_id INTEGER REFERENCES peers(id) ON DELETE SET NULL;
+      ALTER TABLE routes ADD COLUMN target_peer_id INTEGER;
       ALTER TABLE routes ADD COLUMN target_lan_host TEXT;
       ALTER TABLE routes ADD COLUMN target_lan_port INTEGER;
       ALTER TABLE routes ADD COLUMN wol_enabled INTEGER NOT NULL DEFAULT 0;
@@ -123,9 +130,14 @@ Append to `/root/gatecontrol/src/db/migrations.js` im `migrations`-Array (vor de
         last_config_hash TEXT,
         created_at INTEGER NOT NULL
       );
+
+      CREATE INDEX IF NOT EXISTS idx_routes_target_peer_id ON routes(target_peer_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_meta_api_token_hash ON gateway_meta(api_token_hash);
     `,
   },
 ```
+
+**FK-Cascade für routes.target_peer_id:** Service-Layer in `services/gateways.js.deleteGateway()` muss routes manuell auf `enabled=0` setzen und LAN-Daten beibehalten (siehe Sektion 6.2 der Spec). Kein inline FK, weil SQLite `ALTER TABLE ADD COLUMN REFERENCES` nicht zuverlässig enforced.
 
 - [ ] **Step 4: Test ausführen — muss grün sein**
 
@@ -497,8 +509,10 @@ function generateTokens() {
  * Create a Gateway-Peer with its metadata. Enforces license limit gateway_peers.
  * Returns { peer, apiToken, pushToken } (plaintext tokens only shown ONCE at creation
  * for inclusion in gateway.env file).
+ *
+ * ASYNC because peers.create() generates WireGuard keys asynchronously.
  */
-function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
+async function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
   const db = getDb();
 
   const limit = license.getFeature('gateway_peers');
@@ -507,7 +521,8 @@ function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
     throw new Error(`License limit reached: gateway_peers=${limit} (current=${current})`);
   }
 
-  const peer = peers.createPeer({ name, peerType: 'gateway' });
+  // peers.create() is the existing async factory — we extend its param list to accept peerType
+  const peer = await peers.create({ name, peerType: 'gateway' });
 
   const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
 
@@ -524,24 +539,26 @@ function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
 module.exports = { createGateway };
 ```
 
-- [ ] **Step 4: `peers.createPeer` um `peerType`-Parameter erweitern**
+**Consumer-Hinweis:** Alle Tests, die `gateways.createGateway(...)` aufrufen, müssen das Ergebnis awaiten. Die Test-Snippets in Tasks 5-14 sind mit Promise-Returns geschrieben — bei Ausführung muss das Test-Code-Muster `const gw = await gateways.createGateway(...)` sein. In `before()` hooks: `await` nutzen oder synchronen Wrapper per `before(async () => { ... })` definieren.
 
-Modify `/root/gatecontrol/src/services/peers.js` — in der `createPeer`-Funktion:
+- [ ] **Step 4: `peers.create()` um `peerType`-Parameter erweitern**
+
+Modify `/root/gatecontrol/src/services/peers.js` — in der bestehenden `create`-Funktion (Export `module.exports = { create, ... }`):
 - Parameter-Destructuring um `peerType = 'regular'` erweitern
-- Im INSERT-Statement `peer_type` mit aufnehmen:
+- Im INSERT-Statement `peer_type` in die Spaltenliste + VALUES aufnehmen:
 
 ```javascript
-function createPeer({ name, peerType = 'regular' /* ...andere existing params */ }) {
-  // ... bestehende Logik ...
+async function create({ name, peerType = 'regular', /* ...bestehende Parameter */ }) {
+  // ... bestehende Logik (Key-Generation, IP-Allocation, etc.) ...
   const info = db.prepare(`
-    INSERT INTO peers (name, public_key, ip_address, /* ... */, peer_type)
-    VALUES (?, ?, ?, /* ... */, ?)
-  `).run(name, publicKey, ipAddress, /* ... */, peerType);
+    INSERT INTO peers (name, public_key, ip_address, /* ...bestehende Spalten */, peer_type)
+    VALUES (?, ?, ?, /* ...bestehende Placeholders */, ?)
+  `).run(name, publicKey, ipAddress, /* ...bestehende Werte */, peerType);
   // ... rest unchanged
 }
 ```
 
-(Exakte Signatur an bestehende Funktion anpassen — nicht vorhandene Spalten nicht dazu erfinden.)
+(Exakte Signatur an bestehende Funktion in `src/services/peers.js` anpassen — nicht vorhandene Spalten nicht dazu erfinden. Die Änderung ist rein additiv und backward-compatible, weil `peerType` einen Default hat.)
 
 - [ ] **Step 5: Test ausführen — muss grün sein**
 
@@ -972,9 +989,9 @@ node --test tests/gateway_auth.test.js
 
 Expected: 4 Tests grün. Falls es Fehlschläge gibt, den Code entsprechend anpassen (häufig: die Suchlogik für Hash-Match muss geradliniger sein — einfach `SELECT * FROM gateway_meta WHERE api_token_hash=?` mit bereits gehashtem Input).
 
-- [ ] **Step 5: Code vereinfachen (falls nötig)**
+- [ ] **Step 5: Code mit explizitem timingSafeEqual-Check ergänzen**
 
-Replace the `requireGateway` body with a cleaner version that uses direct hash lookup:
+Replace the `requireGateway` body:
 
 ```javascript
 function requireGateway(req, res, next) {
@@ -989,22 +1006,38 @@ function requireGateway(req, res, next) {
   const tokenHash = hashToken(token);
   const db = getDb();
   const match = db.prepare(`
-    SELECT gm.peer_id, gm.api_port, p.name AS peer_name, p.ip_address
+    SELECT gm.peer_id, gm.api_port, gm.api_token_hash AS stored_hash,
+           p.name AS peer_name, p.ip_address
     FROM gateway_meta gm
     JOIN peers p ON p.id = gm.peer_id
     WHERE gm.api_token_hash = ? AND p.peer_type = 'gateway' AND p.enabled = 1
   `).get(tokenHash);
 
+  // Defense-in-depth: even though the indexed lookup already requires matching
+  // hashes, do an explicit timingSafeEqual on the stored vs computed hash to
+  // prevent any theoretical timing side-channel from b-tree-index comparison.
   if (!match) {
     logger.warn({ ip: req.ip }, 'Invalid gateway token');
     return res.status(403).json({ error: 'invalid_token' });
   }
-  req.gateway = match;
+  const storedBuf = Buffer.from(match.stored_hash, 'utf8');
+  const computedBuf = Buffer.from(tokenHash, 'utf8');
+  if (storedBuf.length !== computedBuf.length || !crypto.timingSafeEqual(storedBuf, computedBuf)) {
+    logger.warn({ ip: req.ip }, 'Timing-safe compare failed — token mismatch');
+    return res.status(403).json({ error: 'invalid_token' });
+  }
+
+  req.gateway = {
+    peer_id: match.peer_id,
+    api_port: match.api_port,
+    peer_name: match.peer_name,
+    ip_address: match.ip_address,
+  };
   next();
 }
 ```
 
-(Begründung: Direct-Hash-Lookup ist timing-safe, weil SHA-256 selbst fest in Zeit ist und DB-Index-Lookup konstante Komplexität hat. Der zusätzliche `timingSafeEqual`-Check ist redundant, wenn wir den Hash nur als Lookup-Key nutzen — nicht als Plaintext-Compare.)
+(Begründung: Der DB-Index-Lookup auf `api_token_hash` ist in der Praxis schnell, aber B-Tree-Lookups sind nicht garantiert konstant-zeitig. Der explizite `timingSafeEqual` macht den Vergleich korrekt timing-safe und verhindert Sidechannel-Analyse.)
 
 - [ ] **Step 6: Test nochmal grün**
 
@@ -1056,8 +1089,8 @@ describe('gateway API: /config + /config/check', () => {
     const gw = gateways.createGateway({ name: 'api-gw', apiPort: 9876 });
     apiToken = gw.apiToken;
 
-    const { buildApp } = require('../src/app');
-    app = buildApp();
+    const { createApp } = require('../src/app');
+    app = createApp();
     server = app.listen(0);
     const port = server.address().port;
     baseUrl = `http://127.0.0.1:${port}`;
@@ -1209,8 +1242,8 @@ describe('gateway API: /heartbeat', () => {
     const gateways = require('../src/services/gateways');
     const gw = gateways.createGateway({ name: 'hb-gw', apiPort: 9876 });
     apiToken = gw.apiToken; peerId = gw.peer.id;
-    const { buildApp } = require('../src/app');
-    server = buildApp().listen(0);
+    const { createApp } = require('../src/app');
+    server = createApp().listen(0);
     baseUrl = `http://127.0.0.1:${server.address().port}`;
     db = require('../src/db/connection').getDb();
   });
@@ -1378,8 +1411,8 @@ describe('gateway API: /status and /probe', () => {
     const gateways = require('../src/services/gateways');
     const gw = gateways.createGateway({ name: 'st-gw', apiPort: 9876 });
     apiToken = gw.apiToken;
-    const { buildApp } = require('../src/app');
-    server = buildApp().listen(0);
+    const { createApp } = require('../src/app');
+    server = createApp().listen(0);
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
@@ -1933,14 +1966,22 @@ describe('Gateway Health StateMachine (sliding window)', () => {
   });
 
   it('counts flaps in last hour', () => {
+    // 1st transition: unknown → online (no cooldown check for first transition)
     for (let i = 0; i < 5; i++) sm.recordHeartbeat(true);
+    assert.equal(sm.status, 'online');
+
+    // Fake cooldown elapsed so next Offline-Transition is allowed by _evaluate (called from recordHeartbeat)
     sm._lastTransitionAt = Date.now() - 10 * 60 * 1000;
     sm.recordHeartbeat(false); sm.recordHeartbeat(false); sm.recordHeartbeat(false);
-    sm._evaluate();
+    assert.equal(sm.status, 'offline');
+
+    // Fake cooldown elapsed again for the Online-Transition
     sm._lastTransitionAt = Date.now() - 10 * 60 * 1000;
     sm.recordHeartbeat(true); sm.recordHeartbeat(true); sm.recordHeartbeat(true); sm.recordHeartbeat(true);
-    sm._evaluate();
-    assert.ok(sm.flapCountLastHour() >= 2);
+    assert.equal(sm.status, 'online');
+
+    // 2 transitions total: online-offline + offline-online
+    assert.equal(sm.flapCountLastHour(), 2);
   });
 });
 ```
@@ -2053,16 +2094,17 @@ const os = require('node:os');
 describe('monitor: gateway health tracking', () => {
   let gateways, activity, email, peerId;
 
-  before(() => {
+  before(async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-mon-'));
     process.env.GC_DB_PATH = path.join(tmp, 'test.db');
     ['../src/db/connection', '../src/db/migrations', '../src/services/gateways', '../src/services/monitor']
       .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
+    gateways._resetSmCacheForTest(); // prevent state bleed from prior test files
     activity = require('../src/services/activity');
     email = require('../src/services/email');
-    const gw = gateways.createGateway({ name: 'mon-gw', apiPort: 9876 });
+    const gw = await gateways.createGateway({ name: 'mon-gw', apiPort: 9876 });
     peerId = gw.peer.id;
   });
 
@@ -2165,15 +2207,20 @@ function getHealthStatus(peerId) {
   return _getSm(peerId).status;
 }
 
-// Testing helper
+// Testing helpers — not for production use
 function _forceCooldownExhaustedForTest(peerId) {
   const sm = _getSm(peerId);
   sm._lastTransitionAt = Date.now() - 10 * 60 * 1000;
 }
 
+function _resetSmCacheForTest() {
+  _smCache.clear();
+}
+
 module.exports.handleHeartbeat = handleHeartbeat;
 module.exports.getHealthStatus = getHealthStatus;
 module.exports._forceCooldownExhaustedForTest = _forceCooldownExhaustedForTest;
+module.exports._resetSmCacheForTest = _resetSmCacheForTest;
 ```
 
 - [ ] **Step 4: Test ausführen — muss grün sein**
@@ -2421,6 +2468,28 @@ const routes = db.prepare(`
 `).all();
 ```
 
+**Zwingend erforderlich für Task 20:** Jedes gebaute Caddy-Route-Objekt muss ein `@id`-Feld bekommen, damit die Caddy-Admin-API `PATCH /id/<id>/handle` funktioniert. In `buildCaddyConfig()` vor dem `return`:
+
+```javascript
+// Add @id marker on every HTTP route object so /config/apps/http/servers/.../routes/N
+// can be patched via Admin-API /id/ lookup (needed for Task 20 partial-patch-on-status-change)
+for (const caddyRoute of httpServerRoutes) {
+  caddyRoute['@id'] = `gc_route_${caddyRoute._source_id}`;
+}
+```
+
+Wobei `_source_id` bereits beim Bau mit der DB-Route-ID gesetzt sein muss. In Tests:
+
+```javascript
+it('gateway-typed HTTP route gets @id field for Admin-API patches', () => {
+  const routes = [{ id: 1, domain: 'nas.example.com', type: 'http', target_kind: 'gateway',
+                   target_peer_ip: '10.8.0.5', target_lan_host: '192.168.1.10', target_lan_port: 5001, enabled: 1 }];
+  const config = buildCaddyConfig(routes, { gatewayProxyPort: 8080 });
+  const json = JSON.stringify(config);
+  assert.ok(json.includes('gc_route_1'), '@id gc_route_<id> must be present for Admin-API /id lookup');
+});
+```
+
 - [ ] **Step 4: Test ausführen — muss grün sein**
 
 ```bash
@@ -2444,6 +2513,8 @@ git push
 - Modify: `/root/gatecontrol/src/services/caddyConfig.js`
 - Create: `/root/gatecontrol/tests/caddyConfig_offline.test.js`
 
+**i18n-Konvention für Templates Tasks 19, 22, 23, 24, 25:** Nutzt den bestehenden Nunjucks-Helper `{{ t('key') }}` aus `src/middleware/i18n.js`. Alle neuen Keys müssen in **beiden** Locale-Dateien ergänzt werden: `locales/de.json` und `locales/en.json`. Fehlt ein Key, gibt `t()` den Raw-Key-String zurück (z.B. `gateway_offline_title`) — im Dev sofort sichtbar.
+
 - [ ] **Step 1: Template erstellen**
 
 Create `/root/gatecontrol/templates/gateway-offline.njk`:
@@ -2453,7 +2524,7 @@ Create `/root/gatecontrol/templates/gateway-offline.njk`:
 <html lang="{{ lang or 'de' }}">
 <head>
   <meta charset="UTF-8">
-  <title>{{ __('gateway_offline_title', 'Home Gateway offline') }}</title>
+  <title>{{ t('gateway_offline_title') }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8f9fa; color: #212529; margin: 0; padding: 2rem; }
@@ -2466,13 +2537,13 @@ Create `/root/gatecontrol/templates/gateway-offline.njk`:
 </head>
 <body>
   <div class="container">
-    <h1>{{ __('gateway_offline_heading', 'Home Gateway ist offline') }}</h1>
-    <p>{{ __('gateway_offline_message', 'Der Home-Gateway, über den diese Seite erreichbar ist, antwortet aktuell nicht.') }}</p>
+    <h1>{{ t('gateway_offline_heading') }}</h1>
+    <p>{{ t('gateway_offline_message') }}</p>
     <div class="detail">
-      <strong>{{ __('gateway_name_label', 'Gateway') }}:</strong> <code>{{ gateway_name }}</code><br>
-      <strong>{{ __('gateway_last_seen_label', 'Letzter Kontakt') }}:</strong> <code>{{ gateway_last_seen }}</code>
+      <strong>{{ t('gateway_name_label') }}:</strong> <code>{{ gateway_name }}</code><br>
+      <strong>{{ t('gateway_last_seen_label') }}:</strong> <code>{{ gateway_last_seen }}</code>
     </div>
-    <p style="margin-top: 1.5rem; font-size: 0.875rem;">{{ __('gateway_offline_hint', 'Bitte kontaktiere deinen Administrator.') }}</p>
+    <p style="margin-top: 1.5rem; font-size: 0.875rem;">{{ t('gateway_offline_hint') }}</p>
   </div>
 </body>
 </html>
@@ -2612,7 +2683,7 @@ async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSee
   const caddyAdmin = process.env.GC_CADDY_ADMIN_URL || 'http://127.0.0.1:2019';
 
   for (const route of routes) {
-    const routeId = `route_${route.id}`; // assumes Caddy config uses @id convention
+    const routeId = `gc_route_${route.id}`; // @id convention established in Task 18
     const handler = offline
       ? {
           handler: 'static_response',
@@ -2723,8 +2794,8 @@ describe('GET /api/peers/:id/gateway-env', () => {
     gwPeerId = gw.peer.id;
     const t = tokens.createToken({ name: 'admin', scopes: ['full-access'] });
     adminToken = t.token;
-    const { buildApp } = require('../src/app');
-    server = buildApp().listen(0);
+    const { createApp } = require('../src/app');
+    server = createApp().listen(0);
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
@@ -2739,8 +2810,19 @@ describe('GET /api/peers/:id/gateway-env', () => {
     });
   }
 
-  it('returns gateway.env content when called on gateway peer', async () => {
-    const r = await get(`/api/v1/peers/${gwPeerId}/gateway-env`, { Authorization: `Bearer ${adminToken}` });
+  async function postJson(p, body, headers = {}) {
+    return new Promise(resolve => {
+      const url = new URL(baseUrl + p);
+      const payload = JSON.stringify(body);
+      const req = http.request({ host: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...headers } },
+        (r) => { let b = ''; r.on('data', c => b += c); r.on('end', () => resolve({ status: r.statusCode, body: b })); });
+      req.end(payload);
+    });
+  }
+
+  it('returns gateway.env content on POST rotate', async () => {
+    const r = await postJson(`/api/v1/peers/${gwPeerId}/gateway-env/rotate`, {}, { Authorization: `Bearer ${adminToken}` });
     assert.equal(r.status, 200);
     assert.match(r.body, /GC_SERVER_URL=/);
     assert.match(r.body, /GC_API_TOKEN=gc_gw_[a-f0-9]{64}/);
@@ -2751,7 +2833,7 @@ describe('GET /api/peers/:id/gateway-env', () => {
   it('returns 404 on non-gateway peer', async () => {
     const db = require('../src/db/connection').getDb();
     const regularPeerId = db.prepare("INSERT INTO peers (name, public_key, ip_address, peer_type) VALUES ('regular', 'key', '10.8.0.77', 'regular')").run().lastInsertRowid;
-    const r = await get(`/api/v1/peers/${regularPeerId}/gateway-env`, { Authorization: `Bearer ${adminToken}` });
+    const r = await postJson(`/api/v1/peers/${regularPeerId}/gateway-env/rotate`, {}, { Authorization: `Bearer ${adminToken}` });
     assert.equal(r.status, 404);
   });
 });
@@ -2835,12 +2917,14 @@ function rotateGatewayTokens(peerId) {
 module.exports.rotateGatewayTokens = rotateGatewayTokens;
 ```
 
-- [ ] **Step 4: Endpoint in peers-Route ergänzen**
+- [ ] **Step 4: Endpoint in peers-Route ergänzen — POST für Rotation, damit kein akzidenteller Browser-GET die Tokens invalidiert**
 
 Modify `/root/gatecontrol/src/routes/api/peers.js` — neuen Handler ergänzen:
 
 ```javascript
-router.get('/:id/gateway-env', /* existing admin-auth middleware */, (req, res) => {
+// POST (not GET!) for token-regeneration to avoid accidental browser-prefetch
+// or tab-restore killing live gateway tokens.
+router.post('/:id/gateway-env/rotate', /* existing admin-auth middleware */, (req, res) => {
   const peerId = parseInt(req.params.id, 10);
   try {
     const env = require('../../services/gateways').rotateGatewayTokens(peerId);
@@ -2884,13 +2968,13 @@ Modify das Peer-Create-Formular-Template (Pfad je nach Struktur, z.B. `views/pee
 <div class="form-group">
   <label>
     <input type="checkbox" id="is_gateway" name="is_gateway">
-    {{ __('peer_is_gateway', 'Home Gateway') }}
+    {{ t('peer_is_gateway') }}
   </label>
-  <small class="hint">{{ __('peer_gateway_hint', 'Aktiviere, wenn dieser Peer ein Home Gateway im Heimnetz ist') }}</small>
+  <small class="hint">{{ t('peer_gateway_hint') }}</small>
 </div>
 
 <div id="gateway-fields" class="form-group" style="display:none">
-  <label for="api_port">{{ __('peer_gateway_api_port', 'Gateway API Port') }}</label>
+  <label for="api_port">{{ t('peer_gateway_api_port') }}</label>
   <input type="number" id="api_port" name="api_port" value="9876" min="1024" max="65535">
 </div>
 ```
@@ -2954,13 +3038,15 @@ Modify das Peer-Detail-Template:
   <span class="badge badge-gateway">GATEWAY</span>
 
   <div class="gateway-actions">
-    <a href="/api/v1/peers/{{ peer.id }}/gateway-env"
-       download="gateway-{{ peer.id }}.env"
-       class="btn btn-primary">
-      {{ __('gateway_download_env', 'Gateway-Config herunterladen') }}
-    </a>
+    <form method="POST" action="/api/v1/peers/{{ peer.id }}/gateway-env/rotate"
+          onsubmit="return confirm('{{ t('gateway_download_confirm') }}')">
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      <button type="submit" class="btn btn-warning">
+        {{ t('gateway_download_env') }}
+      </button>
+    </form>
     <small class="warning">
-      {{ __('gateway_download_warning', 'ACHTUNG: Tokens werden regeneriert — alter Gateway wird ungültig') }}
+      {{ t('gateway_download_warning') }}
     </small>
   </div>
 {% endif %}
@@ -2994,16 +3080,16 @@ Im Route-Formular (Target-Sektion):
 
 ```html
 <div class="form-group">
-  <label>{{ __('route_target_kind', 'Ziel-Typ') }}</label>
+  <label>{{ t('route_target_kind') }}</label>
   <select id="target_kind" name="target_kind">
-    <option value="peer">{{ __('route_target_peer', 'Direkter Peer (WG-IP)') }}</option>
-    <option value="gateway">{{ __('route_target_gateway', 'Home Gateway (LAN)') }}</option>
+    <option value="peer">{{ t('route_target_peer') }}</option>
+    <option value="gateway">{{ t('route_target_gateway') }}</option>
   </select>
 </div>
 
 <div id="gateway-target-fields" style="display:none">
   <div class="form-group">
-    <label>{{ __('route_gateway_peer', 'Gateway') }}</label>
+    <label>{{ t('route_gateway_peer') }}</label>
     <select name="target_peer_id">
       {% for gw in gateways %}
         <option value="{{ gw.id }}">{{ gw.name }}</option>
@@ -3012,24 +3098,24 @@ Im Route-Formular (Target-Sektion):
   </div>
 
   <div class="form-group">
-    <label>{{ __('route_lan_host', 'LAN-Host') }}</label>
+    <label>{{ t('route_lan_host') }}</label>
     <input type="text" name="target_lan_host" placeholder="192.168.1.10" pattern="^(10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\..*">
   </div>
 
   <div class="form-group">
-    <label>{{ __('route_lan_port', 'LAN-Port') }}</label>
+    <label>{{ t('route_lan_port') }}</label>
     <input type="number" name="target_lan_port" min="1" max="65535">
   </div>
 
   <div class="form-group">
     <label>
       <input type="checkbox" name="wol_enabled">
-      {{ __('route_wol_enabled', 'Wake-on-LAN aktivieren') }}
+      {{ t('route_wol_enabled') }}
     </label>
   </div>
 
   <div class="form-group" id="wol-mac-field" style="display:none">
-    <label>{{ __('route_wol_mac', 'MAC-Adresse (AA:BB:CC:DD:EE:FF)') }}</label>
+    <label>{{ t('route_wol_mac') }}</label>
     <input type="text" name="wol_mac" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$">
   </div>
 </div>
@@ -3185,33 +3271,38 @@ node --test tests/gateway_unpair_on_rotate.test.js
 
 - [ ] **Step 5: UI-Banner bei needs_repair-Gateways**
 
-Modify `/root/gatecontrol/views/dashboard.njk` (oder Layout):
+Modify `/root/gatecontrol/views/dashboard.njk` (oder Layout, je nach Struktur):
 
 ```html
-{% if needs_repair_gateways.length > 0 %}
+{% if needs_repair_gateways and needs_repair_gateways.length > 0 %}
   <div class="alert alert-warning">
-    <strong>{{ __('gateway_needs_repair_title', 'Gateways benötigen Re-Pairing') }}</strong>
-    <p>{{ __('gateway_needs_repair_msg', 'Nach Master-Key-Rotation müssen folgende Gateways neu gepaart werden:') }}</p>
+    <strong>{{ t('gateway_needs_repair_title') }}</strong>
+    <p>{{ t('gateway_needs_repair_msg') }}</p>
     <ul>
       {% for gw in needs_repair_gateways %}
-        <li>{{ gw.name }} — <a href="/peers/{{ gw.id }}">{{ __('download_new_env', 'Neue Config herunterladen') }}</a></li>
+        <li>{{ gw.name }} — <a href="/peers/{{ gw.id }}">{{ t('download_new_env') }}</a></li>
       {% endfor %}
     </ul>
   </div>
 {% endif %}
 ```
 
-Und im Dashboard-Controller:
+Und im Dashboard-Controller (**konkrete Location:** `/root/gatecontrol/src/routes/dashboard.js`, Handler für `GET /dashboard` bzw. `GET /`):
 
 ```javascript
+// In der dashboard-route-Handler (vor dem res.render-Call)
+const needs_repair_gateways = req.db.prepare(`
+  SELECT p.id, p.name FROM peers p JOIN gateway_meta gm ON gm.peer_id=p.id
+  WHERE gm.needs_repair=1 AND p.enabled=1
+`).all();
+
 res.render('dashboard', {
-  // ...
-  needs_repair_gateways: db.prepare(`
-    SELECT p.id, p.name FROM peers p JOIN gateway_meta gm ON gm.peer_id=p.id
-    WHERE gm.needs_repair=1
-  `).all(),
+  // ... bestehende Variablen ...
+  needs_repair_gateways,
 });
 ```
+
+**Wichtig:** Die Query NUR im Dashboard-Handler, NICHT in `src/middleware/locals.js`. Sonst wird sie bei jedem Request ausgeführt (teuer + unnötig).
 
 - [ ] **Step 6: Commit**
 
