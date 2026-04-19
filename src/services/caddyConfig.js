@@ -85,12 +85,20 @@ async function caddyApi(path, options = {}) {
 }
 
 // ─── Build Caddy JSON config from all enabled routes ────
-function buildCaddyConfig() {
+/**
+ * Build Caddy configuration JSON. Overloaded:
+ *   buildCaddyConfig()                   → Query routes from DB
+ *   buildCaddyConfig(routes, options)    → Use provided routes (for tests)
+ */
+function buildCaddyConfig(injectedRoutes, options = {}) {
   const db = getDb();
-  const routes = db.prepare(`
-    SELECT r.*, p.allowed_ips, p.name AS peer_name
+  const gatewayProxyPort = options.gatewayProxyPort || 8080;
+  const routes = Array.isArray(injectedRoutes) ? injectedRoutes : db.prepare(`
+    SELECT r.*, p.allowed_ips, p.name AS peer_name,
+           gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
+    LEFT JOIN peers gp ON gp.id = r.target_peer_id
     WHERE r.enabled = 1
   `).all();
 
@@ -123,8 +131,21 @@ function buildCaddyConfig() {
     }
     const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
 
+    // Determine gateway-target peer IP (for target_kind='gateway' routes)
+    let gatewayPeerIp = null;
+    if (route.target_kind === 'gateway') {
+      if (route.target_peer_ip) {
+        gatewayPeerIp = route.target_peer_ip;
+      } else if (route.target_peer_allowed_ips) {
+        gatewayPeerIp = route.target_peer_allowed_ips.split('/')[0];
+      }
+    }
+
     let upstreams;
-    if (hasMultipleBackends) {
+    if (gatewayPeerIp) {
+      // Route through gateway: upstream = gateway-tunnel-IP:proxy-port
+      upstreams = [{ dial: `${gatewayPeerIp}:${gatewayProxyPort}` }];
+    } else if (hasMultipleBackends) {
       upstreams = backends.map(b => ({ dial: `${b.ip}:${b.port}` }));
     } else {
       const upstream = `${targetIp}:${route.target_port}`;
@@ -157,6 +178,19 @@ function buildCaddyConfig() {
       handler: 'reverse_proxy',
       upstreams,
     };
+
+    // Gateway-routing: inject X-Gateway-Target and X-Gateway-Target-Domain headers
+    // so the Gateway-HTTP-Proxy knows the LAN target to forward to.
+    if (gatewayPeerIp && (route.target_lan_host || route.target_lan_port)) {
+      const lanTarget = `${route.target_lan_host}:${route.target_lan_port}`;
+      reverseProxy.headers = reverseProxy.headers || {};
+      reverseProxy.headers.request = reverseProxy.headers.request || {};
+      reverseProxy.headers.request.set = {
+        ...(reverseProxy.headers.request.set || {}),
+        'X-Gateway-Target': [lanTarget],
+        'X-Gateway-Target-Domain': [route.domain],
+      };
+    }
 
     // Load balancing policy (only for multiple backends)
     if (hasMultipleBackends) {
@@ -300,6 +334,7 @@ function buildCaddyConfig() {
     routeHandlers.push(reverseProxy);
 
     const routeConfig = {
+      '@id': `gc_route_${route.id}`,
       handle: routeHandlers,
     };
 
@@ -517,12 +552,17 @@ function buildCaddyConfig() {
   const serverRoutes = [];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
     if (srvConfig.routes.length === 1) {
-      serverRoutes.push({
+      const inner = srvConfig.routes[0];
+      const entry = {
         match: [{ host: [domain] }],
-        handle: srvConfig.routes[0].handle,
+        handle: inner.handle,
         terminal: true,
-      });
+      };
+      // Propagate @id marker (used by Admin-API partial patches, Task 20).
+      if (inner['@id']) entry['@id'] = inner['@id'];
+      serverRoutes.push(entry);
     } else {
+      // For compound routes, preserve inner @id markers inside subroute
       serverRoutes.push({
         match: [{ host: [domain] }],
         handle: [{
