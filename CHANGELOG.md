@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.2] — 2026-04-19
+
+### Dokumentation
+- Home Gateway rollout plan v1.2 (coordinated deploy)
+
+---
+
 ## [1.40.1] — 2026-04-19
 
 ### Fixes
