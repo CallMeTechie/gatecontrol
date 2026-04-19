@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.1] — 2026-04-19
+
+### Fixes
+- fallback keygen when wg unavailable + NODE_AUTH_TOKEN for ESLint job
+
+---
+
 ## [1.40.0] — 2026-04-19
 
 ### Features
