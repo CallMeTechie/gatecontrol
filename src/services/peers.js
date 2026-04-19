@@ -62,7 +62,7 @@ async function create(data) {
   const { privateKey, publicKey } = await generateKeyPair();
   const presharedKey = await generatePresharedKey();
 
-  const dns = data.dns || config.wireguard.dns.join(',');
+  const peerDns = data.dns || config.wireguard.dns.join(',');
   const keepalive = data.persistentKeepalive || config.wireguard.persistentKeepalive;
 
   // Wrap IP allocation + INSERT in a transaction to prevent race conditions
@@ -79,8 +79,8 @@ async function create(data) {
 
     const result = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id, peer_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `).run(
       sanitize(data.name),
       sanitize(data.description) || null,
@@ -88,11 +88,12 @@ async function create(data) {
       encrypt(privateKey),
       encrypt(presharedKey),
       allowedIps,
-      dns,
+      peerDns,
       keepalive,
       sanitize(data.tags) || '',
       data.expiresAt || null,
-      data.groupId || null
+      data.groupId || null,
+      data.peerType || 'regular'
     );
 
     return { peerId: result.lastInsertRowid, ip, allowedIps };
@@ -122,6 +123,8 @@ async function create(data) {
     presharedKey,
     allowedIps,
     ip,
+    ip_address: ip,
+    peer_type: data.peerType || 'regular',
     expires_at: data.expiresAt || null,
   };
 }
