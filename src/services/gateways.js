@@ -6,6 +6,10 @@ const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const license = require('./license');
 const peers = require('./peers');
+const activity = require('./activity');
+const email = require('./email');
+const webhook = require('./webhook');
+const { StateMachine } = require('./gatewayHealth');
 const logger = require('../utils/logger');
 const {
   computeConfigHash: libComputeConfigHash,
@@ -15,6 +19,17 @@ const {
 /** Extract the bare IP (drop CIDR) from peers.allowed_ips. */
 function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
+}
+
+const _smCache = new Map(); // peerId → StateMachine
+
+function _getSm(peerId) {
+  let sm = _smCache.get(peerId);
+  if (!sm) {
+    sm = new StateMachine();
+    _smCache.set(peerId, sm);
+  }
+  return sm;
 }
 
 const DEFAULT_API_PORT = 9876;
@@ -123,8 +138,9 @@ function computeConfigHash(peerId) {
 }
 
 /**
- * Record a heartbeat from a Gateway. Updates last_seen_at and last_health.
- * Feeds into monitoring state machine (Task 16).
+ * Record a heartbeat from a Gateway. Updates last_seen_at and last_health,
+ * and feeds the sliding-window health state-machine (Task 15/16).
+ * On status transitions fires activity.log + email alerts + webhooks.
  */
 function handleHeartbeat(peerId, health) {
   const db = getDb();
@@ -134,7 +150,94 @@ function handleHeartbeat(peerId, health) {
     SET last_seen_at = ?, last_health = ?
     WHERE peer_id = ?
   `).run(now, JSON.stringify(health || {}), peerId);
-  // Status-Transition-Logik wird in Task 16 hinzugefügt
+
+  const sm = _getSm(peerId);
+  const prevStatus = sm.status;
+  const healthy = !!(health && health.http_proxy_healthy) &&
+    !((health && Array.isArray(health.tcp_listeners) ? health.tcp_listeners : []).some(l => l && l.status === 'listener_failed'));
+  sm.recordHeartbeat(healthy);
+
+  if (sm.status !== prevStatus) {
+    _onStatusTransition(peerId, prevStatus, sm.status, health);
+  }
+
+  // Flap-Metric
+  if (sm.flapCountLastHour() > 4) {
+    activity.log('gateway_flap_warning', `Gateway peer ${peerId} flapping`, {
+      source: 'system',
+      severity: 'warning',
+      details: { peer_id: peerId, flap_count: sm.flapCountLastHour() },
+    });
+  }
+}
+
+function _onStatusTransition(peerId, from, to, health) {
+  const peer = getDb().prepare('SELECT name FROM peers WHERE id=?').get(peerId);
+  const peerName = peer ? peer.name : `peer-${peerId}`;
+
+  // Delegate Caddy patch (Task 20) — late-require to avoid cycle
+  try {
+    const meta = getDb().prepare('SELECT last_seen_at FROM gateway_meta WHERE peer_id=?').get(peerId);
+    const caddyConfig = require('./caddyConfig');
+    if (typeof caddyConfig.patchGatewayRouteHandlers === 'function') {
+      caddyConfig.patchGatewayRouteHandlers({
+        peerId,
+        offline: to === 'offline',
+        gatewayName: peerName,
+        lastSeen: meta && meta.last_seen_at ? new Date(meta.last_seen_at).toISOString() : '',
+      }).catch(err => logger.warn({ err: err.message, peerId }, 'Caddy patch failed'));
+    }
+  } catch (err) {
+    logger.debug({ err: err.message }, 'caddyConfig patch not available');
+  }
+
+  if (to === 'offline') {
+    activity.log('gateway_offline', `Gateway ${peerName} went offline`, {
+      source: 'system',
+      severity: 'warning',
+      details: { peer_id: peerId, peer_name: peerName, last_health: health },
+    });
+    try {
+      if (typeof email.sendMonitoringAlert === 'function') {
+        email.sendMonitoringAlert({ subject: `Gateway ${peerName} offline`, body: JSON.stringify(health || {}, null, 2) }).catch(() => {});
+      }
+    } catch {}
+    try {
+      if (typeof webhook.notify === 'function') {
+        webhook.notify('gateway.offline', { peer_id: peerId, peer_name: peerName, health }).catch(() => {});
+      }
+    } catch {}
+  } else if (to === 'online') {
+    activity.log('gateway_recovered', `Gateway ${peerName} is back online`, {
+      source: 'system',
+      severity: 'info',
+      details: { peer_id: peerId, peer_name: peerName },
+    });
+    try {
+      if (typeof email.sendMonitoringAlert === 'function') {
+        email.sendMonitoringAlert({ subject: `Gateway ${peerName} wieder online`, body: '' }).catch(() => {});
+      }
+    } catch {}
+    try {
+      if (typeof webhook.notify === 'function') {
+        webhook.notify('gateway.recovered', { peer_id: peerId, peer_name: peerName }).catch(() => {});
+      }
+    } catch {}
+  }
+}
+
+function getHealthStatus(peerId) {
+  return _getSm(peerId).status;
+}
+
+// Testing helpers — not for production use
+function _forceCooldownExhaustedForTest(peerId) {
+  const sm = _getSm(peerId);
+  sm._lastTransitionAt = Date.now() - 10 * 60 * 1000;
+}
+
+function _resetSmCacheForTest() {
+  _smCache.clear();
 }
 
 /**
@@ -238,4 +341,15 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
   });
 }
 
-module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat, recordTrafficSnapshot, notifyConfigChanged, notifyWol };
+module.exports = {
+  createGateway,
+  getGatewayConfig,
+  computeConfigHash,
+  handleHeartbeat,
+  recordTrafficSnapshot,
+  notifyConfigChanged,
+  notifyWol,
+  getHealthStatus,
+  _forceCooldownExhaustedForTest,
+  _resetSmCacheForTest,
+};
