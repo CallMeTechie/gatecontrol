@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.10] — 2026-04-19
+
+### Fixes
+- round-2 review findings (testPathIgnorePatterns, fuzz-swallow, ESM-hash-script, test-counts)
+
+---
+
 ## [1.39.9] — 2026-04-19
 
 ### Fixes
