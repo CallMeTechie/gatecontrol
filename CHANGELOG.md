@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.3] — 2026-04-19
+
+### Fixes
+- pass NODE_AUTH_TOKEN to docker build in Trivy scan step
+
+---
+
 ## [1.40.2] — 2026-04-19
 
 ### Dokumentation
