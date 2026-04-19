@@ -273,6 +273,28 @@ function privateKeyDecrypt(ciphertext) {
   return decrypted.toString('utf8');
 }
 
+/**
+ * Rotate the master encryption key. Placeholder implementation: for the
+ * home-gateway-companion feature we only need the side-effect of marking all
+ * gateway_meta rows `needs_repair=1` so the admin re-pairs each gateway with
+ * fresh push-tokens encrypted under the new key.
+ *
+ * Full re-encryption of peer keys is out of scope for Plan 2 and would be
+ * implemented here alongside key versioning in a dedicated rotation workflow.
+ */
+function rotateMasterKey() {
+  const { getDb } = require('../db/connection');
+  const logger = require('./logger');
+  const db = getDb();
+
+  // Mark all gateways as needing re-pairing — push_token_encrypted was
+  // encrypted under the old master key and can't be decrypted after rotation.
+  db.prepare('UPDATE gateway_meta SET needs_repair=1').run();
+
+  const count = db.prepare('SELECT COUNT(*) AS n FROM gateway_meta').get().n;
+  logger.warn({ count }, 'Master key rotated — all gateways marked needs_repair');
+}
+
 module.exports = {
   generateKeyPair,
   generatePresharedKey,
@@ -285,4 +307,5 @@ module.exports = {
   publicKeyEncrypt,
   privateKeyDecrypt,
   getOrCreateKeypair,
+  rotateMasterKey,
 };

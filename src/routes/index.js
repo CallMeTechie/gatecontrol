@@ -136,6 +136,17 @@ pages.forEach(({ path, template, titleKey }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch {}
 
+    // Dashboard-only: gateways that need re-pairing after master-key rotation
+    if (template === 'dashboard') {
+      try {
+        const { getDb } = require('../db/connection');
+        extraLocals.needs_repair_gateways = getDb().prepare(`
+          SELECT p.id, p.name FROM peers p JOIN gateway_meta gm ON gm.peer_id=p.id
+          WHERE gm.needs_repair=1 AND p.enabled=1
+        `).all();
+      } catch { extraLocals.needs_repair_gateways = []; }
+    }
+
     res.render(`${res.locals.theme}/pages/${template}.njk`, {
       title: res.locals.t(titleKey),
       activeNav: template,
