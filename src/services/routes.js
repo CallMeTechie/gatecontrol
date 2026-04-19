@@ -162,6 +162,15 @@ async function create(data) {
     data.bot_blocker_config = typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config);
   }
 
+  const targetKind = data.target_kind || 'peer';
+  const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
+  const targetLanHost = targetKind === 'gateway' ? (data.target_lan_host || null) : null;
+  const targetLanPort = targetKind === 'gateway' && data.target_lan_port
+    ? parseInt(data.target_lan_port, 10)
+    : null;
+  const wolEnabled = (targetKind === 'gateway' && data.wol_enabled) ? 1 : 0;
+  const wolMac = targetKind === 'gateway' ? (data.wol_mac || null) : null;
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
@@ -172,8 +181,10 @@ async function create(data) {
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
-                        mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids,
+                        target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
+                        enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -218,6 +229,12 @@ async function create(data) {
     data.debug_enabled ? 1 : 0,
     data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
     data.user_ids ? JSON.stringify(data.user_ids) : null,
+    targetKind,
+    targetPeerId,
+    targetLanHost,
+    targetLanPort,
+    wolEnabled,
+    wolMac,
   );
 
   const routeId = result.lastInsertRowid;
@@ -251,6 +268,14 @@ async function create(data) {
   }
 
   logger.info({ routeId, domain }, 'Route created');
+
+  // Fire-and-forget push-notification for gateway peers
+  if (targetKind === 'gateway' && targetPeerId) {
+    try {
+      const gateways = require('./gateways');
+      gateways.notifyConfigChanged(targetPeerId).catch(() => {});
+    } catch { /* fallback when module load fails */ }
+  }
 
   return getById(routeId);
 }
