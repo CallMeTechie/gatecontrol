@@ -186,6 +186,13 @@ async function checkRoute(route) {
     }
 
     logger.info({ routeId: route.id, domain: route.domain, status: newStatus, responseTime: result.responseTime }, 'Route status changed');
+
+    // Auto-WoL: gateway routes with wol_enabled trigger a magic packet on down
+    if (oldStatus === 'up' && newStatus === 'down') {
+      try { handleRouteDownDetected(route.id); } catch (err) {
+        logger.warn({ err: err.message, routeId: route.id }, 'handleRouteDownDetected failed');
+      }
+    }
   }
 
   // Circuit breaker integration
@@ -304,6 +311,28 @@ function getSummary() {
   return { total, up, down };
 }
 
+/**
+ * Handle a monitor status change where a route went from "up" → "down".
+ * For gateway-typed routes with wol_enabled, triggers Wake-on-LAN via the gateway.
+ */
+function handleRouteDownDetected(routeId) {
+  const db = getDb();
+  const route = db.prepare(`
+    SELECT target_peer_id, target_lan_host, target_lan_port, wol_enabled, wol_mac, target_kind
+    FROM routes WHERE id=?
+  `).get(routeId);
+  if (!route) return;
+  if (!route.wol_enabled || !route.wol_mac || !route.target_peer_id) return;
+  if (route.target_kind !== 'gateway') return;
+
+  const gateways = require('./gateways');
+  gateways.notifyWol(route.target_peer_id, {
+    mac: route.wol_mac,
+    lan_host: route.target_lan_host,
+    timeout_ms: 60000,
+  }).catch(() => {});
+}
+
 module.exports = {
   getSettings,
   checkRoute,
@@ -312,4 +341,5 @@ module.exports = {
   startMonitor,
   stopMonitor,
   getSummary,
+  handleRouteDownDetected,
 };
