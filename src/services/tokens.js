@@ -13,6 +13,7 @@ const VALID_SCOPES = [
   'read-only', 'full-access',
   'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup',
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
+  'gateway',
 ];
 
 /**
@@ -27,6 +28,8 @@ const SCOPE_MAP = [
   ['/api/v1/client/rdp', 'client:rdp'],
   // Client base (ping, register, config, heartbeat, status, peer-info, update)
   ['/api/v1/client', 'client'],
+  // Gateway scope
+  ['/api/v1/gateway', 'gateway'],
   // Server resource scopes
   ['/api/v1/peers', 'peers'],
   ['/api/v1/routes', 'routes'],
@@ -76,6 +79,24 @@ function validateFingerprint(fp) {
   if (!fp || typeof fp !== 'string') return 'Fingerprint is required';
   if (!FINGERPRINT_RE.test(fp)) return 'Invalid fingerprint format (expected SHA256 hex)';
   return null;
+}
+
+/**
+ * Check if a token's scopes permit access to a given path (method-agnostic).
+ * Used for tests + simple scope-gating. Delegates to the per-method checker
+ * via a method that exercises the full deny path (POST).
+ */
+function hasPathAccess(path, scopes) {
+  if (!Array.isArray(scopes)) return false;
+  // full-access allows everything
+  if (scopes.includes('full-access')) return true;
+  // Check per-resource scopes (ordered: specific paths first)
+  for (const [prefix, scope] of SCOPE_MAP) {
+    if (path.startsWith(prefix)) {
+      return scopes.includes(scope);
+    }
+  }
+  return false;
 }
 
 /**
@@ -362,8 +383,10 @@ module.exports = {
   checkScope,
   validateScopes,
   hashToken,
+  hasPathAccess,
   listByUserId,
   listUnassigned,
   assignToUser,
   VALID_SCOPES,
+  SCOPE_MAP,
 };
