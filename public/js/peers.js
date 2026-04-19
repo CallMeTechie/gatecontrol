@@ -1,6 +1,63 @@
 'use strict';
 
 (function () {
+  // ─── Gateway-Tokens Modal (shared helper for create + rotate flows) ──────
+  function openGatewayTokensModal(peer, tokens) {
+    var apiEl = document.getElementById('gateway-tokens-api-token');
+    var pushEl = document.getElementById('gateway-tokens-push-token');
+    var envEl = document.getElementById('gateway-tokens-env');
+    var feedback = document.getElementById('gateway-tokens-copy-feedback');
+    if (!apiEl) return; // modal template not loaded — shouldn't happen
+
+    apiEl.value = tokens.apiToken || '';
+    pushEl.value = tokens.pushToken || '';
+    envEl.value = tokens.envContent || '';
+    if (feedback) feedback.style.display = 'none';
+
+    function showFeedback() {
+      if (!feedback) return;
+      feedback.style.display = '';
+      setTimeout(function() { feedback.style.display = 'none'; }, 2000);
+    }
+
+    function copyToClipboard(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(showFeedback);
+      }
+      // Fallback for older browsers or non-HTTPS contexts
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); showFeedback(); } catch (e) { /* noop */ }
+      document.body.removeChild(ta);
+    }
+
+    document.getElementById('gateway-tokens-copy-api').onclick = function() {
+      copyToClipboard(apiEl.value);
+    };
+    document.getElementById('gateway-tokens-copy-push').onclick = function() {
+      copyToClipboard(pushEl.value);
+    };
+    document.getElementById('gateway-tokens-copy-all').onclick = function() {
+      copyToClipboard(envEl.value);
+    };
+    document.getElementById('gateway-tokens-download').onclick = function() {
+      var blob = new Blob([envEl.value], { type: 'text/plain' });
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'gateway-' + peer.id + '.env';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    };
+
+    openModal('modal-gateway-tokens');
+  }
+
   const tbody = document.getElementById('peers-tbody');
   const searchInput = document.getElementById('peer-search');
   const statusTags = document.getElementById('peer-status-tags');
@@ -490,9 +547,11 @@
         clearFieldErrors();
         closeModal('modal-add-peer');
         if (data.gateway && data.gateway.apiToken && data.gateway.pushToken) {
-          alert('Gateway Tokens (ONE-TIME, save now!):\nAPI: ' + data.gateway.apiToken + '\nPush: ' + data.gateway.pushToken);
+          // Gateway peer created — show tokens + env-file in dedicated modal
+          openGatewayTokensModal(data.peer, data.gateway);
+        } else {
+          showQrModal(data.peer.id);
         }
-        showQrModal(data.peer.id);
         loadPeers();
         loadGroups();
       } else if (data.fields) {
@@ -555,6 +614,36 @@
         } else {
           badge.style.display = 'none';
         }
+      }
+    }
+
+    // Gateway-Info-Block — nur sichtbar wenn peer_type === 'gateway'
+    var gwInfo = document.getElementById('edit-peer-gateway-info');
+    var gwBtn = document.getElementById('btn-edit-peer-download-env');
+    if (gwInfo) {
+      if (peer.peer_type === 'gateway') {
+        gwInfo.style.display = '';
+        var portDisplay = document.getElementById('edit-peer-api-port-display');
+        if (portDisplay) portDisplay.textContent = peer.api_port || '9876';
+        if (gwBtn) {
+          gwBtn.onclick = async function() {
+            if (!confirm((GC.t && GC.t['gateway_download_confirm']) || 'Gateway-Tokens werden regeneriert. Laufender Gateway wird ungültig. Fortfahren?')) return;
+            try {
+              // POST /rotate returns JSON { apiToken, pushToken, envContent }
+              var data = await api.post('/api/peers/' + peer.id + '/gateway-env/rotate', {});
+              if (!data.ok) {
+                showError('edit-peer-error', data.error || 'Rotate failed');
+                return;
+              }
+              closeModal('modal-edit-peer');
+              openGatewayTokensModal(peer, data);
+            } catch (err) {
+              showError('edit-peer-error', err.message);
+            }
+          };
+        }
+      } else {
+        gwInfo.style.display = 'none';
       }
     }
 

@@ -262,7 +262,10 @@ function applyLicense(data) {
   previousPlan = cachedPlan;
   unlicensed = false;
   cachedPlan = data.plan;
-  cachedFeatures = data.features;
+  // Merge COMMUNITY_FALLBACK as base so features NEW to the client
+  // (not yet known to the license server) still work. License-returned
+  // values override the fallback.
+  cachedFeatures = { ...COMMUNITY_FALLBACK, ...data.features };
   cachedLicenseInfo = {
     expires_at: data.expires_at || null,
     activations: data.activations || null,

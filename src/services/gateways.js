@@ -342,29 +342,17 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
 }
 
 /**
- * Regenerate both api_token and push_token for a gateway. Returns the
- * full gateway.env content with fresh tokens. Old tokens are invalidated.
+ * Build the gateway.env file content from peer data + tokens.
+ * Shared helper used by createGateway (on initial creation) and
+ * rotateGatewayTokens (on re-pairing).
  */
-function rotateGatewayTokens(peerId) {
-  const db = getDb();
-  const row = db.prepare(`
-    SELECT p.*, gm.api_port FROM peers p
-    JOIN gateway_meta gm ON gm.peer_id = p.id
-    WHERE p.id=? AND p.peer_type='gateway'
-  `).get(peerId);
-  if (!row) throw new Error('not_a_gateway');
-
-  const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
-  db.prepare('UPDATE gateway_meta SET api_token_hash=?, push_token_encrypted=?, needs_repair=0 WHERE peer_id=?')
-    .run(apiTokenHash, pushTokenEncrypted, peerId);
-
+function buildEnvContent(row, apiToken, pushToken) {
   const ip = _peerIp(row.allowed_ips);
   const privateKey = row.private_key_encrypted ? decrypt(row.private_key_encrypted) : '';
-
-  const envLines = [
+  const lines = [
     `# GateControl Home Gateway — Pairing Config`,
     `# Generated: ${new Date().toISOString()}`,
-    `# Peer: ${row.name} (ID: ${peerId})`,
+    `# Peer: ${row.name} (ID: ${row.id})`,
     ``,
     `GC_SERVER_URL=${process.env.GC_BASE_URL || 'https://gatecontrol.example.com'}`,
     `GC_API_TOKEN=${apiToken}`,
@@ -383,7 +371,44 @@ function rotateGatewayTokens(peerId) {
     `WG_ADDRESS=${ip}/24`,
     `WG_DNS=10.8.0.1`,
   ];
-  return envLines.join('\n') + '\n';
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Get the full gateway.env content for an EXISTING gateway with known tokens
+ * (used by createGateway to include the env content in its response without
+ * a second rotate-step).
+ */
+function buildEnvForPeer(peerId, apiToken, pushToken) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.*, gm.api_port FROM peers p
+    JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.id=? AND p.peer_type='gateway'
+  `).get(peerId);
+  if (!row) throw new Error('not_a_gateway');
+  return buildEnvContent(row, apiToken, pushToken);
+}
+
+/**
+ * Regenerate both api_token and push_token for a gateway. Returns
+ * { apiToken, pushToken, envContent } — old tokens are invalidated.
+ */
+function rotateGatewayTokens(peerId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.*, gm.api_port FROM peers p
+    JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.id=? AND p.peer_type='gateway'
+  `).get(peerId);
+  if (!row) throw new Error('not_a_gateway');
+
+  const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
+  db.prepare('UPDATE gateway_meta SET api_token_hash=?, push_token_encrypted=?, needs_repair=0 WHERE peer_id=?')
+    .run(apiTokenHash, pushTokenEncrypted, peerId);
+
+  const envContent = buildEnvContent(row, apiToken, pushToken);
+  return { apiToken, pushToken, envContent };
 }
 
 module.exports = {
@@ -396,6 +421,7 @@ module.exports = {
   notifyWol,
   getHealthStatus,
   rotateGatewayTokens,
+  buildEnvForPeer,
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
 };

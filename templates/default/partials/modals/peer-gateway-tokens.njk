@@ -1,0 +1,52 @@
+<div class="modal-overlay" id="modal-gateway-tokens" style="display:none">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-head">
+      <span class="modal-title">{{ t('gateway_tokens_title') }}</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="padding:10px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;margin-bottom:16px;font-size:13px;line-height:1.5">
+        <strong>⚠ {{ t('gateway_tokens_warning_title') }}</strong><br>
+        {{ t('gateway_tokens_warning_body') }}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_tokens_api_token') }}</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" class="form-input" id="gateway-tokens-api-token" readonly
+                 style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
+          <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-api">
+            {{ t('common.copy') }}
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_tokens_push_token') }}</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" class="form-input" id="gateway-tokens-push-token" readonly
+                 style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
+          <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-push">
+            {{ t('common.copy') }}
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_tokens_env_file') }}</label>
+        <textarea id="gateway-tokens-env" readonly
+                  style="width:100%;min-height:220px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical"></textarea>
+        <small class="form-hint">{{ t('gateway_tokens_env_hint') }}</small>
+      </div>
+
+      <div id="gateway-tokens-copy-feedback" style="display:none;padding:8px 12px;background:#d1fae5;border-left:3px solid #10b981;border-radius:4px;font-size:13px;color:#065f46">
+        ✓ {{ t('gateway_tokens_copied') }}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.close') }}</button>
+      <button class="btn btn-secondary" id="gateway-tokens-copy-all">{{ t('gateway_tokens_copy_all') }}</button>
+      <button class="btn btn-primary" id="gateway-tokens-download">{{ t('gateway_tokens_download') }}</button>
+    </div>
+  </div>
+</div>

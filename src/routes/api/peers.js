@@ -96,16 +96,21 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
 
     if (is_gateway) {
       // Gateway path: create peer + meta + tokens in one go. Return plaintext
-      // tokens ONCE so the admin can download the gateway.env file.
+      // tokens ONCE + full env-file content so the admin can copy or download.
       const gateways = require('../../services/gateways');
       const result = await gateways.createGateway({
         name,
         apiPort: api_port ? parseInt(api_port, 10) : 9876,
       });
+      const envContent = gateways.buildEnvForPeer(result.peer.id, result.apiToken, result.pushToken);
       return res.status(201).json({
         ok: true,
         peer: stripPeer(result.peer),
-        gateway: { apiToken: result.apiToken, pushToken: result.pushToken },
+        gateway: {
+          apiToken: result.apiToken,
+          pushToken: result.pushToken,
+          envContent,
+        },
       });
     }
 
@@ -306,10 +311,8 @@ router.get('/:id/traffic', (req, res) => {
 router.post('/:id/gateway-env/rotate', (req, res) => {
   const peerId = parseInt(req.params.id, 10);
   try {
-    const env = require('../../services/gateways').rotateGatewayTokens(peerId);
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="gateway-${peerId}.env"`);
-    res.send(env);
+    const { apiToken, pushToken, envContent } = require('../../services/gateways').rotateGatewayTokens(peerId);
+    res.json({ ok: true, apiToken, pushToken, envContent });
   } catch (err) {
     if (err.message === 'not_a_gateway') {
       return res.status(404).json({ ok: false, error: 'not_a_gateway' });
