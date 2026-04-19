@@ -671,6 +671,12 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_gateway_meta_api_token_hash ON gateway_meta(api_token_hash);
     `,
   },
+  {
+    version: 37,
+    name: 'gateway_meta_last_health',
+    sql: `ALTER TABLE gateway_meta ADD COLUMN last_health TEXT;`,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'last_health'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

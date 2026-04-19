@@ -28,4 +28,24 @@ router.get('/config/check', (req, res) => {
   res.status(200).json({ config_hash: currentHash });
 });
 
+/** POST /api/v1/gateway/heartbeat */
+router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
+  const peerId = req.gateway.peer_id;
+  const body = req.body || {};
+
+  // Minimal type validation
+  if (body.uptime_s !== undefined && typeof body.uptime_s !== 'number') {
+    return res.status(400).json({ error: 'uptime_s must be number' });
+  }
+  if (body.tcp_listeners !== undefined && !Array.isArray(body.tcp_listeners)) {
+    return res.status(400).json({ error: 'tcp_listeners must be array' });
+  }
+  if (body.http_proxy_healthy !== undefined && typeof body.http_proxy_healthy !== 'boolean') {
+    return res.status(400).json({ error: 'http_proxy_healthy must be boolean' });
+  }
+
+  gateways.handleHeartbeat(peerId, body);
+  res.status(200).json({ ok: true });
+});
+
 module.exports = router;

@@ -116,4 +116,19 @@ function computeConfigHash(peerId) {
   return libComputeConfigHash(cfg);
 }
 
-module.exports = { createGateway, getGatewayConfig, computeConfigHash };
+/**
+ * Record a heartbeat from a Gateway. Updates last_seen_at and last_health.
+ * Feeds into monitoring state machine (Task 16).
+ */
+function handleHeartbeat(peerId, health) {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    UPDATE gateway_meta
+    SET last_seen_at = ?, last_health = ?
+    WHERE peer_id = ?
+  `).run(now, JSON.stringify(health || {}), peerId);
+  // Status-Transition-Logik wird in Task 16 hinzugefügt
+}
+
+module.exports = { createGateway, getGatewayConfig, computeConfigHash, handleHeartbeat };
