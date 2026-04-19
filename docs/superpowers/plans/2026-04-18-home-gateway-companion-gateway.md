@@ -1732,7 +1732,7 @@ Create `/root/gatecontrol-gateway/tests/wol.test.js`:
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildMagicPacket, validateMac } = require('../src/wol');
+const { buildMagicPacket, validateMac, _computeBroadcast } = require('../src/wol');
 
 describe('wol', () => {
   it('buildMagicPacket produces 102 bytes: 6xFF + 16xMAC', () => {
@@ -1766,6 +1766,23 @@ describe('wol', () => {
     assert.equal(validateMac('AA:BB:CC:DD:EE:FF'), true);
     assert.equal(validateMac('aa-bb-cc-dd-ee-ff'), true);
     assert.equal(validateMac('not-a-mac'), false);
+  });
+
+  it('_computeBroadcast: 192.168.1.5 / 255.255.255.0 → 192.168.1.255', () => {
+    assert.equal(_computeBroadcast('192.168.1.5', '255.255.255.0'), '192.168.1.255');
+  });
+
+  it('_computeBroadcast: 10.0.0.1 / 255.0.0.0 → 10.255.255.255', () => {
+    assert.equal(_computeBroadcast('10.0.0.1', '255.0.0.0'), '10.255.255.255');
+  });
+
+  it('_computeBroadcast: /30 subnet (192.168.1.5 / 255.255.255.252) → 192.168.1.7', () => {
+    assert.equal(_computeBroadcast('192.168.1.5', '255.255.255.252'), '192.168.1.7');
+  });
+
+  it('_computeBroadcast: invalid input returns null', () => {
+    assert.equal(_computeBroadcast('', '255.255.255.0'), null);
+    assert.equal(_computeBroadcast('192.168.1.5', '255.255'), null);
   });
 });
 ```
@@ -3470,7 +3487,7 @@ See [Deployment Docs](docs/deployment/) for platform-specific instructions:
 - Container läuft als non-root `gateway` User
 - `cap_drop: ALL` + nur `NET_ADMIN` (wg-quick) + `NET_BIND_SERVICE` (ports <1024)
 - `read_only: true` Root-FS mit tmpfs für `/tmp`, `/run`, `/etc/wireguard`
-- `security_opt: no-new-privileges:true`
+- `security_opt: no-new-privileges` bewusst NICHT gesetzt (Linux-Inkompatibilität mit non-root + cap_add NET_ADMIN; Compensating Controls: cap_drop ALL + read_only + USER gateway)
 - Management-API bindet **ausschließlich** auf Tunnel-IP (Startup-Assertion)
 
 ## Development
@@ -3533,7 +3550,7 @@ Create `/root/gatecontrol-gateway/CHANGELOG.md`:
 - 4-layer self-check (process + network + per-route + end-to-end)
 - Heartbeat ticker to server with health payload
 - Multi-arch Docker image (amd64, arm64, arm/v7)
-- Security-hardened container: non-root user, cap_drop ALL, read-only FS, no-new-privileges
+- Security-hardened container: non-root user, cap_drop ALL, read-only FS
 - Platform deployment guides (Linux, Synology DSM 7.2+, Pi, migration from dwg)
 ```
 
@@ -3566,7 +3583,6 @@ docker pull ghcr.io/callmetechie/gatecontrol-gateway:v1.0.0
 mkdir -p /tmp/gw-smoke/config
 # (gateway.env aus GateControl-UI herunterladen, nach /tmp/gw-smoke/config/ legen)
 docker run --rm --network host --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE \
-  --security-opt no-new-privileges:true \
   -v /tmp/gw-smoke/config:/config:ro \
   ghcr.io/callmetechie/gatecontrol-gateway:v1.0.0
 ```
