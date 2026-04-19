@@ -71,7 +71,7 @@ Create `/root/gatecontrol-config-hash/package.json`:
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --testPathIgnorePatterns=",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --testPathIgnorePatterns='[]'",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -354,7 +354,7 @@ export function canonicalizeString(s: string): string {
 npm test -- tests/primitives.test.ts
 ```
 
-Expected: `8 passed`.
+Expected: `11 passed` (8 control/escape + 3 surrogate/byte-identical).
 
 - [ ] **Step 5: Commit**
 
@@ -463,7 +463,7 @@ export function canonicalizeNumber(n: number): string {
 npm test -- tests/primitives.test.ts
 ```
 
-Expected: `17 passed` (8 String + 9 Number).
+Expected: `20 passed` (11 String + 9 Number).
 
 - [ ] **Step 5: Commit**
 
@@ -1662,7 +1662,7 @@ Expected: Alle Tests grün, inkl. der Assertion-Checks gegen `expected-hashes.js
 Modify `/root/gatecontrol-config-hash/package.json` — ergänze im `scripts`-Block:
 
 ```json
-    "test:update-hashes": "UPDATE_EXPECTED_HASHES=1 jest tests/contract.test.ts"
+    "test:update-hashes": "UPDATE_EXPECTED_HASHES=1 NODE_OPTIONS=--experimental-vm-modules jest tests/contract.test.ts"
 ```
 
 - [ ] **Step 7: Commit**
@@ -1689,7 +1689,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fc from 'fast-check';
-import { computeConfigHash } from '../src/index';
+import { computeConfigHash, GatewayConfigSchema } from '../src/index';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, 'fixtures');
@@ -1780,14 +1780,14 @@ describe('property: hash is invariant under shuffling', () => {
         }),
         fc.integer({ min: 1, max: 0x7fffffff }),
         (cfg, seed) => {
-          try {
-            const base = computeConfigHash(cfg);
-            const shuffled = deepShuffle(cfg, makeRng(seed));
-            return computeConfigHash(shuffled) === base;
-          } catch {
-            // Zod rejection is fine — we only care about shapes that PASS schema
-            return true;
-          }
+          // Use safeParse to skip non-matching inputs without swallowing real bugs.
+          // (The generators are shaped to produce valid configs, but safeParse is
+          // a safety-net for Zod refinements we might add later.)
+          const valid = GatewayConfigSchema.safeParse(cfg);
+          if (!valid.success) return true;
+          const base = computeConfigHash(cfg);
+          const shuffled = deepShuffle(cfg, makeRng(seed));
+          return computeConfigHash(shuffled) === base;
         }
       ),
       { numRuns: 100 }
