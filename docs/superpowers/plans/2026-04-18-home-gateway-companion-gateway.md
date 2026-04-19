@@ -1963,6 +1963,28 @@ describe('POST /api/wol', () => {
     assert.equal(r.status, 400);
     s.close();
   });
+
+  it('rejects non-RFC1918 lan_host with 400', async () => {
+    const store = { isMacInWolWhitelist: () => true };
+    const s = await serverWith(store);
+    const r = await postJson(s.address().port, '/api/wol', { mac: 'AA:BB:CC:DD:EE:FF', lan_host: '8.8.8.8', timeout_ms: 5000 });
+    assert.equal(r.status, 400);
+    assert.match(r.body, /rfc1918/i);
+    s.close();
+  });
+
+  it('respects explicit lan_host_port in reachability poll', async () => {
+    const store = { isMacInWolWhitelist: () => true };
+    let capturedPort = null;
+    const s = await serverWith(store, {
+      waitForReachable: async (host, port) => { capturedPort = port; return 100; },
+    });
+    const r = await postJson(s.address().port, '/api/wol',
+      { mac: 'AA:BB:CC:DD:EE:FF', lan_host: '192.168.1.10', lan_host_port: 3389, timeout_ms: 5000 });
+    assert.equal(r.status, 200);
+    assert.equal(capturedPort, 3389);
+    s.close();
+  });
 });
 ```
 
@@ -2728,7 +2750,9 @@ RUN apk add --no-cache git make && \
 FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS node-build
 WORKDIR /build
 COPY package.json package-lock.json .npmrc ./
-ARG GH_PACKAGES_TOKEN
+# Default empty — fails explicitly if private packages are actually required
+# but not provided. Local builds without private deps work fine.
+ARG GH_PACKAGES_TOKEN=""
 # Inline on the RUN line — NOT an ENV layer (would leak token via docker history).
 RUN NODE_AUTH_TOKEN=${GH_PACKAGES_TOKEN} npm ci --omit=dev --ignore-scripts
 COPY src ./src
