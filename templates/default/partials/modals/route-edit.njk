@@ -33,20 +33,57 @@
             <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">{{ t('route_target_kind') }}</label>
+          <select id="edit-route-target-kind" style="width:100%">
+            <option value="peer">{{ t('route_target_peer') }}</option>
+            <option value="gateway">{{ t('route_target_gateway') }}</option>
+          </select>
+        </div>
+        <div id="edit-route-peer-fields">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">{{ t('routes.target_peer') }}</label>
+              <select id="edit-route-peer" style="width:100%">
+                <option value="">— {{ t('routes.direct_ip') }} —</option>
+              </select>
+            </div>
+            <div class="form-group" id="edit-route-ip-group">
+              <label class="form-label">Target IP</label>
+              <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('routes.target_port') }}</label>
+              <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+            </div>
+          </div>
+        </div>
+        <div id="edit-route-gateway-fields" style="display:none">
           <div class="form-group">
-            <label class="form-label">{{ t('routes.target_peer') }}</label>
-            <select id="edit-route-peer" style="width:100%">
-              <option value="">— {{ t('routes.direct_ip') }} —</option>
+            <label class="form-label">{{ t('route_gateway_peer') }}</label>
+            <select id="edit-route-gateway-peer" style="width:100%">
+              <option value="">—</option>
             </select>
           </div>
-          <div class="form-group" id="edit-route-ip-group">
-            <label class="form-label">Target IP</label>
-            <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">{{ t('route_lan_host') }}</label>
+              <input type="text" id="edit-route-lan-host" placeholder="192.168.1.10">
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('route_lan_port') }}</label>
+              <input type="number" id="edit-route-lan-port" placeholder="8080" min="1" max="65535">
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label">{{ t('routes.target_port') }}</label>
-            <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="edit-route-wol-enabled" name="wol_enabled">
+              <span>{{ t('route_wol_enabled') }}</span>
+            </label>
+          </div>
+          <div class="form-group" id="edit-route-wol-mac-field" style="display:none">
+            <label class="form-label">{{ t('route_wol_mac') }}</label>
+            <input type="text" id="edit-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$">
           </div>
         </div>
         <div class="form-group">

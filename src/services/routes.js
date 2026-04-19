@@ -483,6 +483,12 @@ async function update(id, data) {
       bot_blocker_mode = COALESCE(?, bot_blocker_mode),
       bot_blocker_config = COALESCE(?, bot_blocker_config),
       user_ids = COALESCE(?, user_ids),
+      target_kind = COALESCE(?, target_kind),
+      target_peer_id = COALESCE(?, target_peer_id),
+      target_lan_host = COALESCE(?, target_lan_host),
+      target_lan_port = COALESCE(?, target_lan_port),
+      wol_enabled = COALESCE(?, wol_enabled),
+      wol_mac = COALESCE(?, wol_mac),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -533,6 +539,12 @@ async function update(id, data) {
     data.bot_blocker_mode !== undefined ? data.bot_blocker_mode : null,
     data.bot_blocker_config !== undefined ? (typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config)) : null,
     data.user_ids !== undefined ? (data.user_ids ? JSON.stringify(data.user_ids) : null) : null,
+    data.target_kind !== undefined ? (data.target_kind || null) : null,
+    data.target_peer_id !== undefined ? (data.target_peer_id || null) : null,
+    data.target_lan_host !== undefined ? (data.target_lan_host || null) : null,
+    data.target_lan_port !== undefined ? (data.target_lan_port ? parseInt(data.target_lan_port, 10) : null) : null,
+    data.wol_enabled !== undefined ? (data.wol_enabled ? 1 : 0) : null,
+    data.wol_mac !== undefined ? (data.wol_mac || null) : null,
     id
   );
 
@@ -600,7 +612,25 @@ async function update(id, data) {
     });
   }
 
-  return getById(id);
+  // Fire-and-forget push-notification for gateway peers (current + previous)
+  const finalRoute = getById(id);
+  const touchedGwPeers = new Set();
+  if (finalRoute && finalRoute.target_kind === 'gateway' && finalRoute.target_peer_id) {
+    touchedGwPeers.add(finalRoute.target_peer_id);
+  }
+  if (route.target_kind === 'gateway' && route.target_peer_id) {
+    touchedGwPeers.add(route.target_peer_id);
+  }
+  if (touchedGwPeers.size > 0) {
+    try {
+      const gateways = require('./gateways');
+      for (const pid of touchedGwPeers) {
+        gateways.notifyConfigChanged(pid).catch(() => {});
+      }
+    } catch { /* module load guard */ }
+  }
+
+  return finalRoute;
 }
 
 /**

@@ -746,6 +746,59 @@
       ipGroup.style.display = route.peer_id ? 'none' : 'block';
     }
 
+    // Target-kind: peer (direct) vs gateway (home-gateway LAN)
+    const tkSelect = document.getElementById('edit-route-target-kind');
+    const peerFields = document.getElementById('edit-route-peer-fields');
+    const gwFields = document.getElementById('edit-route-gateway-fields');
+    const gwPeerSelect = document.getElementById('edit-route-gateway-peer');
+    const lanHost = document.getElementById('edit-route-lan-host');
+    const lanPort = document.getElementById('edit-route-lan-port');
+    const wolCb = document.getElementById('edit-route-wol-enabled');
+    const wolMacField = document.getElementById('edit-route-wol-mac-field');
+    const wolMac = document.getElementById('edit-route-wol-mac');
+
+    // Populate gateway-peer select with gateway-type peers
+    if (gwPeerSelect && window.allPeers) {
+      while (gwPeerSelect.firstChild) gwPeerSelect.removeChild(gwPeerSelect.firstChild);
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '\u2014';
+      gwPeerSelect.appendChild(placeholder);
+      window.allPeers
+        .filter(p => p.peer_type === 'gateway')
+        .forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name;
+          if (String(route.target_peer_id || '') === String(p.id)) opt.selected = true;
+          gwPeerSelect.appendChild(opt);
+        });
+    }
+
+    function updateTargetKindVisibility() {
+      const kind = tkSelect ? tkSelect.value : 'peer';
+      if (peerFields) peerFields.style.display = kind === 'peer' ? 'block' : 'none';
+      if (gwFields) gwFields.style.display = kind === 'gateway' ? 'block' : 'none';
+    }
+
+    if (tkSelect) {
+      tkSelect.value = route.target_kind || 'peer';
+      tkSelect.addEventListener('change', updateTargetKindVisibility);
+      updateTargetKindVisibility();
+    }
+
+    if (lanHost) lanHost.value = route.target_lan_host || '';
+    if (lanPort) lanPort.value = route.target_lan_port || '';
+    if (wolCb) wolCb.checked = !!route.wol_enabled;
+    if (wolMac) wolMac.value = route.wol_mac || '';
+    if (wolCb && wolMacField) {
+      const syncWolMacVisibility = () => {
+        wolMacField.style.display = wolCb.checked ? 'block' : 'none';
+      };
+      wolCb.addEventListener('change', syncWolMacVisibility);
+      syncWolMacVisibility();
+    }
+
     const httpsToggle = document.getElementById('edit-route-https');
     if (httpsToggle) {
       if (route.https_enabled) httpsToggle.classList.add('on');
@@ -1189,6 +1242,23 @@
           payload.l4_protocol = document.getElementById('edit-l4-protocol').value;
           payload.l4_listen_port = document.getElementById('edit-l4-listen-port').value;
           payload.l4_tls_mode = document.getElementById('edit-l4-tls-mode').value;
+        }
+
+        // Target-kind (peer vs gateway)
+        const tkEl = document.getElementById('edit-route-target-kind');
+        const tkVal = tkEl ? tkEl.value : 'peer';
+        payload.target_kind = tkVal;
+        if (tkVal === 'gateway') {
+          const gwPeerEl = document.getElementById('edit-route-gateway-peer');
+          const lanHostEl = document.getElementById('edit-route-lan-host');
+          const lanPortEl = document.getElementById('edit-route-lan-port');
+          const wolEnabledEl = document.getElementById('edit-route-wol-enabled');
+          const wolMacEl = document.getElementById('edit-route-wol-mac');
+          payload.target_peer_id = gwPeerEl && gwPeerEl.value ? parseInt(gwPeerEl.value, 10) : null;
+          payload.target_lan_host = lanHostEl ? lanHostEl.value.trim() : null;
+          payload.target_lan_port = lanPortEl && lanPortEl.value ? parseInt(lanPortEl.value, 10) : null;
+          payload.wol_enabled = !!(wolEnabledEl && wolEnabledEl.checked);
+          payload.wol_mac = wolMacEl && wolMacEl.value ? wolMacEl.value.trim() : null;
         }
         if (basic_auth_enabled) {
           payload.basic_auth_user = basic_auth_user.trim();

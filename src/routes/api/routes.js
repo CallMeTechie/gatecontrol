@@ -281,6 +281,29 @@ router.post('/',
       }
     }
 
+    // Gateway target_kind license gates
+    if (req.body.target_kind === 'gateway') {
+      const license = require('../../services/license');
+      if (route_type === 'l4' && !license.hasFeature('gateway_tcp_routing')) {
+        return res.status(403).json({ ok: false, error: 'gateway_tcp_routing not licensed' });
+      }
+      if (req.body.wol_enabled && !license.hasFeature('gateway_wol')) {
+        return res.status(403).json({ ok: false, error: 'gateway_wol not licensed' });
+      }
+      if ((route_type || 'http') === 'http' && req.body.target_peer_id) {
+        const { getDb } = require('../../db/connection');
+        const gwLimit = license.getFeatureLimit('gateway_http_targets');
+        if (gwLimit !== -1) {
+          const count = getDb().prepare(
+            `SELECT COUNT(*) AS n FROM routes WHERE target_peer_id=? AND target_kind='gateway' AND route_type='http'`
+          ).get(parseInt(req.body.target_peer_id, 10)).n;
+          if (count >= gwLimit) {
+            return res.status(403).json({ ok: false, error: 'gateway_http_targets limit reached' });
+          }
+        }
+      }
+    }
+
     // Validate mirror targets (peer_id + port format)
     if (mirror_targets) {
       if (!Array.isArray(mirror_targets)) {
@@ -316,6 +339,12 @@ router.post('/',
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      target_kind: req.body.target_kind,
+      target_peer_id: req.body.target_peer_id,
+      target_lan_host: req.body.target_lan_host,
+      target_lan_port: req.body.target_lan_port,
+      wol_enabled: req.body.wol_enabled,
+      wol_mac: req.body.wol_mac,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -423,6 +452,17 @@ router.put('/:id',
       }
     }
 
+    // Gateway target_kind license gates (also on update)
+    if (req.body.target_kind === 'gateway') {
+      const license = require('../../services/license');
+      if ((route_type || '') === 'l4' && !license.hasFeature('gateway_tcp_routing')) {
+        return res.status(403).json({ ok: false, error: 'gateway_tcp_routing not licensed' });
+      }
+      if (req.body.wol_enabled && !license.hasFeature('gateway_wol')) {
+        return res.status(403).json({ ok: false, error: 'gateway_wol not licensed' });
+      }
+    }
+
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -438,6 +478,12 @@ router.put('/:id',
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      target_kind: req.body.target_kind,
+      target_peer_id: req.body.target_peer_id,
+      target_lan_host: req.body.target_lan_host,
+      target_lan_port: req.body.target_lan_port,
+      wol_enabled: req.body.wol_enabled,
+      wol_mac: req.body.wol_mac,
     });
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {
