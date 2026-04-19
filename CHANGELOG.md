@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.15] — 2026-04-19
+
+### Fixes
+- round-1 review findings (systems + reliability)
+
+---
+
 ## [1.39.14] — 2026-04-19
 
 ### Fixes
