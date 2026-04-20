@@ -188,27 +188,6 @@ if ! caddy validate --config "$CADDYFILE" --adapter caddyfile > /dev/null 2>&1; 
   echo "WARNING: Caddy config validation failed — check your Caddyfile"
 fi
 
-# ─── Pre-generate Caddy JSON from DB state ───────────
-# Previously Caddy started with the minimal Caddyfile and Node replaced
-# its whole config via POST /load 5 s later. Caddy's internal TLS re-init
-# during that /load sometimes left the listener in a broken state —
-# browsers and the Home-Gateway heartbeat got `TLS alert 80 (internal
-# error)` until the container was restarted a second time. Writing the
-# final JSON here and booting Caddy directly with it eliminates the race.
-# Falls back to the Caddyfile if the export or validation fails, so the
-# admin UI stays reachable on fresh installs or after a bad DB state.
-CADDY_JSON="/data/caddy/runtime.json"
-echo "» Exporting Caddy JSON from DB..."
-if node /app/src/bin/export-caddy-config.js "$CADDY_JSON" && \
-   caddy validate --config "$CADDY_JSON" > /dev/null 2>&1; then
-  export GC_CADDY_CONFIG_PATH="$CADDY_JSON"
-  export GC_CADDY_CONFIG_PRELOADED=1
-  echo "» Caddy will start from pre-generated JSON ($CADDY_JSON)"
-else
-  export GC_CADDY_CONFIG_PATH="$CADDYFILE"
-  echo "» Caddy will start from Caddyfile (export/validate skipped)"
-fi
-
 # ─── Generate dnsmasq config for split-horizon DNS ────
 # VPN peers normally resolve the API hostname to its public IP. WireGuard
 # then creates an endpoint-route exception for that IP, so API traffic to
@@ -352,6 +331,32 @@ fi
 # Harden key file permissions — readable only by root
 chmod 600 "$KEY_FILE"
 chown root:root "$KEY_FILE"
+
+# ─── Pre-generate Caddy JSON from DB state (after secrets) ─────
+# Previously Caddy started with the minimal Caddyfile and Node replaced
+# its whole config via POST /load 5 s later. Caddy's internal TLS re-init
+# during that /load sometimes left the listener in a broken state — browsers
+# and the Home-Gateway heartbeat got `TLS alert 80 (internal error)` until
+# the container was restarted a second time. Writing the final JSON here
+# and booting Caddy directly with it eliminates the boot-time race.
+#
+# Must run AFTER GC_SECRET + GC_ENCRYPTION_KEY are exported, because the
+# helper loads config/default.js → validate.js, which refuses to start
+# without those secrets.
+#
+# Falls back to the Caddyfile if export or validation fails so the admin UI
+# stays reachable on fresh installs / bad DB state.
+CADDY_JSON="/data/caddy/runtime.json"
+echo "» Exporting Caddy JSON from DB..."
+if node /app/src/bin/export-caddy-config.js "$CADDY_JSON" && \
+   caddy validate --config "$CADDY_JSON" > /dev/null 2>&1; then
+  export GC_CADDY_CONFIG_PATH="$CADDY_JSON"
+  export GC_CADDY_CONFIG_PRELOADED=1
+  echo "» Caddy will start from pre-generated JSON ($CADDY_JSON)"
+else
+  export GC_CADDY_CONFIG_PATH="$CADDYFILE"
+  echo "» Caddy will start from Caddyfile (export/validate skipped)"
+fi
 
 # ─── Set ownership for non-root Node process ─────────
 chown -R gatecontrol:gatecontrol /data 2>/dev/null || true

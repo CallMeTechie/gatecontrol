@@ -688,15 +688,22 @@ function _verifyLocalTls(sniHost, timeoutMs = 4000) {
   });
 }
 
-// Ask supervisord to restart Caddy. Caddy comes back from the runtime.json
-// we just wrote, which gives it a clean TLS state and re-triggers cert
-// provisioning for any new hosts. Brief downtime (~2–3 s) but recovers.
+// Kill the Caddy process so supervisord's autorestart brings it back
+// from scratch. Caddy boots from runtime.json (which we just wrote),
+// giving it a clean TLS state and re-triggering cert provisioning for
+// any new hosts. Brief downtime (~2–3 s) but recovers.
 // Uses execFile with fixed argv — no shell, no injection surface.
+// (Avoids supervisorctl because Alpine's supervisor package doesn't
+// ship the RPC interface module we'd need for it.)
 function _restartCaddyViaSupervisor() {
   const { execFile } = require('node:child_process');
   return new Promise((resolve, reject) => {
-    execFile('supervisorctl', ['restart', 'caddy'], { timeout: 15000 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`supervisorctl restart caddy failed: ${err.message} ${stderr || ''}`.trim()));
+    execFile('pkill', ['-TERM', '-x', 'caddy'], { timeout: 10000 }, (err, stdout, stderr) => {
+      // pkill exit code 1 = no process matched (Caddy not running); still a
+      // success for our purposes because supervisord will spawn it shortly.
+      if (err && err.code !== 1) {
+        return reject(new Error(`pkill caddy failed: ${err.message} ${stderr || ''}`.trim()));
+      }
       resolve(stdout);
     });
   });
