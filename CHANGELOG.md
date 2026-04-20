@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.6] — 2026-04-20
+
+### Fixes
+- include WG_PRESHARED_KEY in gateway.env download
+
+---
+
 ## [1.40.5] — 2026-04-20
 
 ### Fixes
