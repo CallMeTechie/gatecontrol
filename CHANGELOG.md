@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.1] — 2026-04-20
+
+### Fixes
+- add DE translations for new route form error messages
+
+---
+
 ## [1.41.0] — 2026-04-20
 
 ### Features
