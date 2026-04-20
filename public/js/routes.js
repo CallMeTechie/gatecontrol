@@ -125,10 +125,22 @@
     }
 
     routesList.innerHTML = routes.map(r => {
-      const peerIp = r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip;
-      const peerLabel = r.peer_name || peerIp;
-      const target = `${peerIp}:${r.target_port}`;
-      const peerOnline = r.peer_enabled !== 0;
+      // Gateway-routed routes show the LAN target behind the home gateway.
+      // Peer-routed routes show the direct WG peer IP.
+      const isGatewayRoute = r.target_kind === 'gateway';
+      let peerIp, peerLabel, target;
+      if (isGatewayRoute) {
+        const gwIp = r.target_peer_ip ? r.target_peer_ip.split('/')[0] : '';
+        const gwLabel = r.target_peer_name || gwIp || 'Gateway';
+        peerIp = gwIp;
+        peerLabel = 'Gateway: ' + gwLabel;
+        target = (r.target_lan_host || '?') + ':' + (r.target_lan_port || r.target_port || '?');
+      } else {
+        peerIp = r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip;
+        peerLabel = r.peer_name || peerIp;
+        target = peerIp + ':' + r.target_port;
+      }
+      const peerOnline = isGatewayRoute ? (r.target_peer_enabled !== 0) : (r.peer_enabled !== 0);
       const statusTag = !r.enabled
         ? '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.disabled'] || 'Disabled') + '</span>'
         : peerOnline

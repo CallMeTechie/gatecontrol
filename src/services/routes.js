@@ -16,11 +16,13 @@ const logger = require('../utils/logger');
 function getAll({ limit = 250, offset = 0, type = null } = {}) {
   const db = getDb();
   let query = `SELECT r.*, p.name as peer_name, p.enabled as peer_enabled, p.allowed_ips as peer_ip,
+    gp.name AS target_peer_name, gp.allowed_ips AS target_peer_ip, gp.enabled AS target_peer_enabled,
     ra.auth_type as route_auth_type, ra.two_factor_enabled as route_auth_2fa,
     ra.two_factor_method as route_auth_2fa_method, ra.session_max_age as route_auth_session_max_age,
     CASE WHEN ra.id IS NOT NULL THEN 1 ELSE 0 END as route_auth_enabled
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
+    LEFT JOIN peers gp ON gp.id = r.target_peer_id
     LEFT JOIN route_auth ra ON ra.route_id = r.id`;
   const params = [];
   if (type) {
@@ -38,9 +40,11 @@ function getAll({ limit = 250, offset = 0, type = null } = {}) {
 function getById(id) {
   const db = getDb();
   const route = db.prepare(`
-    SELECT r.*, p.name AS peer_name, p.allowed_ips AS peer_ip
+    SELECT r.*, p.name AS peer_name, p.allowed_ips AS peer_ip,
+           gp.name AS target_peer_name, gp.allowed_ips AS target_peer_ip
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
+    LEFT JOIN peers gp ON gp.id = r.target_peer_id
     WHERE r.id = ?
   `).get(id);
   if (route) {
