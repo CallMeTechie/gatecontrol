@@ -86,14 +86,49 @@
           <input type="text" name="description" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" style="width:100%;padding:8px 12px" maxlength="255">
         </div>
         <div style="margin-bottom:14px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_peer') }}</label>
-          <select name="peer_id" style="width:100%" id="route-peer-select">
-            <option value="">—</option>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_target_kind') }}</label>
+          <select class="form-select" id="create-route-target-kind" name="target_kind" style="width:100%;padding:8px 12px">
+            <option value="peer">{{ t('route_target_peer') }}</option>
+            <option value="gateway">{{ t('route_target_gateway') }}</option>
           </select>
         </div>
-        <div style="margin-bottom:14px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_port') }}</label>
-          <input type="text" id="route-port" name="target_port" placeholder="{{ t('routes.target_port_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="5">
+        <div id="create-route-peer-fields">
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_peer') }}</label>
+            <select name="peer_id" style="width:100%" id="route-peer-select">
+              <option value="">—</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.target_port') }}</label>
+            <input type="text" id="route-port" name="target_port" placeholder="{{ t('routes.target_port_placeholder') }}" style="width:100%;padding:8px 12px" maxlength="5">
+          </div>
+        </div>
+        <div id="create-route-gateway-fields" style="display:none">
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_gateway_peer') }}</label>
+            <select class="form-select" id="create-route-gateway-peer" style="width:100%;padding:8px 12px">
+              <option value="">—</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_lan_host') }}</label>
+            <input type="text" id="create-route-lan-host" placeholder="192.168.1.10" style="width:100%;padding:8px 12px" maxlength="253">
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_lan_port') }}</label>
+            <input type="number" id="create-route-lan-port" placeholder="8080" min="1" max="65535" style="width:100%;padding:8px 12px">
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="create-route-wol-enabled">
+              <span>{{ t('route_wol_enabled') }}</span>
+            </label>
+          </div>
+          <div id="create-route-wol-mac-field" style="display:none;margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_wol_mac') }}</label>
+            <input type="text" id="create-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" style="width:100%;padding:8px 12px">
+          </div>
         </div>
         <div id="l4-fields" style="display:none">
           <div class="form-group">

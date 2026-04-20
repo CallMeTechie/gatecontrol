@@ -1155,6 +1155,7 @@
   "route_lan_port": "LAN port",
   "route_wol_enabled": "Enable Wake-on-LAN",
   "route_wol_mac": "MAC address (AA:BB:CC:DD:EE:FF)",
+  "route_gateway_required": "Gateway, LAN host and LAN port are required",
   "gateway_needs_repair_title": "Gateways need re-pairing",
   "gateway_needs_repair_msg": "After master key rotation, the following gateways must be re-paired:",
   "download_new_env": "Download new config"

@@ -181,6 +181,7 @@ router.get('/peers', async (req, res) => {
       ip: p.allowed_ips ? p.allowed_ips.split('/')[0] : null,
       enabled: p.enabled,
       isOnline: p.isOnline,
+      peer_type: p.peer_type || 'regular',
     }));
     res.json({ ok: true, peers: simplified });
   } catch (err) {

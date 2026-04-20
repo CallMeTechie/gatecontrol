@@ -35,10 +35,30 @@
       const data = await api.get('/api/routes/peers');
       if (data.ok) {
         allPeers = data.peers;
+        window.allPeers = allPeers;
         renderPeerOptions(peerSelect);
+        renderGatewayPeerOptions(document.getElementById('create-route-gateway-peer'));
       }
     } catch (err) {
       console.error('Failed to load peers:', err);
+    }
+  }
+
+  function renderGatewayPeerOptions(select, selectedId) {
+    if (!select) return;
+    select.innerHTML = '';
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = '\u2014';
+    select.appendChild(emptyOpt);
+    for (const p of allPeers.filter(x => x.peer_type === 'gateway')) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      const ip = p.ip || '?';
+      const status = p.isOnline ? ' (online)' : p.enabled ? '' : ' (disabled)';
+      opt.textContent = `${p.name} — ${ip}${status}`;
+      if (String(selectedId) === String(p.id)) opt.selected = true;
+      select.appendChild(opt);
     }
   }
 
@@ -314,6 +334,29 @@
     }
   });
 
+  // ─── Create form: target-kind (peer vs gateway) toggle ───
+  (function initCreateTargetKindToggle() {
+    const tkSel = document.getElementById('create-route-target-kind');
+    const peerFields = document.getElementById('create-route-peer-fields');
+    const gwFields = document.getElementById('create-route-gateway-fields');
+    const wolCb = document.getElementById('create-route-wol-enabled');
+    const wolMacField = document.getElementById('create-route-wol-mac-field');
+    if (tkSel && peerFields && gwFields) {
+      const sync = () => {
+        const gw = tkSel.value === 'gateway';
+        peerFields.style.display = gw ? 'none' : '';
+        gwFields.style.display = gw ? '' : 'none';
+      };
+      tkSel.addEventListener('change', sync);
+      sync();
+    }
+    if (wolCb && wolMacField) {
+      const syncWol = () => { wolMacField.style.display = wolCb.checked ? '' : 'none'; };
+      wolCb.addEventListener('change', syncWol);
+      syncWol();
+    }
+  })();
+
   // ─── Create route via inline form ────────────────────────
   routeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -321,8 +364,11 @@
     const fd = new FormData(routeForm);
     const domain = fd.get('domain').trim();
     const description = fd.get('description') ? fd.get('description').trim() : '';
-    const peer_id = fd.get('peer_id') || null;
-    const target_port = fd.get('target_port').trim();
+    const targetKind = (document.getElementById('create-route-target-kind')?.value) || 'peer';
+    const isGateway = targetKind === 'gateway';
+    const peer_id = isGateway ? null : (fd.get('peer_id') || null);
+    const lanPortVal = document.getElementById('create-route-lan-port')?.value || '';
+    const target_port = isGateway ? lanPortVal.trim() : fd.get('target_port').trim();
 
     const httpsToggle = routeForm.querySelector('[data-field="https_enabled"]');
     const backendHttpsToggle = routeForm.querySelector('[data-field="backend_https"]');
@@ -336,6 +382,15 @@
     const basic_auth_password = fd.get('basic_auth_password') ? fd.get('basic_auth_password').trim() : '';
 
     if (!domain || !target_port) return;
+
+    if (isGateway) {
+      const gwPeer = document.getElementById('create-route-gateway-peer')?.value || '';
+      const lanHost = document.getElementById('create-route-lan-host')?.value.trim() || '';
+      if (!gwPeer || !lanHost || !target_port) {
+        alert(GC.t['route_gateway_required'] || 'Gateway, LAN host and LAN port are required');
+        return;
+      }
+    }
 
     if (basic_auth_enabled && (!basic_auth_user || !basic_auth_password)) {
       alert(GC.t['routes.auth_basic_required'] || 'Basic auth username and password are required when auth is enabled');
@@ -388,7 +443,20 @@
         bot_blocker_config: createBotBlocker ? createBotConfig : null,
         mirror_enabled: document.getElementById('create-route-mirror')?.classList.contains('on') ? 1 : 0,
         mirror_targets: createMirrorTargets.length > 0 ? createMirrorTargets : null,
+        target_kind: targetKind,
       };
+      if (isGateway) {
+        const gwPeerVal = document.getElementById('create-route-gateway-peer')?.value || '';
+        const lanHostVal = document.getElementById('create-route-lan-host')?.value || '';
+        const lanPortNum = parseInt(document.getElementById('create-route-lan-port')?.value || '', 10);
+        const wolEnabled = !!document.getElementById('create-route-wol-enabled')?.checked;
+        const wolMacVal = document.getElementById('create-route-wol-mac')?.value || '';
+        payload.target_peer_id = gwPeerVal ? parseInt(gwPeerVal, 10) : null;
+        payload.target_lan_host = lanHostVal.trim() || null;
+        payload.target_lan_port = Number.isInteger(lanPortNum) ? lanPortNum : null;
+        payload.wol_enabled = wolEnabled;
+        payload.wol_mac = wolEnabled ? (wolMacVal.trim() || null) : null;
+      }
       // User visibility
       var createUserIds = [];
       document.querySelectorAll('.create-route-user-cb:checked').forEach(function (cb) {
