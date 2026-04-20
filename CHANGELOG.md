@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.6] — 2026-04-20
+
+### Fixes
+- don't apply SSRF private-IP guard to gateway routes
+
+---
+
 ## [1.41.5] — 2026-04-20
 
 ### Fixes
