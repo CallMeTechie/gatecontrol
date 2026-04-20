@@ -381,13 +381,28 @@
     const basic_auth_user = fd.get('basic_auth_user') ? fd.get('basic_auth_user').trim() : '';
     const basic_auth_password = fd.get('basic_auth_password') ? fd.get('basic_auth_password').trim() : '';
 
-    if (!domain || !target_port) return;
+    if (!domain) {
+      alert(GC.t['routes.domain_required'] || 'Domain is required');
+      return;
+    }
+    if (!target_port) {
+      alert(isGateway
+        ? (GC.t['route_lan_port_required'] || 'LAN port is required')
+        : (GC.t['routes.target_port_required'] || 'Target port is required'));
+      return;
+    }
 
     if (isGateway) {
       const gwPeer = document.getElementById('create-route-gateway-peer')?.value || '';
       const lanHost = document.getElementById('create-route-lan-host')?.value.trim() || '';
-      if (!gwPeer || !lanHost || !target_port) {
+      if (!gwPeer || !lanHost) {
         alert(GC.t['route_gateway_required'] || 'Gateway, LAN host and LAN port are required');
+        return;
+      }
+    } else {
+      // Peer mode requires a selected peer (otherwise route target defaults to 127.0.0.1 silently)
+      if (!peer_id) {
+        alert(GC.t['routes.peer_required'] || 'Please select a target peer');
         return;
       }
     }
@@ -545,10 +560,15 @@
         updateCreateAuthTypeUI();
         loadRoutes();
       } else if (data.fields) {
+        // Map target_port error to the visible input for the active target_kind.
+        // In gateway mode #route-port is inside a display:none div, so the error
+        // would be attached to an invisible element.
         showFieldErrors(data.fields, {
-          domain: 'create-route-domain', target_port: 'route-port',
+          domain: 'create-route-domain',
+          target_port: isGateway ? 'create-route-lan-port' : 'route-port',
           description: 'route-description', target_ip: 'route-ip',
         });
+        if (data.error) alert(data.error);
       } else {
         alert(data.error || 'Failed to create route');
       }
