@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.2] — 2026-04-20
+
+### Fixes
+- boot with pre-generated JSON to eliminate TLS-alert-80 race
+
+---
+
 ## [Unreleased]
 
 ### Fixes
