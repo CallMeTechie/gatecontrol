@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.3] — 2026-04-20
+
+### Fixes
+- gateway routes show LAN target, not '127.0.0.1'
+
+---
+
 ## [1.41.2] — 2026-04-20
 
 ### Fixes
