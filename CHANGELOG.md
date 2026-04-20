@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.5] — 2026-04-20
+
+### Fixes
+- derive WG_ENDPOINT + WG_SERVER_PUBLIC_KEY for gateway.env
+
+---
+
 ## [1.40.4] — 2026-04-19
 
 ### Fixes
