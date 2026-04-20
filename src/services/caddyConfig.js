@@ -643,6 +643,87 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 // ─── Push config to Caddy Admin API ─────────────────────
 let lastGoodConfig = null;
 
+const RUNTIME_JSON_PATH = (config.caddy && config.caddy.dataDir
+  ? config.caddy.dataDir
+  : '/data/caddy') + '/runtime.json';
+
+// Write the generated Caddy config to /data/caddy/runtime.json atomically.
+// This file is the source-of-truth that entrypoint.sh boots Caddy from
+// (variant C) and that a runtime restart falls back to if /load leaves
+// Caddy in a bad state.
+function _persistRuntimeJson(caddyConfig) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const tmp = RUNTIME_JSON_PATH + '.tmp';
+  try {
+    fs.mkdirSync(path.dirname(RUNTIME_JSON_PATH), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(caddyConfig, null, 2));
+    fs.renameSync(tmp, RUNTIME_JSON_PATH);
+    return true;
+  } catch (err) {
+    logger.warn({ err: err.message, path: RUNTIME_JSON_PATH }, 'Could not persist runtime.json (not fatal)');
+    return false;
+  }
+}
+
+// Quick TLS-handshake self-test against 127.0.0.1:443 with the given SNI.
+// POST /load occasionally leaves Caddy in a state where it answers the
+// admin API but kills every new TLS handshake with `internal error`.
+function _verifyLocalTls(sniHost, timeoutMs = 4000) {
+  const tls = require('node:tls');
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    const socket = tls.connect({
+      host: '127.0.0.1',
+      port: 443,
+      servername: sniHost,
+      rejectUnauthorized: false,
+      timeout: timeoutMs,
+      ALPNProtocols: ['http/1.1'],
+    });
+    socket.once('secureConnect', () => { socket.end(); done(true); });
+    socket.once('error', () => done(false));
+    socket.once('timeout', () => { socket.destroy(); done(false); });
+  });
+}
+
+// Ask supervisord to restart Caddy. Caddy comes back from the runtime.json
+// we just wrote, which gives it a clean TLS state and re-triggers cert
+// provisioning for any new hosts. Brief downtime (~2–3 s) but recovers.
+// Uses execFile with fixed argv — no shell, no injection surface.
+function _restartCaddyViaSupervisor() {
+  const { execFile } = require('node:child_process');
+  return new Promise((resolve, reject) => {
+    execFile('supervisorctl', ['restart', 'caddy'], { timeout: 15000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(`supervisorctl restart caddy failed: ${err.message} ${stderr || ''}`.trim()));
+      resolve(stdout);
+    });
+  });
+}
+
+// The management UI domain is the canary for TLS health — it has a
+// provisioned cert from day one, so a failed TLS handshake against it
+// means Caddy's listener state is broken (not just "cert still
+// provisioning for a new subdomain"). Prefer GC_BASE_URL's hostname;
+// fall back to the first route's first host.
+function _managementHost(caddyConfig) {
+  try {
+    const baseUrl = config.app && config.app.baseUrl;
+    if (baseUrl) {
+      try {
+        const host = new URL(baseUrl).hostname;
+        if (host) return host;
+      } catch { /* fall through */ }
+    }
+    const srv = caddyConfig && caddyConfig.apps && caddyConfig.apps.http
+      && caddyConfig.apps.http.servers && caddyConfig.apps.http.servers.srv0;
+    const hosts = srv && srv.routes && srv.routes[0] && srv.routes[0].match
+      && srv.routes[0].match[0] && srv.routes[0].match[0].host;
+    return Array.isArray(hosts) && hosts.length > 0 ? hosts[0] : null;
+  } catch { return null; }
+}
+
 async function syncToCaddy() {
   let previousConfig = null;
   try {
@@ -651,6 +732,11 @@ async function syncToCaddy() {
 
   const caddyConfig = buildCaddyConfig();
 
+  // 1. Persist runtime.json FIRST so a Caddy restart always recovers
+  //    the latest intended config even if /load corrupts live state.
+  _persistRuntimeJson(caddyConfig);
+
+  // 2. Fast path: live config update via /load (no downtime when it works).
   const result = await caddyApi('/load', {
     method: 'POST',
     body: JSON.stringify(caddyConfig),
@@ -663,6 +749,27 @@ async function syncToCaddy() {
   try {
     const check = await caddyApi('/config/');
     if (!check) throw new Error('Config verification failed');
+
+    // 3. Real TLS self-test — admin API answering is not enough. Caddy
+    //    can accept /load and still reject every TLS handshake with
+    //    `internal error` after a bad listener transition. Detect that
+    //    and automatically restart Caddy so it reloads the runtime.json
+    //    we just wrote, with a clean TLS state.
+    const sni = _managementHost(caddyConfig);
+    if (sni) {
+      const tlsOk = await _verifyLocalTls(sni);
+      if (!tlsOk) {
+        logger.warn({ sni }, 'Caddy /load succeeded but local TLS handshake fails — restarting Caddy');
+        try {
+          await _restartCaddyViaSupervisor();
+          await new Promise((r) => setTimeout(r, 3000));
+          logger.info('Caddy restarted — serving from runtime.json');
+        } catch (restartErr) {
+          logger.error({ err: restartErr.message }, 'Automatic Caddy restart failed — manual `docker compose restart` required');
+        }
+      }
+    }
+
     lastGoodConfig = caddyConfig;
     logger.info('Caddy config synced and verified');
   } catch (verifyErr) {
