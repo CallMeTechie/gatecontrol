@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.5] — 2026-04-20
+
+### Fixes
+- unbreak crash-loop — export after secrets, pkill instead of supervisorctl
+
+---
+
 ## [1.41.4] — 2026-04-20
 
 ### Fixes
