@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.4] — 2026-04-20
+
+### Fixes
+- self-heal after /load leaves Caddy in a broken TLS state
+
+---
+
 ## [1.41.3] — 2026-04-20
 
 ### Fixes
