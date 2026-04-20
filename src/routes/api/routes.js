@@ -270,8 +270,11 @@ router.post('/',
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    // SSRF protection: block private/loopback IPs for direct target_ip (not peer-linked routes)
-    if (target_ip && !peer_id) {
+    // SSRF protection: block private/loopback IPs for direct target_ip.
+    // Skipped for peer-linked routes (target_ip isn't used there) and for
+    // gateway-typed routes (LAN host is intentionally private and only
+    // reachable via the home gateway's WG tunnel, not directly proxied).
+    if (target_ip && !peer_id && req.body.target_kind !== 'gateway') {
       const parts = target_ip.split('.').map(Number);
       if (parts[0] === 127 || parts[0] === 10 ||
           (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
@@ -421,8 +424,9 @@ router.put('/:id',
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
 
-    // SSRF protection: block private/loopback IPs for direct target_ip (not peer-linked routes)
-    if (target_ip && !peer_id) {
+    // SSRF protection: block private/loopback IPs for direct target_ip.
+    // Skipped for peer-linked and gateway-typed routes (see POST handler).
+    if (target_ip && !peer_id && req.body.target_kind !== 'gateway') {
       const parts = target_ip.split('.').map(Number);
       if (parts[0] === 127 || parts[0] === 10 ||
           (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||

@@ -1359,6 +1359,12 @@
           payload.target_lan_port = lanPortEl && lanPortEl.value ? parseInt(lanPortEl.value, 10) : null;
           payload.wol_enabled = !!(wolEnabledEl && wolEnabledEl.checked);
           payload.wol_mac = wolMacEl && wolMacEl.value ? wolMacEl.value.trim() : null;
+          // Don't leak the peer-fields' target_ip/peer_id into a gateway
+          // route payload. The old `target_ip='127.0.0.1'` placeholder
+          // from legacy gateway-route creates would otherwise trip the
+          // server's SSRF private-IP guard on every edit-save.
+          payload.target_ip = null;
+          payload.peer_id = null;
         }
         if (basic_auth_enabled) {
           payload.basic_auth_user = basic_auth_user.trim();
