@@ -346,6 +346,36 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
  * Shared helper used by createGateway (on initial creation) and
  * rotateGatewayTokens (on re-pairing).
  */
+/**
+ * Get the server's own WireGuard public key.
+ * Tries (in order):
+ *   1. Env GC_WG_SERVER_PUBLIC_KEY (explicit override)
+ *   2. `wg show <interface> public-key` via execFileSync (runtime, most accurate)
+ *   3. Empty string (causes Gateway bootstrap to reject — deliberate fail-loud)
+ */
+function _getServerWgPublicKey() {
+  if (process.env.GC_WG_SERVER_PUBLIC_KEY) return process.env.GC_WG_SERVER_PUBLIC_KEY.trim();
+  try {
+    const { execFileSync } = require('node:child_process');
+    const iface = (process.env.GC_WG_INTERFACE || 'wg0').replace(/[^a-zA-Z0-9_-]/g, '');
+    const key = execFileSync('wg', ['show', iface, 'public-key'], { encoding: 'utf8', timeout: 3000 }).trim();
+    if (key) return key;
+  } catch (e) {
+    logger.warn({ err: e.message }, 'Could not get server WireGuard public key via wg command');
+  }
+  return '';
+}
+
+/**
+ * Get the server's WireGuard endpoint (host:port) for peer config.
+ */
+function _getServerWgEndpoint() {
+  if (process.env.GC_WG_ENDPOINT) return process.env.GC_WG_ENDPOINT.trim();
+  const host = process.env.GC_WG_HOST || '';
+  const port = process.env.GC_WG_PORT || '51820';
+  return host ? `${host}:${port}` : '';
+}
+
 function buildEnvContent(row, apiToken, pushToken) {
   const ip = _peerIp(row.allowed_ips);
   const privateKey = row.private_key_encrypted ? decrypt(row.private_key_encrypted) : '';
@@ -366,8 +396,8 @@ function buildEnvContent(row, apiToken, pushToken) {
     `# WireGuard config inline`,
     `WG_PRIVATE_KEY=${privateKey}`,
     `WG_PUBLIC_KEY=${row.public_key || ''}`,
-    `WG_ENDPOINT=${process.env.GC_WG_ENDPOINT || ''}`,
-    `WG_SERVER_PUBLIC_KEY=${process.env.GC_WG_SERVER_PUBLIC_KEY || ''}`,
+    `WG_ENDPOINT=${_getServerWgEndpoint()}`,
+    `WG_SERVER_PUBLIC_KEY=${_getServerWgPublicKey()}`,
     `WG_ADDRESS=${ip}/24`,
     `WG_DNS=10.8.0.1`,
   ];
