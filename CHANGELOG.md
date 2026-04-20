@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.0] — 2026-04-20
+
+### Features
+- target_kind selector in route create form
+
+---
+
 ## [1.40.6] — 2026-04-20
 
 ### Fixes
