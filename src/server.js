@@ -54,19 +54,27 @@ async function start() {
       }
     }, 2000);
 
-    // Sync routes to Caddy on startup (with delay to let Caddy start)
-    setTimeout(async () => {
-      try {
-        const { syncToCaddy, getAll: getAllRoutes } = require('./services/routes');
-        const routes = getAllRoutes();
-        if (routes.length > 0) {
-          await syncToCaddy();
-          logger.info({ routeCount: routes.length }, 'Routes synced to Caddy on startup');
+    // Sync routes to Caddy on startup — but only if entrypoint.sh did
+    // NOT already boot Caddy with the pre-generated JSON. When the JSON
+    // is pre-loaded, Caddy's running config already equals what
+    // buildCaddyConfig() would produce, and a redundant /load would
+    // reintroduce the very TLS-alert-80 race this change is meant to fix.
+    if (process.env.GC_CADDY_CONFIG_PRELOADED === '1') {
+      logger.info('Caddy booted from pre-generated JSON — skipping initial /load sync');
+    } else {
+      setTimeout(async () => {
+        try {
+          const { syncToCaddy, getAll: getAllRoutes } = require('./services/routes');
+          const routes = getAllRoutes();
+          if (routes.length > 0) {
+            await syncToCaddy();
+            logger.info({ routeCount: routes.length }, 'Routes synced to Caddy on startup');
+          }
+        } catch (err) {
+          logger.warn({ error: err.message }, 'Could not sync routes to Caddy on startup (will retry on next change)');
         }
-      } catch (err) {
-        logger.warn({ error: err.message }, 'Could not sync routes to Caddy on startup (will retry on next change)');
-      }
-    }, config.intervals.caddySyncDelay);
+      }, config.intervals.caddySyncDelay);
+    }
 
     // Start background tasks
     startCollector(config.intervals.trafficCollector);

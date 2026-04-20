@@ -40,7 +40,7 @@ COPY . .
 RUN addgroup -S gatecontrol && adduser -S -G gatecontrol gatecontrol && \
     mkdir -p /data/caddy /data/wireguard /data/backups /etc/wireguard /app/config && \
     chmod 700 /data/wireguard /etc/wireguard && \
-    chmod +x /app/scripts/wg-wrapper.sh && \
+    chmod +x /app/scripts/wg-wrapper.sh /app/scripts/caddy-start.sh && \
     chown -R gatecontrol:gatecontrol /app /data
 
 VOLUME ["/data"]

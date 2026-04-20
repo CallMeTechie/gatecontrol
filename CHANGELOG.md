@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Eliminate the TLS-alert-80 race that occurred on every image deploy.
+  Caddy previously booted with a minimal Caddyfile and Node replaced the
+  whole config via `POST /load` after 5 s — during that transition
+  Caddy's TLS listener could be left in a broken state, producing
+  `internal error` TLS alerts on every handshake (affected browsers
+  hitting the admin UI and the Home-Gateway heartbeat alike). Now
+  `entrypoint.sh` exports the final JSON from the DB via
+  `src/bin/export-caddy-config.js` and Caddy starts directly with it;
+  Node skips the redundant startup sync when `GC_CADDY_CONFIG_PRELOADED`
+  is set. Falls back to the static Caddyfile if export or validation
+  fails, so the admin UI stays reachable.
+- Route-create form: explicit alerts for missing fields and field-error
+  mapping per `target_kind` so gateway-route validation errors aren't
+  attached to the hidden peer-fields input.
+
+---
+
 ## [1.41.1] — 2026-04-20
 
 ### Fixes
