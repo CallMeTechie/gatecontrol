@@ -379,6 +379,7 @@ function _getServerWgEndpoint() {
 function buildEnvContent(row, apiToken, pushToken) {
   const ip = _peerIp(row.allowed_ips);
   const privateKey = row.private_key_encrypted ? decrypt(row.private_key_encrypted) : '';
+  const presharedKey = row.preshared_key_encrypted ? decrypt(row.preshared_key_encrypted) : '';
   const lines = [
     `# GateControl Home Gateway — Pairing Config`,
     `# Generated: ${new Date().toISOString()}`,
@@ -396,6 +397,7 @@ function buildEnvContent(row, apiToken, pushToken) {
     `# WireGuard config inline`,
     `WG_PRIVATE_KEY=${privateKey}`,
     `WG_PUBLIC_KEY=${row.public_key || ''}`,
+    `WG_PRESHARED_KEY=${presharedKey}`,
     `WG_ENDPOINT=${_getServerWgEndpoint()}`,
     `WG_SERVER_PUBLIC_KEY=${_getServerWgPublicKey()}`,
     `WG_ADDRESS=${ip}/24`,
