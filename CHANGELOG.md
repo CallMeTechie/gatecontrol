@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.7] — 2026-04-21
+
+### Fixes
+- ship env with /32 Address + AllowedIPs=server-only
+
+---
+
 ## [1.41.6] — 2026-04-20
 
 ### Fixes
