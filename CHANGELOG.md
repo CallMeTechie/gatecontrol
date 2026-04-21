@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.0] — 2026-04-21
+
+### Features
+- propagate backend_https flag to gateway config sync
+
+---
+
 ## [1.41.11] — 2026-04-21
 
 ### Fixes
