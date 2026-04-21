@@ -76,4 +76,45 @@ describe('gateway API: /heartbeat', () => {
     const r = await postJson('/api/v1/gateway/heartbeat', {});
     assert.equal(r.status, 401);
   });
+
+  it('captures hostname into peers.hostname via internal_dns feature', async () => {
+    const license = require('../src/services/license');
+    license._overrideForTest && license._overrideForTest({ gateway_peers: 10, internal_dns: true });
+
+    const r = await postJson('/api/v1/gateway/heartbeat', {
+      uptime_s: 10,
+      hostname: 'home-gw',
+    }, { Authorization: `Bearer ${apiToken}` });
+    assert.equal(r.status, 200);
+    const row = db.prepare('SELECT hostname, hostname_source FROM peers WHERE id = ?').get(peerId);
+    assert.equal(row.hostname, 'home-gw');
+    assert.equal(row.hostname_source, 'agent');
+  });
+
+  it('does not overwrite admin-set hostname from agent heartbeat', async () => {
+    const license = require('../src/services/license');
+    license._overrideForTest && license._overrideForTest({ gateway_peers: 10, internal_dns: true });
+    const peers = require('../src/services/peers');
+    peers.setHostname(peerId, 'admin-chosen', 'admin');
+
+    const r = await postJson('/api/v1/gateway/heartbeat', {
+      uptime_s: 10,
+      hostname: 'some-other-name',
+    }, { Authorization: `Bearer ${apiToken}` });
+    assert.equal(r.status, 200);
+    const row = db.prepare('SELECT hostname, hostname_source FROM peers WHERE id = ?').get(peerId);
+    assert.equal(row.hostname, 'admin-chosen');
+    assert.equal(row.hostname_source, 'admin');
+  });
+
+  it('silently ignores malformed hostname (heartbeat still 200)', async () => {
+    const license = require('../src/services/license');
+    license._overrideForTest && license._overrideForTest({ gateway_peers: 10, internal_dns: true });
+
+    const r = await postJson('/api/v1/gateway/heartbeat', {
+      uptime_s: 10,
+      hostname: 'BAD NAME WITH SPACES',
+    }, { Authorization: `Bearer ${apiToken}` });
+    assert.equal(r.status, 200);
+  });
 });

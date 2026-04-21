@@ -3,6 +3,8 @@
 const express = require('express');
 const { requireGateway } = require('../../middleware/gatewayAuth');
 const gateways = require('../../services/gateways');
+const peers = require('../../services/peers');
+const { hasFeature } = require('../../services/license');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -61,6 +63,18 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   }
   if (body.http_proxy_healthy !== undefined && typeof body.http_proxy_healthy !== 'boolean') {
     return res.status(400).json({ error: 'http_proxy_healthy must be boolean' });
+  }
+
+  // Opportunistic hostname capture via heartbeat (feature: internal_dns).
+  // Mirrors client.js heartbeat behaviour so a gateway peer shows up in the
+  // internal DNS zone within one heartbeat cycle. Sticky-admin policy is
+  // enforced inside setHostname (admin-source writes aren't overwritten).
+  if (body.hostname && typeof body.hostname === 'string' && hasFeature('internal_dns')) {
+    try {
+      peers.setHostname(peerId, body.hostname, 'agent');
+    } catch (err) {
+      logger.debug({ peerId, err: err.message }, 'Gateway heartbeat hostname rejected');
+    }
   }
 
   gateways.handleHeartbeat(peerId, body);
