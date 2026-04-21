@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.0] — 2026-04-21
+
+### Features
+- accept hostname in gateway heartbeat for internal DNS
+
+---
+
 ## [1.44.5] — 2026-04-21
 
 ### Änderungen
