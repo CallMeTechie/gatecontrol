@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.11] — 2026-04-21
+
+### Fixes
+- never TLS-wrap the Caddy → gateway hop
+
+---
+
 ## [1.41.10] — 2026-04-21
 
 ### Fixes
