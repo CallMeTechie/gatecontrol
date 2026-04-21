@@ -126,7 +126,14 @@ function getGatewayConfig(peerId) {
     })),
     l4_routes: l4Routes.map(r => ({
       id: r.id,
-      listen_port: r.listen_port,
+      // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
+      // like "8000-8100" fits). The shared config-hash schema however
+      // requires a plain number — ranges don't apply to gateway L4
+      // anyway (a Node net.createServer listener binds a single port).
+      // Coerce to number; fall through to the original value if that
+      // fails so a misuse surfaces loudly instead of silently hashing
+      // wrong data.
+      listen_port: Number.isFinite(Number(r.listen_port)) ? Number(r.listen_port) : r.listen_port,
       target_lan_host: r.target_lan_host,
       target_lan_port: r.target_lan_port,
       wol_enabled: !!r.wol_enabled,

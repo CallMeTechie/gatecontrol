@@ -82,7 +82,18 @@ const config = {
   },
 
   l4: {
-    blockedPorts: (process.env.GC_L4_BLOCKED_PORTS || '80,443,2019,3000,51820')
+    // Ports the server itself needs — cannot be used as L4 listen-ports
+    // because Caddy's layer4 plugin would fail to bind with EADDRINUSE.
+    //   22    = SSH daemon on nearly every Linux VPS
+    //   53    = systemd-resolved / dnsmasq on host (container shares NS)
+    //   80    = Caddy Auto-HTTPS challenge
+    //   443   = Caddy HTTPS server
+    //   2019  = Caddy admin API
+    //   3000  = GateControl Node app (Caddy upstream)
+    //   51820 = WireGuard server endpoint
+    // Override with GC_L4_BLOCKED_PORTS if any of these are remapped on
+    // your host. Trimming 22 is risky — you'd need to move sshd first.
+    blockedPorts: (process.env.GC_L4_BLOCKED_PORTS || '22,53,80,443,2019,3000,51820')
       .split(',').map(p => parseInt(p.trim(), 10)).filter(Boolean),
     maxPortRange: parseInt(process.env.GC_L4_MAX_PORT_RANGE, 10) || 100,
   },
