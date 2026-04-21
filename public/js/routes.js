@@ -675,37 +675,37 @@
     if (isLast) renderWizardReview();
   }
 
+  function wizardError(msgKey, fallback, focusEl) {
+    const msg = (GC.t && GC.t[msgKey]) || fallback;
+    if (typeof window.showToast === 'function') window.showToast(msg, 'error');
+    else alert(msg);
+    if (focusEl) { try { focusEl.focus(); } catch (_) {} }
+    return false;
+  }
+
   function validateWizardStep(n) {
     if (n !== 1) return true;
     const domainEl = document.getElementById('create-route-domain');
     const domain = (domainEl && domainEl.value || '').trim();
-    if (!domain) {
-      alert((GC.t && GC.t['routes.domain_required']) || 'Domain is required');
-      if (domainEl) domainEl.focus();
-      return false;
-    }
+    if (!domain) return wizardError('routes.domain_required', 'Domain is required', domainEl);
     if (isL4Route()) {
       const lpEl = document.getElementById('l4-listen-port');
-      if (!lpEl || !lpEl.value.trim()) {
-        alert((GC.t && GC.t['routes.l4_listen_port_required']) || 'Listen-Port erforderlich');
-        if (lpEl) lpEl.focus();
-        return false;
-      }
+      if (!lpEl || !lpEl.value.trim()) return wizardError('routes.l4_listen_port_required', 'Listen-Port erforderlich', lpEl);
       return true;
     }
     const tk = (document.getElementById('create-route-target-kind') || {}).value || 'peer';
     if (tk === 'gateway') {
-      const gw = (document.getElementById('create-route-gateway-peer') || {}).value || '';
-      const host = ((document.getElementById('create-route-lan-host') || {}).value || '').trim();
-      const port = (document.getElementById('create-route-lan-port') || {}).value || '';
-      if (!gw) { alert((GC.t && GC.t['route_gateway_peer_required']) || 'Gateway erforderlich'); return false; }
-      if (!host) { alert((GC.t && GC.t['route_lan_host_required']) || 'LAN-Host erforderlich'); return false; }
-      if (!port) { alert((GC.t && GC.t['route_lan_port_required']) || 'LAN-Port erforderlich'); return false; }
+      const gwEl = document.getElementById('create-route-gateway-peer');
+      const hostEl = document.getElementById('create-route-lan-host');
+      const portEl = document.getElementById('create-route-lan-port');
+      if (!((gwEl || {}).value)) return wizardError('route_gateway_peer_required', 'Gateway erforderlich', gwEl);
+      if (!(((hostEl || {}).value) || '').trim()) return wizardError('route_lan_host_required', 'LAN-Host erforderlich', hostEl);
+      if (!((portEl || {}).value)) return wizardError('route_lan_port_required', 'LAN-Port erforderlich', portEl);
     } else {
-      const peer = (document.getElementById('route-peer-select') || {}).value || '';
-      const port = ((document.getElementById('route-port') || {}).value || '').trim();
-      if (!peer) { alert((GC.t && GC.t['routes.peer_required']) || 'Peer erforderlich'); return false; }
-      if (!port) { alert((GC.t && GC.t['routes.target_port_required']) || 'Target-Port erforderlich'); return false; }
+      const peerEl = document.getElementById('route-peer-select');
+      const portEl = document.getElementById('route-port');
+      if (!((peerEl || {}).value)) return wizardError('routes.peer_required', 'Peer erforderlich', peerEl);
+      if (!(((portEl || {}).value) || '').trim()) return wizardError('routes.target_port_required', 'Target-Port erforderlich', portEl);
     }
     return true;
   }
