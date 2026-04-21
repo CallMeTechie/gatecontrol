@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.10] — 2026-04-21
+
+### Fixes
+- isolate login assets under /route-auth/static/*
+
+---
+
 ## [1.41.9] — 2026-04-21
 
 ### Fixes
