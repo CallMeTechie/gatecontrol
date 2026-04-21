@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.5] — 2026-04-21
+
+### Änderungen
+- remove redundant Gateway-Host footer card
+
+---
+
 ## [1.44.4] — 2026-04-21
 
 ### Änderungen
