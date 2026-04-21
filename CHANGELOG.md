@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.3] — 2026-04-21
+
+### Fixes
+- make Verfügbarkeit card functional, drop fake uptime %
+
+---
+
 ## [1.44.2] — 2026-04-21
 
 ### Fixes
