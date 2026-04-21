@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.2] — 2026-04-21
+
+### Fixes
+- keep compact toggle-groups at content width
+
+---
+
 ## [1.44.1] — 2026-04-21
 
 ### Änderungen
