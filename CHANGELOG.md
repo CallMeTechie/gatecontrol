@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.9] — 2026-04-21
+
+### Fixes
+- render login template with theme + i18n middleware
+
+---
+
 ## [1.41.8] — 2026-04-21
 
 ### Fixes
