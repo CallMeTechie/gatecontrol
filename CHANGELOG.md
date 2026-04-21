@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.4] — 2026-04-21
+
+### Änderungen
+- serialise release runs per branch via concurrency group
+
+---
+
 ## [1.43.3] — 2026-04-21
 
 ### Änderungen
