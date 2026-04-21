@@ -266,8 +266,15 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       }
     }
 
-    // Backend HTTPS with insecure_skip_verify
-    if (route.backend_https) {
+    // Backend HTTPS with insecure_skip_verify. Skipped for gateway-typed
+    // routes: the Caddy → Gateway hop (over WG tunnel) always speaks
+    // plain HTTP on the gateway's proxy port, regardless of the LAN
+    // target's scheme. Applying TLS transport here turned every gateway
+    // route into a 502 (`tls: first record does not look like a TLS
+    // handshake`) whenever the flag was set. If the LAN target itself
+    // needs HTTPS, that gets handled by the gateway's own proxy — not
+    // by the WG-side leg.
+    if (route.backend_https && !gatewayPeerIp) {
       logger.warn({ domain: route.domain, upstreams: upstreams.map(u => u.dial).join(',') }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
       reverseProxy.transport = {
         protocol: 'http',
