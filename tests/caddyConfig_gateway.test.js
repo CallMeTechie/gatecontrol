@@ -61,6 +61,27 @@ describe('caddyConfig: gateway-typed routes', () => {
     assert.ok(!json.includes('X-Gateway-Target'));
   });
 
+  it('L4 gateway route forwards to gateway-peer-ip:listen_port (not the 127.0.0.1 placeholder)', () => {
+    // Previously buildL4Route built `target = target_ip + ':' + target_port`
+    // which for gateway routes was '127.0.0.1:<placeholder>' — Caddy L4
+    // then forwarded to its own loopback and the route silently dropped.
+    // Fix: gateway-typed L4 routes must target <gateway-peer-tunnel-ip>:
+    // <l4_listen_port>, since the gateway's TcpProxyManager binds that
+    // port on the tunnel IP and forwards on to the LAN.
+    const routes = [{
+      id: 10, route_type: 'l4', target_kind: 'gateway',
+      l4_protocol: 'tcp', l4_listen_port: '3389', l4_tls_mode: 'none',
+      target_peer_allowed_ips: '10.8.0.5/32',
+      target_lan_host: '192.168.2.100', target_lan_port: 3389,
+      target_ip: '127.0.0.1', target_port: 0,  // legacy placeholder fields
+      enabled: 1,
+    }];
+    const config = buildCaddyConfig(routes);
+    const json = JSON.stringify(config);
+    assert.ok(json.includes('10.8.0.5:3389'), 'upstream should be gateway-tunnel-IP:l4_listen_port');
+    assert.ok(!json.includes('127.0.0.1:0'), 'placeholder target_ip must not leak into the Caddy L4 config');
+  });
+
   it('gateway-typed HTTP route gets @id field for Admin-API patches', () => {
     const routes = [{
       id: 1, domain: 'nas.example.com', route_type: 'http', target_kind: 'gateway',

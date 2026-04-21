@@ -638,7 +638,16 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   if (l4Routes.length > 0) {
     for (const route of l4Routes) {
       if (route.peer_id && route.allowed_ips) {
+        // Peer-route: upstream = peer's WG IP + route.target_port.
         route.target_ip = route.allowed_ips.split('/')[0];
+      } else if (route.target_kind === 'gateway' && route.target_peer_allowed_ips) {
+        // Gateway-route: upstream = gateway-peer's WG IP + l4_listen_port.
+        // The gateway container runs its own TcpProxyManager bound to
+        // tunnel_ip:l4_listen_port and forwards to target_lan_host:
+        // target_lan_port on the LAN — so Caddy on the server just
+        // needs to hand the connection to the gateway's listener.
+        route.target_ip = route.target_peer_allowed_ips.split('/')[0];
+        route.target_port = route.l4_listen_port;
       }
     }
 
