@@ -717,18 +717,10 @@
   align-items: start;
 }
 .wiz-row-2 > * { margin-bottom: 0 !important; }
-.wiz-section-title {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 600;
-  margin: 6px 0 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
 .wiz-step-body { min-height: 480px; }
+/* Keep compact toggle-groups shrunk to their content inside flex-column form-groups.
+   Groups explicitly set to style="width:100%" keep their explicit width. */
+.wiz-step-body .toggle-group { align-self: flex-start; }
 @media (max-width: 640px) {
   .wiz-row-2 { grid-template-columns: 1fr; }
 }

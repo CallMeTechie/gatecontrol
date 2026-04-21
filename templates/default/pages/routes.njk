@@ -718,6 +718,9 @@
 }
 .wiz-row-2 > * { margin-bottom: 0 !important; }
 .wiz-step-body { min-height: 480px; }
+/* Keep compact toggle-groups shrunk to their content inside flex-column form-groups.
+   Groups explicitly set to style="width:100%" keep their explicit width. */
+.wiz-step-body .toggle-group { align-self: flex-start; }
 @media (max-width: 640px) {
   .wiz-row-2 { grid-template-columns: 1fr; }
 }
