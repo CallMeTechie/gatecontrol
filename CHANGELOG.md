@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.4] — 2026-04-21
+
+### Änderungen
+- move Uptime boot-date right-aligned into card header
+
+---
+
 ## [1.44.3] — 2026-04-21
 
 ### Fixes
