@@ -178,16 +178,22 @@ router.post('/batch', (req, res) => {
 /**
  * POST /api/v1/rdp -- Create new RDP route
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const route = rdp.create(req.body);
+    if (req.body.access_mode === 'gateway') {
+      const license = require('../../services/license');
+      if (!license.hasFeature('rdp_via_gateway')) {
+        return res.status(403).json({ ok: false, error: req.t('error.license.feature_not_available') || 'Feature not available in your plan', feature: 'rdp_via_gateway' });
+      }
+    }
+    const route = await rdp.create(req.body);
     res.status(201).json({ ok: true, route });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create RDP route');
     if (err.fields) {
       return res.status(400).json({ ok: false, error: err.message, fields: err.fields });
     }
-    res.status(500).json({ ok: false, error: req.t('error.rdp.create') });
+    res.status(500).json({ ok: false, error: err.message || req.t('error.rdp.create') });
   }
 });
 
@@ -208,9 +214,15 @@ router.get('/:id', (req, res) => {
 /**
  * PATCH /api/v1/rdp/:id -- Update RDP route
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
-    const route = rdp.update(parseInt(req.params.id, 10), req.body);
+    if (req.body.access_mode === 'gateway') {
+      const license = require('../../services/license');
+      if (!license.hasFeature('rdp_via_gateway')) {
+        return res.status(403).json({ ok: false, error: req.t('error.license.feature_not_available') || 'Feature not available in your plan', feature: 'rdp_via_gateway' });
+      }
+    }
+    const route = await rdp.update(parseInt(req.params.id, 10), req.body);
     res.json({ ok: true, route });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update RDP route');
@@ -220,16 +232,16 @@ router.patch('/:id', (req, res) => {
     if (err.fields) {
       return res.status(400).json({ ok: false, error: err.message, fields: err.fields });
     }
-    res.status(500).json({ ok: false, error: req.t('error.rdp.update') });
+    res.status(500).json({ ok: false, error: err.message || req.t('error.rdp.update') });
   }
 });
 
 /**
  * DELETE /api/v1/rdp/:id -- Delete RDP route
  */
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    rdp.remove(parseInt(req.params.id, 10));
+    await rdp.remove(parseInt(req.params.id, 10));
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete RDP route');
@@ -243,9 +255,9 @@ router.delete('/:id', (req, res) => {
 /**
  * PUT /api/v1/rdp/:id/toggle -- Toggle RDP route enabled/disabled
  */
-router.put('/:id/toggle', (req, res) => {
+router.put('/:id/toggle', async (req, res) => {
   try {
-    const route = rdp.toggle(parseInt(req.params.id, 10));
+    const route = await rdp.toggle(parseInt(req.params.id, 10));
     res.json({ ok: true, route });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle RDP route');
@@ -428,10 +440,10 @@ router.get('/:id/maintenance', (req, res) => {
 /**
  * PUT /api/v1/rdp/:id/maintenance -- Set maintenance window
  */
-router.put('/:id/maintenance', (req, res) => {
+router.put('/:id/maintenance', async (req, res) => {
   try {
     const { enabled, schedule } = req.body;
-    rdp.update(parseInt(req.params.id, 10), {
+    await rdp.update(parseInt(req.params.id, 10), {
       maintenance_enabled: enabled,
       maintenance_schedule: schedule,
     });

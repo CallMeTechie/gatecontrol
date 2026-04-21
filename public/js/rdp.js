@@ -555,14 +555,23 @@
   function updateAccessModeFields() {
     if (!accessMode || !externalFields) return;
     var labelBase = GC.t['rdp.external_hostname'] || 'External Hostname';
-    if (accessMode.value === 'internal') {
-      externalFields.style.display = 'none';
-      externalHostInput.removeAttribute('required');
-      if (externalHostLabel) externalHostLabel.textContent = labelBase;
-    } else {
+    var mode = accessMode.value;
+    var homegwFields = document.getElementById('rdp-homegw-fields');
+
+    // External hostname fields: visible for external / both
+    if (mode === 'external' || mode === 'both') {
       externalFields.style.display = '';
       externalHostInput.setAttribute('required', '');
       if (externalHostLabel) externalHostLabel.textContent = labelBase + ' *';
+    } else {
+      externalFields.style.display = 'none';
+      externalHostInput.removeAttribute('required');
+      if (externalHostLabel) externalHostLabel.textContent = labelBase;
+    }
+
+    // Home-Gateway fields: visible only for access_mode='gateway'
+    if (homegwFields) {
+      homegwFields.style.display = mode === 'gateway' ? '' : 'none';
     }
   }
 
@@ -726,6 +735,11 @@
       document.getElementById('rdp-external-port').value = r.external_port || '';
       document.getElementById('rdp-gateway-host').value = r.gateway_host || '';
       document.getElementById('rdp-gateway-port').value = r.gateway_port || 443;
+      // Home-Gateway fields
+      var homegwPeerSel = document.getElementById('rdp-homegw-peer');
+      if (homegwPeerSel) homegwPeerSel.value = r.gateway_peer_id != null ? String(r.gateway_peer_id) : '';
+      var homegwListenInput = document.getElementById('rdp-homegw-listen-port');
+      if (homegwListenInput) homegwListenInput.value = r.gateway_listen_port != null ? String(r.gateway_listen_port) : '';
       document.getElementById('rdp-credential-mode').value = r.credential_mode || 'none';
       // Load decrypted credentials from server (separate endpoint for security)
       document.getElementById('rdp-username').value = '';
@@ -801,8 +815,16 @@
       access_mode: document.getElementById('rdp-access-mode').value,
       external_hostname: document.getElementById('rdp-external-hostname').value || null,
       external_port: document.getElementById('rdp-external-port').value ? parseInt(document.getElementById('rdp-external-port').value, 10) : null,
+      // Microsoft RD-Gateway (TSGateway) — NOT the Home Gateway
       gateway_host: document.getElementById('rdp-gateway-host').value || null,
       gateway_port: document.getElementById('rdp-gateway-port').value ? parseInt(document.getElementById('rdp-gateway-port').value, 10) : null,
+      // Home-Gateway routing (Option B)
+      gateway_peer_id: (document.getElementById('rdp-access-mode').value === 'gateway'
+        && document.getElementById('rdp-homegw-peer') && document.getElementById('rdp-homegw-peer').value)
+        ? parseInt(document.getElementById('rdp-homegw-peer').value, 10) : null,
+      gateway_listen_port: (document.getElementById('rdp-access-mode').value === 'gateway'
+        && document.getElementById('rdp-homegw-listen-port') && document.getElementById('rdp-homegw-listen-port').value)
+        ? parseInt(document.getElementById('rdp-homegw-listen-port').value, 10) : null,
       credential_mode: document.getElementById('rdp-credential-mode').value,
       domain: document.getElementById('rdp-domain').value || null,
       username: document.getElementById('rdp-username').value || null,
@@ -871,6 +893,195 @@
   // -- Init -----------------------------------------------------
   loadRoutes();
   loadRotationCount();
+
+  // ─── Wizard navigation ─────────────────────────────────
+  // The create/edit modal is laid out as a 6-step wizard. Each section
+  // carries data-wizard-step="N". All steps > currentStep are hidden.
+  // This reuses the existing form state + save handler 1:1 — the
+  // wizard is purely a presentation layer on top of the same <form>.
+  var WIZARD_TOTAL_STEPS = 6;
+  var currentWizardStep = 1;
+
+  function showWizardStep(n) {
+    currentWizardStep = Math.max(1, Math.min(WIZARD_TOTAL_STEPS, n));
+    var modal = document.getElementById('rdp-modal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-wizard-step]').forEach(function (el) {
+      var s = parseInt(el.getAttribute('data-wizard-step'), 10);
+      el.style.display = (s === currentWizardStep) ? '' : 'none';
+    });
+    modal.querySelectorAll('.rdp-step-pill').forEach(function (p) {
+      var s = parseInt(p.getAttribute('data-pill'), 10);
+      p.classList.remove('active', 'done');
+      if (s === currentWizardStep) p.classList.add('active');
+      else if (s < currentWizardStep) p.classList.add('done');
+    });
+    var sub = document.getElementById('rdp-modal-subtitle');
+    if (sub) {
+      var tpl = GC.t['rdp.wizard.step_of'] || 'Step {{current}} of {{total}}';
+      sub.textContent = tpl
+        .replace('{{current}}', String(currentWizardStep))
+        .replace('{{total}}', String(WIZARD_TOTAL_STEPS));
+    }
+    var prev = document.getElementById('rdp-wizard-prev');
+    var next = document.getElementById('rdp-wizard-next');
+    var save = document.getElementById('rdp-modal-save');
+    if (prev) prev.style.display = currentWizardStep > 1 ? '' : 'none';
+    if (next) next.style.display = currentWizardStep < WIZARD_TOTAL_STEPS ? '' : 'none';
+    if (save) save.style.display = currentWizardStep === WIZARD_TOTAL_STEPS ? '' : 'none';
+    if (currentWizardStep === WIZARD_TOTAL_STEPS) renderWizardReview();
+  }
+
+  function validateWizardStep(n) {
+    if (n === 1) {
+      var name = (document.getElementById('rdp-name') || {}).value || '';
+      var host = (document.getElementById('rdp-host') || {}).value || '';
+      if (!name.trim()) { alert(GC.t['rdp.name_required'] || 'Name is required'); return false; }
+      if (!host.trim()) { alert(GC.t['rdp.host_required'] || 'Host is required'); return false; }
+      var accessModeEl = document.getElementById('rdp-access-mode');
+      if (accessModeEl && accessModeEl.value === 'gateway') {
+        var peer = (document.getElementById('rdp-homegw-peer') || {}).value || '';
+        if (!peer) { alert(GC.t['rdp.gateway_peer_required'] || 'Please pick a Home Gateway peer'); return false; }
+      }
+    }
+    return true;
+  }
+
+  function _valOf(id) {
+    var el = document.getElementById(id);
+    if (!el) return '';
+    return el.type === 'checkbox' ? (el.checked ? '✓' : '✗') : (el.value || '');
+  }
+
+  function renderWizardReview() {
+    var target = document.getElementById('rdp-wizard-review');
+    if (!target) return;
+    while (target.firstChild) target.removeChild(target.firstChild);
+    var accessModeVal = _valOf('rdp-access-mode');
+    var credModeVal = _valOf('rdp-credential-mode');
+    var rows = [];
+    rows.push(['Name', _valOf('rdp-name')]);
+    if (_valOf('rdp-description')) rows.push(['Description', _valOf('rdp-description')]);
+    rows.push(['Host', _valOf('rdp-host') + ':' + (_valOf('rdp-port') || '3389')]);
+    rows.push(['Access mode', accessModeVal]);
+    if (accessModeVal === 'gateway') {
+      var gwSel = document.getElementById('rdp-homegw-peer');
+      var gwPeerLabel = (gwSel && gwSel.selectedOptions && gwSel.selectedOptions[0])
+        ? gwSel.selectedOptions[0].textContent : _valOf('rdp-homegw-peer');
+      rows.push(['Home Gateway', gwPeerLabel]);
+      rows.push(['Public listen port', _valOf('rdp-homegw-listen-port') || _valOf('rdp-port') || '3389']);
+    } else if (accessModeVal === 'external' || accessModeVal === 'both') {
+      rows.push(['External', _valOf('rdp-external-hostname') + ':' + (_valOf('rdp-external-port') || '?')]);
+    }
+    if (_valOf('rdp-gateway-host')) {
+      rows.push(['MS RD-Gateway', _valOf('rdp-gateway-host') + ':' + (_valOf('rdp-gateway-port') || '443')]);
+    }
+    rows.push(['Credentials', credModeVal]);
+    if (credModeVal !== 'none' && _valOf('rdp-username')) rows.push(['Username', _valOf('rdp-username')]);
+    if (_valOf('rdp-domain')) rows.push(['Domain', _valOf('rdp-domain')]);
+    var resStr = _valOf('rdp-resolution-mode');
+    if (resStr === 'fixed') resStr += ' (' + _valOf('rdp-resolution-width') + '×' + _valOf('rdp-resolution-height') + ')';
+    rows.push(['Resolution', resStr]);
+    rows.push(['Multi-monitor', _valOf('rdp-multi-monitor')]);
+    rows.push(['Color depth', _valOf('rdp-color-depth') + ' bit']);
+    rows.push(['Audio', _valOf('rdp-audio-mode')]);
+    var redir = [];
+    ['clipboard','printers','drives','usb','smartcard'].forEach(function (k) {
+      var el = document.getElementById('rdp-redirect-' + k);
+      if (el && el.checked) redir.push(k);
+    });
+    if (redir.length) rows.push(['Redirects', redir.join(', ')]);
+    rows.push(['Network', _valOf('rdp-network-profile')]);
+    if (_valOf('rdp-bandwidth-limit')) rows.push(['Bandwidth limit', _valOf('rdp-bandwidth-limit') + ' kbps']);
+    rows.push(['NLA', _valOf('rdp-nla')]);
+    if (_valOf('rdp-session-timeout')) rows.push(['Session timeout', _valOf('rdp-session-timeout') + ' s']);
+    if (_valOf('rdp-remote-app')) rows.push(['Remote app', _valOf('rdp-remote-app')]);
+    rows.push(['Admin session', _valOf('rdp-admin-session')]);
+    var wolStr = _valOf('rdp-wol-enabled');
+    if (wolStr === '✓' && _valOf('rdp-wol-mac')) wolStr += ' → ' + _valOf('rdp-wol-mac');
+    rows.push(['Wake-on-LAN', wolStr]);
+    rows.push(['Health check', _valOf('rdp-health-check')]);
+    if (_valOf('rdp-tags')) rows.push(['Tags', _valOf('rdp-tags')]);
+    // Safe DOM construction — no innerHTML
+    rows.forEach(function (row) {
+      var line = document.createElement('div');
+      line.style.cssText = 'display:grid;grid-template-columns:140px 1fr;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border)';
+      var k = document.createElement('div');
+      k.style.color = 'var(--text-3)';
+      k.textContent = row[0];
+      var v = document.createElement('div');
+      v.textContent = String(row[1]);
+      line.appendChild(k); line.appendChild(v);
+      target.appendChild(line);
+    });
+  }
+
+  async function populateHomeGatewayPeers() {
+    var sel = document.getElementById('rdp-homegw-peer');
+    if (!sel) return;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    var placeholder = document.createElement('option');
+    placeholder.value = ''; placeholder.textContent = '—';
+    sel.appendChild(placeholder);
+    try {
+      // Reuse the simplified peer endpoint that already exposes
+      // peer_type so we don't need a server-side filter change.
+      var data = await api.get('/api/v1/routes/peers');
+      var peers = ((data && data.peers) || []).filter(function (p) { return p.peer_type === 'gateway' && p.enabled; });
+      peers.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = p.name + ' (' + (p.ip || '?') + ')';
+        sel.appendChild(opt);
+      });
+    } catch (err) { /* non-fatal */ }
+  }
+
+  (function initWizardNav() {
+    var next = document.getElementById('rdp-wizard-next');
+    var prev = document.getElementById('rdp-wizard-prev');
+    if (next) next.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      if (!validateWizardStep(currentWizardStep)) return;
+      showWizardStep(currentWizardStep + 1);
+    });
+    if (prev) prev.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      showWizardStep(currentWizardStep - 1);
+    });
+  })();
+
+  // Hook the wizard into openCreateModal / openEditModal so each open
+  // starts at step 1 with a fresh peer dropdown.
+  var originalOpenCreateModal = openCreateModal;
+  openCreateModal = function () {
+    originalOpenCreateModal();
+    populateHomeGatewayPeers();
+    showWizardStep(1);
+  };
+  var originalOpenEditModal = openEditModal;
+  openEditModal = async function (id) {
+    await originalOpenEditModal(id);
+    await populateHomeGatewayPeers();
+    var sel = document.getElementById('rdp-homegw-peer');
+    if (sel && editingId) {
+      try {
+        var res = await api.get('/api/v1/rdp/' + id);
+        if (res && res.ok && res.route && res.route.gateway_peer_id != null) {
+          sel.value = String(res.route.gateway_peer_id);
+        }
+      } catch (e) { /* non-fatal */ }
+    }
+    var am = document.getElementById('rdp-access-mode');
+    if (am) am.dispatchEvent(new Event('change'));
+    showWizardStep(1);
+  };
+  var btnAdd = document.getElementById('btn-add-rdp');
+  if (btnAdd) {
+    var freshBtn = btnAdd.cloneNode(true);
+    btnAdd.parentNode.replaceChild(freshBtn, btnAdd);
+    freshBtn.addEventListener('click', function () { openCreateModal(); });
+  }
 
   // Auto-refresh every 60s
   setInterval(function () {

@@ -47,6 +47,7 @@ const COMMUNITY_FALLBACK = {
   gateway_http_targets: 3,
   gateway_tcp_routing: false,
   gateway_wol: false,
+  rdp_via_gateway: false,
 };
 
 let cachedPlan = 'community';

@@ -677,6 +677,24 @@ const migrations = [
     sql: `ALTER TABLE gateway_meta ADD COLUMN last_health TEXT;`,
     detect: (db) => hasColumn(db, 'gateway_meta', 'last_health'),
   },
+  {
+    // Option B: RDP routes can be fronted by a Home Gateway. When the
+    // user picks access_mode='gateway', the service layer auto-creates
+    // a linked L4 route (listen_port + target_lan_host + target_lan_port
+    // mapped from the RDP config) and tracks its id here so delete/
+    // update can keep both rows in lockstep.
+    version: 38,
+    name: 'rdp_routes_gateway_link',
+    sql: `
+      ALTER TABLE rdp_routes ADD COLUMN gateway_peer_id INTEGER
+        REFERENCES peers(id) ON DELETE SET NULL;
+      ALTER TABLE rdp_routes ADD COLUMN gateway_listen_port INTEGER;
+      ALTER TABLE rdp_routes ADD COLUMN gateway_l4_route_id INTEGER
+        REFERENCES routes(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_rdp_routes_gateway_peer ON rdp_routes(gateway_peer_id);
+    `,
+    detect: (db) => hasColumn(db, 'rdp_routes', 'gateway_peer_id'),
+  },
 ];
 
 // ---------------------------------------------------------------------------

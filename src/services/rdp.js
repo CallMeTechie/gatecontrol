@@ -7,7 +7,11 @@ const logger = require('../utils/logger');
 
 // --- Validation ------------------------------------------------
 
-const VALID_ACCESS_MODES = ['internal', 'external', 'both'];
+// 'gateway' routes the RDP session through a Home Gateway peer — the
+// service layer auto-creates a linked L4 TCP route on the server and
+// tracks its id in rdp_routes.gateway_l4_route_id. Licensed via the
+// rdp_via_gateway feature flag.
+const VALID_ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
 const VALID_CREDENTIAL_MODES = ['none', 'user_only', 'full'];
 const VALID_RESOLUTION_MODES = ['fullscreen', 'fixed', 'dynamic'];
 const VALID_AUDIO_MODES = ['local', 'remote', 'off'];
@@ -46,7 +50,24 @@ function validateRdpRoute(data, isUpdate = false) {
   }
 
   if (data.access_mode !== undefined && !VALID_ACCESS_MODES.includes(data.access_mode)) {
-    errors.access_mode = 'Access mode must be internal, external, or both';
+    errors.access_mode = 'Access mode must be internal, external, both, or gateway';
+  }
+
+  // Gateway mode needs a gateway peer + a listen port for the auto-
+  // created L4 route. Host+port (the LAN target) are already covered
+  // by the general RDP-route validation further up.
+  if (data.access_mode === 'gateway') {
+    if (data.gateway_peer_id === undefined || data.gateway_peer_id === null) {
+      errors.gateway_peer_id = 'Gateway peer is required for access_mode=gateway';
+    } else if (!Number.isInteger(parseInt(data.gateway_peer_id, 10))) {
+      errors.gateway_peer_id = 'Gateway peer id must be an integer';
+    }
+    if (data.gateway_listen_port !== undefined && data.gateway_listen_port !== null) {
+      const p = parseInt(data.gateway_listen_port, 10);
+      if (isNaN(p) || p < 1 || p > 65535) {
+        errors.gateway_listen_port = 'Listen port must be between 1 and 65535';
+      }
+    }
   }
 
   if (data.credential_mode !== undefined && !VALID_CREDENTIAL_MODES.includes(data.credential_mode)) {
@@ -238,7 +259,7 @@ function getById(id, includeCredentials = false) {
   return stripSensitive(row);
 }
 
-function create(data) {
+async function create(data) {
   const errors = validateRdpRoute(data, false);
   if (errors) {
     const err = new Error(Object.values(errors)[0]);
@@ -264,7 +285,8 @@ function create(data) {
       screenshot_enabled,
       credential_rotation_enabled, credential_rotation_days,
       token_ids, user_ids, notes, tags,
-      health_check_enabled
+      health_check_enabled,
+      gateway_peer_id, gateway_listen_port
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -279,7 +301,8 @@ function create(data) {
       ?,
       ?, ?,
       ?, ?, ?, ?,
-      ?
+      ?,
+      ?, ?
     )
   `).run(
     data.name.trim(),
@@ -331,22 +354,93 @@ function create(data) {
     data.user_ids ? JSON.stringify(data.user_ids) : null,
     data.notes || null,
     data.tags ? JSON.stringify(data.tags) : null,
-    data.health_check_enabled !== undefined ? (data.health_check_enabled ? 1 : 0) : 1
+    data.health_check_enabled !== undefined ? (data.health_check_enabled ? 1 : 0) : 1,
+    data.access_mode === 'gateway' && data.gateway_peer_id != null
+      ? parseInt(data.gateway_peer_id, 10) : null,
+    data.access_mode === 'gateway' && data.gateway_listen_port != null
+      ? parseInt(data.gateway_listen_port, 10) : null
   );
 
   const routeId = result.lastInsertRowid;
 
+  // Gateway access mode: spin up a linked L4 TCP route that forwards
+  // the external listen-port to the RDP target via the gateway's
+  // TcpProxyManager. Roll back the RDP row if the L4 side fails —
+  // leaving a half-configured pair behind would silently break reads
+  // in the admin UI and never attract a fix.
+  if (data.access_mode === 'gateway') {
+    try {
+      await _syncLinkedL4Route(routeId, null);
+    } catch (err) {
+      db.prepare('DELETE FROM rdp_routes WHERE id = ?').run(routeId);
+      throw new Error(`Linked L4 gateway route could not be created: ${err.message}`);
+    }
+  }
+
   activity.log('rdp_route_created', `RDP route "${data.name}" created -> ${data.host}:${data.port || 3389}`, {
     source: 'admin',
     severity: 'info',
-    details: { routeId, name: data.name, host: data.host },
+    details: { routeId, name: data.name, host: data.host, access_mode: data.access_mode || 'internal' },
   });
 
   logger.info({ routeId, name: data.name }, 'RDP route created');
   return getById(routeId);
 }
 
-function update(id, data) {
+// Create / update / delete the L4 TCP route that backs a gateway-mode
+// RDP route. Keeps rdp_routes.gateway_l4_route_id and the matching row
+// in routes(.target_kind='gateway', route_type='l4') in sync.
+async function _syncLinkedL4Route(rdpId, previousL4RouteId) {
+  const db = getDb();
+  const rdp = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(rdpId);
+  if (!rdp) throw new Error('RDP route not found');
+
+  const routesService = require('./routes');
+
+  // Case A: no longer a gateway-mode route — clean up any leftover L4.
+  if (rdp.access_mode !== 'gateway') {
+    if (previousL4RouteId) {
+      try {
+        await routesService.remove(previousL4RouteId);
+      } catch (err) {
+        logger.warn({ err: err.message, previousL4RouteId },
+          'Linked L4 cleanup failed (not fatal — orphan may remain)');
+      }
+      db.prepare('UPDATE rdp_routes SET gateway_l4_route_id = NULL WHERE id = ?').run(rdpId);
+    }
+    return;
+  }
+
+  // Case B: gateway-mode. Determine the desired listen port; fall back to
+  // the RDP target port if the user didn't pick a dedicated one.
+  const listenPort = rdp.gateway_listen_port || rdp.port || 3389;
+
+  const l4Payload = {
+    domain: null,                              // L4 with tls_mode=none needs no domain
+    route_type: 'l4',
+    target_kind: 'gateway',
+    target_peer_id: rdp.gateway_peer_id,
+    target_lan_host: rdp.host,
+    target_lan_port: rdp.port || 3389,
+    l4_protocol: 'tcp',
+    l4_listen_port: String(listenPort),
+    l4_tls_mode: 'none',
+    target_port: listenPort,                   // legacy NOT NULL column — mirror listen_port
+    enabled: !!rdp.enabled,
+    description: `auto-created for RDP route "${rdp.name}"`,
+  };
+
+  if (previousL4RouteId) {
+    await routesService.update(previousL4RouteId, l4Payload);
+    return;
+  }
+
+  const created = await routesService.create(l4Payload);
+  db.prepare('UPDATE rdp_routes SET gateway_l4_route_id = ? WHERE id = ?')
+    .run(created.id, rdpId);
+}
+
+async function update(id, data) {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!existing) throw new Error('RDP route not found');
@@ -364,6 +458,7 @@ function update(id, data) {
   const directFields = [
     'name', 'description', 'host', 'port', 'external_hostname', 'external_port',
     'access_mode', 'gateway_host', 'gateway_port', 'enabled',
+    'gateway_peer_id', 'gateway_listen_port',
     'credential_mode', 'domain',
     'resolution_mode', 'resolution_width', 'resolution_height', 'multi_monitor', 'color_depth',
     'redirect_clipboard', 'redirect_printers', 'redirect_drives', 'redirect_usb', 'redirect_smartcard', 'audio_mode',
@@ -388,7 +483,8 @@ function update(id, data) {
   ];
 
   const intFields = [
-    'port', 'external_port', 'gateway_port', 'resolution_width', 'resolution_height',
+    'port', 'external_port', 'gateway_port', 'gateway_peer_id', 'gateway_listen_port',
+    'resolution_width', 'resolution_height',
     'color_depth', 'bandwidth_limit', 'session_timeout', 'credential_rotation_days',
   ];
 
@@ -442,20 +538,56 @@ function update(id, data) {
 
   db.prepare(`UPDATE rdp_routes SET ${sets.join(', ')} WHERE id = ?`).run(...values);
 
+  // Any gateway-mode relevant field changed → reconcile the linked L4
+  // route (create / update / delete). We re-read the post-update row
+  // rather than reconstructing it from the SET list so we always see
+  // the authoritative final values.
+  const gatewayRelevantChanged =
+    data.access_mode !== undefined ||
+    data.gateway_peer_id !== undefined ||
+    data.gateway_listen_port !== undefined ||
+    data.host !== undefined ||
+    data.port !== undefined ||
+    data.enabled !== undefined;
+
+  if (gatewayRelevantChanged) {
+    try {
+      await _syncLinkedL4Route(id, existing.gateway_l4_route_id || null);
+    } catch (err) {
+      // Don't roll back the RDP update — user-visible settings stayed
+      // consistent with DB. Log loudly so the orphan/missing state
+      // surfaces in monitoring; user can re-save to retry.
+      logger.error({ err: err.message, rdpId: id },
+        'Linked L4 sync failed — RDP update succeeded but gateway-route may be stale');
+    }
+  }
+
   activity.log('rdp_route_updated', `RDP route "${existing.name}" updated`, {
     source: 'admin',
     severity: 'info',
-    details: { routeId: id },
+    details: { routeId: id, access_mode: data.access_mode },
   });
 
   logger.info({ routeId: id }, 'RDP route updated');
   return getById(id);
 }
 
-function remove(id) {
+async function remove(id) {
   const db = getDb();
   const route = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!route) throw new Error('RDP route not found');
+
+  // Cascade: drop the linked L4 route first so no orphan lingers if
+  // the RDP delete fails afterwards.
+  if (route.gateway_l4_route_id) {
+    try {
+      const routesService = require('./routes');
+      await routesService.remove(route.gateway_l4_route_id);
+    } catch (err) {
+      logger.warn({ err: err.message, l4RouteId: route.gateway_l4_route_id, rdpId: id },
+        'Linked L4 delete failed during RDP-route removal');
+    }
+  }
 
   db.prepare('DELETE FROM rdp_routes WHERE id = ?').run(id);
 
@@ -468,13 +600,26 @@ function remove(id) {
   logger.info({ routeId: id, name: route.name }, 'RDP route deleted');
 }
 
-function toggle(id) {
+async function toggle(id) {
   const db = getDb();
-  const route = db.prepare('SELECT id, name, enabled FROM rdp_routes WHERE id = ?').get(id);
+  const route = db.prepare('SELECT id, name, enabled, gateway_l4_route_id FROM rdp_routes WHERE id = ?').get(id);
   if (!route) throw new Error('RDP route not found');
 
   const newState = route.enabled ? 0 : 1;
   db.prepare("UPDATE rdp_routes SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(newState, id);
+
+  // Keep the linked L4 route in sync so a disabled RDP route also
+  // closes its external listen port instead of silently forwarding
+  // to a disabled target.
+  if (route.gateway_l4_route_id) {
+    try {
+      const routesService = require('./routes');
+      await routesService.update(route.gateway_l4_route_id, { enabled: !!newState });
+    } catch (err) {
+      logger.warn({ err: err.message, l4RouteId: route.gateway_l4_route_id, rdpId: id },
+        'Linked L4 toggle failed — listener may be stale');
+    }
+  }
 
   activity.log('rdp_route_toggled', `RDP route "${route.name}" ${newState ? 'enabled' : 'disabled'}`, {
     source: 'admin',
