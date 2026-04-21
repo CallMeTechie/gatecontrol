@@ -19,6 +19,7 @@
 
       // Monitoring summary — parseInt guards against type-coercion XSS
       const monitorEl = document.getElementById('stat-monitoring');
+      const monitorSubEl = document.getElementById('stat-monitoring-sub');
       if (monitorEl && data.monitoring) {
         var up = parseInt(data.monitoring.up, 10) || 0;
         var total = parseInt(data.monitoring.total, 10) || 0;
@@ -26,21 +27,30 @@
         if (total > 0) {
           monitorEl.textContent = '';
           var spanUp = document.createElement('span');
-          spanUp.style.color = 'var(--green)';
+          spanUp.style.color = down > 0 ? 'var(--amber)' : 'var(--green)';
           spanUp.textContent = up;
           var spanTotal = document.createElement('span');
-          spanTotal.textContent = total;
+          spanTotal.style.color = 'var(--text-2)';
+          spanTotal.textContent = '/' + total;
           monitorEl.appendChild(spanUp);
-          monitorEl.appendChild(document.createTextNode('/'));
           monitorEl.appendChild(spanTotal);
-          if (down > 0) {
-            var spanDown = document.createElement('span');
-            spanDown.style.cssText = 'color:var(--red);font-size:12px';
-            spanDown.textContent = ' (' + down + ' down)';
-            monitorEl.appendChild(spanDown);
+          if (monitorSubEl) {
+            monitorSubEl.textContent = '';
+            if (down > 0) {
+              var downMsg = (GC.t && GC.t['monitoring.dashboard_down']) || '{n} down';
+              monitorSubEl.style.color = 'var(--red)';
+              monitorSubEl.textContent = downMsg.replace('{n}', String(down));
+            } else {
+              monitorSubEl.style.color = 'var(--green)';
+              monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_all_ok']) || 'Alle erreichbar';
+            }
           }
         } else {
           monitorEl.textContent = '\u2014';
+          if (monitorSubEl) {
+            monitorSubEl.style.color = 'var(--text-3)';
+            monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_empty']) || 'Monitoring nicht aktiv';
+          }
         }
       }
       // Traffic today
@@ -129,8 +139,11 @@
       const uptimeValue = document.getElementById('uptime-value');
       if (uptimeValue) uptimeValue.textContent = data.uptime.formatted;
 
-      const uptimePct = document.getElementById('uptime-pct');
-      if (uptimePct) uptimePct.textContent = '99.9 %';
+      const uptimeBoot = document.getElementById('uptime-boot');
+      if (uptimeBoot && data.uptime && data.uptime.bootTime) {
+        const label = (GC.t && GC.t['dashboard.booted_on']) || 'Seit {date}';
+        uptimeBoot.textContent = label.replace('{date}', data.uptime.bootTime);
+      }
 
     } catch (err) {
       console.error('Failed to refresh resources:', err);

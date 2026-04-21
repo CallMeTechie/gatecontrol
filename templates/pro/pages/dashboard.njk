@@ -79,7 +79,7 @@
     <div class="stat-card-value" id="stat-latency">—</div>
   </div>
 
-  <div class="stat-card">
+  <a class="stat-card" href="/routes" style="text-decoration:none;color:inherit" title="{{ t('monitoring.dashboard_link_title') or 'Routen-Monitoring verwalten' }}">
     <div class="stat-card-header">
       <span class="stat-card-label">{{ t('monitoring.dashboard_label') or 'Uptime' }}</span>
       <div class="stat-card-icon green">
@@ -87,7 +87,8 @@
       </div>
     </div>
     <div class="stat-card-value" id="stat-monitoring">—</div>
-  </div>
+    <div id="stat-monitoring-sub" style="font-size:11px;color:var(--text-3);font-family:var(--font-mono);margin-top:-4px"></div>
+  </a>
 </div>
 
 <!-- Traffic Chart + Activity Feed -->
@@ -166,13 +167,10 @@
   <div class="card">
     <div class="card-header">
       <span class="card-header-title">{{ t('dashboard.uptime') }}</span>
-      <span style="font-size:12px;font-family:var(--font-mono);font-weight:600;color:var(--accent);margin-left:auto" id="uptime-pct">—</span>
     </div>
     <div class="card-body">
       <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)" id="uptime-value">—</div>
-      <div class="meter" style="margin-top:8px">
-        <div class="meter-bar amber" style="width:99.9%"></div>
-      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);margin-top:6px" id="uptime-boot"></div>
     </div>
   </div>
 </div>

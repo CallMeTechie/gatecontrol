@@ -74,14 +74,15 @@
     <div class="stat-label">{{ t('dashboard.avg_latency') }}</div>
   </div>
 
-  <div class="stat-card">
+  <a class="stat-card" href="/routes" style="text-decoration:none;color:inherit" title="{{ t('monitoring.dashboard_link_title') or 'Routen-Monitoring verwalten' }}">
     <div class="stat-card-stripe" style="background:var(--green)"></div>
     <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     </div>
     <div class="stat-value" style="color:var(--green)" id="stat-monitoring">—</div>
     <div class="stat-label">{{ t('monitoring.dashboard_label') or 'Uptime' }}</div>
-  </div>
+    <div id="stat-monitoring-sub" style="font-size:10px;color:var(--text-3);font-family:var(--font-mono);margin-top:2px"></div>
+  </a>
 </div>
 
 <!-- Traffic + Activity -->
@@ -156,11 +157,10 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">{{ t('dashboard.uptime') }}</span>
-      <span class="card-sub" style="color:var(--accent)" id="uptime-pct">—</span>
     </div>
     <div class="card-body">
       <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)" id="uptime-value">—</div>
-      <div class="meter-bar" style="margin-top:8px"><div class="meter-fill" style="width:99.9%;background:linear-gradient(90deg,var(--accent),#22c55e)"></div></div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);margin-top:6px" id="uptime-boot"></div>
     </div>
   </div>
 </div>
