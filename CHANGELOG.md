@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.0] — 2026-04-21
+
+### Features
+- 6-step create-route wizard modal replaces sidebar form
+
+---
+
 ## [1.43.4] — 2026-04-21
 
 ### Änderungen
