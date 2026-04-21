@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/route-auth.css">
+  <link rel="stylesheet" href="/route-auth/static/css/route-auth.css">
   {% if branding and branding.color %}
   <style nonce="{{ cspNonce }}">
     :root { --ra-accent: {{ branding.color }}; }
@@ -16,7 +16,7 @@
   </style>
   {% endif %}
   {% if branding and branding.bg_image %}
-  <style nonce="{{ cspNonce }}">body { background: url('/branding/{{ branding.bg_image }}') center/cover no-repeat fixed; }</style>
+  <style nonce="{{ cspNonce }}">body { background: url('/route-auth/static/branding/{{ branding.bg_image }}') center/cover no-repeat fixed; }</style>
   {% elif branding and branding.bg %}
   <style nonce="{{ cspNonce }}">body { background: {{ branding.bg }}; }</style>
   {% endif %}
@@ -28,7 +28,7 @@
     {# Logo + Title #}
     <div class="logo" style="{% if branding and not branding.title %}justify-content:center{% endif %}">
       {% if branding and branding.logo %}
-      <img src="/branding/{{ branding.logo }}" alt="Logo" style="max-height:96px;max-width:400px;object-fit:contain{% if branding and not branding.title %};margin:0 auto;display:block{% endif %}">
+      <img src="/route-auth/static/branding/{{ branding.logo }}" alt="Logo" style="max-height:96px;max-width:400px;object-fit:contain{% if branding and not branding.title %};margin:0 auto;display:block{% endif %}">
       {% elif not branding or branding.title %}
       <div class="logo-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -342,6 +342,6 @@
 
   <div class="page-footer">{{ t('route_auth.protected_by') }}</div>
 
-  <script src="/js/route-auth-login.js" nonce="{{ cspNonce }}"></script>
+  <script src="/route-auth/static/js/route-auth-login.js" nonce="{{ cspNonce }}"></script>
 </body>
 </html>

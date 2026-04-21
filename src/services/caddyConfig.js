@@ -408,7 +408,15 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     if (needsForwardAuth) {
       const routeAuthProxy = {
-        match: [{ path: ['/route-auth/*', '/css/*', '/js/*', '/fonts/*', '/branding/*'] }],
+        // Only intercept /route-auth/* (covers the login page and its
+        // assets under /route-auth/static/*). Previously /css/*, /js/*,
+        // /fonts/*, /branding/* were also intercepted so the login
+        // template could load its own stylesheet/script — but those
+        // paths collide with the upstream's own assets, so after login
+        // the upstream's /js/jquery.js etc. got routed to our Node and
+        // returned as 404 HTML, breaking every legacy web interface
+        // (Speedport, TR-064, older Synology panels…).
+        match: [{ path: ['/route-auth/*'] }],
         handle: [{
           handler: 'reverse_proxy',
           upstreams: [{ dial: '127.0.0.1:3000' }],

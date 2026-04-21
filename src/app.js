@@ -54,6 +54,14 @@ function createApp() {
     dotfiles: 'deny',
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   }));
+  // Same files under /route-auth/static/* so the route-auth login page
+  // can load its CSS/JS assets via a unique prefix that Caddy can
+  // safely intercept on proxied domains (speedport.foo etc.) without
+  // colliding with the upstream application's own /css, /js paths.
+  app.use('/route-auth/static', express.static(publicDir, {
+    dotfiles: 'deny',
+    maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  }));
 
   // ─── Route Auth (public, before session/csrf) ──────
   // Must be mounted before session middleware to avoid admin CSRF token
