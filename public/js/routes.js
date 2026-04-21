@@ -1363,8 +1363,12 @@
           // route payload. The old `target_ip='127.0.0.1'` placeholder
           // from legacy gateway-route creates would otherwise trip the
           // server's SSRF private-IP guard on every edit-save.
-          payload.target_ip = null;
-          payload.peer_id = null;
+          // `delete` (not `= null`) so the PUT handler's validateIp() and
+          // SSRF checks see target_ip as undefined and skip — null would
+          // still trigger validateIp("IP address is required") and block
+          // the update silently (field-error attached to hidden input).
+          delete payload.target_ip;
+          delete payload.peer_id;
         }
         if (basic_auth_enabled) {
           payload.basic_auth_user = basic_auth_user.trim();

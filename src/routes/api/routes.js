@@ -408,7 +408,12 @@ router.put('/:id',
       const descErr = validateDescription(description);
       if (descErr) fields.description = req.t('error.routes.description_invalid') || descErr;
     }
-    if (target_ip !== undefined && !peer_id) {
+    // Validate direct IP only when one was actually provided and the
+    // route isn't gateway-typed. Previously this fired validateIp(null)
+    // when the UI cleared the field to escape the SSRF guard, returning
+    // a 400 that got attached to a hidden peer-fields input — the edit
+    // save then aborted silently before the follow-up route_auth POST.
+    if (target_ip && !peer_id && req.body.target_kind !== 'gateway') {
       const ipErr = validateIp(target_ip);
       if (ipErr) fields.target_ip = req.t('error.routes.ip_invalid') || ipErr;
     }
