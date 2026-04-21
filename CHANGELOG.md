@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.8] — 2026-04-21
+
+### Fixes
+- unbreak edit-save for gateway routes — don't send target_ip=null
+
+---
+
 ## [1.41.7] — 2026-04-21
 
 ### Fixes
