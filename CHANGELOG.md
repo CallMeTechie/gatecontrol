@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.2] — 2026-04-21
+
+### Fixes
+- block port 22 by default + coerce listen_port to number in sync
+
+---
+
 ## [1.42.1] — 2026-04-21
 
 ### Fixes
