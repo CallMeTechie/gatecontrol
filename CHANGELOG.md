@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.1] — 2026-04-21
+
+### Änderungen
+- 2-col grid layout, min-height, toast errors
+
+---
+
 ## [1.44.0] — 2026-04-21
 
 ### Features
