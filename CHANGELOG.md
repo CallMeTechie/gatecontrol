@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.2] — 2026-04-21
+
+### Fixes
+- sync default theme template with pro — wizard + dots
+
+---
+
 ## [1.43.1] — 2026-04-21
 
 ### Fixes
