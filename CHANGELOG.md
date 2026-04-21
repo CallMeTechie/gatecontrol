@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.3] — 2026-04-21
+
+### Änderungen
+- re-trigger release after race-condition in previous run
+
+---
+
 ## [1.43.2] — 2026-04-21
 
 ### Fixes
