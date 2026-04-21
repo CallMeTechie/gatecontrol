@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.0] — 2026-04-21
+
+### Features
+- route RDP sessions through the Home Gateway (access_mode=gateway)
+
+---
+
 ## [1.42.2] — 2026-04-21
 
 ### Fixes
