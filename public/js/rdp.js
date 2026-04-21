@@ -906,16 +906,28 @@
     currentWizardStep = Math.max(1, Math.min(WIZARD_TOTAL_STEPS, n));
     var modal = document.getElementById('rdp-modal');
     if (!modal) return;
+
+    // Show matching step content, hide everything else
     modal.querySelectorAll('[data-wizard-step]').forEach(function (el) {
       var s = parseInt(el.getAttribute('data-wizard-step'), 10);
       el.style.display = (s === currentWizardStep) ? '' : 'none';
     });
-    modal.querySelectorAll('.rdp-step-pill').forEach(function (p) {
-      var s = parseInt(p.getAttribute('data-pill'), 10);
-      p.classList.remove('active', 'done');
-      if (s === currentWizardStep) p.classList.add('active');
-      else if (s < currentWizardStep) p.classList.add('done');
+
+    // Mark dots + connecting lines as active / done
+    var dots = modal.querySelectorAll('.rdp-step-dot');
+    var lines = modal.querySelectorAll('.rdp-step-line');
+    dots.forEach(function (d) {
+      var s = parseInt(d.getAttribute('data-pill'), 10);
+      d.classList.remove('active', 'done');
+      if (s === currentWizardStep) d.classList.add('active');
+      else if (s < currentWizardStep) d.classList.add('done');
     });
+    lines.forEach(function (line, idx) {
+      // Line between dot idx+1 and dot idx+2; done if currentStep > idx+1
+      line.classList.toggle('done', currentWizardStep > idx + 1);
+    });
+
+    // Sub-title: "Schritt X von 6"
     var sub = document.getElementById('rdp-modal-subtitle');
     if (sub) {
       var tpl = GC.t['rdp.wizard.step_of'] || 'Step {{current}} of {{total}}';
@@ -923,12 +935,22 @@
         .replace('{{current}}', String(currentWizardStep))
         .replace('{{total}}', String(WIZARD_TOTAL_STEPS));
     }
+
+    // Step title next to the counter — pulled from the active dot's data-label
+    var stepTitle = document.getElementById('rdp-modal-steptitle');
+    if (stepTitle) {
+      var activeDot = modal.querySelector('.rdp-step-dot[data-pill="' + currentWizardStep + '"]');
+      stepTitle.textContent = activeDot ? (activeDot.getAttribute('data-label') || '') : '';
+    }
+
+    // Nav-button visibility
     var prev = document.getElementById('rdp-wizard-prev');
     var next = document.getElementById('rdp-wizard-next');
     var save = document.getElementById('rdp-modal-save');
     if (prev) prev.style.display = currentWizardStep > 1 ? '' : 'none';
     if (next) next.style.display = currentWizardStep < WIZARD_TOTAL_STEPS ? '' : 'none';
     if (save) save.style.display = currentWizardStep === WIZARD_TOTAL_STEPS ? '' : 'none';
+
     if (currentWizardStep === WIZARD_TOTAL_STEPS) renderWizardReview();
   }
 
@@ -1049,6 +1071,17 @@
       ev.preventDefault();
       showWizardStep(currentWizardStep - 1);
     });
+    // Clicking a done-dot jumps back to that step — quick edits without
+    // clicking Prev six times. Active + not-yet-reached dots ignore clicks.
+    var stepsBar = document.getElementById('rdp-wizard-steps');
+    if (stepsBar) {
+      stepsBar.addEventListener('click', function (ev) {
+        var dot = ev.target.closest('.rdp-step-dot.done');
+        if (!dot) return;
+        var target = parseInt(dot.getAttribute('data-pill'), 10);
+        if (!isNaN(target)) showWizardStep(target);
+      });
+    }
   })();
 
   // Hook the wizard into openCreateModal / openEditModal so each open
