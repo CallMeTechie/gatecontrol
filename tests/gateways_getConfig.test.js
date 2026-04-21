@@ -31,9 +31,13 @@ describe('gateways.getGatewayConfig', () => {
     const gw = await gateways.createGateway({ name: 'gw', apiPort: 9876 });
     gwPeerId = gw.peer.id;
 
-    // Insert gateway-typed HTTP route
-    db.prepare(`INSERT INTO routes (domain, target_ip, target_port, route_type, target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled)
-                VALUES ('nas.example.com', ?, 8080, 'http', 'gateway', ?, '192.168.1.10', 5001, 0)`)
+    // Insert gateway-typed HTTP route (plain HTTP target)
+    db.prepare(`INSERT INTO routes (domain, target_ip, target_port, route_type, target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled, backend_https)
+                VALUES ('nas.example.com', ?, 8080, 'http', 'gateway', ?, '192.168.1.10', 5001, 0, 0)`)
+      .run(gw.peer.ip, gwPeerId);
+    // Insert gateway-typed HTTP route with backend_https=1 (LAN HTTPS target)
+    db.prepare(`INSERT INTO routes (domain, target_ip, target_port, route_type, target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled, backend_https)
+                VALUES ('dsm.example.com', ?, 8080, 'http', 'gateway', ?, '192.168.1.11', 5001, 0, 1)`)
       .run(gw.peer.ip, gwPeerId);
   });
 
@@ -57,10 +61,22 @@ describe('gateways.getGatewayConfig', () => {
     assert.equal(route.wol_enabled, false);
   });
 
+  it('omits backend_https on routes without the flag (hash stays stable for legacy routes)', () => {
+    const cfg = gateways.getGatewayConfig(gwPeerId);
+    const plain = cfg.routes.find(r => r.domain === 'nas.example.com');
+    assert.equal('backend_https' in plain, false, 'field should be omitted when falsy so config-hash is unchanged for routes without LAN HTTPS');
+  });
+
+  it('sends backend_https=true when route targets a HTTPS LAN service', () => {
+    const cfg = gateways.getGatewayConfig(gwPeerId);
+    const https = cfg.routes.find(r => r.domain === 'dsm.example.com');
+    assert.equal(https.backend_https, true);
+  });
+
   it('omits routes for other gateways', async () => {
     await gateways.createGateway({ name: 'gw2', apiPort: 9876 });
     const cfg = gateways.getGatewayConfig(gwPeerId);
-    assert.equal(cfg.routes.length, 1, 'should only contain gw1 routes');
+    assert.equal(cfg.routes.length, 2, 'should only contain gw1 routes');
   });
 
   it('includes l4_routes array (empty if none)', () => {

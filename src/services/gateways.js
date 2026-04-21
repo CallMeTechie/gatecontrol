@@ -88,6 +88,7 @@ function getGatewayConfig(peerId) {
 
   const httpRoutes = db.prepare(`
     SELECT id, domain, target_kind, target_lan_host, target_lan_port,
+           backend_https,
            COALESCE(l4_protocol, 'http') AS protocol, wol_enabled, wol_mac
     FROM routes
     WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
@@ -113,6 +114,12 @@ function getGatewayConfig(peerId) {
       target_kind: r.target_kind,
       target_lan_host: r.target_lan_host,
       target_lan_port: r.target_lan_port,
+      // LAN-side scheme. When set, the gateway speaks https:// to the
+      // LAN target (with cert verification disabled — self-signed is
+      // the LAN norm). Omitted from the JSON when false so config-hash
+      // stays byte-identical for the common case and older gateways
+      // without support don't diverge.
+      ...(r.backend_https ? { backend_https: true } : {}),
       protocol: r.protocol,
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),

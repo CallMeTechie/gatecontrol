@@ -199,7 +199,7 @@
   "routes.rate_limit_window_1h": "1 Stunde",
   "routes.rate_limit_badge": "Rate Limit: {{requests}}/{{window}}",
   "routes.backend_https": "Backend HTTPS",
-  "routes.backend_https_desc": "Backend nutzt HTTPS (z.B. Synology DSM Port 5001)",
+  "routes.backend_https_desc": "HTTPS zum Ziel sprechen. Bei Gateway-Routen gilt das für den Gateway → LAN-Hop (z.B. Synology DSM auf Port 5001). Selbstsignierte Zertifikate werden akzeptiert; TLS-Pinning im LAN ist nicht praxistauglich.",
   "routes.compress": "Komprimierung",
   "routes.compress_desc": "Gzip/Zstd/Brotli-Antwortkomprimierung über Caddy aktivieren",
   "routes.compress_badge": "Komprimierung",
