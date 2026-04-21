@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.0] — 2026-04-21
+
+### Features
+- hostname field in pro peer-edit modal (license-gated)
+
+---
+
 ## [1.45.0] — 2026-04-21
 
 ### Features
