@@ -424,7 +424,7 @@
       return;
     }
 
-    const submitBtn = routeForm.querySelector('button[type="submit"]');
+    const submitBtn = document.getElementById('route-wizard-save') || routeForm.querySelector('button[type="submit"]');
     btnLoading(submitBtn);
     try {
       const createMonitoring = document.getElementById('create-route-monitoring')?.classList.contains('on') || false;
@@ -570,6 +570,8 @@
         renderIpFilterRules('create', createIpFilterRules);
         setToggleGroup('create-auth-type-group', 'create-auth-type', 'none');
         updateCreateAuthTypeUI();
+        // Close wizard modal on success
+        if (typeof window.closeRouteWizard === 'function') window.closeRouteWizard();
         loadRoutes();
       } else if (data.fields) {
         // Map target_port error to the visible input for the active target_kind.
@@ -591,19 +593,268 @@
     }
   });
 
-  // ─── Add route button (mobile) ───────────────────────────
+  // ─── Create-Route Wizard ──────────────────────────────────
   const btnAdd = document.getElementById('btn-add-route');
-  if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
-      // Scroll to the form on the right side
-      const form = document.getElementById('route-form');
-      if (form) {
-        form.scrollIntoView({ behavior: 'smooth' });
-        const firstInput = form.querySelector('input[name="domain"]');
-        if (firstInput) firstInput.focus();
+  const routeModalOverlay = document.getElementById('route-modal-overlay');
+  const routeModalClose = document.getElementById('route-modal-close');
+  const wizardPrev = document.getElementById('route-wizard-prev');
+  const wizardNext = document.getElementById('route-wizard-next');
+  const wizardSave = document.getElementById('route-wizard-save');
+  const wizardStepIndicator = document.getElementById('route-wizard-step-indicator');
+  const wizardSubtitle = document.getElementById('route-modal-subtitle');
+  const wizardStepTitle = document.getElementById('route-modal-steptitle');
+  const wizardReviewEl = document.getElementById('route-wizard-review');
+  const routeTypeInput = document.getElementById('route-type');
+
+  const WIZARD_STEP_LABELS = {
+    1: (GC.t && GC.t['routes.wizard.step_target']) || 'Ziel',
+    2: (GC.t && GC.t['routes.wizard.step_transport']) || 'Transport',
+    3: (GC.t && GC.t['routes.wizard.step_auth']) || 'Authentifizierung',
+    4: (GC.t && GC.t['routes.wizard.step_access']) || 'Zugriff',
+    5: (GC.t && GC.t['routes.wizard.step_reliability']) || 'Zuverlässigkeit',
+    6: (GC.t && GC.t['routes.wizard.step_review']) || 'Übersicht',
+  };
+
+  let currentWizardStep = 1;
+
+  function isL4Route() {
+    return (routeTypeInput && routeTypeInput.value === 'l4');
+  }
+
+  function visibleWizardSteps() {
+    // L4 routes skip transport/auth/access/reliability (all inside #http-fields)
+    return isL4Route() ? [1, 6] : [1, 2, 3, 4, 5, 6];
+  }
+
+  function showWizardStep(n) {
+    if (!routeModalOverlay) return;
+    const steps = visibleWizardSteps();
+    if (!steps.includes(n)) n = steps[0];
+    currentWizardStep = n;
+
+    routeModalOverlay.querySelectorAll('[data-wizard-step]').forEach(el => {
+      el.style.display = (Number(el.dataset.wizardStep) === n) ? '' : 'none';
+    });
+
+    const dots = Array.from(routeModalOverlay.querySelectorAll('.route-step-dot'));
+    const lines = Array.from(routeModalOverlay.querySelectorAll('.route-step-line'));
+    dots.forEach(dot => dot.classList.remove('active', 'done'));
+    lines.forEach(line => line.classList.remove('done'));
+    const idx = steps.indexOf(n);
+    dots.forEach(dot => {
+      const stepN = Number(dot.dataset.pill);
+      if (!steps.includes(stepN)) {
+        dot.style.opacity = '0.35';
+        dot.style.cursor = 'default';
+        return;
+      }
+      dot.style.opacity = '';
+      const dotIdx = steps.indexOf(stepN);
+      if (stepN === n) dot.classList.add('active');
+      else if (dotIdx < idx) dot.classList.add('done');
+    });
+    // Mark lines done based on visible dot order in DOM
+    let completedCount = 0;
+    dots.forEach((dot, i) => {
+      const stepN = Number(dot.dataset.pill);
+      if (steps.includes(stepN) && steps.indexOf(stepN) < idx) {
+        if (lines[i]) lines[i].classList.add('done');
+        completedCount++;
       }
     });
+
+    if (wizardStepIndicator) wizardStepIndicator.textContent = (idx + 1) + ' / ' + steps.length;
+    if (wizardSubtitle) wizardSubtitle.textContent = ((GC.t && GC.t['routes.wizard.step']) || 'Schritt') + ' ' + (idx + 1) + '/' + steps.length;
+    if (wizardStepTitle) wizardStepTitle.textContent = WIZARD_STEP_LABELS[n] || '';
+
+    if (wizardPrev) wizardPrev.style.visibility = (idx === 0) ? 'hidden' : '';
+    const isLast = (idx === steps.length - 1);
+    if (wizardNext) wizardNext.style.display = isLast ? 'none' : '';
+    if (wizardSave) wizardSave.style.display = isLast ? '' : 'none';
+
+    if (isLast) renderWizardReview();
   }
+
+  function validateWizardStep(n) {
+    if (n !== 1) return true;
+    const domainEl = document.getElementById('create-route-domain');
+    const domain = (domainEl && domainEl.value || '').trim();
+    if (!domain) {
+      alert((GC.t && GC.t['routes.domain_required']) || 'Domain is required');
+      if (domainEl) domainEl.focus();
+      return false;
+    }
+    if (isL4Route()) {
+      const lpEl = document.getElementById('l4-listen-port');
+      if (!lpEl || !lpEl.value.trim()) {
+        alert((GC.t && GC.t['routes.l4_listen_port_required']) || 'Listen-Port erforderlich');
+        if (lpEl) lpEl.focus();
+        return false;
+      }
+      return true;
+    }
+    const tk = (document.getElementById('create-route-target-kind') || {}).value || 'peer';
+    if (tk === 'gateway') {
+      const gw = (document.getElementById('create-route-gateway-peer') || {}).value || '';
+      const host = ((document.getElementById('create-route-lan-host') || {}).value || '').trim();
+      const port = (document.getElementById('create-route-lan-port') || {}).value || '';
+      if (!gw) { alert((GC.t && GC.t['route_gateway_peer_required']) || 'Gateway erforderlich'); return false; }
+      if (!host) { alert((GC.t && GC.t['route_lan_host_required']) || 'LAN-Host erforderlich'); return false; }
+      if (!port) { alert((GC.t && GC.t['route_lan_port_required']) || 'LAN-Port erforderlich'); return false; }
+    } else {
+      const peer = (document.getElementById('route-peer-select') || {}).value || '';
+      const port = ((document.getElementById('route-port') || {}).value || '').trim();
+      if (!peer) { alert((GC.t && GC.t['routes.peer_required']) || 'Peer erforderlich'); return false; }
+      if (!port) { alert((GC.t && GC.t['routes.target_port_required']) || 'Target-Port erforderlich'); return false; }
+    }
+    return true;
+  }
+
+  function goWizardNext() {
+    if (!validateWizardStep(currentWizardStep)) return;
+    const steps = visibleWizardSteps();
+    const idx = steps.indexOf(currentWizardStep);
+    if (idx < steps.length - 1) showWizardStep(steps[idx + 1]);
+  }
+
+  function goWizardPrev() {
+    const steps = visibleWizardSteps();
+    const idx = steps.indexOf(currentWizardStep);
+    if (idx > 0) showWizardStep(steps[idx - 1]);
+  }
+
+  function renderWizardReview() {
+    if (!wizardReviewEl) return;
+    while (wizardReviewEl.firstChild) wizardReviewEl.removeChild(wizardReviewEl.firstChild);
+
+    const domain = ((document.getElementById('create-route-domain') || {}).value || '').trim() || '—';
+    const type = (routeTypeInput && routeTypeInput.value) || 'http';
+    let target = '—';
+    if (isL4Route()) {
+      const proto = ((document.getElementById('l4-protocol') || {}).value || 'tcp').toUpperCase();
+      const port = (document.getElementById('l4-listen-port') || {}).value || '';
+      const tls = (document.getElementById('l4-tls-mode') || {}).value || 'none';
+      target = proto + ' :' + port + (tls !== 'none' ? (' (' + tls + ')') : '');
+    } else {
+      const tk = (document.getElementById('create-route-target-kind') || {}).value || 'peer';
+      if (tk === 'gateway') {
+        const gw = document.getElementById('create-route-gateway-peer');
+        const gwLabel = (gw && gw.options && gw.options[gw.selectedIndex] && gw.options[gw.selectedIndex].text) || '';
+        const host = (document.getElementById('create-route-lan-host') || {}).value || '';
+        const port = (document.getElementById('create-route-lan-port') || {}).value || '';
+        target = gwLabel + ' → ' + host + ':' + port;
+      } else {
+        const peer = document.getElementById('route-peer-select');
+        const peerLabel = (peer && peer.options && peer.options[peer.selectedIndex] && peer.options[peer.selectedIndex].text) || '';
+        const port = (document.getElementById('route-port') || {}).value || '';
+        target = peerLabel + ':' + port;
+      }
+    }
+
+    const auth = (document.getElementById('create-auth-type') || {}).value || 'none';
+    const authLabel = auth === 'none' ? ((GC.t && GC.t['route_auth.auth_none']) || 'None')
+      : auth === 'basic' ? ((GC.t && GC.t['route_auth.auth_basic']) || 'Basic Auth')
+      : ((GC.t && GC.t['route_auth.auth_route']) || 'Route Auth');
+
+    const httpsToggleEl = document.querySelector('#route-form [data-field="https_enabled"]');
+    const httpsOn = httpsToggleEl && httpsToggleEl.classList.contains('on');
+    const backendHttpsEl = document.querySelector('#route-form [data-field="backend_https"]');
+    const backendHttpsOn = backendHttpsEl && backendHttpsEl.classList.contains('on');
+
+    const rows = [
+      [(GC.t && GC.t['routes.domain']) || 'Domain', domain],
+      [(GC.t && GC.t['routes.type']) || 'Typ', type.toUpperCase()],
+      [(GC.t && GC.t['routes.target_peer']) || 'Ziel', target],
+    ];
+    if (!isL4Route()) {
+      rows.push([(GC.t && GC.t['routes.force_https']) || 'HTTPS', httpsOn ? '✓' : '—']);
+      rows.push([(GC.t && GC.t['routes.backend_https']) || 'Backend HTTPS', backendHttpsOn ? '✓' : '—']);
+      rows.push([(GC.t && GC.t['route_auth.auth_type']) || 'Auth', authLabel]);
+    }
+
+    rows.forEach(([k, v]) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border)';
+      const kEl = document.createElement('span');
+      kEl.style.cssText = 'color:var(--text-3);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;flex-shrink:0';
+      kEl.textContent = k;
+      const vEl = document.createElement('span');
+      vEl.style.cssText = 'color:var(--text-1);font-weight:600;text-align:right;word-break:break-all';
+      vEl.textContent = v;
+      row.appendChild(kEl);
+      row.appendChild(vEl);
+      wizardReviewEl.appendChild(row);
+    });
+  }
+
+  function openRouteWizard() {
+    if (!routeModalOverlay) return;
+    currentWizardStep = 1;
+    routeModalOverlay.style.display = 'flex';
+    showWizardStep(1);
+    setTimeout(() => {
+      const f = document.getElementById('create-route-domain');
+      if (f) f.focus();
+    }, 50);
+  }
+
+  function closeRouteWizard() {
+    if (!routeModalOverlay) return;
+    routeModalOverlay.style.display = 'none';
+  }
+
+  window.openRouteWizard = openRouteWizard;
+  window.closeRouteWizard = closeRouteWizard;
+
+  if (btnAdd) btnAdd.addEventListener('click', openRouteWizard);
+  if (routeModalClose) routeModalClose.addEventListener('click', closeRouteWizard);
+  if (routeModalOverlay) {
+    routeModalOverlay.addEventListener('click', (e) => {
+      if (e.target === routeModalOverlay) closeRouteWizard();
+    });
+  }
+  if (wizardNext) wizardNext.addEventListener('click', goWizardNext);
+  if (wizardPrev) wizardPrev.addEventListener('click', goWizardPrev);
+  if (wizardSave) wizardSave.addEventListener('click', () => {
+    routeForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  });
+
+  // Dots: click to jump back to completed steps
+  if (routeModalOverlay) {
+    routeModalOverlay.querySelectorAll('.route-step-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        const step = Number(dot.dataset.pill);
+        const steps = visibleWizardSteps();
+        if (steps.includes(step) && steps.indexOf(step) < steps.indexOf(currentWizardStep)) {
+          showWizardStep(step);
+        }
+      });
+    });
+  }
+
+  // Refresh visible steps if route-type changes mid-wizard
+  if (routeTypeInput) {
+    const routeTypeGroup = document.getElementById('route-type-group');
+    if (routeTypeGroup) {
+      routeTypeGroup.addEventListener('click', () => {
+        // Defer to after setupToggleGroup handler updates hidden value
+        setTimeout(() => {
+          if (routeModalOverlay && routeModalOverlay.style.display !== 'none') {
+            const steps = visibleWizardSteps();
+            if (!steps.includes(currentWizardStep)) showWizardStep(steps[0]);
+            else showWizardStep(currentWizardStep);
+          }
+        }, 10);
+      });
+    }
+  }
+
+  // ESC to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && routeModalOverlay && routeModalOverlay.style.display !== 'none') {
+      closeRouteWizard();
+    }
+  });
 
   // ─── Route Auth UI helpers ────────────────────────────────
 

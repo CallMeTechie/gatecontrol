@@ -202,7 +202,7 @@ document.querySelectorAll('.flash').forEach(el => {
 // ─── Button loading states ──────────────────────────────
 window.btnLoading = function(btn) {
   if (!btn) return;
-  btn._origText = btn.textContent;
+  btn._origChildren = Array.from(btn.childNodes).map(n => n.cloneNode(true));
   btn.classList.add('is-loading');
   btn.disabled = true;
 };
@@ -210,7 +210,10 @@ window.btnReset = function(btn) {
   if (!btn) return;
   btn.classList.remove('is-loading');
   btn.disabled = false;
-  if (btn._origText) btn.textContent = btn._origText;
+  if (btn._origChildren) {
+    while (btn.firstChild) btn.removeChild(btn.firstChild);
+    btn._origChildren.forEach(n => btn.appendChild(n));
+  }
 };
 
 // ─── Modal system (global) ──────────────────────────────
