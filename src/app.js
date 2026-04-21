@@ -56,10 +56,30 @@ function createApp() {
   }));
 
   // ─── Route Auth (public, before session/csrf) ──────
-  // Must be mounted before session middleware to avoid
-  // admin CSRF token conflicts with route-auth CSRF
+  // Must be mounted before session middleware to avoid admin CSRF token
+  // conflicts with route-auth CSRF. The admin-side injectLocals runs
+  // AFTER session so user-specific theme resolution works there; here
+  // route-auth gets its own lean middleware stack (i18n + default-theme
+  // fallback) so /route-auth/login can render its Nunjucks template
+  // without `res.locals.theme` being undefined (which produced a 500
+  // on every unauthenticated visit to a protected route).
+  loadLocales();
+  // Resolve default theme without touching req.session (not yet initialised
+  // at this middleware position). Lets the template render without the
+  // admin-side injectLocals stack.
+  const routeAuthLocals = (req, res, next) => {
+    try {
+      const settings = require('./services/settings');
+      const defaultsCfg = require('../config/default');
+      const t = settings.get('default_theme');
+      res.locals.theme = (t === 'default' || t === 'pro') ? t : defaultsCfg.theme.defaultTheme;
+    } catch {
+      res.locals.theme = 'default';
+    }
+    next();
+  };
   const routeAuthRoutes = require('./routes/routeAuth');
-  app.use('/route-auth', routeAuthRoutes);
+  app.use('/route-auth', i18nMiddleware, routeAuthLocals, routeAuthRoutes);
 
   // ─── Sessions ────────────────────────────────────
   const store = new SQLiteStore();
