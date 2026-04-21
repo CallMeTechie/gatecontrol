@@ -400,7 +400,17 @@ function buildEnvContent(row, apiToken, pushToken) {
     `WG_PRESHARED_KEY=${presharedKey}`,
     `WG_ENDPOINT=${_getServerWgEndpoint()}`,
     `WG_SERVER_PUBLIC_KEY=${_getServerWgPublicKey()}`,
-    `WG_ADDRESS=${ip}/24`,
+    // Use /32 for both Address and AllowedIPs so the gateway's WG
+    // interface doesn't add a blanket 10.8.0.0/24 route. Many gateway
+    // hosts already run a regular WireGuard client for the same
+    // tunnel (NAS with gatecontrol-client + gatecontrol-gateway side
+    // by side) — two /24 routes on the same host cause the kernel to
+    // pick the wrong interface for return traffic, and TCP from the
+    // server to the gateway's proxy port silently times out. With a
+    // /32 route for the server IP, the gateway tunnel is always the
+    // most-specific match and always wins the routing lookup.
+    `WG_ADDRESS=${ip}/32`,
+    `WG_ALLOWED_IPS=10.8.0.1/32`,
     `WG_DNS=10.8.0.1`,
   ];
   return lines.join('\n') + '\n';
