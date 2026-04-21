@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.1] — 2026-04-21
+
+### Fixes
+- restyle step indicator — dots + lines, no text wrapping
+
+---
+
 ## [1.43.0] — 2026-04-21
 
 ### Features
