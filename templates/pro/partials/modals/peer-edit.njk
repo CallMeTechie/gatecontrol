@@ -32,6 +32,19 @@
         <small class="form-hint">{{ t('peers.dns_override_hint') }}</small>
       </div>
       {% endif %}
+      {% if license.features.internal_dns %}
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-hostname">
+          {{ t('peers.internal_hostname') }}
+          <span id="edit-peer-hostname-badge" class="badge badge-sm" style="display:none;margin-left:6px"></span>
+        </label>
+        <input class="form-input" type="text" id="edit-peer-hostname" autocomplete="off" maxlength="63"
+               placeholder="{{ t('peers.internal_hostname_placeholder') }}"
+               pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,62}"
+               style="font-family:var(--font-mono)">
+        <small class="form-hint">{{ t('peers.internal_hostname_hint') }}</small>
+      </div>
+      {% endif %}
       <div class="form-group">
         <label class="form-label" for="edit-peer-expires">{{ t('peers.expires') }}</label>
         <select class="form-select" id="edit-peer-expires">
