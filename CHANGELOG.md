@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.1] — 2026-04-21
+
+### Fixes
+- L4 gateway routes forward to gateway tunnel-IP, not placeholder
+
+---
+
 ## [1.42.0] — 2026-04-21
 
 ### Features
