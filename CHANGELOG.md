@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.0] — 2026-04-22
+
+### Features
+- redesigned page with collapsible Home-Gateway cards
+
+---
+
 ## [1.49.0] — 2026-04-22
 
 ### Features
