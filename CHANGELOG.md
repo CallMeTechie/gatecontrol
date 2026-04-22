@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.1] — 2026-04-22
+
+### Fixes
+- route_reachability is ground truth, not self-check flags
+
+---
+
 ## [1.50.0] — 2026-04-22
 
 ### Features
