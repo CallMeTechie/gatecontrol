@@ -1280,7 +1280,6 @@
   var statGwTotal  = document.getElementById('stat-gw-total');
   var statClOnline = document.getElementById('stat-cl-online');
   var statClTotal  = document.getElementById('stat-cl-total');
-  var statGwRoutes = document.getElementById('stat-gw-routes');
 
   var allGateways = [];
   var GW_EXPANDED_KEY = 'gc_gw_expanded_v1';
@@ -1679,12 +1678,10 @@
     var gwTotal = allGateways.length;
     var clients = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
     var clientsOnline = clients.filter(function(p) { return p.isOnline; }).length;
-    var totalGwRoutes = allGateways.reduce(function(sum, g) { return sum + (g.routes ? g.routes.length : 0); }, 0);
     if (statGwOnline) statGwOnline.textContent = gwOnline;
     if (statGwTotal)  statGwTotal.textContent = '/ ' + gwTotal;
     if (statClOnline) statClOnline.textContent = clientsOnline;
     if (statClTotal)  statClTotal.textContent  = '/ ' + clients.length;
-    if (statGwRoutes) statGwRoutes.textContent = String(totalGwRoutes);
     if (peersCountEl) peersCountEl.textContent = clients.length + ' total · ' + clientsOnline + ' online';
   }
 
