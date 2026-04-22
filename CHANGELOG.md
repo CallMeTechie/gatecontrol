@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.0] — 2026-04-22
+
+### Features
+- expose gateway telemetry in peer-edit modal
+
+---
+
 ## [1.48.0] — 2026-04-22
 
 ### Features
