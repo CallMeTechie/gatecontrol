@@ -156,6 +156,46 @@ function computeConfigHash(peerId) {
  * and feeds the sliding-window health state-machine (Task 15/16).
  * On status transitions fires activity.log + email alerts + webhooks.
  */
+/**
+ * Decide whether a heartbeat represents a healthy gateway.
+ *
+ * Priority of signals (first-match wins):
+ *   1. route_reachability — ground truth. If the gateway was asked to probe
+ *      LAN targets for each configured route, the empirical result is more
+ *      trustworthy than any localhost self-check. We treat the gateway as
+ *      healthy when every reachability entry reports reachable:true.
+ *   2. self-check — if no route_reachability is present (older gateway
+ *      agent, or no routes configured yet), fall back to the previous
+ *      definition: http_proxy_healthy:true AND no listener_failed entries.
+ *   3. bare heartbeat — if neither signal is present at all (very early
+ *      heartbeat before the first self-check completed), trust the heartbeat
+ *      itself; the process is up.
+ *
+ * Rationale: NAS1-style deployments ship heartbeats where the localhost
+ * probes fail (self-check bug or proxy binds to specific iface) even though
+ * every configured route's LAN target answers. The old definition would
+ * flag those gateways offline despite them doing their job.
+ */
+function _isHeartbeatHealthy(health) {
+  if (!health || typeof health !== 'object') return false;
+
+  const reach = Array.isArray(health.route_reachability) ? health.route_reachability : null;
+  if (reach && reach.length > 0) {
+    // Empirical: all configured LAN targets must answer.
+    return reach.every((r) => r && r.reachable);
+  }
+
+  const hasSelfCheckSignal = typeof health.http_proxy_healthy === 'boolean';
+  if (hasSelfCheckSignal) {
+    const tcp = Array.isArray(health.tcp_listeners) ? health.tcp_listeners : [];
+    const anyListenerFailed = tcp.some((l) => l && l.status === 'listener_failed');
+    return !!health.http_proxy_healthy && !anyListenerFailed;
+  }
+
+  // No probes, no self-check → the heartbeat arrived, consider the process alive.
+  return true;
+}
+
 function handleHeartbeat(peerId, health) {
   const db = getDb();
   const now = Date.now();
@@ -167,8 +207,7 @@ function handleHeartbeat(peerId, health) {
 
   const sm = _getSm(peerId);
   const prevStatus = sm.status;
-  const healthy = !!(health && health.http_proxy_healthy) &&
-    !((health && Array.isArray(health.tcp_listeners) ? health.tcp_listeners : []).some(l => l && l.status === 'listener_failed'));
+  const healthy = _isHeartbeatHealthy(health);
   sm.recordHeartbeat(healthy);
 
   if (sm.status !== prevStatus) {
@@ -472,6 +511,7 @@ module.exports = {
   getGatewayConfig,
   computeConfigHash,
   handleHeartbeat,
+  _isHeartbeatHealthy, // exported for tests
   recordTrafficSnapshot,
   notifyConfigChanged,
   notifyWol,
