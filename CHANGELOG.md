@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.1] — 2026-04-22
+
+### Änderungen
+- move management card from /peers to /settings
+
+---
+
 ## [1.47.0] — 2026-04-22
 
 ### Features
