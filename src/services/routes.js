@@ -8,6 +8,25 @@ const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = re
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
+// ─── Rollback helpers (full snapshot restore) ───────────
+function _routeColumns(db) {
+  return db.prepare("PRAGMA table_info(routes)").all().map(c => c.name);
+}
+
+function _restoreRouteRow(db, id, snapshot) {
+  const cols = _routeColumns(db).filter(c => c !== 'id');
+  const sets = cols.map(c => `${c} = ?`).join(', ');
+  const values = cols.map(c => snapshot[c] === undefined ? null : snapshot[c]);
+  db.prepare(`UPDATE routes SET ${sets} WHERE id = ?`).run(...values, id);
+}
+
+function _reinsertRouteRow(db, row) {
+  const cols = _routeColumns(db);
+  const placeholders = cols.map(() => '?').join(', ');
+  const values = cols.map(c => row[c] === undefined ? null : row[c]);
+  db.prepare(`INSERT INTO routes (${cols.join(', ')}) VALUES (${placeholders})`).run(...values);
+}
+
 // ─── CRUD Operations ────────────────────────────────────
 
 /**
@@ -579,26 +598,14 @@ async function update(id, data) {
     }
   }
 
-  // Sync to Caddy — rollback DB update on failure
+  // Sync to Caddy — rollback DB update on failure. Use a full-column
+  // snapshot restore so security-critical fields (ip_filter_*, acl_*,
+  // bot_blocker_*, monitoring_*, branding_*, retry_*, ...) aren't
+  // silently reset to defaults when the rollback path fires.
   try {
     await syncToCaddy();
   } catch (err) {
-    db.prepare(`
-      UPDATE routes SET
-        domain = ?, target_ip = ?, target_port = ?, description = ?, peer_id = ?,
-        https_enabled = ?, backend_https = ?, basic_auth_enabled = ?,
-        basic_auth_user = ?, basic_auth_password_hash = ?,
-        route_type = ?, l4_protocol = ?, l4_listen_port = ?, l4_tls_mode = ?,
-        enabled = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      snapshot.domain, snapshot.target_ip, snapshot.target_port, snapshot.description,
-      snapshot.peer_id, snapshot.https_enabled, snapshot.backend_https,
-      snapshot.basic_auth_enabled, snapshot.basic_auth_user,
-      snapshot.basic_auth_password_hash,
-      snapshot.route_type, snapshot.l4_protocol, snapshot.l4_listen_port, snapshot.l4_tls_mode,
-      snapshot.enabled, snapshot.updated_at, id
-    );
+    _restoreRouteRow(db, id, snapshot);
     throw err;
   }
 
@@ -647,23 +654,14 @@ async function remove(id) {
 
   db.prepare('DELETE FROM routes WHERE id = ?').run(id);
 
-  // Sync to Caddy — rollback DB delete on failure
+  // Sync to Caddy — rollback DB delete on failure. Re-insert every
+  // column of the original row (not just the hard-coded core set),
+  // otherwise a rollback throws away ACLs / IP-filter / bot-blocker
+  // config that the admin set up and leaves a half-castrated route.
   try {
     await syncToCaddy();
   } catch (err) {
-    db.prepare(`
-      INSERT INTO routes (id, domain, target_ip, target_port, description, peer_id,
-        https_enabled, backend_https, basic_auth_enabled, basic_auth_user,
-        basic_auth_password_hash, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
-        enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      route.id, route.domain, route.target_ip, route.target_port, route.description,
-      route.peer_id, route.https_enabled, route.backend_https, route.basic_auth_enabled,
-      route.basic_auth_user, route.basic_auth_password_hash,
-      route.route_type, route.l4_protocol, route.l4_listen_port, route.l4_tls_mode,
-      route.enabled, route.created_at, route.updated_at
-    );
+    _reinsertRouteRow(db, route);
     throw err;
   }
 

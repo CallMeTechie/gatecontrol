@@ -58,7 +58,11 @@ describe('caddyConfig: gateway-typed routes', () => {
     const config = buildCaddyConfig(routes);
     const json = JSON.stringify(config);
     assert.ok(json.includes('10.8.0.7:80'));
-    assert.ok(!json.includes('X-Gateway-Target'));
+    // X-Gateway-Target must not be set on non-gateway routes — may appear
+    // only in the `delete` array that strips client-supplied spoofs.
+    const setBlock = JSON.stringify(config).match(/"set":\s*\{[^}]*\}/g) || [];
+    assert.ok(!setBlock.some(s => s.includes('X-Gateway-Target')),
+      'X-Gateway-Target should not be in any set block');
   });
 
   it('L4 gateway route forwards to gateway-peer-ip:listen_port (not the 127.0.0.1 placeholder)', () => {

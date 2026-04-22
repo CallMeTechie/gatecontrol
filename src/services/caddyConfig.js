@@ -234,11 +234,21 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // Gateway-routing: inject X-Gateway-Target and X-Gateway-Target-Domain headers
     // so the Gateway-HTTP-Proxy knows the LAN target to forward to.
     // Skip when serving the gateway_offline maintenance page (static_response).
+    // Always strip any client-supplied X-Gateway-* headers first so a caller
+    // cannot spoof them into a gateway regardless of whether this route is
+    // gateway-routed itself.
+    if (reverseProxy.handler === 'reverse_proxy') {
+      reverseProxy.headers = reverseProxy.headers || {};
+      reverseProxy.headers.request = reverseProxy.headers.request || {};
+      reverseProxy.headers.request.delete = [
+        ...(reverseProxy.headers.request.delete || []),
+        'X-Gateway-Target',
+        'X-Gateway-Target-Domain',
+      ];
+    }
     if (reverseProxy.handler === 'reverse_proxy'
         && gatewayPeerIp && (route.target_lan_host || route.target_lan_port)) {
       const lanTarget = `${route.target_lan_host}:${route.target_lan_port}`;
-      reverseProxy.headers = reverseProxy.headers || {};
-      reverseProxy.headers.request = reverseProxy.headers.request || {};
       reverseProxy.headers.request.set = {
         ...(reverseProxy.headers.request.set || {}),
         'X-Gateway-Target': [lanTarget],
