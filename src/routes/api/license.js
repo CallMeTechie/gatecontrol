@@ -8,9 +8,15 @@ const activity = require('../../services/activity');
 const config = require('../../../config/default');
 const router = Router();
 
-let lastActivateCall = 0;
-let lastRefreshCall = 0;
+// Per-identity cooldowns (keyed by session user or req.ip fallback). A
+// global cooldown used to let one admin DoS another admin's license
+// refresh. Map entry is pruned on access.
+const _activateCooldown = new Map();
+const _refreshCooldown = new Map();
 const COOLDOWN = 60000;
+function _cooldownKey(req) {
+  return `u:${req.session?.userId || req.ip}`;
+}
 
 router.get('/', (req, res) => {
   res.json({ ok: true, ...license.getLicenseInfo() });
@@ -18,13 +24,14 @@ router.get('/', (req, res) => {
 
 router.post('/activate', async (req, res) => {
   const now = Date.now();
-  if (now - lastActivateCall < COOLDOWN) {
+  const key = _cooldownKey(req);
+  if (now - (_activateCooldown.get(key) || 0) < COOLDOWN) {
     return res.status(429).json({
       ok: false,
       error: req.t ? req.t('error.license.rate_limited') : 'Please wait before trying again',
     });
   }
-  lastActivateCall = now;
+  _activateCooldown.set(key, now);
 
   const { license_key, signing_key } = req.body;
   if (!license_key || typeof license_key !== 'string' || license_key.length > 4096) {
@@ -52,13 +59,14 @@ router.post('/activate', async (req, res) => {
 
 router.post('/refresh', async (req, res) => {
   const now = Date.now();
-  if (now - lastRefreshCall < COOLDOWN) {
+  const key = _cooldownKey(req);
+  if (now - (_refreshCooldown.get(key) || 0) < COOLDOWN) {
     return res.status(429).json({
       ok: false,
       error: req.t ? req.t('error.license.rate_limited') : 'Please wait before trying again',
     });
   }
-  lastRefreshCall = now;
+  _refreshCooldown.set(key, now);
 
   try {
     await license.refreshLicenseInBackground();

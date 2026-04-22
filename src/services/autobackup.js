@@ -198,6 +198,18 @@ function startScheduler() {
 
   const intervalMs = SCHEDULE_MS[cfg.schedule] || SCHEDULE_MS.daily;
 
+  // Catch-up on start: if the container restarted and the scheduled
+  // window already elapsed, run immediately instead of silently missing
+  // a backup until the next interval tick. A weekly schedule with a
+  // 6-day reboot cycle would otherwise never produce a backup.
+  try {
+    const lastRunIso = settings.get('autobackup_last_run', null);
+    const lastRun = lastRunIso ? Date.parse(lastRunIso) : 0;
+    if (!lastRun || Date.now() - lastRun >= intervalMs) {
+      setImmediate(() => { try { runBackup(); } catch (err) { logger.warn({ err: err.message }, 'catch-up autobackup failed'); } });
+    }
+  } catch {}
+
   timer = setInterval(() => {
     try {
       runBackup();
