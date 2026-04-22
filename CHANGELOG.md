@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.6] — 2026-04-22
+
+### Änderungen
+- bug-hunt Welle-2 medium findings (batch 8)
+
+---
+
 ## [1.50.5] — 2026-04-22
 
 ### Fixes
