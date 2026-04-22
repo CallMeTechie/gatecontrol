@@ -22,6 +22,7 @@ router.use('/system', require('./system'));
 router.use('/logs', require('./logs'));
 router.use('/peers', require('./peers'));
 router.use('/peer-groups', require('./peerGroups'));
+router.use('/gateways', require('./gateways'));
 router.use('/tags', require('./tags'));
 router.use('/routes/:id/auth', require('./routeAuth'));
 router.use('/routes', require('./routes'));

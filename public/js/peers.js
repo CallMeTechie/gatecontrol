@@ -369,7 +369,9 @@
   }
 
   function applyFilters() {
-    var filtered = allPeers;
+    // Gateway peers live in their own section above the table — exclude
+    // them from the client list so they don't appear twice.
+    var filtered = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
 
     // Group filter
     if (activeGroupFilter === 'ungrouped') {
@@ -1266,9 +1268,451 @@
     }
   });
 
+  // ─── Home-Gateway cards (above the peer table) ──────────
+  // One /api/gateways call returns each gateway's state, telemetry and
+  // the routes it serves. Cards default to collapsed; the expanded set
+  // is persisted per-gateway in localStorage so the UI remembers which
+  // ones the admin had open.
+  var gwContainer = document.getElementById('gateways-container');
+  var gwCountEl = document.getElementById('gw-section-count');
+  var peersCountEl = document.getElementById('peers-section-count');
+  var statGwOnline = document.getElementById('stat-gw-online');
+  var statGwTotal  = document.getElementById('stat-gw-total');
+  var statClOnline = document.getElementById('stat-cl-online');
+  var statClTotal  = document.getElementById('stat-cl-total');
+  var statGwRoutes = document.getElementById('stat-gw-routes');
+
+  var allGateways = [];
+  var GW_EXPANDED_KEY = 'gc_gw_expanded_v1';
+  var gwExpanded = (function() {
+    try { return new Set((JSON.parse(localStorage.getItem(GW_EXPANDED_KEY) || '[]') || []).map(String)); }
+    catch (_) { return new Set(); }
+  })();
+  function saveGwExpanded() {
+    try { localStorage.setItem(GW_EXPANDED_KEY, JSON.stringify(Array.from(gwExpanded))); } catch (_) { /* ignore */ }
+  }
+
+  function clearEl(el) { while (el && el.firstChild) el.removeChild(el.firstChild); }
+
+  function gwT(key, fallback) {
+    return (window.GC && GC.t && GC.t[key]) || fallback;
+  }
+
+  function formatRelTime(ms) {
+    if (!ms) return null;
+    var sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h';
+    return Math.floor(sec / 86400) + 'd';
+  }
+  function formatUptimeSec(s) {
+    if (s == null) return null;
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+  function formatPct(used, total) {
+    if (!total) return null;
+    return Math.round((used / total) * 100) + '%';
+  }
+
+  // ─── SVG helpers (pure DOM, no innerHTML) ───────────────
+  function svgEl(attrs, children) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    Object.keys(attrs).forEach(function(k) { svg.setAttribute(k, attrs[k]); });
+    (children || []).forEach(function(c) { svg.appendChild(c); });
+    return svg;
+  }
+  function svgShape(tag, attrs) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var el = document.createElementNS(ns, tag);
+    Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+  function shieldSvg() {
+    return svgEl(
+      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+      [svgShape('path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' }),
+       svgShape('polyline', { points: '9 12 11 14 15 10' })]
+    );
+  }
+  function chevronSvg() {
+    return svgEl(
+      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+      [svgShape('polyline', { points: '6 9 12 15 18 9' })]
+    );
+  }
+  function plainSvg(path) {
+    return svgEl(
+      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', width: '14', height: '14' },
+      [svgShape('path', { d: path })]
+    );
+  }
+
+  function addMeta(row, text) {
+    var el = document.createElement('span');
+    el.textContent = text;
+    row.appendChild(el);
+  }
+  function addSep(row) {
+    var s = document.createElement('span');
+    s.className = 'sep';
+    s.textContent = '·';
+    row.appendChild(s);
+  }
+
+  function renderGatewayHeader(gw, isExpanded) {
+    var head = document.createElement('header');
+    head.className = 'gw-card-head';
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    head.setAttribute('aria-expanded', String(isExpanded));
+
+    var avatar = document.createElement('div');
+    avatar.className = 'gw-avatar';
+    avatar.appendChild(shieldSvg());
+
+    var identity = document.createElement('div');
+    identity.className = 'gw-identity';
+    var h3 = document.createElement('h3');
+    h3.textContent = gw.name;
+    identity.appendChild(h3);
+
+    var meta = document.createElement('div');
+    meta.className = 'gw-identity-meta';
+    var metaParts = [];
+    if (gw.hostname) metaParts.push(gw.hostname);
+    if (gw.ip) metaParts.push(gw.ip);
+    if (gw.api_port) metaParts.push('API :' + gw.api_port);
+    metaParts.forEach(function(p, i) {
+      addMeta(meta, p);
+      if (i < metaParts.length - 1) addSep(meta);
+    });
+    identity.appendChild(meta);
+
+    var statusWrap = document.createElement('div');
+    statusWrap.className = 'gw-status';
+    var telemetry = (gw.health && gw.health.telemetry) || null;
+    if (telemetry && telemetry.gateway_version) {
+      var vchip = document.createElement('span');
+      vchip.className = 'version-chip';
+      vchip.title = gwT('peers.gateway.version_chip', 'Gateway-Container-Version');
+      vchip.textContent = 'v' + telemetry.gateway_version;
+      statusWrap.appendChild(vchip);
+    }
+
+    var status = gw.status || 'degraded';
+    var pill = document.createElement('span');
+    pill.className = 'status-pill ' + status;
+    var dot = document.createElement('span');
+    dot.className = 'dot';
+    pill.appendChild(dot);
+    var labelKey = 'peers.gateway.status_' + status;
+    var fallback = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Degraded';
+    pill.appendChild(document.createTextNode(gwT(labelKey, fallback)));
+    statusWrap.appendChild(pill);
+
+    var chev = document.createElement('span');
+    chev.className = 'gw-chev';
+    chev.appendChild(chevronSvg());
+    statusWrap.appendChild(chev);
+
+    head.appendChild(avatar);
+    head.appendChild(identity);
+    head.appendChild(statusWrap);
+    return head;
+  }
+
+  function teleRow(grid, key, value, barPercent, barClass) {
+    if (value === undefined || value === null || value === '') return;
+    var k = document.createElement('div');
+    k.className = 'tele-k';
+    k.textContent = key;
+    var v = document.createElement('div');
+    v.className = 'tele-v';
+    v.textContent = value;
+    if (typeof barPercent === 'number' && barPercent >= 0) {
+      var bar = document.createElement('span');
+      bar.className = 'tele-bar';
+      var fill = document.createElement('span');
+      fill.className = 'tele-bar-fill' + (barClass ? ' ' + barClass : '');
+      fill.style.width = Math.min(100, Math.max(0, barPercent)) + '%';
+      bar.appendChild(fill);
+      v.appendChild(bar);
+    }
+    grid.appendChild(k);
+    grid.appendChild(v);
+  }
+
+  function renderTelemetrySection(gw) {
+    var sec = document.createElement('div');
+    sec.className = 'gw-section';
+    var title = document.createElement('div');
+    title.className = 'gw-section-title';
+    title.textContent = gwT('peers.gateway.section_telemetry', 'Telemetrie');
+    sec.appendChild(title);
+
+    var grid = document.createElement('div');
+    grid.className = 'tele-rows';
+    var h = gw.health || {};
+    var t = h.telemetry || {};
+
+    // Status-y fields
+    teleRow(grid, gwT('peers.gateway.last_seen', 'Zuletzt gesehen'),
+      gw.last_seen_at ? (formatRelTime(gw.last_seen_at) + ' ago') : '—');
+    teleRow(grid, gwT('peers.gateway.uptime', 'Laufzeit'), formatUptimeSec(h.uptime_s));
+    if (typeof h.wg_handshake_age_s === 'number') {
+      teleRow(grid, gwT('peers.gateway.wg_handshake', 'Handshake'), h.wg_handshake_age_s + 's ago');
+    }
+    if (h.hostname) teleRow(grid, gwT('peers.gateway.hostname', 'Hostname'), h.hostname);
+
+    // Versions
+    if (t.gateway_version) teleRow(grid, 'Gateway', 'v' + t.gateway_version);
+    if (t.node_version)    teleRow(grid, 'Node', t.node_version);
+    if (t.wg_tools_version) teleRow(grid, 'WG-Tools', t.wg_tools_version);
+    if (t.os_platform) {
+      teleRow(grid, 'OS', t.os_platform + (t.os_release ? ' ' + t.os_release : '') + (t.arch ? ' · ' + t.arch : ''));
+    }
+
+    // Resources
+    if (t.cpu_cores) {
+      var loadStr = Array.isArray(t.cpu_load_avg)
+        ? t.cpu_load_avg.map(function(n) { return (+n).toFixed(2); }).join(' · ')
+        : '';
+      teleRow(grid, 'CPU', t.cpu_cores + ' cores' + (loadStr ? ' · load ' + loadStr : ''));
+    }
+    if (t.mem_total) {
+      var pct = Math.round((t.mem_used / t.mem_total) * 100);
+      var memCls = pct > 90 ? 'bad' : pct > 70 ? 'warn' : '';
+      teleRow(grid, 'Memory',
+        window.formatBytes(t.mem_used) + ' / ' + window.formatBytes(t.mem_total) + ' (' + pct + '%)',
+        pct, memCls);
+    }
+    if (t.disk && t.disk.total) {
+      var dPct = Math.round((t.disk.used / t.disk.total) * 100);
+      var dCls = dPct > 90 ? 'bad' : dPct > 70 ? 'warn' : '';
+      teleRow(grid, 'Disk',
+        window.formatBytes(t.disk.free) + ' frei / ' + window.formatBytes(t.disk.total) + ' (' + dPct + '%)',
+        dPct, dCls);
+    }
+
+    // LAN
+    if (t.default_gateway_ip) teleRow(grid, 'LAN-GW', t.default_gateway_ip);
+    if (Array.isArray(t.dns_resolvers) && t.dns_resolvers.length) {
+      teleRow(grid, 'DNS', t.dns_resolvers.join(', '));
+    }
+
+    sec.appendChild(grid);
+    return sec;
+  }
+
+  function renderRoutesSection(gw) {
+    var sec = document.createElement('div');
+    sec.className = 'gw-section';
+    var title = document.createElement('div');
+    title.className = 'gw-section-title';
+    var routes = Array.isArray(gw.routes) ? gw.routes : [];
+    title.textContent = gwT('peers.gateway.section_routes', 'Geroutete Ziele') + ' (' + routes.length + ')';
+    sec.appendChild(title);
+
+    if (!routes.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'font-size:11px;color:var(--text-3);font-family:var(--font-mono)';
+      empty.textContent = gwT('peers.gateway.no_routes', 'Keine Routen über diesen Gateway');
+      sec.appendChild(empty);
+      return sec;
+    }
+
+    // Build a lookup from route_reachability if present
+    var reach = {};
+    var arr = (gw.health && Array.isArray(gw.health.route_reachability)) ? gw.health.route_reachability : [];
+    arr.forEach(function(r) { reach[r.route_id] = r; });
+
+    var list = document.createElement('div');
+    list.className = 'gw-routes-list';
+    routes.forEach(function(r) {
+      var row = document.createElement('div');
+      row.className = 'gw-route-row';
+
+      var dot = document.createElement('span');
+      dot.className = 'gw-route-dot';
+      var rr = reach[r.id];
+      if (rr) {
+        if (rr.reachable) dot.classList.add(); // green default
+        else dot.classList.add('down');
+      } else {
+        dot.classList.add('check');
+      }
+      row.appendChild(dot);
+
+      var domain = document.createElement('span');
+      domain.className = 'gw-route-domain';
+      domain.textContent = r.domain || '—';
+      row.appendChild(domain);
+
+      var target = document.createElement('span');
+      target.className = 'gw-route-target';
+      if (r.route_type === 'l4') {
+        target.textContent = '→ ' + (r.target_lan_host || '?') + ':' + (r.target_lan_port || r.l4_listen_port || '?');
+      } else {
+        target.textContent = '→ ' + (r.target_lan_host || '?') + ':' + (r.target_lan_port || '?');
+      }
+      row.appendChild(target);
+
+      var kind = document.createElement('span');
+      kind.className = 'gw-route-kind ' + (r.route_type || 'http');
+      kind.textContent = (r.route_type || 'http').toUpperCase();
+      row.appendChild(kind);
+
+      list.appendChild(row);
+    });
+    sec.appendChild(list);
+
+    // Reachability summary
+    if (arr.length) {
+      var reachCount = arr.filter(function(x) { return x.reachable; }).length;
+      var latencies = arr.filter(function(x) { return typeof x.latency_ms === 'number'; }).map(function(x) { return x.latency_ms; });
+      var avg = latencies.length ? (latencies.reduce(function(a, b) { return a + b; }, 0) / latencies.length).toFixed(1) : null;
+      var summary = document.createElement('div');
+      summary.style.cssText = 'margin-top:10px;font-size:11px;color:var(--text-3);font-family:var(--font-mono)';
+      summary.textContent = 'Reachability: ' + reachCount + '/' + arr.length + ' erreichbar' + (avg ? ' · Ø ' + avg + ' ms' : '');
+      sec.appendChild(summary);
+    }
+    return sec;
+  }
+
+  function renderActionsSection(gw) {
+    var footer = document.createElement('footer');
+    footer.className = 'gw-actions';
+
+    var left = document.createElement('div');
+    left.className = 'gw-actions-left';
+    if (gw.health && gw.health.config_hash) {
+      left.textContent = 'Config-Hash: ' + gw.health.config_hash.slice(0, 24);
+    } else {
+      left.textContent = '';
+    }
+    footer.appendChild(left);
+
+    function mkBtn(labelKey, labelFallback, onClick, danger) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm' + (danger ? ' btn-danger' : '');
+      b.textContent = gwT(labelKey, labelFallback);
+      b.addEventListener('click', function(e) { e.stopPropagation(); onClick(); });
+      return b;
+    }
+
+    footer.appendChild(mkBtn('peers.gateway.action_edit', 'Bearbeiten', function() {
+      showEditModal(gw.peer_id);
+    }));
+    footer.appendChild(mkBtn('peers.gateway.action_env', 'ENV herunterladen', function() {
+      // Open edit modal which carries the download/rotate UI — same flow
+      showEditModal(gw.peer_id);
+    }));
+    return footer;
+  }
+
+  function toggleGwExpanded(peerId, card) {
+    var id = String(peerId);
+    if (gwExpanded.has(id)) { gwExpanded.delete(id); card.classList.remove('expanded'); }
+    else { gwExpanded.add(id); card.classList.add('expanded'); }
+    var head = card.querySelector('.gw-card-head');
+    if (head) head.setAttribute('aria-expanded', String(gwExpanded.has(id)));
+    saveGwExpanded();
+  }
+
+  function renderGatewayCard(gw) {
+    var card = document.createElement('article');
+    card.className = 'gw-card';
+    var isOpen = gwExpanded.has(String(gw.peer_id));
+    if (isOpen) card.classList.add('expanded');
+    if (gw.status === 'offline') card.classList.add('offline');
+
+    var head = renderGatewayHeader(gw, isOpen);
+    card.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'gw-card-body';
+    body.appendChild(renderTelemetrySection(gw));
+    body.appendChild(renderRoutesSection(gw));
+    card.appendChild(body);
+
+    card.appendChild(renderActionsSection(gw));
+
+    head.addEventListener('click', function(e) {
+      if (e.target.closest('button, a')) return;
+      toggleGwExpanded(gw.peer_id, card);
+    });
+    head.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleGwExpanded(gw.peer_id, card);
+      }
+    });
+    return card;
+  }
+
+  function renderGateways() {
+    if (!gwContainer) return;
+    clearEl(gwContainer);
+    if (gwCountEl) {
+      var online = allGateways.filter(function(g) { return g.status === 'online'; }).length;
+      gwCountEl.textContent = online + ' / ' + allGateways.length + ' online';
+    }
+    gwContainer.classList.toggle('multi', allGateways.length > 1);
+    if (!allGateways.length) {
+      var empty = document.createElement('div');
+      empty.className = 'gw-empty';
+      empty.textContent = gwT('peers.gateway.none', 'Kein Gateway konfiguriert. Neuen Gateway-Peer über „Hinzufügen" anlegen.');
+      gwContainer.appendChild(empty);
+      return;
+    }
+    allGateways.forEach(function(gw) { gwContainer.appendChild(renderGatewayCard(gw)); });
+  }
+
+  function updateStats() {
+    var gwOnline = allGateways.filter(function(g) { return g.status === 'online'; }).length;
+    var gwTotal = allGateways.length;
+    var clients = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
+    var clientsOnline = clients.filter(function(p) { return p.isOnline; }).length;
+    var totalGwRoutes = allGateways.reduce(function(sum, g) { return sum + (g.routes ? g.routes.length : 0); }, 0);
+    if (statGwOnline) statGwOnline.textContent = gwOnline;
+    if (statGwTotal)  statGwTotal.textContent = '/ ' + gwTotal;
+    if (statClOnline) statClOnline.textContent = clientsOnline;
+    if (statClTotal)  statClTotal.textContent  = '/ ' + clients.length;
+    if (statGwRoutes) statGwRoutes.textContent = String(totalGwRoutes);
+    if (peersCountEl) peersCountEl.textContent = clients.length + ' total · ' + clientsOnline + ' online';
+  }
+
+  async function loadGateways() {
+    try {
+      var data = await api.get('/api/gateways');
+      if (data && data.ok) {
+        allGateways = Array.isArray(data.gateways) ? data.gateways : [];
+        renderGateways();
+        updateStats();
+      }
+    } catch (err) {
+      console.error('gateways load failed', err);
+    }
+  }
+
+  // Re-run stats when peers finish loading — wraps loadPeers to refresh stats.
+  var _origLoadPeers = loadPeers;
+  loadPeers = async function() {
+    await _origLoadPeers.apply(this, arguments);
+    updateStats();
+  };
+
   // ─── Auto-refresh ────────────────────────────────────────
   loadGroups();
   loadPeers();
+  loadGateways();
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
+  setInterval(loadGateways, 20000);
 })();
