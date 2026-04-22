@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.0] — 2026-04-22
+
+### Features
+- hostname field in add-peer modal (license-gated)
+
+---
+
 ## [1.46.0] — 2026-04-21
 
 ### Features
