@@ -169,10 +169,62 @@ function remove(rawName) {
   };
 }
 
+/**
+ * Auto-register tokens into the registry. Called from peers.create and
+ * peers.update so every tag an admin types into the peer-tags CSV becomes a
+ * first-class registry entry (no more "nicht registriert" badge). Invalid
+ * tokens are dropped silently — we won't reject a peer save because of
+ * a bad tag token; the registry just skips it.
+ */
+function ensureRegistered(rawCsvOrTokens) {
+  if (!rawCsvOrTokens) return 0;
+  const db = getDb();
+  const tokens = Array.isArray(rawCsvOrTokens)
+    ? rawCsvOrTokens
+    : splitCsv(rawCsvOrTokens);
+  if (tokens.length === 0) return 0;
+
+  const insert = db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)');
+  let added = 0;
+  const tx = db.transaction(() => {
+    for (const raw of tokens) {
+      const name = normalizeName(raw);
+      if (!name || name.length > MAX_NAME_LEN || INVALID_CHARS_RE.test(name)) continue;
+      const info = insert.run(name);
+      if (info.changes > 0) added++;
+    }
+  });
+  try { tx(); } catch (err) {
+    logger.debug({ err: err.message }, 'tags.ensureRegistered failed');
+  }
+  return added;
+}
+
+/**
+ * One-shot backfill — scan every peer row and register each distinct
+ * token. Cheap (executed under a transaction) and idempotent thanks to
+ * INSERT OR IGNORE. Called at startup so existing peer CSVs that predate
+ * the tags table get promoted into the registry.
+ */
+function backfillFromPeers() {
+  const db = getDb();
+  const rows = db.prepare('SELECT tags FROM peers WHERE tags IS NOT NULL AND tags != \'\'').all();
+  const seen = new Set();
+  for (const row of rows) {
+    for (const token of splitCsv(row.tags)) {
+      seen.add(token);
+    }
+  }
+  if (seen.size === 0) return 0;
+  return ensureRegistered(Array.from(seen));
+}
+
 module.exports = {
   list,
   create,
   remove,
+  ensureRegistered,
+  backfillFromPeers,
   // Exported for tests; not part of the service's normal surface.
   _splitCsv: splitCsv,
   _validateName: validateName,

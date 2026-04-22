@@ -78,14 +78,9 @@
     }
     row.appendChild(meta);
 
-    if (!tag.registered) {
-      var badge = document.createElement('span');
-      badge.className = 'tag tag-amber';
-      badge.style.cssText = 'font-size:10px;padding:1px 6px';
-      badge.textContent = t('tags.unregistered', 'nicht registriert');
-      badge.title = t('tags.unregistered_hint', 'Dieses Tag wird von mindestens einem Peer benutzt, ist aber nicht explizit angelegt.');
-      row.appendChild(badge);
-    }
+    // Tags used by peers are auto-registered in the tags registry on
+    // create/update (and backfilled at server start), so every visible
+    // tag is "registered" — no badge needed.
 
     var delBtn = document.createElement('button');
     delBtn.className = 'icon-btn';

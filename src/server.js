@@ -29,6 +29,17 @@ async function start() {
   runMigrations();
   await seedAdminUser();
 
+  // One-shot: promote every existing peer-CSV tag into the tags registry
+  // so the Tags admin card shows them all as registered (no "nicht
+  // registriert" badge). Idempotent, runs every startup.
+  try {
+    const tagsSvc = require('./services/tags');
+    const added = tagsSvc.backfillFromPeers();
+    if (added > 0) logger.info({ added }, 'Tags registry backfilled from peer CSVs');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Tags backfill failed (non-fatal)');
+  }
+
   // Validate license (never throws — falls back to Community mode internally)
   const licenseInfo = await validateLicense();
   logger.info(`License: ${licenseInfo.plan} plan`);

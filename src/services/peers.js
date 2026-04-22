@@ -104,6 +104,12 @@ async function create(data) {
   // Update WireGuard config and sync
   await rewriteWgConfig();
 
+  // Promote newly-typed tag tokens into the registry so the Tags admin
+  // card shows them as first-class entries rather than "nicht registriert".
+  try {
+    if (data.tags) require('./tags').ensureRegistered(data.tags);
+  } catch (err) { logger.debug({ err: err.message }, 'tags.ensureRegistered (create)'); }
+
   // Log activity
   activity.log('peer_created', `Peer "${sanitize(data.name)}" created (${allowedIps})`, {
     source: 'admin',
@@ -210,6 +216,11 @@ async function update(id, data) {
   );
 
   await rewriteWgConfig();
+
+  // See peers.create: promote typed tag tokens into the registry.
+  try {
+    if (data.tags !== undefined && data.tags) require('./tags').ensureRegistered(data.tags);
+  } catch (err) { logger.debug({ err: err.message }, 'tags.ensureRegistered (update)'); }
 
   activity.log('peer_updated', `Peer "${peer.name}" updated`, {
     source: 'admin',
