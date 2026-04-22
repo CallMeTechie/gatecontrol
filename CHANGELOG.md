@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.3] — 2026-04-22
+
+### Fixes
+- HTTP routes always have an Auto-TLS cert
+
+---
+
 ## [1.47.2] — 2026-04-22
 
 ### Fixes
