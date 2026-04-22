@@ -27,6 +27,7 @@
       <div class="tab" data-severity="error">{{ t('logs.error') }}</div>
     </div>
     <div style="display:flex;gap:6px">
+      {% if license.features.log_export %}
       <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="activity-export-csv">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         {{ t('logs.export_csv') }}
@@ -35,6 +36,10 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         {{ t('logs.export_json') }}
       </button>
+      {% else %}
+      <button class="btn btn-ghost" disabled style="font-size:12px;padding:4px 10px;opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('logs.export_csv') }} <span class="lock-icon"></span></button>
+      <button class="btn btn-ghost" disabled style="font-size:12px;padding:4px 10px;opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('logs.export_json') }} <span class="lock-icon"></span></button>
+      {% endif %}
     </div>
   </div>
   <div class="card">
@@ -61,6 +66,7 @@
       <div class="tab" data-status="500">5xx</div>
     </div>
     <div style="display:flex;gap:6px">
+      {% if license.features.log_export %}
       <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="access-export-csv">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         {{ t('logs.export_csv') }}
@@ -69,6 +75,10 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         {{ t('logs.export_json') }}
       </button>
+      {% else %}
+      <button class="btn btn-ghost" disabled style="font-size:12px;padding:4px 10px;opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('logs.export_csv') }} <span class="lock-icon"></span></button>
+      <button class="btn btn-ghost" disabled style="font-size:12px;padding:4px 10px;opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('logs.export_json') }} <span class="lock-icon"></span></button>
+      {% endif %}
     </div>
   </div>
   <div class="card">

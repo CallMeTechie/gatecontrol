@@ -295,7 +295,11 @@
             <div class="toggle-group" id="create-auth-type-group">
               <button type="button" class="toggle-btn on" data-value="none">{{ t('route_auth.auth_none') }}</button>
               <button type="button" class="toggle-btn" data-value="basic">{{ t('route_auth.auth_basic') }}</button>
+              {% if license.features.route_auth %}
               <button type="button" class="toggle-btn" data-value="route">{{ t('route_auth.auth_route') }}</button>
+              {% else %}
+              <button type="button" class="toggle-btn" disabled style="opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('route_auth.auth_route') }} <span class="lock-icon"></span></button>
+              {% endif %}
             </div>
             <input type="hidden" name="auth_type" id="create-auth-type" value="none">
           </div>

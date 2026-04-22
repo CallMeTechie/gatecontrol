@@ -207,7 +207,11 @@
           <div class="toggle-group" id="edit-auth-type-group">
             <button type="button" class="toggle-btn on" data-value="none">{{ t('route_auth.auth_none') }}</button>
             <button type="button" class="toggle-btn" data-value="basic">{{ t('route_auth.auth_basic') }}</button>
+            {% if license.features.route_auth %}
             <button type="button" class="toggle-btn" data-value="route">{{ t('route_auth.auth_route') }}</button>
+            {% else %}
+            <button type="button" class="toggle-btn" disabled style="opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">{{ t('route_auth.auth_route') }} <span class="lock-icon"></span></button>
+            {% endif %}
           </div>
           <input type="hidden" id="edit-auth-type" value="none">
         </div>
@@ -584,10 +588,15 @@
 
       {# ═══ TAB: Headers ═══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="headers" style="display:none">
+        {% if not license.features.custom_headers %}
+        <div style="padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px;font-size:12px;color:var(--text-3)">
+          <span class="lock-icon"></span> {{ t('license.requires_pro') }} — {{ t('headers.locked_hint') or 'Custom Headers benötigen eine Pro-Lizenz. Die Eingabe-Felder sind deaktiviert.' }}
+        </div>
+        {% endif %}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div style="font-size:13px;font-weight:600">{{ t('headers.title') or 'Custom Headers' }}</div>
+          <div style="font-size:13px;font-weight:600">{{ t('headers.title') or 'Custom Headers' }} {% if not license.features.custom_headers %}<span class="lock-icon"></span>{% endif %}</div>
           <div style="display:flex;gap:6px">
-            <select class="form-select" id="edit-headers-preset" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+            <select class="form-select" id="edit-headers-preset" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:var(--radius-xs)" {% if not license.features.custom_headers %}disabled{% endif %}>
               <option value="">{{ t('headers.preset') or 'Presets' }}...</option>
               <option value="cors">{{ t('headers.preset_cors') or 'CORS Headers' }}</option>
               <option value="security">{{ t('headers.preset_security') or 'Security Headers' }}</option>
@@ -598,27 +607,32 @@
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.request_headers') or 'Request Headers' }}</label>
           <div id="edit-headers-request-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
           <div style="display:flex;gap:6px">
-            <input class="form-input" type="text" id="edit-headers-req-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <input class="form-input" type="text" id="edit-headers-req-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <button type="button" class="btn btn-ghost" id="edit-headers-req-add" style="padding:6px 10px;font-size:12px">+</button>
+            <input class="form-input" type="text" id="edit-headers-req-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>
+            <input class="form-input" type="text" id="edit-headers-req-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>
+            <button type="button" class="btn btn-ghost" id="edit-headers-req-add" style="padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>+</button>
           </div>
         </div>
         <div>
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.response_headers') or 'Response Headers' }}</label>
           <div id="edit-headers-response-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
           <div style="display:flex;gap:6px">
-            <input class="form-input" type="text" id="edit-headers-resp-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <input class="form-input" type="text" id="edit-headers-resp-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <button type="button" class="btn btn-ghost" id="edit-headers-resp-add" style="padding:6px 10px;font-size:12px">+</button>
+            <input class="form-input" type="text" id="edit-headers-resp-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>
+            <input class="form-input" type="text" id="edit-headers-resp-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>
+            <button type="button" class="btn btn-ghost" id="edit-headers-resp-add" style="padding:6px 10px;font-size:12px" {% if not license.features.custom_headers %}disabled{% endif %}>+</button>
           </div>
         </div>
       </div>
 
       {# ═══ TAB: Branding ══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="branding" style="display:none">
+        {% if not license.features.custom_branding %}
+        <div style="padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px;font-size:12px;color:var(--text-3)">
+          <span class="lock-icon"></span> {{ t('license.requires_pro') }} — {{ t('branding.locked_hint') or 'Custom Branding (Logo, Farben, Hintergrund) benötigt eine Pro-Lizenz.' }}
+        </div>
+        {% endif %}
         <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label" for="edit-branding-title">{{ t('branding.page_title') or 'Title' }}</label>
-          <input class="form-input" type="text" id="edit-branding-title" placeholder="GateControl" maxlength="100" style="width:100%">
+          <label class="form-label" for="edit-branding-title">{{ t('branding.page_title') or 'Title' }}{% if not license.features.custom_branding %} <span class="lock-icon"></span>{% endif %}</label>
+          <input class="form-input" type="text" id="edit-branding-title" placeholder="GateControl" maxlength="100" style="width:100%" {% if not license.features.custom_branding %}disabled{% endif %}>
         </div>
         <div class="form-group" style="margin-bottom:8px">
           <label class="form-label" for="edit-branding-text">{{ t('branding.text') or 'Welcome text' }}</label>

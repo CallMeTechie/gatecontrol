@@ -95,14 +95,20 @@
         <div id="user-form-error" class="form-error" style="display:none"></div>
       </form>
 
-      {# Token section (edit mode only) #}
+      {# Token section (edit mode only) — hinzufügen nur wenn api_tokens lizenziert #}
       <div id="user-tokens-section" style="display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:13px;font-weight:600;color:var(--text-1)">{{ t('users.tokens') }}</span>
+          {% if license.features.api_tokens %}
           <button type="button" class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="btn-add-token">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             {{ t('users.add_token') }}
           </button>
+          {% else %}
+          <button type="button" class="btn btn-ghost" disabled style="font-size:12px;padding:4px 10px;opacity:0.5;cursor:not-allowed" title="{{ t('license.requires_pro') }}">
+            {{ t('users.add_token') }} <span class="lock-icon"></span>
+          </button>
+          {% endif %}
         </div>
         <div id="user-tokens-list" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
