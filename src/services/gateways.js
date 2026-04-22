@@ -520,4 +520,5 @@ module.exports = {
   buildEnvForPeer,
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
+  _smCache,
 };

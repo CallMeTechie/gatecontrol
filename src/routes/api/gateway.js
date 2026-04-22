@@ -69,11 +69,23 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   // Mirrors client.js heartbeat behaviour so a gateway peer shows up in the
   // internal DNS zone within one heartbeat cycle. Sticky-admin policy is
   // enforced inside setHostname (admin-source writes aren't overwritten).
+  // Rate-limit hostname-change acceptance so a compromised gateway can't
+  // spam activity-log entries + DNS rebuilds on every heartbeat: only
+  // accept one hostname change per peer per minute and skip no-op writes.
   if (body.hostname && typeof body.hostname === 'string' && hasFeature('internal_dns')) {
-    try {
-      peers.setHostname(peerId, body.hostname, 'agent');
-    } catch (err) {
-      logger.debug({ peerId, err: err.message }, 'Gateway heartbeat hostname rejected');
+    const now = Date.now();
+    if (!peers._hostnameAcceptWindow) peers._hostnameAcceptWindow = new Map();
+    const last = peers._hostnameAcceptWindow.get(peerId) || 0;
+    if (now - last >= 60 * 1000) {
+      try {
+        const row = peers.getById ? peers.getById(peerId) : null;
+        if (!row || row.hostname !== body.hostname) {
+          peers.setHostname(peerId, body.hostname, 'agent');
+          peers._hostnameAcceptWindow.set(peerId, now);
+        }
+      } catch (err) {
+        logger.debug({ peerId, err: err.message }, 'Gateway heartbeat hostname rejected');
+      }
     }
   }
 

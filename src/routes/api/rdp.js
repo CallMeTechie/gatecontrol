@@ -332,6 +332,18 @@ router.post('/:id/wol', async (req, res) => {
     if (!route.wol_enabled || !route.wol_mac_address) {
       return res.status(400).json({ ok: false, error: req.t('error.rdp.wol_not_configured') });
     }
+    // For gateway-routed RDP targets the host lives on the gateway's LAN,
+    // not on the server's LAN. A local UDP broadcast from the server
+    // never reaches it, so delegate to the companion's /api/wol endpoint
+    // and let the gateway send the magic packet on the right network.
+    if (route.access_mode === 'gateway' && route.gateway_peer_id) {
+      const gateways = require('../../services/gateways');
+      await gateways.notifyWol(route.gateway_peer_id, {
+        mac: route.wol_mac_address,
+        lan_host: route.host,
+      });
+      return res.json({ ok: true, message: 'Magic packet sent via gateway' });
+    }
     await wol.sendMagicPacket(route.wol_mac_address);
     res.json({ ok: true, message: 'Magic packet sent' });
   } catch (err) {

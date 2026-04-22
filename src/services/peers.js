@@ -246,6 +246,17 @@ async function remove(id) {
 
   // Unlink routes pointing to this peer
   db.prepare('UPDATE routes SET peer_id = NULL WHERE peer_id = ?').run(id);
+  // target_peer_id has no FK (SQLite ALTER TABLE ADD COLUMN drops the
+  // REFERENCES clause), so manually disable and unlink gateway-routed
+  // targets that pointed at this peer. Leaving them enabled would
+  // produce broken Caddy config (empty upstream) after sync.
+  db.prepare("UPDATE routes SET target_peer_id = NULL, enabled = 0 WHERE target_peer_id = ? AND target_kind = 'gateway'").run(id);
+  // Drop state-machine cache for this gateway so a later peer reusing
+  // the id (unlikely but possible) doesn't start with stale transitions.
+  try {
+    const gw = require('./gateways');
+    if (gw && gw._smCache && typeof gw._smCache.delete === 'function') gw._smCache.delete(id);
+  } catch {}
 
   await rewriteWgConfig();
 
@@ -457,9 +468,20 @@ PersistentKeepalive = ${peer.persistent_keepalive || 25}
 }
 
 /**
- * Rewrite wg0.conf from database and sync with running interface
+ * Serialize rewriteWgConfig() so two concurrent peer mutations can't race
+ * each other between the SELECT, writeFile, and wg syncconf — a late
+ * second writer could otherwise clobber the first's state or install a
+ * DB-inconsistent wg0.conf. Callers chain onto the in-flight promise.
  */
+let _wgRewriteChain = Promise.resolve();
+
 async function rewriteWgConfig() {
+  const task = _wgRewriteChain.then(() => _rewriteWgConfigInner()).catch(() => _rewriteWgConfigInner());
+  _wgRewriteChain = task;
+  return task;
+}
+
+async function _rewriteWgConfigInner() {
   const db = getDb();
   const peers = db.prepare('SELECT * FROM peers WHERE enabled = 1').all();
 

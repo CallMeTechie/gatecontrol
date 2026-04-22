@@ -59,8 +59,21 @@ function validateRdpRoute(data, isUpdate = false) {
   if (data.access_mode === 'gateway') {
     if (data.gateway_peer_id === undefined || data.gateway_peer_id === null) {
       errors.gateway_peer_id = 'Gateway peer is required for access_mode=gateway';
-    } else if (!Number.isInteger(parseInt(data.gateway_peer_id, 10))) {
-      errors.gateway_peer_id = 'Gateway peer id must be an integer';
+    } else {
+      const peerId = parseInt(data.gateway_peer_id, 10);
+      if (!Number.isInteger(peerId)) {
+        errors.gateway_peer_id = 'Gateway peer id must be an integer';
+      } else {
+        // Referenced peer must actually be a gateway-peer; otherwise the
+        // L4 auto-link / WoL push / config-push flows all fail at runtime
+        // with a cryptic error instead of this clear config-time message.
+        const row = getDb().prepare('SELECT peer_type FROM peers WHERE id = ?').get(peerId);
+        if (!row) {
+          errors.gateway_peer_id = 'Gateway peer not found';
+        } else if (row.peer_type !== 'gateway') {
+          errors.gateway_peer_id = 'Referenced peer is not a gateway peer';
+        }
+      }
     }
     if (data.gateway_listen_port !== undefined && data.gateway_listen_port !== null) {
       const p = parseInt(data.gateway_listen_port, 10);
