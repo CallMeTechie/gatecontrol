@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const logger = require('../../utils/logger');
 const { getSmtpSettings, saveSmtpSettings, sendTestEmail } = require('../../services/email');
 
 const router = Router();
@@ -20,7 +21,7 @@ router.get('/settings', (req, res) => {
         hasPassword: !!settings.passwordEncrypted,
       },
     });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'smtp handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // PUT /api/smtp/settings — save SMTP settings
@@ -45,7 +46,7 @@ router.put('/settings', (req, res) => {
 
     saveSmtpSettings({ host, port: portNum, user, password, from, secure });
     res.json({ ok: true });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'smtp handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // POST /api/smtp/test — send a test email
@@ -59,7 +60,7 @@ router.post('/test', (req, res) => {
 
     await sendTestEmail(email);
     res.json({ ok: true });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'smtp handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 module.exports = router;

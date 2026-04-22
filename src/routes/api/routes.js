@@ -617,7 +617,7 @@ router.post('/:id/check', async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error({ error: err.message }, 'Manual check failed');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

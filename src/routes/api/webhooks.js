@@ -2,7 +2,7 @@
 
 const { Router } = require('express');
 const webhooks = require('../../services/webhook');
-const { validateWebhookUrl } = webhooks;
+const { validateWebhookUrl, validateResolvedIps } = webhooks;
 const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
 const { requireFeature } = require('../../middleware/license');
@@ -99,6 +99,11 @@ router.post('/:id/test', async (req, res) => {
     if (!wh) return res.status(404).json({ ok: false, error: req.t('error.webhooks.not_found') });
 
     validateWebhookUrl(wh.url);
+    // Block SSRF / DNS-rebinding: the regular notify() path calls
+    // validateResolvedIps before fetch, but the test endpoint had
+    // skipped this, so an admin-created webhook pointing at evil.com
+    // could resolve to 127.0.0.1 and POST into local services.
+    await validateResolvedIps(new URL(wh.url).hostname);
 
     const payload = JSON.stringify({
       event: 'webhook_test',

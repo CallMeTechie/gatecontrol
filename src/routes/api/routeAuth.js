@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const logger = require('../../utils/logger');
 const { getDb } = require('../../db/connection');
 const { syncToCaddy } = require('../../services/routes');
 const {
@@ -36,7 +37,7 @@ router.get('/', (req, res) => {
         has_totp: !!totp_secret_encrypted,
       },
     });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'route-auth handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // POST /api/routes/:id/auth — create or update auth config
@@ -139,7 +140,7 @@ router.post('/', requireFeature('route_auth'), (req, res) => {
         has_totp: !!totp_secret_encrypted,
       },
     });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'route-auth handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // DELETE /api/routes/:id/auth — delete auth config
@@ -153,7 +154,7 @@ router.delete('/', (req, res) => {
       require('../../utils/logger').warn({ err: syncErr }, 'Caddy sync failed after route auth delete');
     }
     res.json({ ok: true });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'route-auth handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // POST /api/routes/:id/auth/totp-setup — generate a new TOTP secret
@@ -169,7 +170,7 @@ router.post('/totp-setup', (req, res) => {
 
     const { secret, uri } = generateTotpSecret(route.domain);
     res.json({ ok: true, data: { secret, uri } });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'route-auth handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 // POST /api/routes/:id/auth/totp-verify — verify a TOTP token against a plain secret
@@ -185,7 +186,7 @@ router.post('/totp-verify', (req, res) => {
     const encryptedSecret = encrypt(secret);
     const valid = verifyTotp(encryptedSecret, token);
     res.json({ ok: true, data: { valid } });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+  })().catch((err) => { logger.error({ err: err.message }, 'route-auth handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });
 
 module.exports = router;

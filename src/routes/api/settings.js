@@ -509,7 +509,8 @@ router.post('/ip2location/test', async (req, res) => {
     const result = await testLookup(ip.startsWith('::ffff:') ? ip.slice(7) : ip);
     res.json({ ok: true, data: result });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    logger.error({ err: err.message }, 'ip2location test failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

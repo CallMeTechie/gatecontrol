@@ -66,7 +66,7 @@ router.post('/refresh', async (req, res) => {
     res.json({ ok: true, ...license.getLicenseInfo() });
   } catch (err) {
     activity.log('license_refresh_failed', `License refresh failed: ${err.message}`, { severity: 'warning' });
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

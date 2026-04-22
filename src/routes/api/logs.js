@@ -59,9 +59,16 @@ router.get('/access', async (req, res) => {
 });
 
 // ─── CSV helper ───────────────────────────────────
+// Neutralize Excel/Sheets formula-injection. User-agents and URIs come from
+// unauthenticated public HTTP traffic, so a crafted request header can land
+// as `=IMPORTXML(...)` in a CSV cell and exfiltrate data when the admin
+// opens the export. Prefix the cell with a single quote so the spreadsheet
+// treats it as literal text.
+const FORMULA_TRIGGERS = /^[=+\-@\t\r]/;
 function escapeCsvField(value) {
   if (value == null) return '';
-  const str = String(value);
+  let str = String(value);
+  if (FORMULA_TRIGGERS.test(str)) str = "'" + str;
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return '"' + str.replace(/"/g, '""') + '"';
   }

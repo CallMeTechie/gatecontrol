@@ -259,4 +259,5 @@ module.exports = {
   toggle,
   notify,
   validateWebhookUrl,
+  validateResolvedIps,
 };

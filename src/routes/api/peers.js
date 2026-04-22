@@ -361,7 +361,7 @@ router.post('/:id/gateway-env/rotate', (req, res) => {
       return res.status(404).json({ ok: false, error: 'not_a_gateway' });
     }
     logger.error({ error: err.message, peerId }, 'Failed to rotate gateway tokens');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

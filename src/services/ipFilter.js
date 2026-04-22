@@ -92,6 +92,10 @@ async function checkAccess(routeId, clientIp) {
   }
 
   if (!Array.isArray(rules) || rules.length === 0) {
+    // Fail-closed for whitelist: an empty list means "only allow these",
+    // so allowing everything would be a Security surprise. Blacklist with
+    // no rules keeps the historical allow-all behaviour.
+    if (mode === 'whitelist') return { allowed: false, reason: 'empty_whitelist' };
     return { allowed: true, reason: 'no_rules' };
   }
 

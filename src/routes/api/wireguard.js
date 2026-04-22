@@ -22,9 +22,25 @@ router.get('/status', async (req, res) => {
 
 /**
  * POST /api/wg/restart
+ * Token auth is rejected here: a stolen `system`-scoped token could otherwise
+ * loop-kick the WG interface and DoS every peer. Admin session only.
+ * Session users additionally get a 1/min rate-limit key so a compromised
+ * session cannot spam-restart.
  */
+const _wgRestartWindow = new Map();
 router.post('/restart', async (req, res) => {
   try {
+    if (req.tokenAuth) {
+      return res.status(403).json({ ok: false, error: req.t('error.wireguard.restart') });
+    }
+    const key = `session:${req.session?.userId || req.ip}`;
+    const now = Date.now();
+    const last = _wgRestartWindow.get(key) || 0;
+    if (now - last < 60 * 1000) {
+      return res.status(429).json({ ok: false, error: req.t('error.wireguard.restart') });
+    }
+    _wgRestartWindow.set(key, now);
+
     const success = await wg.restart();
     activity.log('wg_restart', 'WireGuard interface restarted', {
       source: 'admin',

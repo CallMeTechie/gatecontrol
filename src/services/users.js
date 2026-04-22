@@ -194,14 +194,25 @@ function update(id, data) {
   const values = [];
 
   if (data.displayName !== undefined) {
+    if (typeof data.displayName !== 'string' || data.displayName.length > 100) {
+      throw new Error('display_name must be a string of at most 100 characters');
+    }
     fields.push('display_name = ?');
     values.push(data.displayName);
   }
   if (data.email !== undefined) {
+    if (data.email !== null && (typeof data.email !== 'string' || data.email.length > 255)) {
+      throw new Error('email must be a string of at most 255 characters');
+    }
     fields.push('email = ?');
     values.push(data.email);
   }
   if (data.role !== undefined) {
+    // Whitelist is deliberately small — unknown roles map to an empty scope
+    // set in getAllowedScopes, which is an easy way to brick an account.
+    if (!['admin', 'user'].includes(data.role)) {
+      throw new Error('role must be "admin" or "user"');
+    }
     fields.push('role = ?');
     values.push(data.role);
   }
