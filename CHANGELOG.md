@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.5] — 2026-04-22
+
+### Fixes
+- close 8 license-gate UX gaps flagged by audit
+
+---
+
 ## [1.50.4] — 2026-04-22
 
 ### Fixes
