@@ -2732,6 +2732,11 @@
         document.getElementById('batch-delete-routes').disabled = false;
       } else {
         batchCountEl.textContent = GC.t['batch.none_selected'] || 'Select items...';
+        // Strip the ' ({{count}})' placeholder so the button labels don't
+        // leak raw template syntax while nothing is selected.
+        document.getElementById('batch-enable-routes').textContent = (GC.t['batch.enable'] || 'Enable').replace(' ({{count}})', '').replace('({{count}})', '');
+        document.getElementById('batch-disable-routes').textContent = (GC.t['batch.disable'] || 'Disable').replace(' ({{count}})', '').replace('({{count}})', '');
+        document.getElementById('batch-delete-routes').textContent = (GC.t['batch.delete'] || 'Delete').replace(' ({{count}})', '').replace('({{count}})', '');
         document.getElementById('batch-enable-routes').disabled = true;
         document.getElementById('batch-disable-routes').disabled = true;
         document.getElementById('batch-delete-routes').disabled = true;
