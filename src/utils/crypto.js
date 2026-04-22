@@ -297,26 +297,32 @@ function privateKeyDecrypt(ciphertext) {
 }
 
 /**
- * Rotate the master encryption key. Placeholder implementation: for the
- * home-gateway-companion feature we only need the side-effect of marking all
- * gateway_meta rows `needs_repair=1` so the admin re-pairs each gateway with
- * fresh push-tokens encrypted under the new key.
+ * Mark every gateway as needing re-pairing. Intended to be called by the
+ * operator AFTER manually rotating GC_ENCRYPTION_KEY — `push_token_encrypted`
+ * on gateway_meta was encrypted under the old key and can no longer be
+ * decrypted, so each gateway must be re-paired to receive a fresh push
+ * token under the new key.
  *
- * Full re-encryption of peer keys is out of scope for Plan 2 and would be
- * implemented here alongside key versioning in a dedicated rotation workflow.
+ * This function does NOT perform a key rotation. It does not re-encrypt any
+ * existing ciphertext (peer private keys, PSKs, RDP credentials, SMTP
+ * password, TOTP secrets). A real rotation would need to decrypt with the
+ * old key and re-encrypt with the new one in a single transaction; that is
+ * tracked as a separate workflow.
  */
-function rotateMasterKey() {
+function markGatewaysForRepair() {
   const { getDb } = require('../db/connection');
   const logger = require('./logger');
   const db = getDb();
 
-  // Mark all gateways as needing re-pairing — push_token_encrypted was
-  // encrypted under the old master key and can't be decrypted after rotation.
   db.prepare('UPDATE gateway_meta SET needs_repair=1').run();
 
   const count = db.prepare('SELECT COUNT(*) AS n FROM gateway_meta').get().n;
-  logger.warn({ count }, 'Master key rotated — all gateways marked needs_repair');
+  logger.warn({ count }, 'All gateways marked needs_repair (post key rotation)');
 }
+
+// Backwards-compat alias: previously misnamed. Keep exported so the companion
+// repair workflow continues to work for callers still using the old name.
+const rotateMasterKey = markGatewaysForRepair;
 
 module.exports = {
   generateKeyPair,
@@ -331,4 +337,5 @@ module.exports = {
   privateKeyDecrypt,
   getOrCreateKeypair,
   rotateMasterKey,
+  markGatewaysForRepair,
 };

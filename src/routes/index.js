@@ -11,7 +11,21 @@ const express = require('express');
 const router = Router();
 
 // ─── Branding assets (public, no auth) ─────────────
-router.use('/branding', express.static('/data/branding', { maxAge: '1d' }));
+// Only serves whitelisted image extensions to prevent stored-XSS if a file slips past upload validation.
+const path = require('node:path');
+const BRANDING_ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+router.use('/branding', (req, res, next) => {
+  const ext = path.extname(req.path).toLowerCase();
+  if (!BRANDING_ALLOWED_EXT.has(ext)) return res.status(404).end();
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+  next();
+}, express.static('/data/branding', {
+  maxAge: '1d',
+  dotfiles: 'deny',
+  index: false,
+  fallthrough: false,
+}));
 
 // ─── Prometheus metrics (token auth or session) ────
 router.get('/metrics', async (req, res) => {

@@ -179,6 +179,12 @@ function isInMaintenanceWindow(routeId) {
 function parseMaintenanceActive(schedule) {
   if (!schedule) return false;
 
+  // Backwards compatibility: older rows were JSON.stringify'd, so the string
+  // is wrapped in double-quotes. Unwrap it so the regex parses cleanly.
+  if (typeof schedule === 'string' && schedule.startsWith('"') && schedule.endsWith('"')) {
+    try { schedule = JSON.parse(schedule); } catch {}
+  }
+
   const now = new Date();
   const dayIndex = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -343,7 +349,7 @@ async function create(data) {
     data.wol_enabled ? 1 : 0,
     data.wol_mac_address || null,
     data.maintenance_enabled ? 1 : 0,
-    data.maintenance_schedule ? JSON.stringify(data.maintenance_schedule) : null,
+    data.maintenance_schedule ? (typeof data.maintenance_schedule === 'string' ? data.maintenance_schedule : JSON.stringify(data.maintenance_schedule)) : null,
     data.sharing_enabled ? 1 : 0,
     data.sharing_mode || 'view',
     data.sharing_require_consent !== undefined ? (data.sharing_require_consent ? 1 : 0) : 1,
@@ -516,7 +522,7 @@ async function update(id, data) {
 
   if (data.maintenance_schedule !== undefined) {
     sets.push('maintenance_schedule = ?');
-    values.push(data.maintenance_schedule ? JSON.stringify(data.maintenance_schedule) : null);
+    values.push(data.maintenance_schedule ? (typeof data.maintenance_schedule === 'string' ? data.maintenance_schedule : JSON.stringify(data.maintenance_schedule)) : null);
   }
   if (data.token_ids !== undefined) {
     sets.push('token_ids = ?');
@@ -756,31 +762,38 @@ function clearCredentials(id) {
 
 // --- Token-filtered access -------------------------------------
 
+// Centralized access-check used by both the list endpoint (`getForToken`)
+// and the direct-by-id endpoints (`/client/rdp/:id/connect`, `/status`,
+// `/session`). Keep the priority order identical everywhere so a user who
+// cannot see a route in the list also cannot reach it via a known id.
+function canAccessRoute(route, tokenId, userId) {
+  if (!route) return false;
+  // 1. user_ids set → user-level access control (priority)
+  if (route.user_ids) {
+    try {
+      const allowed = JSON.parse(route.user_ids);
+      if (Array.isArray(allowed) && allowed.length > 0) {
+        return userId ? allowed.includes(userId) : false;
+      }
+    } catch {}
+  }
+  // 2. token_ids set → legacy token-level access control
+  if (route.token_ids) {
+    try {
+      const allowed = JSON.parse(route.token_ids);
+      if (Array.isArray(allowed) && allowed.length > 0) {
+        return tokenId ? allowed.includes(tokenId) : false;
+      }
+    } catch {}
+  }
+  // 3. No restrictions → visible to all
+  return true;
+}
+
 function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
-  return routes.filter(r => {
-    // 1. user_ids set → user-level access control (priority)
-    if (r.user_ids) {
-      try {
-        const allowed = JSON.parse(r.user_ids);
-        if (Array.isArray(allowed) && allowed.length > 0) {
-          return userId ? allowed.includes(userId) : false;
-        }
-      } catch {}
-    }
-    // 2. token_ids set → legacy token-level access control
-    if (r.token_ids) {
-      try {
-        const allowed = JSON.parse(r.token_ids);
-        if (Array.isArray(allowed) && allowed.length > 0) {
-          return allowed.includes(tokenId);
-        }
-      } catch {}
-    }
-    // 3. No restrictions → visible to all
-    return true;
-  }).map(stripSensitive);
+  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(stripSensitive);
 }
 
 module.exports = {
@@ -796,6 +809,7 @@ module.exports = {
   setCredentials,
   clearCredentials,
   getForToken,
+  canAccessRoute,
   decryptCredentials,
   validateRdpRoute,
   isInMaintenanceWindow,

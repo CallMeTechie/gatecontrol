@@ -689,11 +689,16 @@ router.get('/rdp/:id/status', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
     }
     const id = parseInt(req.params.id, 10);
+    const route = rdpService.getById(id);
+    if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
+    if (!rdpService.canAccessRoute(route, req.tokenId, req.tokenUserId)) {
+      return res.status(403).json({ ok: false, error: 'Not authorized for this RDP route' });
+    }
     const result = await rdpMonitor.checkRouteById(id);
     res.json({ ok: true, status: { online: result.online, responseTime: result.responseTime, lastCheck: result.lastCheck } });
   } catch (err) {
     logger.error({ error: err.message }, 'Client RDP status check failed');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: 'Status check failed' });
   }
 });
 
@@ -712,6 +717,11 @@ router.get('/rdp/:id/connect', (req, res) => {
     const route = rdpService.getById(id, true);
     if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
 
+    // Disabled routes must not hand out credentials, even if the id is guessed.
+    if (!route.enabled) {
+      return res.status(403).json({ ok: false, error: 'RDP route is disabled' });
+    }
+
     // Self-guard: a peer cannot RDP into itself. Mirrors the list
     // filter in GET /rdp — covers stale client caches that still
     // remember a self-route id from before the server-side filter.
@@ -725,14 +735,11 @@ router.get('/rdp/:id/connect', (req, res) => {
       }
     }
 
-    // Check token access
-    if (route.token_ids) {
-      try {
-        const allowed = JSON.parse(route.token_ids);
-        if (Array.isArray(allowed) && !allowed.includes(req.tokenId)) {
-          return res.status(403).json({ ok: false, error: 'Not authorized for this RDP route' });
-        }
-      } catch {}
+    // Centralized ACL: user_ids takes priority over token_ids (same order
+    // as list endpoint). Must stay aligned — otherwise a user sees no
+    // route in the list but can guess the id and get credentials.
+    if (!rdpService.canAccessRoute(route, req.tokenId, req.tokenUserId)) {
+      return res.status(403).json({ ok: false, error: 'Not authorized for this RDP route' });
     }
 
     // Maintenance window check
@@ -872,6 +879,11 @@ router.post('/rdp/:id/session', (req, res) => {
     }
 
     const id = parseInt(req.params.id, 10);
+    const route = rdpService.getById(id);
+    if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
+    if (!rdpService.canAccessRoute(route, req.tokenId, req.tokenUserId)) {
+      return res.status(403).json({ ok: false, error: 'Not authorized for this RDP route' });
+    }
     const token = req.tokenAuth ? tokens.getById(req.tokenId) : null;
 
     const session = rdpSessions.startSession(id, {
@@ -900,9 +912,15 @@ router.patch('/rdp/:id/session', (req, res) => {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId required' });
 
-    rdpSessions.heartbeatSession(parseInt(sessionId, 10));
+    rdpSessions.heartbeatSession(parseInt(sessionId, 10), {
+      tokenId: req.tokenId || null,
+      peerId: req.tokenPeerId || null,
+    });
     res.json({ ok: true });
   } catch (err) {
+    if (err.message === 'Session not owned by caller') {
+      return res.status(403).json({ ok: false, error: 'Not your session' });
+    }
     if (err.message === 'Session not found' || err.message === 'Session is not active') {
       return res.status(404).json({ ok: false, error: err.message });
     }
@@ -918,20 +936,28 @@ router.delete('/rdp/:id/session', (req, res) => {
   try {
     const { sessionId, endReason } = req.body || {};
     const routeId = parseInt(req.params.id, 10);
+    const ownerCheck = {
+      tokenId: req.tokenId || null,
+      peerId: req.tokenPeerId || null,
+    };
     let resolvedSessionId = sessionId ? parseInt(sessionId, 10) : null;
 
-    // Fallback: find active session by routeId + tokenId if no sessionId provided
+    // Fallback: find the most recent active session owned by THIS caller.
+    // Without the owner filter any client with rdp scope could terminate
+    // another user's active session by calling DELETE without a body.
     if (!resolvedSessionId) {
-      const tokenId = req.tokenRecord?.id;
-      const activeSession = rdpSessions.findActiveSession(routeId, tokenId);
+      const activeSession = rdpSessions.findActiveSession(routeId, ownerCheck);
       if (activeSession) resolvedSessionId = activeSession.id;
     }
 
     if (!resolvedSessionId) return res.status(400).json({ ok: false, error: 'No active session found' });
 
-    const result = rdpSessions.endSession(resolvedSessionId, endReason || 'normal');
+    const result = rdpSessions.endSession(resolvedSessionId, endReason || 'normal', ownerCheck);
     res.json({ ok: true, session: result });
   } catch (err) {
+    if (err.message === 'Session not owned by caller') {
+      return res.status(403).json({ ok: false, error: 'Not your session' });
+    }
     if (err.message === 'Session not found') {
       return res.status(404).json({ ok: false, error: 'Session not found' });
     }

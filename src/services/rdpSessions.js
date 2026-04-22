@@ -23,22 +23,30 @@ function startSession(rdpRouteId, { tokenId, tokenName, peerId, clientIp }) {
   return { id: sessionId, status: 'active', started_at: new Date().toISOString() };
 }
 
-function heartbeatSession(sessionId) {
+function heartbeatSession(sessionId, ownerCheck = null) {
   const db = getDb();
-  const session = db.prepare('SELECT id, status FROM rdp_sessions WHERE id = ?').get(sessionId);
+  const session = db.prepare('SELECT id, status, token_id, peer_id FROM rdp_sessions WHERE id = ?').get(sessionId);
   if (!session) throw new Error('Session not found');
+  if (ownerCheck && !_sessionOwnedBy(session, ownerCheck)) throw new Error('Session not owned by caller');
   if (session.status !== 'active') throw new Error('Session is not active');
   db.prepare("UPDATE rdp_sessions SET last_heartbeat = datetime('now') WHERE id = ?").run(sessionId);
   return true;
 }
 
-function endSession(sessionId, endReason = 'normal') {
+function _sessionOwnedBy(session, { tokenId, peerId }) {
+  if (tokenId != null && session.token_id != null && session.token_id === tokenId) return true;
+  if (peerId != null && session.peer_id != null && session.peer_id === peerId) return true;
+  return false;
+}
+
+function endSession(sessionId, endReason = 'normal', ownerCheck = null) {
   const db = getDb();
   const session = db.prepare(`
-    SELECT s.id, s.rdp_route_id, s.token_name, s.started_at, r.name as route_name
+    SELECT s.id, s.rdp_route_id, s.token_id, s.peer_id, s.token_name, s.started_at, r.name as route_name
     FROM rdp_sessions s JOIN rdp_routes r ON r.id = s.rdp_route_id WHERE s.id = ?
   `).get(sessionId);
   if (!session) throw new Error('Session not found');
+  if (ownerCheck && !_sessionOwnedBy(session, ownerCheck)) throw new Error('Session not owned by caller');
   const startedAt = new Date(session.started_at + 'Z');
   const durationSeconds = Math.floor((Date.now() - startedAt.getTime()) / 1000);
   db.prepare(`UPDATE rdp_sessions SET status = 'ended', ended_at = datetime('now'), duration_seconds = ?, end_reason = ? WHERE id = ?`).run(durationSeconds, endReason, sessionId);
@@ -81,12 +89,19 @@ function getGlobalHistoryCount({ status, since, until } = {}) {
   return db.prepare(query).get(...params).count;
 }
 
-function findActiveSession(routeId, tokenId) {
+function findActiveSession(routeId, { tokenId = null, peerId = null } = {}) {
   const db = getDb();
-  if (tokenId) {
+  if (tokenId != null) {
     return db.prepare("SELECT * FROM rdp_sessions WHERE rdp_route_id = ? AND token_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1").get(routeId, tokenId);
   }
-  return db.prepare("SELECT * FROM rdp_sessions WHERE rdp_route_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1").get(routeId);
+  if (peerId != null) {
+    return db.prepare("SELECT * FROM rdp_sessions WHERE rdp_route_id = ? AND peer_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1").get(routeId, peerId);
+  }
+  // Intentionally no owner-less fallback: callers that need to pick any
+  // active session must pass { admin: true } (not implemented here) —
+  // unauthenticated scope-wide lookup would otherwise allow cross-user
+  // session kills. Returning null forces the caller to supply owner info.
+  return null;
 }
 
 function getActiveSessionCounts() {

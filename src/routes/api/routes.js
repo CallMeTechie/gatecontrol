@@ -15,8 +15,28 @@ const { getDb } = require('../../db/connection');
 const multer = require('multer');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 
 const BRANDING_DIR = '/data/branding';
+const ALLOWED_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+const ALLOWED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+function verifyImageMagic(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(12);
+    fs.readSync(fd, buf, 0, 12, 0);
+    fs.closeSync(fd);
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpeg';
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'gif';
+    if (buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') return 'webp';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const logoUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
@@ -24,16 +44,42 @@ const logoUpload = multer({
       cb(null, BRANDING_DIR);
     },
     filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || '.png';
-      cb(null, `${req.params.id}-${Date.now()}${ext}`);
+      const ext = path.extname(file.originalname).toLowerCase();
+      const safeExt = ALLOWED_IMAGE_EXT.has(ext) ? ext : '.png';
+      cb(null, `${crypto.randomUUID()}${safeExt}`);
     },
   }),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'));
+    if (!ALLOWED_IMAGE_MIME.has((file.mimetype || '').toLowerCase())) {
+      return cb(new Error('Only PNG, JPEG, WEBP, GIF images are allowed'));
+    }
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_IMAGE_EXT.has(ext)) {
+      return cb(new Error('Only PNG, JPEG, WEBP, GIF images are allowed'));
+    }
+    cb(null, true);
   },
 });
+
+function validateBrandingUpload(req, res) {
+  if (!req.file) {
+    res.status(400).json({ ok: false, error: 'No file uploaded' });
+    return false;
+  }
+  const magic = verifyImageMagic(req.file.path);
+  if (!magic) {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    res.status(400).json({ ok: false, error: 'Invalid or unsupported image' });
+    return false;
+  }
+  if (!/^\d+$/.test(String(req.params.id))) {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    res.status(400).json({ ok: false, error: 'Invalid route id' });
+    return false;
+  }
+  return true;
+}
 
 const router = Router();
 
@@ -622,12 +668,15 @@ router.post('/:id/circuit-breaker/reset', requireFeature('circuit_breaker'), asy
  */
 router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding'), logoUpload.single('logo'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
+    if (!validateBrandingUpload(req, res)) return;
 
     const { getDb } = require('../../db/connection');
     const db = getDb();
     const route = db.prepare('SELECT branding_logo FROM routes WHERE id = ?').get(req.params.id);
-    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+    if (!route) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(404).json({ ok: false, error: 'Route not found' });
+    }
 
     // Delete old logo if exists
     if (route.branding_logo) {
@@ -641,7 +690,7 @@ router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding
     res.json({ ok: true, filename: req.file.filename });
   } catch (err) {
     logger.error({ error: err.message }, 'Logo upload failed');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 
@@ -665,21 +714,24 @@ router.delete('/:id/branding/logo', (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 
 /**
  * POST /api/routes/:id/branding/bg-image — Upload background image
  */
-router.post('/:id/branding/bg-image', uploadLimiter, logoUpload.single('bg_image'), (req, res) => {
+router.post('/:id/branding/bg-image', uploadLimiter, requireFeature('custom_branding'), logoUpload.single('bg_image'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded' });
+    if (!validateBrandingUpload(req, res)) return;
 
     const { getDb } = require('../../db/connection');
     const db = getDb();
     const route = db.prepare('SELECT branding_bg_image FROM routes WHERE id = ?').get(req.params.id);
-    if (!route) return res.status(404).json({ ok: false, error: 'Route not found' });
+    if (!route) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(404).json({ ok: false, error: 'Route not found' });
+    }
 
     if (route.branding_bg_image) {
       const oldPath = path.join(BRANDING_DIR, route.branding_bg_image);
@@ -692,7 +744,7 @@ router.post('/:id/branding/bg-image', uploadLimiter, logoUpload.single('bg_image
     res.json({ ok: true, filename: req.file.filename });
   } catch (err) {
     logger.error({ error: err.message }, 'BG image upload failed');
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 
@@ -716,7 +768,7 @@ router.delete('/:id/branding/bg-image', (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
 

@@ -44,6 +44,19 @@ function createApp() {
   }));
 
   // ─── Body parsing ────────────────────────────────
+  // Gateway companion endpoints must stay small: heartbeats, probe
+  // results, etc. Reject oversized bodies BEFORE express.json runs,
+  // because body-parser sets req._body=true after the first parse,
+  // so a per-router express.json({ limit: '16kb' }) would be a no-op.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api/v1/gateway/')) return next();
+    const len = parseInt(req.headers['content-length'] || '0', 10);
+    const MAX_GATEWAY_BODY = 16 * 1024;
+    if (len > MAX_GATEWAY_BODY) {
+      return res.status(413).json({ ok: false, error: 'Payload too large' });
+    }
+    next();
+  });
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
   app.use(cookieParser());
