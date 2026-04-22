@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.4] — 2026-04-22
+
+### Fixes
+- wire retry_match_status + expose circuit-breaker reset
+
+---
+
 ## [1.50.3] — 2026-04-22
 
 ### Fixes
