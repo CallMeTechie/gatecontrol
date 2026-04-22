@@ -51,7 +51,7 @@ describe('backup service', () => {
 
     const result = backup.createBackup();
 
-    assert.equal(result.version, 3);
+    assert.equal(result.version, 4);
     assert.ok(result.created_at);
     assert.equal(result.data.peers.length, 1);
     assert.equal(result.data.peers[0].name, 'test-peer');
