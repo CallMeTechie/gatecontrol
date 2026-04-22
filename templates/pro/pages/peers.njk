@@ -71,28 +71,6 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:14px">
-  <div class="card-header">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-    <span class="card-header-title">{{ t('peer_groups.title') }}</span>
-  </div>
-  <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-    <div style="font-size:12px;color:var(--text-3)">{{ t('peer_groups.subtitle') }}</div>
-    <div id="peer-groups-list"></div>
-    <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
-      <div style="display:flex;gap:8px">
-        <input type="text" id="pg-name" placeholder="{{ t('peer_groups.name_placeholder') }}" style="flex:1;padding:8px 12px;font-size:12px" maxlength="100">
-        <input type="color" id="pg-color" value="#6b7280" style="width:40px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-      </div>
-      <input type="text" id="pg-desc" placeholder="{{ t('peer_groups.description_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="255">
-      <div id="pg-error" class="form-error" style="display:none"></div>
-      <button class="btn btn-primary" id="btn-add-peer-group" style="align-self:flex-start">
-        {{ t('peer_groups.add') }}
-      </button>
-    </div>
-  </div>
-</div>
-
 {% include theme + "/partials/modals/peer-add.njk" %}
 {% include theme + "/partials/modals/peer-edit.njk" %}
 {% include theme + "/partials/modals/peer-qr.njk" %}
