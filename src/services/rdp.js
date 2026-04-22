@@ -471,6 +471,21 @@ async function update(id, data) {
     throw err;
   }
 
+  // Validate the merged post-update shape: a PATCH that nulls
+  // gateway_peer_id while access_mode stays 'gateway' would otherwise
+  // be accepted here and then blow up inside _syncLinkedL4Route after
+  // the row has already been persisted.
+  const merged = { ...existing, ...data };
+  if (merged.access_mode === 'gateway') {
+    if (merged.gateway_peer_id == null) {
+      throw new Error('Gateway peer is required for access_mode=gateway');
+    }
+    const peerRow = db.prepare('SELECT peer_type FROM peers WHERE id = ?').get(parseInt(merged.gateway_peer_id, 10));
+    if (!peerRow || peerRow.peer_type !== 'gateway') {
+      throw new Error('Referenced peer is not a gateway peer');
+    }
+  }
+
   const sets = [];
   const values = [];
 

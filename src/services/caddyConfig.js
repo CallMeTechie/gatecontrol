@@ -194,18 +194,24 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       try { customHeaders = JSON.parse(route.custom_headers); } catch {}
     }
 
-    // Parse mirror targets — resolve peer IPs from peer_id
+    // Parse mirror targets — resolve peer IPs from peer_id. Cap at 5 so
+    // a backup-restored or manually-edited DB with many targets can't
+    // multiply ingress traffic unbounded on the WG tunnel.
+    const MIRROR_MAX = 5;
     let mirrorTargets = null;
     if (route.mirror_enabled && route.mirror_targets) {
       try {
         const rawMirrorTargets = JSON.parse(route.mirror_targets);
         if (Array.isArray(rawMirrorTargets)) {
-          mirrorTargets = rawMirrorTargets.map(t => {
+          mirrorTargets = rawMirrorTargets.slice(0, MIRROR_MAX).map(t => {
             if (!t.peer_id) return null;
             const mirrorPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(t.peer_id);
             if (!mirrorPeer || !mirrorPeer.enabled) return null;
             return { ip: mirrorPeer.allowed_ips.split('/')[0], port: t.port };
           }).filter(Boolean);
+          if (rawMirrorTargets.length > MIRROR_MAX) {
+            logger.warn({ routeId: route.id, got: rawMirrorTargets.length, cap: MIRROR_MAX }, 'Mirror targets exceed cap, truncating');
+          }
         }
       } catch {}
     }
