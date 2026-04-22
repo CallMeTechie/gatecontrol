@@ -695,6 +695,27 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'rdp_routes', 'gateway_peer_id'),
   },
+  {
+    // Tag registry — peer.tags remains a CSV on the peer row (unchanged),
+    // this table is the canonical list for the Tags admin card. Entries
+    // may exist without any peer having the tag yet (pre-registered).
+    // Initially seeded from existing distinct values in peers.tags by the
+    // tags service on first list() so migration stays schema-only.
+    version: 39,
+    name: 'create_tags_registry',
+    sql: `
+      CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+    `,
+    detect: (db) => {
+      const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tags'").get();
+      return !!row;
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
