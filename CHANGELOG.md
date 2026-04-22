@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.4] — 2026-04-22
+
+### Fixes
+- drop LIKE ESCAPE + use correct /api/v1 prefix in test
+
+---
+
 ## [1.47.3] — 2026-04-22
 
 ### Fixes
