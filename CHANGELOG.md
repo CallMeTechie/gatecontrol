@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.3] — 2026-04-22
+
+### Fixes
+- strip {{count}} placeholder from batch buttons when empty
+
+---
+
 ## [1.50.2] — 2026-04-22
 
 ### Änderungen
