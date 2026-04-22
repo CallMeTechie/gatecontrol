@@ -132,10 +132,12 @@ function remove(rawName) {
 
   const removedRegistry = db.prepare('DELETE FROM tags WHERE name = ? COLLATE NOCASE').run(name).changes > 0;
 
-  const likePattern = '%' + name.replace(/[\\%_]/g, (m) => '\\' + m) + '%';
+  // Scan every peer row — we need token-accurate matching in JS anyway,
+  // and SQL LIKE with ESCAPE is awkward when tag names may contain '%' or
+  // '_'. The table is small (≤ number of peers).
   const candidates = db.prepare(
-    "SELECT id, tags FROM peers WHERE tags LIKE ? ESCAPE '\\\\'"
-  ).all(likePattern);
+    'SELECT id, tags FROM peers WHERE tags IS NOT NULL AND tags != \'\''
+  ).all();
 
   const update = db.prepare('UPDATE peers SET tags = ? WHERE id = ?');
   let peersAffected = 0;
