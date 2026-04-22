@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.2] — 2026-04-22
+
+### Fixes
+- list all routes with a domain, not only https_enabled=1
+
+---
+
 ## [1.47.1] — 2026-04-22
 
 ### Änderungen
