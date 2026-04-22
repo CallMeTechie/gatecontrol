@@ -505,6 +505,8 @@
     document.getElementById('add-peer-expires').value = '';
     document.getElementById('add-peer-expires-date').value = '';
     document.getElementById('add-peer-expires-date').style.display = 'none';
+    var addHostnameEl = document.getElementById('add-peer-hostname');
+    if (addHostnameEl) addHostnameEl.value = '';
     if (isGatewayCb) {
       isGatewayCb.checked = false;
       var gwFields = document.getElementById('add-peer-gateway-fields');
@@ -545,6 +547,29 @@
       var data = await api.post('/api/peers', payload);
       if (data.ok) {
         clearFieldErrors();
+
+        // Hostname is a separate, license-gated endpoint. Only call when the
+        // field is visible AND the admin entered a value.
+        var addHostnameInput = document.getElementById('add-peer-hostname');
+        var addHostnameVal = addHostnameInput ? addHostnameInput.value.trim() : '';
+        if (addHostnameInput && addHostnameVal && data.peer && data.peer.id) {
+          try {
+            var hnRes = await api.patch('/api/peers/' + data.peer.id + '/hostname', { hostname: addHostnameVal });
+            if (!hnRes.ok) {
+              showError('add-peer-error', hnRes.error || 'Hostname update failed');
+              // Peer is created — don't roll back, just surface the hostname error.
+              loadPeers();
+              loadGroups();
+              return;
+            }
+          } catch (hnErr) {
+            showError('add-peer-error', hnErr.message);
+            loadPeers();
+            loadGroups();
+            return;
+          }
+        }
+
         closeModal('modal-add-peer');
         if (data.gateway && data.gateway.apiToken && data.gateway.pushToken) {
           // Gateway peer created — show tokens + env-file in dedicated modal
