@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.2] — 2026-04-22
+
+### Änderungen
+- drop Gateway-Routen stat card, rename Clients → Peers
+
+---
+
 ## [1.50.1] — 2026-04-22
 
 ### Fixes
