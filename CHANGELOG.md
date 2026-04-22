@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0] — 2026-04-22
+
+### Features
+- auto-register CSV tokens on peer save + startup backfill
+
+---
+
 ## [1.47.4] — 2026-04-22
 
 ### Fixes
