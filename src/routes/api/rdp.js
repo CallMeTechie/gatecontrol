@@ -324,6 +324,7 @@ router.delete('/:id/credentials', (req, res) => {
 /**
  * POST /api/v1/rdp/:id/wol -- Send Wake-on-LAN magic packet
  */
+const _wolCooldown = new Map();
 router.post('/:id/wol', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -332,6 +333,14 @@ router.post('/:id/wol', async (req, res) => {
     if (!route.wol_enabled || !route.wol_mac_address) {
       return res.status(400).json({ ok: false, error: req.t('error.rdp.wol_not_configured') });
     }
+    // 10-second per-route cooldown: spamming magic packets doesn't wake the
+    // host faster and amplifies UDP broadcast load on the LAN.
+    const now = Date.now();
+    const last = _wolCooldown.get(id) || 0;
+    if (now - last < 10_000) {
+      return res.status(429).json({ ok: false, error: 'WoL cooldown — try again in a few seconds' });
+    }
+    _wolCooldown.set(id, now);
     // For gateway-routed RDP targets the host lives on the gateway's LAN,
     // not on the server's LAN. A local UDP broadcast from the server
     // never reaches it, so delegate to the companion's /api/wol endpoint

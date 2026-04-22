@@ -164,8 +164,18 @@ function exportCsv({ since, until, routeId } = {}) {
   if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY s.started_at DESC';
   const rows = db.prepare(query).all(...params);
+  // Quote every field, neutralize Excel formula-injection. route_name /
+  // token_name / end_reason are user-controlled — admin may paste anything
+  // into them, and client_ip could theoretically be a spoofed X-Forwarded
+  // value on some setups. Treat every cell as potentially hostile.
+  const esc = (v) => {
+    if (v == null) return '';
+    let s = String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
   const header = 'id,route_name,route_host,route_port,token_name,status,started_at,ended_at,duration_seconds,end_reason,client_ip\n';
-  const lines = rows.map(r => `${r.id},${r.route_name},${r.route_host},${r.route_port},${r.token_name || ''},${r.status},${r.started_at},${r.ended_at || ''},${r.duration_seconds || ''},${r.end_reason || ''},${r.client_ip || ''}`);
+  const lines = rows.map(r => [r.id, r.route_name, r.route_host, r.route_port, r.token_name, r.status, r.started_at, r.ended_at, r.duration_seconds, r.end_reason, r.client_ip].map(esc).join(','));
   return header + lines.join('\n');
 }
 

@@ -27,10 +27,10 @@ router.post('/activate', async (req, res) => {
   lastActivateCall = now;
 
   const { license_key, signing_key } = req.body;
-  if (!license_key) {
+  if (!license_key || typeof license_key !== 'string' || license_key.length > 4096) {
     return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.key_required') : 'License key is required' });
   }
-  if (!signing_key) {
+  if (!signing_key || typeof signing_key !== 'string' || signing_key.length > 4096) {
     return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.signing_key_required') : 'Signing key is required' });
   }
 

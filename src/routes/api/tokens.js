@@ -32,8 +32,13 @@ function validateSplitTunnelPreset(obj) {
 
 /**
  * GET /api/v1/tokens — List all tokens
+ * Token auth cannot enumerate tokens — same escalation-prevention
+ * principle as POST/DELETE. Only session-auth (admin UI) may list.
  */
 router.get('/', (req, res) => {
+  if (req.tokenAuth) {
+    return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
+  }
   try {
     const list = tokens.list();
     res.json({ ok: true, tokens: list });

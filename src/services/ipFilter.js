@@ -104,6 +104,8 @@ async function checkAccess(routeId, clientIp) {
   if (ip && ip.startsWith('::ffff:')) ip = ip.slice(7);
 
   let matchFound = false;
+  let countryLookupFailed = false;
+  const hasCountryRule = rules.some(r => r.type === 'country');
 
   for (const rule of rules) {
     let matches = false;
@@ -114,6 +116,7 @@ async function checkAccess(routeId, clientIp) {
       matches = matchesCidr(ip, rule.value);
     } else if (rule.type === 'country') {
       const country = await lookupCountry(ip);
+      if (country == null) countryLookupFailed = true;
       matches = country && country.toUpperCase() === rule.value.toUpperCase();
     }
 
@@ -128,7 +131,12 @@ async function checkAccess(routeId, clientIp) {
       ? { allowed: true, reason: 'whitelisted' }
       : { allowed: false, reason: 'not_whitelisted' };
   } else {
-    // blacklist
+    // blacklist — fail-closed when a country lookup failed while the ruleset
+    // contains country rules. Without this a missing IP2Location key (or a
+    // transient lookup failure) would flip blacklisted traffic to allowed.
+    if (!matchFound && hasCountryRule && countryLookupFailed) {
+      return { allowed: false, reason: 'country_lookup_failed' };
+    }
     return matchFound
       ? { allowed: false, reason: 'blacklisted' }
       : { allowed: true, reason: 'not_blacklisted' };

@@ -19,6 +19,33 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const router = Router();
 
+// A token with `settings` scope must not be able to perform admin-only
+// system-level actions: downloading or restoring the full DB, wiping the
+// activity log, changing account-lockout/DNS/machine-binding policy,
+// unlocking accounts, or running autobackup. These are session-only.
+const TOKEN_FORBIDDEN = [
+  /^\/backup\b/,
+  /^\/restore(\/preview)?$/,
+  /^\/clear-logs$/,
+  /^\/security$/,
+  /^\/lockout(\/|$)/,
+  /^\/dns$/,
+  /^\/machine-binding$/,
+  /^\/split-tunnel$/,
+  /^\/autobackup(\/|$)/,
+  /^\/ip2location(\/test)?$/,
+  /^\/metrics$/,
+  /^\/password$/,
+  /^\/profile$/,
+];
+router.use((req, res, next) => {
+  if (!req.tokenAuth) return next();
+  if (TOKEN_FORBIDDEN.some(rx => rx.test(req.path))) {
+    return res.status(403).json({ ok: false, error: 'Forbidden for token auth' });
+  }
+  next();
+});
+
 /**
  * GET /api/settings/profile — Get current user profile
  */
