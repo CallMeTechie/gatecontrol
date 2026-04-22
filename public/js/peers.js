@@ -592,6 +592,162 @@
   });
 
   // ─── Edit peer ───────────────────────────────────────────
+  // ─── Gateway telemetry panel (in edit-peer modal) ──────────────────
+  // Fetches the parsed last_health snapshot from the server and renders a
+  // compact two-column table (key / value). Safe-by-construction: every
+  // value is inserted via textContent; style strings are static literals.
+  function renderRow(parent, key, value, opts) {
+    if (value === undefined || value === null || value === '') return;
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;padding:2px 0;align-items:baseline';
+    var k = document.createElement('span');
+    k.style.cssText = 'color:var(--text-3);width:110px;flex-shrink:0;text-transform:uppercase;font-size:10px;letter-spacing:0.05em';
+    k.textContent = key;
+    var v = document.createElement('span');
+    v.style.cssText = 'color:var(--text-1);flex:1;word-break:break-all';
+    if (opts && opts.mute) v.style.color = 'var(--text-2)';
+    v.textContent = value;
+    row.appendChild(k); row.appendChild(v);
+    parent.appendChild(row);
+  }
+
+  function renderSectionHeader(parent, title) {
+    var h = document.createElement('div');
+    h.style.cssText = 'margin-top:8px;margin-bottom:4px;color:var(--accent);font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase';
+    h.textContent = title;
+    parent.appendChild(h);
+  }
+
+  function formatRelTime(ms) {
+    if (!ms) return null;
+    var diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (diffSec < 60) return diffSec + 's';
+    if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm';
+    if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h';
+    return Math.floor(diffSec / 86400) + 'd';
+  }
+
+  function formatUptimeSec(s) {
+    if (!s && s !== 0) return null;
+    var d = Math.floor(s / 86400);
+    var h = Math.floor((s % 86400) / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  function formatPercent(used, total) {
+    if (!total) return null;
+    return Math.round((used / total) * 100) + '%';
+  }
+
+  function paintStatusBadge(el, status) {
+    if (!el) return;
+    if (!status) { el.style.display = 'none'; return; }
+    el.textContent = status.toUpperCase();
+    el.style.display = '';
+    if (status === 'online') {
+      el.style.background = 'var(--green-lt)';
+      el.style.color = 'var(--green)';
+      el.style.border = '1px solid var(--green-bd)';
+    } else if (status === 'offline') {
+      el.style.background = 'var(--red-lt)';
+      el.style.color = 'var(--red)';
+      el.style.border = '1px solid var(--red-bd)';
+    } else {
+      el.style.background = 'var(--amber-lt)';
+      el.style.color = 'var(--amber)';
+      el.style.border = '1px solid var(--amber-bd)';
+    }
+  }
+
+  async function loadGatewayTelemetry(peerId) {
+    var wrap = document.getElementById('edit-gw-telemetry');
+    var empty = document.getElementById('edit-gw-telemetry-empty');
+    var statusBadge = document.getElementById('edit-gw-status-badge');
+    if (!wrap) return;
+    while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+    wrap.style.display = 'none';
+    if (empty) empty.style.display = 'none';
+    paintStatusBadge(statusBadge, null);
+
+    try {
+      var data = await api.get('/api/peers/' + peerId + '/gateway-info');
+      if (!data || !data.ok || !data.gateway) return;
+      var gw = data.gateway;
+      paintStatusBadge(statusBadge, gw.status);
+
+      var health = gw.health || {};
+      var tel = health.telemetry || null;
+
+      // No heartbeat received yet — nothing to render.
+      if (!gw.last_seen_at && !tel) {
+        if (empty) empty.style.display = '';
+        return;
+      }
+
+      renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_status']) || 'Status');
+      renderRow(wrap, (GC.t && GC.t['gateway_info.last_seen']) || 'Last seen',
+        gw.last_seen_at ? (formatRelTime(gw.last_seen_at) + ' ago') : '—');
+      if (typeof health.uptime_s === 'number') {
+        renderRow(wrap, (GC.t && GC.t['gateway_info.uptime']) || 'Uptime', formatUptimeSec(health.uptime_s));
+      }
+      if (typeof health.wg_handshake_age_s === 'number') {
+        renderRow(wrap, (GC.t && GC.t['gateway_info.wg_handshake']) || 'WG handshake',
+          health.wg_handshake_age_s + 's ago');
+      }
+      if (health.hostname) {
+        renderRow(wrap, (GC.t && GC.t['gateway_info.hostname']) || 'Hostname', health.hostname);
+      }
+
+      if (tel) {
+        renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_version']) || 'Versionen');
+        renderRow(wrap, 'Gateway', tel.gateway_version);
+        renderRow(wrap, 'Node', tel.node_version);
+        renderRow(wrap, 'WG-Tools', tel.wg_tools_version);
+        if (tel.os_platform) {
+          renderRow(wrap, 'OS', tel.os_platform + (tel.os_release ? ' ' + tel.os_release : '') +
+            (tel.arch ? ' · ' + tel.arch : ''));
+        }
+
+        renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_resources']) || 'Ressourcen');
+        if (tel.cpu_cores) {
+          var load = Array.isArray(tel.cpu_load_avg) ? tel.cpu_load_avg.map(function(n) { return n.toFixed(2); }).join(' · ') : '';
+          renderRow(wrap, 'CPU', tel.cpu_cores + ' cores' + (load ? ' · load ' + load : ''));
+        }
+        if (tel.mem_total) {
+          var pct = formatPercent(tel.mem_used, tel.mem_total);
+          renderRow(wrap, 'Memory',
+            window.formatBytes(tel.mem_used) + ' / ' + window.formatBytes(tel.mem_total) +
+            (pct ? ' (' + pct + ')' : ''));
+        }
+        if (tel.disk && tel.disk.total) {
+          var diskPct = formatPercent(tel.disk.used, tel.disk.total);
+          renderRow(wrap, 'Disk',
+            window.formatBytes(tel.disk.free) + ' free / ' + window.formatBytes(tel.disk.total) +
+            (diskPct ? ' (' + diskPct + ' used)' : ''));
+        }
+
+        if (tel.default_gateway_ip || (tel.dns_resolvers && tel.dns_resolvers.length)) {
+          renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_lan']) || 'LAN');
+          renderRow(wrap, 'Default GW', tel.default_gateway_ip);
+          if (Array.isArray(tel.dns_resolvers) && tel.dns_resolvers.length) {
+            renderRow(wrap, 'DNS', tel.dns_resolvers.join(', '));
+          }
+        }
+      }
+
+      wrap.style.display = '';
+    } catch (err) {
+      console.error('gateway telemetry load failed', err);
+      if (empty) {
+        empty.textContent = err.message || ((GC.t && GC.t['gateway_info.no_data']) || 'Keine Daten');
+        empty.style.display = '';
+      }
+    }
+  }
+
   async function showEditModal(id) {
     var peer = allPeers.find(function(p) { return String(p.id) === String(id); });
     if (!peer) return;
@@ -667,6 +823,8 @@
             }
           };
         }
+        // Fetch + render telemetry snapshot (versions, resources, LAN).
+        loadGatewayTelemetry(peer.id);
       } else {
         gwInfo.style.display = 'none';
       }

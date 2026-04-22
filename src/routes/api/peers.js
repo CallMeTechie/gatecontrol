@@ -281,6 +281,49 @@ router.patch('/:id/hostname', requireFeature('internal_dns'), (req, res) => {
 });
 
 /**
+ * GET /api/peers/:id/gateway-info — telemetry snapshot for a gateway peer.
+ * Returns the parsed last_health JSON (written by gateways.handleHeartbeat)
+ * alongside metadata: last_seen_at, health-state-machine status, api_port.
+ * Non-gateway peers get a 404.
+ */
+router.get('/:id/gateway-info', (req, res) => {
+  try {
+    const peer = peers.getById(req.params.id);
+    if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
+    if (peer.peer_type !== 'gateway') {
+      return res.status(404).json({ ok: false, error: 'Not a gateway peer' });
+    }
+
+    const meta = getDb().prepare(
+      'SELECT last_seen_at, last_health, api_port FROM gateway_meta WHERE peer_id = ?'
+    ).get(peer.id);
+    if (!meta) return res.status(404).json({ ok: false, error: 'Gateway meta missing' });
+
+    let health = {};
+    if (meta.last_health) {
+      try { health = JSON.parse(meta.last_health); } catch (_) { health = {}; }
+    }
+
+    const gateways = require('../../services/gateways');
+    const status = gateways.getHealthStatus(peer.id);
+
+    res.json({
+      ok: true,
+      gateway: {
+        peer_id: peer.id,
+        status,
+        api_port: meta.api_port,
+        last_seen_at: meta.last_seen_at,
+        health,
+      },
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get gateway info');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * GET /api/peers/:id/traffic — Get per-peer traffic chart data
  */
 router.get('/:id/traffic', (req, res) => {

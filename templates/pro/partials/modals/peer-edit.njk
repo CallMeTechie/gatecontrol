@@ -59,10 +59,18 @@
       </div>
       <div class="form-group" id="edit-peer-gateway-info" style="display:none">
         <label class="form-label">{{ t('peer_is_gateway') }}</label>
-        <div style="padding:10px;background:var(--bg-2);border-radius:6px;font-size:13px;line-height:1.5">
-          <span class="badge badge-gateway" style="display:inline-block;padding:2px 8px;border-radius:10px;background:#4a90e2;color:#fff;font-size:11px">GATEWAY</span>
-          <span>{{ t('peer_gateway_api_port') }}: <code id="edit-peer-api-port-display">9876</code></span>
-          <div style="margin-top:8px;font-size:11px;color:var(--text-3)">{{ t('gateway_download_warning') }}</div>
+        <div style="padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;line-height:1.5">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-gateway" style="display:inline-block;padding:2px 8px;border-radius:10px;background:#4a90e2;color:#fff;font-size:11px">GATEWAY</span>
+            <span>{{ t('peer_gateway_api_port') }}: <code id="edit-peer-api-port-display">9876</code></span>
+            <span id="edit-gw-status-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;display:none"></span>
+          </div>
+
+          {# Telemetry panel — populated on modal open via /api/peers/:id/gateway-info #}
+          <div id="edit-gw-telemetry" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-family:var(--font-mono);font-size:11px"></div>
+          <div id="edit-gw-telemetry-empty" style="display:none;margin-top:8px;font-size:11px;color:var(--text-3);font-style:italic">{{ t('gateway_info.no_data') or 'Noch keine Heartbeat-Daten erhalten.' }}</div>
+
+          <div style="margin-top:10px;font-size:11px;color:var(--text-3)">{{ t('gateway_download_warning') }}</div>
           <button type="button" class="btn btn-warning btn-sm" id="btn-edit-peer-download-env" style="margin-top:8px">
             {{ t('gateway_download_env') }}
           </button>
