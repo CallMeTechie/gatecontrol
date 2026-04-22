@@ -17,6 +17,26 @@ const nunjucks = require('nunjucks');
 const nodePath = require('node:path');
 
 /**
+ * Parse the comma-separated status code list that the UI stores in
+ * route.retry_match_status (e.g. "502,503,504"). Dropped silently: non-
+ * numeric tokens, codes outside the standard HTTP range. Returns a de-
+ * duplicated number array.
+ */
+function parseStatusCodes(csv) {
+  if (!csv || typeof csv !== 'string') return [];
+  const seen = new Set();
+  const out = [];
+  for (const token of csv.split(',')) {
+    const n = parseInt(token.trim(), 10);
+    if (!Number.isInteger(n) || n < 100 || n > 599) continue;
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/**
  * Render the gateway-offline maintenance page. Nunjucks-based so i18n-keys
  * are picked up via the `t()` helper. Uses a fallback key-lookup if no
  * request-scoped t() is available (standalone render from caddyConfig builder).
@@ -247,10 +267,22 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       }
     }
 
-    // Retry configuration
+    // Retry configuration.
+    //
+    // Caddy's reverse_proxy retries only within `try_duration` and only for
+    // responses matching `retry_match` (or connect errors by default). Prior
+    // code set `retries` alone — which Caddy ignores unless try_duration is
+    // positive and something in retry_match triggers — so the admin-set
+    // status codes in route.retry_match_status never made it into the
+    // actual config. Wire both fields through.
     if (route.retry_enabled) {
       if (!reverseProxy.load_balancing) reverseProxy.load_balancing = {};
       reverseProxy.load_balancing.retries = route.retry_count || 3;
+      reverseProxy.load_balancing.try_duration = '5s';
+      const codes = parseStatusCodes(route.retry_match_status);
+      if (codes.length > 0) {
+        reverseProxy.load_balancing.retry_match = [{ status_code: codes }];
+      }
     }
 
     // Response custom headers

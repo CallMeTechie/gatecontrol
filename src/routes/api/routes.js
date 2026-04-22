@@ -576,6 +576,48 @@ router.post('/:id/check', async (req, res) => {
 });
 
 /**
+ * POST /api/routes/:id/circuit-breaker/reset — Manually close a stuck
+ * circuit breaker. Zero out failure-count and opened_at, set status
+ * back to 'closed', and trigger a Caddy reload so the 503 maintenance
+ * handler stops serving. Needed because the breaker state is persisted
+ * in SQLite (cb_failure_count, cb_opened_at) and survives restarts —
+ * without a manual reset the route stays gated until monitoring runs
+ * through timeout → half-open → healthy-probe on its own schedule.
+ */
+router.post('/:id/circuit-breaker/reset', requireFeature('circuit_breaker'), async (req, res) => {
+  try {
+    const route = routes.getById(req.params.id);
+    if (!route) return res.status(404).json({ ok: false, error: req.t('error.routes.not_found') });
+    if (!route.circuit_breaker_enabled) {
+      return res.status(400).json({ ok: false, error: 'Circuit breaker is not enabled on this route' });
+    }
+
+    const circuitBreaker = require('../../services/circuitBreaker');
+    circuitBreaker.resetStatus(route.id);
+
+    const activity = require('../../services/activity');
+    activity.log('circuit_breaker_reset', `Circuit breaker manually reset for "${route.domain}"`, {
+      source: 'admin',
+      severity: 'info',
+      details: { routeId: route.id, domain: route.domain },
+    });
+
+    // Re-render Caddy so the 503 maintenance handler is taken out.
+    try {
+      const { syncToCaddy } = require('../../services/caddyConfig');
+      await syncToCaddy();
+    } catch (err) {
+      logger.warn({ err: err.message, routeId: route.id }, 'Caddy reload after CB reset failed');
+    }
+
+    res.json({ ok: true, status: 'closed' });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Circuit breaker reset failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * POST /api/routes/:id/branding/logo — Upload branding logo
  */
 router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding'), logoUpload.single('logo'), (req, res) => {

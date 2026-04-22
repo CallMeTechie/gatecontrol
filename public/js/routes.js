@@ -1393,8 +1393,12 @@
     if (cbThreshold) cbThreshold.value = route.circuit_breaker_threshold || 5;
     var cbTimeout = document.getElementById('edit-cb-timeout');
     if (cbTimeout) cbTimeout.value = route.circuit_breaker_timeout || 30;
-    // Circuit breaker status indicator
+    // Circuit breaker status indicator + manual reset button.
+    // The breaker state is persisted in SQLite (cb_failure_count, cb_opened_at),
+    // so an open breaker survives restarts and only clears via monitoring
+    // timeout or this button.
     var cbStatusIndicator = document.getElementById('edit-cb-status-indicator');
+    var cbResetBtn = document.getElementById('edit-cb-reset');
     if (cbStatusIndicator && route.circuit_breaker_enabled) {
       var cbStatus = route.circuit_breaker_status || 'closed';
       cbStatusIndicator.style.display = '';
@@ -1411,8 +1415,35 @@
         cbStatusIndicator.style.color = '#000';
         cbStatusIndicator.textContent = GC.t['circuit_breaker.status_half_open'] || 'Half-Open';
       }
+      // Reset only makes sense when the breaker isn't closed.
+      if (cbResetBtn) {
+        cbResetBtn.style.display = cbStatus !== 'closed' ? '' : 'none';
+        cbResetBtn.onclick = async function() {
+          if (typeof window.btnLoading === 'function') window.btnLoading(cbResetBtn);
+          try {
+            var resp = await api.post('/api/routes/' + route.id + '/circuit-breaker/reset', {});
+            if (resp && resp.ok) {
+              if (typeof window.showToast === 'function') {
+                window.showToast(GC.t['circuit_breaker.reset_ok'] || 'Circuit-Breaker zurückgesetzt', 'success');
+              }
+              cbStatusIndicator.style.background = 'var(--green, #4ade80)';
+              cbStatusIndicator.style.color = '#fff';
+              cbStatusIndicator.textContent = GC.t['circuit_breaker.status_closed'] || 'Closed';
+              cbResetBtn.style.display = 'none';
+              loadRoutes();
+            } else if (typeof window.showToast === 'function') {
+              window.showToast((resp && resp.error) || 'Reset failed', 'error');
+            }
+          } catch (err) {
+            if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+          } finally {
+            if (typeof window.btnReset === 'function') window.btnReset(cbResetBtn);
+          }
+        };
+      }
     } else if (cbStatusIndicator) {
       cbStatusIndicator.style.display = 'none';
+      if (cbResetBtn) cbResetBtn.style.display = 'none';
     }
     // Show monitoring requirement warning if monitoring not enabled
     var cbRequiresMonitoring = document.getElementById('edit-cb-requires-monitoring');

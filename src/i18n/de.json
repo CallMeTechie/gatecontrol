@@ -912,6 +912,8 @@
   "circuit_breaker.status_closed": "Geschlossen",
   "circuit_breaker.status_open": "Offen",
   "circuit_breaker.status_half_open": "Halb-Offen",
+  "circuit_breaker.reset": "Circuit-Breaker zurücksetzen",
+  "circuit_breaker.reset_ok": "Circuit-Breaker zurückgesetzt",
   "circuit_breaker.badge_closed": "CB: Geschlossen",
   "circuit_breaker.badge_open": "CB: Offen",
   "circuit_breaker.badge_half_open": "CB: Halb-Offen",

@@ -501,6 +501,9 @@
           </div>
           <div id="edit-cb-status-indicator" style="display:none;padding:6px 10px;border-radius:var(--radius-xs);font-size:12px;font-weight:600;text-align:center;margin-bottom:4px">
           </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="edit-cb-reset" style="display:none;width:100%;justify-content:center;margin-top:6px">
+            {{ t('circuit_breaker.reset') or 'Circuit-Breaker zurücksetzen' }}
+          </button>
         </div>
         {% else %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
