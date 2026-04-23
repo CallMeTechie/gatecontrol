@@ -1,11 +1,18 @@
 'use strict';
 
 /**
- * Caddy JSON config builder and sync.
+ * Caddy JSON config builder and sync orchestrator.
  *
- * Extracted from routes.js to keep that module focused on CRUD.
- * Contains: buildCaddyConfig(), syncToCaddy(), caddyApi(), and the
- * validation/sanitization helpers used exclusively during config generation.
+ * Internals are split across focused modules:
+ *   caddyValidators.js    — string/format validators + defender helpers
+ *   caddyAcl.js           — route ACL peer DB helpers
+ *   caddyMaintenance.js   — gateway-offline page renderer
+ *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
+ *                           supervisor restart + partial PATCH helpers
+ *
+ * This file keeps the monolithic buildCaddyConfig() (~600 lines of
+ * route→JSON mapping) and the syncToCaddy() orchestration. Public API
+ * (module.exports) is unchanged — all importers keep working.
  */
 
 const { getDb } = require('../db/connection');
@@ -13,156 +20,27 @@ const config = require('../../config/default');
 const { buildL4Servers, validatePortConflicts } = require('./l4');
 const { getAuthForRoute } = require('./routeAuth');
 const logger = require('../utils/logger');
-const nunjucks = require('nunjucks');
-const nodePath = require('node:path');
 
-// Static list of caddy-defender bot provider ranges used by this project.
-// Extracted from the two inline builders so adding/removing a provider is
-// a single-point change. Override via GC_BOT_BLOCKER_RANGES (comma list).
-const DEFAULT_BOT_BLOCKER_RANGES = Object.freeze([
-  'openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud',
-]);
-const BOT_BLOCKER_RANGES = Object.freeze(
-  (process.env.GC_BOT_BLOCKER_RANGES || '').split(',').map(s => s.trim()).filter(Boolean).length > 0
-    ? process.env.GC_BOT_BLOCKER_RANGES.split(',').map(s => s.trim()).filter(Boolean)
-    : DEFAULT_BOT_BLOCKER_RANGES
-);
-
-// Escape user-supplied strings that land in Caddy response bodies so they
-// cannot inject HTML into the error page served to blocked bots/humans.
-function escapeHtmlForDefender(str) {
-  if (typeof str !== 'string') return str;
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function buildDefenderConfig(route) {
-  const defenderConfig = {
-    handler: 'defender',
-    raw_responder: route.bot_blocker_mode || 'block',
-    ranges: [...BOT_BLOCKER_RANGES],
-  };
-  const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
-  if (bbConfig.message) defenderConfig.message = escapeHtmlForDefender(String(bbConfig.message));
-  if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
-  if (bbConfig.url) defenderConfig.url = bbConfig.url;
-  return defenderConfig;
-}
-
-/**
- * Parse the comma-separated status code list that the UI stores in
- * route.retry_match_status (e.g. "502,503,504"). Dropped silently: non-
- * numeric tokens, codes outside the standard HTTP range. Returns a de-
- * duplicated number array.
- */
-function parseStatusCodes(csv) {
-  if (!csv || typeof csv !== 'string') return [];
-  const seen = new Set();
-  const out = [];
-  for (const token of csv.split(',')) {
-    const n = parseInt(token.trim(), 10);
-    if (!Number.isInteger(n) || n < 100 || n > 599) continue;
-    if (seen.has(n)) continue;
-    seen.add(n);
-    out.push(n);
-  }
-  return out;
-}
-
-/**
- * Render the gateway-offline maintenance page. Nunjucks-based so i18n-keys
- * are picked up via the `t()` helper. Uses a fallback key-lookup if no
- * request-scoped t() is available (standalone render from caddyConfig builder).
- */
-function renderMaintenancePage(ctx) {
-  const tmplDir = nodePath.join(__dirname, '..', '..', 'templates');
-  const env = nunjucks.configure(tmplDir, { autoescape: true, noCache: false });
-  // Provide a default `t()` helper that returns the raw key — the gateway-
-  // offline page is rendered server-side at config-build time (no request).
-  env.addGlobal('t', (key) => key);
-  return env.render('gateway-offline.njk', { lang: 'de', ...ctx });
-}
-
-const CADDY_ADMIN = config.caddy.adminUrl;
-
-// ─── Header / config injection prevention ────────────────
-const HEADER_NAME_RE = /^[a-zA-Z0-9\-]+$/;
-const CADDY_PLACEHOLDER_RE = /\{[^}]+\}/;
-const VALID_RATE_WINDOWS = ['1s', '1m', '5m', '1h'];
-const STICKY_COOKIE_NAME_RE = /^[a-zA-Z0-9_\-]+$/;
-
-function isValidHeaderName(name) {
-  return typeof name === 'string' && name.length <= 256 && HEADER_NAME_RE.test(name);
-}
-
-function isValidHeaderValue(value) {
-  return typeof value === 'string' && value.length <= 4096 && !CADDY_PLACEHOLDER_RE.test(value);
-}
-
-function sanitizeRateWindow(window) {
-  return VALID_RATE_WINDOWS.includes(window) ? window : '1m';
-}
-
-function sanitizeStickyCookieName(name) {
-  return (typeof name === 'string' && STICKY_COOKIE_NAME_RE.test(name)) ? name : 'gc_sticky';
-}
-
-// ─── ACL helpers ────────────────────────────────────────
-function getAclPeers(routeId) {
-  const db = getDb();
-  return db.prepare(`
-    SELECT rpa.peer_id, p.name, p.allowed_ips
-    FROM route_peer_acl rpa
-    JOIN peers p ON p.id = rpa.peer_id
-    WHERE rpa.route_id = ?
-  `).all(routeId);
-}
-
-function setAclPeers(routeId, peerIds) {
-  const db = getDb();
-  db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
-  if (Array.isArray(peerIds) && peerIds.length > 0) {
-    const insert = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
-    for (const peerId of peerIds) {
-      insert.run(routeId, peerId);
-    }
-  }
-}
-
-// ─── Caddy Admin API helper ─────────────────────────────
-async function caddyApi(path, options = {}) {
-  // Production-safety: in NODE_ENV=test, never open a real HTTP connection
-  // to the Caddy admin API. The container uses network_mode: host, so
-  // 127.0.0.1:2019 from a host-side test process is the LIVE Caddy and
-  // would get overwritten with test-seeded routes. Return null to mimic
-  // the existing ECONNREFUSED fallback branch — callers already handle that.
-  if (process.env.NODE_ENV === 'test') return null;
-
-  const url = `${CADDY_ADMIN}${path}`;
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(config.timeouts.caddyApi),
-      ...options,
-      headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Caddy API ${res.status}: ${text}`);
-    }
-    const text = await res.text();
-    return text ? JSON.parse(text) : {};
-  } catch (err) {
-    if (err.cause && err.cause.code === 'ECONNREFUSED') {
-      logger.warn('Caddy admin API not reachable');
-      return null;
-    }
-    throw err;
-  }
-}
+const {
+  BOT_BLOCKER_RANGES,
+  buildDefenderConfig,
+  parseStatusCodes,
+  isValidHeaderName,
+  isValidHeaderValue,
+  sanitizeRateWindow,
+  sanitizeStickyCookieName,
+} = require('./caddyValidators');
+const { getAclPeers, setAclPeers } = require('./caddyAcl');
+const { renderMaintenancePage } = require('./caddyMaintenance');
+const {
+  caddyApi,
+  _caddyApi,
+  _persistRuntimeJson,
+  _verifyLocalTls,
+  _restartCaddyViaSupervisor,
+  _managementHost,
+  patchGatewayRouteHandlers,
+} = require('./caddyAdminClient');
 
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
@@ -768,98 +646,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 // ─── Push config to Caddy Admin API ─────────────────────
 let lastGoodConfig = null;
 
-const RUNTIME_JSON_PATH = (config.caddy && config.caddy.dataDir
-  ? config.caddy.dataDir
-  : '/data/caddy') + '/runtime.json';
-
-// Write the generated Caddy config to /data/caddy/runtime.json atomically.
-// This file is the source-of-truth that entrypoint.sh boots Caddy from
-// (variant C) and that a runtime restart falls back to if /load leaves
-// Caddy in a bad state.
-function _persistRuntimeJson(caddyConfig) {
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const tmp = RUNTIME_JSON_PATH + '.tmp';
-  try {
-    fs.mkdirSync(path.dirname(RUNTIME_JSON_PATH), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify(caddyConfig, null, 2));
-    fs.renameSync(tmp, RUNTIME_JSON_PATH);
-    return true;
-  } catch (err) {
-    logger.warn({ err: err.message, path: RUNTIME_JSON_PATH }, 'Could not persist runtime.json (not fatal)');
-    return false;
-  }
-}
-
-// Quick TLS-handshake self-test against 127.0.0.1:443 with the given SNI.
-// POST /load occasionally leaves Caddy in a state where it answers the
-// admin API but kills every new TLS handshake with `internal error`.
-function _verifyLocalTls(sniHost, timeoutMs = 4000) {
-  const tls = require('node:tls');
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
-    const socket = tls.connect({
-      host: '127.0.0.1',
-      port: 443,
-      servername: sniHost,
-      rejectUnauthorized: false,
-      timeout: timeoutMs,
-      ALPNProtocols: ['http/1.1'],
-    });
-    socket.once('secureConnect', () => { socket.end(); done(true); });
-    socket.once('error', () => done(false));
-    socket.once('timeout', () => { socket.destroy(); done(false); });
-  });
-}
-
-// Kill the Caddy process so supervisord's autorestart brings it back
-// from scratch. Caddy boots from runtime.json (which we just wrote),
-// giving it a clean TLS state and re-triggering cert provisioning for
-// any new hosts. Brief downtime (~2–3 s) but recovers.
-// Uses execFile with fixed argv — no shell, no injection surface.
-// (Avoids supervisorctl because Alpine's supervisor package doesn't
-// ship the RPC interface module we'd need for it.)
-function _restartCaddyViaSupervisor() {
-  const { execFile } = require('node:child_process');
-  return new Promise((resolve, reject) => {
-    execFile('pkill', ['-TERM', '-x', 'caddy'], { timeout: 10000 }, (err, stdout, stderr) => {
-      // pkill exit code 1 = no process matched (Caddy not running); still a
-      // success for our purposes because supervisord will spawn it shortly.
-      if (err && err.code !== 1) {
-        return reject(new Error(`pkill caddy failed: ${err.message} ${stderr || ''}`.trim()));
-      }
-      resolve(stdout);
-    });
-  });
-}
-
-// The management UI domain is the canary for TLS health — it has a
-// provisioned cert from day one, so a failed TLS handshake against it
-// means Caddy's listener state is broken (not just "cert still
-// provisioning for a new subdomain"). Prefer GC_BASE_URL's hostname;
-// fall back to the first route's first host.
-function _managementHost(caddyConfig) {
-  try {
-    const baseUrl = config.app && config.app.baseUrl;
-    if (baseUrl) {
-      try {
-        const host = new URL(baseUrl).hostname;
-        if (host) return host;
-      } catch { /* fall through */ }
-    }
-    const srv = caddyConfig && caddyConfig.apps && caddyConfig.apps.http
-      && caddyConfig.apps.http.servers && caddyConfig.apps.http.servers.srv0;
-    const hosts = srv && srv.routes && srv.routes[0] && srv.routes[0].match
-      && srv.routes[0].match[0] && srv.routes[0].match[0].host;
-    return Array.isArray(hosts) && hosts.length > 0 ? hosts[0] : null;
-  } catch { return null; }
-}
-
 async function syncToCaddy() {
-  // Production-safety: skip the whole sync in test env. Returning early
-  // keeps routes.create/update from throwing "Caddy not reachable" in
-  // tests while guaranteeing no HTTP ever touches the real admin API.
+  // Production-safety: skip sync in test env. caddyAdminClient's
+  // caddyApi() also guards individually, but skipping the whole sync
+  // here avoids even building the config and spares test runs from
+  // uninterruptible "Caddy not reachable" throws downstream.
   if (process.env.NODE_ENV === 'test') return;
 
   let previousConfig = null;
@@ -926,67 +717,6 @@ async function syncToCaddy() {
   }
 
   return true;
-}
-
-// ─── Gateway-aware partial patching of Caddy Admin API ──────
-// Uses @id route markers (added in Task 18) so status transitions can be
-// applied without a full config reload — PATCH /id/gc_route_<id>/handle.
-
-const _caddyApi = {
-  async patch(patchPath, body) {
-    // Same production-safety guard as caddyApi() — see that comment.
-    if (process.env.NODE_ENV === 'test') return;
-
-    const http = require('node:http');
-    return new Promise((resolve, reject) => {
-      const url = new URL((process.env.GC_CADDY_ADMIN_URL || config.caddy.adminUrl || 'http://127.0.0.1:2019') + patchPath);
-      const payload = body === null || body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body));
-      const req = http.request({
-        host: url.hostname,
-        port: url.port,
-        path: url.pathname,
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-          'Origin': 'http://127.0.0.1:2019',
-        },
-      }, (res) => {
-        res.resume();
-        res.on('end', resolve);
-      });
-      req.on('error', reject);
-      if (payload) req.write(payload);
-      req.end();
-    });
-  },
-};
-
-async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSeen }) {
-  const db = getDb();
-  const routes = db.prepare(`
-    SELECT id, domain FROM routes
-    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
-  `).all(peerId);
-
-  for (const route of routes) {
-    const routeId = `gc_route_${route.id}`;
-    const handler = offline
-      ? {
-          handler: 'static_response',
-          status_code: 502,
-          headers: { 'Content-Type': ['text/html; charset=utf-8'] },
-          body: renderMaintenancePage({ gateway_name: gatewayName, gateway_last_seen: lastSeen }),
-        }
-      : null;
-
-    try {
-      // Standard pattern: PATCH /id/gc_route_<id>/handle
-      await module.exports._caddyApi.patch(`/id/${routeId}/handle`, handler || 'revert');
-    } catch (err) {
-      logger.warn({ err: err.message, routeId }, 'Caddy partial patch failed');
-    }
-  }
 }
 
 module.exports = {
