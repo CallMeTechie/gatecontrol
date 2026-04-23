@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.11] — 2026-04-23
+
+### Änderungen
+- split migrations.js (941 lines) into four focused modules (#39)
+
+---
+
 ## [1.50.10] — 2026-04-23
 
 ### Änderungen
