@@ -68,6 +68,10 @@ function _verifyLocalTls(sniHost, timeoutMs = 4000) {
   return new Promise((resolve) => {
     let settled = false;
     const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    // rejectUnauthorized: false is intentional — this is a local-loopback
+    // TLS-liveness probe, not a request for data. We only care whether
+    // Caddy's TLS stack is responsive; the cert may be self-signed mid-
+    // provision and validation here would make the health check useless.
     const socket = tls.connect({
       host: '127.0.0.1',
       port: 443,
