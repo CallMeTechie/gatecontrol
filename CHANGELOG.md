@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.9] — 2026-04-23
+
+### Fixes
+- clear gateway_* on route target_kind switch + deploy from GHCR (#37)
+
+---
+
 ## [1.50.8] — 2026-04-23
 
 ### Änderungen
