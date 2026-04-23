@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { hashToken } = require('../middleware/gatewayAuth');
 const license = require('./license');
 const peers = require('./peers');
 const activity = require('./activity');
@@ -40,7 +41,7 @@ const DEFAULT_API_PORT = 9876;
 function generateTokens() {
   const apiTokenRaw = crypto.randomBytes(32).toString('hex');
   const apiToken = `gc_gw_${apiTokenRaw}`;
-  const apiTokenHash = 'sha256:' + crypto.createHash('sha256').update(apiToken).digest('hex');
+  const apiTokenHash = hashToken(apiToken);
 
   const pushToken = crypto.randomBytes(32).toString('hex');
   const pushTokenEncrypted = encrypt(pushToken);
