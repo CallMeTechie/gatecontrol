@@ -45,6 +45,19 @@ function updateUserProfile(userId, data) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) throw new Error('User not found');
 
+  // Cap string lengths so a misuse or crafted payload can't bloat the DB
+  // with a multi-MB value in display_name/email.
+  if (data.display_name !== undefined && data.display_name !== null) {
+    if (typeof data.display_name !== 'string' || data.display_name.length > 100) {
+      throw new Error('display_name must be a string of at most 100 characters');
+    }
+  }
+  if (data.email !== undefined && data.email !== null) {
+    if (typeof data.email !== 'string' || data.email.length > 255) {
+      throw new Error('email must be a string of at most 255 characters');
+    }
+  }
+
   db.prepare(`
     UPDATE users SET
       display_name = COALESCE(?, display_name),

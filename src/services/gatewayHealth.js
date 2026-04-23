@@ -40,6 +40,13 @@ class StateMachine {
         return; // Cooldown blocks transition
       }
       this._transitions.push({ at: now, from: this.status, to: next });
+      // Prune entries older than 24h to keep the array bounded. The
+      // flap counter only looks back 1h so anything older is dead
+      // weight that would otherwise grow unbounded over months.
+      const dayCutoff = now - 24 * 60 * 60 * 1000;
+      while (this._transitions.length > 0 && this._transitions[0].at < dayCutoff) {
+        this._transitions.shift();
+      }
       this.status = next;
       this._lastTransitionAt = now;
     }

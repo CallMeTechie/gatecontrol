@@ -98,9 +98,15 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
       // Gateway path: create peer + meta + tokens in one go. Return plaintext
       // tokens ONCE + full env-file content so the admin can copy or download.
       const gateways = require('../../services/gateways');
+      const parsedApiPort = api_port != null && api_port !== ''
+        ? parseInt(api_port, 10)
+        : gateways.DEFAULT_API_PORT;
+      if (!Number.isInteger(parsedApiPort) || parsedApiPort < 1 || parsedApiPort > 65535) {
+        return res.status(400).json({ ok: false, error: 'api_port must be 1..65535' });
+      }
       const result = await gateways.createGateway({
         name,
-        apiPort: api_port ? parseInt(api_port, 10) : 9876,
+        apiPort: parsedApiPort,
       });
       const envContent = gateways.buildEnvForPeer(result.peer.id, result.apiToken, result.pushToken);
       return res.status(201).json({

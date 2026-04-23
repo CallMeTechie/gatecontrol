@@ -502,11 +502,22 @@ function rotateGatewayTokens(peerId) {
   db.prepare('UPDATE gateway_meta SET api_token_hash=?, push_token_encrypted=?, needs_repair=0 WHERE peer_id=?')
     .run(apiTokenHash, pushTokenEncrypted, peerId);
 
+  // Security-relevant operation — leave an audit trail, never the token
+  // plaintext. Mirrors the peer_created audit entry so post-incident
+  // review can see who rotated what and when.
+  try {
+    const activity = require('./activity');
+    activity.log('gateway_tokens_rotated',
+      `Gateway tokens rotated for peer "${row.name}"`,
+      { source: 'admin', severity: 'warning', details: { peerId, peerName: row.name } });
+  } catch {}
+
   const envContent = buildEnvContent(row, apiToken, pushToken);
   return { apiToken, pushToken, envContent };
 }
 
 module.exports = {
+  DEFAULT_API_PORT,
   createGateway,
   getGatewayConfig,
   computeConfigHash,
