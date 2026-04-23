@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.13] — 2026-04-23
+
+### Änderungen
+- split client.js (1267 lines) into focused sub-router modules (#41)
+
+---
+
 ## [1.50.12] — 2026-04-23
 
 ### Änderungen
