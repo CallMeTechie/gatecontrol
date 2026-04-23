@@ -135,6 +135,13 @@ function setAclPeers(routeId, peerIds) {
 
 // ─── Caddy Admin API helper ─────────────────────────────
 async function caddyApi(path, options = {}) {
+  // Production-safety: in NODE_ENV=test, never open a real HTTP connection
+  // to the Caddy admin API. The container uses network_mode: host, so
+  // 127.0.0.1:2019 from a host-side test process is the LIVE Caddy and
+  // would get overwritten with test-seeded routes. Return null to mimic
+  // the existing ECONNREFUSED fallback branch — callers already handle that.
+  if (process.env.NODE_ENV === 'test') return null;
+
   const url = `${CADDY_ADMIN}${path}`;
   try {
     const res = await fetch(url, {
@@ -850,6 +857,11 @@ function _managementHost(caddyConfig) {
 }
 
 async function syncToCaddy() {
+  // Production-safety: skip the whole sync in test env. Returning early
+  // keeps routes.create/update from throwing "Caddy not reachable" in
+  // tests while guaranteeing no HTTP ever touches the real admin API.
+  if (process.env.NODE_ENV === 'test') return;
+
   let previousConfig = null;
   try {
     previousConfig = await caddyApi('/config/');
@@ -922,6 +934,9 @@ async function syncToCaddy() {
 
 const _caddyApi = {
   async patch(patchPath, body) {
+    // Same production-safety guard as caddyApi() — see that comment.
+    if (process.env.NODE_ENV === 'test') return;
+
     const http = require('node:http');
     return new Promise((resolve, reject) => {
       const url = new URL((process.env.GC_CADDY_ADMIN_URL || config.caddy.adminUrl || 'http://127.0.0.1:2019') + patchPath);
