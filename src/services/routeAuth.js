@@ -287,12 +287,19 @@ function deleteSession(sessionId) {
 // ---------------------------------------------------------------------------
 
 /**
- * Verify a user's email and password against the stored auth config
+ * Verify a user's email and password against the stored auth config.
+ * Constant-time across existence: always runs argon2.verify against a
+ * dummy hash when the config/email is missing, so a timing side-channel
+ * cannot enumerate which emails are registered for a route.
  */
+const ROUTE_AUTH_DUMMY_HASH = '$argon2id$v=19$m=19456,t=2,p=1$Wm10dWh5V1VmMFI0b3V0Yg$qQ9zSuE6kG5lcGDBPa4htcoOPRkMiPwCfvV1Cq3pCI0';
 async function verifyPassword(authConfig, email, password) {
+  const hash = (authConfig && authConfig.password_hash) ? authConfig.password_hash : ROUTE_AUTH_DUMMY_HASH;
+  let pwOk = false;
+  try { pwOk = await argon2.verify(hash, password); } catch { pwOk = false; }
   if (!authConfig || !authConfig.email || !authConfig.password_hash) return false;
   if (authConfig.email !== email) return false;
-  return argon2.verify(authConfig.password_hash, password);
+  return pwOk;
 }
 
 // ---------------------------------------------------------------------------

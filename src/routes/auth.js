@@ -7,6 +7,13 @@ const config = require('../../config/default');
 const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
 
+// Precomputed dummy argon2id hash used when the username does not exist,
+// so verify() runs against a real hash and attackers cannot enumerate
+// usernames by timing the short-circuit.
+// Computed at module load and frozen: value never needs to validate any
+// real password — `argon2.verify` returns false on mismatch.
+const DUMMY_PASSWORD_HASH = '$argon2id$v=19$m=19456,t=2,p=1$Wm10dWh5V1VmMFI0b3V0Yg$qQ9zSuE6kG5lcGDBPa4htcoOPRkMiPwCfvV1Cq3pCI0';
+
 const authRoutes = {
   loginPage(req, res) {
     res.render(`${res.locals.theme}/pages/login.njk`, {
@@ -37,7 +44,13 @@ const authRoutes = {
 
       const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
-      if (!user || !(await argon2.verify(user.password_hash, password))) {
+      // Constant-time path: always run argon2.verify, even when the
+      // username doesn't exist, so the short-circuit timing no longer
+      // leaks "this user exists".
+      const hashToCheck = user ? user.password_hash : DUMMY_PASSWORD_HASH;
+      let passwordOk = false;
+      try { passwordOk = await argon2.verify(hashToCheck, password); } catch { passwordOk = false; }
+      if (!user || !passwordOk) {
         logger.warn({ username, ip: req.ip }, 'Failed login attempt');
 
         // Record failed attempt for lockout

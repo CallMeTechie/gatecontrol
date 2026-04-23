@@ -16,6 +16,43 @@ const logger = require('../utils/logger');
 const nunjucks = require('nunjucks');
 const nodePath = require('node:path');
 
+// Static list of caddy-defender bot provider ranges used by this project.
+// Extracted from the two inline builders so adding/removing a provider is
+// a single-point change. Override via GC_BOT_BLOCKER_RANGES (comma list).
+const DEFAULT_BOT_BLOCKER_RANGES = Object.freeze([
+  'openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud',
+]);
+const BOT_BLOCKER_RANGES = Object.freeze(
+  (process.env.GC_BOT_BLOCKER_RANGES || '').split(',').map(s => s.trim()).filter(Boolean).length > 0
+    ? process.env.GC_BOT_BLOCKER_RANGES.split(',').map(s => s.trim()).filter(Boolean)
+    : DEFAULT_BOT_BLOCKER_RANGES
+);
+
+// Escape user-supplied strings that land in Caddy response bodies so they
+// cannot inject HTML into the error page served to blocked bots/humans.
+function escapeHtmlForDefender(str) {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildDefenderConfig(route) {
+  const defenderConfig = {
+    handler: 'defender',
+    raw_responder: route.bot_blocker_mode || 'block',
+    ranges: [...BOT_BLOCKER_RANGES],
+  };
+  const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
+  if (bbConfig.message) defenderConfig.message = escapeHtmlForDefender(String(bbConfig.message));
+  if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
+  if (bbConfig.url) defenderConfig.url = bbConfig.url;
+  return defenderConfig;
+}
+
 /**
  * Parse the comma-separated status code list that the UI stores in
  * route.retry_match_status (e.g. "502,503,504"). Dropped silently: non-
@@ -293,8 +330,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // actual config. Wire both fields through.
     if (route.retry_enabled) {
       if (!reverseProxy.load_balancing) reverseProxy.load_balancing = {};
-      reverseProxy.load_balancing.retries = route.retry_count || 3;
-      reverseProxy.load_balancing.try_duration = '5s';
+      const retryCount = route.retry_count || 3;
+      reverseProxy.load_balancing.retries = retryCount;
+      // try_duration bounds the retry loop; a fixed 5s silently caps
+      // high retry_count values (a slow upstream burns the whole budget
+      // in a few attempts). Scale with the admin's configured count.
+      reverseProxy.load_balancing.try_duration = `${Math.max(5, retryCount * 2)}s`;
       const codes = parseStatusCodes(route.retry_match_status);
       if (codes.length > 0) {
         reverseProxy.load_balancing.retry_match = [{ status_code: codes }];
@@ -353,16 +394,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Bot blocker
     if (route.bot_blocker_enabled) {
-      const defenderConfig = {
-        handler: 'defender',
-        raw_responder: route.bot_blocker_mode || 'block',
-        ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
-      };
-      const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
-      if (bbConfig.message) defenderConfig.message = bbConfig.message;
-      if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
-      if (bbConfig.url) defenderConfig.url = bbConfig.url;
-      routeHandlers.push(defenderConfig);
+      routeHandlers.push(buildDefenderConfig(route));
     }
 
     // Request tracing
@@ -519,16 +551,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         });
       }
       if (route.bot_blocker_enabled) {
-        const defenderConfig = {
-          handler: 'defender',
-          raw_responder: route.bot_blocker_mode || 'block',
-          ranges: ['openai', 'aws', 'gcloud', 'githubcopilot', 'deepseek', 'azurepubliccloud'],
-        };
-        const bbConfig = (route.bot_blocker_config ? JSON.parse(route.bot_blocker_config) : null) || {};
-        if (bbConfig.message) defenderConfig.message = bbConfig.message;
-        if (bbConfig.status_code) defenderConfig.status_code = bbConfig.status_code;
-        if (bbConfig.url) defenderConfig.url = bbConfig.url;
-        authHandlers.unshift(defenderConfig);
+        authHandlers.unshift(buildDefenderConfig(route));
       }
       if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
         const requestSet = {};
