@@ -312,15 +312,31 @@ describe('Health', () => {
       'monitoring must be able to detect Caddy crashes via /health');
   });
 
-  it('GET /health with external X-Forwarded-For does NOT leak internal state', async () => {
-    const res = await agent.get('/health').set('X-Forwarded-For', '1.2.3.4');
+  it('GET /health: anonymous external request gets only {ok} (no info leak)', async () => {
+    // Fresh agent = no session cookie → anonymous.
+    // X-Forwarded-For makes Express (trust proxy: loopback) classify
+    // the request as non-localhost.
+    const supertest = require('supertest');
+    const { createApp } = require('../src/app');
+    const anon = supertest(createApp());
+    const res = await anon.get('/health').set('X-Forwarded-For', '1.2.3.4');
     assert.equal(typeof res.body.ok, 'boolean');
-    // Must NOT leak any internal health detail to external callers
     assert.equal(res.body.db, undefined);
     assert.equal(res.body.wireguard, undefined);
     assert.equal(res.body.caddy, undefined);
     assert.equal(res.body.version, undefined);
     assert.equal(res.body.uptime, undefined);
+  });
+
+  it('GET /health: authenticated admin external request DOES see details', async () => {
+    // Logged-in admin (agent) + X-Forwarded-For → still gets full detail
+    // via admin-session bypass of the info-leak guard.
+    const res = await agent.get('/health').set('X-Forwarded-For', '1.2.3.4');
+    assert.equal(typeof res.body.db, 'boolean');
+    assert.equal(typeof res.body.wireguard, 'boolean');
+    assert.equal(typeof res.body.caddy, 'boolean');
+    assert.equal(typeof res.body.version, 'string');
+    assert.equal(typeof res.body.uptime, 'number');
   });
 });
 
