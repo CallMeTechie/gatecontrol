@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.7] — 2026-04-23
+
+### Änderungen
+- bug-hunt Welle-2 final batch (batch 13)
+
+---
+
 ## [1.50.6] — 2026-04-22
 
 ### Änderungen
