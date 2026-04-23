@@ -28,6 +28,26 @@ router.use('/branding', (req, res, next) => {
 }));
 
 // ─── Prometheus metrics (token auth or session) ────
+// Per-identity rate limit so a stolen `read-only`/`system` token can't
+// loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well
+// above any sane Prometheus scrape config (default 15s).
+const _metricsWindow = new Map();
+function _metricsRateLimit(req, res) {
+  const key = req.session?.userId
+    ? `s:${req.session.userId}`
+    : (req.headers.authorization || req.headers['x-api-token'] || req.ip).slice(0, 80);
+  const now = Date.now();
+  const entry = _metricsWindow.get(key) || { start: now, count: 0 };
+  if (now - entry.start > 60_000) { entry.start = now; entry.count = 0; }
+  entry.count++;
+  _metricsWindow.set(key, entry);
+  if (entry.count > 60) {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+    return true;
+  }
+  return false;
+}
+
 router.get('/metrics', async (req, res) => {
   const settings = require('../services/settings');
 
@@ -35,6 +55,7 @@ router.get('/metrics', async (req, res) => {
   if (settings.get('metrics_enabled', 'false') !== 'true') {
     return res.status(404).json({ ok: false, error: 'Not found' });
   }
+  if (_metricsRateLimit(req, res)) return;
 
   if (!hasFeature('prometheus_metrics')) {
     return res.status(403).json({ ok: false, error: 'Prometheus metrics requires a Pro or Lifetime license' });

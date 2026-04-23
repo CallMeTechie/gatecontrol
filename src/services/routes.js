@@ -734,6 +734,12 @@ async function batch(action, ids) {
   }
 
   const domains = existing.map(r => r.domain);
+  // Full-row snapshots so we can restore every column (not just enabled)
+  // if syncToCaddy throws. A partial rollback would leave security flags
+  // out of sync between DB and Caddy, same problem the single-row paths
+  // already solved.
+  const snapshots = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
+  const aclSnapshots = db.prepare(`SELECT * FROM route_peer_acl WHERE route_id IN (${placeholders})`).all(...ids);
 
   if (action === 'enable') {
     db.prepare(`UPDATE routes SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
@@ -744,7 +750,23 @@ async function batch(action, ids) {
     db.prepare(`DELETE FROM routes WHERE id IN (${placeholders})`).run(...ids);
   }
 
-  await syncToCaddy();
+  try {
+    await syncToCaddy();
+  } catch (err) {
+    const tx = db.transaction(() => {
+      if (action === 'delete') {
+        for (const row of snapshots) _reinsertRouteRow(db, row);
+        const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
+        for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
+      } else {
+        for (const row of snapshots) _restoreRouteRow(db, row.id, row);
+      }
+    });
+    try { tx(); } catch (rbErr) {
+      logger.error({ err: rbErr.message }, 'batch rollback failed — DB may be inconsistent with Caddy');
+    }
+    throw err;
+  }
 
   const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
   activity.log(
