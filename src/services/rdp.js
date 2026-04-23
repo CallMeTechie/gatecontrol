@@ -163,16 +163,18 @@ function encryptCredentials(data) {
 }
 
 function decryptCredentials(row) {
-  const result = { username: null, password: null };
+  const result = { username: null, password: null, decrypt_failed: false };
   try {
     if (row.username_encrypted) result.username = decrypt(row.username_encrypted);
   } catch (err) {
     logger.warn({ error: err.message }, 'Failed to decrypt RDP username');
+    result.decrypt_failed = true;
   }
   try {
     if (row.password_encrypted) result.password = decrypt(row.password_encrypted);
   } catch (err) {
     logger.warn({ error: err.message }, 'Failed to decrypt RDP password');
+    result.decrypt_failed = true;
   }
   return result;
 }
@@ -273,6 +275,10 @@ function getById(id, includeCredentials = false) {
     const safe = stripSensitive(row);
     safe.username = creds.username;
     safe.password = creds.password;
+    // Propagate the decrypt-failure signal so callers can emit a clear
+    // error instead of shipping empty credentials (e.g. after a
+    // GC_ENCRYPTION_KEY rotation left ciphertext unreadable).
+    safe.decrypt_failed = creds.decrypt_failed === true;
     return safe;
   }
   return stripSensitive(row);

@@ -33,6 +33,13 @@ function getDb() {
 
 function closeDb() {
   if (db) {
+    // Flush WAL into the main DB file so a later restore/copy sees a
+    // consistent snapshot without needing SQLite to replay a leftover
+    // -wal/-shm pair. TRUNCATE shrinks the WAL file back to zero,
+    // which matters for backup tooling that copies /data verbatim.
+    try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (err) {
+      logger.warn({ err: err.message }, 'wal_checkpoint failed on shutdown');
+    }
     db.close();
     db = null;
     logger.info('Database connection closed');

@@ -820,6 +820,13 @@ router.get('/rdp/:id/connect', (req, res) => {
 
     // Include credentials if applicable
     if (route.credential_mode !== 'none') {
+      // getById(id, true) returned decrypted values or null — but the
+      // service also reports whether decrypt itself failed, so the
+      // client sees a clear 409 instead of a confusingly empty
+      // credentials payload after a key rotation.
+      if (route.decrypt_failed) {
+        return res.status(409).json({ ok: false, error: 'credentials_invalid' });
+      }
       const ecdhPubKey = req.query.ecdhPublicKey;
       const rsaPubKey = req.query.publicKey;
 
