@@ -109,9 +109,29 @@ router.get('/metrics', async (req, res) => {
   }
 });
 
+// TCP-probe Caddy's admin API on 127.0.0.1:2019 — if it answers, Caddy
+// is alive. Fast, no HTTP round-trip. NODE_ENV=test returns true by
+// design (see PR #38): the container uses network_mode:host, so a real
+// TCP probe from a host-side test process would hit the LIVE production
+// Caddy. Returning true keeps the check inert in tests without
+// weakening the real-world behaviour.
+function checkCaddyLiveness(timeoutMs = 500) {
+  if (process.env.NODE_ENV === 'test') return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const net = require('node:net');
+    const sock = net.connect({ host: '127.0.0.1', port: 2019 });
+    let settled = false;
+    const done = (ok) => { if (!settled) { settled = true; sock.destroy(); resolve(ok); } };
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+    sock.once('timeout', () => done(false));
+  });
+}
+
 // ─── Health check (public, no auth) ────────────────
 router.get('/health', async (req, res) => {
-  const checks = { db: false, wireguard: false };
+  const checks = { db: false, wireguard: false, caddy: false };
   let status = 200;
 
   // Check database connectivity
@@ -129,10 +149,18 @@ router.get('/health', async (req, res) => {
     checks.wireguard = fs.existsSync(`/sys/class/net/${wgInterface}`);
   } catch { checks.wireguard = false; }
 
-  if (!checks.db || !checks.wireguard) status = 503;
+  // Check Caddy admin API is reachable — predicts user-visible health
+  checks.caddy = await checkCaddyLiveness();
+
+  if (!checks.db || !checks.wireguard || !checks.caddy) status = 503;
   const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
   if (isLocalhost) {
-    res.status(status).json({ ok: status === 200, ...checks });
+    res.status(status).json({
+      ok: status === 200,
+      version: require('../../package.json').version,
+      uptime: Math.floor(process.uptime()),
+      ...checks,
+    });
   } else {
     res.status(status).json({ ok: status === 200 });
   }

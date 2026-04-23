@@ -291,6 +291,37 @@ describe('Health', () => {
     assert.ok([200, 503].includes(res.status));
     assert.equal(res.body.db, true);
   });
+
+  it('GET /health on localhost exposes version matching package.json', async () => {
+    const res = await agent.get('/health');
+    const pkgVersion = require('../package.json').version;
+    assert.equal(res.body.version, pkgVersion,
+      'health must expose running version so deploys can be verified');
+  });
+
+  it('GET /health on localhost returns integer uptime in seconds', async () => {
+    const res = await agent.get('/health');
+    assert.equal(typeof res.body.uptime, 'number');
+    assert.ok(Number.isInteger(res.body.uptime));
+    assert.ok(res.body.uptime >= 0);
+  });
+
+  it('GET /health on localhost exposes caddy liveness as boolean', async () => {
+    const res = await agent.get('/health');
+    assert.equal(typeof res.body.caddy, 'boolean',
+      'monitoring must be able to detect Caddy crashes via /health');
+  });
+
+  it('GET /health with external X-Forwarded-For does NOT leak internal state', async () => {
+    const res = await agent.get('/health').set('X-Forwarded-For', '1.2.3.4');
+    assert.equal(typeof res.body.ok, 'boolean');
+    // Must NOT leak any internal health detail to external callers
+    assert.equal(res.body.db, undefined);
+    assert.equal(res.body.wireguard, undefined);
+    assert.equal(res.body.caddy, undefined);
+    assert.equal(res.body.version, undefined);
+    assert.equal(res.body.uptime, undefined);
+  });
 });
 
 // ─── Backup API ─────────────────────────────────────
