@@ -4,6 +4,9 @@ const crypto = require('node:crypto');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
+// SHA-256 (not bcrypt/argon2) is intentional: gateway tokens are 256-bit
+// crypto.randomBytes outputs, not user-chosen passwords. Slow KDFs protect
+// low-entropy secrets from brute force — pointless for 2^256 tokens.
 function hashToken(token) {
   return 'sha256:' + crypto.createHash('sha256').update(token).digest('hex');
 }
