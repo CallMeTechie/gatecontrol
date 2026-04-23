@@ -571,6 +571,14 @@ async function update(id, data) {
     id
   );
 
+  // When the admin switches target_kind away from 'gateway', COALESCE
+  // above would preserve stale gateway_* values that pollute both the
+  // DB row and any future backup. Explicitly clear them in a follow-up
+  // write so Caddy config generation sees a clean row.
+  if (data.target_kind !== undefined && data.target_kind !== 'gateway') {
+    db.prepare(`UPDATE routes SET target_peer_id = NULL, target_lan_host = NULL, target_lan_port = NULL, wol_enabled = 0, wol_mac = NULL WHERE id = ?`).run(id);
+  }
+
   // Update ACL peers if provided
   const oldAclPeers = getAclPeers(id).map(p => p.peer_id).sort();
   if (data.acl_peers !== undefined) {
