@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.12] — 2026-04-23
+
+### Änderungen
+- split caddyConfig.js into five focused modules (#40)
+
+---
+
 ## [1.50.11] — 2026-04-23
 
 ### Änderungen
