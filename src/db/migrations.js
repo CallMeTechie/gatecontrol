@@ -893,32 +893,47 @@ function runMigrations() {
     return;
   }
 
-  // Run pending migrations in a transaction
+  // Apply each pending migration in its OWN transaction. A combined
+  // transaction made debugging impossible: any failure rolled back
+  // *all* prior migrations, so the admin saw the DB revert to the
+  // pre-upgrade version and rerunning hit the same failing step
+  // without partial progress. Per-step commit preserves progress up
+  // to the failure and narrows the diagnostic surface.
   logger.info({ count: pending.length }, 'Running pending database migrations');
 
   const insert = db.prepare(
     'INSERT INTO migration_history (version, name, checksum) VALUES (?, ?, ?)'
   );
+  const runSql = (sql) => db.exec(sql);
 
-  const applyMigrations = db.transaction(() => {
-    for (const migration of pending) {
-      logger.info(
-        { version: migration.version, name: migration.name },
-        'Applying migration'
-      );
-      db.exec(migration.sql);
+  let applied = 0;
+  for (const migration of pending) {
+    logger.info(
+      { version: migration.version, name: migration.name },
+      'Applying migration'
+    );
+    const apply = db.transaction(() => {
+      runSql(migration.sql);
       insert.run(
         migration.version,
         migration.name,
         computeChecksum(migration.sql)
       );
+    });
+    try {
+      apply();
+      applied++;
+    } catch (err) {
+      logger.error(
+        { version: migration.version, name: migration.name, err: err.message },
+        'Migration failed — stopping at this version'
+      );
+      throw err;
     }
-  });
-
-  applyMigrations();
+  }
 
   logger.info(
-    { applied: pending.length },
+    { applied },
     'Database migrations completed'
   );
 }

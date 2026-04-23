@@ -599,6 +599,15 @@ async function update(id, data) {
       // surfaces in monitoring; user can re-save to retry.
       logger.error({ err: err.message, rdpId: id },
         'Linked L4 sync failed — RDP update succeeded but gateway-route may be stale');
+      // Raise the activity-log severity to error (not info) so the
+      // drift is visible in the dashboard and can wake alerts, instead
+      // of being buried among successful updates. Admin still has to
+      // notice and click re-sync, but at least the signal is there.
+      try {
+        activity.log('rdp_gateway_sync_failed',
+          `RDP route ${id} gateway-link sync failed — L4 route may be stale`,
+          { source: 'system', severity: 'error', details: { rdpId: id, err: err.message } });
+      } catch {}
     }
   }
 

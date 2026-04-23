@@ -251,6 +251,14 @@ async function remove(id) {
   // targets that pointed at this peer. Leaving them enabled would
   // produce broken Caddy config (empty upstream) after sync.
   db.prepare("UPDATE routes SET target_peer_id = NULL, enabled = 0 WHERE target_peer_id = ? AND target_kind = 'gateway'").run(id);
+  // Same situation for rdp_routes.gateway_peer_id: FK declared via ALTER
+  // TABLE is silently ignored by older SQLite, so a deleted gateway peer
+  // would leave dangling rdp_routes pointing at a non-existent id. Null
+  // out the pointer and flip access_mode back to internal so the UI
+  // shows a clear "not configured" state instead of a broken gateway.
+  try {
+    db.prepare("UPDATE rdp_routes SET gateway_peer_id = NULL, access_mode = 'internal' WHERE gateway_peer_id = ?").run(id);
+  } catch {}
   // Drop state-machine cache for this gateway so a later peer reusing
   // the id (unlikely but possible) doesn't start with stale transitions.
   try {
