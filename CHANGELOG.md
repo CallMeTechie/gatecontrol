@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.8] — 2026-04-23
+
+### Änderungen
+- dedup gateway token hash into single source (#36)
+
+---
+
 ## [1.50.7] — 2026-04-23
 
 ### Änderungen
