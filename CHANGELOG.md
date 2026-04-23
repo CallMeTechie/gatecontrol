@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.0] — 2026-04-23
+
+### Features
+- extend /health with Caddy liveness check, version and uptime (#42)
+
+---
+
 ## [1.50.13] — 2026-04-23
 
 ### Änderungen
