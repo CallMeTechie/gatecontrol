@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.10] — 2026-04-23
+
+### Änderungen
+- prevent tests from reconfiguring live Caddy via network_mode:host (#38)
+
+---
+
 ## [1.50.9] — 2026-04-23
 
 ### Fixes
