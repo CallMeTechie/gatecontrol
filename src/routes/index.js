@@ -153,8 +153,14 @@ router.get('/health', async (req, res) => {
   checks.caddy = await checkCaddyLiveness();
 
   if (!checks.db || !checks.wireguard || !checks.caddy) status = 503;
+  // Show full detail to localhost callers (internal monitoring, docker
+  // exec) and to authenticated admin sessions (browser-accessible
+  // version/uptime/health view without SSH). Anonymous external
+  // callers still get only { ok } so automated HTTP monitors can
+  // check up/down without exposing internal state publicly.
   const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-  if (isLocalhost) {
+  const isAdmin = !!(req.session && req.session.userId);
+  if (isLocalhost || isAdmin) {
     res.status(status).json({
       ok: status === 200,
       version: require('../../package.json').version,
