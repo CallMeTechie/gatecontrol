@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.3] — 2026-04-24
+
+### Fixes
+- derive COMPOSE_DIR from script location; guard on missing compose (#46)
+
+---
+
 ## [1.52.2] — 2026-04-24
 
 ### Fixes
