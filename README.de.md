@@ -319,86 +319,46 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 
 ## Schnellstart
 
+Für Ungeduldige — Minimal-Setup in einem frischen `/opt/gatecontrol/`-Verzeichnis:
+
 ```bash
-# Klonen und starten
-git clone https://github.com/CallMeTechie/gatecontrol.git
-cd gatecontrol
+mkdir -p /opt/gatecontrol && cd /opt/gatecontrol
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
 cp .env.example .env
 
 # .env bearbeiten — mindestens folgende Werte setzen:
-#   GC_ADMIN_PASSWORD  (dein Admin-Passwort)
+#   GC_ADMIN_PASSWORD  (starkes Passwort)
 #   GC_WG_HOST         (deine öffentliche IP oder Domain)
 #   GC_BASE_URL        (https://deine-domain.de)
 
 docker compose up -d
 ```
 
-GateControl ist anschließend unter deiner konfigurierten `GC_BASE_URL` erreichbar.
+GateControl ist innerhalb von ~30 Sekunden unter deiner konfigurierten `GC_BASE_URL` erreichbar (erster Let's-Encrypt-Cert-Fetch eingerechnet).
 
 ---
 
 ## Installation
 
-### Option 1: Online (empfohlen)
+Siehe **[INSTALL.de.md](INSTALL.de.md)** für die vollständige Installationsanleitung — Voraussetzungen (DNS, Firewall-Ports), empfohlenes Verzeichnislayout, `.env`-Konfiguration, erster Login, Verifikation, Troubleshooting der fünf häufigsten Install-Fehler, Backup-Strategie und Migration bestehender Named-Volume-Setups.
 
-Setup-Dateien herunterladen und den interaktiven Installer starten:
-
-```bash
-mkdir gatecontrol && cd gatecontrol
-
-# Setup-Dateien vom neuesten Release herunterladen
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
-
-# Interaktives Setup starten (installiert Docker bei Bedarf, zieht Image von GHCR)
-sudo bash setup.sh
-```
-
-Das Setup-Skript wird:
-1. Dein Betriebssystem erkennen (Ubuntu, Debian, Fedora, CentOS, RHEL, Rocky, Alma, Alpine)
-2. Docker und Docker Compose installieren, falls nicht vorhanden
-3. Das neueste Image von `ghcr.io/callmetechie/gatecontrol` ziehen
-4. Dich durch die Konfiguration führen (Domain, Admin-Zugangsdaten, Sprache, etc.)
-5. Sichere Secrets automatisch generieren
-6. Den Container starten
-
-### Option 2: Offline
-
-Alle Release-Assets inklusive des vorgefertigten Docker-Images herunterladen:
-
-```bash
-# Alle Dateien eines bestimmten Releases herunterladen
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/gatecontrol-image.tar.gz
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/setup.sh
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/.env.example
-
-# Setup starten — erkennt die tar.gz und lädt sie lokal
-sudo bash setup.sh
-```
-
-### Option 3: Docker Compose (manuell)
-
-```bash
-git clone https://github.com/CallMeTechie/gatecontrol.git
-cd gatecontrol
-cp .env.example .env
-# .env mit deinen Werten bearbeiten
-docker compose up -d
-```
+Der interaktive `setup.sh`-Installer (Variante A in INSTALL.de.md) erledigt Docker-Installation, interaktive `.env`-Konfiguration und sichere Secret-Generierung automatisch.
 
 ### Aktualisierung
 
 ```bash
-# Neuestes Image ziehen
-docker pull ghcr.io/callmetechie/gatecontrol:latest
-
-# Mit neuem Image neu starten
-docker compose down && docker compose up -d
+cd /opt/gatecontrol
+./update.sh
 ```
 
-Deine Daten sind im Docker-Volume `gatecontrol-data` gespeichert und überstehen Updates.
+Oder manuell:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Daten sind im Bind-Mount-Verzeichnis `./data` persistiert und überstehen Updates. Siehe [INSTALL.de.md §11](INSTALL.de.md#11-updates) für den vollen Update-Workflow inklusive Cron/systemd-Timer für automatische Updates.
 
 ---
 
