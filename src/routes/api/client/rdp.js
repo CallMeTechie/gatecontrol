@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const peers = require('../../../services/peers');
 const routes = require('../../../services/routes');
+const tokens = require('../../../services/tokens');
 const logger = require('../../../utils/logger');
 const { hasFeature } = require('../../../services/license');
 const rdpService = require('../../../services/rdp');

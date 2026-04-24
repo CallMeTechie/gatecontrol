@@ -1,8 +1,11 @@
 'use strict';
 
 const { Router } = require('express');
+const config = require('../../../../config/default');
 const peers = require('../../../services/peers');
 const routes = require('../../../services/routes');
+const settings = require('../../../services/settings');
+const logger = require('../../../utils/logger');
 const { requirePeerOwnership } = require('./helpers');
 
 const router = Router();
@@ -83,7 +86,6 @@ router.get('/services', (req, res) => {
  * Returns VPN DNS config so the client can verify DNS goes through VPN
  */
 router.get('/dns-check', (req, res) => {
-  const settings = require("../../../services/settings");
   const customDns = settings.get('custom_dns');
   const vpnDns = customDns || config.wireguard.dns.join(',');
 
