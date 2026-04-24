@@ -96,6 +96,26 @@ async function start() {
     startLicenseRefresh();
     startRdpMonitor();     // RDP health check monitor
 
+    // Caddy reconciler — periodic detection-only check that the live
+    // Caddy config matches the DB state via @id marker comparison.
+    // Auto-repair is off by default; enable with GC_CADDY_AUTO_RECONCILE=1
+    // only for unattended production deployments.
+    const caddyReconciler = require('./services/caddyReconciler');
+    const caddyConfigSvc = require('./services/caddyConfig');
+    caddyReconciler.startReconciler({
+      listDbRouteIds: () => {
+        const { getDb } = require('./db/connection');
+        const rows = getDb()
+          .prepare("SELECT id FROM routes WHERE enabled = 1 AND (route_type IS NULL OR route_type = 'http')")
+          .all();
+        return new Set(rows.map(r => `gc_route_${r.id}`));
+      },
+      getCaddyConfig: () => caddyConfigSvc.caddyApi('/config/'),
+      syncToCaddy: () => caddyConfigSvc.syncToCaddy(),
+      autoRepair: process.env.GC_CADDY_AUTO_RECONCILE === '1',
+      logger,
+    });
+
     // Gateway probe poller — catches silently-dead gateways that
     // stopped heartbeating and recovers gateways before the next
     // real heartbeat arrives. See src/services/gatewayProbe.js.
@@ -262,6 +282,7 @@ const shutdown = createShutdownHandler({
     () => stopAutoBackup(),
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
+    () => require('./services/caddyReconciler').stopReconciler(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,
