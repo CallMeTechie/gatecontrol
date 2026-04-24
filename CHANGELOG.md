@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.0] — 2026-04-24
+
+### Features
+- periodic reconciler detects + optionally repairs DB↔Caddy drift (#49)
+
+---
+
 ## [1.53.0] — 2026-04-24
 
 ### Features
