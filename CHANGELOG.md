@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.0] — 2026-04-24
+
+### Features
+- reveal /health detail to authenticated admin sessions (#43)
+
+---
+
 ## [1.51.0] — 2026-04-23
 
 ### Features
