@@ -96,6 +96,27 @@ async function start() {
     startLicenseRefresh();
     startRdpMonitor();     // RDP health check monitor
 
+    // Gateway probe poller — catches silently-dead gateways that
+    // stopped heartbeating and recovers gateways before the next
+    // real heartbeat arrives. See src/services/gatewayProbe.js.
+    const gatewayProbe = require('./services/gatewayProbe');
+    const gatewaysSvc = require('./services/gateways');
+    gatewayProbe.startProbe({
+      listGateways: () => {
+        const { getDb } = require('./db/connection');
+        return getDb().prepare(`
+          SELECT gm.peer_id, gm.api_port, gm.last_seen_at,
+                 -- Extract bare IP from peers.allowed_ips (first CIDR, drop mask)
+                 SUBSTR(p.allowed_ips, 1, INSTR(p.allowed_ips || '/', '/') - 1) AS ip
+          FROM gateway_meta gm
+          JOIN peers p ON p.id = gm.peer_id
+          WHERE p.enabled = 1 AND p.peer_type = 'gateway'
+        `).all();
+      },
+      recordProbeResult: gatewaysSvc.recordProbeResult,
+      logger,
+    });
+
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
     const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);
@@ -240,6 +261,7 @@ const shutdown = createShutdownHandler({
     () => stopRdpMonitor(),
     () => stopAutoBackup(),
     () => stopLicenseRefresh(),
+    () => require('./services/gatewayProbe').stopProbe(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,

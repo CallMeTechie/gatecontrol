@@ -517,12 +517,34 @@ function rotateGatewayTokens(peerId) {
   return { apiToken, pushToken, envContent };
 }
 
+/**
+ * Feed a probe result into a gateway's health state machine WITHOUT
+ * updating last_seen_at. Unlike handleHeartbeat — which treats the
+ * arrival as fresh traffic from the gateway — a probe is initiated by
+ * the server and tells us only whether the gateway's TCP port is
+ * reachable. Keeping last_seen_at untouched preserves the "gateway is
+ * stale" signal that drives the probe in the first place.
+ *
+ * Used by the gatewayProbe background poller to catch silently-dead
+ * gateways (crashed without farewell heartbeat) and to detect recovery
+ * before the next real heartbeat arrives.
+ */
+function recordProbeResult(peerId, healthy) {
+  const sm = _getSm(peerId);
+  const prevStatus = sm.status;
+  sm.recordHeartbeat(!!healthy);
+  if (sm.status !== prevStatus) {
+    _onStatusTransition(peerId, prevStatus, sm.status, null);
+  }
+}
+
 module.exports = {
   DEFAULT_API_PORT,
   createGateway,
   getGatewayConfig,
   computeConfigHash,
   handleHeartbeat,
+  recordProbeResult,
   _isHeartbeatHealthy, // exported for tests
   recordTrafficSnapshot,
   notifyConfigChanged,
