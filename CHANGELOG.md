@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.4] — 2026-04-24
+
+### Fixes
+- process-level error handlers + robust idempotent shutdown (#47)
+
+---
+
 ## [1.52.3] — 2026-04-24
 
 ### Fixes
