@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.1] — 2026-04-24
+
+### Dokumentation
+- add INSTALL.md covering DNS, layout, first login, backup, migration (#44)
+
+---
+
 ## [1.52.0] — 2026-04-24
 
 ### Features
