@@ -319,86 +319,46 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 
 ## Quick Start
 
+For the impatient — a minimal setup in a fresh `/opt/gatecontrol/` directory:
+
 ```bash
-# Clone and start
-git clone https://github.com/CallMeTechie/gatecontrol.git
-cd gatecontrol
+mkdir -p /opt/gatecontrol && cd /opt/gatecontrol
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
 cp .env.example .env
 
 # Edit .env — set at minimum:
-#   GC_ADMIN_PASSWORD  (your admin password)
+#   GC_ADMIN_PASSWORD  (strong password)
 #   GC_WG_HOST         (your public IP or domain)
 #   GC_BASE_URL        (https://your-domain.com)
 
 docker compose up -d
 ```
 
-GateControl will be available at your configured `GC_BASE_URL`.
+GateControl will be reachable at your configured `GC_BASE_URL` within ~30 seconds (first Let's Encrypt certificate fetch included).
 
 ---
 
 ## Installation
 
-### Option 1: Online (recommended)
+See **[INSTALL.md](INSTALL.md)** for the complete installation guide — prerequisites (DNS, firewall ports), recommended directory layout, `.env` configuration, first login, verification, troubleshooting the five most common first-install errors, backup strategy, and migration from older named-volume setups.
 
-Download the setup files and run the interactive installer:
-
-```bash
-mkdir gatecontrol && cd gatecontrol
-
-# Download setup files from the latest release
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
-
-# Run interactive setup (installs Docker if needed, pulls image from GHCR)
-sudo bash setup.sh
-```
-
-The setup script will:
-1. Detect your OS (Ubuntu, Debian, Fedora, CentOS, RHEL, Rocky, Alma, Alpine)
-2. Install Docker and Docker Compose if not present
-3. Pull the latest image from `ghcr.io/callmetechie/gatecontrol`
-4. Walk you through configuration (domain, admin credentials, language, etc.)
-5. Generate secure secrets automatically
-6. Start the container
-
-### Option 2: Offline
-
-Download all release assets including the pre-built Docker image:
-
-```bash
-# Download all files from a specific release
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/gatecontrol-image.tar.gz
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/setup.sh
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/download/v1.0.0/.env.example
-
-# Run setup — detects the tar.gz and loads it locally
-sudo bash setup.sh
-```
-
-### Option 3: Docker Compose (manual)
-
-```bash
-git clone https://github.com/CallMeTechie/gatecontrol.git
-cd gatecontrol
-cp .env.example .env
-# Edit .env with your values
-docker compose up -d
-```
+The interactive `setup.sh` installer (option A in INSTALL.md) handles Docker installation, interactive `.env` configuration, and secure secret generation for you.
 
 ### Updating
 
 ```bash
-# Pull latest image
-docker pull ghcr.io/callmetechie/gatecontrol:latest
-
-# Restart with new image
-docker compose down && docker compose up -d
+cd /opt/gatecontrol
+./update.sh
 ```
 
-Your data is persisted in the `gatecontrol-data` Docker volume and survives updates.
+Or manually:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Data is persisted in the bind-mounted `./data` directory and survives updates. See [INSTALL.md §11](INSTALL.md#11-updates) for the full update workflow including the cron/systemd-timer setup for automatic updates.
 
 ---
 
