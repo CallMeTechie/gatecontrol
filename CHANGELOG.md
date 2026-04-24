@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.0] — 2026-04-24
+
+### Features
+- TCP-probe poller detects silent dead gateways + faster recovery (#48)
+
+---
+
 ## [1.52.4] — 2026-04-24
 
 ### Fixes
