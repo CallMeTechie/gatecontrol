@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.2] — 2026-04-24
+
+### Fixes
+- restore missing imports in client router sub-modules (PR #41 regression) (#45)
+
+---
+
 ## [1.52.1] — 2026-04-24
 
 ### Dokumentation
