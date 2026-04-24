@@ -220,35 +220,31 @@ start().catch((err) => {
   process.exit(1);
 });
 
-// Graceful shutdown
-function shutdown(signal) {
-  logger.info(`${signal} received, shutting down gracefully`);
-  stopCollector();
-  stopPoller();
-  stopSessionCleanup();
-  stopMonitor();
-  stopRdpMonitor();
-  stopAutoBackup();
-  stopLicenseRefresh();
+// Process-level error handlers. Without these, an unhandled rejection
+// silently terminates Node (>=15 default) and leaves no log entry.
+const { registerProcessErrorHandlers, createShutdownHandler } = require('./lifecycle');
+registerProcessErrorHandlers(logger);
 
-  const closeAndExit = () => {
-    const { closeDb } = require('./db/connection');
-    closeDb();
-    logger.info('Shutdown complete');
-    process.exit(0);
-  };
-
-  if (server) {
-    server.close(closeAndExit);
-    // Force exit if connections don't close
-    setTimeout(() => {
-      logger.warn('Forcing shutdown after timeout');
-      closeAndExit();
-    }, config.intervals.shutdownTimeout);
-  } else {
-    closeAndExit();
-  }
-}
+// Graceful shutdown via extracted lifecycle helper:
+//   - drains in-flight HTTP requests (server.close)
+//   - nudges idle keepalive/HTTP2 connections (closeIdleConnections)
+//   - force-closes everything at deadline (closeAllConnections)
+//   - idempotent: a second SIGTERM is logged and ignored
+const shutdown = createShutdownHandler({
+  getServer: () => server,
+  stoppers: [
+    () => stopCollector(),
+    () => stopPoller(),
+    () => stopSessionCleanup(),
+    () => stopMonitor(),
+    () => stopRdpMonitor(),
+    () => stopAutoBackup(),
+    () => stopLicenseRefresh(),
+  ],
+  closeDb: () => { require('./db/connection').closeDb(); },
+  timeoutMs: config.intervals.shutdownTimeout,
+  logger,
+});
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
