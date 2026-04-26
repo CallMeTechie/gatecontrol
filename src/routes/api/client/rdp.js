@@ -6,6 +6,7 @@ const routes = require('../../../services/routes');
 const tokens = require('../../../services/tokens');
 const logger = require('../../../utils/logger');
 const { hasFeature } = require('../../../services/license');
+const { getDb } = require('../../../db/connection');
 const rdpService = require('../../../services/rdp');
 const rdpMonitor = require('../../../services/rdpMonitor');
 const rdpSessions = require('../../../services/rdpSessions');
