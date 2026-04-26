@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.3] — 2026-04-26
+
+### Fixes
+- reject malformed validateOnline responses before mutating state
+
+---
+
 ## [1.54.2] — 2026-04-26
 
 ### Fixes
