@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.1] — 2026-04-26
+
+### Fixes
+- restore release-cache constants in client/update.js
+
+---
+
 ## [1.54.0] — 2026-04-24
 
 ### Features
