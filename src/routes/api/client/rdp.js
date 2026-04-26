@@ -353,26 +353,4 @@ router.delete('/rdp/:id/session', (req, res) => {
   }
 });
 
-// ── Auto-Update ──────────────────────────────────────────────
-
-const https = require('node:https');
-const http = require('node:http');
-
-// Pro-rata Cache pro Client-Typ: { [clientType]: { data, fetchedAt } }
-const releaseCache = {};
-const CACHE_TTL = 120000; // 2 minutes
-
-const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
-
-const CLIENT_REPOS = {
-  community: process.env.GC_CLIENT_REPO_COMMUNITY || 'CallMeTechie/GateControl-Community-Client',
-  pro:       process.env.GC_CLIENT_REPO_PRO       || 'CallMeTechie/GateControl-Pro-Client',
-  android:   process.env.GC_CLIENT_REPO_ANDROID   || 'CallMeTechie/GateControl-Android-Client',
-};
-
-/**
- * Client-Typ aus Query/Header ermitteln
- * Prüft mehrere Quellen für robuste Erkennung (auch ältere Clients ohne client-Param)
- */
-
 module.exports = router;

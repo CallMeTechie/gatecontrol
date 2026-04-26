@@ -2,8 +2,21 @@
 
 const { Router } = require('express');
 const https = require('node:https');
+const http = require('node:http');
 const config = require('../../../../config/default');
 const logger = require('../../../utils/logger');
+
+// Per-client-type release cache (2 min TTL). Used by both /check and /download.
+const releaseCache = {};
+const CACHE_TTL = 120000;
+
+const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
+
+const CLIENT_REPOS = {
+  community: process.env.GC_CLIENT_REPO_COMMUNITY || 'CallMeTechie/GateControl-Community-Client',
+  pro:       process.env.GC_CLIENT_REPO_PRO       || 'CallMeTechie/GateControl-Pro-Client',
+  android:   process.env.GC_CLIENT_REPO_ANDROID   || 'CallMeTechie/GateControl-Android-Client',
+};
 
 function resolveClientType(req) {
   // 1. Expliziter Parameter (neue Clients)
