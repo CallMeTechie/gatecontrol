@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.2] — 2026-04-26
+
+### Fixes
+- import missing getDb in client/rdp.js connect handler
+
+---
+
 ## [1.54.1] — 2026-04-26
 
 ### Fixes
