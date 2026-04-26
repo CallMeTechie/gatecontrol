@@ -163,6 +163,18 @@ async function validateOnline(fingerprint) {
   }
 
   const data = await res.json();
+
+  // Reject malformed responses before mutating cached state. A 200 with a
+  // missing or empty license object would otherwise spread into
+  // COMMUNITY_FALLBACK in applyLicense, which then trips
+  // refreshLicenseInBackground's previousPlan-changed check and disables
+  // peers/routes via enforceLimits — exactly the regression seen on
+  // 2026-04-26 (3 peers + 3 routes auto-disabled with COMMUNITY_FALLBACK
+  // limits 3/1/0 even though the lifetime JWT was intact).
+  if (!data || !data.license || typeof data.license.plan !== 'string' || !data.license.features || typeof data.license.features !== 'object') {
+    throw new Error('License server returned malformed response');
+  }
+
   saveToken(data.token);
 
   return {
