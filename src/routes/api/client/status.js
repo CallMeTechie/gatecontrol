@@ -6,6 +6,7 @@ const activity = require('../../../services/activity');
 const logger = require('../../../utils/logger');
 const { hasFeature } = require('../../../services/license');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
+const { getDb } = require('../../../db/connection');
 
 const router = Router();
 

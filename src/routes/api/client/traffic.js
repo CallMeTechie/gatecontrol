@@ -6,7 +6,8 @@ const peers = require('../../../services/peers');
 const routes = require('../../../services/routes');
 const settings = require('../../../services/settings');
 const logger = require('../../../utils/logger');
-const { requirePeerOwnership } = require('./helpers');
+const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
+const { getDb } = require('../../../db/connection');
 
 const router = Router();
 
