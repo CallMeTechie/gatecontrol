@@ -23,6 +23,10 @@ describe('gateways pairing-code', () => {
     require('../src/db/migrations').runMigrations();
     gateways = require('../src/services/gateways');
     db = require('../src/db/connection').getDb();
+    // Allow multiple gateway peers — community fallback caps at 1, which
+    // would block every test past the first createGateway() call.
+    const license = require('../src/services/license');
+    if (license._overrideForTest) license._overrideForTest({ gateway_peers: 20 });
   });
 
   it('createPairingCode returns code in XXXX-XXXX-XXXX-XXXX@host format', async () => {
