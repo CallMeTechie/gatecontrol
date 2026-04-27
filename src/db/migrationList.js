@@ -714,6 +714,32 @@ const migrations = [
       return !!row;
     },
   },
+  {
+    // Pairing-code mechanism for the install-pve.sh / one-shot bootstrap
+    // flow: dashboard generates a short cleartext token (XXXX-XXXX-XXXX-
+    // XXXX@host) shown once, installer POSTs it to /api/v1/gateway/pair
+    // and gets the gateway.env content back. Codes are SHA-256 hashed
+    // at rest, single-active per peer (regenerate invalidates prior),
+    // 10-min TTL, one-shot (consumed_at set atomically on redeem).
+    version: 40,
+    name: 'create_gateway_pairing_codes',
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_pairing_codes (
+        code_hash TEXT PRIMARY KEY,
+        peer_id INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        consumed_from_ip TEXT,
+        created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+      );
+      CREATE INDEX IF NOT EXISTS idx_gateway_pairing_codes_peer ON gateway_pairing_codes(peer_id);
+      CREATE INDEX IF NOT EXISTS idx_gateway_pairing_codes_expires ON gateway_pairing_codes(expires_at);
+    `,
+    detect: (db) => {
+      const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='gateway_pairing_codes'").get();
+      return !!row;
+    },
+  },
 ];
 
 module.exports = { migrations };

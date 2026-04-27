@@ -2,12 +2,40 @@
 
 const express = require('express');
 const { requireGateway } = require('../../middleware/gatewayAuth');
+const { gatewayPairLimiter } = require('../../middleware/rateLimit');
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
+
+/**
+ * POST /api/v1/gateway/pair — public, unauthenticated. Trades a one-shot
+ * pairing code (issued by the dashboard's Gateway-Peer modal) for the
+ * gateway.env content. Mounted BEFORE requireGateway so the installer
+ * can call it without already having a token.
+ *
+ * Body: { "code": "XXXX-XXXX-XXXX-XXXX" }   — bare code, no @host suffix
+ * On success: 200 + { ok: true, envContent: "<full gateway.env>" }
+ * On invalid/expired/consumed: 400 + { ok: false, error: 'invalid_or_expired' }
+ *
+ * Rate-limited by gatewayPairLimiter (10/IP/5min) on top of the apiLimiter
+ * the parent router already applies.
+ */
+router.post('/pair', gatewayPairLimiter, express.json({ limit: '1kb' }), (req, res) => {
+  const code = req.body && typeof req.body.code === 'string' ? req.body.code.trim().toUpperCase() : '';
+  try {
+    const { envContent } = gateways.redeemPairingCode(code, req.ip);
+    res.json({ ok: true, envContent });
+  } catch (err) {
+    if (err.code === 'invalid_or_expired') {
+      return res.status(400).json({ ok: false, error: 'invalid_or_expired' });
+    }
+    logger.error({ error: err.message }, 'Failed to redeem gateway pairing code');
+    res.status(500).json({ ok: false, error: 'pair_failed' });
+  }
+});
 
 router.use(requireGateway);
 

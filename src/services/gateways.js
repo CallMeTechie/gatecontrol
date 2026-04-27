@@ -543,6 +543,128 @@ function recordProbeResult(peerId, healthy) {
   }
 }
 
+// ─── Pairing codes (one-shot bootstrap for install-pve.sh) ────────────
+
+const PAIRING_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes — hardcoded
+
+// 16 hex chars (64 bits) formatted XXXX-XXXX-XXXX-XXXX. Cleartext only,
+// hashed before persisting. Capital letters because that's what the
+// installer regex expects.
+function _generatePairingCodePlaintext() {
+  const hex = crypto.randomBytes(8).toString('hex').toUpperCase();
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}`;
+}
+
+function _hashPairingCode(code) {
+  return crypto.createHash('sha256').update(code).digest('hex');
+}
+
+/**
+ * Generate a single-active pairing code for a gateway peer. The cleartext
+ * code is returned ONCE and never persisted — only its SHA-256 hash hits
+ * the DB. Any existing code for this peer is invalidated atomically so
+ * "regenerate" really does revoke the old one.
+ *
+ * Returns the full token in `code@host` form (the installer parses on @
+ * to know which server to redeem against).
+ */
+function createPairingCode(peerId) {
+  const db = getDb();
+  const peer = db.prepare("SELECT id, name, peer_type FROM peers WHERE id=?").get(peerId);
+  if (!peer || peer.peer_type !== 'gateway') throw new Error('not_a_gateway');
+
+  // Single active code per peer — wipe any previous unconsumed entries.
+  db.prepare('DELETE FROM gateway_pairing_codes WHERE peer_id=?').run(peerId);
+
+  const code = _generatePairingCodePlaintext();
+  const codeHash = _hashPairingCode(code);
+  const expiresAt = Date.now() + PAIRING_CODE_TTL_MS;
+
+  db.prepare(`
+    INSERT INTO gateway_pairing_codes (code_hash, peer_id, expires_at)
+    VALUES (?, ?, ?)
+  `).run(codeHash, peerId, expiresAt);
+
+  // Compose the cleartext token with the public hostname suffix so the
+  // installer learns where to redeem without a separate prompt.
+  const config = require('../../config/default');
+  let host;
+  try { host = new URL(config.app.baseUrl).host; } catch { host = require('os').hostname(); }
+  const token = `${code}@${host}`;
+
+  try {
+    activity.log('gateway_pairing_code_created',
+      `Pairing code generated for gateway "${peer.name}"`,
+      { source: 'admin', severity: 'info', details: { peerId, peerName: peer.name, expires_at: expiresAt } });
+  } catch {}
+
+  return { code, token, expiresAt };
+}
+
+/**
+ * Atomically consume a pairing code and rotate the gateway's tokens.
+ * Same end result as the dashboard's "Download Config" flow — fresh
+ * api/push tokens + freshly-built env content. Caller passes the source
+ * IP (from the public endpoint) so the activity log captures who
+ * redeemed it.
+ *
+ * Throws an Error with .code = 'invalid_or_expired' | 'consumed' on any
+ * non-success path so callers can distinguish 410 (already used) from
+ * 400 (never existed / expired) without leaking which is which to the
+ * client — both surface as 400.
+ */
+function redeemPairingCode(rawCode, sourceIp) {
+  const db = getDb();
+  if (typeof rawCode !== 'string' || !/^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/.test(rawCode)) {
+    const err = new Error('invalid_format');
+    err.code = 'invalid_or_expired';
+    throw err;
+  }
+
+  const codeHash = _hashPairingCode(rawCode);
+  const now = Date.now();
+
+  // Atomic mark-consumed: only succeeds if the code is unconsumed and
+  // unexpired. Two concurrent installers redeeming the same code can
+  // therefore not both win.
+  const update = db.prepare(`
+    UPDATE gateway_pairing_codes
+    SET consumed_at = ?, consumed_from_ip = ?
+    WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
+  `).run(now, sourceIp || null, codeHash, now);
+
+  if (update.changes === 0) {
+    const err = new Error('not_redeemable');
+    err.code = 'invalid_or_expired';
+    throw err;
+  }
+
+  const row = db.prepare('SELECT peer_id FROM gateway_pairing_codes WHERE code_hash=?').get(codeHash);
+  const peerId = row.peer_id;
+  const peer = db.prepare('SELECT name FROM peers WHERE id=?').get(peerId);
+
+  // Rotate tokens — same effect as a manual "Download Config" click.
+  // The previously running gateway (if any) is forcibly disconnected.
+  const { envContent } = rotateGatewayTokens(peerId);
+
+  try {
+    activity.log('gateway_pairing_code_redeemed',
+      `Pairing code redeemed for gateway "${peer ? peer.name : peerId}"${sourceIp ? ` from ${sourceIp}` : ''}`,
+      { source: 'system', severity: 'info', details: { peerId, peerName: peer ? peer.name : null, sourceIp } });
+  } catch {}
+
+  return { envContent };
+}
+
+/**
+ * Delete pairing codes whose TTL is in the past. Cheap, can run as a
+ * periodic janitor or just opportunistically on each create.
+ */
+function cleanupExpiredPairingCodes() {
+  const db = getDb();
+  return db.prepare('DELETE FROM gateway_pairing_codes WHERE expires_at <= ?').run(Date.now()).changes;
+}
+
 module.exports = {
   DEFAULT_API_PORT,
   createGateway,
@@ -557,6 +679,9 @@ module.exports = {
   getHealthStatus,
   rotateGatewayTokens,
   buildEnvForPeer,
+  createPairingCode,
+  redeemPairingCode,
+  cleanupExpiredPairingCodes,
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
   _smCache,

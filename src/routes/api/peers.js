@@ -371,4 +371,24 @@ router.post('/:id/gateway-env/rotate', (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/peers/:id/gateway-pairing-code — generate a one-shot
+ * pairing code that the install-pve.sh installer can redeem to bootstrap
+ * the gateway without manual gateway.env transfer. Single-active per
+ * peer, 10-min TTL, hashed at rest. The cleartext token is returned ONCE.
+ */
+router.post('/:id/gateway-pairing-code', (req, res) => {
+  const peerId = parseInt(req.params.id, 10);
+  try {
+    const { token, expiresAt } = require('../../services/gateways').createPairingCode(peerId);
+    res.json({ ok: true, token, expiresAt });
+  } catch (err) {
+    if (err.message === 'not_a_gateway') {
+      return res.status(404).json({ ok: false, error: 'not_a_gateway' });
+    }
+    logger.error({ error: err.message, peerId }, 'Failed to create gateway pairing code');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 module.exports = router;

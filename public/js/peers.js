@@ -2,6 +2,19 @@
 
 (function () {
   // ─── Gateway-Tokens Modal (shared helper for create + rotate flows) ──────
+  // Source URL of the install-pve.sh script used in the LXC tab. Hardcoded
+  // — the gateway repo is the canonical home; if it ever moves, both this
+  // and the script's own self-reference need updating in lockstep.
+  var INSTALL_SCRIPT_URL =
+    'https://raw.githubusercontent.com/CallMeTechie/gatecontrol-gateway/main/scripts/install-pve.sh';
+
+  // Track the active pairing-code countdown so we can cancel it on
+  // modal-close / regenerate without leaving timers running.
+  var _pairingCountdownTimer = null;
+  function _stopPairingCountdown() {
+    if (_pairingCountdownTimer) { clearInterval(_pairingCountdownTimer); _pairingCountdownTimer = null; }
+  }
+
   function openGatewayTokensModal(peer, tokens) {
     var apiEl = document.getElementById('gateway-tokens-api-token');
     var pushEl = document.getElementById('gateway-tokens-push-token');
@@ -54,6 +67,102 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
     };
+
+    // ── Tabs ──────────────────────────────────────────────
+    var tabs = document.querySelectorAll('.gw-tab');
+    var panes = document.querySelectorAll('.gw-tab-pane');
+    function activateTab(name) {
+      tabs.forEach(function(b) {
+        var on = b.getAttribute('data-gw-tab') === name;
+        b.style.borderBottomColor = on ? '#2563eb' : 'transparent';
+        b.style.color = on ? '#2563eb' : '#6b7280';
+        b.style.fontWeight = on ? '600' : 'normal';
+      });
+      panes.forEach(function(p) {
+        p.style.display = (p.getAttribute('data-gw-pane') === name) ? '' : 'none';
+      });
+    }
+    tabs.forEach(function(b) {
+      b.onclick = function() { activateTab(b.getAttribute('data-gw-tab')); };
+    });
+    activateTab('lxc');
+
+    // ── LXC pairing-code wiring ───────────────────────────
+    var tokenEl = document.getElementById('gateway-pairing-token');
+    var commandEl = document.getElementById('gateway-pairing-command');
+    var countdownEl = document.getElementById('gateway-pairing-countdown');
+    var statusEl = document.getElementById('gateway-pairing-status');
+    var copyTokenBtn = document.getElementById('gateway-pairing-copy-token');
+    var copyCmdBtn = document.getElementById('gateway-pairing-copy-command');
+    var regenBtn = document.getElementById('gateway-pairing-regenerate');
+
+    function buildCommand(token) {
+      // Inline -- separator splits the curl-fetched script's positional
+      // args from bash's own args. The installer uses --token and --yes.
+      return 'bash -c "$(curl -fsSL ' + INSTALL_SCRIPT_URL + ')" -- \\\n' +
+             '  --token "' + token + '" --yes';
+    }
+
+    function startCountdown(expiresAt) {
+      _stopPairingCountdown();
+      function tick() {
+        var ms = expiresAt - Date.now();
+        if (ms <= 0) {
+          countdownEl.textContent = (GC.t['gateway_deploy_lxc_expired'] || 'Expired — click ↻ to regenerate');
+          countdownEl.style.color = '#dc2626';
+          _stopPairingCountdown();
+          return;
+        }
+        var s = Math.floor(ms / 1000);
+        var m = Math.floor(s / 60);
+        var ss = String(s % 60).padStart(2, '0');
+        countdownEl.textContent = (GC.t['gateway_deploy_lxc_valid_for'] || 'Valid for') + ' ' + m + ':' + ss;
+        countdownEl.style.color = ms < 2 * 60 * 1000 ? '#dc2626' : '#6b7280';
+      }
+      tick();
+      _pairingCountdownTimer = setInterval(tick, 1000);
+    }
+
+    async function loadPairingCode() {
+      tokenEl.value = '';
+      commandEl.value = '';
+      statusEl.textContent = (GC.t['gateway_deploy_lxc_generating'] || 'Generating…');
+      countdownEl.textContent = '';
+      try {
+        const resp = await fetch('/api/v1/peers/' + encodeURIComponent(peer.id) + '/gateway-pairing-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'failed');
+        tokenEl.value = data.token;
+        commandEl.value = buildCommand(data.token);
+        statusEl.textContent = '';
+        startCountdown(data.expiresAt);
+      } catch (err) {
+        statusEl.textContent = (GC.t['gateway_deploy_lxc_failed'] || 'Failed') + ': ' + err.message;
+        statusEl.style.color = '#dc2626';
+      }
+    }
+
+    if (copyTokenBtn) copyTokenBtn.onclick = function() { copyToClipboard(tokenEl.value); };
+    if (copyCmdBtn)   copyCmdBtn.onclick   = function() { copyToClipboard(commandEl.value); };
+    if (regenBtn)     regenBtn.onclick     = function() { loadPairingCode(); };
+
+    // Auto-fetch on open. If the user closes the modal without copying,
+    // the code expires harmlessly within 10 minutes — server-side janitor
+    // sweeps eventually.
+    loadPairingCode();
+
+    // Stop the countdown when the modal closes (any [data-close-modal] click).
+    var modal = document.getElementById('modal-gateway-tokens');
+    if (modal) {
+      modal.addEventListener('click', function onClose(e) {
+        if (e.target.closest && e.target.closest('[data-close-modal]')) {
+          _stopPairingCountdown();
+        }
+      });
+    }
 
     openModal('modal-gateway-tokens');
   }

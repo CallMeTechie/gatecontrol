@@ -74,4 +74,19 @@ const hostnameReportLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter };
+// Public gateway-pairing redemption: 64-bit codes with 10-min TTL plus
+// one-shot semantics already make brute-force impractical, but a tight
+// per-IP limit (10 per 5 min) keeps log noise down and discourages
+// scanning. Endpoint is unauthenticated by design.
+const gatewayPairLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => `pair:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many pairing attempts. Try again later.' });
+  },
+});
+
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayPairLimiter };

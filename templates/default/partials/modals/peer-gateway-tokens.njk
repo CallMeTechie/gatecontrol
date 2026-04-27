@@ -1,5 +1,5 @@
 <div class="modal-overlay" id="modal-gateway-tokens" style="display:none">
-  <div class="modal" style="max-width:640px">
+  <div class="modal" style="max-width:720px">
     <div class="modal-head">
       <span class="modal-title">{{ t('gateway_tokens_title') }}</span>
       <button class="modal-close" data-close-modal>&times;</button>
@@ -10,36 +10,96 @@
         {{ t('gateway_tokens_warning_body') }}
       </div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('gateway_tokens_api_token') }}</label>
-        <div style="display:flex;gap:6px">
-          <input type="text" class="form-input" id="gateway-tokens-api-token" readonly
-                 style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
-          <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-api">
-            {{ t('common.copy') }}
-          </button>
+      {# ─── Deployment-method tabs ─────────────────────────────── #}
+      <div class="gw-deploy-tabs" role="tablist"
+           style="display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:16px">
+        <button type="button" class="gw-tab gw-tab-active" data-gw-tab="lxc" role="tab"
+                style="background:none;border:none;border-bottom:2px solid #2563eb;color:#2563eb;padding:8px 16px;font-weight:600;cursor:pointer">
+          {{ t('gateway_deploy_tab_lxc') }}
+        </button>
+        <button type="button" class="gw-tab" data-gw-tab="docker" role="tab"
+                style="background:none;border:none;border-bottom:2px solid transparent;color:#6b7280;padding:8px 16px;cursor:pointer">
+          {{ t('gateway_deploy_tab_docker') }}
+        </button>
+        <button type="button" class="gw-tab" data-gw-tab="manual" role="tab"
+                style="background:none;border:none;border-bottom:2px solid transparent;color:#6b7280;padding:8px 16px;cursor:pointer">
+          {{ t('gateway_deploy_tab_manual') }}
+        </button>
+      </div>
+
+      {# ─── LXC tab (default) ──────────────────────────────────── #}
+      <div class="gw-tab-pane" data-gw-pane="lxc">
+        <div style="padding:8px 12px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:4px;margin-bottom:14px;font-size:13px;line-height:1.5">
+          {{ t('gateway_deploy_lxc_intro') }}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_deploy_lxc_command_label') }}</label>
+          <div style="display:flex;gap:6px;align-items:flex-start">
+            <textarea id="gateway-pairing-command" readonly
+                      style="width:100%;min-height:90px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
+            <button type="button" class="btn btn-secondary btn-sm" id="gateway-pairing-copy-command" style="flex-shrink:0">
+              {{ t('common.copy') }}
+            </button>
+          </div>
+          <small class="form-hint">{{ t('gateway_deploy_lxc_command_hint') }}</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_deploy_lxc_token_label') }}</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" class="form-input" id="gateway-pairing-token" readonly
+                   style="font-family:var(--font-mono,monospace);font-size:13px;flex:1;letter-spacing:0.5px">
+            <button type="button" class="btn btn-ghost btn-sm" id="gateway-pairing-copy-token">
+              {{ t('common.copy') }}
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" id="gateway-pairing-regenerate" title="{{ t('gateway_deploy_lxc_regenerate_title') }}">
+              ↻
+            </button>
+          </div>
+          <small class="form-hint" style="display:flex;justify-content:space-between;align-items:center">
+            <span id="gateway-pairing-countdown">&nbsp;</span>
+            <span id="gateway-pairing-status" style="color:#6b7280">&nbsp;</span>
+          </small>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('gateway_tokens_push_token') }}</label>
-        <div style="display:flex;gap:6px">
-          <input type="text" class="form-input" id="gateway-tokens-push-token" readonly
-                 style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
-          <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-push">
-            {{ t('common.copy') }}
-          </button>
+      {# ─── Docker tab (existing flow) ─────────────────────────── #}
+      <div class="gw-tab-pane" data-gw-pane="docker" style="display:none">
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_tokens_env_file') }}</label>
+          <textarea id="gateway-tokens-env" readonly
+                    style="width:100%;min-height:220px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical"></textarea>
+          <small class="form-hint">{{ t('gateway_tokens_env_hint') }}</small>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('gateway_tokens_env_file') }}</label>
-        <textarea id="gateway-tokens-env" readonly
-                  style="width:100%;min-height:220px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical"></textarea>
-        <small class="form-hint">{{ t('gateway_tokens_env_hint') }}</small>
+      {# ─── Manual tab (raw tokens) ────────────────────────────── #}
+      <div class="gw-tab-pane" data-gw-pane="manual" style="display:none">
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_tokens_api_token') }}</label>
+          <div style="display:flex;gap:6px">
+            <input type="text" class="form-input" id="gateway-tokens-api-token" readonly
+                   style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-api">
+              {{ t('common.copy') }}
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_tokens_push_token') }}</label>
+          <div style="display:flex;gap:6px">
+            <input type="text" class="form-input" id="gateway-tokens-push-token" readonly
+                   style="font-family:var(--font-mono,monospace);font-size:12px;flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" id="gateway-tokens-copy-push">
+              {{ t('common.copy') }}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div id="gateway-tokens-copy-feedback" style="display:none;padding:8px 12px;background:#d1fae5;border-left:3px solid #10b981;border-radius:4px;font-size:13px;color:#065f46">
+      <div id="gateway-tokens-copy-feedback" style="display:none;padding:8px 12px;background:#d1fae5;border-left:3px solid #10b981;border-radius:4px;font-size:13px;color:#065f46;margin-top:12px">
         ✓ {{ t('gateway_tokens_copied') }}
       </div>
     </div>
