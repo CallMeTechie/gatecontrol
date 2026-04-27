@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.5] — 2026-04-27
+
+### Fixes
+- derive HTTP-route protocol from backend_https, never l4_protocol
+
+---
+
 ## [1.54.4] — 2026-04-27
 
 ### Fixes
