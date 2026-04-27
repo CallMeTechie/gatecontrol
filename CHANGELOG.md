@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.4] — 2026-04-27
+
+### Fixes
+- restore missing helpers/getDb imports in client/traffic + status
+
+---
+
 ## [1.54.3] — 2026-04-26
 
 ### Fixes
