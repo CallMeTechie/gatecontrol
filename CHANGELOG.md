@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.6] — 2026-04-27
+
+### Fixes
+- null L4-only columns on non-L4 routes (create + update)
+
+---
+
 ## [1.54.5] — 2026-04-27
 
 ### Fixes
