@@ -220,9 +220,12 @@ async function create(data) {
     basicAuthUser,
     basicAuthPasswordHash,
     routeType,
-    data.l4_protocol || null,
-    data.l4_listen_port || null,
-    data.l4_tls_mode || null,
+    // L4-only fields are NULL on http routes regardless of input — a
+    // stale 'tcp' on an http row breaks getGatewayConfig's Zod schema
+    // and silently 500s the gateway-config endpoint.
+    routeType === 'l4' ? (data.l4_protocol || null) : null,
+    routeType === 'l4' ? (data.l4_listen_port || null) : null,
+    routeType === 'l4' ? (data.l4_tls_mode || null) : null,
     data.monitoring_enabled ? 1 : 0,
     data.ip_filter_enabled ? 1 : 0,
     data.ip_filter_mode || null,
@@ -526,9 +529,15 @@ async function update(id, data) {
     basicAuthUser,
     basicAuthPasswordHash,
     data.route_type || null,
-    data.l4_protocol !== undefined ? (data.l4_protocol || null) : route.l4_protocol,
-    data.l4_listen_port !== undefined ? (data.l4_listen_port || null) : route.l4_listen_port,
-    data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode,
+    // Force L4-only fields to NULL on http routes regardless of input
+    // or stored value. The effective routeType after this update is
+    // either the new one or the existing one — if it's not 'l4', the
+    // l4_* columns must not survive (they trip getGatewayConfig's Zod
+    // schema and 500 the gateway-config endpoint). Mirrors the same
+    // guard in create().
+    routeType === 'l4' ? (data.l4_protocol !== undefined ? (data.l4_protocol || null) : route.l4_protocol) : null,
+    routeType === 'l4' ? (data.l4_listen_port !== undefined ? (data.l4_listen_port || null) : route.l4_listen_port) : null,
+    routeType === 'l4' ? (data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode) : null,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     data.monitoring_enabled !== undefined ? (data.monitoring_enabled ? 1 : 0) : null,
     data.ip_filter_enabled !== undefined ? (data.ip_filter_enabled ? 1 : 0) : null,
