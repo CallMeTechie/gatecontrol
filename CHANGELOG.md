@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.7] — 2026-04-27
+
+### Änderungen
+- override license limit so all subtests can create peers
+
+---
+
 ## [1.54.6] — 2026-04-27
 
 ### Fixes
