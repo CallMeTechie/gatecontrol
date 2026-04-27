@@ -89,8 +89,7 @@ function getGatewayConfig(peerId) {
 
   const httpRoutes = db.prepare(`
     SELECT id, domain, target_kind, target_lan_host, target_lan_port,
-           backend_https,
-           COALESCE(l4_protocol, 'http') AS protocol, wol_enabled, wol_mac
+           backend_https, wol_enabled, wol_mac
     FROM routes
     WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
       AND (route_type = 'http' OR route_type IS NULL)
@@ -121,7 +120,13 @@ function getGatewayConfig(peerId) {
       // stays byte-identical for the common case and older gateways
       // without support don't diverge.
       ...(r.backend_https ? { backend_https: true } : {}),
-      protocol: r.protocol,
+      // Derive protocol strictly from backend_https — never read
+      // l4_protocol here even if the row has a stale value from a
+      // route_type=l4 → http transition. The shared config-hash schema
+      // requires 'http'|'https' for HTTP routes; a leftover 'tcp' would
+      // throw ZodError, /api/v1/gateway/config returns 500, and the
+      // gateway never picks up the new route → "No route for domain X".
+      protocol: r.backend_https ? 'https' : 'http',
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
