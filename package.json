@@ -16,7 +16,7 @@
     "cookie-parser": "^1.4.7",
     "csrf-sync": "^4.0.3",
     "express": "^4.21.1",
-    "express-rate-limit": "^7.4.1",
+    "express-rate-limit": "^8.4.1",
     "express-session": "^1.18.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.3",
