@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.0] — 2026-04-28
+
+### Features
+- platform picker (Synology vs Linux kernel WG)
+
+---
+
 ## [1.55.1] — 2026-04-28
 
 ### Fixes
