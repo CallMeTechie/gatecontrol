@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.3] — 2026-04-28
+
+### Änderungen
+- ENV-Download button -> key icon that opens the pairing-tokens modal directly
+
+---
+
 ## [1.58.2] — 2026-04-28
 
 ### Änderungen
