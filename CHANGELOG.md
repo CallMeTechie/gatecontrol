@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.4] — 2026-04-28
+
+### Änderungen
+- key icon opens pairing-tokens modal without rotating gateway tokens
+
+---
+
 ## [1.58.3] — 2026-04-28
 
 ### Änderungen
