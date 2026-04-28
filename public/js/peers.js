@@ -712,6 +712,28 @@
     }
   }
 
+  // Rotate the gateway's api_token + push_token and present the result
+  // in the Gateway-Pairing-Tokens modal. Mirrors the Edit-modal's
+  // 'Tokens rotieren'-button behaviour, exposed as a single call so
+  // the icon button on the Gateway-Card can use the same path without
+  // routing through the Edit modal first.
+  async function rotateGatewayTokensAndShowModal(peer) {
+    var confirmMsg = (GC.t && GC.t['gateway_download_confirm'])
+      || 'Gateway-Tokens werden regeneriert. Laufender Gateway wird ungültig. Fortfahren?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      // /rotate returns JSON: { ok, apiToken, pushToken, envContent }
+      var data = await api.post('/api/peers/' + peer.id + '/gateway-env/rotate', {});
+      if (!data || data.ok === false) {
+        alert((GC.t && GC.t['common.error'] || 'Error') + ': ' + (data && data.error ? data.error : 'rotate failed'));
+        return;
+      }
+      openGatewayTokensModal(peer, data);
+    } catch (err) {
+      alert((GC.t && GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err));
+    }
+  }
+
   // ─── Gateway env download (rotates tokens on server) ─────
   async function downloadGatewayEnv(peerId) {
     var confirmMsg = GC.t['gateway_download_confirm']
@@ -2012,15 +2034,17 @@
       function() { showGatewayDeleteConfirm(gw.peer_id); },
       true
     ));
-    // Key icon — same flow as Edit-modal → 'ENV herunterladen' just
-    // without the Edit-modal detour. downloadGatewayEnv() shows the
-    // rotate-confirm prompt, calls /gateway-env/rotate, and opens the
-    // Gateway-Pairing-Tokens modal with all three tabs populated
-    // (LXC / Docker / Manual).
+    // Key icon — opens the Gateway-Pairing-Tokens modal directly.
+    // Same flow as Edit modal → 'Tokens rotieren'-Button: confirm,
+    // POST /gateway-env/rotate, then open the modal with envContent +
+    // apiToken + pushToken populated. NOT downloadGatewayEnv() —
+    // that's a misleadingly-named legacy file-download function.
     footer.appendChild(mkIconBtn(
       'peers.gateway.action_env', 'Pairing-Tokens',
       '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
-      function() { downloadGatewayEnv(gw.peer_id); }
+      function() {
+        rotateGatewayTokensAndShowModal({ id: gw.peer_id, name: gw.name });
+      }
     ));
     return footer;
   }
