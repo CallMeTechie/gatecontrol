@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.9] — 2026-04-28
+
+### Fixes
+- include CSRF token + same-origin creds on pairing-code request
+
+---
+
 ## [1.54.8] — 2026-04-28
 
 ### Fixes
