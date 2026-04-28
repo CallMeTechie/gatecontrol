@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.7] — 2026-04-28
+
+### Fixes
+- collapsed gateway card no longer stretched to row height
+
+---
+
 ## [1.58.6] — 2026-04-28
 
 ### Fixes
