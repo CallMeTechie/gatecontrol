@@ -422,15 +422,11 @@
     '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + p.id + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
     '</button>' +
-    // Trash sits next to Edit per UX feedback — destructive action
-    // grouped with the modify action makes the row scannable. The
-    // gateway-specific delete flow (route-impact preview + IP-typing
-    // confirm) kicks in via the click handler when peer_type=gateway.
-    '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
-    '</button>' +
     '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
     '</button>';
   }
 
@@ -1987,9 +1983,31 @@
       return b;
     }
 
+    // Icon-only button matching the existing icon-btn class used in the
+    // standard peer list. The trash sits next to "Bearbeiten" so the
+    // destructive action is grouped with the modify action visually.
+    function mkIconBtn(titleKey, titleFallback, svgPath, onClick, danger) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'icon-btn' + (danger ? ' icon-btn-danger' : '');
+      b.title = gwT(titleKey, titleFallback);
+      b.setAttribute('aria-label', b.title);
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + svgPath + '</svg>';
+      b.addEventListener('click', function(e) { e.stopPropagation(); onClick(); });
+      return b;
+    }
+
     footer.appendChild(mkBtn('peers.gateway.action_edit', 'Bearbeiten', function() {
       showEditModal(gw.peer_id);
     }));
+    // Trash icon — opens the IP-typing safety modal (showGatewayDeleteConfirm).
+    // Placed immediately after the edit button per user request.
+    footer.appendChild(mkIconBtn(
+      'peers.gateway.action_delete', 'Gateway löschen',
+      '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
+      function() { showGatewayDeleteConfirm(gw.peer_id); },
+      true
+    ));
     footer.appendChild(mkBtn('peers.gateway.action_env', 'ENV herunterladen', function() {
       // Open edit modal which carries the download/rotate UI — same flow
       showEditModal(gw.peer_id);
