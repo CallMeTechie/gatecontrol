@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.57.0] — 2026-04-28
+
+### Features
+- platform-specific intro/instructions + responsive modal
+
+---
+
 ## [1.56.0] — 2026-04-28
 
 ### Features
