@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.2] — 2026-04-28
+
+### Änderungen
+- convert Gateway-Card 'Bearbeiten' button to pencil icon
+
+---
+
 ## [1.58.1] — 2026-04-28
 
 ### Fixes
