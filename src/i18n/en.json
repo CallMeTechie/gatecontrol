@@ -160,7 +160,7 @@
   "peers.gateway.none": "No gateway configured. Add one via the Add button.",
   "peers.gateway.version_chip": "Gateway container version",
   "peers.gateway.action_edit": "Edit",
-  "peers.gateway.action_env": "Download ENV",
+  "peers.gateway.action_env": "Pairing tokens",
   "peers.gateway.action_delete": "Delete gateway",
   "peers.tags": "Tags",
   "peers.tags_placeholder": "e.g. server, production",

@@ -160,7 +160,7 @@
   "peers.gateway.none": "Kein Gateway konfiguriert. Neuen Gateway-Peer über „Hinzufügen\" anlegen.",
   "peers.gateway.version_chip": "Gateway-Container-Version",
   "peers.gateway.action_edit": "Bearbeiten",
-  "peers.gateway.action_env": "ENV herunterladen",
+  "peers.gateway.action_env": "Pairing-Tokens anzeigen",
   "peers.gateway.action_delete": "Gateway löschen",
   "peers.tags": "Tags",
   "peers.tags_placeholder": "z.B. Server, Produktion",
