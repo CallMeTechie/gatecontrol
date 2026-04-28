@@ -2012,20 +2012,15 @@
       function() { showGatewayDeleteConfirm(gw.peer_id); },
       true
     ));
-    // Key icon — opens the Gateway-Pairing-Tokens modal directly
-    // (LXC / Docker / Manual tabs) WITHOUT rotating the existing
-    // gateway tokens. The LXC tab still works because pairing codes
-    // are tracked in a separate table — generating one doesn't touch
-    // the gateway's api_token / push_token. Docker and Manual tabs
-    // start empty; they need a token rotation to populate, which the
-    // user can trigger explicitly via 'Edit peer → rotate' — no
-    // surprise rotation just from opening this modal.
+    // Key icon — same flow as Edit-modal → 'ENV herunterladen' just
+    // without the Edit-modal detour. downloadGatewayEnv() shows the
+    // rotate-confirm prompt, calls /gateway-env/rotate, and opens the
+    // Gateway-Pairing-Tokens modal with all three tabs populated
+    // (LXC / Docker / Manual).
     footer.appendChild(mkIconBtn(
       'peers.gateway.action_env', 'Pairing-Tokens',
       '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
-      function() {
-        openGatewayTokensModal({ id: gw.peer_id, name: gw.name }, {});
-      }
+      function() { downloadGatewayEnv(gw.peer_id); }
     ));
     return footer;
   }
