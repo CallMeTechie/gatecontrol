@@ -129,12 +129,19 @@
       statusEl.textContent = (GC.t['gateway_deploy_lxc_generating'] || 'Generating…');
       countdownEl.textContent = '';
       try {
+        // Same CSRF + credentials shape as the existing /gateway-env/rotate
+        // call below — the admin POST endpoints all require both.
         const resp = await fetch('/api/v1/peers/' + encodeURIComponent(peer.id) + '/gateway-pairing-code', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          headers: {
+            'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '',
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
         });
         const data = await resp.json();
-        if (!data.ok) throw new Error(data.error || 'failed');
+        if (!data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         tokenEl.value = data.token;
         commandEl.value = buildCommand(data.token);
         statusEl.textContent = '';
