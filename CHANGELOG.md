@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.1] — 2026-04-28
+
+### Fixes
+- trash icon belongs on the Gateway-CARD, not the regular peer row
+
+---
+
 ## [1.58.0] — 2026-04-28
 
 ### Features
