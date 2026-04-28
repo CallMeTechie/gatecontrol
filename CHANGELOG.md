@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.0] — 2026-04-28
+
+### Features
+- docker-compose.yml + Synology install in the Docker tab
+
+---
+
 ## [1.54.9] — 2026-04-28
 
 ### Fixes
