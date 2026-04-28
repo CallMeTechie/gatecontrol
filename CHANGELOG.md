@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.0] — 2026-04-28
+
+### Features
+- gateway-aware delete with route-impact preview + IP-typing safety
+
+---
+
 ## [1.57.0] — 2026-04-28
 
 ### Features
