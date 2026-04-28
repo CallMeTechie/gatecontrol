@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.6] — 2026-04-28
+
+### Fixes
+- key icon really opens the pairing-tokens modal (not downloadGatewayEnv)
+
+---
+
 ## [1.58.5] — 2026-04-28
 
 ### Änderungen
