@@ -72,87 +72,109 @@
       downloadAsFile(envEl.value, 'gateway-' + peer.id + '.env');
     };
 
-    // ── Docker tab — compose template + downloads ────────
-    // Two pre-baked templates rather than a server round-trip: the env
-    // file already carries everything, and the compose differs only in
-    // the network-mode block. Bridge mode is HTTP-only by design — L4
-    // routes need dynamic port binding which Docker bridge can't do
-    // without restarting the container, and WoL multicast packets get
-    // filtered by the bridge anyway.
-    // /dev/net/tun is REQUIRED on Synology and any host without the
-    // WireGuard kernel module — wg-quick falls back to the wireguard-go
-    // userspace implementation, which opens /dev/net/tun directly. Even
-    // with network_mode: host, Docker doesn't expose host /dev to the
-    // container by default, so the device must be bind-mounted.
-    var COMPOSE_HOST =
-      'services:\n' +
-      '  gateway:\n' +
-      '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest\n' +
-      '    restart: unless-stopped\n' +
-      '    network_mode: host\n' +
-      '    cap_drop:\n' +
-      '      - ALL\n' +
-      '    cap_add:\n' +
-      '      - NET_ADMIN\n' +
-      '      - NET_BIND_SERVICE\n' +
-      '    devices:\n' +
-      '      - /dev/net/tun:/dev/net/tun\n' +
-      '    read_only: true\n' +
-      '    tmpfs:\n' +
-      '      - /tmp\n' +
-      '      - /run\n' +
-      '      - /etc/wireguard\n' +
-      '    volumes:\n' +
-      '      - ./config:/config:ro\n' +
-      '    environment:\n' +
-      '      - LOG_LEVEL=info\n' +
-      '      - GATEWAY_ENV_PATH=/config/gateway.env\n';
+    // ── Docker tab — compose builder + downloads ─────────
+    // Two orthogonal choices drive the compose:
+    //   platform: synology|linux  → governs whether /dev/net/tun is
+    //     bind-mounted. Synology / DSM / BSD / Docker Desktop have no
+    //     WireGuard kernel module so wg-quick falls back to the
+    //     wireguard-go userspace daemon, which needs the TUN device
+    //     explicitly mounted (network_mode: host doesn't expose host
+    //     /dev). Linux with kernel WG uses netlink directly and never
+    //     touches /dev/net/tun.
+    //   network: host|bridge  → host gives full feature set (L4 routes,
+    //     Wake-on-LAN). Bridge isolates but loses both because Docker
+    //     bridge can't add ports after start and filters multicast.
+    function buildCompose(opts) {
+      var lines = [];
+      var headerNotes = [];
 
-    var COMPOSE_BRIDGE =
-      '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN\n' +
-      '# require host-network mode and will NOT work with this compose.\n' +
-      'services:\n' +
-      '  gateway:\n' +
-      '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest\n' +
-      '    restart: unless-stopped\n' +
-      '    cap_drop:\n' +
-      '      - ALL\n' +
-      '    cap_add:\n' +
-      '      - NET_ADMIN\n' +
-      '    devices:\n' +
-      '      - /dev/net/tun:/dev/net/tun\n' +
-      '    ports:\n' +
-      '      - "8080:8080"   # HTTP proxy (Caddy upstream)\n' +
-      '      - "9876:9876"   # Management API (do NOT expose to internet)\n' +
-      '    read_only: true\n' +
-      '    tmpfs:\n' +
-      '      - /tmp\n' +
-      '      - /run\n' +
-      '      - /etc/wireguard\n' +
-      '    volumes:\n' +
-      '      - ./config:/config:ro\n' +
-      '    environment:\n' +
-      '      - LOG_LEVEL=info\n' +
-      '      - GATEWAY_ENV_PATH=/config/gateway.env\n';
+      if (opts.network === 'bridge') {
+        headerNotes.push(
+          '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN',
+          '# require host-network mode and will NOT work with this compose.');
+      }
+      if (opts.platform === 'synology') {
+        headerNotes.push(
+          '# Userspace WireGuard (wireguard-go) — for Synology DSM and any host',
+          '# without the WireGuard kernel module. ~2-3x slower than kernel WG',
+          '# but reliable and needs no kernel modifications.');
+      } else {
+        headerNotes.push(
+          '# Linux kernel WireGuard — full performance via netlink, no TUN',
+          '# device required. Requires the wireguard kernel module loaded',
+          '# on the host (default on Debian 11+ / Ubuntu 22.04+ / kernel ≥5.6).');
+      }
+
+      lines.push(
+        'services:',
+        '  gateway:',
+        '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
+        '    restart: unless-stopped'
+      );
+      if (opts.network === 'host') {
+        lines.push('    network_mode: host');
+      }
+      lines.push(
+        '    cap_drop:',
+        '      - ALL',
+        '    cap_add:',
+        '      - NET_ADMIN'
+      );
+      // NET_BIND_SERVICE is only meaningful in host mode (binding low
+      // ports for L4 routes). Bridge always maps to high ports.
+      if (opts.network === 'host') {
+        lines.push('      - NET_BIND_SERVICE');
+      }
+      // /dev/net/tun only needed for the wireguard-go userspace path.
+      if (opts.platform === 'synology') {
+        lines.push(
+          '    devices:',
+          '      - /dev/net/tun:/dev/net/tun'
+        );
+      }
+      if (opts.network === 'bridge') {
+        lines.push(
+          '    ports:',
+          '      - "8080:8080"   # HTTP proxy (Caddy upstream)',
+          '      - "9876:9876"   # Management API (do NOT expose to internet)'
+        );
+      }
+      lines.push(
+        '    read_only: true',
+        '    tmpfs:',
+        '      - /tmp',
+        '      - /run',
+        '      - /etc/wireguard',
+        '    volumes:',
+        '      - ./config:/config:ro',
+        '    environment:',
+        '      - LOG_LEVEL=info',
+        '      - GATEWAY_ENV_PATH=/config/gateway.env'
+      );
+      var header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
+      return header + lines.join('\n') + '\n';
+    }
 
     var dockerComposeEl = document.getElementById('gateway-docker-compose');
     var dockerNetHintEl = document.getElementById('gw-docker-net-hint');
+    var dockerPlatformHintEl = document.getElementById('gw-docker-platform-hint');
 
     function renderCompose() {
-      var mode = document.querySelector('input[name="gw-docker-net"]:checked').value;
-      if (mode === 'bridge') {
-        dockerComposeEl.value = COMPOSE_BRIDGE;
-        dockerNetHintEl.textContent = GC.t['gateway_deploy_docker_net_hint_bridge']
-          || 'Bridge mode supports HTTP routes only. L4 / WoL need Host mode.';
-      } else {
-        dockerComposeEl.value = COMPOSE_HOST;
-        dockerNetHintEl.textContent = GC.t['gateway_deploy_docker_net_hint_host']
-          || 'Host mode supports all features (L4 routes, Wake-on-LAN). Recommended.';
-      }
+      var network = document.querySelector('input[name="gw-docker-net"]:checked').value;
+      var platform = document.querySelector('input[name="gw-docker-platform"]:checked').value;
+      dockerComposeEl.value = buildCompose({ network: network, platform: platform });
+
+      dockerNetHintEl.textContent = (network === 'bridge'
+        ? (GC.t['gateway_deploy_docker_net_hint_bridge'] || 'Bridge mode supports HTTP routes only. L4 / WoL need Host mode.')
+        : (GC.t['gateway_deploy_docker_net_hint_host']   || 'Host mode supports all features (L4 routes, Wake-on-LAN). Recommended.'));
+
+      dockerPlatformHintEl.textContent = (platform === 'linux'
+        ? (GC.t['gateway_deploy_docker_platform_hint_linux']    || 'Linux with kernel WireGuard module — fastest.')
+        : (GC.t['gateway_deploy_docker_platform_hint_synology'] || 'Synology / NAS / Docker Desktop — uses wireguard-go userspace.'));
     }
 
     Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="gw-docker-net"]'),
+      document.querySelectorAll('input[name="gw-docker-net"], input[name="gw-docker-platform"]'),
       function(r) { r.onchange = renderCompose; }
     );
     renderCompose();
