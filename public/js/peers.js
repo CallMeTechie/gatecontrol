@@ -57,16 +57,107 @@
     document.getElementById('gateway-tokens-copy-all').onclick = function() {
       copyToClipboard(envEl.value);
     };
-    document.getElementById('gateway-tokens-download').onclick = function() {
-      var blob = new Blob([envEl.value], { type: 'text/plain' });
+
+    function downloadAsFile(text, filename) {
+      var blob = new Blob([text], { type: 'text/plain' });
       var link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'gateway-' + peer.id + '.env';
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
+    }
+    document.getElementById('gateway-tokens-download').onclick = function() {
+      downloadAsFile(envEl.value, 'gateway-' + peer.id + '.env');
     };
+
+    // ── Docker tab — compose template + downloads ────────
+    // Two pre-baked templates rather than a server round-trip: the env
+    // file already carries everything, and the compose differs only in
+    // the network-mode block. Bridge mode is HTTP-only by design — L4
+    // routes need dynamic port binding which Docker bridge can't do
+    // without restarting the container, and WoL multicast packets get
+    // filtered by the bridge anyway.
+    var COMPOSE_HOST =
+      'services:\n' +
+      '  gateway:\n' +
+      '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest\n' +
+      '    restart: unless-stopped\n' +
+      '    network_mode: host\n' +
+      '    cap_drop:\n' +
+      '      - ALL\n' +
+      '    cap_add:\n' +
+      '      - NET_ADMIN\n' +
+      '      - NET_BIND_SERVICE\n' +
+      '    read_only: true\n' +
+      '    tmpfs:\n' +
+      '      - /tmp\n' +
+      '      - /run\n' +
+      '      - /etc/wireguard\n' +
+      '    volumes:\n' +
+      '      - ./config:/config:ro\n' +
+      '    environment:\n' +
+      '      - LOG_LEVEL=info\n' +
+      '      - GATEWAY_ENV_PATH=/config/gateway.env\n';
+
+    var COMPOSE_BRIDGE =
+      '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN\n' +
+      '# require host-network mode and will NOT work with this compose.\n' +
+      'services:\n' +
+      '  gateway:\n' +
+      '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest\n' +
+      '    restart: unless-stopped\n' +
+      '    cap_drop:\n' +
+      '      - ALL\n' +
+      '    cap_add:\n' +
+      '      - NET_ADMIN\n' +
+      '    devices:\n' +
+      '      - /dev/net/tun:/dev/net/tun\n' +
+      '    ports:\n' +
+      '      - "8080:8080"   # HTTP proxy (Caddy upstream)\n' +
+      '      - "9876:9876"   # Management API (do NOT expose to internet)\n' +
+      '    read_only: true\n' +
+      '    tmpfs:\n' +
+      '      - /tmp\n' +
+      '      - /run\n' +
+      '      - /etc/wireguard\n' +
+      '    volumes:\n' +
+      '      - ./config:/config:ro\n' +
+      '    environment:\n' +
+      '      - LOG_LEVEL=info\n' +
+      '      - GATEWAY_ENV_PATH=/config/gateway.env\n';
+
+    var dockerComposeEl = document.getElementById('gateway-docker-compose');
+    var dockerNetHintEl = document.getElementById('gw-docker-net-hint');
+
+    function renderCompose() {
+      var mode = document.querySelector('input[name="gw-docker-net"]:checked').value;
+      if (mode === 'bridge') {
+        dockerComposeEl.value = COMPOSE_BRIDGE;
+        dockerNetHintEl.textContent = GC.t['gateway_deploy_docker_net_hint_bridge']
+          || 'Bridge mode supports HTTP routes only. L4 / WoL need Host mode.';
+      } else {
+        dockerComposeEl.value = COMPOSE_HOST;
+        dockerNetHintEl.textContent = GC.t['gateway_deploy_docker_net_hint_host']
+          || 'Host mode supports all features (L4 routes, Wake-on-LAN). Recommended.';
+      }
+    }
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="gw-docker-net"]'),
+      function(r) { r.onchange = renderCompose; }
+    );
+    renderCompose();
+
+    var copyComposeBtn = document.getElementById('gateway-docker-copy-compose');
+    var dlComposeBtn   = document.getElementById('gateway-docker-download-compose');
+    var copyEnvBtn     = document.getElementById('gateway-docker-copy-env');
+    var dlEnvBtn       = document.getElementById('gateway-docker-download-env');
+    if (copyComposeBtn) copyComposeBtn.onclick = function() { copyToClipboard(dockerComposeEl.value); };
+    if (dlComposeBtn)   dlComposeBtn.onclick   = function() { downloadAsFile(dockerComposeEl.value, 'docker-compose.yml'); };
+    if (copyEnvBtn)     copyEnvBtn.onclick     = function() { copyToClipboard(envEl.value); };
+    if (dlEnvBtn)       dlEnvBtn.onclick       = function() { downloadAsFile(envEl.value, 'gateway.env'); };
 
     // ── Tabs ──────────────────────────────────────────────
     var tabs = document.querySelectorAll('.gw-tab');

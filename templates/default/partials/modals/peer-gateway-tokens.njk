@@ -64,14 +64,72 @@
         </div>
       </div>
 
-      {# ─── Docker tab (existing flow) ─────────────────────────── #}
+      {# ─── Docker tab ─────────────────────────────────────────── #}
       <div class="gw-tab-pane" data-gw-pane="docker" style="display:none">
+        <div style="padding:8px 12px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:4px;margin-bottom:14px;font-size:13px;line-height:1.5">
+          {{ t('gateway_deploy_docker_intro') }}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_deploy_docker_network_mode') }}</label>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="gw-docker-net" value="host" checked>
+              <span>{{ t('gateway_deploy_docker_net_host') }}</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="gw-docker-net" value="bridge">
+              <span>{{ t('gateway_deploy_docker_net_bridge') }}</span>
+            </label>
+          </div>
+          <small class="form-hint" id="gw-docker-net-hint">{{ t('gateway_deploy_docker_net_hint_host') }}</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_deploy_docker_compose_label') }}</label>
+          <div style="display:flex;gap:6px;align-items:flex-start">
+            <textarea id="gateway-docker-compose" readonly
+                      style="width:100%;min-height:200px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
+            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+              <button type="button" class="btn btn-ghost btn-sm" id="gateway-docker-copy-compose">
+                {{ t('common.copy') }}
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="gateway-docker-download-compose">
+                {{ t('common.download') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">{{ t('gateway_tokens_env_file') }}</label>
-          <textarea id="gateway-tokens-env" readonly
-                    style="width:100%;min-height:220px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical"></textarea>
-          <small class="form-hint">{{ t('gateway_tokens_env_hint') }}</small>
+          <div style="display:flex;gap:6px;align-items:flex-start">
+            <textarea id="gateway-tokens-env" readonly
+                      style="width:100%;min-height:160px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
+            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+              <button type="button" class="btn btn-ghost btn-sm" id="gateway-docker-copy-env">
+                {{ t('common.copy') }}
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="gateway-docker-download-env">
+                {{ t('common.download') }}
+              </button>
+            </div>
+          </div>
         </div>
+
+        <details style="margin-top:14px;padding:8px 12px;background:#f9fafb;border-radius:4px;border:1px solid #e5e7eb">
+          <summary style="cursor:pointer;font-weight:600;font-size:13px">
+            {{ t('gateway_deploy_docker_synology_title') }}
+          </summary>
+          <ol style="font-size:13px;line-height:1.6;margin:10px 0 0 0;padding-left:20px">
+            <li>{{ t('gateway_deploy_docker_synology_step1') }}</li>
+            <li>{{ t('gateway_deploy_docker_synology_step2') }}</li>
+            <li>{{ t('gateway_deploy_docker_synology_step3') }}</li>
+            <li>{{ t('gateway_deploy_docker_synology_step4') }}</li>
+            <li>{{ t('gateway_deploy_docker_synology_step5') }}</li>
+            <li>{{ t('gateway_deploy_docker_synology_step6') }}</li>
+          </ol>
+        </details>
       </div>
 
       {# ─── Manual tab (raw tokens) ────────────────────────────── #}
