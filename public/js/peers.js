@@ -171,6 +171,17 @@
       dockerPlatformHintEl.textContent = (platform === 'linux'
         ? (GC.t['gateway_deploy_docker_platform_hint_linux']    || 'Linux with kernel WireGuard module — fastest.')
         : (GC.t['gateway_deploy_docker_platform_hint_synology'] || 'Synology / NAS / Docker Desktop — uses wireguard-go userspace.'));
+
+      // Toggle which intro panel + install-instruction block is visible.
+      // Two of each are rendered server-side; we just swap their display
+      // so the user sees the steps that match their chosen platform.
+      Array.prototype.forEach.call(
+        document.querySelectorAll('.gw-platform-intro, .gw-platform-doc'),
+        function(el) {
+          var which = el.getAttribute('data-platform-intro') || el.getAttribute('data-platform-doc');
+          el.style.display = (which === platform) ? '' : 'none';
+        }
+      );
     }
 
     Array.prototype.forEach.call(

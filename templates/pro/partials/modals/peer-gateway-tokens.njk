@@ -1,55 +1,93 @@
+<style nonce="{{ cspNonce }}">
+  /* Modal layout — wider, capped at viewport for mobile. */
+  #modal-gateway-tokens .modal { max-width: min(880px, 95vw); width: 100%; }
+  #modal-gateway-tokens .modal-body { max-height: 75vh; overflow-y: auto; }
+
+  /* Tabs row — wraps on narrow screens instead of overflowing. */
+  .gw-deploy-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #e5e7eb; margin-bottom: 16px; }
+  .gw-tab { background: none; border: none; border-bottom: 2px solid transparent; color: #6b7280; padding: 8px 16px; cursor: pointer; }
+  .gw-tab.gw-tab-active { border-bottom-color: #2563eb; color: #2563eb; font-weight: 600; }
+
+  /* Radio groups for platform / network mode. */
+  .gw-radio-group { display: flex; gap: 14px; flex-wrap: wrap; }
+  .gw-radio-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* Textarea + button column. Stacks vertically on narrow screens. */
+  .gw-textarea-row { display: flex; gap: 6px; align-items: flex-start; }
+  .gw-textarea-row textarea { flex: 1; width: 100%; }
+  .gw-button-stack { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+
+  /* Mono-textarea base style — replaces the inline style attribute. */
+  .gw-mono-area { font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.4; padding: 8px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; }
+
+  /* Notice block (intro / warning panels). */
+  .gw-notice { padding: 8px 12px; border-left: 3px solid #2563eb; background: #eff6ff; border-radius: 4px; margin-bottom: 14px; font-size: 13px; line-height: 1.5; }
+  .gw-notice-warn { border-left-color: #f59e0b; background: #fef3c7; }
+
+  /* Instruction <details> block. */
+  .gw-instructions { margin-top: 14px; padding: 8px 12px; background: #f9fafb; border-radius: 4px; border: 1px solid #e5e7eb; }
+  .gw-instructions summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+  .gw-instructions ol { font-size: 13px; line-height: 1.6; margin: 10px 0 0 0; padding-left: 20px; }
+  .gw-instructions code { background: #e5e7eb; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+  @media (max-width: 640px) {
+    #modal-gateway-tokens .modal { max-width: 100vw; max-height: 100vh; border-radius: 0; }
+    .gw-textarea-row { flex-direction: column; }
+    .gw-button-stack { flex-direction: row; flex-wrap: wrap; }
+    .gw-tab { padding: 8px 10px; font-size: 13px; }
+    .gw-mono-area { font-size: 12px; }
+  }
+</style>
+
 <div class="modal-overlay" id="modal-gateway-tokens" style="display:none">
-  <div class="modal" style="max-width:720px">
+  <div class="modal">
     <div class="modal-head">
       <span class="modal-title">{{ t('gateway_tokens_title') }}</span>
       <button class="modal-close" data-close-modal>&times;</button>
     </div>
     <div class="modal-body">
-      <div style="padding:10px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;margin-bottom:16px;font-size:13px;line-height:1.5">
+      <div class="gw-notice gw-notice-warn">
         <strong>⚠ {{ t('gateway_tokens_warning_title') }}</strong><br>
         {{ t('gateway_tokens_warning_body') }}
       </div>
 
       {# ─── Deployment-method tabs ─────────────────────────────── #}
-      <div class="gw-deploy-tabs" role="tablist"
-           style="display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:16px">
-        <button type="button" class="gw-tab gw-tab-active" data-gw-tab="lxc" role="tab"
-                style="background:none;border:none;border-bottom:2px solid #2563eb;color:#2563eb;padding:8px 16px;font-weight:600;cursor:pointer">
+      <div class="gw-deploy-tabs" role="tablist">
+        <button type="button" class="gw-tab gw-tab-active" data-gw-tab="lxc" role="tab">
           {{ t('gateway_deploy_tab_lxc') }}
         </button>
-        <button type="button" class="gw-tab" data-gw-tab="docker" role="tab"
-                style="background:none;border:none;border-bottom:2px solid transparent;color:#6b7280;padding:8px 16px;cursor:pointer">
+        <button type="button" class="gw-tab" data-gw-tab="docker" role="tab">
           {{ t('gateway_deploy_tab_docker') }}
         </button>
-        <button type="button" class="gw-tab" data-gw-tab="manual" role="tab"
-                style="background:none;border:none;border-bottom:2px solid transparent;color:#6b7280;padding:8px 16px;cursor:pointer">
+        <button type="button" class="gw-tab" data-gw-tab="manual" role="tab">
           {{ t('gateway_deploy_tab_manual') }}
         </button>
       </div>
 
       {# ─── LXC tab (default) ──────────────────────────────────── #}
       <div class="gw-tab-pane" data-gw-pane="lxc">
-        <div style="padding:8px 12px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:4px;margin-bottom:14px;font-size:13px;line-height:1.5">
+        <div class="gw-notice">
           {{ t('gateway_deploy_lxc_intro') }}
         </div>
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_deploy_lxc_command_label') }}</label>
-          <div style="display:flex;gap:6px;align-items:flex-start">
-            <textarea id="gateway-pairing-command" readonly
-                      style="width:100%;min-height:90px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
-            <button type="button" class="btn btn-secondary btn-sm" id="gateway-pairing-copy-command" style="flex-shrink:0">
-              {{ t('common.copy') }}
-            </button>
+          <div class="gw-textarea-row">
+            <textarea id="gateway-pairing-command" readonly class="form-input gw-mono-area" style="min-height:90px"></textarea>
+            <div class="gw-button-stack">
+              <button type="button" class="btn btn-secondary btn-sm" id="gateway-pairing-copy-command">
+                {{ t('common.copy') }}
+              </button>
+            </div>
           </div>
           <small class="form-hint">{{ t('gateway_deploy_lxc_command_hint') }}</small>
         </div>
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_deploy_lxc_token_label') }}</label>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <input type="text" class="form-input" id="gateway-pairing-token" readonly
-                   style="font-family:var(--font-mono,monospace);font-size:13px;flex:1;letter-spacing:0.5px">
+                   style="font-family:var(--font-mono,monospace);font-size:13px;flex:1;min-width:240px;letter-spacing:0.5px">
             <button type="button" class="btn btn-ghost btn-sm" id="gateway-pairing-copy-token">
               {{ t('common.copy') }}
             </button>
@@ -57,7 +95,7 @@
               ↻
             </button>
           </div>
-          <small class="form-hint" style="display:flex;justify-content:space-between;align-items:center">
+          <small class="form-hint" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
             <span id="gateway-pairing-countdown">&nbsp;</span>
             <span id="gateway-pairing-status" style="color:#6b7280">&nbsp;</span>
           </small>
@@ -66,18 +104,23 @@
 
       {# ─── Docker tab ─────────────────────────────────────────── #}
       <div class="gw-tab-pane" data-gw-pane="docker" style="display:none">
-        <div style="padding:8px 12px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:4px;margin-bottom:14px;font-size:13px;line-height:1.5">
-          {{ t('gateway_deploy_docker_intro') }}
+        {# Two intro panels — JS toggles which one is visible based on the
+           selected platform. Only one is shown at a time. #}
+        <div class="gw-notice gw-platform-intro" data-platform-intro="synology">
+          {{ t('gateway_deploy_docker_intro_synology') }}
+        </div>
+        <div class="gw-notice gw-platform-intro" data-platform-intro="linux" style="display:none">
+          {{ t('gateway_deploy_docker_intro_linux') }}
         </div>
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_deploy_docker_platform') }}</label>
-          <div style="display:flex;gap:14px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <div class="gw-radio-group">
+            <label>
               <input type="radio" name="gw-docker-platform" value="synology" checked>
               <span>{{ t('gateway_deploy_docker_platform_synology') }}</span>
             </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <label>
               <input type="radio" name="gw-docker-platform" value="linux">
               <span>{{ t('gateway_deploy_docker_platform_linux') }}</span>
             </label>
@@ -87,12 +130,12 @@
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_deploy_docker_network_mode') }}</label>
-          <div style="display:flex;gap:14px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <div class="gw-radio-group">
+            <label>
               <input type="radio" name="gw-docker-net" value="host" checked>
               <span>{{ t('gateway_deploy_docker_net_host') }}</span>
             </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <label>
               <input type="radio" name="gw-docker-net" value="bridge">
               <span>{{ t('gateway_deploy_docker_net_bridge') }}</span>
             </label>
@@ -102,10 +145,9 @@
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_deploy_docker_compose_label') }}</label>
-          <div style="display:flex;gap:6px;align-items:flex-start">
-            <textarea id="gateway-docker-compose" readonly
-                      style="width:100%;min-height:200px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
-            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          <div class="gw-textarea-row">
+            <textarea id="gateway-docker-compose" readonly class="gw-mono-area" style="min-height:200px"></textarea>
+            <div class="gw-button-stack">
               <button type="button" class="btn btn-ghost btn-sm" id="gateway-docker-copy-compose">
                 {{ t('common.copy') }}
               </button>
@@ -118,10 +160,9 @@
 
         <div class="form-group">
           <label class="form-label">{{ t('gateway_tokens_env_file') }}</label>
-          <div style="display:flex;gap:6px;align-items:flex-start">
-            <textarea id="gateway-tokens-env" readonly
-                      style="width:100%;min-height:160px;font-family:var(--font-mono,monospace);font-size:11px;line-height:1.4;padding:8px;border:1px solid #ddd;border-radius:4px;resize:vertical;flex:1"></textarea>
-            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          <div class="gw-textarea-row">
+            <textarea id="gateway-tokens-env" readonly class="gw-mono-area" style="min-height:160px"></textarea>
+            <div class="gw-button-stack">
               <button type="button" class="btn btn-ghost btn-sm" id="gateway-docker-copy-env">
                 {{ t('common.copy') }}
               </button>
@@ -132,17 +173,27 @@
           </div>
         </div>
 
-        <details style="margin-top:14px;padding:8px 12px;background:#f9fafb;border-radius:4px;border:1px solid #e5e7eb">
-          <summary style="cursor:pointer;font-weight:600;font-size:13px">
-            {{ t('gateway_deploy_docker_synology_title') }}
-          </summary>
-          <ol style="font-size:13px;line-height:1.6;margin:10px 0 0 0;padding-left:20px">
+        {# Two install-instruction blocks — same toggle as the intro. #}
+        <details class="gw-instructions gw-platform-doc" data-platform-doc="synology">
+          <summary>{{ t('gateway_deploy_docker_synology_title') }}</summary>
+          <ol>
             <li>{{ t('gateway_deploy_docker_synology_step1') }}</li>
             <li>{{ t('gateway_deploy_docker_synology_step2') }}</li>
             <li>{{ t('gateway_deploy_docker_synology_step3') }}</li>
             <li>{{ t('gateway_deploy_docker_synology_step4') }}</li>
             <li>{{ t('gateway_deploy_docker_synology_step5') }}</li>
             <li>{{ t('gateway_deploy_docker_synology_step6') }}</li>
+          </ol>
+        </details>
+        <details class="gw-instructions gw-platform-doc" data-platform-doc="linux" style="display:none">
+          <summary>{{ t('gateway_deploy_docker_linux_title') }}</summary>
+          <ol>
+            <li>{{ t('gateway_deploy_docker_linux_step1') }}</li>
+            <li>{{ t('gateway_deploy_docker_linux_step2') }}</li>
+            <li>{{ t('gateway_deploy_docker_linux_step3') }}</li>
+            <li>{{ t('gateway_deploy_docker_linux_step4') }}</li>
+            <li>{{ t('gateway_deploy_docker_linux_step5') }}</li>
+            <li>{{ t('gateway_deploy_docker_linux_step6') }}</li>
           </ol>
         </details>
       </div>
