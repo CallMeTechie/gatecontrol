@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.5] — 2026-04-28
+
+### Änderungen
+- key icon mirrors Edit-modal -> ENV button flow exactly
+
+---
+
 ## [1.58.4] — 2026-04-28
 
 ### Änderungen
