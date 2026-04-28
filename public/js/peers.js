@@ -79,6 +79,11 @@
     // routes need dynamic port binding which Docker bridge can't do
     // without restarting the container, and WoL multicast packets get
     // filtered by the bridge anyway.
+    // /dev/net/tun is REQUIRED on Synology and any host without the
+    // WireGuard kernel module — wg-quick falls back to the wireguard-go
+    // userspace implementation, which opens /dev/net/tun directly. Even
+    // with network_mode: host, Docker doesn't expose host /dev to the
+    // container by default, so the device must be bind-mounted.
     var COMPOSE_HOST =
       'services:\n' +
       '  gateway:\n' +
@@ -90,6 +95,8 @@
       '    cap_add:\n' +
       '      - NET_ADMIN\n' +
       '      - NET_BIND_SERVICE\n' +
+      '    devices:\n' +
+      '      - /dev/net/tun:/dev/net/tun\n' +
       '    read_only: true\n' +
       '    tmpfs:\n' +
       '      - /tmp\n' +
