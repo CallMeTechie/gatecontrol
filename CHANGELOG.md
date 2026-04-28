@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.8] — 2026-04-28
+
+### Fixes
+- cache-bust peers.js with appVersion query param
+
+---
+
 ## [1.54.7] — 2026-04-27
 
 ### Änderungen
