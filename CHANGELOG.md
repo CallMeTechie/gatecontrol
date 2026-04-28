@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.1] — 2026-04-28
+
+### Fixes
+- bind-mount /dev/net/tun in host-mode compose
+
+---
+
 ## [1.55.0] — 2026-04-28
 
 ### Features
