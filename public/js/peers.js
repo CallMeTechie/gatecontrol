@@ -422,11 +422,15 @@
     '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + p.id + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
     '</button>' +
-    '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
-    '</button>' +
+    // Trash sits next to Edit per UX feedback — destructive action
+    // grouped with the modify action makes the row scannable. The
+    // gateway-specific delete flow (route-impact preview + IP-typing
+    // confirm) kicks in via the click handler when peer_type=gateway.
     '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
+    '</button>' +
+    '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
     '</button>';
   }
 
@@ -695,7 +699,19 @@
       case 'qr': showQrModal(id); break;
       case 'edit': showEditModal(id); break;
       case 'toggle': togglePeer(id); break;
-      case 'delete': showConfirmDelete(id, btn.dataset.name); break;
+      case 'delete': {
+        // Gateway peers get a richer confirmation flow: pre-flight
+        // shows which routes will be auto-disabled, and the user has
+        // to type the gateway IP to prove they're targeting the right
+        // row. Other peer types keep the simple yes/no flow.
+        var p = allPeers.find(function(x) { return x.id === id; });
+        if (p && p.peer_type === 'gateway') {
+          showGatewayDeleteConfirm(id);
+        } else {
+          showConfirmDelete(id, btn.dataset.name);
+        }
+        break;
+      }
       case 'gateway-env': downloadGatewayEnv(id); break;
     }
   }
@@ -1207,6 +1223,125 @@
       loadGroups();
     } catch (err) {
       alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+    } finally {
+      btnReset(btn);
+    }
+  });
+
+  // ─── Gateway delete (impact preview + IP-typing safety check) ──────
+  // Wired in via the click-handler above when a gateway peer's trash
+  // icon is clicked. Two-stage flow:
+  //   1. GET /peers/:id/delete-impact — list of routes that will be
+  //      auto-disabled when the peer goes (server already does the
+  //      disable on DELETE; we just show what's about to happen).
+  //   2. User types the gateway's IP. Submit only enables on exact match.
+  // No browser confirm/alert anywhere — failures stay inline in the
+  // modal so the user keeps context.
+
+  var gwDeletePeer = null;
+
+  function _gwClearChildren(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  async function showGatewayDeleteConfirm(peerId) {
+    var statusEl = document.getElementById('gw-delete-confirm-status');
+    var btn = document.getElementById('gw-delete-confirm-btn');
+    var input = document.getElementById('gw-delete-confirm-input');
+    var summaryEl = document.getElementById('gw-delete-peer-summary');
+    var routesSection = document.getElementById('gw-delete-routes-section');
+    var noRoutesSection = document.getElementById('gw-delete-no-routes-section');
+    var routesList = document.getElementById('gw-delete-routes-list');
+    var routesHint = document.getElementById('gw-delete-routes-hint');
+    var requiredIpEl = document.getElementById('gw-delete-required-ip');
+
+    // Reset UI before fetching impact so an old open doesn't bleed through.
+    summaryEl.textContent = (GC.t['common.loading'] || 'Loading') + '…';
+    _gwClearChildren(routesList);
+    routesHint.textContent = '';
+    routesSection.style.display = 'none';
+    noRoutesSection.style.display = 'none';
+    requiredIpEl.textContent = '—';
+    input.value = '';
+    btn.disabled = true;
+    statusEl.textContent = ' ';
+    statusEl.style.color = '#6b7280';
+
+    openModal('modal-gateway-delete');
+
+    var impact;
+    try {
+      impact = await api.get('/api/peers/' + encodeURIComponent(peerId) + '/delete-impact');
+    } catch (err) {
+      statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
+      statusEl.style.color = '#dc2626';
+      return;
+    }
+    if (!impact || !impact.ok || !impact.peer) {
+      statusEl.textContent = (impact && impact.error) || (GC.t['common.error'] || 'Error');
+      statusEl.style.color = '#dc2626';
+      return;
+    }
+
+    gwDeletePeer = impact.peer;
+    summaryEl.textContent = impact.peer.name + '   (' + impact.peer.ip + ')';
+    requiredIpEl.textContent = impact.peer.ip;
+
+    var allRoutes = (impact.httpRoutes || []).concat(
+      (impact.rdpRoutes || []).map(function(r) { return { id: r.id, domain: 'RDP: ' + (r.name || r.host) }; })
+    );
+
+    if (allRoutes.length === 0) {
+      noRoutesSection.style.display = '';
+    } else {
+      routesSection.style.display = '';
+      allRoutes.forEach(function(r) {
+        var li = document.createElement('li');
+        li.textContent = r.domain || ('Route #' + r.id);
+        routesList.appendChild(li);
+      });
+      var tpl = GC.t['gateway_delete_routes_hint'] || 'These {count} routes will be disabled. You can re-enable them later by re-pointing them at a different gateway.';
+      routesHint.textContent = tpl.replace('{count}', allRoutes.length);
+    }
+
+    // Live IP match — enable submit only on exact equality.
+    input.oninput = function() {
+      var v = input.value.trim();
+      if (v === gwDeletePeer.ip) {
+        btn.disabled = false;
+        statusEl.textContent = GC.t['gateway_delete_ip_match'] || '✓ IP matches';
+        statusEl.style.color = '#10b981';
+      } else {
+        btn.disabled = true;
+        if (v.length === 0) {
+          statusEl.textContent = ' ';
+          statusEl.style.color = '#6b7280';
+        } else {
+          statusEl.textContent = GC.t['gateway_delete_ip_mismatch'] || 'IP does not match';
+          statusEl.style.color = '#dc2626';
+        }
+      }
+    };
+    setTimeout(function() { input.focus(); }, 50);
+  }
+
+  document.getElementById('gw-delete-confirm-btn').addEventListener('click', async function() {
+    if (!gwDeletePeer) return;
+    var btn = this;
+    var statusEl = document.getElementById('gw-delete-confirm-status');
+    btn.disabled = true;
+    btnLoading(btn);
+    try {
+      var data = await api.del('/api/peers/' + encodeURIComponent(gwDeletePeer.id));
+      if (data && data.ok === false) throw new Error(data.error || 'failed');
+      closeModal('modal-gateway-delete');
+      gwDeletePeer = null;
+      loadPeers();
+      loadGroups();
+    } catch (err) {
+      statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
+      statusEl.style.color = '#dc2626';
+      btn.disabled = false;
     } finally {
       btnReset(btn);
     }

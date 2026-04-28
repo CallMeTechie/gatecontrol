@@ -169,6 +169,62 @@ router.put('/:id', async (req, res) => {
 });
 
 /**
+ * GET /api/peers/:id/delete-impact — Preview which routes would be
+ * disabled if this peer were deleted. Used by the gateway-delete modal
+ * to show the user what they're about to break before they confirm.
+ */
+router.get('/:id/delete-impact', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const peer = peers.getById(id);
+    if (!peer) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const db = getDb();
+    let httpRoutes = [];
+    let rdpRoutes = [];
+
+    if (peer.peer_type === 'gateway') {
+      httpRoutes = db.prepare(`
+        SELECT id, domain, route_type, target_lan_host, target_lan_port
+        FROM routes
+        WHERE target_peer_id = ? AND target_kind = 'gateway'
+        ORDER BY domain
+      `).all(id);
+      rdpRoutes = db.prepare(`
+        SELECT id, name, host, port
+        FROM rdp_routes
+        WHERE gateway_peer_id = ?
+        ORDER BY name
+      `).all(id);
+    } else {
+      // Regular peer — legacy peer_id link on http routes
+      httpRoutes = db.prepare(`
+        SELECT id, domain, route_type
+        FROM routes
+        WHERE peer_id = ?
+        ORDER BY domain
+      `).all(id);
+    }
+
+    res.json({
+      ok: true,
+      peer: {
+        id: peer.id,
+        name: peer.name,
+        ip: (peer.allowed_ips || '').split(',')[0].split('/')[0].trim(),
+        peer_type: peer.peer_type,
+        enabled: !!peer.enabled,
+      },
+      httpRoutes,
+      rdpRoutes,
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to compute delete impact');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * DELETE /api/peers/:id — Delete peer
  */
 router.delete('/:id', async (req, res) => {

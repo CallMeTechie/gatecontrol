@@ -273,6 +273,18 @@ async function remove(id) {
     try { await wireguard.removePeer(publicKey); } catch {}
   }
 
+  // Push the disabled-route state to Caddy so requests to those domains
+  // stop being proxied to a now-non-existent gateway. Late-require to
+  // avoid the routes ↔ peers circular import.
+  try {
+    const routesSvc = require('./routes');
+    if (typeof routesSvc.syncToCaddy === 'function') {
+      await routesSvc.syncToCaddy();
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Caddy sync after peer delete failed');
+  }
+
   activity.log('peer_deleted', `Peer "${peer.name}" deleted`, {
     source: 'admin',
     severity: 'warning',
