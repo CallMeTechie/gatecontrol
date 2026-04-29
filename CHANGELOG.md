@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.10] — 2026-04-29
+
+### Fixes
+- own dnsmasq lifecycle from wg-wrapper.sh, drop redundant supervisord program (#58)
+
+---
+
 ## [1.58.9] — 2026-04-29
 
 ### Änderungen
