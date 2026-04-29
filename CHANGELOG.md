@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.12] — 2026-04-29
+
+### Änderungen
+- extract mirror handler builder into caddyMirror.js (#60)
+
+---
+
 ## [1.58.11] — 2026-04-29
 
 ### Änderungen
