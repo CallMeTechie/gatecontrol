@@ -13,6 +13,7 @@
  *   caddyRetry.js         — retry config applier (mutates reverseProxy)
  *   caddyCustomHeaders.js — request/response headers handler builders
  *   caddyBackends.js      — JSON `backends` column → resolved peer IPs
+ *   caddyTlsAutomation.js — apps.tls.automation policies (ACME / internal)
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -38,6 +39,7 @@ const { buildMirrorHandler } = require('./caddyMirror');
 const { applyRetryConfig } = require('./caddyRetry');
 const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
 const { resolveBackends } = require('./caddyBackends');
+const { buildTlsAutomation } = require('./caddyTlsAutomation');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -437,44 +439,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // split a single `.test`/`.local`/`.internal` route would hammer the
   // Let's Encrypt rate-limit endpoint with retries every hour and
   // pollute acme logs.
-  const NON_PUBLIC_TLDS = new Set(['test', 'local', 'invalid', 'internal', 'lan', 'home', 'localhost', 'corp']);
-  function isPublicDomain(d) {
-    if (!d) return false;
-    const parts = String(d).toLowerCase().split('.');
-    const tld = parts[parts.length - 1];
-    return !NON_PUBLIC_TLDS.has(tld);
-  }
-  const allDomains = Object.keys(caddyRoutes).filter(d => !/^:\d+$/.test(d));
-  const publicDomains = allDomains.filter(isPublicDomain);
-  const privateDomains = allDomains.filter(d => !isPublicDomain(d));
-  if (config.caddy.email) {
-    caddyConfig.apps.tls = {
-      automation: {
-        policies: [],
-      },
-    };
-    if (publicDomains.length > 0) {
-      const acmePolicy = {
-        subjects: publicDomains,
-        issuers: [{ module: 'acme', email: config.caddy.email }],
-      };
-      if (config.caddy.acmeCa) acmePolicy.issuers[0].ca = config.caddy.acmeCa;
-      caddyConfig.apps.tls.automation.policies.push(acmePolicy);
-    }
-    if (privateDomains.length > 0) {
-      caddyConfig.apps.tls.automation.policies.push({
-        subjects: privateDomains,
-        issuers: [{ module: 'internal' }],
-      });
-    }
-    if (caddyConfig.apps.tls.automation.policies.length === 0) {
-      // Keep the previous catch-all so new routes created before the
-      // next buildCaddyConfig still get a certificate attempt.
-      const fallback = { issuers: [{ module: 'acme', email: config.caddy.email }] };
-      if (config.caddy.acmeCa) fallback.issuers[0].ca = config.caddy.acmeCa;
-      caddyConfig.apps.tls.automation.policies.push(fallback);
-    }
-  }
+  const tlsConfig = buildTlsAutomation(Object.keys(caddyRoutes), config.caddy);
+  if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
   const baseUrl = config.app.baseUrl || '';
