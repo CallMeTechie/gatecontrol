@@ -12,6 +12,7 @@ const {
   clearCredentials,
 } = require('./rdpCredentials');
 const { isInMaintenanceWindow } = require('./rdpMaintenance');
+const { canAccessRoute } = require('./rdpAcl');
 
 // --- Validation ------------------------------------------------
 
@@ -638,35 +639,9 @@ function getCount() {
 }
 
 // --- Token-filtered access -------------------------------------
-
-// Centralized access-check used by both the list endpoint (`getForToken`)
-// and the direct-by-id endpoints (`/client/rdp/:id/connect`, `/status`,
-// `/session`). Keep the priority order identical everywhere so a user who
-// cannot see a route in the list also cannot reach it via a known id.
-function canAccessRoute(route, tokenId, userId) {
-  if (!route) return false;
-  // 1. user_ids set → user-level access control (priority)
-  if (route.user_ids) {
-    try {
-      const allowed = JSON.parse(route.user_ids);
-      if (Array.isArray(allowed) && allowed.length > 0) {
-        return userId ? allowed.includes(userId) : false;
-      }
-    } catch {}
-  }
-  // 2. token_ids set → legacy token-level access control
-  if (route.token_ids) {
-    try {
-      const allowed = JSON.parse(route.token_ids);
-      if (Array.isArray(allowed) && allowed.length > 0) {
-        return tokenId ? allowed.includes(tokenId) : false;
-      }
-    } catch {}
-  }
-  // 3. No restrictions → visible to all
-  return true;
-}
-
+// canAccessRoute lives in ./rdpAcl — keep getForToken here because
+// it ties together the DB query with stripSensitive, which is a
+// route-shape concern owned by this module.
 function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
