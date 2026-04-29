@@ -6,6 +6,7 @@ const { validateDomain, validatePort, validateDescription, validateBasicAuthUser
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
+const { validateBrandingFields, validateBotBlockerConfig } = require('./routesValidation');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
@@ -90,12 +91,7 @@ async function create(data) {
     if (descErr) throw new Error(descErr);
   }
 
-  if (data.branding_title && data.branding_title.length > 255) {
-    throw new Error('Branding title must be 255 characters or less');
-  }
-  if (data.branding_text && data.branding_text.length > 2000) {
-    throw new Error('Branding text must be 2000 characters or less');
-  }
+  validateBrandingFields(data);
 
   const db = getDb();
   const domain = data.domain ? sanitize(data.domain).toLowerCase() : null;
@@ -147,25 +143,7 @@ async function create(data) {
     ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets))
     : null;
 
-  const VALID_BOT_MODES = ['block', 'tarpit', 'drop', 'garbage', 'redirect', 'custom'];
-  if (data.bot_blocker_mode && !VALID_BOT_MODES.includes(data.bot_blocker_mode)) {
-    throw new Error('Invalid bot blocker mode');
-  }
-  if (data.bot_blocker_config) {
-    const bbCfg = (typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config) || {};
-    if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
-      throw new Error('Redirect mode requires a valid URL');
-    }
-    if (data.bot_blocker_mode === 'custom') {
-      if (bbCfg.status_code && (bbCfg.status_code < 100 || bbCfg.status_code > 599)) {
-        throw new Error('Invalid status code');
-      }
-      if (bbCfg.message && bbCfg.message.length > 500) {
-        throw new Error('Message too long');
-      }
-    }
-    data.bot_blocker_config = typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config);
-  }
+  validateBotBlockerConfig(data);
 
   const targetKind = data.target_kind || 'peer';
   const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
@@ -351,12 +329,7 @@ async function update(id, data) {
     if (descErr) throw new Error(descErr);
   }
 
-  if (data.branding_title && data.branding_title.length > 255) {
-    throw new Error('Branding title must be 255 characters or less');
-  }
-  if (data.branding_text && data.branding_text.length > 2000) {
-    throw new Error('Branding text must be 2000 characters or less');
-  }
+  validateBrandingFields(data);
 
   // Validate and hash basic auth credentials when enabled
   let basicAuthUser = route.basic_auth_user;
@@ -422,25 +395,7 @@ async function update(id, data) {
     ? (data.mirror_targets ? (typeof data.mirror_targets === 'string' ? data.mirror_targets : JSON.stringify(data.mirror_targets)) : null)
     : route.mirror_targets;
 
-  const VALID_BOT_MODES = ['block', 'tarpit', 'drop', 'garbage', 'redirect', 'custom'];
-  if (data.bot_blocker_mode && !VALID_BOT_MODES.includes(data.bot_blocker_mode)) {
-    throw new Error('Invalid bot blocker mode');
-  }
-  if (data.bot_blocker_config) {
-    const bbCfg = (typeof data.bot_blocker_config === 'string' ? JSON.parse(data.bot_blocker_config) : data.bot_blocker_config) || {};
-    if (data.bot_blocker_mode === 'redirect' && (!bbCfg.url || !/^https?:\/\//.test(bbCfg.url))) {
-      throw new Error('Redirect mode requires a valid URL');
-    }
-    if (data.bot_blocker_mode === 'custom') {
-      if (bbCfg.status_code && (bbCfg.status_code < 100 || bbCfg.status_code > 599)) {
-        throw new Error('Invalid status code');
-      }
-      if (bbCfg.message && bbCfg.message.length > 500) {
-        throw new Error('Message too long');
-      }
-    }
-    data.bot_blocker_config = typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config);
-  }
+  validateBotBlockerConfig(data);
 
   db.prepare(`
     UPDATE routes SET
