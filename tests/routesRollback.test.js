@@ -38,18 +38,18 @@ describe('routesRollback: getRouteColumns', () => {
 });
 
 describe('routesRollback: restoreRouteRow', () => {
-  it('overwrites an existing row with the snapshot, preserving the id', () => {
+  it('overwrites an existing row with a SELECT *-style snapshot, preserving the id', () => {
     const db = getDb();
-    const insertResult = db.prepare(
+    const id = db.prepare(
       "INSERT INTO routes (domain, target_ip, target_port) VALUES ('a.example.com', '10.0.0.1', 80)"
-    ).run();
-    const id = insertResult.lastInsertRowid;
+    ).run().lastInsertRowid;
+    // Capture the full snapshot the way production does — SELECT * fills
+    // every column, so NOT-NULL columns stay populated through the rollback.
+    const snapshot = db.prepare('SELECT * FROM routes WHERE id=?').get(id);
 
-    // Mutate the row.
     db.prepare("UPDATE routes SET domain='b.example.com', target_port=8080 WHERE id=?").run(id);
 
-    // Restore from a snapshot of the original.
-    restoreRouteRow(db, id, { domain: 'a.example.com', target_ip: '10.0.0.1', target_port: 80 });
+    restoreRouteRow(db, id, snapshot);
 
     const row = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
     assert.equal(row.domain, 'a.example.com');
@@ -57,20 +57,23 @@ describe('routesRollback: restoreRouteRow', () => {
     assert.equal(row.id, id, 'id is unchanged after restore');
   });
 
-  it('writes NULL for snapshot fields that are undefined', () => {
+  it('restores nullable fields back to NULL when the snapshot has them as null', () => {
     const db = getDb();
     const id = db.prepare(
-      "INSERT INTO routes (domain, target_ip, target_port, description) VALUES ('x.example.com', '10.0.0.2', 80, 'before')"
+      "INSERT INTO routes (domain, target_ip, target_port, description) VALUES ('x.example.com', '10.0.0.2', 80, NULL)"
     ).run().lastInsertRowid;
+    const snapshot = db.prepare('SELECT * FROM routes WHERE id=?').get(id);
 
-    restoreRouteRow(db, id, { domain: 'x.example.com', target_ip: '10.0.0.2', target_port: 80 });
+    db.prepare("UPDATE routes SET description='added later' WHERE id=?").run(id);
+    restoreRouteRow(db, id, snapshot);
+
     const row = db.prepare('SELECT description FROM routes WHERE id=?').get(id);
-    assert.equal(row.description, null, 'undefined description in the snapshot is restored as NULL');
+    assert.equal(row.description, null);
   });
 });
 
 describe('routesRollback: reinsertRouteRow', () => {
-  it('re-inserts a row and preserves the original id', () => {
+  it('re-inserts a row from a SELECT *-style snapshot and preserves the original id', () => {
     const db = getDb();
     const id = db.prepare(
       "INSERT INTO routes (domain, target_ip, target_port) VALUES ('keep-id.example.com', '10.0.0.3', 80)"
@@ -84,5 +87,7 @@ describe('routesRollback: reinsertRouteRow', () => {
     const reborn = db.prepare('SELECT * FROM routes WHERE id=?').get(id);
     assert.ok(reborn, 'row must reappear at the original id');
     assert.equal(reborn.domain, 'keep-id.example.com');
+    assert.equal(reborn.target_ip, '10.0.0.3');
+    assert.equal(reborn.target_port, 80);
   });
 });
