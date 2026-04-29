@@ -7,6 +7,7 @@
  *   caddyValidators.js    — string/format validators + defender helpers
  *   caddyAcl.js           — route ACL peer DB helpers
  *   caddyMaintenance.js   — gateway-offline page renderer
+ *   caddyRateLimit.js     — rate_limit handler builder
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -27,9 +28,9 @@ const {
   parseStatusCodes,
   isValidHeaderName,
   isValidHeaderValue,
-  sanitizeRateWindow,
   sanitizeStickyCookieName,
 } = require('./caddyValidators');
+const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -309,16 +310,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Rate limiting
     if (route.rate_limit_enabled) {
-      routeHandlers.push({
-        handler: 'rate_limit',
-        rate_limits: {
-          static: {
-            key: '{http.request.remote.host}',
-            window: sanitizeRateWindow(route.rate_limit_window),
-            max_events: route.rate_limit_requests || 100,
-          },
-        },
-      });
+      routeHandlers.push(buildRateLimitHandler(route));
     }
 
     // Request mirroring
@@ -453,16 +445,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         }
       }
       if (route.rate_limit_enabled) {
-        authHandlers.push({
-          handler: 'rate_limit',
-          rate_limits: {
-            static: {
-              key: '{http.request.remote.host}',
-              window: sanitizeRateWindow(route.rate_limit_window),
-              max_events: route.rate_limit_requests || 100,
-            },
-          },
-        });
+        authHandlers.push(buildRateLimitHandler(route));
       }
       if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
         authHandlers.push({
