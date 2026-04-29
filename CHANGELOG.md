@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.21] — 2026-04-29
+
+### Fixes
+- applyResponseHeaders merges instead of clobbering reverseProxy.headers (#69)
+
+---
+
 ## [1.58.20] — 2026-04-29
 
 ### Änderungen
