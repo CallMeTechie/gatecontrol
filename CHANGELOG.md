@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.27] — 2026-04-29
+
+### Änderungen
+- extract PATCH-semantics validateIfProvided helper (#75)
+
+---
+
 ## [1.58.26] — 2026-04-29
 
 ### Änderungen
