@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
 const { validateBrandingFields, validateBotBlockerConfig } = require('./routesValidation');
+const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
@@ -231,13 +232,10 @@ async function create(data) {
   }
 
   // Sync to Caddy — rollback DB insert on failure
-  try {
-    await syncToCaddy();
-  } catch (err) {
+  await withCaddySync(syncToCaddy, () => {
     db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
-    throw err;
-  }
+  }, 'route create');
 
   activity.log('route_created', `Route "${domain}" created → ${targetIp}:${data.target_port}`, {
     source: 'admin',
@@ -556,12 +554,7 @@ async function update(id, data) {
   // snapshot restore so security-critical fields (ip_filter_*, acl_*,
   // bot_blocker_*, monitoring_*, branding_*, retry_*, ...) aren't
   // silently reset to defaults when the rollback path fires.
-  try {
-    await syncToCaddy();
-  } catch (err) {
-    restoreRouteRow(db, id, snapshot);
-    throw err;
-  }
+  await withCaddySync(syncToCaddy, () => restoreRouteRow(db, id, snapshot), 'route update');
 
   activity.log('route_updated', `Route "${route.domain}" updated`, {
     source: 'admin',
@@ -612,12 +605,7 @@ async function remove(id) {
   // column of the original row (not just the hard-coded core set),
   // otherwise a rollback throws away ACLs / IP-filter / bot-blocker
   // config that the admin set up and leaves a half-castrated route.
-  try {
-    await syncToCaddy();
-  } catch (err) {
-    reinsertRouteRow(db, route);
-    throw err;
-  }
+  await withCaddySync(syncToCaddy, () => reinsertRouteRow(db, route), 'route delete');
 
   activity.log('route_deleted', `Route "${route.domain}" deleted`, {
     source: 'admin',
@@ -640,12 +628,9 @@ async function toggle(id) {
   db.prepare("UPDATE routes SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(newState, id);
 
   // Sync to Caddy — rollback toggle on failure
-  try {
-    await syncToCaddy();
-  } catch (err) {
+  await withCaddySync(syncToCaddy, () => {
     db.prepare("UPDATE routes SET enabled = ?, updated_at = ? WHERE id = ?").run(route.enabled, route.updated_at, id);
-    throw err;
-  }
+  }, 'route toggle');
 
   activity.log(
     newState ? 'route_enabled' : 'route_disabled',
@@ -704,9 +689,7 @@ async function batch(action, ids) {
     db.prepare(`DELETE FROM routes WHERE id IN (${placeholders})`).run(...ids);
   }
 
-  try {
-    await syncToCaddy();
-  } catch (err) {
+  await withCaddySync(syncToCaddy, () => {
     const tx = db.transaction(() => {
       if (action === 'delete') {
         for (const row of snapshots) reinsertRouteRow(db, row);
@@ -716,11 +699,8 @@ async function batch(action, ids) {
         for (const row of snapshots) restoreRouteRow(db, row.id, row);
       }
     });
-    try { tx(); } catch (rbErr) {
-      logger.error({ err: rbErr.message }, 'batch rollback failed — DB may be inconsistent with Caddy');
-    }
-    throw err;
-  }
+    tx();
+  }, `batch ${action}`);
 
   const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
   activity.log(
