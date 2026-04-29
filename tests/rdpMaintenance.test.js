@@ -56,14 +56,34 @@ describe('rdpMaintenance: parseMaintenanceActive', () => {
     assert.equal(parseMaintenanceActive(sched, on(5, 18, 0)), false, 'Fri 18:00 — past day-window');
   });
 
-  it('does NOT support overnight time wrap inside a single day — known limitation', () => {
-    // 22:00-06:00 on the same day evaluates to startMin=1320, endMin=360,
-    // and the check `mins >= 1320 && mins < 360` is impossible. The
-    // pre-refactor code had the same gap; this test pins the limitation
-    // so anyone fixing it has to update both sides.
+  it('overnight time wrap — "Mo 22:00-06:00" covers Mon evening + Tue early morning', () => {
     const sched = 'Mo 22:00-06:00';
-    assert.equal(parseMaintenanceActive(sched, on(1, 23, 0)), false);
-    assert.equal(parseMaintenanceActive(sched, on(1, 3, 0)), false);
+    assert.equal(parseMaintenanceActive(sched, on(1, 22, 0)), true,  'Mon 22:00 — start');
+    assert.equal(parseMaintenanceActive(sched, on(1, 23, 30)), true, 'Mon 23:30 — late portion');
+    assert.equal(parseMaintenanceActive(sched, on(2, 0, 0)), true,   'Tue 00:00 — wrap into next day');
+    assert.equal(parseMaintenanceActive(sched, on(2, 5, 59)), true,  'Tue 05:59 — last minute');
+    assert.equal(parseMaintenanceActive(sched, on(2, 6, 0)), false,  'Tue 06:00 — endMin exclusive');
+    assert.equal(parseMaintenanceActive(sched, on(1, 21, 59)), false, 'Mon 21:59 — before window');
+    assert.equal(parseMaintenanceActive(sched, on(1, 3, 0)), false,
+      'Mon 03:00 is the previous Sunday-night window, not Mon-overnight');
+  });
+
+  it('overnight time wrap combined with day wrap — "Fr-Mo 22:00-06:00"', () => {
+    const sched = 'Fr-Mo 22:00-06:00';
+    // Late-portion-of-today branch
+    assert.equal(parseMaintenanceActive(sched, on(5, 23, 0)), true, 'Fri 23:00');
+    assert.equal(parseMaintenanceActive(sched, on(6, 22, 30)), true, 'Sat 22:30');
+    assert.equal(parseMaintenanceActive(sched, on(0, 23, 0)), true, 'Sun 23:00');
+    assert.equal(parseMaintenanceActive(sched, on(1, 22, 30)), true, 'Mon 22:30');
+    // Early-portion-of-today (yesterday-was-in-range) branch
+    assert.equal(parseMaintenanceActive(sched, on(6, 3, 0)), true, 'Sat 03:00 — Fri overnight');
+    assert.equal(parseMaintenanceActive(sched, on(0, 5, 0)), true, 'Sun 05:00 — Sat overnight');
+    assert.equal(parseMaintenanceActive(sched, on(1, 5, 59)), true, 'Mon 05:59 — Sun overnight');
+    assert.equal(parseMaintenanceActive(sched, on(2, 5, 0)), true, 'Tue 05:00 — Mon overnight');
+    // Outside the window
+    assert.equal(parseMaintenanceActive(sched, on(2, 23, 0)), false, 'Tue 23:00 — Tue not in day-range');
+    assert.equal(parseMaintenanceActive(sched, on(2, 6, 0)), false, 'Tue 06:00 — Mon overnight ended');
+    assert.equal(parseMaintenanceActive(sched, on(3, 3, 0)), false, 'Wed 03:00 — Tue not in day-range');
   });
 
   it('supports multiple windows separated by newline OR semicolon', () => {
