@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.16] — 2026-04-29
+
+### Änderungen
+- extract sync-rollback helpers into routesRollback.js (#64)
+
+---
+
 ## [1.58.15] — 2026-04-29
 
 ### Änderungen
