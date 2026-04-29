@@ -5,27 +5,9 @@ const config = require('../../config/default');
 const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
+const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
 const activity = require('./activity');
 const logger = require('../utils/logger');
-
-// ─── Rollback helpers (full snapshot restore) ───────────
-function _routeColumns(db) {
-  return db.prepare("PRAGMA table_info(routes)").all().map(c => c.name);
-}
-
-function _restoreRouteRow(db, id, snapshot) {
-  const cols = _routeColumns(db).filter(c => c !== 'id');
-  const sets = cols.map(c => `${c} = ?`).join(', ');
-  const values = cols.map(c => snapshot[c] === undefined ? null : snapshot[c]);
-  db.prepare(`UPDATE routes SET ${sets} WHERE id = ?`).run(...values, id);
-}
-
-function _reinsertRouteRow(db, row) {
-  const cols = _routeColumns(db);
-  const placeholders = cols.map(() => '?').join(', ');
-  const values = cols.map(c => row[c] === undefined ? null : row[c]);
-  db.prepare(`INSERT INTO routes (${cols.join(', ')}) VALUES (${placeholders})`).run(...values);
-}
 
 // ─── CRUD Operations ────────────────────────────────────
 
@@ -622,7 +604,7 @@ async function update(id, data) {
   try {
     await syncToCaddy();
   } catch (err) {
-    _restoreRouteRow(db, id, snapshot);
+    restoreRouteRow(db, id, snapshot);
     throw err;
   }
 
@@ -678,7 +660,7 @@ async function remove(id) {
   try {
     await syncToCaddy();
   } catch (err) {
-    _reinsertRouteRow(db, route);
+    reinsertRouteRow(db, route);
     throw err;
   }
 
@@ -772,11 +754,11 @@ async function batch(action, ids) {
   } catch (err) {
     const tx = db.transaction(() => {
       if (action === 'delete') {
-        for (const row of snapshots) _reinsertRouteRow(db, row);
+        for (const row of snapshots) reinsertRouteRow(db, row);
         const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
         for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
       } else {
-        for (const row of snapshots) _restoreRouteRow(db, row.id, row);
+        for (const row of snapshots) restoreRouteRow(db, row.id, row);
       }
     });
     try { tx(); } catch (rbErr) {
