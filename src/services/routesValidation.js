@@ -19,6 +19,28 @@ const BRANDING_TITLE_MAX = 255;
 const BRANDING_TEXT_MAX = 2000;
 const BOT_CUSTOM_MESSAGE_MAX = 500;
 
+/**
+ * PATCH-semantics helper for the update() path: run `validatorFn(value)`
+ * only when the field is actually present on the patch payload (i.e.
+ * `data[field] !== undefined`). The validator is expected to return an
+ * error STRING on failure, or any falsy value on success — that matches
+ * the contract used throughout src/utils/validate.js.
+ *
+ * Throws an Error with the validator's message on failure, otherwise
+ * returns silently.
+ *
+ * Empty strings and zero ARE considered "provided" (only `undefined`
+ * skips). That matches the existing inline pattern in update() — an
+ * admin sending `target_port: 0` should hit the validator and get a
+ * "must be 1-65535" error rather than being silently allowed because
+ * 0 is falsy.
+ */
+function validateIfProvided(data, field, validatorFn) {
+  if (data[field] === undefined) return;
+  const err = validatorFn(data[field]);
+  if (err) throw new Error(err);
+}
+
 function validateBrandingFields(data) {
   if (data.branding_title && data.branding_title.length > BRANDING_TITLE_MAX) {
     throw new Error(`Branding title must be ${BRANDING_TITLE_MAX} characters or less`);
@@ -61,6 +83,7 @@ function validateBotBlockerConfig(data) {
 }
 
 module.exports = {
+  validateIfProvided,
   validateBrandingFields,
   validateBotBlockerConfig,
   VALID_BOT_MODES,

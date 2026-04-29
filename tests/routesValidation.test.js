@@ -4,9 +4,50 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  validateIfProvided,
   validateBrandingFields,
   validateBotBlockerConfig,
 } = require('../src/services/routesValidation');
+
+describe('routesValidation: validateIfProvided', () => {
+  it('skips validation when the field is undefined on the patch', () => {
+    let calls = 0;
+    validateIfProvided({}, 'foo', () => { calls++; return 'never'; });
+    assert.equal(calls, 0);
+  });
+
+  it('runs validation when the field is null (null is "explicit clear", not "absent")', () => {
+    let calls = 0;
+    validateIfProvided({ foo: null }, 'foo', (v) => { calls++; return null; });
+    assert.equal(calls, 1);
+  });
+
+  it('runs validation on empty string and 0 (not skipped as "falsy")', () => {
+    let received = [];
+    validateIfProvided({ port: 0 }, 'port', (v) => { received.push(v); return null; });
+    validateIfProvided({ name: '' }, 'name', (v) => { received.push(v); return null; });
+    assert.deepEqual(received, [0, '']);
+  });
+
+  it('throws Error(message) when the validator returns a string', () => {
+    assert.throws(
+      () => validateIfProvided({ port: 99999 }, 'port', () => 'Port must be between 1 and 65535'),
+      /Port must be between 1 and 65535/,
+    );
+  });
+
+  it('passes silently when the validator returns null / undefined / empty string', () => {
+    assert.doesNotThrow(() => validateIfProvided({ port: 80 }, 'port', () => null));
+    assert.doesNotThrow(() => validateIfProvided({ port: 80 }, 'port', () => undefined));
+    assert.doesNotThrow(() => validateIfProvided({ port: 80 }, 'port', () => ''));
+  });
+
+  it('passes the actual field value into the validator', () => {
+    let seen;
+    validateIfProvided({ x: 'hello' }, 'x', (v) => { seen = v; return null; });
+    assert.equal(seen, 'hello');
+  });
+});
 
 describe('routesValidation: validateBrandingFields', () => {
   it('passes when branding fields are absent', () => {
