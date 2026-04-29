@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.29] — 2026-04-29
+
+### Änderungen
+- split routes/api/settings.js into 6 domain clusters
+
+---
+
 ## [1.58.28] — 2026-04-29
 
 ### Änderungen
