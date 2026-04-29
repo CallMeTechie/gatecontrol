@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.15] — 2026-04-29
+
+### Änderungen
+- extract backend resolver into caddyBackends.js (#63)
+
+---
+
 ## [1.58.14] — 2026-04-29
 
 ### Änderungen
