@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.26] — 2026-04-29
+
+### Änderungen
+- extract sync-with-rollback pattern into routesSync.js (#74)
+
+---
+
 ## [1.58.25] — 2026-04-29
 
 ### Änderungen
