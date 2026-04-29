@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.9] — 2026-04-29
+
+### Änderungen
+- re-trigger release pipeline after stale v1.58.9 tag cleanup
+
+---
+
 ## [1.58.8] — 2026-04-29
 
 ### Fixes
