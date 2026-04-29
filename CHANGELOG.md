@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.23] — 2026-04-29
+
+### Fixes
+- explicit timeout + retry/backoff for Caddy admin calls (#71)
+
+---
+
 ## [1.58.22] — 2026-04-29
 
 ### Fixes
