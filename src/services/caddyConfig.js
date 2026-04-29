@@ -8,6 +8,7 @@
  *   caddyAcl.js           — route ACL peer DB helpers
  *   caddyMaintenance.js   — gateway-offline page renderer
  *   caddyRateLimit.js     — rate_limit handler builder
+ *   caddyCircuitBreaker.js — circuit-breaker open-state 503 builder
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -31,6 +32,7 @@ const {
   sanitizeStickyCookieName,
 } = require('./caddyValidators');
 const { buildRateLimitHandler } = require('./caddyRateLimit');
+const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -261,17 +263,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Circuit breaker — when open, return 503
     if (route.circuit_breaker_enabled && route.circuit_breaker_status === 'open') {
-      const routeConfig503 = {
-        handle: [{
-          handler: 'static_response',
-          status_code: '503',
-          body: 'Service temporarily unavailable',
-          headers: { 'Retry-After': [String(route.circuit_breaker_timeout || 30)] },
-        }],
-      };
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
-        routes: [routeConfig503],
+        routes: [{
+          handle: [buildCircuitBreakerOpenHandler(route.circuit_breaker_timeout)],
+        }],
       };
       continue;
     }
