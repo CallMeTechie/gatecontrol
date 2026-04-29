@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.14] — 2026-04-29
+
+### Änderungen
+- extract custom-headers handler builders into caddyCustomHeaders.js (#62)
+
+---
+
 ## [1.58.13] — 2026-04-29
 
 ### Änderungen
