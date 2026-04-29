@@ -9,6 +9,7 @@
  *   caddyMaintenance.js   — gateway-offline page renderer
  *   caddyRateLimit.js     — rate_limit handler builder
  *   caddyCircuitBreaker.js — circuit-breaker open-state 503 builder
+ *   caddyMirror.js        — mirror handler builder
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -33,6 +34,7 @@ const {
 } = require('./caddyValidators');
 const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
+const { buildMirrorHandler } = require('./caddyMirror');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -311,10 +313,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Request mirroring
     if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
-      routeHandlers.push({
-        handler: 'mirror',
-        targets: mirrorTargets.map(t => ({ dial: `${t.ip}:${t.port}` })),
-      });
+      routeHandlers.push(buildMirrorHandler(mirrorTargets));
     }
 
     // Compression
@@ -444,10 +443,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         authHandlers.push(buildRateLimitHandler(route));
       }
       if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
-        authHandlers.push({
-          handler: 'mirror',
-          targets: mirrorTargets.map(t => ({ dial: `${t.ip}:${t.port}` })),
-        });
+        authHandlers.push(buildMirrorHandler(mirrorTargets));
       }
       if (route.compress_enabled) {
         authHandlers.push({ handler: 'encode', encodings: { zstd: {}, brotli: {}, gzip: {} } });
