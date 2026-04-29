@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.18] — 2026-04-29
+
+### Änderungen
+- extract credential management into rdpCredentials.js (#66)
+
+---
+
 ## [1.58.17] — 2026-04-29
 
 ### Änderungen
