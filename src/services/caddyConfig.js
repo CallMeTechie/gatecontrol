@@ -11,6 +11,7 @@
  *   caddyCircuitBreaker.js — circuit-breaker open-state 503 builder
  *   caddyMirror.js        — mirror handler builder
  *   caddyRetry.js         — retry config applier (mutates reverseProxy)
+ *   caddyCustomHeaders.js — request/response headers handler builders
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -28,14 +29,13 @@ const logger = require('../utils/logger');
 const {
   BOT_BLOCKER_RANGES,
   buildDefenderConfig,
-  isValidHeaderName,
-  isValidHeaderValue,
   sanitizeStickyCookieName,
 } = require('./caddyValidators');
 const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { buildMirrorHandler } = require('./caddyMirror');
 const { applyRetryConfig } = require('./caddyRetry');
+const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -215,18 +215,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // when route.retry_enabled is set; no-op otherwise).
     applyRetryConfig(reverseProxy, route);
 
-    // Response custom headers
-    if (customHeaders && Array.isArray(customHeaders.response) && customHeaders.response.length > 0) {
-      const responseSet = {};
-      for (const h of customHeaders.response) {
-        if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
-          responseSet[h.name] = [h.value];
-        }
-      }
-      if (Object.keys(responseSet).length > 0) {
-        reverseProxy.headers = { response: { set: responseSet } };
-      }
-    }
+    // Response custom headers (mutates reverseProxy.headers).
+    if (customHeaders) applyResponseHeaders(reverseProxy, customHeaders.response);
 
     // Backend HTTPS with insecure_skip_verify. Skipped for gateway-typed
     // routes: the Caddy → Gateway hop (over WG tunnel) always speaks
@@ -274,19 +264,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
 
     // Request custom headers
-    if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
-      const requestSet = {};
-      for (const h of customHeaders.request) {
-        if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
-          requestSet[h.name] = [h.value];
-        }
-      }
-      if (Object.keys(requestSet).length > 0) {
-        routeHandlers.push({
-          handler: 'headers',
-          request: { set: requestSet },
-        });
-      }
+    if (customHeaders) {
+      const reqHeaders = buildRequestHeadersHandler(customHeaders.request);
+      if (reqHeaders) routeHandlers.push(reqHeaders);
     }
 
     // Rate limiting
@@ -408,19 +388,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       if (route.bot_blocker_enabled) {
         authHandlers.unshift(buildDefenderConfig(route));
       }
-      if (customHeaders && Array.isArray(customHeaders.request) && customHeaders.request.length > 0) {
-        const requestSet = {};
-        for (const h of customHeaders.request) {
-          if (h.name && h.value && isValidHeaderName(h.name) && isValidHeaderValue(h.value)) {
-            requestSet[h.name] = [h.value];
-          }
-        }
-        if (Object.keys(requestSet).length > 0) {
-          authHandlers.push({
-            handler: 'headers',
-            request: { set: requestSet },
-          });
-        }
+      if (customHeaders) {
+        const reqHeaders = buildRequestHeadersHandler(customHeaders.request);
+        if (reqHeaders) authHandlers.push(reqHeaders);
       }
       if (route.rate_limit_enabled) {
         authHandlers.push(buildRateLimitHandler(route));
