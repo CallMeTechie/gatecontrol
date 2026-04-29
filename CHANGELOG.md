@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.13] — 2026-04-29
+
+### Änderungen
+- extract retry config into caddyRetry.js (#61)
+
+---
+
 ## [1.58.12] — 2026-04-29
 
 ### Änderungen
