@@ -129,7 +129,7 @@ describe('caddyConfig contract: top-level shape', () => {
       enabled: 1, https_enabled: 1,
     }]);
     const serverRoutes = cfg.apps.http.servers.srv0.routes;
-    const match = serverRoutes.find(r => r.match && r.match[0] && r.match[0].host && r.match[0].host.includes('b.example.com'));
+    const match = serverRoutes.find(r => r.match?.[0]?.host?.[0] === 'b.example.com');
     assert.ok(match, 'route must match on host b.example.com');
     assert.equal(match.terminal, true, 'route must be terminal');
   });
