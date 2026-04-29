@@ -12,6 +12,7 @@
  *   caddyMirror.js        — mirror handler builder
  *   caddyRetry.js         — retry config applier (mutates reverseProxy)
  *   caddyCustomHeaders.js — request/response headers handler builders
+ *   caddyBackends.js      — JSON `backends` column → resolved peer IPs
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -36,6 +37,7 @@ const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { buildMirrorHandler } = require('./caddyMirror');
 const { applyRetryConfig } = require('./caddyRetry');
 const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
+const { resolveBackends } = require('./caddyBackends');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -79,20 +81,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
 
     // Parse backends for load balancing — resolve peer IPs from peer_id
-    let backends = null;
-    if (route.backends) {
-      try {
-        const rawBackends = JSON.parse(route.backends);
-        if (Array.isArray(rawBackends)) {
-          backends = rawBackends.map(b => {
-            if (!b.peer_id) return null;
-            const bPeer = db.prepare('SELECT allowed_ips, enabled FROM peers WHERE id = ?').get(b.peer_id);
-            if (!bPeer || !bPeer.enabled) return null;
-            return { ip: bPeer.allowed_ips.split('/')[0], port: b.port, weight: b.weight || 1 };
-          }).filter(Boolean);
-        }
-      } catch {}
-    }
+    const backends = resolveBackends(db, route);
     const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
 
     // Determine gateway-target peer IP (for target_kind='gateway' routes)
