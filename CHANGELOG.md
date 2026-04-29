@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.17] — 2026-04-29
+
+### Änderungen
+- extract branding + bot-blocker validation into routesValidation.js (#65)
+
+---
+
 ## [1.58.16] — 2026-04-29
 
 ### Änderungen
