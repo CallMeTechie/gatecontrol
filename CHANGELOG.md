@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.25] — 2026-04-29
+
+### Änderungen
+- extract auth subroute + handler chain into caddyAuthSubroute.js (#73)
+
+---
+
 ## [1.58.24] — 2026-04-29
 
 ### Änderungen
