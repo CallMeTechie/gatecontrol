@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.28] — 2026-04-29
+
+### Änderungen
+- align license-gated and autobackup expectations with current behavior
+
+---
+
 ## [1.58.27] — 2026-04-29
 
 ### Änderungen
