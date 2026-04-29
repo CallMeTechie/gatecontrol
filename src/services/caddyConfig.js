@@ -14,6 +14,7 @@
  *   caddyCustomHeaders.js — request/response headers handler builders
  *   caddyBackends.js      — JSON `backends` column → resolved peer IPs
  *   caddyTlsAutomation.js — apps.tls.automation policies (ACME / internal)
+ *   caddyAuthSubroute.js  — forward-auth subroute + handler chain
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -40,6 +41,7 @@ const { applyRetryConfig } = require('./caddyRetry');
 const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
 const { resolveBackends } = require('./caddyBackends');
 const { buildTlsAutomation } = require('./caddyTlsAutomation');
+const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubroute');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -320,84 +322,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     const needsForwardAuth = routeAuthConfig || route.ip_filter_enabled;
 
     if (needsForwardAuth) {
-      const routeAuthProxy = {
-        // Only intercept /route-auth/* (covers the login page and its
-        // assets under /route-auth/static/*). Previously /css/*, /js/*,
-        // /fonts/*, /branding/* were also intercepted so the login
-        // template could load its own stylesheet/script — but those
-        // paths collide with the upstream's own assets, so after login
-        // the upstream's /js/jquery.js etc. got routed to our Node and
-        // returned as 404 HTML, breaking every legacy web interface
-        // (Speedport, TR-064, older Synology panels…).
-        match: [{ path: ['/route-auth/*'] }],
-        handle: [{
-          handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3000' }],
-        }],
-      };
-
-      const forwardAuthSubrequest = {
-        handler: 'reverse_proxy',
-        upstreams: [{ dial: '127.0.0.1:3000' }],
-        rewrite: { method: 'GET', uri: '/route-auth/verify' },
-        headers: {
-          request: {
-            set: {
-              'X-Route-Domain': [route.domain],
-              'X-Forwarded-Method': ['{http.request.method}'],
-              'X-Forwarded-Uri': ['{http.request.uri}'],
-            },
-          },
-        },
-        handle_response: [
-          {
-            match: { status_code: [2] },
-            routes: [{ handle: [{ handler: 'vars' }] }],
-          },
-          {
-            routes: [{
-              handle: [{
-                handler: 'static_response',
-                status_code: 302,
-                headers: {
-                  'Location': [`/route-auth/login?route=${route.domain}&redirect={http.request.uri}`],
-                },
-              }],
-            }],
-          },
-        ],
-      };
-
-      const authHandlers = [forwardAuthSubrequest];
-      if (route.debug_enabled) {
-        authHandlers.unshift({
-          handler: 'trace',
-          tag: `route-${route.id}`,
-          response_debug_enabled: true,
-        });
-      }
-      if (route.bot_blocker_enabled) {
-        authHandlers.unshift(buildDefenderConfig(route));
-      }
-      if (customHeaders) {
-        const reqHeaders = buildRequestHeadersHandler(customHeaders.request);
-        if (reqHeaders) authHandlers.push(reqHeaders);
-      }
-      if (route.rate_limit_enabled) {
-        authHandlers.push(buildRateLimitHandler(route));
-      }
-      if (mirrorTargets && Array.isArray(mirrorTargets) && mirrorTargets.length > 0) {
-        authHandlers.push(buildMirrorHandler(mirrorTargets));
-      }
-      if (route.compress_enabled) {
-        authHandlers.push({ handler: 'encode', encodings: { zstd: {}, brotli: {}, gzip: {} } });
-      }
-      authHandlers.push(reverseProxy);
-      routeConfig.handle = authHandlers;
-
+      routeConfig.handle = buildAuthHandlerChain({
+        route, reverseProxy, customHeaders, mirrorTargets,
+      });
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
-        routes: [routeAuthProxy, routeConfig],
+        routes: [buildRouteAuthProxy(), routeConfig],
       };
     } else {
       caddyRoutes[route.domain] = {
