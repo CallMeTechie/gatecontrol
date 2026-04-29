@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.24] — 2026-04-29
+
+### Änderungen
+- extract TLS automation policies into caddyTlsAutomation.js (#72)
+
+---
+
 ## [1.58.23] — 2026-04-29
 
 ### Fixes
