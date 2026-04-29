@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateDescription, validateBasicAuthUser
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateBrandingFields, validateBotBlockerConfig } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -278,19 +278,10 @@ async function update(id, data) {
   const routeType = data.route_type || route.route_type || 'http';
 
   if (routeType === 'l4') {
-    if (data.l4_protocol !== undefined) {
-      const protoErr = validateL4Protocol(data.l4_protocol);
-      if (protoErr) throw new Error(protoErr);
-    }
-    if (data.l4_listen_port !== undefined) {
-      const portErr = validateL4ListenPort(data.l4_listen_port);
-      if (portErr) throw new Error(portErr);
-    }
+    validateIfProvided(data, 'l4_protocol', validateL4Protocol);
+    validateIfProvided(data, 'l4_listen_port', validateL4ListenPort);
+    validateIfProvided(data, 'l4_tls_mode', validateL4TlsMode);
     const tlsMode = data.l4_tls_mode !== undefined ? data.l4_tls_mode : route.l4_tls_mode;
-    if (data.l4_tls_mode !== undefined) {
-      const tlsErr = validateL4TlsMode(data.l4_tls_mode);
-      if (tlsErr) throw new Error(tlsErr);
-    }
     if (tlsMode && tlsMode !== 'none') {
       const domain = data.domain !== undefined ? data.domain : route.domain;
       if (!domain) throw new Error('TLS mode requires a domain for SNI');
@@ -317,15 +308,8 @@ async function update(id, data) {
     if (dup) throw new Error('A route with this domain already exists');
   }
 
-  if (data.target_port !== undefined) {
-    const portErr = validatePort(data.target_port);
-    if (portErr) throw new Error(portErr);
-  }
-
-  if (data.description !== undefined) {
-    const descErr = validateDescription(data.description);
-    if (descErr) throw new Error(descErr);
-  }
+  validateIfProvided(data, 'target_port', validatePort);
+  validateIfProvided(data, 'description', validateDescription);
 
   validateBrandingFields(data);
 
