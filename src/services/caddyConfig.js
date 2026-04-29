@@ -10,6 +10,7 @@
  *   caddyRateLimit.js     — rate_limit handler builder
  *   caddyCircuitBreaker.js — circuit-breaker open-state 503 builder
  *   caddyMirror.js        — mirror handler builder
+ *   caddyRetry.js         — retry config applier (mutates reverseProxy)
  *   caddyAdminClient.js   — Caddy Admin API client + TLS self-test +
  *                           supervisor restart + partial PATCH helpers
  *
@@ -27,7 +28,6 @@ const logger = require('../utils/logger');
 const {
   BOT_BLOCKER_RANGES,
   buildDefenderConfig,
-  parseStatusCodes,
   isValidHeaderName,
   isValidHeaderValue,
   sanitizeStickyCookieName,
@@ -35,6 +35,7 @@ const {
 const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { buildMirrorHandler } = require('./caddyMirror');
+const { applyRetryConfig } = require('./caddyRetry');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const {
@@ -210,27 +211,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       }
     }
 
-    // Retry configuration.
-    //
-    // Caddy's reverse_proxy retries only within `try_duration` and only for
-    // responses matching `retry_match` (or connect errors by default). Prior
-    // code set `retries` alone — which Caddy ignores unless try_duration is
-    // positive and something in retry_match triggers — so the admin-set
-    // status codes in route.retry_match_status never made it into the
-    // actual config. Wire both fields through.
-    if (route.retry_enabled) {
-      if (!reverseProxy.load_balancing) reverseProxy.load_balancing = {};
-      const retryCount = route.retry_count || 3;
-      reverseProxy.load_balancing.retries = retryCount;
-      // try_duration bounds the retry loop; a fixed 5s silently caps
-      // high retry_count values (a slow upstream burns the whole budget
-      // in a few attempts). Scale with the admin's configured count.
-      reverseProxy.load_balancing.try_duration = `${Math.max(5, retryCount * 2)}s`;
-      const codes = parseStatusCodes(route.retry_match_status);
-      if (codes.length > 0) {
-        reverseProxy.load_balancing.retry_match = [{ status_code: codes }];
-      }
-    }
+    // Retry configuration (mutates reverseProxy.load_balancing in place
+    // when route.retry_enabled is set; no-op otherwise).
+    applyRetryConfig(reverseProxy, route);
 
     // Response custom headers
     if (customHeaders && Array.isArray(customHeaders.response) && customHeaders.response.length > 0) {
