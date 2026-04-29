@@ -1176,7 +1176,15 @@
     var ra2fa = document.getElementById('edit-ra-2fa');
     if (ra2fa) ra2fa.classList.remove('on');
     setToggleGroup('edit-ra-method-group', 'edit-ra-method', 'email_password');
-    setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', 'email_code');
+    // 2FA F2 group shares the same hidden #edit-ra-method as the SF group.
+    // Reset only its visual state — do NOT write the hidden value, that
+    // would clobber the SF default and hide the password field on first open.
+    var ra2faGroupReset = document.getElementById('edit-ra-2fa-method-group');
+    if (ra2faGroupReset) {
+      ra2faGroupReset.querySelectorAll('.toggle-btn').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.value === 'email_code');
+      });
+    }
     // Reset all text fields
     ['edit-ra-email', 'edit-ra-password', 'edit-ra-2fa-email', 'edit-ra-2fa-password'].forEach(function (fid) {
       var el = document.getElementById(fid); if (el) el.value = '';
