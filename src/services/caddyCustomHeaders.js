@@ -35,15 +35,19 @@ function buildRequestHeadersHandler(headerList) {
 
 /**
  * Mutate a Caddy reverse_proxy handler in place to attach response
- * headers. Preserves the prior overwrite semantics: if the caller has
- * already set `reverseProxy.headers` for any reason, this REPLACES it
- * with a `{ response: { set } }` object. (Touching this would be a
- * separate bug-fix PR — see the call-site comment.)
+ * headers. MERGES into any existing `reverseProxy.headers` so a
+ * gateway-routing block (which writes `headers.request.delete` and
+ * `headers.request.set`) is preserved. The pre-fix version assigned
+ * a fresh `{ response: { set } }` object, which clobbered that
+ * request block whenever a route had both gateway routing and
+ * response headers configured.
  */
 function applyResponseHeaders(reverseProxy, headerList) {
   const set = buildHeaderSetMap(headerList);
   if (!set) return;
-  reverseProxy.headers = { response: { set } };
+  reverseProxy.headers = reverseProxy.headers || {};
+  reverseProxy.headers.response = reverseProxy.headers.response || {};
+  reverseProxy.headers.response.set = set;
 }
 
 module.exports = {
