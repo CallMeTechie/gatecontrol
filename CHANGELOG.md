@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.8] — 2026-04-29
+
+### Fixes
+- show password field on first open of edit-route auth tab
+
+---
+
 ## [1.58.7] — 2026-04-28
 
 ### Fixes
