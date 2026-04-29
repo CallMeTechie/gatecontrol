@@ -11,6 +11,84 @@ const RUNTIME_JSON_PATH = (config.caddy && config.caddy.dataDir
   ? config.caddy.dataDir
   : '/data/caddy') + '/runtime.json';
 
+// HTTP statuses where a retry has a meaningful chance of succeeding.
+// 4xx are caller bugs and never retryable; 501 is "not implemented" and
+// retrying won't change the answer.
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+const DEFAULT_RETRY = {
+  maxRetries: 2,    // 1 initial attempt + 2 retries = 3 total attempts
+  baseDelayMs: 500,
+  maxDelayMs: 4000,
+};
+
+/**
+ * Common retry wrapper for both fetch- and node:http-based Caddy admin
+ * calls. Bail-with-null on ECONNREFUSED preserves the legacy contract:
+ * "Caddy not running" is a routine signal during early boot, not an
+ * error worth retrying.
+ *
+ * Retries on:
+ *   - timeout (AbortError / TimeoutError)
+ *   - mid-request connection drop (ECONNRESET)
+ *   - 5xx responses tagged via err.retryable
+ *
+ * Exponential backoff: baseDelayMs * 2^attempt, clamped by maxDelayMs.
+ */
+async function _caddyAdminWithRetry(attemptFn, label, opts = {}) {
+  const { maxRetries, baseDelayMs, maxDelayMs } = { ...DEFAULT_RETRY, ...opts };
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await attemptFn();
+    } catch (err) {
+      const code = err.cause && err.cause.code;
+
+      // ECONNREFUSED → Caddy not running, bail immediately and let
+      // caller treat it as "skip". Retrying just delays the obvious.
+      if (code === 'ECONNREFUSED' || err.code === 'ECONNREFUSED') {
+        logger.warn({ label }, 'Caddy admin API not reachable');
+        return null;
+      }
+
+      const isRetryable =
+        err.name === 'AbortError' ||
+        err.name === 'TimeoutError' ||
+        code === 'ECONNRESET' ||
+        err.code === 'ECONNRESET' ||
+        err.retryable === true;
+
+      if (!isRetryable || attempt === maxRetries) throw err;
+
+      const delay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
+      logger.warn(
+        { label, attempt: attempt + 1, retryInMs: delay, error: err.message },
+        'Caddy admin API call failed, retrying',
+      );
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+// Single-attempt fetch against the Caddy admin API. Returns parsed JSON
+// or {} on empty body. Throws Error with err.retryable=true for 5xx.
+async function _caddyApiAttempt(url, options, timeoutMs) {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(timeoutMs),
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    const err = new Error(`Caddy API ${res.status}: ${text}`);
+    err.status = res.status;
+    err.retryable = RETRYABLE_STATUS.has(res.status);
+    throw err;
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
+}
+
 // Caddy Admin API fetch wrapper.
 // Production-safety: in NODE_ENV=test, never open a real HTTP connection.
 // The container uses network_mode: host, so 127.0.0.1:2019 from a
@@ -21,26 +99,68 @@ async function caddyApi(path, options = {}) {
   if (process.env.NODE_ENV === 'test') return null;
 
   const url = `${CADDY_ADMIN}${path}`;
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(config.timeouts.caddyApi),
-      ...options,
-      headers: { 'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:2019', ...options.headers },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Caddy API ${res.status}: ${text}`);
-    }
-    const text = await res.text();
-    return text ? JSON.parse(text) : {};
-  } catch (err) {
-    if (err.cause && err.cause.code === 'ECONNREFUSED') {
-      logger.warn('Caddy admin API not reachable');
-      return null;
-    }
-    throw err;
-  }
+  return _caddyAdminWithRetry(
+    () => _caddyApiAttempt(url, options, config.timeouts.caddyApi),
+    `${(options.method || 'GET').toUpperCase()} ${path}`,
+  );
 }
+
+// Single-attempt PATCH via node:http. Adds an explicit socket-timeout
+// (the inline pre-fix version had none, so a hung Caddy admin would
+// leave the patch promise hanging forever). The settled-guard makes
+// 'timeout' and 'error' coexist safely.
+function _patchAttempt(urlString, body, timeoutMs) {
+  const http = require('node:http');
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+
+    const url = new URL(urlString);
+    const payload = body === null || body === undefined
+      ? ''
+      : (typeof body === 'string' ? body : JSON.stringify(body));
+    const req = http.request({
+      host: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'Origin': 'http://127.0.0.1:2019',
+      },
+      timeout: timeoutMs,
+    }, (res) => {
+      res.resume();
+      res.on('end', () => settle(resolve));
+    });
+    req.on('error', (err) => settle(reject, err));
+    req.on('timeout', () => {
+      const err = new Error('Caddy admin patch timeout');
+      err.name = 'TimeoutError';
+      req.destroy();
+      settle(reject, err);
+    });
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+// ─── Gateway-aware partial patching of Caddy Admin API ──────
+// Uses @id route markers so status transitions can be applied without
+// a full config reload — PATCH /id/gc_route_<id>/handle.
+const _caddyApi = {
+  async patch(patchPath, body) {
+    // Same production-safety guard as caddyApi().
+    if (process.env.NODE_ENV === 'test') return;
+
+    const url = (process.env.GC_CADDY_ADMIN_URL || config.caddy.adminUrl || 'http://127.0.0.1:2019') + patchPath;
+    return _caddyAdminWithRetry(
+      () => _patchAttempt(url, body, config.timeouts.caddyApi),
+      `PATCH ${patchPath}`,
+    );
+  },
+};
 
 // Write the generated Caddy config to /data/caddy/runtime.json atomically.
 // entrypoint.sh boots Caddy from this file and a restart falls back to it
@@ -134,39 +254,6 @@ function _managementHost(caddyConfig) {
   } catch { return null; }
 }
 
-// ─── Gateway-aware partial patching of Caddy Admin API ──────
-// Uses @id route markers so status transitions can be applied without
-// a full config reload — PATCH /id/gc_route_<id>/handle.
-const _caddyApi = {
-  async patch(patchPath, body) {
-    // Same production-safety guard as caddyApi().
-    if (process.env.NODE_ENV === 'test') return;
-
-    const http = require('node:http');
-    return new Promise((resolve, reject) => {
-      const url = new URL((process.env.GC_CADDY_ADMIN_URL || config.caddy.adminUrl || 'http://127.0.0.1:2019') + patchPath);
-      const payload = body === null || body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body));
-      const req = http.request({
-        host: url.hostname,
-        port: url.port,
-        path: url.pathname,
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-          'Origin': 'http://127.0.0.1:2019',
-        },
-      }, (res) => {
-        res.resume();
-        res.on('end', resolve);
-      });
-      req.on('error', reject);
-      if (payload) req.write(payload);
-      req.end();
-    });
-  },
-};
-
 async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSeen }) {
   const db = getDb();
   const routes = db.prepare(`
@@ -196,6 +283,7 @@ async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSee
 module.exports = {
   caddyApi,
   _caddyApi,
+  _caddyAdminWithRetry,
   _persistRuntimeJson,
   _verifyLocalTls,
   _restartCaddyViaSupervisor,
