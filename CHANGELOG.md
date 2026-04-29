@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.19] — 2026-04-29
+
+### Änderungen
+- extract maintenance-window logic into rdpMaintenance.js (#67)
+
+---
+
 ## [1.58.18] — 2026-04-29
 
 ### Änderungen
