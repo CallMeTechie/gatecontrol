@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.20] — 2026-04-29
+
+### Änderungen
+- extract canAccessRoute into rdpAcl.js (#68)
+
+---
+
 ## [1.58.19] — 2026-04-29
 
 ### Änderungen
