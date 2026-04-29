@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.11] — 2026-04-29
+
+### Änderungen
+- extract circuit-breaker open-state handler into caddyCircuitBreaker.js (#59)
+
+---
+
 ## [1.58.10] — 2026-04-29
 
 ### Fixes
