@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.22] — 2026-04-29
+
+### Fixes
+- support overnight time wrap-around in maintenance schedules (#70)
+
+---
+
 ## [1.58.21] — 2026-04-29
 
 ### Fixes
