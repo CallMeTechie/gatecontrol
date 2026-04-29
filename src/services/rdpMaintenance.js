@@ -36,10 +36,30 @@ function isInMaintenanceWindow(routeId) {
   return parseMaintenanceActive(route.maintenance_schedule);
 }
 
+function isDayInRange(dayIndex, startDay, endDay) {
+  if (startDay <= endDay) {
+    return dayIndex >= startDay && dayIndex <= endDay;
+  }
+  // Wrap-around day range, e.g. "Fr-Mo" = Fri | Sat | Sun | Mon.
+  return dayIndex >= startDay || dayIndex <= endDay;
+}
+
 /**
  * Returns true when `schedule` covers `now` (defaults to live wall
  * clock; the caller can pass a Date to make this deterministic in
  * tests).
+ *
+ * Supports two kinds of wrap-around independently:
+ *
+ *   - DAY range wraps the week: "Fr-Mo 09:00-17:00" → Fri/Sat/Sun/Mon
+ *     each from 09:00 to 17:00.
+ *   - TIME range wraps midnight: "Mo 22:00-06:00" → Mon 22:00 through
+ *     Tue 06:00. Implemented by checking BOTH "today is in day-range
+ *     and we're in the late portion (>= startMin)" AND "yesterday was
+ *     in day-range and we're in the early portion (< endMin)".
+ *
+ * Both can wrap at once: "Fr-Mo 22:00-06:00" covers Fri evening
+ * through Tuesday morning.
  */
 function parseMaintenanceActive(schedule, now = new Date()) {
   if (!schedule) return false;
@@ -51,6 +71,7 @@ function parseMaintenanceActive(schedule, now = new Date()) {
   }
 
   const dayIndex = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const yesterdayIndex = (dayIndex + 6) % 7; // -1 mod 7
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const lines = schedule.split(/[\n;]+/).map(l => l.trim()).filter(Boolean);
@@ -68,15 +89,23 @@ function parseMaintenanceActive(schedule, now = new Date()) {
     const startMin = parseInt(h1, 10) * 60 + parseInt(m1, 10);
     const endMin = parseInt(h2, 10) * 60 + parseInt(m2, 10);
 
-    let dayInRange;
-    if (startDay <= endDay) {
-      dayInRange = dayIndex >= startDay && dayIndex <= endDay;
+    if (startMin <= endMin) {
+      // Same-day window: today must be in day-range AND time in [start, end).
+      if (isDayInRange(dayIndex, startDay, endDay)
+          && currentMinutes >= startMin && currentMinutes < endMin) {
+        return true;
+      }
     } else {
-      dayInRange = dayIndex >= startDay || dayIndex <= endDay;
-    }
-
-    if (dayInRange && currentMinutes >= startMin && currentMinutes < endMin) {
-      return true;
+      // Overnight window splits into two cases:
+      //   1. Today is in day-range and we're in the late portion (>= startMin).
+      //   2. Yesterday was in day-range and we're in the early-morning
+      //      portion of today (< endMin).
+      if (isDayInRange(dayIndex, startDay, endDay) && currentMinutes >= startMin) {
+        return true;
+      }
+      if (isDayInRange(yesterdayIndex, startDay, endDay) && currentMinutes < endMin) {
+        return true;
+      }
     }
   }
 
