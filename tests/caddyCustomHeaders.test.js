@@ -77,20 +77,43 @@ describe('caddyCustomHeaders: applyResponseHeaders', () => {
     });
   });
 
-  it('REPLACES any pre-existing reverseProxy.headers (preserves prior overwrite semantics)', () => {
-    // The original inline code did `reverseProxy.headers = { response: ... }`
-    // which obliterates any earlier `request` block. We preserve that here
-    // and call out the bug in the helper docstring rather than fixing it
-    // implicitly inside a refactor PR.
+  it('preserves a pre-existing reverseProxy.headers.request block when adding response headers', () => {
+    // Regression sentinel for the gateway-routing + response-headers
+    // collision: the pre-fix version assigned a fresh
+    // `{ response: { set } }` object and clobbered the gateway
+    // headers.request block (delete + set), turning every gateway
+    // route with response headers into a 502. The fix merges instead.
     const rp = {
       handler: 'reverse_proxy',
-      headers: { request: { delete: ['X-Forwarded-For'] } },
+      headers: {
+        request: {
+          delete: ['X-Forwarded-For'],
+          set: { 'X-Gateway-Target': ['lan-host:5001'] },
+        },
+      },
     };
-    applyResponseHeaders(rp, [{ name: 'X-Custom', value: 'v' }]);
-    assert.deepEqual(rp.headers, {
-      response: { set: { 'X-Custom': ['v'] } },
+    applyResponseHeaders(rp, [{ name: 'X-Frame-Options', value: 'DENY' }]);
+
+    assert.deepEqual(rp.headers.request, {
+      delete: ['X-Forwarded-For'],
+      set: { 'X-Gateway-Target': ['lan-host:5001'] },
+    }, 'gateway-routing request block must not be clobbered');
+
+    assert.deepEqual(rp.headers.response, {
+      set: { 'X-Frame-Options': ['DENY'] },
     });
-    assert.equal(rp.headers.request, undefined,
-      'pre-existing request block is overwritten — known pre-refactor behaviour');
+  });
+
+  it('overwrites only the response.set sub-key — leaves other response sub-keys (if any) alone', () => {
+    // Defensive: a future feature might write `response.delete` or
+    // `response.add`. This call should only touch response.set.
+    const rp = {
+      handler: 'reverse_proxy',
+      headers: { response: { add: { 'X-Probe': ['v1'] } } },
+    };
+    applyResponseHeaders(rp, [{ name: 'X-Frame-Options', value: 'DENY' }]);
+
+    assert.deepEqual(rp.headers.response.add, { 'X-Probe': ['v1'] });
+    assert.deepEqual(rp.headers.response.set, { 'X-Frame-Options': ['DENY'] });
   });
 });
