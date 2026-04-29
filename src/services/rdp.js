@@ -1,9 +1,16 @@
 'use strict';
 
 const { getDb } = require('../db/connection');
-const { encrypt, decrypt } = require('../utils/crypto');
 const activity = require('./activity');
 const logger = require('../utils/logger');
+const {
+  VALID_CREDENTIAL_MODES,
+  encryptCredentials,
+  decryptCredentials,
+  getCredentials,
+  setCredentials,
+  clearCredentials,
+} = require('./rdpCredentials');
 
 // --- Validation ------------------------------------------------
 
@@ -12,7 +19,6 @@ const logger = require('../utils/logger');
 // tracks its id in rdp_routes.gateway_l4_route_id. Licensed via the
 // rdp_via_gateway feature flag.
 const VALID_ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
-const VALID_CREDENTIAL_MODES = ['none', 'user_only', 'full'];
 const VALID_RESOLUTION_MODES = ['fullscreen', 'fixed', 'dynamic'];
 const VALID_AUDIO_MODES = ['local', 'remote', 'off'];
 const VALID_NETWORK_PROFILES = ['lan', 'broadband', 'modem', 'auto'];
@@ -143,40 +149,6 @@ function validateRdpRoute(data, isUpdate = false) {
   }
 
   return Object.keys(errors).length > 0 ? errors : null;
-}
-
-// --- Credential Encryption Helpers -----------------------------
-
-function encryptCredentials(data) {
-  const result = {};
-  if (data.username !== undefined && data.username !== null && data.username !== '') {
-    result.username_encrypted = encrypt(data.username);
-  } else if (data.username === '' || data.username === null) {
-    result.username_encrypted = null;
-  }
-  if (data.password !== undefined && data.password !== null && data.password !== '') {
-    result.password_encrypted = encrypt(data.password);
-  } else if (data.password === '' || data.password === null) {
-    result.password_encrypted = null;
-  }
-  return result;
-}
-
-function decryptCredentials(row) {
-  const result = { username: null, password: null, decrypt_failed: false };
-  try {
-    if (row.username_encrypted) result.username = decrypt(row.username_encrypted);
-  } catch (err) {
-    logger.warn({ error: err.message }, 'Failed to decrypt RDP username');
-    result.decrypt_failed = true;
-  }
-  try {
-    if (row.password_encrypted) result.password = decrypt(row.password_encrypted);
-  } catch (err) {
-    logger.warn({ error: err.message }, 'Failed to decrypt RDP password');
-    result.decrypt_failed = true;
-  }
-  return result;
 }
 
 /**
@@ -721,86 +693,6 @@ function getCount() {
   const total = db.prepare('SELECT COUNT(*) as count FROM rdp_routes').get().count;
   const enabled = db.prepare('SELECT COUNT(*) as count FROM rdp_routes WHERE enabled = 1').get().count;
   return { total, enabled };
-}
-
-// --- Credentials -----------------------------------------------
-
-function getCredentials(id) {
-  const db = getDb();
-  const row = db.prepare('SELECT username_encrypted, password_encrypted, credential_mode, domain FROM rdp_routes WHERE id = ?').get(id);
-  if (!row) throw new Error('RDP route not found');
-  if (row.credential_mode === 'none') return { credential_mode: 'none', username: null, password: null, domain: null };
-
-  const creds = decryptCredentials(row);
-  return {
-    credential_mode: row.credential_mode,
-    username: creds.username,
-    password: row.credential_mode === 'full' ? creds.password : null,
-    domain: row.domain,
-  };
-}
-
-function setCredentials(id, { username, password, domain, credential_mode }) {
-  const db = getDb();
-  const route = db.prepare('SELECT id, name FROM rdp_routes WHERE id = ?').get(id);
-  if (!route) throw new Error('RDP route not found');
-
-  const sets = [];
-  const values = [];
-
-  if (credential_mode !== undefined) {
-    if (!VALID_CREDENTIAL_MODES.includes(credential_mode)) throw new Error('Invalid credential mode');
-    sets.push('credential_mode = ?');
-    values.push(credential_mode);
-  }
-
-  if (username !== undefined) {
-    sets.push('username_encrypted = ?');
-    values.push(username ? encrypt(username) : null);
-  }
-
-  if (password !== undefined) {
-    sets.push('password_encrypted = ?');
-    values.push(password ? encrypt(password) : null);
-  }
-
-  if (domain !== undefined) {
-    sets.push('domain = ?');
-    values.push(domain || null);
-  }
-
-  if (sets.length === 0) return;
-
-  sets.push("updated_at = datetime('now')");
-  values.push(id);
-
-  db.prepare(`UPDATE rdp_routes SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-
-  activity.log('rdp_credentials_updated', `Credentials for RDP route "${route.name}" updated`, {
-    source: 'admin',
-    severity: 'info',
-    details: { routeId: id },
-  });
-}
-
-function clearCredentials(id) {
-  const db = getDb();
-  const route = db.prepare('SELECT id, name FROM rdp_routes WHERE id = ?').get(id);
-  if (!route) throw new Error('RDP route not found');
-
-  db.prepare(`UPDATE rdp_routes SET
-    credential_mode = 'none',
-    username_encrypted = NULL,
-    password_encrypted = NULL,
-    domain = NULL,
-    updated_at = datetime('now')
-    WHERE id = ?`).run(id);
-
-  activity.log('rdp_credentials_cleared', `Credentials for RDP route "${route.name}" cleared`, {
-    source: 'admin',
-    severity: 'warning',
-    details: { routeId: id },
-  });
 }
 
 // --- Token-filtered access -------------------------------------
