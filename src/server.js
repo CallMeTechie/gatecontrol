@@ -137,6 +137,11 @@ async function start() {
       logger,
     });
 
+    // Gateway health watchdog — evaluates pool-member gateways every 30s
+    // for stale heartbeats and drives the threshold-based state machine.
+    const gatewayHealth = require('./services/gatewayHealth');
+    gatewayHealth.startWatchdog();
+
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
     const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);

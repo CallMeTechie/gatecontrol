@@ -118,6 +118,23 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   }
 
   gateways.handleHeartbeat(peerId, body);
+
+  // Persist companion-reported config_hash so the pool-mutation
+  // confirm-loop in gatewayPoolSync can detect when companions have
+  // applied a new config. Companion sends config_hash in heartbeat
+  // payload.
+  if (req.body && typeof req.body.config_hash === 'string') {
+    require('../../db/connection').getDb()
+      .prepare('UPDATE gateway_meta SET last_config_hash = ? WHERE peer_id = ?')
+      .run(req.body.config_hash, peerId);
+  }
+
+  // Event-driven pool-aware evaluation
+  const gatewayHealth = require('../../services/gatewayHealth');
+  gatewayHealth.onHeartbeatReceived(peerId).catch(err => {
+    require('../../utils/logger').warn({ err: err.message, peerId }, 'gatewayHealth.onHeartbeatReceived failed');
+  });
+
   res.status(200).json({ ok: true });
 });
 

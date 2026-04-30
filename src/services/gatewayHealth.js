@@ -143,6 +143,99 @@ function serializeStateChange(fn) {
   return next;
 }
 
+const activity = require('./activity');
+const webhook = require('./webhook');
+
+async function _onTransition(peerId, transition) {
+  const peer = getDb().prepare('SELECT id, name FROM peers WHERE id = ?').get(peerId);
+  const peerLabel = peer?.name || `peer #${peerId}`;
+  const gatewayPool = require('./gatewayPool');
+
+  switch (transition) {
+    case 'alive_to_down':
+      activity.log('gateway_down', `Gateway ${peerLabel} is offline`, {
+        source: 'system', severity: 'warn', details: { peerId },
+      });
+      webhook.notify('gateway_state_change', `Gateway ${peerLabel} offline`, { peer_id: peerId, alive: false }).catch(() => {});
+      for (const pool of gatewayPool.listPoolsForPeer(peerId)) {
+        const aliveMembers = gatewayPool.resolveActivePeers(pool.id, _snapshot);
+        if (aliveMembers.length === 0) {
+          activity.log('pool_outage_started', `Pool ${pool.name}: all gateways offline`, {
+            source: 'system', severity: 'error', details: { poolId: pool.id, poolName: pool.name },
+          });
+        }
+      }
+      break;
+
+    case 'cooldown_reset':
+      if (!_hasRecoveryInterruptBeenLogged(peerId)) {
+        activity.log('gateway_recovery_interrupted', `Gateway ${peerLabel} recovery interrupted by heartbeat gap`, {
+          source: 'system', severity: 'warn', details: { peerId },
+        });
+        _markRecoveryInterruptLogged(peerId);
+      }
+      break;
+
+    case 'cooldown_to_alive':
+    case 'first_alive':
+      activity.log('gateway_alive', `Gateway ${peerLabel} is online`, {
+        source: 'system', severity: 'info', details: { peerId },
+      });
+      webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch(() => {});
+      for (const pool of gatewayPool.listPoolsForPeer(peerId)) {
+        const aliveMembers = gatewayPool.resolveActivePeers(pool.id, _snapshot);
+        if (aliveMembers.length === 1 && aliveMembers[0] === peerId) {
+          activity.log('pool_outage_resolved', `Pool ${pool.name}: at least one gateway back online`, {
+            source: 'system', severity: 'info', details: { poolId: pool.id, poolName: pool.name },
+          });
+        }
+      }
+      break;
+  }
+
+  if (['alive_to_down', 'cooldown_to_alive', 'first_alive'].includes(transition)) {
+    if (gatewayPool.isPeerInAnyPool(peerId)) {
+      try {
+        await require('./caddyConfig').syncToCaddy();
+      } catch (err) {
+        require('../utils/logger').error({ err: err.message, peerId }, 'caddy re-render failed after gateway state change');
+      }
+    }
+  }
+}
+
+async function watchdogTick() {
+  const peers = getDb().prepare("SELECT id FROM peers WHERE peer_type = 'gateway' AND enabled = 1").all();
+  for (const p of peers) {
+    const { transition } = evaluatePeer(p.id);
+    if (transition) {
+      await serializeStateChange(() => _onTransition(p.id, transition));
+    }
+  }
+}
+
+let _watchdogInterval = null;
+function startWatchdog() {
+  if (_watchdogInterval) return;
+  _watchdogInterval = setInterval(() => {
+    watchdogTick().catch(err => {
+      require('../utils/logger').error({ err: err.message }, 'watchdog tick failed');
+    });
+  }, 30_000);
+}
+
+function stopWatchdog() {
+  if (_watchdogInterval) clearInterval(_watchdogInterval);
+  _watchdogInterval = null;
+}
+
+async function onHeartbeatReceived(peerId) {
+  const { transition } = evaluatePeer(peerId);
+  if (transition) {
+    await serializeStateChange(() => _onTransition(peerId, transition));
+  }
+}
+
 module.exports = {
   StateMachine,
   evaluatePeer,
@@ -151,4 +244,8 @@ module.exports = {
   _resetSnapshotCache,
   _markRecoveryInterruptLogged,
   _hasRecoveryInterruptBeenLogged,
+  watchdogTick,
+  startWatchdog,
+  stopWatchdog,
+  onHeartbeatReceived,
 };

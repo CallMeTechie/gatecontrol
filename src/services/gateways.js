@@ -220,6 +220,19 @@ function handleHeartbeat(peerId, health) {
 }
 
 function _onStatusTransition(peerId, from, to, health) {
+  // Pool-member peers are managed by the new gatewayHealth.evaluatePeer
+  // system (threshold-based, with pool-specific cooldown). Skip the
+  // legacy sliding-window transition path entirely for them — otherwise
+  // we get double Caddy renders and duplicate activity-log/webhook events.
+  // Late-require to avoid circular import at module-load.
+  try {
+    if (require('./gatewayPool').isPeerInAnyPool(peerId)) return;
+  } catch (err) {
+    // Logged at warn so a broken gatewayPool module doesn't silently
+    // route every pool-member peer through the legacy path.
+    logger.warn({ err: err.message, peerId }, 'gatewayPool require failed in legacy transition path; falling through to legacy');
+  }
+
   const peer = getDb().prepare('SELECT name FROM peers WHERE id=?').get(peerId);
   const peerName = peer ? peer.name : `peer-${peerId}`;
 
