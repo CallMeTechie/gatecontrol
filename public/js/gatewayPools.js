@@ -36,27 +36,35 @@ async function removeMember(poolId, peerId) {
   return fetch('/api/v1/gateway-pools/' + poolId + '/members/' + peerId, { method: 'DELETE', headers: { 'X-CSRF-Token': window.csrfToken || '' } });
 }
 
-// Cooldown preset dropdown
+// Cooldown preset dropdown — idempotent (clears previous options on re-init)
 function initCooldownPresets() {
   const sel = document.getElementById('cooldown-preset');
   if (!sel) return;
-  const opts = COOLDOWN_PRESETS.map(function(p) {
-    const label = (window.GC && window.GC.t && window.GC.t[p.i18n]) || p.i18n;
-    const opt = document.createElement('option');
-    opt.value = p.value != null ? String(p.value) : '';
-    opt.textContent = label;
-    return opt;
-  });
+  // Clear existing options (function may run multiple times: DOMContentLoaded
+  // + openCreateModal + openEditModal — without clearing we'd accumulate duplicates).
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+
   const placeholder = document.createElement('option');
   placeholder.value = '';
   placeholder.textContent = '---';
   sel.appendChild(placeholder);
-  opts.forEach(function(o) { sel.appendChild(o); });
-  sel.addEventListener('change', function() {
-    const v = sel.value;
-    const inp = document.querySelector('input[name="failback_cooldown_s"]');
-    if (v && inp) inp.value = v;
+  COOLDOWN_PRESETS.forEach(function(p) {
+    const label = (window.GC && window.GC.t && window.GC.t[p.i18n]) || p.i18n;
+    const opt = document.createElement('option');
+    opt.value = p.value != null ? String(p.value) : '';
+    opt.textContent = label;
+    sel.appendChild(opt);
   });
+
+  // Guard against attaching the listener twice across re-inits.
+  if (!sel.dataset.presetListenerAttached) {
+    sel.addEventListener('change', function() {
+      const v = sel.value;
+      const inp = document.querySelector('input[name="failback_cooldown_s"]');
+      if (v && inp) inp.value = v;
+    });
+    sel.dataset.presetListenerAttached = '1';
+  }
 }
 
 // Mode toggle: show/hide lb_policy row
