@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.2] — 2026-04-30
+
+### Fixes
+- add gateway-pools CSS (data-table, modal-box, pool-mode-badges) + missing i18n keys (#78)
+
+---
+
 ## [1.59.1] — 2026-04-30
 
 ### Fixes
