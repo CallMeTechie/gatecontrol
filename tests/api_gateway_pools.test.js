@@ -73,3 +73,14 @@ test('DELETE rejects when pool is referenced by routes', async () => {
   const res = await agent.delete(`/api/v1/gateway-pools/${poolId}`).set('X-CSRF-Token', csrf);
   assert.equal(res.status, 409);
 });
+
+test('license downgrade disables pools', async () => {
+  const license = require('../src/services/license');
+  await agent.post('/api/v1/gateway-pools').set('X-CSRF-Token', csrf)
+    .send({ name: 'A', mode: 'failover', failback_cooldown_s: 60 });
+  license._overrideForTest({ gateway_pools: false });
+  await license.enforceLimits();
+  const pool = require('../src/db/connection').getDb()
+    .prepare("SELECT enabled FROM gateway_pools WHERE name = 'A'").get();
+  assert.equal(pool.enabled, 0);
+});
