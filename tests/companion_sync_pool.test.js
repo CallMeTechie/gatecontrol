@@ -14,7 +14,7 @@ beforeEach(async () => {
 afterEach(teardown);
 
 function insertGatewayPeer(db, id) {
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips, enabled) VALUES (?, ?, 'gateway', '10.8.0.' || ? || '/32', 1)").run(id, `pk${id}`, id);
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (?, ?, ?, 'gateway', '10.8.0.' || ? || '/32', 1)").run(id, `gw-${id}`, `pk${id}`, id);
   db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, alive, created_at) VALUES (?, 9876, 'h', 'e', 1, strftime('%s','now')*1000)").run(id);
 }
 

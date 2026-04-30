@@ -16,7 +16,7 @@ afterEach(teardown);
 
 function insertGatewayPeer(db, id, lastHbAgoMs = null, alive = 1) {
   const lastHb = lastHbAgoMs == null ? null : Date.now() - lastHbAgoMs;
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips) VALUES (?, ?, 'gateway', '10.8.0.' || ? || '/32')").run(id, `pk${id}`, id);
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips) VALUES (?, ?, ?, 'gateway', '10.8.0.' || ? || '/32')").run(id, `gw-${id}`, `pk${id}`, id);
   db.prepare(`
     INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at)
     VALUES (?, 9876, 'h', 'e', ?, ?, strftime('%s','now')*1000)
@@ -103,7 +103,7 @@ test('cooldown_reset interrupt-log fires exactly once per outage', () => {
 
 test('newly added peer with no heartbeat: first HB → alive without cooldown', () => {
   const db = getDb();
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips) VALUES (1, 'pk1', 'gateway', '10.8.0.1/32')").run();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips) VALUES (1, 'gw-1', 'pk1', 'gateway', '10.8.0.1/32')").run();
   db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at) VALUES (1, 9876, 'h', 'e', NULL, 0, strftime('%s','now')*1000)").run();
   let result = gatewayHealth.evaluatePeer(1);
   assert.equal(result.transition, null);

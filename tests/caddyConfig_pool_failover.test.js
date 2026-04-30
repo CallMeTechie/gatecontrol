@@ -17,8 +17,8 @@ afterEach(teardown);
 
 function setupTwoGwPool(mode = 'failover', lb_policy = null) {
   const db = getDb();
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips, enabled) VALUES (10, 'pk10', 'gateway', '10.8.0.10/32', 1)").run();
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips, enabled) VALUES (11, 'pk11', 'gateway', '10.8.0.11/32', 1)").run();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (10, 'gw-10', 'pk10', 'gateway', '10.8.0.10/32', 1)").run();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (11, 'gw-11', 'pk11', 'gateway', '10.8.0.11/32', 1)").run();
   db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at) VALUES (10, 9876, 'h', 'e', ?, 1, strftime('%s','now')*1000)").run(Date.now());
   db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at) VALUES (11, 9876, 'h', 'e', ?, 1, strftime('%s','now')*1000)").run(Date.now());
   const poolId = gatewayPool.createPool({ name: 'P', mode, lb_policy, failback_cooldown_s: 60 });
@@ -76,7 +76,7 @@ test('pool-outage renders 503 block (HTTP), not user-maintenance', async () => {
 
 test('pin-route on down peer is unchanged (passes through)', async () => {
   const db = getDb();
-  db.prepare("INSERT INTO peers (id, public_key, peer_type, allowed_ips, enabled) VALUES (10, 'pk10', 'gateway', '10.8.0.10/32', 1)").run();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (10, 'gw-10', 'pk10', 'gateway', '10.8.0.10/32', 1)").run();
   db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, alive, created_at) VALUES (10, 9876, 'h', 'e', 0, strftime('%s','now')*1000)").run();
   db.prepare(`
     INSERT INTO routes (domain, target_kind, target_peer_id, target_lan_host, target_lan_port, target_ip, target_port, route_type, enabled)
