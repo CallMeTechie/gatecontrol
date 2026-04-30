@@ -49,13 +49,28 @@ router.get('/', (req, res) => {
       if (row.last_health) {
         try { health = JSON.parse(row.last_health); } catch (_) { /* ignore */ }
       }
+      const status = gatewaysSvc.getHealthStatus(row.id);
+
+      // When the gateway is offline, the last cached `route_reachability`
+      // is stale by definition — anything behind a down gateway can't be
+      // reachable. Force-mark it so UI dots don't lie. Also expose the
+      // `stale` flag so clients can distinguish "freshly observed offline"
+      // from "we have no idea anymore".
+      if (status === 'offline' && Array.isArray(health.route_reachability) && health.route_reachability.length > 0) {
+        health = {
+          ...health,
+          stale: true,
+          route_reachability: health.route_reachability.map((r) => ({ ...r, reachable: false })),
+        };
+      }
+
       return {
         peer_id: row.id,
         name: row.name,
         hostname: row.hostname,
         ip: row.allowed_ips ? row.allowed_ips.split('/')[0] : null,
         api_port: row.api_port,
-        status: gatewaysSvc.getHealthStatus(row.id),
+        status,
         last_seen_at: row.last_seen_at,
         health,
         routes: routeStmt.all(row.id),

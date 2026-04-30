@@ -1930,6 +1930,12 @@
     var arr = (gw.health && Array.isArray(gw.health.route_reachability)) ? gw.health.route_reachability : [];
     arr.forEach(function(r) { reach[r.route_id] = r; });
 
+    // Defense-in-depth: an offline gateway means nothing behind it can be
+    // reachable, even if a stale last_health says otherwise. The API layer
+    // already force-marks reachable=false for offline gateways, but this
+    // guard keeps the UI honest if it ever sees pre-fix or cached data.
+    var gatewayDown = gw.status === 'offline';
+
     var list = document.createElement('div');
     list.className = 'gw-routes-list';
     routes.forEach(function(r) {
@@ -1939,7 +1945,9 @@
       var dot = document.createElement('span');
       dot.className = 'gw-route-dot';
       var rr = reach[r.id];
-      if (rr) {
+      if (gatewayDown) {
+        dot.classList.add('down');
+      } else if (rr) {
         if (rr.reachable) dot.classList.add(); // green default
         else dot.classList.add('down');
       } else {

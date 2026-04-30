@@ -18,48 +18,48 @@ describe('gateway health: _isHeartbeatHealthy', () => {
     assert.equal(isHealthy('string'), false);
   });
 
-  it('treats all-reachable route_reachability as healthy even if self-check fails', () => {
-    // This is the NAS1 reality: localhost probes fail but routes work.
+  it('stays healthy when a route is unreachable but listeners are up', () => {
+    // Bug 1 (2026-04-30): Home Gateway with one offline LAN target was
+    // flagged offline because the old definition required all routes
+    // reachable. route_reachability is per-route info — gateway liveness
+    // depends only on the gateway process itself.
     const health = {
-      http_proxy_healthy: false,
-      api_healthy: false,
-      tcp_listeners: [{ port: 2022, status: 'listener_failed' }],
+      http_proxy_healthy: true,
+      tcp_listeners: [{ port: 13389, status: 'listening' }],
       route_reachability: [
-        { route_id: 43, reachable: true,  latency_ms: 2 },
-        { route_id: 46, reachable: true,  latency_ms: 1 },
-        { route_id: 47, reachable: true,  latency_ms: 1 },
+        { route_id: 1, reachable: true },
+        { route_id: 2, reachable: false }, // pve1 dead — gateway still up
       ],
     };
     assert.equal(isHealthy(health), true);
   });
 
-  it('flags unhealthy when any configured route is unreachable', () => {
+  it('stays healthy when self-check reports proxy unhealthy but listeners are up', () => {
+    // NAS1 reality: localhost probe reports http_proxy_healthy:false but
+    // every TCP listener is bound and answering. The process is alive.
     const health = {
-      http_proxy_healthy: true,
+      http_proxy_healthy: false,
+      tcp_listeners: [{ port: 2022, status: 'listening' }],
       route_reachability: [
-        { route_id: 1, reachable: true  },
-        { route_id: 2, reachable: false },
+        { route_id: 43, reachable: true,  latency_ms: 2 },
+        { route_id: 46, reachable: true,  latency_ms: 1 },
       ],
     };
-    assert.equal(isHealthy(health), false);
+    assert.equal(isHealthy(health), true);
   });
 
-  it('falls back to self-check when no route_reachability present', () => {
-    // Self-check healthy
-    assert.equal(isHealthy({
+  it('flags unhealthy when any tcp_listener is explicitly listener_failed', () => {
+    // Real listener-bind problem (port collision, permission, etc.) —
+    // process is broken regardless of what reachability says.
+    const health = {
       http_proxy_healthy: true,
-      tcp_listeners: [{ port: 443, status: 'listening' }],
-    }), true);
-    // Self-check: proxy down
-    assert.equal(isHealthy({
-      http_proxy_healthy: false,
-      tcp_listeners: [],
-    }), false);
-    // Self-check: listener failed
-    assert.equal(isHealthy({
-      http_proxy_healthy: true,
-      tcp_listeners: [{ port: 80, status: 'listener_failed' }],
-    }), false);
+      tcp_listeners: [
+        { port: 443, status: 'listening' },
+        { port: 80,  status: 'listener_failed' },
+      ],
+      route_reachability: [{ route_id: 1, reachable: true }],
+    };
+    assert.equal(isHealthy(health), false);
   });
 
   it('treats a bare heartbeat with no signals as healthy (process alive)', () => {
@@ -70,17 +70,24 @@ describe('gateway health: _isHeartbeatHealthy', () => {
     assert.equal(isHealthy({}), true);
   });
 
-  it('empty route_reachability array defers to self-check', () => {
-    // No routes to probe; self-check fails → unhealthy
-    assert.equal(isHealthy({
-      route_reachability: [],
-      http_proxy_healthy: false,
-    }), false);
-    // No routes to probe; self-check passes → healthy
-    assert.equal(isHealthy({
-      route_reachability: [],
-      http_proxy_healthy: true,
-    }), true);
+  it('healthy when tcp_listeners array is empty (no broken listener evidence)', () => {
+    // No listener evidence either way → trust the heartbeat itself.
+    assert.equal(isHealthy({ tcp_listeners: [] }), true);
+    assert.equal(isHealthy({ tcp_listeners: [], http_proxy_healthy: false }), true);
+  });
+
+  it('ignores route_reachability for liveness — even a fully unreachable list', () => {
+    // A gateway sitting on an isolated LAN that briefly loses its targets
+    // is not itself broken. Per-route badges show the trouble, gateway
+    // itself stays online as long as the heartbeat keeps arriving.
+    const health = {
+      tcp_listeners: [{ port: 443, status: 'listening' }],
+      route_reachability: [
+        { route_id: 1, reachable: false },
+        { route_id: 2, reachable: false },
+      ],
+    };
+    assert.equal(isHealthy(health), true);
   });
 
 });

@@ -165,40 +165,29 @@ function computeConfigHash(peerId) {
 /**
  * Decide whether a heartbeat represents a healthy gateway.
  *
- * Priority of signals (first-match wins):
- *   1. route_reachability — ground truth. If the gateway was asked to probe
- *      LAN targets for each configured route, the empirical result is more
- *      trustworthy than any localhost self-check. We treat the gateway as
- *      healthy when every reachability entry reports reachable:true.
- *   2. self-check — if no route_reachability is present (older gateway
- *      agent, or no routes configured yet), fall back to the previous
- *      definition: http_proxy_healthy:true AND no listener_failed entries.
- *   3. bare heartbeat — if neither signal is present at all (very early
- *      heartbeat before the first self-check completed), trust the heartbeat
- *      itself; the process is up.
+ * Liveness ≠ reachability. The gateway is "healthy" if its own process is
+ * up and its TCP listeners are bound. Whether individual LAN targets answer
+ * (`route_reachability`) is per-route information for the UI; it must NOT
+ * gate the gateway's own status. Otherwise one bad target behind the
+ * gateway makes the whole gateway look down — exact opposite of intent.
  *
- * Rationale: NAS1-style deployments ship heartbeats where the localhost
- * probes fail (self-check bug or proxy binds to specific iface) even though
- * every configured route's LAN target answers. The old definition would
- * flag those gateways offline despite them doing their job.
+ * Definition:
+ *   unhealthy ⇔ malformed payload OR any tcp_listener with status='listener_failed'
+ *   healthy   otherwise (heartbeat arrived + no broken listener)
+ *
+ * Notes:
+ * - `http_proxy_healthy:false` alone (NAS1-style self-check noise) is
+ *   tolerated. It only counts when accompanied by a real listener_failed.
+ * - `route_reachability` is intentionally ignored here. It is surfaced
+ *   verbatim through `/api/v1/gateways` for per-route UI badges and is
+ *   force-marked stale by the API layer when the gateway is offline.
  */
 function _isHeartbeatHealthy(health) {
   if (!health || typeof health !== 'object') return false;
 
-  const reach = Array.isArray(health.route_reachability) ? health.route_reachability : null;
-  if (reach && reach.length > 0) {
-    // Empirical: all configured LAN targets must answer.
-    return reach.every((r) => r && r.reachable);
-  }
+  const tcp = Array.isArray(health.tcp_listeners) ? health.tcp_listeners : [];
+  if (tcp.some((l) => l && l.status === 'listener_failed')) return false;
 
-  const hasSelfCheckSignal = typeof health.http_proxy_healthy === 'boolean';
-  if (hasSelfCheckSignal) {
-    const tcp = Array.isArray(health.tcp_listeners) ? health.tcp_listeners : [];
-    const anyListenerFailed = tcp.some((l) => l && l.status === 'listener_failed');
-    return !!health.http_proxy_healthy && !anyListenerFailed;
-  }
-
-  // No probes, no self-check → the heartbeat arrived, consider the process alive.
   return true;
 }
 
