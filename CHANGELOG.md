@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.0] — 2026-04-30
+
+### Features
+- gateway-pool failover & load-balancing (#76)
+
+---
+
 ## [Unreleased]
 
 ### Added
