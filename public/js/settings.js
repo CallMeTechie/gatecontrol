@@ -1306,3 +1306,18 @@
     }
   });
 })();
+
+(() => {
+  const sliderEl = document.getElementById('gw-down-threshold');
+  const sliderOut = document.getElementById('gw-down-threshold-value');
+  if (sliderEl && sliderOut) {
+    sliderEl.addEventListener('input', () => { sliderOut.textContent = sliderEl.value + ' s'; });
+    sliderEl.addEventListener('change', async () => {
+      await fetch('/api/v1/settings/gateway-failover', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken },
+        body: JSON.stringify({ gateway_down_threshold_s: parseInt(sliderEl.value, 10) }),
+      });
+    });
+  }
+})();
