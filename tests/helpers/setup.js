@@ -58,6 +58,10 @@ async function setup() {
     webhooks: true,
     api_tokens: true,
     remote_desktop: true,
+    gateway_pools: true,
+    gateway_pool_failover: true,
+    gateway_pool_load_balancing: true,
+    gateway_pools_limit: 100,
   });
 
   app = createApp();

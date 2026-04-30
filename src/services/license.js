@@ -48,6 +48,12 @@ const COMMUNITY_FALLBACK = {
   gateway_tcp_routing: false,
   gateway_wol: false,
   rdp_via_gateway: false,
+  // Gateway-Pool feature (failover + load-balancing).
+  // Tier-distribution is configured on the license server, not here.
+  gateway_pools: false,
+  gateway_pool_failover: false,
+  gateway_pool_load_balancing: false,
+  gateway_pools_limit: 0,
 };
 
 let cachedPlan = 'community';

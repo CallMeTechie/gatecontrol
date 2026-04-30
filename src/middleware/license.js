@@ -56,9 +56,12 @@ function requireLimit(featureKey, countFn) {
   };
 }
 
-function requireFeatureField(bodyField, featureKey) {
+function requireFeatureField(bodyField, featureKey, opts = {}) {
   return (req, res, next) => {
-    if (req.body && req.body[bodyField] && !hasFeature(featureKey)) {
+    const value = req.body && req.body[bodyField];
+    if (value === undefined || value === null) return next();
+    if (opts.onlyValue !== undefined && value !== opts.onlyValue) return next();
+    if (!hasFeature(featureKey)) {
       return res.status(403).json({
         ok: false,
         error: req.t ? req.t('error.license.feature_not_available') : 'Feature not available in your plan',
