@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.4] — 2026-04-30
+
+### Fixes
+- clear cooldown-preset options on re-init to avoid duplicates (#80)
+
+---
+
 ## [1.59.3] — 2026-04-30
 
 ### Fixes
