@@ -60,4 +60,95 @@ class StateMachine {
   }
 }
 
-module.exports = { StateMachine };
+const { getDb } = require('../db/connection');
+
+let _snapshot = {};
+let _recoveryInterruptLogged = new Set();
+let _stateChainTail = Promise.resolve();
+
+function _resetSnapshotCache() {
+  _snapshot = {};
+  _recoveryInterruptLogged = new Set();
+  _stateChainTail = Promise.resolve();
+}
+
+function getSnapshot() { return _snapshot; }
+
+function _getDownThresholdSeconds() {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = 'gateway_down_threshold_s'").get();
+  return parseInt(row?.value ?? '90', 10);
+}
+
+function evaluatePeer(peerId) {
+  const db = getDb();
+  const gw = db.prepare('SELECT peer_id, alive, last_seen_at, went_down_at, recovered_first_hb_at FROM gateway_meta WHERE peer_id = ?').get(peerId);
+  if (!gw) return { transition: null };
+
+  const thresholdMs = _getDownThresholdSeconds() * 1000;
+  const now = Date.now();
+  const isStale = gw.last_seen_at == null ? true : (now - gw.last_seen_at) > thresholdMs;
+
+  let transition = null;
+
+  if (gw.alive === 1) {
+    if (isStale) {
+      db.prepare(`UPDATE gateway_meta SET alive = 0, went_down_at = COALESCE(went_down_at, ?) WHERE peer_id = ?`).run(now, peerId);
+      transition = 'alive_to_down';
+      _recoveryInterruptLogged.delete(peerId);
+    }
+  } else {
+    if (isStale) {
+      if (gw.recovered_first_hb_at) {
+        db.prepare('UPDATE gateway_meta SET recovered_first_hb_at = NULL WHERE peer_id = ?').run(peerId);
+        transition = 'cooldown_reset';
+      }
+    } else if (gw.last_seen_at != null) {
+      if (gw.went_down_at == null) {
+        db.prepare(`UPDATE gateway_meta SET alive = 1 WHERE peer_id = ?`).run(peerId);
+        transition = 'first_alive';
+      } else if (gw.recovered_first_hb_at == null) {
+        db.prepare(`UPDATE gateway_meta SET recovered_first_hb_at = ? WHERE peer_id = ?`).run(now, peerId);
+        transition = 'down_to_cooldown';
+      } else {
+        const gatewayPool = require('./gatewayPool');
+        const maxCooldownS = gatewayPool.getMaxCooldownForPeer(peerId);
+        if ((now - gw.recovered_first_hb_at) >= maxCooldownS * 1000) {
+          db.prepare(`UPDATE gateway_meta SET alive = 1, went_down_at = NULL, recovered_first_hb_at = NULL WHERE peer_id = ?`).run(peerId);
+          transition = 'cooldown_to_alive';
+          _recoveryInterruptLogged.delete(peerId);
+        }
+      }
+    }
+  }
+
+  const updated = db.prepare('SELECT alive, last_seen_at, went_down_at, recovered_first_hb_at FROM gateway_meta WHERE peer_id = ?').get(peerId);
+  _snapshot[peerId] = {
+    alive: updated.alive === 1,
+    last_seen_at: updated.last_seen_at,
+    went_down_at: updated.went_down_at,
+    recovered_first_hb_at: updated.recovered_first_hb_at,
+  };
+
+  return { transition };
+}
+
+function _markRecoveryInterruptLogged(peerId) { _recoveryInterruptLogged.add(peerId); }
+function _hasRecoveryInterruptBeenLogged(peerId) { return _recoveryInterruptLogged.has(peerId); }
+
+function serializeStateChange(fn) {
+  const next = _stateChainTail.then(() => fn()).catch(err => {
+    require('../utils/logger').error({ err: err.message }, 'gateway state change failed');
+  });
+  _stateChainTail = next;
+  return next;
+}
+
+module.exports = {
+  StateMachine,
+  evaluatePeer,
+  getSnapshot,
+  serializeStateChange,
+  _resetSnapshotCache,
+  _markRecoveryInterruptLogged,
+  _hasRecoveryInterruptBeenLogged,
+};
