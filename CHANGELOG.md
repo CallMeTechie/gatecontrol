@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Gateway-Pool concept with Failover and Load-Balancing modes (license-gated)
+- Per-pool Failback-Cooldown with reboot-time presets (LXC, VM, Proxmox, NAS, Windows)
+- Companion-Sync with confirmation before Caddy re-render (no 502 cutover-races)
+- Configurable global gateway-down threshold (default 90 s, range 30–600 s)
+- Pool-Outage render path separate from User-Maintenance
+- Activity-log events: gateway_down, gateway_alive, gateway_recovery_interrupted, pool_outage_started, pool_outage_resolved
+- Webhook event: gateway_state_change
+- Auto-disable pools on license downgrade
+
+---
+
 ## [1.58.30] — 2026-04-30
 
 ### Änderungen
