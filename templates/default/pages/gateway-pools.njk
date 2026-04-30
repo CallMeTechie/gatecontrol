@@ -1,0 +1,138 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.routing') }}</div>
+    <div class="page-title">{{ t('gateway_pools.title') }}</div>
+    <div class="page-sub">{{ t('gateway_pools.subtitle') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button id="btn-migrate-routes" class="btn btn-secondary">{{ t('gateway_pools.migrate_routes') }}</button>
+    <button id="btn-create-pool" class="btn btn-primary">{{ t('gateway_pools.create') }}</button>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <table class="data-table" id="pools-table">
+    <thead>
+      <tr>
+        <th>{{ t('gateway_pools.name') }}</th>
+        <th>{{ t('gateway_pools.mode') }}</th>
+        <th>{{ t('gateway_pools.members') }}</th>
+        <th>{{ t('gateway_pools.failback_cooldown') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pool in pools %}
+      <tr data-pool-id="{{ pool.id }}">
+        <td>{{ pool.name }}</td>
+        <td>
+          <span class="pool-mode-badge pool-mode-{{ pool.mode }}">{{ t('gateway_pools.mode_' + pool.mode) }}</span>
+        </td>
+        <td>{{ pool.members | length }}</td>
+        <td>{{ pool.failback_cooldown_s }}s</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm btn-edit-pool" data-pool-id="{{ pool.id }}">{{ t('gateway_pools.edit') }}</button>
+          <button class="btn btn-sm btn-danger btn-delete-pool" data-pool-id="{{ pool.id }}">{{ t('gateway_pools.delete') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" style="text-align:center;color:var(--text-3);padding:32px">{{ t('gateway_pools.empty') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Form modal -->
+<div id="pool-form-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="pool-form-title">{{ t('gateway_pools.create') }}</h2>
+      <button class="modal-close" id="btn-cancel-pool">&times;</button>
+    </div>
+    <form id="pool-form" class="modal-body">
+      <input type="hidden" name="id">
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_pools.name') }}</label>
+        <input type="text" name="name" class="form-input" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_pools.mode') }}</label>
+        <select name="mode" class="form-input">
+          <option value="failover">{{ t('gateway_pools.mode_failover') }}</option>
+          {% if license.features.gateway_pool_load_balancing %}
+          <option value="load_balancing">{{ t('gateway_pools.mode_load_balancing') }}</option>
+          {% else %}
+          <option value="load_balancing" disabled>{{ t('gateway_pools.mode_load_balancing') }} ({{ t('gateway_pools.license_locked_lb') }})</option>
+          {% endif %}
+        </select>
+      </div>
+
+      <div class="form-group lb-policy-row" style="display:none">
+        <label class="form-label">{{ t('gateway_pools.lb_policy') }}</label>
+        <select name="lb_policy" class="form-input">
+          <option value="round_robin">{{ t('gateway_pools.lb_policy_round_robin') }}</option>
+          <option value="least_conn">{{ t('gateway_pools.lb_policy_least_conn') }}</option>
+          <option value="ip_hash">{{ t('gateway_pools.lb_policy_ip_hash') }}</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_pools.failback_cooldown') }} (s)</label>
+        <div style="display:flex;gap:8px">
+          <input type="number" name="failback_cooldown_s" class="form-input" min="0" required style="flex:1">
+          <select id="cooldown-preset" class="form-input" style="flex:1"></select>
+        </div>
+        <div class="form-hint">{{ t('gateway_pools.failback_cooldown_help') }}</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_pools.outage_message') }}</label>
+        <textarea name="outage_message" class="form-input" rows="2"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_pools.members') }}</label>
+        <div id="pool-members" style="margin-bottom:8px"></div>
+        <div class="add-member-row" style="display:flex;gap:8px;align-items:center">
+          <select id="new-member-peer" class="form-input" style="flex:1">
+            {% for p in gatewayPeers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+          <input type="number" id="new-member-priority" placeholder="100" value="100" class="form-input" style="width:80px">
+          <button type="button" id="btn-add-member" class="btn btn-sm">{{ t('gateway_pools.add_member') }}</button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn" id="btn-cancel-pool-footer">{{ t('common.cancel') }}</button>
+        <button type="submit" class="btn btn-primary">{{ t('common.save') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Migration modal -->
+<div id="pool-migrate-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>{{ t('gateway_pools.migrate_routes') }}</h2>
+      <button class="modal-close" id="btn-migrate-cancel">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="migrate-routes-list"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="btn-migrate-cancel-footer">{{ t('common.cancel') }}</button>
+        <button type="button" class="btn btn-primary" id="btn-migrate-submit">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/gatewayPools.js"></script>
+{% endblock %}
