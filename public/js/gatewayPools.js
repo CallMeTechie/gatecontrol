@@ -41,7 +41,7 @@ function initCooldownPresets() {
   const sel = document.getElementById('cooldown-preset');
   if (!sel) return;
   const opts = COOLDOWN_PRESETS.map(function(p) {
-    const label = (window.i18n && window.i18n[p.i18n]) || p.i18n;
+    const label = (window.GC && window.GC.t && window.GC.t[p.i18n]) || p.i18n;
     const opt = document.createElement('option');
     opt.value = p.value != null ? String(p.value) : '';
     opt.textContent = label;
@@ -116,7 +116,7 @@ function openCreateModal() {
   document.getElementById('pool-form').reset();
   document.querySelector('input[name="id"]').value = '';
   const titleEl = document.getElementById('pool-form-title');
-  if (titleEl) titleEl.textContent = (window.i18n && window.i18n['gateway_pools.create']) || 'Create Pool';
+  if (titleEl) titleEl.textContent = (window.GC && window.GC.t && window.GC.t['gateway_pools.create']) || 'Create Pool';
   renderMembersInForm([]);
   modal.style.display = 'flex';
   initModeToggle();
@@ -136,7 +136,7 @@ function openEditModal(pool, members) {
   const outage = form.querySelector('textarea[name="outage_message"]');
   if (outage) outage.value = pool.outage_message || '';
   const titleEl = document.getElementById('pool-form-title');
-  if (titleEl) titleEl.textContent = (window.i18n && window.i18n['gateway_pools.edit']) || 'Edit Pool';
+  if (titleEl) titleEl.textContent = (window.GC && window.GC.t && window.GC.t['gateway_pools.edit']) || 'Edit Pool';
   renderMembersInForm(members);
   modal.style.display = 'flex';
   initModeToggle();
@@ -217,7 +217,7 @@ function openMigrateModal() {
         list.appendChild(p);
         return;
       }
-      const helpText = (window.i18n && window.i18n['gateway_pools.migrate_help']) || 'Assign existing gateway routes to a pool.';
+      const helpText = (window.GC && window.GC.t && window.GC.t['gateway_pools.migrate_help']) || 'Assign existing gateway routes to a pool.';
       const p = document.createElement('p');
       p.style.cssText = 'font-size:13px;margin-bottom:12px';
       p.textContent = helpText;
@@ -228,7 +228,7 @@ function openMigrateModal() {
 
       const lbl = document.createElement('label');
       lbl.className = 'form-label';
-      lbl.textContent = (window.i18n && window.i18n['gateway_pools.target_pool']) || 'Target pool';
+      lbl.textContent = (window.GC && window.GC.t && window.GC.t['gateway_pools.target_pool']) || 'Target pool';
 
       const sel = document.createElement('select');
       sel.id = 'migrate-target-pool';
