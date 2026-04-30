@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.1] — 2026-04-30
+
+### Fixes
+- add gateway-pools sidebar link + page template (#77)
+
+---
+
 ## [1.59.0] — 2026-04-30
 
 ### Features
