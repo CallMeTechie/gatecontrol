@@ -54,13 +54,89 @@ const {
   patchGatewayRouteHandlers,
 } = require('./caddyAdminClient');
 
+const gatewayPool = require('./gatewayPool');
+const gatewayHealth = require('./gatewayHealth');
+
+function _peerIp(allowedIps) {
+  return (allowedIps || '').split('/')[0].split(',')[0].trim();
+}
+
+function resolveRouteUpstreams(route, options = {}) {
+  const db = require('../db/connection').getDb();
+  const snapshot = gatewayHealth.getSnapshot();
+  const proxyPort = options.gatewayProxyPort || 8080;
+
+  if (route.target_pool_id) {
+    const pool = gatewayPool.getPool(route.target_pool_id);
+    if (!pool || !pool.enabled) return { peers: [], outage: true };
+    const peerIds = pool.mode === 'failover'
+      ? (() => { const id = gatewayPool.resolveActivePeer(route.target_pool_id, snapshot); return id ? [id] : []; })()
+      : gatewayPool.resolveActivePeers(route.target_pool_id, snapshot);
+    if (peerIds.length === 0) return { peers: [], outage: true };
+    const peers = peerIds.map(id => db.prepare('SELECT id, allowed_ips FROM peers WHERE id = ?').get(id));
+    return {
+      peers: peers.map(p => ({ id: p.id, ip: _peerIp(p.allowed_ips), port: proxyPort })),
+      outage: false,
+      lb_policy: pool.mode === 'load_balancing' ? pool.lb_policy : null,
+      pool,
+    };
+  }
+
+  if (route.target_peer_id) {
+    // Pin-route: use target_peer_allowed_ips from JOIN if available, else query DB
+    const allowedIps = route.target_peer_allowed_ips
+      || (() => {
+        const peer = db.prepare('SELECT id, allowed_ips FROM peers WHERE id = ?').get(route.target_peer_id);
+        return peer ? peer.allowed_ips : null;
+      })();
+    if (!allowedIps) return { peers: [], outage: true };
+    return {
+      peers: [{ id: route.target_peer_id, ip: _peerIp(allowedIps), port: proxyPort }],
+      outage: false,
+      lb_policy: null,
+    };
+  }
+
+  return { peers: [], outage: true };
+}
+
+function buildPoolOutageBlock(route) {
+  const pool = route.target_pool_id ? gatewayPool.getPool(route.target_pool_id) : null;
+  let defaultBody = 'Service temporarily unavailable. Please try again later.';
+  try {
+    const i18n = require('../i18n');
+    if (typeof i18n.t === 'function') {
+      const lang = process.env.GC_DEFAULT_LANG || 'de';
+      const translated = i18n.t(lang, 'pool_outage.body');
+      if (translated) defaultBody = translated;
+    }
+  } catch { /* i18n not available — fall back to literal */ }
+  const body = pool?.outage_message || defaultBody;
+  return {
+    match: [{ host: [route.domain] }],
+    handle: [{
+      handler: 'static_response',
+      status_code: 503,
+      headers: { 'Content-Type': ['text/plain; charset=utf-8'] },
+      body,
+    }],
+    terminal: true,
+  };
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
  * Build Caddy configuration JSON. Overloaded:
  *   buildCaddyConfig()                   → Query routes from DB
+ *   buildCaddyConfig(options)            → Query routes from DB, pass options
  *   buildCaddyConfig(routes, options)    → Use provided routes (for tests)
  */
 function buildCaddyConfig(injectedRoutes, options = {}) {
+  // Support buildCaddyConfig(options) — single plain-object argument
+  if (injectedRoutes && !Array.isArray(injectedRoutes) && typeof injectedRoutes === 'object') {
+    options = injectedRoutes;
+    injectedRoutes = null;
+  }
   const db = getDb();
   const gatewayProxyPort = options.gatewayProxyPort || 8080;
   const routes = Array.isArray(injectedRoutes) ? injectedRoutes : db.prepare(`
@@ -76,6 +152,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const l4Routes = routes.filter(r => r.route_type === 'l4');
 
   const caddyRoutes = {};
+  // Pre-assembled route entries (e.g. pool-outage 503 blocks) that bypass
+  // the caddyRoutes dict and are merged directly into serverRoutes.
+  const serverRoutes_pending = [];
 
   for (const route of httpRoutes) {
     // Determine target IP: if linked to a peer, use peer's WG IP; otherwise use target_ip
@@ -89,9 +168,20 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
 
     // Determine gateway-target peer IP (for target_kind='gateway' routes)
+    // Pool-routes (target_pool_id) are resolved via resolveRouteUpstreams;
+    // pin-routes (target_peer_id) fall back to the existing JOIN columns.
     let gatewayPeerIp = null;
+    let poolUpstreams = null; // set when target_pool_id is present
     if (route.target_kind === 'gateway') {
-      if (route.target_peer_ip) {
+      if (route.target_pool_id) {
+        // Pool-aware resolution — may result in outage block
+        const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
+        if (resolved.outage) {
+          serverRoutes_pending.push(buildPoolOutageBlock(route));
+          continue;
+        }
+        poolUpstreams = resolved;
+      } else if (route.target_peer_ip) {
         gatewayPeerIp = route.target_peer_ip;
       } else if (route.target_peer_allowed_ips) {
         gatewayPeerIp = route.target_peer_allowed_ips.split('/')[0];
@@ -99,8 +189,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
 
     let upstreams;
-    if (gatewayPeerIp) {
-      // Route through gateway: upstream = gateway-tunnel-IP:proxy-port
+    if (poolUpstreams) {
+      // Pool route: upstreams already resolved
+      upstreams = poolUpstreams.peers.map(p => ({ dial: `${p.ip}:${p.port}` }));
+    } else if (gatewayPeerIp) {
+      // Pin-route through gateway: upstream = gateway-tunnel-IP:proxy-port
       upstreams = [{ dial: `${gatewayPeerIp}:${gatewayProxyPort}` }];
     } else if (hasMultipleBackends) {
       upstreams = backends.map(b => ({ dial: `${b.ip}:${b.port}` }));
@@ -174,12 +267,19 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       ];
     }
     if (reverseProxy.handler === 'reverse_proxy'
-        && gatewayPeerIp && (route.target_lan_host || route.target_lan_port)) {
+        && (gatewayPeerIp || poolUpstreams) && (route.target_lan_host || route.target_lan_port)) {
       const lanTarget = `${route.target_lan_host}:${route.target_lan_port}`;
       reverseProxy.headers.request.set = {
         ...(reverseProxy.headers.request.set || {}),
         'X-Gateway-Target': [lanTarget],
         'X-Gateway-Target-Domain': [route.domain],
+      };
+    }
+
+    // Pool load balancing policy
+    if (poolUpstreams?.lb_policy) {
+      reverseProxy.load_balancing = {
+        selection_policy: { policy: poolUpstreams.lb_policy },
       };
     }
 
@@ -390,7 +490,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   } catch {}
 
   // Group routes into a single server
-  const serverRoutes = [];
+  const serverRoutes = [...serverRoutes_pending];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
     if (srvConfig.routes.length === 1) {
       const inner = srvConfig.routes[0];
@@ -428,8 +528,17 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
   // L4 config
   if (l4Routes.length > 0) {
+    const activeL4Routes = [];
     for (const route of l4Routes) {
-      if (route.peer_id && route.allowed_ips) {
+      if (route.target_kind === 'gateway' && route.target_pool_id) {
+        // Pool-aware: skip listener if pool is in outage
+        const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
+        if (resolved.outage) continue;
+        // Use first resolved peer for L4 (single upstream for TCP proxy)
+        const first = resolved.peers[0];
+        route.target_ip = first.ip;
+        route.target_port = route.l4_listen_port;
+      } else if (route.peer_id && route.allowed_ips) {
         // Peer-route: upstream = peer's WG IP + route.target_port.
         route.target_ip = route.allowed_ips.split('/')[0];
       } else if (route.target_kind === 'gateway' && route.target_peer_allowed_ips) {
@@ -441,16 +550,19 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         route.target_ip = route.target_peer_allowed_ips.split('/')[0];
         route.target_port = route.l4_listen_port;
       }
+      activeL4Routes.push(route);
     }
 
-    const conflicts = validatePortConflicts(l4Routes);
+    const conflicts = validatePortConflicts(activeL4Routes);
     if (conflicts.length > 0) {
       throw new Error('L4 port conflicts: ' + conflicts.join('; '));
     }
 
-    caddyConfig.apps.layer4 = {
-      servers: buildL4Servers(l4Routes),
-    };
+    if (activeL4Routes.length > 0) {
+      caddyConfig.apps.layer4 = {
+        servers: buildL4Servers(activeL4Routes),
+      };
+    }
   }
 
   return caddyConfig;
@@ -541,4 +653,6 @@ module.exports = {
   patchGatewayRouteHandlers,
   _caddyApi,
   renderMaintenancePage,
+  resolveRouteUpstreams,
+  buildPoolOutageBlock,
 };
