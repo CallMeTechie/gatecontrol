@@ -7,7 +7,7 @@ const rdpSessions = require('../../services/rdpSessions');
 const wol = require('../../services/wol');
 const { getServerPublicKey, publicKeyEncrypt } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
-const { requireFeature } = require('../../middleware/license');
+const { requireFeature, requireFeatureField } = require('../../middleware/license');
 
 const router = Router();
 
@@ -178,7 +178,9 @@ router.post('/batch', (req, res) => {
 /**
  * POST /api/v1/rdp -- Create new RDP route
  */
-router.post('/', async (req, res) => {
+router.post('/',
+  requireFeatureField('gateway_pool_id', 'gateway_pool_failover'),
+  async (req, res) => {
   try {
     if (req.body.access_mode === 'gateway') {
       const license = require('../../services/license');
@@ -214,7 +216,9 @@ router.get('/:id', (req, res) => {
 /**
  * PATCH /api/v1/rdp/:id -- Update RDP route
  */
-router.patch('/:id', async (req, res) => {
+router.patch('/:id',
+  requireFeatureField('gateway_pool_id', 'gateway_pool_failover'),
+  async (req, res) => {
   try {
     if (req.body.access_mode === 'gateway') {
       const license = require('../../services/license');
