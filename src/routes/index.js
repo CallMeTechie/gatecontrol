@@ -192,6 +192,7 @@ const pages = [
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
+  { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
 ];
 
 pages.forEach(({ path, template, titleKey }) => {
@@ -204,6 +205,23 @@ pages.forEach(({ path, template, titleKey }) => {
       const counts = rdpService.getCount();
       extraLocals.rdpRouteCount = counts.total;
     } catch {}
+
+    if (template === 'routes') {
+      try {
+        extraLocals.gatewayPools = require('../services/gatewayPool').listPools();
+      } catch { extraLocals.gatewayPools = []; }
+    }
+
+    if (template === 'gateway-pools') {
+      try {
+        extraLocals.pools = require('../services/gatewayPool').listPools();
+        for (const p of extraLocals.pools) {
+          p.members = require('../services/gatewayPool').listMembers(p.id);
+        }
+        extraLocals.gatewayPeers = require('../db/connection').getDb()
+          .prepare("SELECT id, name FROM peers WHERE peer_type = 'gateway' AND enabled = 1 ORDER BY name").all();
+      } catch { extraLocals.pools = []; extraLocals.gatewayPeers = []; }
+    }
 
     // Dashboard-only: gateways that need re-pairing after master-key rotation
     if (template === 'dashboard') {

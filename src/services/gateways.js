@@ -91,19 +91,27 @@ function getGatewayConfig(peerId) {
     SELECT id, domain, target_kind, target_lan_host, target_lan_port,
            backend_https, wol_enabled, wol_mac
     FROM routes
-    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
+    WHERE target_kind = 'gateway' AND enabled = 1
       AND (route_type = 'http' OR route_type IS NULL)
+      AND (
+        target_peer_id = ?
+        OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
+      )
     ORDER BY id
-  `).all(peerId);
+  `).all(peerId, peerId);
 
   const l4Routes = db.prepare(`
     SELECT id, l4_listen_port AS listen_port, target_lan_host, target_lan_port,
            wol_enabled, wol_mac
     FROM routes
-    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
+    WHERE target_kind = 'gateway' AND enabled = 1
       AND route_type = 'l4'
+      AND (
+        target_peer_id = ?
+        OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
+      )
     ORDER BY id
-  `).all(peerId);
+  `).all(peerId, peerId);
 
   return {
     config_hash_version: CONFIG_HASH_VERSION,
@@ -220,6 +228,19 @@ function handleHeartbeat(peerId, health) {
 }
 
 function _onStatusTransition(peerId, from, to, health) {
+  // Pool-member peers are managed by the new gatewayHealth.evaluatePeer
+  // system (threshold-based, with pool-specific cooldown). Skip the
+  // legacy sliding-window transition path entirely for them — otherwise
+  // we get double Caddy renders and duplicate activity-log/webhook events.
+  // Late-require to avoid circular import at module-load.
+  try {
+    if (require('./gatewayPool').isPeerInAnyPool(peerId)) return;
+  } catch (err) {
+    // Logged at warn so a broken gatewayPool module doesn't silently
+    // route every pool-member peer through the legacy path.
+    logger.warn({ err: err.message, peerId }, 'gatewayPool require failed in legacy transition path; falling through to legacy');
+  }
+
   const peer = getDb().prepare('SELECT name FROM peers WHERE id=?').get(peerId);
   const peerName = peer ? peer.name : `peer-${peerId}`;
 

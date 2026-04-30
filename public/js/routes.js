@@ -346,18 +346,20 @@
     }
   });
 
-  // ─── Create form: target-kind (peer vs gateway) toggle ───
+  // ─── Create form: target-kind (peer vs gateway vs pool) toggle ───
   (function initCreateTargetKindToggle() {
     const tkSel = document.getElementById('create-route-target-kind');
     const peerFields = document.getElementById('create-route-peer-fields');
     const gwFields = document.getElementById('create-route-gateway-fields');
+    const poolFields = document.getElementById('create-route-pool-fields');
     const wolCb = document.getElementById('create-route-wol-enabled');
     const wolMacField = document.getElementById('create-route-wol-mac-field');
     if (tkSel && peerFields && gwFields) {
       const sync = () => {
-        const gw = tkSel.value === 'gateway';
-        peerFields.style.display = gw ? 'none' : '';
-        gwFields.style.display = gw ? '' : 'none';
+        const kind = tkSel.value;
+        peerFields.style.display = kind === 'peer' ? '' : 'none';
+        gwFields.style.display = kind === 'gateway' ? '' : 'none';
+        if (poolFields) poolFields.style.display = kind === 'pool' ? '' : 'none';
       };
       tkSel.addEventListener('change', sync);
       sync();
@@ -2903,4 +2905,14 @@
       radio.addEventListener('change', checkRdpPort);
     });
   })();
+})();
+
+(() => {
+  document.querySelectorAll('select[name="target_kind"]').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const kind = e.target.value;
+      const poolSel = sel.closest('form')?.querySelector('select[data-show-when-target-kind="pool"]');
+      if (poolSel) poolSel.style.display = kind === 'pool' ? '' : 'none';
+    });
+  });
 })();

@@ -42,5 +42,6 @@ router.use('/', require('./security'));
 router.use('/', require('./backup'));
 router.use('/', require('./network'));
 router.use('/', require('./observability'));
+router.use('/', require('./gateway'));
 
 module.exports = router;

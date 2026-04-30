@@ -1319,3 +1319,12 @@ input[type="file"] {
 
 @media (max-width: 1200px) { .vm-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 800px) { .vm-grid { grid-template-columns: 1fr; } }
+
+/* Gateway Pools */
+.pool-card { padding: 1rem; border: 1px solid var(--border-color, #ccc); border-radius: 4px; margin-bottom: 0.5rem; }
+.pool-mode-badge { padding: 2px 6px; border-radius: 3px; font-size: 0.85em; }
+.pool-mode-failover { background: #e0e7ff; }
+.pool-mode-load_balancing { background: #d1fae5; }
+.pool-member-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+.pool-member-priority-input { width: 60px; }
+.feature-locked-lb { opacity: 0.5; pointer-events: none; }

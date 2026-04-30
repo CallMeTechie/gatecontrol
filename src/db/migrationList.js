@@ -740,6 +740,54 @@ const migrations = [
       return !!row;
     },
   },
+  {
+    // Gateway-Pool: groups gateway-peers for failover or load-balancing.
+    // Routes can target a single peer (target_peer_id, pin-mode,
+    // unchanged) OR a pool (target_pool_id, dynamic resolution at render
+    // time). Pool routes keep target_kind='gateway' so existing
+    // companion-sync paths recognize them; target_pool_id is ADDITIVE.
+    //
+    // gateway_meta gets the alive-state + outage timestamps directly.
+    // settings gets the gateway_down_threshold_s default (90 s).
+    version: 41,
+    name: 'create_gateway_pools',
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_pools (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                  TEXT NOT NULL UNIQUE,
+        mode                  TEXT NOT NULL DEFAULT 'failover',
+        lb_policy             TEXT,
+        failback_cooldown_s   INTEGER NOT NULL,
+        outage_message        TEXT,
+        enabled               INTEGER NOT NULL DEFAULT 1,
+        created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
+        updated_at            DATETIME NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_gateway_pools_enabled ON gateway_pools(enabled);
+
+      CREATE TABLE IF NOT EXISTS gateway_pool_members (
+        pool_id    INTEGER NOT NULL REFERENCES gateway_pools(id) ON DELETE CASCADE,
+        peer_id    INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        priority   INTEGER NOT NULL DEFAULT 100,
+        PRIMARY KEY (pool_id, peer_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pool_members_peer ON gateway_pool_members(peer_id);
+
+      ALTER TABLE routes      ADD COLUMN target_pool_id INTEGER REFERENCES gateway_pools(id);
+      ALTER TABLE rdp_routes  ADD COLUMN gateway_pool_id INTEGER REFERENCES gateway_pools(id);
+
+      ALTER TABLE gateway_meta ADD COLUMN alive INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE gateway_meta ADD COLUMN went_down_at INTEGER;
+      ALTER TABLE gateway_meta ADD COLUMN recovered_first_hb_at INTEGER;
+
+      INSERT OR IGNORE INTO settings (key, value)
+        VALUES ('gateway_down_threshold_s', '90');
+    `,
+    detect: (db) => {
+      const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='gateway_pools'").get();
+      return !!row;
+    },
+  },
 ];
 
 module.exports = { migrations };

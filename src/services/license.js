@@ -48,6 +48,12 @@ const COMMUNITY_FALLBACK = {
   gateway_tcp_routing: false,
   gateway_wol: false,
   rdp_via_gateway: false,
+  // Gateway-Pool feature (failover + load-balancing).
+  // Tier-distribution is configured on the license server, not here.
+  gateway_pools: false,
+  gateway_pool_failover: false,
+  gateway_pool_load_balancing: false,
+  gateway_pools_limit: 0,
 };
 
 let cachedPlan = 'community';
@@ -384,6 +390,48 @@ async function enforceLimitsInternal() {
           // Email alert is best-effort
         }
       }
+    }
+    // ─── Pool enforcement ────────────────────────────
+    if (cachedFeatures.gateway_pools === false) {
+      const result = db.prepare("UPDATE gateway_pools SET enabled = 0 WHERE enabled = 1").run();
+      if (result.changes > 0) {
+        activity.log(
+          'pool_disabled_by_license_enforcement',
+          `${result.changes} pool(s) disabled — gateway_pools feature revoked`,
+          { source: 'system', severity: 'warn', details: { count: result.changes } },
+        );
+      }
+    } else if (cachedFeatures.gateway_pool_load_balancing === false) {
+      const result = db.prepare("UPDATE gateway_pools SET enabled = 0 WHERE mode = 'load_balancing' AND enabled = 1").run();
+      if (result.changes > 0) {
+        activity.log(
+          'pool_disabled_by_license_enforcement',
+          `${result.changes} LB pool(s) disabled — gateway_pool_load_balancing revoked`,
+          { source: 'system', severity: 'warn', details: { count: result.changes } },
+        );
+      }
+    }
+
+    const poolsLimit = cachedFeatures.gateway_pools_limit ?? 0;
+    if (poolsLimit > 0) {
+      const overflow = db.prepare(`
+        SELECT id FROM gateway_pools WHERE enabled = 1 ORDER BY created_at DESC LIMIT -1 OFFSET ?
+      `).all(poolsLimit);
+      if (overflow.length > 0) {
+        const ids = overflow.map(r => r.id);
+        db.prepare(`UPDATE gateway_pools SET enabled = 0 WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+        activity.log(
+          'pool_disabled_by_license_enforcement',
+          `${overflow.length} pool(s) over limit (${poolsLimit}) disabled`,
+          { source: 'system', severity: 'warn', details: { ids, limit: poolsLimit } },
+        );
+      }
+    }
+
+    try {
+      await require('./caddyConfig').syncToCaddy();
+    } catch (err) {
+      logger.warn({ err: err.message }, 'caddy re-render after license enforcement failed');
     }
   } catch (err) {
     // DB not available (tests, first boot) or other error — skip enforcement

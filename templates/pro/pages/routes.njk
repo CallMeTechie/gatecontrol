@@ -126,6 +126,11 @@
           <select class="form-select" id="create-route-target-kind" name="target_kind" style="width:100%;padding:8px 12px">
             <option value="peer">{{ t('route_target_peer') }}</option>
             <option value="gateway">{{ t('route_target_gateway') }}</option>
+            {% if license.features.gateway_pool_failover %}
+            <option value="pool">{{ t('gateway_pools.title') }}</option>
+            {% else %}
+            <option value="pool" disabled>{{ t('gateway_pools.title') }} ({{ t('gateway_pools.license_locked_pool') }})</option>
+            {% endif %}
           </select>
         </div>
 
@@ -170,6 +175,15 @@
           <div id="create-route-wol-mac-field" style="display:none;margin-bottom:14px">
             <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_wol_mac') }}</label>
             <input type="text" id="create-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" style="width:100%;padding:8px 12px">
+          </div>
+        </div>
+
+        <div id="create-route-pool-fields" style="display:none">
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('gateway_pools.title') }}</label>
+            <select name="target_pool_id" data-show-when-target-kind="pool" style="width:100%;padding:8px 12px">
+              {% for p in gatewayPools %}<option value="{{ p.id }}">{{ p.name }} ({{ p.mode }})</option>{% endfor %}
+            </select>
           </div>
         </div>
 

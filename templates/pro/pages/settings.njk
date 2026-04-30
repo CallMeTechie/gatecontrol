@@ -830,6 +830,14 @@
   </div>
 </div>
 
+<section class="settings-section">
+  <h3>{{ t('gateway_failover_settings.title') }}</h3>
+  <label for="gw-down-threshold">{{ t('gateway_failover_settings.down_threshold_s') }}</label>
+  <input type="range" id="gw-down-threshold" min="30" max="600" step="10" value="{{ settings.gateway_down_threshold_s or 90 }}">
+  <output id="gw-down-threshold-value">{{ settings.gateway_down_threshold_s or 90 }} s</output>
+  <p class="help-text">{{ t('gateway_failover_settings.down_threshold_help') }}</p>
+</section>
+
 {% endblock %}
 
 {% block scripts %}

@@ -207,6 +207,18 @@ async function create(data) {
     throw err;
   }
 
+  if (data.gateway_peer_id != null && data.gateway_pool_id != null) {
+    throw new Error('conflicting_target: rdp route cannot have both gateway_peer_id and gateway_pool_id');
+  }
+  if (data.gateway_pool_id != null) {
+    const gatewayPool = require('./gatewayPool');
+    const pool = gatewayPool.getPool(data.gateway_pool_id);
+    if (!pool) throw new Error('gateway_pool_not_found');
+    if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
+      throw new Error('gateway_pool_empty');
+    }
+  }
+
   const db = getDb();
   const encrypted = encryptCredentials(data);
 
@@ -226,7 +238,7 @@ async function create(data) {
       credential_rotation_enabled, credential_rotation_days,
       token_ids, user_ids, notes, tags,
       health_check_enabled,
-      gateway_peer_id, gateway_listen_port
+      gateway_peer_id, gateway_listen_port, gateway_pool_id
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -242,7 +254,7 @@ async function create(data) {
       ?, ?,
       ?, ?, ?, ?,
       ?,
-      ?, ?
+      ?, ?, ?
     )
   `).run(
     data.name.trim(),
@@ -298,7 +310,9 @@ async function create(data) {
     data.access_mode === 'gateway' && data.gateway_peer_id != null
       ? parseInt(data.gateway_peer_id, 10) : null,
     data.access_mode === 'gateway' && data.gateway_listen_port != null
-      ? parseInt(data.gateway_listen_port, 10) : null
+      ? parseInt(data.gateway_listen_port, 10) : null,
+    data.access_mode === 'gateway' && data.gateway_pool_id != null
+      ? parseInt(data.gateway_pool_id, 10) : null
   );
 
   const routeId = result.lastInsertRowid;
@@ -359,7 +373,8 @@ async function _syncLinkedL4Route(rdpId, previousL4RouteId) {
     domain: null,                              // L4 with tls_mode=none needs no domain
     route_type: 'l4',
     target_kind: 'gateway',
-    target_peer_id: rdp.gateway_peer_id,
+    target_peer_id: rdp.gateway_pool_id ? null : rdp.gateway_peer_id,
+    target_pool_id: rdp.gateway_pool_id || null,
     target_lan_host: rdp.host,
     target_lan_port: rdp.port || 3389,
     l4_protocol: 'tcp',
@@ -404,6 +419,18 @@ async function update(id, data) {
     const peerRow = db.prepare('SELECT peer_type FROM peers WHERE id = ?').get(parseInt(merged.gateway_peer_id, 10));
     if (!peerRow || peerRow.peer_type !== 'gateway') {
       throw new Error('Referenced peer is not a gateway peer');
+    }
+  }
+
+  if (data.gateway_peer_id != null && data.gateway_pool_id != null) {
+    throw new Error('conflicting_target: rdp route cannot have both gateway_peer_id and gateway_pool_id');
+  }
+  if (data.gateway_pool_id != null) {
+    const gatewayPool = require('./gatewayPool');
+    const pool = gatewayPool.getPool(data.gateway_pool_id);
+    if (!pool) throw new Error('gateway_pool_not_found');
+    if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
+      throw new Error('gateway_pool_empty');
     }
   }
 
@@ -484,6 +511,10 @@ async function update(id, data) {
   if (data.tags !== undefined) {
     sets.push('tags = ?');
     values.push(data.tags ? JSON.stringify(data.tags) : null);
+  }
+  if (data.gateway_pool_id !== undefined) {
+    sets.push('gateway_pool_id = ?');
+    values.push(data.gateway_pool_id != null ? parseInt(data.gateway_pool_id, 10) : null);
   }
 
   if (sets.length === 0) return getById(id);
