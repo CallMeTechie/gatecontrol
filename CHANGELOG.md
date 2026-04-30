@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.3] — 2026-04-30
+
+### Fixes
+- use window.GC.t (correct API) for pool i18n + expose pool keys in layouts (#79)
+
+---
+
 ## [1.59.2] — 2026-04-30
 
 ### Fixes

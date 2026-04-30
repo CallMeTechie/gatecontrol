@@ -1,6 +1,6 @@
 {
   "name": "gatecontrol",
-  "version": "1.59.2",
+  "version": "1.59.3",
   "description": "Unified WireGuard VPN + Caddy Reverse Proxy Management",
   "main": "src/server.js",
   "scripts": {
