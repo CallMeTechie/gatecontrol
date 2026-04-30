@@ -31,25 +31,36 @@ describe('monitor: gateway health tracking', () => {
     peerId = gw.peer.id;
   });
 
-  it('after 4 heartbeats with http_proxy_healthy=true gateway is online', () => {
+  it('after 4 healthy heartbeats gateway is online', () => {
     for (let i = 0; i < 4; i++) {
-      gateways.handleHeartbeat(peerId, { http_proxy_healthy: true, tcp_listeners: [] });
+      gateways.handleHeartbeat(peerId, {
+        tcp_listeners: [{ port: 13389, status: 'listening' }],
+      });
     }
     const status = gateways.getHealthStatus(peerId);
     assert.equal(status, 'online');
   });
 
-  it('after online then 3 unhealthy heartbeats transitions to offline with alert', () => {
+  it('after online then 3 listener_failed heartbeats transitions to offline with alert', () => {
     // bring to online
-    for (let i = 0; i < 4; i++) gateways.handleHeartbeat(peerId, { http_proxy_healthy: true });
+    for (let i = 0; i < 4; i++) {
+      gateways.handleHeartbeat(peerId, { tcp_listeners: [{ port: 13389, status: 'listening' }] });
+    }
     assert.equal(gateways.getHealthStatus(peerId), 'online');
 
     // Fake cooldown exhaustion
     gateways._forceCooldownExhaustedForTest(peerId);
 
+    // Liveness-fail signal in the new model is an explicit listener_failed
+    // entry. http_proxy_healthy:false alone is tolerated (NAS1 case) and
+    // route_reachability is per-route info, not gateway liveness.
     const activitySpy = mock.method(activity, 'log');
     try {
-      for (let i = 0; i < 3; i++) gateways.handleHeartbeat(peerId, { http_proxy_healthy: false });
+      for (let i = 0; i < 3; i++) {
+        gateways.handleHeartbeat(peerId, {
+          tcp_listeners: [{ port: 13389, status: 'listener_failed' }],
+        });
+      }
       assert.equal(gateways.getHealthStatus(peerId), 'offline');
       assert.ok(activitySpy.mock.calls.some(c => c.arguments[0] === 'gateway_offline'));
     } finally {
