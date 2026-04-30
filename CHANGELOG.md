@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.30] — 2026-04-30
+
+### Änderungen
+- align monitor_gateway health-transition test with new liveness model
+
+---
+
 ## [1.58.29] — 2026-04-29
 
 ### Änderungen
