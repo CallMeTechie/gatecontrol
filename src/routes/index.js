@@ -206,6 +206,12 @@ pages.forEach(({ path, template, titleKey }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch {}
 
+    if (template === 'routes') {
+      try {
+        extraLocals.gatewayPools = require('../services/gatewayPool').listPools();
+      } catch { extraLocals.gatewayPools = []; }
+    }
+
     if (template === 'gateway-pools') {
       try {
         extraLocals.pools = require('../services/gatewayPool').listPools();
