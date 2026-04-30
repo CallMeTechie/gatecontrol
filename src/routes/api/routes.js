@@ -106,6 +106,9 @@ const VALIDATION_ERROR_MAP = {
   'is reserved': 'error.routes.l4_port_blocked',
   'port conflicts': 'error.routes.l4_port_conflict',
   'Port range exceeds': 'error.routes.l4_port_range_too_large',
+  'conflicting_target': 'error.routes.conflicting_target',
+  'target_pool_not_found': 'error.routes.target_pool_not_found',
+  'target_pool_empty': 'error.routes.target_pool_empty',
 };
 
 function resolveError(req, err, fallbackKey) {
@@ -272,6 +275,7 @@ router.post('/',
   requireFeatureField('branding_title', 'custom_branding'),
   requireFeatureField('debug_enabled', 'request_debugging'),
   requireFeatureField('bot_blocker_enabled', 'bot_blocking'),
+  requireFeatureField('target_pool_id', 'gateway_pool_failover'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -391,6 +395,7 @@ router.post('/',
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
+      target_pool_id: req.body.target_pool_id,
       target_lan_host: req.body.target_lan_host,
       target_lan_port: req.body.target_lan_port,
       wol_enabled: req.body.wol_enabled,
@@ -425,6 +430,7 @@ router.put('/:id',
   requireFeatureField('branding_title', 'custom_branding'),
   requireFeatureField('debug_enabled', 'request_debugging'),
   requireFeatureField('bot_blocker_enabled', 'bot_blocking'),
+  requireFeatureField('target_pool_id', 'gateway_pool_failover'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -536,6 +542,7 @@ router.put('/:id',
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
+      target_pool_id: req.body.target_pool_id,
       target_lan_host: req.body.target_lan_host,
       target_lan_port: req.body.target_lan_port,
       wol_enabled: req.body.wol_enabled,

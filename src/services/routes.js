@@ -11,6 +11,22 @@ const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 
+// ─── Target Exclusivity Validation ──────────────────────
+
+function validateTargetExclusivity(data) {
+  if (data.target_peer_id != null && data.target_pool_id != null) {
+    throw new Error('conflicting_target: route cannot have both target_peer_id and target_pool_id');
+  }
+  if (data.target_pool_id != null) {
+    const gatewayPool = require('./gatewayPool');
+    const pool = gatewayPool.getPool(data.target_pool_id);
+    if (!pool) throw new Error('target_pool_not_found');
+    if (gatewayPool.listMembers(data.target_pool_id).length === 0) {
+      throw new Error('target_pool_empty');
+    }
+  }
+}
+
 // ─── CRUD Operations ────────────────────────────────────
 
 /**
@@ -146,8 +162,13 @@ async function create(data) {
 
   validateBotBlockerConfig(data);
 
+  validateTargetExclusivity(data);
+
   const targetKind = data.target_kind || 'peer';
   const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
+  const targetPoolId = targetKind === 'gateway'
+    ? (data.target_pool_id != null ? parseInt(data.target_pool_id, 10) : null)
+    : null;
   const targetLanHost = targetKind === 'gateway' ? (data.target_lan_host || null) : null;
   const targetLanPort = targetKind === 'gateway' && data.target_lan_port
     ? parseInt(data.target_lan_port, 10)
@@ -166,9 +187,9 @@ async function create(data) {
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
                         mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids,
-                        target_kind, target_peer_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
+                        target_kind, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -218,6 +239,7 @@ async function create(data) {
     data.user_ids ? JSON.stringify(data.user_ids) : null,
     targetKind,
     targetPeerId,
+    targetPoolId,
     targetLanHost,
     targetLanPort,
     wolEnabled,
@@ -379,6 +401,8 @@ async function update(id, data) {
 
   validateBotBlockerConfig(data);
 
+  validateTargetExclusivity(data);
+
   db.prepare(`
     UPDATE routes SET
       domain = COALESCE(?, domain),
@@ -430,6 +454,7 @@ async function update(id, data) {
       user_ids = COALESCE(?, user_ids),
       target_kind = COALESCE(?, target_kind),
       target_peer_id = COALESCE(?, target_peer_id),
+      target_pool_id = COALESCE(?, target_pool_id),
       target_lan_host = COALESCE(?, target_lan_host),
       target_lan_port = COALESCE(?, target_lan_port),
       wol_enabled = COALESCE(?, wol_enabled),
@@ -492,6 +517,7 @@ async function update(id, data) {
     data.user_ids !== undefined ? (data.user_ids ? JSON.stringify(data.user_ids) : null) : null,
     data.target_kind !== undefined ? (data.target_kind || null) : null,
     data.target_peer_id !== undefined ? (data.target_peer_id || null) : null,
+    data.target_pool_id !== undefined ? (data.target_pool_id != null ? parseInt(data.target_pool_id, 10) : null) : null,
     data.target_lan_host !== undefined ? (data.target_lan_host || null) : null,
     data.target_lan_port !== undefined ? (data.target_lan_port ? parseInt(data.target_lan_port, 10) : null) : null,
     data.wol_enabled !== undefined ? (data.wol_enabled ? 1 : 0) : null,
@@ -504,7 +530,7 @@ async function update(id, data) {
   // DB row and any future backup. Explicitly clear them in a follow-up
   // write so Caddy config generation sees a clean row.
   if (data.target_kind !== undefined && data.target_kind !== 'gateway') {
-    db.prepare(`UPDATE routes SET target_peer_id = NULL, target_lan_host = NULL, target_lan_port = NULL, wol_enabled = 0, wol_mac = NULL WHERE id = ?`).run(id);
+    db.prepare(`UPDATE routes SET target_peer_id = NULL, target_pool_id = NULL, target_lan_host = NULL, target_lan_port = NULL, wol_enabled = 0, wol_mac = NULL WHERE id = ?`).run(id);
   }
 
   // Update ACL peers if provided
