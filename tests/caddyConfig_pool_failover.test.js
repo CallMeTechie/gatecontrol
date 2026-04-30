@@ -43,7 +43,9 @@ test('failover-mode picks lowest-priority alive peer', async () => {
 
 test('failover-mode skips down peer, picks next priority', async () => {
   setupTwoGwPool('failover');
-  getDb().prepare("UPDATE gateway_meta SET alive = 0, went_down_at = ? WHERE peer_id = 10").run(Date.now());
+  // Set last_seen_at older than 90s threshold so evaluatePeer keeps alive=0
+  getDb().prepare("UPDATE gateway_meta SET alive = 0, went_down_at = ?, last_seen_at = ? WHERE peer_id = 10")
+    .run(Date.now() - 200_000, Date.now() - 200_000);
   gatewayHealth._resetSnapshotCache();
   gatewayHealth.evaluatePeer(10);
   gatewayHealth.evaluatePeer(11);
@@ -64,7 +66,10 @@ test('lb-mode includes all alive peers + selection_policy', async () => {
 
 test('pool-outage renders 503 block (HTTP), not user-maintenance', async () => {
   setupTwoGwPool('failover');
-  getDb().prepare("UPDATE gateway_meta SET alive = 0").run();
+  // last_seen_at older than threshold + alive=0 + went_down_at present
+  // → evaluatePeer keeps alive=0 (no first_alive transition)
+  getDb().prepare("UPDATE gateway_meta SET alive = 0, went_down_at = ?, last_seen_at = ?")
+    .run(Date.now() - 200_000, Date.now() - 200_000);
   gatewayHealth._resetSnapshotCache();
   gatewayHealth.evaluatePeer(10);
   gatewayHealth.evaluatePeer(11);

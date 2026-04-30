@@ -16,6 +16,10 @@ process.env.GC_WG_HOST = 'test.example.com';
 process.env.GC_BASE_URL = 'http://localhost:3000';
 process.env.GC_LOG_LEVEL = 'silent';
 process.env.GC_DATA_DIR = tmpDir;
+// High rate-limit caps so the per-test login() calls don't trip 429
+// on suites that run many setup()/teardown() cycles.
+process.env.GC_RATE_LIMIT_LOGIN = '100000';
+process.env.GC_RATE_LIMIT_API = '100000';
 
 // Now import app modules
 const { runMigrations } = require('../../src/db/migrations');
