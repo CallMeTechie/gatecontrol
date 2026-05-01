@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.0] — 2026-05-01
+
+### Features
+- edit proxy_port on existing gateway peers (#84)
+
+---
+
 ## [1.60.0] — 2026-05-01
 
 ### Features
