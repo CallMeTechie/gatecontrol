@@ -820,12 +820,15 @@
       var expires_at = computeExpiresAt('add-peer-expires', 'add-peer-expires-date');
       var isGatewayEl = document.getElementById('add-peer-is-gateway');
       var apiPortEl = document.getElementById('add-peer-api-port');
+      var proxyPortEl = document.getElementById('add-peer-proxy-port');
       var isGateway = !!(isGatewayEl && isGatewayEl.checked);
       var apiPort = apiPortEl ? parseInt(apiPortEl.value, 10) || 9876 : 9876;
+      var proxyPort = proxyPortEl ? parseInt(proxyPortEl.value, 10) || 8080 : 8080;
       var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined };
       if (isGateway) {
         payload.is_gateway = true;
         payload.api_port = apiPort;
+        payload.proxy_port = proxyPort;
       }
       var data = await api.post('/api/peers', payload);
       if (data.ok) {

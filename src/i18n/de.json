@@ -1245,6 +1245,8 @@
   "peer_is_gateway": "Home Gateway",
   "peer_gateway_hint": "Aktiviere, wenn dieser Peer ein Home Gateway im Heimnetz ist",
   "peer_gateway_api_port": "Gateway API Port",
+  "peer_gateway_proxy_port": "Gateway Proxy Port",
+  "peer_gateway_proxy_port_hint": "Port, auf dem der Companion HTTP-Proxy auf der Tunnel-IP lauscht. Default 8080. Auf Synology DSM (Web Station / alternative HTTP-Ports) muss dieser auf einen freien Wert wie 18080 gesetzt werden.",
   "gateway_download_env": "Gateway-Config herunterladen",
   "gateway_download_warning": "ACHTUNG: Tokens werden regeneriert — alter Gateway wird ungültig",
   "gateway_download_confirm": "Beim Download werden die Gateway-Tokens neu generiert. Der aktuell laufende Gateway verliert dadurch die Verbindung. Fortfahren?",

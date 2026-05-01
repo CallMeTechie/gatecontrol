@@ -63,6 +63,9 @@
       <div class="form-group" id="add-peer-gateway-fields" style="display:none">
         <label class="form-label" for="add-peer-api-port">{{ t('peer_gateway_api_port') }}</label>
         <input type="number" id="add-peer-api-port" value="9876" min="1024" max="65535">
+        <label class="form-label" for="add-peer-proxy-port" style="margin-top:8px">{{ t('peer_gateway_proxy_port') }}</label>
+        <input type="number" id="add-peer-proxy-port" value="8080" min="1" max="65535">
+        <small class="form-hint">{{ t('peer_gateway_proxy_port_hint') }}</small>
       </div>
       <div id="add-peer-error" class="form-error" style="display:none"></div>
     </div>

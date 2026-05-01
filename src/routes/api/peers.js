@@ -82,7 +82,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -104,9 +104,16 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
       if (!Number.isInteger(parsedApiPort) || parsedApiPort < 1 || parsedApiPort > 65535) {
         return res.status(400).json({ ok: false, error: 'api_port must be 1..65535' });
       }
+      const parsedProxyPort = proxy_port != null && proxy_port !== ''
+        ? parseInt(proxy_port, 10)
+        : 8080;
+      if (!Number.isInteger(parsedProxyPort) || parsedProxyPort < 1 || parsedProxyPort > 65535) {
+        return res.status(400).json({ ok: false, error: 'proxy_port must be 1..65535' });
+      }
       const result = await gateways.createGateway({
         name,
         apiPort: parsedApiPort,
+        proxyPort: parsedProxyPort,
       });
       const envContent = gateways.buildEnvForPeer(result.peer.id, result.apiToken, result.pushToken);
       return res.status(201).json({
