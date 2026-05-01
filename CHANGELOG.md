@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.6] — 2026-05-01
+
+### Fixes
+- push companion-config-change on toggle (was only on update) (#82)
+
+---
+
 ## [1.59.5] — 2026-05-01
 
 ### Fixes
