@@ -1315,7 +1315,7 @@
     sliderEl.addEventListener('change', async () => {
       await fetch('/api/v1/settings/gateway-failover', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '' },
         body: JSON.stringify({ gateway_down_threshold_s: parseInt(sliderEl.value, 10) }),
       });
     });

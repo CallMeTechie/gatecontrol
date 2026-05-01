@@ -1119,7 +1119,7 @@
             try {
               var resp = await fetch('/api/peers/' + peer.id + '/proxy-port', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '' },
                 body: JSON.stringify({ proxy_port: port }),
               });
               var data = await resp.json();
