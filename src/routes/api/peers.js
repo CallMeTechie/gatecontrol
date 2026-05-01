@@ -364,7 +364,7 @@ router.get('/:id/gateway-info', (req, res) => {
     }
 
     const meta = getDb().prepare(
-      'SELECT last_seen_at, last_health, api_port FROM gateway_meta WHERE peer_id = ?'
+      'SELECT last_seen_at, last_health, api_port, proxy_port FROM gateway_meta WHERE peer_id = ?'
     ).get(peer.id);
     if (!meta) return res.status(404).json({ ok: false, error: 'Gateway meta missing' });
 
@@ -382,6 +382,7 @@ router.get('/:id/gateway-info', (req, res) => {
         peer_id: peer.id,
         status,
         api_port: meta.api_port,
+        proxy_port: meta.proxy_port || 8080,
         last_seen_at: meta.last_seen_at,
         health,
       },
@@ -450,6 +451,41 @@ router.post('/:id/gateway-pairing-code', (req, res) => {
       return res.status(404).json({ ok: false, error: 'not_a_gateway' });
     }
     logger.error({ error: err.message, peerId }, 'Failed to create gateway pairing code');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
+ * PATCH /api/peers/:id/proxy-port — update gateway_meta.proxy_port for an
+ * existing gateway. Triggers a Caddy re-render so backend dial strings
+ * pick up the new port immediately. Companion-side change (in
+ * /config/gateway.env on the gateway host) must be done separately by
+ * the admin — re-download the env file after saving here.
+ */
+router.patch('/:id/proxy-port', async (req, res) => {
+  const peerId = parseInt(req.params.id, 10);
+  const { proxy_port } = req.body || {};
+  const port = parseInt(proxy_port, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return res.status(400).json({ ok: false, error: 'proxy_port must be 1..65535' });
+  }
+  try {
+    const { getDb } = require('../../db/connection');
+    const result = getDb()
+      .prepare('UPDATE gateway_meta SET proxy_port = ? WHERE peer_id = ?')
+      .run(port, peerId);
+    if (result.changes === 0) {
+      return res.status(404).json({ ok: false, error: 'not_a_gateway' });
+    }
+    // Trigger caddy re-render so the new port is picked up in dial strings
+    try {
+      await require('../../services/caddyConfig').syncToCaddy();
+    } catch (err) {
+      logger.warn({ err: err.message, peerId }, 'caddy re-render after proxy_port update failed');
+    }
+    res.json({ ok: true, proxy_port: port });
+  } catch (err) {
+    logger.error({ error: err.message, peerId }, 'Failed to update gateway proxy_port');
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });

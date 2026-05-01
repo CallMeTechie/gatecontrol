@@ -1092,6 +1092,50 @@
         gwInfo.style.display = '';
         var portDisplay = document.getElementById('edit-peer-api-port-display');
         if (portDisplay) portDisplay.textContent = peer.api_port || '9876';
+
+        // Proxy-port input: populate with current value, wire save-button.
+        // Fetch fresh value via /gateway-info because the peer object from
+        // the list endpoint may not include proxy_port.
+        var proxyPortInput = document.getElementById('edit-peer-proxy-port');
+        var proxyPortBtn = document.getElementById('btn-edit-peer-save-proxy-port');
+        if (proxyPortInput) {
+          proxyPortInput.value = peer.proxy_port || '8080';
+          fetch('/api/peers/' + peer.id + '/gateway-info')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data && data.ok && data.gateway && data.gateway.proxy_port) {
+                proxyPortInput.value = data.gateway.proxy_port;
+              }
+            })
+            .catch(function() { /* fallback to default already set */ });
+        }
+        if (proxyPortBtn) {
+          proxyPortBtn.onclick = async function() {
+            var port = parseInt(proxyPortInput.value, 10);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) {
+              showError('edit-peer-error', 'Port muss zwischen 1 und 65535 liegen');
+              return;
+            }
+            try {
+              var resp = await fetch('/api/peers/' + peer.id + '/proxy-port', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
+                body: JSON.stringify({ proxy_port: port }),
+              });
+              var data = await resp.json();
+              if (data.ok) {
+                proxyPortBtn.textContent = '✓';
+                setTimeout(function() {
+                  proxyPortBtn.textContent = (GC.t && GC.t['common.save']) || 'Speichern';
+                }, 2000);
+              } else {
+                showError('edit-peer-error', data.error || 'Update fehlgeschlagen');
+              }
+            } catch (err) {
+              showError('edit-peer-error', err.message);
+            }
+          };
+        }
         if (gwBtn) {
           gwBtn.onclick = async function() {
             if (!confirm((GC.t && GC.t['gateway_download_confirm']) || 'Gateway-Tokens werden regeneriert. Laufender Gateway wird ungültig. Fortfahren?')) return;
