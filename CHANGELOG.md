@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.5] — 2026-05-01
+
+### Fixes
+- pool modal UX — keep open on outside-click, fix cooldown layout, label priority, guard mode listener (#81)
+
+---
+
 ## [1.59.4] — 2026-04-30
 
 ### Fixes
