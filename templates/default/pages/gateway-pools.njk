@@ -86,8 +86,8 @@
       <div class="form-group">
         <label class="form-label">{{ t('gateway_pools.failback_cooldown') }} (s)</label>
         <div style="display:flex;gap:8px">
+          <select id="cooldown-preset" class="form-input" style="flex:2"></select>
           <input type="number" name="failback_cooldown_s" class="form-input" min="0" required style="flex:1">
-          <select id="cooldown-preset" class="form-input" style="flex:1"></select>
         </div>
         <div class="form-hint">{{ t('gateway_pools.failback_cooldown_help') }}</div>
       </div>
@@ -99,12 +99,19 @@
 
       <div class="form-group">
         <label class="form-label">{{ t('gateway_pools.members') }}</label>
+        <div class="form-hint" style="margin-bottom:8px">{{ t('gateway_pools.priority_help') }}</div>
         <div id="pool-members" style="margin-bottom:8px"></div>
-        <div class="add-member-row" style="display:flex;gap:8px;align-items:center">
-          <select id="new-member-peer" class="form-input" style="flex:1">
-            {% for p in gatewayPeers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
-          </select>
-          <input type="number" id="new-member-priority" placeholder="100" value="100" class="form-input" style="width:80px">
+        <div class="add-member-row" style="display:flex;gap:8px;align-items:flex-end">
+          <div style="flex:1">
+            <label class="form-label" style="font-size:11px">Gateway</label>
+            <select id="new-member-peer" class="form-input">
+              {% for p in gatewayPeers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div style="width:90px">
+            <label class="form-label" style="font-size:11px">{{ t('gateway_pools.priority') }}</label>
+            <input type="number" id="new-member-priority" placeholder="100" value="100" class="form-input" title="{{ t('gateway_pools.priority_help') }}">
+          </div>
           <button type="button" id="btn-add-member" class="btn btn-sm">{{ t('gateway_pools.add_member') }}</button>
         </div>
       </div>

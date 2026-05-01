@@ -1346,6 +1346,7 @@
   "gateway_pools.members": "Members",
   "gateway_pools.add_member": "Add Member",
   "gateway_pools.priority": "Priority",
+  "gateway_pools.priority_help": "Lower = preferred. In failover mode the gateway with the lowest priority is chosen as primary.",
   "gateway_pools.outage_message": "Outage Message (optional)",
   "gateway_pools.migrate_routes": "Migrate Routes",
   "gateway_pools.empty": "No pools yet. Click \"Create Pool\" to get started.",
