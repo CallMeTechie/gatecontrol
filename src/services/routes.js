@@ -642,6 +642,17 @@ async function toggle(id) {
     db.prepare("UPDATE routes SET enabled = ?, updated_at = ? WHERE id = ?").run(route.enabled, route.updated_at, id);
   }, 'route toggle');
 
+  // Push the new config to the linked gateway-companion so it picks up
+  // the toggle immediately instead of waiting for the next 300 s poll.
+  // Without this, re-enabling a route leaves the companion answering
+  // "No route for domain ..." until the next polling cycle.
+  if (route.target_kind === 'gateway' && route.target_peer_id) {
+    try {
+      const gateways = require('./gateways');
+      gateways.notifyConfigChanged(route.target_peer_id).catch(() => {});
+    } catch { /* fallback when module load fails */ }
+  }
+
   activity.log(
     newState ? 'route_enabled' : 'route_disabled',
     `Route "${route.domain}" ${newState ? 'enabled' : 'disabled'}`,
