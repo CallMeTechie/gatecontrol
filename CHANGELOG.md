@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.60.0] — 2026-05-01
+
+### Features
+- per-peer proxy_port (default 8080) — fixes DSM 8080 conflict (#83)
+
+---
+
 ## [1.59.6] — 2026-05-01
 
 ### Fixes
