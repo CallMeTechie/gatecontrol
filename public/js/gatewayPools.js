@@ -11,7 +11,7 @@ const COOLDOWN_PRESETS = [
 ];
 
 function csrfHeaders() {
-  return { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' };
+  return { 'Content-Type': 'application/json', 'X-CSRF-Token': ((typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '') };
 }
 
 async function createPool(data) {
@@ -25,7 +25,7 @@ async function updatePool(id, data) {
 }
 
 async function deletePool(id) {
-  return fetch('/api/v1/gateway-pools/' + id, { method: 'DELETE', headers: { 'X-CSRF-Token': window.csrfToken || '' } });
+  return fetch('/api/v1/gateway-pools/' + id, { method: 'DELETE', headers: { 'X-CSRF-Token': ((typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '') } });
 }
 
 async function addMember(poolId, peerId, priority) {
@@ -33,7 +33,7 @@ async function addMember(poolId, peerId, priority) {
 }
 
 async function removeMember(poolId, peerId) {
-  return fetch('/api/v1/gateway-pools/' + poolId + '/members/' + peerId, { method: 'DELETE', headers: { 'X-CSRF-Token': window.csrfToken || '' } });
+  return fetch('/api/v1/gateway-pools/' + poolId + '/members/' + peerId, { method: 'DELETE', headers: { 'X-CSRF-Token': ((typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '') } });
 }
 
 // Cooldown preset dropdown — idempotent (clears previous options on re-init)
