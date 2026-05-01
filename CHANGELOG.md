@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.1] — 2026-05-01
+
+### Fixes
+- read CSRF token from GC.csrfToken (not nonexistent window.csrfToken) (#85)
+
+---
+
 ## [1.61.0] — 2026-05-01
 
 ### Features
