@@ -56,7 +56,7 @@ function generateTokens() {
  *
  * ASYNC because peers.create() generates WireGuard keys asynchronously.
  */
-async function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
+async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 8080 }) {
   const db = getDb();
 
   const limit = license.getFeatureLimit('gateway_peers');
@@ -71,11 +71,11 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT }) {
   const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
 
   db.prepare(`
-    INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(peer.id, apiPort, apiTokenHash, pushTokenEncrypted, Date.now());
+    INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(peer.id, apiPort, proxyPort, apiTokenHash, pushTokenEncrypted, Date.now());
 
-  logger.info({ peerId: peer.id, peerName: name, apiPort }, 'Gateway created');
+  logger.info({ peerId: peer.id, peerName: name, apiPort, proxyPort }, 'Gateway created');
 
   return { peer, apiToken, pushToken };
 }
@@ -458,7 +458,7 @@ function buildEnvContent(row, apiToken, pushToken) {
     `GC_API_TOKEN=${apiToken}`,
     `GC_GATEWAY_TOKEN=${pushToken}`,
     `GC_TUNNEL_IP=${ip}`,
-    `GC_PROXY_PORT=8080`,
+    `GC_PROXY_PORT=${row.proxy_port || 8080}`,
     `GC_API_PORT=${row.api_port}`,
     `GC_HEARTBEAT_INTERVAL_S=30`,
     `GC_POLL_INTERVAL_S=300`,
@@ -493,7 +493,7 @@ function buildEnvContent(row, apiToken, pushToken) {
 function buildEnvForPeer(peerId, apiToken, pushToken) {
   const db = getDb();
   const row = db.prepare(`
-    SELECT p.*, gm.api_port FROM peers p
+    SELECT p.*, gm.api_port, gm.proxy_port FROM peers p
     JOIN gateway_meta gm ON gm.peer_id = p.id
     WHERE p.id=? AND p.peer_type='gateway'
   `).get(peerId);
@@ -508,7 +508,7 @@ function buildEnvForPeer(peerId, apiToken, pushToken) {
 function rotateGatewayTokens(peerId) {
   const db = getDb();
   const row = db.prepare(`
-    SELECT p.*, gm.api_port FROM peers p
+    SELECT p.*, gm.api_port, gm.proxy_port FROM peers p
     JOIN gateway_meta gm ON gm.peer_id = p.id
     WHERE p.id=? AND p.peer_type='gateway'
   `).get(peerId);

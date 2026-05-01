@@ -788,6 +788,18 @@ const migrations = [
       return !!row;
     },
   },
+  {
+    // Per-gateway proxy_port. Some hosts (e.g. Synology DSM) already bind
+    // 8080 on 0.0.0.0, blocking the companion's tunnel-IP listen. Allow
+    // each gateway to declare its own proxy port; server-side caddy renders
+    // backend dial strings with the per-peer port instead of hardcoded 8080.
+    version: 42,
+    name: 'gateway_meta_proxy_port',
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN proxy_port INTEGER NOT NULL DEFAULT 8080;
+    `,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'proxy_port'),
+  },
 ];
 
 module.exports = { migrations };

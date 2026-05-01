@@ -1245,6 +1245,8 @@
   "peer_is_gateway": "Home Gateway",
   "peer_gateway_hint": "Enable if this peer is a Home Gateway in your local network",
   "peer_gateway_api_port": "Gateway API Port",
+  "peer_gateway_proxy_port": "Gateway Proxy Port",
+  "peer_gateway_proxy_port_hint": "Port the companion HTTP proxy listens on (tunnel-IP). Default 8080. On Synology DSM (Web Station / alternative HTTP ports) set this to a free value like 18080.",
   "gateway_download_env": "Download gateway config",
   "gateway_download_warning": "WARNING: tokens will be regenerated — current gateway will be invalidated",
   "gateway_download_confirm": "Downloading regenerates the gateway tokens. The currently running gateway will lose its connection. Continue?",

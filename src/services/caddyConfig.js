@@ -64,7 +64,18 @@ function _peerIp(allowedIps) {
 function resolveRouteUpstreams(route, options = {}) {
   const db = require('../db/connection').getDb();
   const snapshot = gatewayHealth.getSnapshot();
-  const proxyPort = options.gatewayProxyPort || 8080;
+  // Default-port used when the gateway_meta.proxy_port column is missing
+  // (e.g. fresh DB before migration v42 runs in tests).
+  const fallbackPort = options.gatewayProxyPort || 8080;
+
+  // Peer lookup that joins gateway_meta so we get the per-peer proxy_port.
+  // Falls back to the global default if the column / row is absent.
+  const peerLookup = db.prepare(`
+    SELECT p.id, p.allowed_ips, gm.proxy_port
+    FROM peers p
+    LEFT JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.id = ?
+  `);
 
   if (route.target_pool_id) {
     const pool = gatewayPool.getPool(route.target_pool_id);
@@ -73,9 +84,9 @@ function resolveRouteUpstreams(route, options = {}) {
       ? (() => { const id = gatewayPool.resolveActivePeer(route.target_pool_id, snapshot); return id ? [id] : []; })()
       : gatewayPool.resolveActivePeers(route.target_pool_id, snapshot);
     if (peerIds.length === 0) return { peers: [], outage: true };
-    const peers = peerIds.map(id => db.prepare('SELECT id, allowed_ips FROM peers WHERE id = ?').get(id));
+    const peers = peerIds.map(id => peerLookup.get(id));
     return {
-      peers: peers.map(p => ({ id: p.id, ip: _peerIp(p.allowed_ips), port: proxyPort })),
+      peers: peers.map(p => ({ id: p.id, ip: _peerIp(p.allowed_ips), port: p.proxy_port || fallbackPort })),
       outage: false,
       lb_policy: pool.mode === 'load_balancing' ? pool.lb_policy : null,
       pool,
@@ -83,15 +94,10 @@ function resolveRouteUpstreams(route, options = {}) {
   }
 
   if (route.target_peer_id) {
-    // Pin-route: use target_peer_allowed_ips from JOIN if available, else query DB
-    const allowedIps = route.target_peer_allowed_ips
-      || (() => {
-        const peer = db.prepare('SELECT id, allowed_ips FROM peers WHERE id = ?').get(route.target_peer_id);
-        return peer ? peer.allowed_ips : null;
-      })();
-    if (!allowedIps) return { peers: [], outage: true };
+    const peer = peerLookup.get(route.target_peer_id);
+    if (!peer || !peer.allowed_ips) return { peers: [], outage: true };
     return {
-      peers: [{ id: route.target_peer_id, ip: _peerIp(allowedIps), port: proxyPort }],
+      peers: [{ id: peer.id, ip: _peerIp(peer.allowed_ips), port: peer.proxy_port || fallbackPort }],
       outage: false,
       lb_policy: null,
     };
@@ -141,10 +147,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const gatewayProxyPort = options.gatewayProxyPort || 8080;
   const routes = Array.isArray(injectedRoutes) ? injectedRoutes : db.prepare(`
     SELECT r.*, p.allowed_ips, p.name AS peer_name,
-           gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name
+           gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name,
+           gm.proxy_port AS target_peer_proxy_port
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
     LEFT JOIN peers gp ON gp.id = r.target_peer_id
+    LEFT JOIN gateway_meta gm ON gm.peer_id = r.target_peer_id
     WHERE r.enabled = 1
   `).all();
 
@@ -193,8 +201,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       // Pool route: upstreams already resolved
       upstreams = poolUpstreams.peers.map(p => ({ dial: `${p.ip}:${p.port}` }));
     } else if (gatewayPeerIp) {
-      // Pin-route through gateway: upstream = gateway-tunnel-IP:proxy-port
-      upstreams = [{ dial: `${gatewayPeerIp}:${gatewayProxyPort}` }];
+      // Pin-route through gateway: upstream = gateway-tunnel-IP:proxy-port.
+      // Use the peer-specific proxy_port from the JOIN (DSM hosts often
+      // can't bind 8080), fall back to the global default.
+      const pinPort = route.target_peer_proxy_port || gatewayProxyPort;
+      upstreams = [{ dial: `${gatewayPeerIp}:${pinPort}` }];
     } else if (hasMultipleBackends) {
       upstreams = backends.map(b => ({ dial: `${b.ip}:${b.port}` }));
     } else {
