@@ -67,13 +67,19 @@ function initCooldownPresets() {
   }
 }
 
-// Mode toggle: show/hide lb_policy row
+// Mode toggle: show/hide lb_policy row.
+// Listener-guard prevents multiple binds across openCreate/openEdit calls
+// (without it, every modal-open binds another change handler → each click
+// fires N synchronous handlers, causing perceptible UI lag).
 function initModeToggle() {
   const modeSel = document.querySelector('select[name="mode"]');
   const lbRow = document.querySelector('.lb-policy-row');
   if (!modeSel || !lbRow) return;
   const update = function() { lbRow.style.display = modeSel.value === 'load_balancing' ? '' : 'none'; };
-  modeSel.addEventListener('change', update);
+  if (!modeSel.dataset.modeListenerAttached) {
+    modeSel.addEventListener('change', update);
+    modeSel.dataset.modeListenerAttached = '1';
+  }
   update();
 }
 
@@ -323,13 +329,8 @@ function initEventListeners() {
     container.appendChild(row);
   });
 
-  // Close modals on overlay click
-  document.getElementById('pool-form-modal')?.addEventListener('click', function(e) {
-    if (e.target === e.currentTarget) closeFormModal();
-  });
-  document.getElementById('pool-migrate-modal')?.addEventListener('click', function(e) {
-    if (e.target === e.currentTarget) closeMigrateModal();
-  });
+  // Note: deliberately NOT closing the modal on overlay-click — too easy to
+  // lose form input by mistake. Use the explicit close button or Cancel.
 }
 
 document.addEventListener('DOMContentLoaded', function() {
