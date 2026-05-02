@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- implicit pool failover only worked at the frontend caddy layer — the alive sibling never received the offline peer's pin-routes in its companion config, so failed-over traffic hit a 404 on the sibling's companion-caddy. Companion config queries now include sibling pin-routes for every pool member.
+- on container boot, push a config-refresh notification to all alive pool members so deploys that change the companion-config schema take effect immediately instead of waiting for the next unrelated hash change.
+
+---
+
 ## [1.61.5] — 2026-05-02
 
 ### Fixes

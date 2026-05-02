@@ -142,6 +142,30 @@ async function start() {
     const gatewayHealth = require('./services/gatewayHealth');
     gatewayHealth.startWatchdog();
 
+    // Boot-time companion refresh: notify every alive pool member so they
+    // re-pull their config. Companions otherwise only re-pull on hash
+    // mismatch when they happen to poll us — meaning a deploy that
+    // changes the companion-config schema (e.g. adding sibling routes
+    // for implicit failover) takes effect for users only after the next
+    // unrelated config-hash change. Pushing once at boot makes deploys
+    // immediate. Safe to run unconditionally: if hash is unchanged, the
+    // companion no-ops.
+    setTimeout(async () => {
+      try {
+        const gatewayPool = require('./services/gatewayPool');
+        const gateways = require('./services/gateways');
+        const peers = require('./db/connection').getDb()
+          .prepare("SELECT id FROM peers WHERE peer_type='gateway' AND enabled=1").all();
+        for (const p of peers) {
+          if (gatewayPool.isPeerInAnyPool(p.id)) {
+            gateways.notifyConfigChanged(p.id).catch(() => {});
+          }
+        }
+      } catch (err) {
+        require('./utils/logger').warn({ err: err.message }, 'boot companion-refresh skipped');
+      }
+    }, 5000);
+
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
     const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);
