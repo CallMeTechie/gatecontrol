@@ -11,9 +11,12 @@
 
 ### Fixes
 - gateway-pool form save did not persist member changes — members held in the modal DOM were never sent to the server (new `PUT /api/v1/gateway-pools/:id/members` bulk endpoint, form submits members alongside the pool fields)
+- gateway-pool edit modal showed empty members because `GET /api/v1/gateway-pools/:id/members` did not exist — frontend was 404-ing and falling back to an empty list
+- "Migrate Routes" button on /gateway-pools had no working submit handler — clicking OK only closed the modal
 
 ### Features
 - gateway-pool modal: 2-column layout with members panel on the right, drag-and-drop reordering (top = highest priority), auto-position assignment, and dropdown filters out gateways already in the pool
+- migrate-routes: per-route checklist (grouped by source peer) lets the user pick which gateway-pinned routes to move onto a pool; loopback routes (127.0.0.1) are flagged and unchecked by default to prevent accidental cross-machine routing
 
 ---
 

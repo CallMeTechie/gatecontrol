@@ -152,3 +152,79 @@ test('PUT /members 404 for unknown pool', async () => {
   const res = await agent.put('/api/v1/gateway-pools/9999/members').set('X-CSRF-Token', csrf).send([]);
   assert.equal(res.status, 404);
 });
+
+// ── GET /:id/members + migration endpoints ───────────────────────────────
+
+test('GET /api/v1/gateway-pools/:id/members returns members enriched with peer_name', async () => {
+  const db = getDb();
+  insertGatewayPeer(db, 1, 'home');
+  insertGatewayPeer(db, 2, 'ds918');
+  const create = await agent.post('/api/v1/gateway-pools').set('X-CSRF-Token', csrf)
+    .send({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
+  const poolId = create.body.id;
+  gatewayPool.replaceMembers(poolId, [
+    { peer_id: 1, priority: 1 },
+    { peer_id: 2, priority: 2 },
+  ]);
+  const res = await agent.get('/api/v1/gateway-pools/' + poolId + '/members');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.length, 2);
+  assert.equal(res.body[0].peer_name, 'home');
+  assert.equal(res.body[0].priority, 1);
+});
+
+test('GET /api/v1/gateway-pools/migration-candidates lists peer-pinned routes + pools', async () => {
+  const db = getDb();
+  insertGatewayPeer(db, 1, 'home');
+  await agent.post('/api/v1/gateway-pools').set('X-CSRF-Token', csrf)
+    .send({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
+  // Insert a peer-pinned route
+  db.prepare(`
+    INSERT INTO routes (domain, target_kind, target_peer_id, target_ip, target_port, route_type, enabled)
+    VALUES ('foo.test', 'gateway', 1, '10.0.0.1', 8080, 'http', 1)
+  `).run();
+  const res = await agent.get('/api/v1/gateway-pools/migration-candidates');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.routes.length, 1);
+  assert.equal(res.body.routes[0].domain, 'foo.test');
+  assert.equal(res.body.routes[0].peer_name, 'home');
+  assert.equal(res.body.pools.length, 1);
+});
+
+test('POST /api/v1/gateway-pools/:id/migrate-routes switches selected routes', async () => {
+  // Stub syncToCaddy — real one tries to reach Caddy admin:2019.
+  require('../src/services/caddyConfig').syncToCaddy = async () => {};
+
+  const db = getDb();
+  insertGatewayPeer(db, 1, 'home');
+  insertGatewayPeer(db, 2, 'ds918');
+  const create = await agent.post('/api/v1/gateway-pools').set('X-CSRF-Token', csrf)
+    .send({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
+  const poolId = create.body.id;
+  // Two routes pinned to peer 1, one direct (no peer)
+  db.prepare("INSERT INTO routes (id, domain, target_kind, target_peer_id, target_ip, target_port, route_type, enabled) VALUES (101, 'a.test', 'gateway', 1, '10.0.0.1', 80, 'http', 1)").run();
+  db.prepare("INSERT INTO routes (id, domain, target_kind, target_peer_id, target_ip, target_port, route_type, enabled) VALUES (102, 'b.test', 'gateway', 1, '10.0.0.2', 80, 'http', 1)").run();
+
+  const res = await agent.post('/api/v1/gateway-pools/' + poolId + '/migrate-routes')
+    .set('X-CSRF-Token', csrf)
+    .send({ route_ids: [101] });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.migrated, 1);
+
+  const r1 = db.prepare('SELECT target_peer_id, target_pool_id FROM routes WHERE id = 101').get();
+  const r2 = db.prepare('SELECT target_peer_id, target_pool_id FROM routes WHERE id = 102').get();
+  assert.equal(r1.target_peer_id, null);
+  assert.equal(r1.target_pool_id, poolId);
+  assert.equal(r2.target_peer_id, 1); // unchanged
+  assert.equal(r2.target_pool_id, null);
+});
+
+test('POST migrate-routes 400 without route_ids', async () => {
+  insertGatewayPeer(getDb(), 1);
+  const create = await agent.post('/api/v1/gateway-pools').set('X-CSRF-Token', csrf)
+    .send({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
+  const res = await agent.post('/api/v1/gateway-pools/' + create.body.id + '/migrate-routes')
+    .set('X-CSRF-Token', csrf)
+    .send({});
+  assert.equal(res.status, 400);
+});

@@ -378,65 +378,204 @@ async function handleEditClick(poolId) {
   }
 }
 
+// ── Migrate-routes modal ───────────────────────────────────────────────────
+// Lets the user move existing gateway-pinned routes onto a pool. Without
+// this, creating a pool has no effect on traffic — routes still resolve
+// to a fixed peer and fail when that peer goes down. Each route gets its
+// own checkbox because some are intentionally bound to one gateway
+// (e.g. ssh.* targeting 127.0.0.1 means "shell on THAT machine"); we
+// can't safely migrate-all.
+let MIGRATE_CANDIDATES = { routes: [], pools: [] };
+
 function openMigrateModal() {
   const modal = document.getElementById('pool-migrate-modal');
   modal.style.display = 'flex';
   const list = document.getElementById('migrate-routes-list');
   while (list.firstChild) list.removeChild(list.firstChild);
-  const loadingP = document.createElement('p');
-  loadingP.style.color = 'var(--text-3)';
-  loadingP.textContent = 'Loading routes...';
-  list.appendChild(loadingP);
+  const loading = document.createElement('p');
+  loading.style.color = 'var(--text-3)';
+  loading.textContent = 'Loading…';
+  list.appendChild(loading);
 
-  fetch('/api/v1/gateway-pools')
+  fetch('/api/v1/gateway-pools/migration-candidates')
     .then(function(r) { return r.json(); })
-    .then(function(pools) {
-      while (list.firstChild) list.removeChild(list.firstChild);
-      if (!pools || pools.length === 0) {
-        const p = document.createElement('p');
-        p.style.color = 'var(--text-3)';
-        p.textContent = 'No pools available. Create a pool first.';
-        list.appendChild(p);
-        return;
-      }
-      const helpText = (window.GC && window.GC.t && window.GC.t['gateway_pools.migrate_help']) || 'Assign existing gateway routes to a pool.';
-      const p = document.createElement('p');
-      p.style.cssText = 'font-size:13px;margin-bottom:12px';
-      p.textContent = helpText;
-      list.appendChild(p);
-
-      const group = document.createElement('div');
-      group.className = 'form-group';
-
-      const lbl = document.createElement('label');
-      lbl.className = 'form-label';
-      lbl.textContent = (window.GC && window.GC.t && window.GC.t['gateway_pools.target_pool']) || 'Target pool';
-
-      const sel = document.createElement('select');
-      sel.id = 'migrate-target-pool';
-      sel.className = 'form-input';
-      pools.forEach(function(pool) {
-        const opt = document.createElement('option');
-        opt.value = pool.id;
-        opt.textContent = pool.name;
-        sel.appendChild(opt);
-      });
-
-      group.appendChild(lbl);
-      group.appendChild(sel);
-      list.appendChild(group);
+    .then(function(data) {
+      MIGRATE_CANDIDATES = data || { routes: [], pools: [] };
+      renderMigrateForm();
     })
     .catch(function() {
       while (list.firstChild) list.removeChild(list.firstChild);
       const p = document.createElement('p');
       p.style.color = 'var(--red)';
-      p.textContent = 'Failed to load pools.';
+      p.textContent = 'Failed to load migration candidates.';
       list.appendChild(p);
     });
 }
 
+function renderMigrateForm() {
+  const list = document.getElementById('migrate-routes-list');
+  while (list.firstChild) list.removeChild(list.firstChild);
+
+  const pools = MIGRATE_CANDIDATES.pools || [];
+  const routes = MIGRATE_CANDIDATES.routes || [];
+
+  if (pools.length === 0) {
+    const p = document.createElement('p');
+    p.style.color = 'var(--text-3)';
+    p.textContent = tr('gateway_pools.no_pools_for_migration', 'No pools available — create a pool first.');
+    list.appendChild(p);
+    return;
+  }
+
+  const help = document.createElement('p');
+  help.style.cssText = 'font-size:13px;margin-bottom:12px;color:var(--text-2)';
+  help.textContent = tr('gateway_pools.migrate_help',
+    'Assign existing gateway routes to a pool so traffic fails over when the pinned gateway goes down.');
+  list.appendChild(help);
+
+  // Pool picker
+  const poolGroup = document.createElement('div');
+  poolGroup.className = 'form-group';
+  const poolLbl = document.createElement('label');
+  poolLbl.className = 'form-label';
+  poolLbl.textContent = tr('gateway_pools.target_pool', 'Target pool');
+  const poolSel = document.createElement('select');
+  poolSel.id = 'migrate-target-pool';
+  poolSel.className = 'form-input';
+  pools.forEach(function(pool) {
+    const opt = document.createElement('option');
+    opt.value = pool.id;
+    opt.textContent = pool.name + ' (' + pool.mode + ')';
+    poolSel.appendChild(opt);
+  });
+  poolGroup.appendChild(poolLbl);
+  poolGroup.appendChild(poolSel);
+  list.appendChild(poolGroup);
+
+  if (routes.length === 0) {
+    const p = document.createElement('p');
+    p.style.cssText = 'font-size:13px;color:var(--text-3);margin-top:12px';
+    p.textContent = tr('gateway_pools.migrate_no_routes', 'No gateway-pinned routes to migrate.');
+    list.appendChild(p);
+    return;
+  }
+
+  // Route checklist grouped by source peer
+  const grouped = {};
+  routes.forEach(function(r) {
+    const key = r.peer_name || ('Peer #' + r.target_peer_id);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(r);
+  });
+
+  const listLbl = document.createElement('label');
+  listLbl.className = 'form-label';
+  listLbl.style.marginTop = '12px';
+  listLbl.textContent = tr('gateway_pools.migrate_routes_label', 'Routes to migrate');
+  list.appendChild(listLbl);
+
+  // Select-all / select-none controls
+  const ctrl = document.createElement('div');
+  ctrl.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;font-size:12px';
+  const selAll = document.createElement('a');
+  selAll.href = '#';
+  selAll.textContent = tr('gateway_pools.select_all', 'Select all');
+  selAll.addEventListener('click', function(e) {
+    e.preventDefault();
+    list.querySelectorAll('input[name="migrate-route"]').forEach(function(c) { c.checked = true; });
+  });
+  const selNone = document.createElement('a');
+  selNone.href = '#';
+  selNone.textContent = tr('gateway_pools.select_none', 'Select none');
+  selNone.addEventListener('click', function(e) {
+    e.preventDefault();
+    list.querySelectorAll('input[name="migrate-route"]').forEach(function(c) { c.checked = false; });
+  });
+  ctrl.appendChild(selAll);
+  ctrl.appendChild(document.createTextNode(' · '));
+  ctrl.appendChild(selNone);
+  list.appendChild(ctrl);
+
+  Object.keys(grouped).forEach(function(peerName) {
+    const groupHeader = document.createElement('div');
+    groupHeader.style.cssText = 'font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px;margin-bottom:4px';
+    groupHeader.textContent = peerName;
+    list.appendChild(groupHeader);
+
+    grouped[peerName].forEach(function(r) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;cursor:pointer';
+      row.addEventListener('mouseenter', function() { row.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))'; });
+      row.addEventListener('mouseleave', function() { row.style.background = ''; });
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.name = 'migrate-route';
+      cb.value = String(r.id);
+      // Default-uncheck loopback routes — moving "ssh.*→127.0.0.1" to a pool
+      // means the upstream changes machine on failover, which is rarely
+      // desired. User can opt-in by checking manually.
+      const isLoopback = r.target_ip === '127.0.0.1' || r.target_ip === '::1' || r.target_ip === 'localhost';
+      cb.checked = !isLoopback;
+
+      const label = document.createElement('span');
+      label.style.cssText = 'flex:1;font-size:13px';
+      const domSpan = document.createElement('strong');
+      domSpan.textContent = r.domain;
+      const tgtSpan = document.createElement('span');
+      tgtSpan.style.cssText = 'color:var(--text-3);font-family:var(--font-mono);font-size:11px;margin-left:8px';
+      tgtSpan.textContent = '→ ' + r.target_ip + ':' + r.target_port;
+      label.appendChild(domSpan);
+      label.appendChild(tgtSpan);
+
+      if (isLoopback) {
+        const warn = document.createElement('span');
+        warn.style.cssText = 'color:var(--orange,#f59e0b);font-size:11px;margin-left:8px';
+        warn.textContent = '⚠ ' + tr('gateway_pools.migrate_loopback_warn', 'loopback — verify before migrating');
+        label.appendChild(warn);
+      }
+
+      row.appendChild(cb);
+      row.appendChild(label);
+      list.appendChild(row);
+    });
+  });
+}
+
 function closeMigrateModal() {
   document.getElementById('pool-migrate-modal').style.display = 'none';
+}
+
+async function handleMigrateSubmit() {
+  const poolSel = document.getElementById('migrate-target-pool');
+  if (!poolSel || !poolSel.value) {
+    alert(tr('gateway_pools.no_pools_for_migration', 'No pools available'));
+    return;
+  }
+  const poolId = parseInt(poolSel.value, 10);
+  const checked = Array.from(document.querySelectorAll('input[name="migrate-route"]:checked'))
+    .map(function(c) { return parseInt(c.value, 10); });
+  if (checked.length === 0) {
+    alert(tr('gateway_pools.migrate_no_selection', 'Select at least one route to migrate'));
+    return;
+  }
+  const btn = document.getElementById('btn-migrate-submit');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/v1/gateway-pools/' + poolId + '/migrate-routes', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ route_ids: checked }),
+    });
+    const body = await r.json().catch(function() { return {}; });
+    if (!r.ok) throw new Error(body.error || ('http_' + r.status));
+    closeMigrateModal();
+    location.reload();
+  } catch (err) {
+    alert(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function handleAddMemberClick() {
@@ -461,7 +600,7 @@ function initEventListeners() {
   document.getElementById('btn-migrate-routes')?.addEventListener('click', openMigrateModal);
   document.getElementById('btn-migrate-cancel')?.addEventListener('click', closeMigrateModal);
   document.getElementById('btn-migrate-cancel-footer')?.addEventListener('click', closeMigrateModal);
-  document.getElementById('btn-migrate-submit')?.addEventListener('click', closeMigrateModal);
+  document.getElementById('btn-migrate-submit')?.addEventListener('click', handleMigrateSubmit);
 
   document.querySelectorAll('.btn-delete-pool').forEach(function(btn) {
     btn.addEventListener('click', function() { handleDelete(btn.dataset.poolId); });

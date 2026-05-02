@@ -19,6 +19,26 @@ router.get('/', (req, res) => {
   res.json(pools);
 });
 
+// Routes that aren't behind any pool yet — used by the migrate-routes modal.
+// Must come BEFORE the `/:id` route so it isn't shadowed by the param match.
+router.get('/migration-candidates', (req, res) => {
+  const { getDb } = require('../../db/connection');
+  const db = getDb();
+  const routes = db.prepare(`
+    SELECT r.id, r.domain, r.target_ip, r.target_port, r.target_peer_id,
+           p.name AS peer_name
+    FROM routes r
+    JOIN peers p ON p.id = r.target_peer_id
+    WHERE r.target_kind = 'gateway'
+      AND r.target_pool_id IS NULL
+      AND r.target_peer_id IS NOT NULL
+      AND p.peer_type = 'gateway'
+    ORDER BY p.name, r.domain
+  `).all();
+  const pools = gatewayPool.listPools().map(p => ({ id: p.id, name: p.name, mode: p.mode }));
+  res.json({ routes, pools });
+});
+
 router.get('/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const pool = gatewayPool.getPool(id);
@@ -78,6 +98,59 @@ router.delete('/:id', (req, res) => {
     const status = /pool_in_use/.test(err.message) ? 409 : 400;
     res.status(status).json({ ok: false, error: err.message });
   }
+});
+
+// List members of a pool. Used by the edit modal — without this the
+// frontend's GET /:id/members 404s and the modal renders as empty even
+// when the DB has members.
+router.get('/:id/members', (req, res) => {
+  const poolId = parseInt(req.params.id, 10);
+  if (!gatewayPool.getPool(poolId)) return res.status(404).json({ error: 'pool_not_found' });
+  const { getDb } = require('../../db/connection');
+  const members = getDb().prepare(`
+    SELECT m.peer_id, m.priority, p.name AS peer_name
+    FROM gateway_pool_members m
+    JOIN peers p ON p.id = m.peer_id
+    WHERE m.pool_id = ?
+    ORDER BY m.priority ASC, m.peer_id ASC
+  `).all(poolId);
+  res.json(members);
+});
+
+// Bulk-migrate selected routes onto this pool. Body: { route_ids: [<int>...] }.
+// Only updates routes that are still gateway-targeted and not already
+// behind a pool. Triggers one caddy resync at the end so the new
+// pool-resolution kicks in immediately.
+router.post('/:id/migrate-routes', async (req, res) => {
+  const poolId = parseInt(req.params.id, 10);
+  if (!gatewayPool.getPool(poolId)) return res.status(404).json({ error: 'pool_not_found' });
+  const ids = Array.isArray(req.body && req.body.route_ids) ? req.body.route_ids : null;
+  if (!ids || ids.length === 0) return res.status(400).json({ error: 'route_ids_required' });
+  const numericIds = ids.map((v) => parseInt(v, 10)).filter((v) => Number.isInteger(v));
+  if (numericIds.length === 0) return res.status(400).json({ error: 'route_ids_invalid' });
+
+  const { getDb } = require('../../db/connection');
+  const placeholders = numericIds.map(() => '?').join(',');
+  const result = getDb().prepare(`
+    UPDATE routes
+    SET target_peer_id = NULL,
+        target_pool_id = ?,
+        updated_at = datetime('now')
+    WHERE id IN (${placeholders})
+      AND target_kind = 'gateway'
+      AND target_pool_id IS NULL
+  `).run(poolId, ...numericIds);
+
+  if (result.changes > 0) {
+    try {
+      await require('../../services/caddyConfig').syncToCaddy();
+    } catch (err) {
+      logger.error({ err: err.message, poolId }, 'caddy resync after migrate-routes failed');
+      // Don't fail the API call — DB is updated and the next sync will pick up.
+    }
+  }
+
+  res.json({ ok: true, migrated: result.changes });
 });
 
 router.post('/:id/members', async (req, res) => {
