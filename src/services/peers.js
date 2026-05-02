@@ -545,11 +545,24 @@ async function _rewriteWgConfigInner() {
       }
     }
 
-    // Atomic write: write to temp file, then rename (rename is atomic on POSIX)
-    const tmpPath = config.wireguard.configPath + '.tmp';
+    // Atomic write: write to temp file, then rename (rename is atomic on POSIX).
+    // Resolve symlinks first — entrypoint.sh creates /etc/wireguard/wg0.conf as
+    // a symlink to /data/wireguard/wg0.conf so the WG config persists across
+    // container restarts. fs.renameSync() replaces the symlink target with a
+    // regular file at the link path, leaving /data/wireguard/wg0.conf empty
+    // forever — every restart then boots WG with 0 peers until this code runs
+    // again. Resolving realpath first means we replace the persistent file
+    // and keep the symlink intact.
+    let realPath;
+    try {
+      realPath = fs.realpathSync(config.wireguard.configPath);
+    } catch {
+      realPath = config.wireguard.configPath;
+    }
+    const tmpPath = realPath + '.tmp';
     fs.writeFileSync(tmpPath, newConf, { mode: 0o600 });
-    fs.renameSync(tmpPath, config.wireguard.configPath);
-    logger.info({ peerCount: peers.length }, 'WireGuard config rewritten');
+    fs.renameSync(tmpPath, realPath);
+    logger.info({ peerCount: peers.length, path: realPath }, 'WireGuard config rewritten');
 
     // Sync with running interface
     await wireguard.syncConfig();

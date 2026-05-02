@@ -11,7 +11,8 @@
 
 ### Fixes
 - implicit pool failover only worked at the frontend caddy layer — the alive sibling never received the offline peer's pin-routes in its companion config, so failed-over traffic hit a 404 on the sibling's companion-caddy. Companion config queries now include sibling pin-routes for every pool member.
-- on container boot, push a config-refresh notification to all alive pool members so deploys that change the companion-config schema take effect immediately instead of waiting for the next unrelated hash change.
+- on container boot, push a config-refresh notification to all alive pool members with retry/backoff so the WG handshake gap (peers configured but no encrypted session yet) doesn't permanently miss the refresh — previously a single attempt at 5 s would always EHOSTUNREACH on a fresh boot
+- `fs.renameSync` in `_rewriteWgConfigInner` was clobbering the `/etc/wireguard/wg0.conf` → `/data/wireguard/wg0.conf` symlink, leaving the persistent /data file empty across restarts. Every container start would boot WireGuard with zero peers until Node re-ran the rewrite, creating a multi-second window where pool members were unreachable. Now resolves symlinks first so the rename hits the persistent file and the symlink stays intact.
 
 ---
 
