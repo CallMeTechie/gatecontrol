@@ -142,42 +142,6 @@ async function start() {
     const gatewayHealth = require('./services/gatewayHealth');
     gatewayHealth.startWatchdog();
 
-    // Boot-time companion refresh: notify every alive pool member so they
-    // re-pull their config. Without this a deploy that changes the
-    // companion-config schema (e.g. adding sibling routes for implicit
-    // failover) only takes effect after the next unrelated config change.
-    //
-    // Retries with backoff for up to ~75 s. The first attempt usually
-    // hits before the WG tunnel has had a handshake (peers are configured
-    // but no encrypted session yet, so connect() returns EHOSTUNREACH);
-    // persistent-keepalive triggers a handshake within 25 s, after which
-    // the next retry succeeds. Stops retrying once the companion's
-    // last_config_hash matches what the server expects.
-    const bootRefreshCompanions = async () => {
-      const gatewayPool = require('./services/gatewayPool');
-      const gateways = require('./services/gateways');
-      const db = require('./db/connection').getDb();
-      const peers = db.prepare("SELECT id FROM peers WHERE peer_type='gateway' AND enabled=1").all();
-      const targets = peers.filter(p => gatewayPool.isPeerInAnyPool(p.id));
-      if (targets.length === 0) return;
-
-      const delays = [5_000, 15_000, 30_000, 60_000]; // total ~110s of retry budget
-      for (const delay of delays) {
-        await new Promise(r => setTimeout(r, delay));
-        let allConverged = true;
-        for (const p of targets) {
-          const expected = gateways.computeConfigHash(p.id);
-          const row = db.prepare('SELECT last_config_hash FROM gateway_meta WHERE peer_id=?').get(p.id);
-          if (row?.last_config_hash === expected) continue;
-          allConverged = false;
-          gateways.notifyConfigChanged(p.id).catch(() => {});
-        }
-        if (allConverged) break;
-      }
-    };
-    bootRefreshCompanions().catch((err) => {
-      require('./utils/logger').warn({ err: err.message }, 'boot companion-refresh skipped');
-    });
 
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');

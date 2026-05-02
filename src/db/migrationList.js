@@ -800,6 +800,19 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'gateway_meta', 'proxy_port'),
   },
+  {
+    // Pool failover via DB pivot. When a pool member goes offline, the
+    // routes pinned to it are reassigned to the next-priority alive
+    // sibling; original_peer_id records where the route originally lived
+    // so it can be moved back when the original peer recovers. NULL means
+    // the route is in its normal state.
+    version: 43,
+    name: 'routes_original_peer_id',
+    sql: `
+      ALTER TABLE routes ADD COLUMN original_peer_id INTEGER REFERENCES peers(id) ON DELETE SET NULL;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'original_peer_id'),
+  },
 ];
 
 module.exports = { migrations };

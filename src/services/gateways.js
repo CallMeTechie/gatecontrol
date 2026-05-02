@@ -87,13 +87,12 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 808
 function getGatewayConfig(peerId) {
   const db = getDb();
 
-  // The "sibling" branch is what makes implicit pool failover actually work:
-  // when a peer is in a pool, it must also serve the routes pinned to its
-  // pool siblings, otherwise the failover redirect from the frontend caddy
-  // hits a companion that has no idea what to do with the domain. Both
-  // failover and load-balancing modes need this — failover so the standby
-  // is ready to take over, load-balancing so every alive member can serve
-  // every route in parallel.
+  // Failover for peer-pinned routes happens via DB pivot in gatewayHealth:
+  // when the pinned peer goes offline the route's target_peer_id is moved
+  // to the alive sibling. By the time a companion polls, target_peer_id
+  // already names whoever is currently serving the route — no sibling
+  // lookup needed here. target_pool_id (explicit pool routing for
+  // load-balancing) still surfaces in every pool member's config.
   const httpRoutes = db.prepare(`
     SELECT id, domain, target_kind, target_lan_host, target_lan_port,
            backend_https, wol_enabled, wol_mac
@@ -103,15 +102,9 @@ function getGatewayConfig(peerId) {
       AND (
         target_peer_id = ?
         OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
-        OR target_peer_id IN (
-          SELECT m_other.peer_id
-          FROM gateway_pool_members m_self
-          JOIN gateway_pool_members m_other ON m_self.pool_id = m_other.pool_id
-          WHERE m_self.peer_id = ? AND m_other.peer_id != m_self.peer_id
-        )
       )
     ORDER BY id
-  `).all(peerId, peerId, peerId);
+  `).all(peerId, peerId);
 
   const l4Routes = db.prepare(`
     SELECT id, l4_listen_port AS listen_port, target_lan_host, target_lan_port,
@@ -122,15 +115,9 @@ function getGatewayConfig(peerId) {
       AND (
         target_peer_id = ?
         OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
-        OR target_peer_id IN (
-          SELECT m_other.peer_id
-          FROM gateway_pool_members m_self
-          JOIN gateway_pool_members m_other ON m_self.pool_id = m_other.pool_id
-          WHERE m_self.peer_id = ? AND m_other.peer_id != m_self.peer_id
-        )
       )
     ORDER BY id
-  `).all(peerId, peerId, peerId);
+  `).all(peerId, peerId);
 
   return {
     config_hash_version: CONFIG_HASH_VERSION,

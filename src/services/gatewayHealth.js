@@ -146,17 +146,99 @@ function serializeStateChange(fn) {
 const activity = require('./activity');
 const webhook = require('./webhook');
 
+// Pivot routes that target `fromPeerId` over to `toPeerId` (or back to their
+// `original_peer_id` when `toPeerId` is undefined). Returns the set of peers
+// whose companion config was affected so callers can notify them.
+function _pivotRoutes({ fromPeerId, toPeerId, restore }) {
+  const db = getDb();
+  const affected = new Set();
+  if (restore) {
+    // Recovery: every route currently parked because of fromPeerId moves
+    // back to its original target. Snapshot affected peers BEFORE the
+    // update so we can notify both ends (current target + restored
+    // target).
+    const rows = db.prepare(
+      'SELECT id, target_peer_id, original_peer_id FROM routes WHERE original_peer_id = ?',
+    ).all(fromPeerId);
+    if (rows.length === 0) return affected;
+    for (const r of rows) {
+      if (r.target_peer_id != null) affected.add(r.target_peer_id);
+      if (r.original_peer_id != null) affected.add(r.original_peer_id);
+    }
+    db.prepare(`
+      UPDATE routes
+      SET target_peer_id = original_peer_id,
+          original_peer_id = NULL,
+          updated_at = datetime('now')
+      WHERE original_peer_id = ?
+    `).run(fromPeerId);
+    return affected;
+  }
+  // Failover: routes pinned to fromPeerId that haven't already been
+  // pivoted (original_peer_id IS NULL) move to toPeerId. We DON'T touch
+  // routes that already carry an original_peer_id — those are mid-failover
+  // already; their original target is what we want to restore them to.
+  if (!Number.isInteger(toPeerId)) return affected;
+  const rows = db.prepare(
+    'SELECT id FROM routes WHERE target_peer_id = ? AND original_peer_id IS NULL AND target_kind = \'gateway\'',
+  ).all(fromPeerId);
+  if (rows.length === 0) return affected;
+  affected.add(fromPeerId);
+  affected.add(toPeerId);
+  db.prepare(`
+    UPDATE routes
+    SET original_peer_id = target_peer_id,
+        target_peer_id = ?,
+        updated_at = datetime('now')
+    WHERE target_peer_id = ? AND original_peer_id IS NULL AND target_kind = 'gateway'
+  `).run(toPeerId, fromPeerId);
+  return affected;
+}
+
+async function _notifyAffected(affectedPeerIds) {
+  if (affectedPeerIds.size === 0) return;
+  const gateways = require('./gateways');
+  for (const id of affectedPeerIds) {
+    gateways.notifyConfigChanged(id).catch(() => {});
+  }
+}
+
 async function _onTransition(peerId, transition) {
   const peer = getDb().prepare('SELECT id, name FROM peers WHERE id = ?').get(peerId);
   const peerLabel = peer?.name || `peer #${peerId}`;
   const gatewayPool = require('./gatewayPool');
+  let routesPivoted = false;
+  let affectedPeers = new Set();
 
   switch (transition) {
-    case 'alive_to_down':
+    case 'alive_to_down': {
       activity.log('gateway_down', `Gateway ${peerLabel} is offline`, {
         source: 'system', severity: 'warn', details: { peerId },
       });
       webhook.notify('gateway_state_change', `Gateway ${peerLabel} offline`, { peer_id: peerId, alive: false }).catch(() => {});
+
+      // Pivot routes pinned to this peer onto the highest-priority alive
+      // sibling in each pool the peer belongs to. If multiple pools, each
+      // pool independently picks its own failover target — but a route
+      // only has one target_peer_id, so the FIRST pool with a viable
+      // sibling wins and subsequent passes find nothing to pivot.
+      for (const pool of gatewayPool.listPoolsForPeer(peerId)) {
+        if (!pool.enabled) continue;
+        const aliveSibling = gatewayPool.resolveActivePeer(pool.id, _snapshot);
+        if (aliveSibling && aliveSibling !== peerId) {
+          const aff = _pivotRoutes({ fromPeerId: peerId, toPeerId: aliveSibling });
+          if (aff.size > 0) {
+            routesPivoted = true;
+            for (const id of aff) affectedPeers.add(id);
+            activity.log('pool_failover_activated',
+              `Pool ${pool.name}: ${peerLabel} → routes moved to peer #${aliveSibling}`,
+              { source: 'system', severity: 'info', details: { poolId: pool.id, fromPeerId: peerId, toPeerId: aliveSibling } });
+            break; // route already pivoted, no need to check other pools
+          }
+        }
+      }
+
+      // Pool-outage record (no alive siblings anywhere)
       for (const pool of gatewayPool.listPoolsForPeer(peerId)) {
         const aliveMembers = gatewayPool.resolveActivePeers(pool.id, _snapshot);
         if (aliveMembers.length === 0) {
@@ -166,6 +248,7 @@ async function _onTransition(peerId, transition) {
         }
       }
       break;
+    }
 
     case 'cooldown_reset':
       if (!_hasRecoveryInterruptBeenLogged(peerId)) {
@@ -177,11 +260,23 @@ async function _onTransition(peerId, transition) {
       break;
 
     case 'cooldown_to_alive':
-    case 'first_alive':
+    case 'first_alive': {
       activity.log('gateway_alive', `Gateway ${peerLabel} is online`, {
         source: 'system', severity: 'info', details: { peerId },
       });
       webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch(() => {});
+
+      // Restore routes that were pivoted away from this peer while it was
+      // down. Idempotent — does nothing if no routes are parked.
+      const aff = _pivotRoutes({ fromPeerId: peerId, restore: true });
+      if (aff.size > 0) {
+        routesPivoted = true;
+        for (const id of aff) affectedPeers.add(id);
+        activity.log('pool_failover_restored',
+          `Routes restored to ${peerLabel} after recovery`,
+          { source: 'system', severity: 'info', details: { peerId } });
+      }
+
       for (const pool of gatewayPool.listPoolsForPeer(peerId)) {
         const aliveMembers = gatewayPool.resolveActivePeers(pool.id, _snapshot);
         if (aliveMembers.length === 1 && aliveMembers[0] === peerId) {
@@ -191,15 +286,24 @@ async function _onTransition(peerId, transition) {
         }
       }
       break;
+    }
   }
 
+  // Sync caddy on ANY state-change for a pool member (the upstream changes
+  // when target_peer_id is pivoted, so caddy needs the new wiring). Also
+  // covers the no-pivot case where a peer recovered with no failover to
+  // restore — caddy still needs to know the upstream is healthy again.
   if (['alive_to_down', 'cooldown_to_alive', 'first_alive'].includes(transition)) {
-    if (gatewayPool.isPeerInAnyPool(peerId)) {
+    if (routesPivoted || gatewayPool.isPeerInAnyPool(peerId)) {
       try {
         await require('./caddyConfig').syncToCaddy();
       } catch (err) {
         require('../utils/logger').error({ err: err.message, peerId }, 'caddy re-render failed after gateway state change');
       }
+    }
+    // Notify companions whose config_hash just changed because of the pivot.
+    if (affectedPeers.size > 0) {
+      await _notifyAffected(affectedPeers);
     }
   }
 }

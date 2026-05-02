@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **gateway-pool failover now uses DB pivot instead of caddy-side resolution.** When a pool member goes offline, `gatewayHealth._onTransition` updates `routes.target_peer_id` to the highest-priority alive sibling and records the original peer in a new `routes.original_peer_id` column. On recovery the route flips back. This replaces the previous implicit-failover path through `caddyConfig.resolveRouteUpstreams` plus the sibling-routes branch in `getGatewayConfig`. Net effect: simpler code, single source of truth (the routes table), and a SQL query trivially shows who serves what right now.
+
+### Fixes
+- migration v43: `routes.original_peer_id` (nullable, FK to peers with ON DELETE SET NULL)
+- new activity-log events: `pool_failover_activated`, `pool_failover_restored`
+
+---
+
 ## [1.61.7] — 2026-05-02
 
 ### Fixes
