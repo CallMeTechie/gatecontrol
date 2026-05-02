@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.6] — 2026-05-02
+
+### Fixes
+- companion sees sibling pin-routes for implicit failover
+
+---
+
 ## [Unreleased]
 
 ### Fixes
