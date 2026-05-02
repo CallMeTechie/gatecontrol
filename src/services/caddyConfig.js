@@ -209,25 +209,26 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     const backends = resolveBackends(db, route);
     const hasMultipleBackends = Array.isArray(backends) && backends.length > 0;
 
-    // Determine gateway-target peer IP (for target_kind='gateway' routes)
-    // Pool-routes (target_pool_id) are resolved via resolveRouteUpstreams;
-    // pin-routes (target_peer_id) fall back to the existing JOIN columns.
+    // Determine gateway-target peer IP (for target_kind='gateway' routes).
+    // ALL gateway-target routes (peer-pinned and pool) go through
+    // resolveRouteUpstreams so peer-pinned routes pick up implicit
+    // failover when the pinned peer is in a pool and goes offline.
     let gatewayPeerIp = null;
-    let poolUpstreams = null; // set when target_pool_id is present
-    if (route.target_kind === 'gateway') {
-      if (route.target_pool_id) {
-        // Pool-aware resolution — may result in outage block
-        const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
-        if (resolved.outage) {
-          serverRoutes_pending.push(buildPoolOutageBlock(route));
-          continue;
-        }
-        poolUpstreams = resolved;
-      } else if (route.target_peer_ip) {
-        gatewayPeerIp = route.target_peer_ip;
-      } else if (route.target_peer_allowed_ips) {
-        gatewayPeerIp = route.target_peer_allowed_ips.split('/')[0];
+    let poolUpstreams = null;
+    if (route.target_kind === 'gateway' && (route.target_pool_id || route.target_peer_id)) {
+      const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
+      if (resolved.outage) {
+        // Outage block only applies to explicit pool-routes; peer-pinned
+        // routes don't get the 503 page (resolveRouteUpstreams returns
+        // outage:false for them and lets caddy hit the dead peer).
+        serverRoutes_pending.push(buildPoolOutageBlock(route));
+        continue;
       }
+      poolUpstreams = resolved;
+    } else if (route.target_kind === 'gateway') {
+      // Defensive fallback for malformed rows (no peer_id and no pool_id).
+      if (route.target_peer_ip) gatewayPeerIp = route.target_peer_ip;
+      else if (route.target_peer_allowed_ips) gatewayPeerIp = route.target_peer_allowed_ips.split('/')[0];
     }
 
     let upstreams;
@@ -575,11 +576,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   if (l4Routes.length > 0) {
     const activeL4Routes = [];
     for (const route of l4Routes) {
-      if (route.target_kind === 'gateway' && route.target_pool_id) {
-        // Pool-aware: skip listener if pool is in outage
+      if (route.target_kind === 'gateway' && (route.target_pool_id || route.target_peer_id)) {
+        // Pool-aware + implicit pool failover for peer-pinned L4 routes.
         const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
         if (resolved.outage) continue;
-        // Use first resolved peer for L4 (single upstream for TCP proxy)
         const first = resolved.peers[0];
         route.target_ip = first.ip;
         route.target_port = route.l4_listen_port;
