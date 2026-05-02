@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.2] — 2026-05-02
+
+### Fixes
+- make insertGatewayPeer mark peer offline
+
+---
+
 ## [Unreleased]
 
 ### Fixes
