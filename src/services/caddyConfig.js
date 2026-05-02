@@ -96,6 +96,40 @@ function resolveRouteUpstreams(route, options = {}) {
   if (route.target_peer_id) {
     const peer = peerLookup.get(route.target_peer_id);
     if (!peer || !peer.allowed_ips) return { peers: [], outage: true };
+
+    // Implicit pool-failover: if the pinned peer is offline AND it belongs to
+    // any enabled pool, fall back to the highest-priority alive peer of that
+    // pool. This is what makes "add a pool member, get failover for free"
+    // work — without it, peer-pinned routes stay broken even when there's a
+    // healthy sibling in the same pool.
+    //
+    // If the pinned peer is alive, we use it directly (no pool detour). When
+    // it recovers, the next caddy resync (triggered by gatewayHealth on
+    // alive_to_down / cooldown_to_alive transitions) flips the upstream
+    // back automatically.
+    const pinnedAlive = !!snapshot[route.target_peer_id]?.alive;
+    if (!pinnedAlive) {
+      const pools = gatewayPool.listPoolsForPeer(route.target_peer_id);
+      for (const pool of pools) {
+        if (!pool.enabled) continue;
+        const aliveId = gatewayPool.resolveActivePeer(pool.id, snapshot);
+        if (aliveId && aliveId !== route.target_peer_id) {
+          const failoverPeer = peerLookup.get(aliveId);
+          if (failoverPeer && failoverPeer.allowed_ips) {
+            return {
+              peers: [{ id: failoverPeer.id, ip: _peerIp(failoverPeer.allowed_ips), port: failoverPeer.proxy_port || fallbackPort }],
+              outage: false,
+              lb_policy: null,
+              implicit_failover: { from_peer_id: route.target_peer_id, via_pool_id: pool.id },
+            };
+          }
+        }
+      }
+      // No alive sibling in any pool — fall through to use the (offline)
+      // pinned peer; caddy will surface the error rather than silently
+      // black-holing.
+    }
+
     return {
       peers: [{ id: peer.id, ip: _peerIp(peer.allowed_ips), port: peer.proxy_port || fallbackPort }],
       outage: false,
