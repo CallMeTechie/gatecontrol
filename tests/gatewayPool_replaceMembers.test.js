@@ -17,7 +17,9 @@ afterEach(teardown);
 function insertGatewayPeer(db, id, name) {
   db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (?, ?, ?, 'gateway', '10.8.0.' || ? || '/32', 1)")
     .run(id, name || ('gw-' + id), 'pk' + id, id);
-  db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, created_at) VALUES (?, 9876, 'h', 'e', strftime('%s','now')*1000)")
+  // alive=0 keeps the peer in the offline branch of applyPoolMutationWithSequencing,
+  // so it only calls syncToCaddy (which we stub) and skips the real companion push.
+  db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, alive, created_at) VALUES (?, 9876, 'h', 'e', 0, strftime('%s','now')*1000)")
     .run(id);
 }
 
@@ -107,8 +109,8 @@ test('replaceMembers([]) rejects when pool is referenced by routes', () => {
 // ── HTTP layer ────────────────────────────────────────────────────────────
 
 test('PUT /api/v1/gateway-pools/:id/members replaces full member list', async () => {
-  // Stub syncToCaddy — the real one tries to talk to Caddy admin:2019,
-  // which isn't running in test. Same pattern as routes_hook_notify.test.js.
+  // Stub syncToCaddy — real one tries to reach Caddy admin:2019.
+  // Same pattern as routes_hook_notify.test.js.
   require('../src/services/caddyConfig').syncToCaddy = async () => {};
 
   const db = getDb();
@@ -118,12 +120,17 @@ test('PUT /api/v1/gateway-pools/:id/members replaces full member list', async ()
     .send({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
   const poolId = create.body.id;
 
-  const res = await agent.put(`/api/v1/gateway-pools/${poolId}/members`).set('X-CSRF-Token', csrf)
-    .send([
+  // Wrap payload as {members:[...]} — the route accepts both raw arrays and
+  // {members} envelopes, but supertest's auto-type detection on bare arrays
+  // is flaky across versions, so the envelope form is the safe choice.
+  const res = await agent.put(`/api/v1/gateway-pools/${poolId}/members`)
+    .set('X-CSRF-Token', csrf)
+    .set('Content-Type', 'application/json')
+    .send({ members: [
       { peer_id: 1, priority: 1 },
       { peer_id: 2, priority: 2 },
-    ]);
-  assert.equal(res.status, 200);
+    ] });
+  assert.equal(res.status, 200, 'body=' + JSON.stringify(res.body));
   assert.equal(res.body.length, 2);
   assert.equal(res.body[0].peer_id, 1);
 });
