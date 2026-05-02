@@ -63,7 +63,18 @@ function _peerIp(allowedIps) {
 
 function resolveRouteUpstreams(route, options = {}) {
   const db = require('../db/connection').getDb();
-  const snapshot = gatewayHealth.getSnapshot();
+  let snapshot = gatewayHealth.getSnapshot();
+  // export-caddy-config.js builds the boot config before the watchdog has
+  // ever ticked, so the in-memory snapshot is empty `{}`. Without this
+  // bootstrap, every peer looks "not alive" and pool resolution returns
+  // the pinned (offline) peer for the entire pre-boot window — defeating
+  // implicit failover on container restart while a member is down.
+  if (Object.keys(snapshot).length === 0) {
+    const rows = db.prepare('SELECT peer_id, alive FROM gateway_meta').all();
+    const seeded = {};
+    for (const r of rows) seeded[r.peer_id] = { alive: r.alive === 1 };
+    snapshot = seeded;
+  }
   // Default-port used when the gateway_meta.proxy_port column is missing
   // (e.g. fresh DB before migration v42 runs in tests).
   const fallbackPort = options.gatewayProxyPort || 8080;
