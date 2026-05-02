@@ -106,6 +106,27 @@ router.delete('/:id/members/:peerId', async (req, res) => {
   }
 });
 
+// Bulk replace all members of a pool in one shot. Form submit uses this
+// instead of N add/remove/setPriority calls so we trigger only one
+// companion-confirm + caddy sync at the end (otherwise reconfiguring a
+// 3-gateway pool means 3× the 10-second confirm window).
+router.put('/:id/members', async (req, res) => {
+  const poolId = parseInt(req.params.id, 10);
+  if (!gatewayPool.getPool(poolId)) return res.status(404).json({ error: 'pool_not_found' });
+  const members = Array.isArray(req.body) ? req.body : (req.body && req.body.members);
+  if (!Array.isArray(members)) return res.status(400).json({ error: 'members_array_required' });
+  try {
+    const updated = gatewayPool.replaceMembers(poolId, members);
+    await applyPoolMutationWithSequencing(poolId);
+    res.json(updated);
+  } catch (err) {
+    const status = /last_member_in_use/.test(err.message) ? 409
+      : /not_found|not_gateway/.test(err.message) ? 400
+      : 400;
+    res.status(status).json({ ok: false, error: err.message });
+  }
+});
+
 router.put('/:id/members/:peerId', async (req, res) => {
   const poolId = parseInt(req.params.id, 10);
   const peerId = parseInt(req.params.peerId, 10);

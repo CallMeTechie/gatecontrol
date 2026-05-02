@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- gateway-pool form save did not persist member changes — members held in the modal DOM were never sent to the server (new `PUT /api/v1/gateway-pools/:id/members` bulk endpoint, form submits members alongside the pool fields)
+
+### Features
+- gateway-pool modal: 2-column layout with members panel on the right, drag-and-drop reordering (top = highest priority), auto-position assignment, and dropdown filters out gateways already in the pool
+
+---
+
 ## [1.61.1] — 2026-05-01
 
 ### Fixes

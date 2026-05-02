@@ -2866,6 +2866,81 @@ table tbody tr:last-child td { border-bottom: none; }
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   position: relative;
 }
+.modal-box.modal-box-wide {
+  width: 920px;
+}
+
+.pool-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.pool-form-col {
+  min-width: 0;
+}
+.pool-members-col {
+  border-left: 1px solid var(--border, rgba(0,0,0,0.08));
+  padding-left: 24px;
+}
+@media (max-width: 760px) {
+  .modal-box.modal-box-wide { width: 96vw; }
+  .pool-form-grid { grid-template-columns: 1fr; }
+  .pool-members-col { border-left: none; padding-left: 0; border-top: 1px solid var(--border, rgba(0,0,0,0.08)); padding-top: 16px; }
+}
+
+.pool-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 80px;
+}
+.pool-members-list:empty::before {
+  content: attr(data-empty-text);
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 24px 0;
+  text-align: center;
+  border: 1px dashed var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--radius, 6px);
+}
+.pool-member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-2, rgba(0,0,0,0.03));
+  border-radius: var(--radius, 6px);
+  cursor: grab;
+  user-select: none;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.pool-member-row:active { cursor: grabbing; }
+.pool-member-row.dragging { opacity: 0.4; }
+.pool-member-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent, #6366f1); }
+.pool-member-row.drag-over-bottom { box-shadow: 0 2px 0 0 var(--accent, #6366f1); }
+.pool-member-handle {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.pool-member-position {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-2);
+  min-width: 24px;
+  text-align: center;
+}
+.pool-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .pool-mode-badge {
   display: inline-block;
