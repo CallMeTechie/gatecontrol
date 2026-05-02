@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.9] — 2026-05-02
+
+### Fixes
+- boot-time failover reconcile
+
+---
+
 ## [1.61.8] — 2026-05-02
 
 ### Fixes
