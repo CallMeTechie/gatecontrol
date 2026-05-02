@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.3] — 2026-05-02
+
+### Fixes
+- GET /:id/members + working migrate-routes flow
+
+---
+
 ## [1.61.2] — 2026-05-02
 
 ### Fixes
