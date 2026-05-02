@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.5] — 2026-05-02
+
+### Fixes
+- seed snapshot from DB at boot for implicit failover
+
+---
+
 ## [1.61.4] — 2026-05-02
 
 ### Fixes
