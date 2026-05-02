@@ -107,6 +107,10 @@ test('replaceMembers([]) rejects when pool is referenced by routes', () => {
 // ── HTTP layer ────────────────────────────────────────────────────────────
 
 test('PUT /api/v1/gateway-pools/:id/members replaces full member list', async () => {
+  // Stub syncToCaddy — the real one tries to talk to Caddy admin:2019,
+  // which isn't running in test. Same pattern as routes_hook_notify.test.js.
+  require('../src/services/caddyConfig').syncToCaddy = async () => {};
+
   const db = getDb();
   insertGatewayPeer(db, 1);
   insertGatewayPeer(db, 2);
