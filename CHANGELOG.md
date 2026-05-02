@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.7] — 2026-05-02
+
+### Fixes
+- boot-push retries until handshake + WG symlink survives rewrite
+
+---
+
 ## [1.61.6] — 2026-05-02
 
 ### Fixes
