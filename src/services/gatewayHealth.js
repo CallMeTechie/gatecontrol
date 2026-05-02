@@ -348,6 +348,7 @@ module.exports = {
   _resetSnapshotCache,
   _markRecoveryInterruptLogged,
   _hasRecoveryInterruptBeenLogged,
+  _onTransition,
   watchdogTick,
   startWatchdog,
   stopWatchdog,
