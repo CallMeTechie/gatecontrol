@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.8] — 2026-05-02
+
+### Fixes
+- export _onTransition so the failover-pivot tests can drive it
+
+---
+
 ## [Unreleased]
 
 ### Changed
