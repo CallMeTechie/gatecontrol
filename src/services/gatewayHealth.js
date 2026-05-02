@@ -203,6 +203,72 @@ async function _notifyAffected(affectedPeerIds) {
   }
 }
 
+// Reconcile failover state with current DB at boot. Transitions only fire on
+// state CHANGES; if a peer was already offline when the server started, no
+// alive_to_down event will ever fire, so without this its routes would stay
+// stuck on the dead peer forever. Idempotent — re-running doesn't change a
+// converged state.
+async function reconcileFailoverState() {
+  const db = getDb();
+  const gatewayPool = require('./gatewayPool');
+  const affected = new Set();
+  let dirty = false;
+
+  // 1. Park routes whose target is currently offline in a pool with an alive sibling.
+  const offline = db.prepare(`
+    SELECT DISTINCT m.peer_id, m.pool_id
+    FROM gateway_pool_members m
+    JOIN gateway_meta gm ON gm.peer_id = m.peer_id
+    JOIN gateway_pools p ON p.id = m.pool_id
+    WHERE gm.alive = 0 AND p.enabled = 1
+  `).all();
+  for (const o of offline) {
+    const sibling = db.prepare(`
+      SELECT m.peer_id FROM gateway_pool_members m
+      JOIN gateway_meta gm ON gm.peer_id = m.peer_id
+      WHERE m.pool_id = ? AND gm.alive = 1
+      ORDER BY m.priority ASC LIMIT 1
+    `).get(o.pool_id);
+    if (!sibling) continue;
+    const aff = _pivotRoutes({ fromPeerId: o.peer_id, toPeerId: sibling.peer_id });
+    if (aff.size > 0) {
+      dirty = true;
+      for (const id of aff) affected.add(id);
+      activity.log('pool_failover_activated',
+        `Boot reconcile: routes from peer #${o.peer_id} parked on peer #${sibling.peer_id}`,
+        { source: 'system', severity: 'info', details: { fromPeerId: o.peer_id, toPeerId: sibling.peer_id, viaPoolId: o.pool_id } });
+    }
+  }
+
+  // 2. Restore routes whose original_peer_id is now alive (covers cases where
+  //    a peer recovered while the server was down).
+  const aliveOriginals = db.prepare(`
+    SELECT DISTINCT r.original_peer_id AS peer_id
+    FROM routes r
+    JOIN gateway_meta gm ON gm.peer_id = r.original_peer_id
+    WHERE r.original_peer_id IS NOT NULL AND gm.alive = 1
+  `).all();
+  for (const a of aliveOriginals) {
+    const aff = _pivotRoutes({ fromPeerId: a.peer_id, restore: true });
+    if (aff.size > 0) {
+      dirty = true;
+      for (const id of aff) affected.add(id);
+      activity.log('pool_failover_restored',
+        `Boot reconcile: routes restored to recovered peer #${a.peer_id}`,
+        { source: 'system', severity: 'info', details: { peerId: a.peer_id } });
+    }
+  }
+
+  if (dirty) {
+    try {
+      await require('./caddyConfig').syncToCaddy();
+    } catch (err) {
+      require('../utils/logger').error({ err: err.message }, 'caddy resync after boot reconcile failed');
+    }
+    if (affected.size > 0) await _notifyAffected(affected);
+  }
+}
+
 async function _onTransition(peerId, transition) {
   const peer = getDb().prepare('SELECT id, name FROM peers WHERE id = ?').get(peerId);
   const peerLabel = peer?.name || `peer #${peerId}`;
@@ -349,6 +415,7 @@ module.exports = {
   _markRecoveryInterruptLogged,
   _hasRecoveryInterruptBeenLogged,
   _onTransition,
+  reconcileFailoverState,
   watchdogTick,
   startWatchdog,
   stopWatchdog,

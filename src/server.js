@@ -142,6 +142,15 @@ async function start() {
     const gatewayHealth = require('./services/gatewayHealth');
     gatewayHealth.startWatchdog();
 
+    // Boot reconcile: transitions only fire on state CHANGES. If a peer
+    // was already offline when the container started, no alive_to_down
+    // ever fires, so its routes would stay stuck on the dead peer forever.
+    // This catches that — and the symmetric case where a peer recovered
+    // while the server was down. Best-effort, idempotent.
+    gatewayHealth.reconcileFailoverState().catch((err) => {
+      require('./utils/logger').warn({ err: err.message }, 'boot failover reconcile skipped');
+    });
+
 
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
