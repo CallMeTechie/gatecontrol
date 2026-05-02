@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.4] — 2026-05-02
+
+### Fixes
+- route peer-pinned routes through resolveRouteUpstreams
+
+---
+
 ## [1.61.3] — 2026-05-02
 
 ### Fixes
