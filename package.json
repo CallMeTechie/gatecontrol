@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@callmetechie/gatecontrol-config-hash": "^1.0.0",
-    "argon2": "^0.41.1",
+    "argon2": "^0.44.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.7.0",
     "cookie-parser": "^1.4.7",
