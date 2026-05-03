@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.0] — 2026-05-03
+
+### Features
+- close LB gaps — L4 multi-upstream, passive health, trusted_proxies
+
+---
+
 ## [Unreleased]
 
 ### Features
