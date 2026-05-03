@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.10] — 2026-05-03
+
+### Änderungen
+- drop dead target_peer_id branch in resolveRouteUpstreams
+
+---
+
 ## [1.61.9] — 2026-05-02
 
 ### Fixes
