@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- pool load-balancing for L4 routes (TCP/UDP) — caddy-l4 proxy handler now renders multiple upstreams + selection_policy when a pool is in `load_balancing` mode; previously L4 collapsed to the first alive member regardless of mode
+- passive health checks on pool-LB reverse-proxy routes — drops a backend after 3× 5xx for 30 s without needing an active probe, gives free circuit-breaking even when gatewayHealth still thinks the peer is alive
+- `srv0` http server now declares `trusted_proxies` (RFC1918 + CGNAT + IPv6 ULA + loopback) and `client_ip_headers: [X-Forwarded-For]` so `ip_hash` LB and other client-IP-aware policies see the real client when GateControl runs behind a private LB or CDN
+
+---
+
 ## [1.61.10] — 2026-05-03
 
 ### Änderungen

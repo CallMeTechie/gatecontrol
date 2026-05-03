@@ -289,11 +289,26 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       };
     }
 
-    // Pool load balancing policy
+    // Pool load balancing policy + passive health checks. The selection
+    // policy controls which upstream a request goes to; passive HC takes
+    // a member out of rotation after repeated 5xx without needing an
+    // active probe. Keeps LB pools self-healing even if gatewayHealth
+    // hasn't yet flipped alive=0 (companion is up but a backend behind
+    // it is failing).
     if (poolUpstreams?.lb_policy) {
       reverseProxy.load_balancing = {
         selection_policy: { policy: poolUpstreams.lb_policy },
       };
+      if ((poolUpstreams.peers || []).length > 1) {
+        reverseProxy.health_checks = {
+          ...(reverseProxy.health_checks || {}),
+          passive: {
+            fail_duration: '30s',
+            max_fails: 3,
+            unhealthy_status: [500, 502, 503, 504],
+          },
+        };
+      }
     }
 
     // Load balancing policy (only for multiple backends)
@@ -536,6 +551,16 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         default_logger_name: 'access',
       },
       protocols: ['h1', 'h2'],
+      // Trust X-Forwarded-For from RFC1918 / CGNAT / IPv6 ULA sources so
+      // ip_hash and other client-IP-aware policies see the real client IP
+      // when GateControl runs behind a private LB or CDN. Trust scope is
+      // restricted to private ranges — direct internet clients can spoof
+      // XFF freely but Caddy ignores it because the source isn't trusted.
+      trusted_proxies: {
+        source: 'static',
+        ranges: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', 'fd00::/8', '::1/128', '127.0.0.0/8'],
+      },
+      client_ip_headers: ['X-Forwarded-For'],
     };
   }
 
@@ -544,12 +569,20 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     const activeL4Routes = [];
     for (const route of l4Routes) {
       if (route.target_kind === 'gateway' && route.target_pool_id) {
-        // Pool-aware: skip listener if pool is in outage
+        // Pool-aware: skip listener if pool is in outage. For load_balancing
+        // mode we hand the FULL alive set + lb_policy to the L4 builder so
+        // it can render multiple upstreams. Failover mode collapses to the
+        // first alive (priority order).
         const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
         if (resolved.outage) continue;
         const first = resolved.peers[0];
         route.target_ip = first.ip;
         route.target_port = route.l4_listen_port;
+        if (resolved.lb_policy && resolved.peers.length > 1) {
+          // Stash for buildL4Route — non-DB hint, removed before persisting.
+          route._poolUpstreams = resolved.peers.map(p => p.ip + ':' + route.l4_listen_port);
+          route._poolLbPolicy = resolved.lb_policy;
+        }
       } else if (route.peer_id && route.allowed_ips) {
         // Peer-route: upstream = peer's WG IP + route.target_port.
         route.target_ip = route.allowed_ips.split('/')[0];

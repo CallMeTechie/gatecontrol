@@ -33,12 +33,33 @@ function buildL4Servers(routes) {
   return servers;
 }
 
+// caddy-l4's proxy handler accepts multiple upstreams + a load_balancing
+// block similar to (but smaller than) http/reverse_proxy. Supported policies:
+// `random`, `round_robin`, `least_conn`, `first`, `ip_hash`. We map the
+// HTTP-side names through directly — the pool's lb_policy strings
+// (`round_robin` / `least_conn` / `ip_hash`) are all valid here.
 function buildL4Route(route, tlsMode) {
   const target = route.target_ip + ':' + route.target_port;
-  const proxyHandler = {
-    handler: 'proxy',
-    upstreams: [{ dial: [target] }],
-  };
+  const upstreams = (Array.isArray(route._poolUpstreams) && route._poolUpstreams.length > 0)
+    ? route._poolUpstreams.map(addr => ({ dial: [addr] }))
+    : [{ dial: [target] }];
+
+  const proxyHandler = { handler: 'proxy', upstreams };
+  if (route._poolLbPolicy && upstreams.length > 1) {
+    proxyHandler.load_balancing = {
+      selection_policy: { policy: route._poolLbPolicy },
+    };
+    // Health checks: caddy-l4 supports passive 'unhealthy' tracking via
+    // fail_duration + max_fails on the proxy handler. Same intent as
+    // http/health_checks/passive — drop a backend after N consecutive
+    // dial failures, retry it after fail_duration.
+    proxyHandler.health_checks = {
+      passive: {
+        fail_duration: '30s',
+        max_fails: 3,
+      },
+    };
+  }
 
   const caddyRoute = {};
 

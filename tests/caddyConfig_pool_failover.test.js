@@ -94,3 +94,50 @@ test('pin-route on down peer is unchanged (passes through)', async () => {
   assert.match(json, /10\.8\.0\.10:8080/);
 });
 
+test('lb-mode adds passive health checks when pool has 2+ alive members', async () => {
+  setupTwoGwPool('load_balancing', 'round_robin');
+  const cfg = await caddyConfig.buildCaddyConfig({ gatewayProxyPort: 8080 });
+  // health_checks.passive should be present on the reverse_proxy handler
+  // for the lb route — drives caddy-side circuit-breaking.
+  const json = JSON.stringify(cfg);
+  assert.match(json, /"passive"/);
+  assert.match(json, /"max_fails":3/);
+  assert.match(json, /"fail_duration":"30s"/);
+});
+
+test('lb-mode L4 route renders multiple upstreams + selection_policy', async () => {
+  const db = getDb();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (20, 'gw-20', 'pk20', 'gateway', '10.8.0.20/32', 1)").run();
+  db.prepare("INSERT INTO peers (id, name, public_key, peer_type, allowed_ips, enabled) VALUES (21, 'gw-21', 'pk21', 'gateway', '10.8.0.21/32', 1)").run();
+  db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at) VALUES (20, 9876, 'h', 'e', ?, 1, strftime('%s','now')*1000)").run(Date.now());
+  db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, alive, created_at) VALUES (21, 9876, 'h', 'e', ?, 1, strftime('%s','now')*1000)").run(Date.now());
+  const poolId = gatewayPool.createPool({ name: 'L4P', mode: 'load_balancing', lb_policy: 'round_robin', failback_cooldown_s: 60 });
+  gatewayPool.addMember(poolId, 20, 100);
+  gatewayPool.addMember(poolId, 21, 200);
+  // L4 route bound to the pool
+  db.prepare(`
+    INSERT INTO routes (domain, target_kind, target_pool_id, target_lan_host, target_lan_port, target_ip, target_port, route_type, l4_listen_port, l4_protocol, l4_tls_mode, enabled)
+    VALUES ('l4.test', 'gateway', ?, '10.0.1.50', 3389, '0.0.0.0', 3389, 'l4', 13389, 'tcp', 'none', 1)
+  `).run(poolId);
+  gatewayHealth._resetSnapshotCache();
+  gatewayHealth.evaluatePeer(20);
+  gatewayHealth.evaluatePeer(21);
+  const cfg = await caddyConfig.buildCaddyConfig({ gatewayProxyPort: 8080 });
+  const json = JSON.stringify(cfg);
+  // Both upstreams present
+  assert.match(json, /10\.8\.0\.20:13389/);
+  assert.match(json, /10\.8\.0\.21:13389/);
+  // L4 selection policy
+  assert.match(json, /"round_robin"/);
+});
+
+test('http server config includes trusted_proxies for ip_hash to work behind LB', async () => {
+  setupTwoGwPool('load_balancing', 'ip_hash');
+  const cfg = await caddyConfig.buildCaddyConfig({ gatewayProxyPort: 8080 });
+  const srv0 = cfg.apps?.http?.servers?.srv0;
+  assert.ok(srv0, 'srv0 must exist');
+  assert.equal(srv0.trusted_proxies?.source, 'static');
+  assert.ok(Array.isArray(srv0.trusted_proxies?.ranges));
+  assert.deepEqual(srv0.client_ip_headers, ['X-Forwarded-For']);
+});
+
