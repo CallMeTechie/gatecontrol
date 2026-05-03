@@ -61,26 +61,28 @@ function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
 }
 
+// Resolve a target_pool_id route to its current upstream(s). Peer-pinned
+// routes don't go through here — they read target_peer_allowed_ips directly
+// in buildCaddyConfig because failover is now done by pivoting
+// target_peer_id in the DB (gatewayHealth._onTransition), so the peer at
+// route lookup time is always the right one.
 function resolveRouteUpstreams(route, options = {}) {
+  if (!route.target_pool_id) return { peers: [], outage: true };
+
   const db = require('../db/connection').getDb();
   let snapshot = gatewayHealth.getSnapshot();
   // export-caddy-config.js builds the boot config before the watchdog has
   // ever ticked, so the in-memory snapshot is empty {}. Without this seed
-  // every target_pool_id route would serve a 503 outage page until the
-  // first state transition (which may never come if peers were stable at
-  // boot). Peer-pinned routes don't need this — they don't read snapshot.
+  // every pool-route would serve a 503 outage page until the first state
+  // transition (which may never come if peers were stable at boot).
   if (Object.keys(snapshot).length === 0) {
     const rows = db.prepare('SELECT peer_id, alive FROM gateway_meta').all();
     const seeded = {};
     for (const r of rows) seeded[r.peer_id] = { alive: r.alive === 1 };
     snapshot = seeded;
   }
-  // Default-port used when the gateway_meta.proxy_port column is missing
-  // (e.g. fresh DB before migration v42 runs in tests).
   const fallbackPort = options.gatewayProxyPort || 8080;
 
-  // Peer lookup that joins gateway_meta so we get the per-peer proxy_port.
-  // Falls back to the global default if the column / row is absent.
   const peerLookup = db.prepare(`
     SELECT p.id, p.allowed_ips, gm.proxy_port
     FROM peers p
@@ -88,33 +90,19 @@ function resolveRouteUpstreams(route, options = {}) {
     WHERE p.id = ?
   `);
 
-  if (route.target_pool_id) {
-    const pool = gatewayPool.getPool(route.target_pool_id);
-    if (!pool || !pool.enabled) return { peers: [], outage: true };
-    const peerIds = pool.mode === 'failover'
-      ? (() => { const id = gatewayPool.resolveActivePeer(route.target_pool_id, snapshot); return id ? [id] : []; })()
-      : gatewayPool.resolveActivePeers(route.target_pool_id, snapshot);
-    if (peerIds.length === 0) return { peers: [], outage: true };
-    const peers = peerIds.map(id => peerLookup.get(id));
-    return {
-      peers: peers.map(p => ({ id: p.id, ip: _peerIp(p.allowed_ips), port: p.proxy_port || fallbackPort })),
-      outage: false,
-      lb_policy: pool.mode === 'load_balancing' ? pool.lb_policy : null,
-      pool,
-    };
-  }
-
-  if (route.target_peer_id) {
-    const peer = peerLookup.get(route.target_peer_id);
-    if (!peer || !peer.allowed_ips) return { peers: [], outage: true };
-    return {
-      peers: [{ id: peer.id, ip: _peerIp(peer.allowed_ips), port: peer.proxy_port || fallbackPort }],
-      outage: false,
-      lb_policy: null,
-    };
-  }
-
-  return { peers: [], outage: true };
+  const pool = gatewayPool.getPool(route.target_pool_id);
+  if (!pool || !pool.enabled) return { peers: [], outage: true };
+  const peerIds = pool.mode === 'failover'
+    ? (() => { const id = gatewayPool.resolveActivePeer(route.target_pool_id, snapshot); return id ? [id] : []; })()
+    : gatewayPool.resolveActivePeers(route.target_pool_id, snapshot);
+  if (peerIds.length === 0) return { peers: [], outage: true };
+  const peers = peerIds.map(id => peerLookup.get(id));
+  return {
+    peers: peers.map(p => ({ id: p.id, ip: _peerIp(p.allowed_ips), port: p.proxy_port || fallbackPort })),
+    outage: false,
+    lb_policy: pool.mode === 'load_balancing' ? pool.lb_policy : null,
+    pool,
+  };
 }
 
 function buildPoolOutageBlock(route) {
