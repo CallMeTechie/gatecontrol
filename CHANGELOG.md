@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.2] — 2026-05-08
+
+### Änderungen
+- use setup helper so DB-backed settings.get works
+
+---
+
 ## [1.62.1] — 2026-05-08
 
 ### Fixes
