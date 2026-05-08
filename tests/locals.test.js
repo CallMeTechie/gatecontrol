@@ -1,9 +1,16 @@
 'use strict';
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const { setup, teardown } = require('./helpers/setup');
 
-const { injectLocals } = require('../src/middleware/locals');
+let injectLocals;
+
+before(async () => {
+  await setup();   // initializes DB so settings.get('default_theme') works
+  ({ injectLocals } = require('../src/middleware/locals'));
+});
+after(() => teardown());
 
 function run(req, res) {
   return new Promise((resolve, reject) => {
@@ -13,8 +20,6 @@ function run(req, res) {
 
 describe('injectLocals — flash handling does not pollute sessions', () => {
   test('anon visitor with no prior flash leaves session.flash unset', async () => {
-    // Anon path: no userId → DB queries are skipped, only the static
-    // template locals + flash branch run. This is the bug surface.
     const session = {};
     const res = { locals: {} };
     await run({ session, path: '/' }, res);
