@@ -5,9 +5,14 @@
 #
 # Replaces the previous inline supervisord command so the JSON/Caddyfile
 # selection stays readable and doesn't need an escape-soup one-liner.
+#
+# stdout/stderr stream straight through supervisord, which forwards to
+# the container's stdout where Docker's log driver applies rotation.
+# We deliberately do NOT tee into a file under /data — that produced an
+# unbounded duplicate of every log line (observed: 678 MB and growing
+# in a 4-day-old container) without rotation.
 
 CONFIG="${GC_CADDY_CONFIG_PATH:-/app/config/Caddyfile}"
-LOG=/data/caddy/caddy-stdout.log
 
 if [ ! -f "$CONFIG" ]; then
   echo "caddy-start: config not found at $CONFIG, falling back to Caddyfile" >&2
@@ -16,9 +21,9 @@ fi
 
 case "$CONFIG" in
   *.json)
-    caddy run --config "$CONFIG" 2>&1 | tee -a "$LOG"
+    exec caddy run --config "$CONFIG"
     ;;
   *)
-    caddy run --config "$CONFIG" --adapter caddyfile 2>&1 | tee -a "$LOG"
+    exec caddy run --config "$CONFIG" --adapter caddyfile
     ;;
 esac

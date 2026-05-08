@@ -3,6 +3,7 @@
 const argon2 = require('argon2');
 const { getDb } = require('../db/connection');
 const { setFlash } = require('../middleware/locals');
+const { ensureCsrfToken } = require('../middleware/csrf');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
@@ -16,6 +17,10 @@ const DUMMY_PASSWORD_HASH = '$argon2id$v=19$m=19456,t=2,p=1$Wm10dWh5V1VmMFI0b3V0
 
 const authRoutes = {
   loginPage(req, res) {
+    // Mint a CSRF token explicitly: injectCsrfToken no longer
+    // pre-generates for anon visitors (anti session-pollution), but
+    // the login form needs a real token for the POST roundtrip.
+    ensureCsrfToken(req, res);
     res.render(`${res.locals.theme}/pages/login.njk`, {
       title: res.locals.t('auth.login'),
       layout: false,

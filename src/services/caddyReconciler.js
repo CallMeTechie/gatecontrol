@@ -58,7 +58,11 @@ function detectDivergence(expected, actual) {
 
 /**
  * Extract every route @id from Caddy's live /config/ response.
- * Caddy wraps routes under apps.http.servers[*].routes[].@id.
+ * Caddy wraps routes under apps.http.servers[*].routes[].@id, but
+ * routes that need a forward-auth wrapper (route_auth without
+ * basic_auth, or ip_filter) are nested inside a `subroute` handler:
+ *   { handle: [{ handler: 'subroute', routes: [ ..., { @id, ... } ] }] }
+ * so we must recurse into handle[].routes to catch those @ids too.
  * Null-safe against missing intermediate keys (fresh boot, empty
  * config, etc.).
  */
@@ -69,12 +73,20 @@ function extractCaddyRouteIds(caddyConfig) {
   if (!servers) return ids;
   for (const name of Object.keys(servers)) {
     const srv = servers[name];
-    const routes = Array.isArray(srv.routes) ? srv.routes : [];
-    for (const r of routes) {
-      if (r['@id'] && typeof r['@id'] === 'string') ids.add(r['@id']);
-    }
+    collectRouteIds(srv.routes, ids);
   }
   return ids;
+}
+
+function collectRouteIds(routes, ids) {
+  if (!Array.isArray(routes)) return;
+  for (const r of routes) {
+    if (r && r['@id'] && typeof r['@id'] === 'string') ids.add(r['@id']);
+    const handlers = r && Array.isArray(r.handle) ? r.handle : [];
+    for (const h of handlers) {
+      if (h && Array.isArray(h.routes)) collectRouteIds(h.routes, ids);
+    }
+  }
 }
 
 /**

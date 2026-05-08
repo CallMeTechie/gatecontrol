@@ -81,6 +81,56 @@ describe('extractCaddyRouteIds', () => {
     };
     assert.equal(extractCaddyRouteIds(cfg).size, 0);
   });
+
+  test('recurses into subroute handlers (forward-auth wrapped routes)', () => {
+    // Routes with route_auth (no basic_auth) get wrapped: an outer route
+    // with handler:'subroute' whose .routes contain the @id-bearing inner
+    // route plus a sibling /route-auth/* proxy. The reconciler must find
+    // the inner @id, otherwise it reports a false-positive divergence
+    // every cycle (5 min) and would loop-repair under auto-reconcile.
+    const cfg = {
+      apps: {
+        http: {
+          servers: {
+            srv0: {
+              routes: [
+                { '@id': 'gc_route_top', match: [{ host: ['plain'] }] },
+                {
+                  match: [{ host: ['protected'] }],
+                  handle: [{
+                    handler: 'subroute',
+                    routes: [
+                      { match: [{ path: ['/route-auth/*'] }], handle: [{ handler: 'reverse_proxy' }] },
+                      { '@id': 'gc_route_inner', handle: [{ handler: 'reverse_proxy' }] },
+                    ],
+                  }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const ids = extractCaddyRouteIds(cfg);
+    assert.deepEqual([...ids].sort(), ['gc_route_inner', 'gc_route_top']);
+  });
+
+  test('recurses through deeply nested subroutes', () => {
+    const cfg = {
+      apps: { http: { servers: { s: { routes: [{
+        handle: [{
+          handler: 'subroute',
+          routes: [{
+            handle: [{
+              handler: 'subroute',
+              routes: [{ '@id': 'gc_route_deep' }],
+            }],
+          }],
+        }],
+      }] } } } },
+    };
+    assert.deepEqual([...extractCaddyRouteIds(cfg)], ['gc_route_deep']);
+  });
 });
 
 describe('runReconciliationCycle', () => {
