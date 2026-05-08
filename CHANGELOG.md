@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.1] — 2026-05-08
+
+### Fixes
+- bug triage 2026-05-08 — reconciler subroute, caddy-stdout, csrf pollution
+
+---
+
 ## [1.62.0] — 2026-05-03
 
 ### Features
