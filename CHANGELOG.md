@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.3] — 2026-05-08
+
+### Fixes
+- replace otel v1.40.0 → v1.43.0 to close CVE-2026-29181
+
+---
+
 ## [1.62.2] — 2026-05-08
 
 ### Änderungen
