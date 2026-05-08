@@ -25,6 +25,7 @@
 - caddyReconciler: `extractCaddyRouteIds` now recurses into `subroute` handlers, so routes wrapped for forward-auth (route_auth without basic_auth, or ip_filter) are no longer reported as missing every 5 min. Fixes the perpetual `Caddy config diverged from DB missing_in_caddy:["gc_route_<id>"]` WARN and the loop-repair landmine under `GC_CADDY_AUTO_RECONCILE=1`
 - caddy-start.sh no longer tees stdout into `/data/caddy/caddy-stdout.log`. The file was an unrotated duplicate of the container's stdout (observed: 678 MB after 4 days). Caddy logs now flow only through Docker's log driver, which has rotation
 - csrf middleware no longer pre-generates tokens for fresh anonymous visitors. Bot scans of `/.git/config`, `/.env`, etc. previously created a 24h `sessions` row each (~11.5k anon rows in 24 h) because csrf-sync wrote `req.session.csrfToken` and bypassed `saveUninitialized:false`. Tokens are now minted only when a session has state worth protecting (authenticated user, or an existing token); the login page calls a new `ensureCsrfToken()` helper to keep the unauthenticated form flow working
+- injectLocals: the flash-message branch unconditionally wrote `req.session.flash = {}` on every request, which was a *second* source of session pollution independent of CSRF. Now only consumes & clears flash if there's actually something to consume; anon requests no longer mutate the session at all
 
 ---
 

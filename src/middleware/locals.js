@@ -57,10 +57,21 @@ function injectLocals(req, res, next) {
     }
   }
 
-  // Flash messages
+  // Flash messages — only mutate the session when there's actually
+  // something to consume. The previous unconditional
+  // `req.session.flash = {}` modified every session object on every
+  // request, which defeats `saveUninitialized: false` and turned every
+  // anon bot probe into a 24h sessions-table row (~11.5k anon rows in
+  // 24 h observed). Pair this with the lazy-mint behaviour in
+  // injectCsrfToken so an anon visitor's session is only persisted
+  // when something genuinely needs to live across requests.
   if (req.session) {
-    res.locals.flash = req.session.flash || {};
-    req.session.flash = {};
+    if (req.session.flash) {
+      res.locals.flash = req.session.flash;
+      req.session.flash = {};
+    } else {
+      res.locals.flash = {};
+    }
   }
 
   next();
