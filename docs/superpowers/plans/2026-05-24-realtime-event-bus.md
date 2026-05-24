@@ -10,30 +10,33 @@
 
 **Branch:** `feat/realtime-event-bus` (already created off `master`). Commits stay local until the final push/PR step.
 
+> **Review note (2 parallel reviews folded in):** the circuit-breaker event is emitted from `monitor.js` (where `checkAndUpdate` is called and `route.domain` is in scope), NOT from `circuitBreaker.js` (whose function is `checkAndUpdate`, not `recordResult`). Page refresh functions are IIFE-private — `gc:*` listeners go INSIDE each page's IIFE. The feature is registered in `COMMUNITY_FALLBACK`. The login page does not extend the authed layout, so the global `events.js` include never runs unauthenticated (no login-loop); CSP `script-src 'self'` already allows it.
+
 ---
 
 ## File Structure
 
 **New**
-- `src/services/eventBus.js` — singleton pub/sub with per-subscriber filter + isolation. One responsibility: in-process event fan-out.
-- `src/routes/api/events.js` — the SSE request handler (headers, framing, keepalive, drain/close backpressure, teardown). Exports the handler so it can be unit-tested with mocks.
+- `src/services/eventBus.js` — singleton pub/sub with per-subscriber filter + isolation.
+- `src/routes/api/events.js` — SSE request handler (headers, framing, keepalive, drain/close backpressure, teardown). Exported for unit testing with mocks.
 - `public/js/events.js` — browser client: connect, re-dispatch as `gc:*`, bounded-backoff reconnect, exact-401 logout probe.
 - `tests/eventBus.test.js`, `tests/api_events.test.js`.
-- `docs/feature-realtime-events.md` — feature doc (project convention).
+- `docs/feature-realtime-events.md`.
 
 **Modified**
 - `src/routes/api/index.js` — add tiny authed `/ping` probe endpoint.
 - `src/routes/index.js` — mount `GET /api/v1/events` before the `/api/v1` apiLimiter mount.
-- `src/services/activity.js`, `peerStatus.js`, `gatewayHealth.js`, `monitor.js`, `circuitBreaker.js` — one `eventBus.publish(...)` each at the existing change site.
+- `src/services/activity.js`, `peerStatus.js`, `gatewayHealth.js` — one `eventBus.publish(...)` each at the existing change site.
+- `src/services/monitor.js` — **two** publishes: route-status change (`if (statusChanged)` block) and circuit-breaker change (`if (cbResult && cbResult.statusChanged)` block). The circuit event lives here, not in `circuitBreaker.js`.
+- `src/services/license.js` — register `realtime_events: true` in `COMMUNITY_FALLBACK`.
 - `templates/default/layout.njk`, `templates/pro/layout.njk` — include `events.js`.
+- `public/js/logs.js`, `dashboard.js`, `peers.js`, `routes.js`, `gatewayPools.js` (if present) — add `gc:*` listeners INSIDE each file's existing IIFE, calling its existing refresh function.
 
 ---
 
 ## Task 1: Event bus service
 
-**Files:**
-- Create: `src/services/eventBus.js`
-- Test: `tests/eventBus.test.js`
+**Files:** Create `src/services/eventBus.js`; Test `tests/eventBus.test.js`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -152,12 +155,9 @@ git commit -m "feat(events): in-process event bus with per-subscriber filter"
 
 ---
 
-## Task 2: SSE endpoint + auth probe + mount
+## Task 2: SSE endpoint + auth probe + feature flag + mount
 
-**Files:**
-- Create: `src/routes/api/events.js`
-- Modify: `src/routes/api/index.js` (add `/ping`), `src/routes/index.js` (mount `/api/v1/events`)
-- Test: `tests/api_events.test.js`
+**Files:** Create `src/routes/api/events.js`; Modify `src/routes/api/index.js`, `src/routes/index.js`, `src/services/license.js`; Test `tests/api_events.test.js`.
 
 - [ ] **Step 1: Write the failing test** (raw http client + handler-level mocks — NOT supertest, which buffers and hangs on a stream)
 
@@ -254,9 +254,9 @@ describe('SSE /api/v1/events', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `node --test --test-force-exit tests/api_events.test.js`
-Expected: FAIL — `Cannot find module '../src/routes/api/events'` (and 401 test fails: no route yet).
+Expected: FAIL — `Cannot find module '../src/routes/api/events'` and the 401 test fails (no route yet).
 
-- [ ] **Step 3a: Create the SSE handler**
+- [ ] **Step 3a: Create the SSE handler** (note the keepalive respects the `lagging` pause)
 
 ```js
 // src/routes/api/events.js
@@ -302,7 +302,8 @@ function sseHandler(req, res) {
   const listener = (evt) => send(evt);
   eventBus.subscribe(listener, () => true);
 
-  const keepalive = setInterval(() => { res.write(': ping\n\n'); }, KEEPALIVE_MS);
+  // keepalive must also respect backpressure, else it defeats the pause
+  const keepalive = setInterval(() => { if (lagging) return; res.write(': ping\n\n'); }, KEEPALIVE_MS);
 
   req.on('close', cleanup);
 }
@@ -318,7 +319,7 @@ module.exports = sseHandler;
 router.get('/ping', (req, res) => res.json({ ok: true }));
 ```
 
-- [ ] **Step 3c: Mount the SSE route** in `src/routes/index.js` immediately before the `/api/v1` mount (currently line 256). It is mounted here, not inside `./api`, so it bypasses `apiLimiter` (a long-lived GET must not sit behind a per-window limiter):
+- [ ] **Step 3c: Mount the SSE route** in `src/routes/index.js` immediately before the `/api/v1` mount (currently line 256), so it bypasses `apiLimiter` (a long-lived GET must not sit behind a per-window limiter) but keeps `requireAuth`:
 
 ```js
 // ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
@@ -328,39 +329,35 @@ router.get('/api/v1/events', requireAuth, require('./api/events'));
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 ```
 
+- [ ] **Step 3d: Register the feature** in `src/services/license.js` — add to the flat `COMMUNITY_FALLBACK` flag map (~line 15):
+
+```js
+  realtime_events: true,
+```
+
+Community feature, available in all modes (spec §5) — flag defaults `true`, no Pro/API guard. Satisfies the project convention of registering every new feature in `COMMUNITY_FALLBACK`.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test --test-force-exit tests/api_events.test.js`
-Expected: PASS (3 tests).
+Expected: PASS (3 tests). (`requireAuth` returns 401 for `/api/`-prefixed paths without a session — verified in `src/middleware/auth.js`.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/routes/api/events.js src/routes/api/index.js src/routes/index.js tests/api_events.test.js
-git commit -m "feat(events): SSE endpoint, auth probe, drain/close backpressure"
+git add src/routes/api/events.js src/routes/api/index.js src/routes/index.js src/services/license.js tests/api_events.test.js
+git commit -m "feat(events): SSE endpoint, auth probe, drain/close backpressure, feature flag"
 ```
 
 ---
 
-## Task 3: Wire the five emit sites
+## Task 3: Wire the four emit sites
 
-Each sub-step adds exactly one `eventBus.publish(...)` at an existing change site. Add `const eventBus = require('./eventBus');` to the top requires of each service file.
+Add `const eventBus = require('./eventBus');` to the top requires of each modified service file. (`monitor.js` gets two publishes; `circuitBreaker.js` is NOT modified.)
 
-- [ ] **Step 1: Write a spy test for the activity emit**
+- [ ] **Step 1: Write a spy test for the activity emit** — append to `tests/eventBus.test.js`, mirroring the tmp-DB setup from `tests/api_events.test.js` (`runMigrations()` first, cache-bust `../config/default`/`../src/db/connection`/`../src/db/migrations`). Subscribe a collector to a freshly-required `eventBus`, call `require('../src/services/activity').log('test_event', 'hi', { severity: 'info' })`, and assert exactly one event with `type === 'activity'` and `payload.eventType === 'test_event'`.
 
-```js
-// append to tests/eventBus.test.js
-const { it: it2 } = require('node:test');
-it2('activity.log publishes an activity event', () => {
-  // arrange an isolated DB + bus, then assert publish is invoked
-  // (see executing notes: use the same tmp-DB pattern as api_events.test.js,
-  //  subscribe a collector, call activity.log(...), assert one 'activity' event)
-});
-```
-
-Execution note: mirror the tmp-DB setup from `tests/api_events.test.js` (`runMigrations()` first), `require('../src/services/eventBus')`, subscribe a collector, then `require('../src/services/activity').log('test_event','hi',{severity:'info'})` and assert one event of `type==='activity'` with `payload.eventType==='test_event'`.
-
-- [ ] **Step 2: `src/services/activity.js`** — capture the insert id and publish after the INSERT (the `db.prepare(...).run(...)` call inside `log()`):
+- [ ] **Step 2: `src/services/activity.js`** — capture the insert id and publish after the INSERT inside `log()`. Replace the existing un-assigned `db.prepare(...).run(...)` with:
 
 ```js
   const info = db.prepare(`
@@ -374,15 +371,15 @@ Execution note: mirror the tmp-DB setup from `tests/api_events.test.js` (`runMig
   });
 ```
 
-- [ ] **Step 3: `src/services/peerStatus.js`** — inside `pollPeerStatus`, right after the `if (wasOnline !== undefined && wasOnline !== wgPeer.isOnline) { ... }` block (before `previousState.set(...)`):
+(`better-sqlite3` `.run()` returns `{ changes, lastInsertRowid }`. `createdAt` is a hint; the client reconciles the exact value via refetch.)
+
+- [ ] **Step 3: `src/services/peerStatus.js`** — add a single publish INSIDE the existing `if (wasOnline !== undefined && wasOnline !== wgPeer.isOnline) { ... }` block (after the `activity.log(...)`/`logger.info(...)` lines, before the block closes ~line 52). Reuse the existing guard — do NOT add a second `if`:
 
 ```js
-      if (wasOnline !== undefined && wasOnline !== wgPeer.isOnline) {
         eventBus.publish('peer', { peerId: peer.id, name: peer.name, connected: wgPeer.isOnline });
-      }
 ```
 
-- [ ] **Step 4: `src/services/gatewayHealth.js`** — in `evaluatePeer`, just before `return { transition };` (line ~132):
+- [ ] **Step 4: `src/services/gatewayHealth.js`** — in `evaluatePeer`, just before `return { transition };` (~line 132). `updated.alive` is in scope; `name` is not (only in `_onTransition`), so the payload is `{ peerId, alive, transition }` (matches the spec §3 row):
 
 ```js
   if (transition) {
@@ -391,20 +388,19 @@ Execution note: mirror the tmp-DB setup from `tests/api_events.test.js` (`runMig
   return { transition };
 ```
 
-- [ ] **Step 5: `src/services/monitor.js`** — inside `checkRoute`, in the existing `if (statusChanged) { ... }` block (after the `activity.log(...)` call, ~line 182):
+- [ ] **Step 5: `src/services/monitor.js` (route-status event)** — inside `checkRoute`, in the existing `if (statusChanged) { ... }` block, right after the `activity.log(...)` call (~line 182). `newStatus`/`route.domain` are in scope:
 
 ```js
     eventBus.publish('monitor', { routeId: route.id, domain: route.domain, status: newStatus });
 ```
 
-- [ ] **Step 6: `src/services/circuitBreaker.js`** — in `recordResult`, immediately before its `return { statusChanged, newStatus };`:
+- [ ] **Step 6: `src/services/monitor.js` (circuit-breaker event)** — `circuitBreaker` exposes `checkAndUpdate(routeId, isHealthy)` (NOT `recordResult`), and `monitor.checkRoute` already calls it at ~line 220. Add the publish inside the existing `if (cbResult && cbResult.statusChanged) {` block (~line 222), right after `const cbStatus = cbResult.newStatus;`:
 
 ```js
-  if (statusChanged) {
-    eventBus.publish('monitor', { routeId, circuit: newStatus });
-  }
-  return { statusChanged, newStatus };
+    eventBus.publish('monitor', { routeId: route.id, domain: route.domain, circuit: cbStatus });
 ```
+
+Do **not** edit `circuitBreaker.js` — emitting there would lose `route.domain` and fire on internal `open→half-open` timeout transitions (`checkTimeouts`) the UI should not surface.
 
 - [ ] **Step 7: Run the full suite**
 
@@ -414,7 +410,7 @@ Expected: PASS (existing suite + new event tests). Fix any regression before con
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/services/activity.js src/services/peerStatus.js src/services/gatewayHealth.js src/services/monitor.js src/services/circuitBreaker.js tests/eventBus.test.js
+git add src/services/activity.js src/services/peerStatus.js src/services/gatewayHealth.js src/services/monitor.js tests/eventBus.test.js
 git commit -m "feat(events): publish gateway/peer/activity/monitor events at change sites"
 ```
 
@@ -422,9 +418,7 @@ git commit -m "feat(events): publish gateway/peer/activity/monitor events at cha
 
 ## Task 4: Browser client + page wiring
 
-**Files:**
-- Create: `public/js/events.js`
-- Modify: `templates/default/layout.njk`, `templates/pro/layout.njk`
+**Files:** Create `public/js/events.js`; Modify `templates/{default,pro}/layout.njk` and the page scripts.
 
 - [ ] **Step 1: Create the client core**
 
@@ -460,8 +454,8 @@ git commit -m "feat(events): publish gateway/peer/activity/monitor events at cha
       if (failures >= PROBE_AFTER) {
         fetch('/api/v1/ping', { credentials: 'same-origin' })
           .then(function (r) {
-            if (r.status === 401) { stopped = true; window.location = '/login'; return; }
-            setTimeout(connect, backoff()); // transient (429/5xx/network)
+            if (r.status === 401) { stopped = true; window.location = '/login'; return; } // ONLY 401 = logout
+            setTimeout(connect, backoff()); // 429/5xx/network = transient
           })
           .catch(function () { setTimeout(connect, backoff()); });
       } else {
@@ -473,53 +467,61 @@ git commit -m "feat(events): publish gateway/peer/activity/monitor events at cha
 })();
 ```
 
-- [ ] **Step 2: Include it in both layouts** — in `templates/default/layout.njk` and `templates/pro/layout.njk`, immediately after the existing `<script src="/js/app.js"></script>` line:
+- [ ] **Step 2: Include it in both layouts** — in `templates/default/layout.njk` (~line 115) and `templates/pro/layout.njk` (~line 117), immediately after the existing `<script src="/js/app.js"></script>`:
 
 ```html
 <script src="/js/events.js"></script>
 ```
 
-(Global include is harmless: the client only connects once; pages without `gc:*` listeners simply ignore events. This covers Dashboard, Peers, Gateway-Pools and Logs.)
+Plain external `src` matches the existing `app.js` include; CSP `script-src 'self'` allows it, `connect-src 'self'` covers the EventSource. The login/guest pages are standalone templates (they do not `extends` this layout), so `events.js` never runs unauthenticated — no login-loop.
 
-- [ ] **Step 3: Wire one concrete consumer (activity feed)** — in the logs page's existing client script (find the function that renders the activity list, e.g. `loadActivity()` / the table body it populates). Add, near its init:
+- [ ] **Step 3: Wire each page's existing refresh function to `gc:*` — INSIDE that page's IIFE** (the refresh fns are IIFE-private; a listener added elsewhere throws `ReferenceError`). Read each file first to confirm the name; verified names:
+
+  - `public/js/logs.js` → `loadLogs(1)` — on `gc:activity` and `gc:reconnected`.
+  - `public/js/dashboard.js` → `refreshAll()` — on `gc:gateway`, `gc:peer`, `gc:monitor`, `gc:reconnected`.
+  - `public/js/peers.js` → `loadPeers()` (+ `loadGroups()` / `loadGateways()` as relevant) — on `gc:peer`, `gc:gateway`, `gc:reconnected`.
+  - `public/js/routes.js` → `loadRoutes()` — on `gc:monitor`, `gc:reconnected`.
+  - `public/js/gatewayPools.js` (if present) → its pool-refresh fn — on `gc:gateway`, `gc:reconnected`.
+
+  Pattern (added inside the IIFE, after the refresh fn is defined) — e.g. for `logs.js`:
 
 ```js
-// live activity: prepend new rows; on (re)connect, reload to reconcile gaps
-document.addEventListener('gc:activity', function () { loadActivity(); });
-document.addEventListener('gc:reconnected', function () { loadActivity(); });
+  document.addEventListener('gc:activity', function () { loadLogs(1); });
+  document.addEventListener('gc:reconnected', function () { loadLogs(1); });
 ```
 
-Execution note: replace `loadActivity` with the page's actual refresh function name (read the page script first). For the remaining widgets, follow the **same contract**: subscribe to `gc:gateway` / `gc:peer` / `gc:monitor` and call that page's existing refresh function (Dashboard counts, Peers table, Gateway-Pools cards). No new rendering logic — reuse what polling already calls. Each is one `document.addEventListener('gc:<type>', existingRefreshFn)` line.
+  No new rendering logic — reuse exactly what polling already calls.
 
-- [ ] **Step 4: Manual verification (no unit test for client JS — out of c8 scope)**
+- [ ] **Step 4: Manual verification** (client JS has no unit test — out of c8 scope). With a valid admin session cookie `$C` (from devtools):
 
-Run (in one terminal, with a valid admin session cookie `$C` from the browser/devtools):
 ```bash
 curl -N -H "Cookie: gc.sid=$C" https://domaincaster.com/api/v1/events
 ```
-Then trigger a change (e.g. toggle a peer / restart a gateway). Expected: framed `event: …` lines arrive **incrementally** (not batched at the end) — confirms Caddy is not buffering (spec §7).
+
+Trigger a change (toggle a peer / restart a gateway). Expected: framed `event: …` lines arrive **incrementally**, not batched — confirms Caddy isn't buffering (spec §7).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/events.js templates/default/layout.njk templates/pro/layout.njk
-git commit -m "feat(events): resilient SSE client + activity live-feed wiring"
+git add public/js/events.js templates/default/layout.njk templates/pro/layout.njk \
+        public/js/logs.js public/js/dashboard.js public/js/peers.js public/js/routes.js public/js/gatewayPools.js
+git commit -m "feat(events): resilient SSE client + wire page refreshers to gc:* events"
 ```
+
+(If `public/js/gatewayPools.js` doesn't exist, drop it from the `git add`.)
 
 ---
 
-## Task 5: Docs, full verification, push
+## Task 5: Docs, verification, push
 
-- [ ] **Step 1: Write `docs/feature-realtime-events.md`** — short feature doc: what it does, the `gc:*` DOM-event contract, the `/api/v1/events` endpoint, reconnect/logout behaviour, and the "polling retained, no load reduction in v1" note. (Force-add: `git add -f docs/feature-realtime-events.md`.)
+- [ ] **Step 1: Write `docs/feature-realtime-events.md`** — short feature doc: what it does, the `gc:*` DOM-event contract, `/api/v1/events`, reconnect/logout behaviour, the "polling retained, no load reduction in v1" note, and the `COMMUNITY_FALLBACK` flag. Force-add: `git add -f docs/feature-realtime-events.md`.
 
-- [ ] **Step 2: Full test suite green**
+- [ ] **Step 2: Full test suite green** (local TDD loop uses node's built-in runner — no extra deps)
 
 Run: `node --test --test-force-exit tests/`
 Expected: PASS, no regressions.
 
-- [ ] **Step 3: Lint (matches CI)**
-
-Run: `node_modules/.bin/eslint src public/js` (or the project's `npm run lint` equivalent). Expected: clean.
+- [ ] **Step 3: Lint — CI is the canonical gate.** Per the project workflow (`feedback_no_local_tests`), tests/lint run in CI, not locally. ESLint is NOT installed as a local dep, so do **not** invent `npm run lint`. CI (`test.yml`) lints with `npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc` — note this lints `public/js/events.js` too (it uses no eval/child_process/fs, so it passes the security ruleset). The push in Step 4 triggers this.
 
 - [ ] **Step 4: Commit docs + push branch / open PR**
 
@@ -528,14 +530,15 @@ git add -f docs/feature-realtime-events.md
 git commit -m "docs: real-time events feature doc"
 git push -u origin feat/realtime-event-bus
 ```
-Then open a PR to `master` (merge → release.yml builds & releases). Deploy is a separate, explicit step.
+
+Then open a PR to `master` (merge → `release.yml` builds & releases). Deploy is a separate, explicit step.
 
 ---
 
 ## Self-Review
 
-**Spec coverage:** §2.1 bus → Task 1; §2.2 endpoint + backpressure → Task 2; §2.3 client + reconnect/probe → Task 4; §3 taxonomy / emit sites → Task 3; §5 auth + exact-401 probe → Task 2 (`/ping`) + Task 4; §6 drain/close + inline activity → Task 2 + Task 3; §7 Caddy/Node verified + manual curl → Task 4 Step 4; §9 raw-client tests + c8 scope → Task 2; §11 pollers retained → no poller removed in any task (verified — Task 3 only adds publishes); §4 reconnect refetch → Task 4 (`gc:reconnected`). All covered.
+**Spec coverage:** §2.1 bus → Task 1; §2.2 endpoint + drain/close backpressure (keepalive respects `lagging`) → Task 2; §2.3 client + reconnect/exact-401 probe → Task 4 Step 1; §3 taxonomy / emit sites → Task 3 (gateway `{peerId,alive,transition}`, peer `{peerId,name,connected}`, activity inline, monitor status + circuit — both in `monitor.js`); §5 auth + probe + `COMMUNITY_FALLBACK` registration → Task 2 (Steps 3b/3c/3d) + Task 4; §6 drain/close + inline activity → Task 2 + Task 3; §7 verified + manual curl → Task 4 Step 4; §9 raw-client tests + c8 scope → Task 2; §11 pollers retained → no poller removed (Task 3 only adds publishes, Task 4 only adds listeners); §4 reconnect refetch → Task 4 (`gc:reconnected`). All covered.
 
-**Placeholder scan:** Task 3 Step 1 (activity spy test) and Task 4 Step 3 (page refresh fn name) carry explicit *execution notes* with the exact pattern rather than finished code, because the precise test-DB wiring and each page's refresh-function name must be read at execution time. These are "how", not "TBD". All core files (bus, endpoint, client) have complete code.
+**Placeholder scan:** Task 3 Step 1 (activity spy test) and Task 4 Step 3 (per-page IIFE wiring) carry execution notes with exact function names and the precise pattern, not "TBD" — the only thing read at execution time is each file's confirmed-existing refresh fn. All core files (bus, endpoint, client) have complete code.
 
-**Type/name consistency:** `publish/subscribe/unsubscribe/subscriberCount` consistent across Tasks 1–3; event types `gateway|peer|activity|monitor` consistent across endpoint, client and emit sites; client dispatches `gc:<type>` + `gc:reconnected`, consumed verbatim in Task 4 Step 3; probe path `/api/v1/ping` consistent between Task 2 Step 3b and Task 4 Step 1.
+**Type/name consistency:** `publish/subscribe/unsubscribe/subscriberCount` consistent (Tasks 1–3); event types `gateway|peer|activity|monitor` consistent across endpoint, client, emit sites; client dispatches `gc:<type>` + `gc:reconnected`, consumed verbatim in Task 4 Step 3; probe path `/api/v1/ping` consistent (Task 2 Step 3b ↔ Task 4 Step 1); circuit event emitted via `circuitBreaker.checkAndUpdate`'s result inside `monitor.js` (real function name), `circuitBreaker.js` untouched.

@@ -64,7 +64,7 @@ A thin singleton over Node's `EventEmitter`.
   refetch → correct state. This bounds Node memory *and* preserves correctness;
   events are never silently dropped (which would leave a connected client
   showing stale data as "live").
-- **Keepalive:** `: ping\n\n` comment every 25 s (interval cleared on close).
+- **Keepalive:** `: ping\n\n` comment every 25 s (skipped while paused for backpressure; interval cleared on close).
 - **Teardown:** on `req.on('close')` → unsubscribe + clear keepalive + clear
   any drain timer.
 - Mounted so it bypasses `apiLimiter` (a long-lived connection must not consume
@@ -95,11 +95,13 @@ browser's infinite 3 s auto-retry — Concern 1):
 
 | type | emitted from | payload |
 |------|--------------|---------|
-| `gateway` | `gatewayHealth.js` on state transition | `{ peerId, name, status, alive }` |
-| `peer` | `peerStatus.js` on its existing online/offline transition (`previousState` diff already exists) | `{ peerId, name, connected, handshakeAge }` |
+| `gateway` | `gatewayHealth.js` `evaluatePeer` (fires on any transition) | `{ peerId, alive, transition }` |
+| `peer` | `peerStatus.js` on its existing online/offline transition (`previousState` diff already exists) | `{ peerId, name, connected }` |
 | `activity` | `activity.js` on new log row — **row sent inline** (review-B) | `{ id, eventType, message, severity, createdAt }` |
-| `monitor` | `monitor.js` result change | `{ routeId, domain, status }` |
-| `monitor` | `circuitBreaker.js` open/close | `{ routeId, circuit }` |
+| `monitor` | `monitor.js` route-status change | `{ routeId, domain, status }` |
+| `monitor` | `monitor.js` circuit change (from `circuitBreaker.checkAndUpdate` result; **not** `circuitBreaker.js`) | `{ routeId, domain, circuit }` |
+
+Payloads are small refresh-triggers — the client re-dispatches them as `gc:*` DOM events that call each page's existing refresh function, so exact fields beyond the identifiers are not consumed directly.
 
 `monitor` events carry `status` *or* `circuit` depending on source; the client
 updates whichever field is present. Activity rows are tiny and sent inline (no
@@ -163,11 +165,13 @@ Verified against the live system, not assumed:
 endpoint returns a clean 401 (review-C), `tests/eventBus.test.js`,
 `tests/api_events.test.js`, `docs/feature-realtime-events.md`.
 
-**Modified:** the five emit sites (`gatewayHealth.js`, `peerStatus.js`,
-`activity.js`, `monitor.js`, `circuitBreaker.js`) — one `eventBus.publish(...)`
-each at the existing change site; `src/routes/api/index.js` (mount `/events`
-outside `apiLimiter`); page templates for Dashboard, Peers, Gateway-Pools, Logs
-(include `events.js`); `ROADMAP.md`.
+**Modified:** emit sites `gatewayHealth.js`, `peerStatus.js`, `activity.js`,
+and `monitor.js` (two publishes: route-status + circuit — `circuitBreaker.js`
+stays untouched); `src/routes/api/index.js` (`/ping` probe); `src/routes/index.js`
+(mount `/api/v1/events` outside `apiLimiter`); `src/services/license.js`
+(`COMMUNITY_FALLBACK` flag); `templates/{default,pro}/layout.njk` (include
+`events.js`); the page scripts `public/js/{logs,dashboard,peers,routes,gatewayPools}.js`
+(add `gc:*` listeners inside each IIFE); `ROADMAP.md`.
 
 ## 9. Testing (Concern 5)
 
