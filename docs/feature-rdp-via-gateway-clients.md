@@ -77,7 +77,7 @@ Funktion. Vor einem Release bitte folgende Punkte manuell prüfen:
       Phase B/C) öffnet die Route — der Client verwendet `connect_address:connect_port` und landet
       über den Gateway-Tunnel auf dem Ziel-Windows-Rechner.
 - [ ] **Gateway offline → Route offline**: Gateway-Container stoppen oder WG-Tunnel trennen.
-      Nach Ablauf des Heartbeat-Fensters (Standard: 3 min) zeigt die RDP-Route im Client als „offline".
+      Nach Ablauf des Heartbeat-Fensters (Standard: 90 s (Setting `gateway_down_threshold_s`, Default 90, Bereich 30–600 s)) zeigt die RDP-Route im Client als „offline".
 - [ ] **`GC_RDP_PUBLIC_HOST` (optional)**: Variable auf einen abweichenden Hostnamen setzen, Server
       neu starten, `/connect`-Endpunkt aufrufen — `connect_address` muss den neuen Wert zeigen.
 
@@ -100,6 +100,7 @@ sich nichts am bestehenden Verhalten.
 ## Relevante Dateien (Server)
 
 - `src/services/rdpMonitor.js` — Gateway-aware Health-Monitor (Loopback-Probe + Heartbeat-Gate)
-- `src/routes/api/client.js` — `resolveConnectEndpoint()` + Felder in `/client/rdp` und `/client/rdp/:id/connect`
+- `src/services/rdp.js` — `resolveConnectEndpoint()` (Implementierung + Export)
+- `src/routes/api/client/rdp.js` — ruft `resolveConnectEndpoint()` auf und liefert `connect_address`/`connect_port` in der RDP-Liste und in `/connect`
 - `src/config.js` — `rdp.publicHost` aus `GC_RDP_PUBLIC_HOST`
 - `public/js/rdp.js` — Wizard-UI: Host-Hint, NLA-Note, Peer-Autocomplete-Unterdrückung im Gateway-Mode
