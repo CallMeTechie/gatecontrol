@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.1] — 2026-05-24
+
+### Änderungen
+- use npm ci for deterministic, lockfile-faithful installs (#91)
+
+---
+
 ## [1.63.0] — 2026-05-24
 
 ### Features
