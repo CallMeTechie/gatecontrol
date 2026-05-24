@@ -137,6 +137,7 @@ const config = {
   },
 
   rdp: {
+    publicHost: env('GC_RDP_PUBLIC_HOST', ''),
     healthCheckInterval: envInt('GC_RDP_HEALTH_CHECK_INTERVAL', 60000),
     healthCheckTimeout: envInt('GC_RDP_HEALTH_CHECK_TIMEOUT', 5000),
     wolTimeout: envInt('GC_RDP_WOL_TIMEOUT', 60000),

@@ -669,6 +669,33 @@ function getCount() {
   return { total, enabled };
 }
 
+// Resolve the single endpoint a client should connect to, by access mode.
+// gateway → publicHost (GC_RDP_PUBLIC_HOST) || <baseUrl host> : <listen_port|port>;
+//   the publicHost override exists for setups where the admin UI sits behind
+//   Cloudflare/NAT/L7-proxy that does NOT pass the raw L4 RDP port.
+// external/both → external_hostname:external_port; else → host:port.
+// Pure (opts injected) so it is unit-testable without config.
+function resolveConnectEndpoint(route, { baseUrl, publicHost } = {}) {
+  const mode = route.access_mode || 'internal';
+  if (mode === 'gateway') {
+    let host = publicHost || null;
+    if (!host) {
+      try { host = new URL(baseUrl).hostname; } catch { host = null; }
+    }
+    return {
+      connect_address: host,
+      connect_port: route.gateway_listen_port || route.port || 3389,
+    };
+  }
+  if ((mode === 'external' || mode === 'both') && route.external_hostname) {
+    return {
+      connect_address: route.external_hostname,
+      connect_port: route.external_port || route.port || 3389,
+    };
+  }
+  return { connect_address: route.host, connect_port: route.port || 3389 };
+}
+
 // --- Token-filtered access -------------------------------------
 // canAccessRoute lives in ./rdpAcl — keep getForToken here because
 // it ties together the DB query with stripSensitive, which is a
@@ -696,4 +723,5 @@ module.exports = {
   decryptCredentials,
   validateRdpRoute,
   isInMaintenanceWindow,
+  resolveConnectEndpoint,
 };
