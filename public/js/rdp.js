@@ -573,6 +573,13 @@
     if (homegwFields) {
       homegwFields.style.display = mode === 'gateway' ? '' : 'none';
     }
+
+    var hostHint = document.getElementById('rdp-host-hint');
+    if (hostHint && window.GC && GC.t) {
+      hostHint.textContent = (mode === 'gateway')
+        ? (GC.t['rdp.host_hint.gateway'] || hostHint.textContent)
+        : (GC.t['rdp.host_hint.default'] || hostHint.textContent);
+    }
   }
 
   if (accessMode) {
@@ -649,12 +656,16 @@
 
   if (hostInput && suggestions) {
     hostInput.addEventListener('input', async function () {
+      var am = document.getElementById('rdp-access-mode');
+      if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
       var peers = await fetchPeers();
       var filtered = filterPeers(peers, this.value);
       showSuggestions(filtered);
     });
 
     hostInput.addEventListener('focus', async function () {
+      var am = document.getElementById('rdp-access-mode');
+      if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
       if (this.value) {
         var peers = await fetchPeers();
         var filtered = filterPeers(peers, this.value);
