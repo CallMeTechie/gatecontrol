@@ -170,8 +170,9 @@ and `monitor.js` (two publishes: route-status + circuit — `circuitBreaker.js`
 stays untouched); `src/routes/api/index.js` (`/ping` probe); `src/routes/index.js`
 (mount `/api/v1/events` outside `apiLimiter`); `src/services/license.js`
 (`COMMUNITY_FALLBACK` flag); `templates/{default,pro}/layout.njk` (include
-`events.js`); the page scripts `public/js/{logs,dashboard,peers,routes,gatewayPools}.js`
-(add `gc:*` listeners inside each IIFE); `ROADMAP.md`.
+`events.js`); the page scripts `public/js/{logs,dashboard,peers,routes}.js`
+(add `gc:*` listeners inside each IIFE; gateway-pools page is server-rendered,
+excluded in v1); `ROADMAP.md`.
 
 ## 9. Testing (Concern 5)
 

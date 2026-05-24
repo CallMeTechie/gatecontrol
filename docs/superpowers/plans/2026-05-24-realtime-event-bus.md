@@ -30,7 +30,7 @@
 - `src/services/monitor.js` — **two** publishes: route-status change (`if (statusChanged)` block) and circuit-breaker change (`if (cbResult && cbResult.statusChanged)` block). The circuit event lives here, not in `circuitBreaker.js`.
 - `src/services/license.js` — register `realtime_events: true` in `COMMUNITY_FALLBACK`.
 - `templates/default/layout.njk`, `templates/pro/layout.njk` — include `events.js`.
-- `public/js/logs.js`, `dashboard.js`, `peers.js`, `routes.js`, `gatewayPools.js` (if present) — add `gc:*` listeners INSIDE each file's existing IIFE, calling its existing refresh function.
+- `public/js/logs.js`, `dashboard.js`, `peers.js`, `routes.js` — add `gc:*` listeners INSIDE each file's existing IIFE, calling its existing refresh function. (`gatewayPools.js` is **excluded**: it's server-rendered with no client refresh fn; the dashboard already reflects gateway state live.)
 
 ---
 
@@ -402,9 +402,9 @@ Add `const eventBus = require('./eventBus');` to the top requires of each modifi
 
 Do **not** edit `circuitBreaker.js` — emitting there would lose `route.domain` and fire on internal `open→half-open` timeout transitions (`checkTimeouts`) the UI should not surface.
 
-- [ ] **Step 7: Run the full suite**
+- [ ] **Step 7: Run the full suite** (existing tests need `NODE_ENV=test`; the new event tests self-provide secrets)
 
-Run: `node --test --test-force-exit tests/`
+Run: `NODE_ENV=test node --test --test-force-exit tests/`
 Expected: PASS (existing suite + new event tests). Fix any regression before continuing.
 
 - [ ] **Step 8: Commit**
@@ -481,7 +481,7 @@ Plain external `src` matches the existing `app.js` include; CSP `script-src 'sel
   - `public/js/dashboard.js` → `refreshAll()` — on `gc:gateway`, `gc:peer`, `gc:monitor`, `gc:reconnected`.
   - `public/js/peers.js` → `loadPeers()` (+ `loadGroups()` / `loadGateways()` as relevant) — on `gc:peer`, `gc:gateway`, `gc:reconnected`.
   - `public/js/routes.js` → `loadRoutes()` — on `gc:monitor`, `gc:reconnected`.
-  - `public/js/gatewayPools.js` (if present) → its pool-refresh fn — on `gc:gateway`, `gc:reconnected`.
+  - (Gateway-Pools page is server-rendered with no client refresh fn — out of scope for v1; gateway state shows live on the dashboard.)
 
   Pattern (added inside the IIFE, after the refresh fn is defined) — e.g. for `logs.js`:
 
@@ -504,11 +504,9 @@ Trigger a change (toggle a peer / restart a gateway). Expected: framed `event: �
 
 ```bash
 git add public/js/events.js templates/default/layout.njk templates/pro/layout.njk \
-        public/js/logs.js public/js/dashboard.js public/js/peers.js public/js/routes.js public/js/gatewayPools.js
+        public/js/logs.js public/js/dashboard.js public/js/peers.js public/js/routes.js
 git commit -m "feat(events): resilient SSE client + wire page refreshers to gc:* events"
 ```
-
-(If `public/js/gatewayPools.js` doesn't exist, drop it from the `git add`.)
 
 ---
 
@@ -516,10 +514,10 @@ git commit -m "feat(events): resilient SSE client + wire page refreshers to gc:*
 
 - [ ] **Step 1: Write `docs/feature-realtime-events.md`** — short feature doc: what it does, the `gc:*` DOM-event contract, `/api/v1/events`, reconnect/logout behaviour, the "polling retained, no load reduction in v1" note, and the `COMMUNITY_FALLBACK` flag. Force-add: `git add -f docs/feature-realtime-events.md`.
 
-- [ ] **Step 2: Full test suite green** (local TDD loop uses node's built-in runner — no extra deps)
+- [ ] **Step 2: Full test suite green** (set `NODE_ENV=test` so the existing suite's secret-gen works; node's built-in runner, no extra deps)
 
-Run: `node --test --test-force-exit tests/`
-Expected: PASS, no regressions.
+Run: `NODE_ENV=test node --test --test-force-exit tests/`
+Expected: PASS, no regressions. (One env-only test needs the `wg` CLI — green in CI.)
 
 - [ ] **Step 3: Lint — CI is the canonical gate.** Per the project workflow (`feedback_no_local_tests`), tests/lint run in CI, not locally. ESLint is NOT installed as a local dep, so do **not** invent `npm run lint`. CI (`test.yml`) lints with `npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc` — note this lints `public/js/events.js` too (it uses no eval/child_process/fs, so it passes the security ruleset). The push in Step 4 triggers this.
 
