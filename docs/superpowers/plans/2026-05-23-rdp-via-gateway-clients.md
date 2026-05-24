@@ -198,7 +198,7 @@ In `src/routes/api/client/rdp.js`, die `enriched`-Map (aktuell ~49-52) ersetzen 
 
 ```js
     const config = require('../../../../config/default');
-    const connOpts = { baseUrl: config.app.baseUrl, publicHost: config.app.rdpPublicHost };
+    const connOpts = { baseUrl: config.app.baseUrl, publicHost: config.rdp.publicHost };
     const enriched = visibleRoutes.map(r => ({
       ...r,
       ...rdpService.resolveConnectEndpoint(r, connOpts),
@@ -213,7 +213,7 @@ Im `connection`-Objekt-Literal (beginnt bei `const connection = {`), direkt nach
 ```js
       ...(() => {
         const cfg = require('../../../../config/default');
-        return rdpService.resolveConnectEndpoint(route, { baseUrl: cfg.app.baseUrl, publicHost: cfg.app.rdpPublicHost });
+        return rdpService.resolveConnectEndpoint(route, { baseUrl: cfg.app.baseUrl, publicHost: cfg.rdp.publicHost });
       })(),
 ```
 
