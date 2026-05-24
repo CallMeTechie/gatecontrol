@@ -149,6 +149,7 @@
                 <div id="rdp-host-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-panel);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-xs) var(--radius-xs);z-index:10;box-shadow:var(--shadow)">
                 </div>
               </div>
+              <div id="rdp-host-hint" style="font-size:10px;color:var(--text-3);margin-top:3px">{{ t('rdp.host_hint.default') }}</div>
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.port') }}</label>
@@ -184,6 +185,8 @@
             <div id="rdp-homegw-fields" style="display:none;grid-column:1/-1">
               <div style="padding:10px;background:color-mix(in srgb, var(--accent) 5%, transparent);border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border));border-radius:var(--radius-xs);margin-bottom:8px">
                 <div style="font-size:11px;color:var(--text-2)">{{ t('rdp.access_mode_hint.gateway') }}</div>
+                <div style="font-size:11px;color:var(--text-2);margin-top:4px;font-weight:600">{{ t('rdp.gateway_lan_target_note') }}</div>
+                <div style="font-size:10px;color:var(--text-3);margin-top:4px">{{ t('rdp.gateway_nla_note') }}</div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div>

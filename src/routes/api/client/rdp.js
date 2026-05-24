@@ -11,6 +11,7 @@ const rdpService = require('../../../services/rdp');
 const rdpMonitor = require('../../../services/rdpMonitor');
 const rdpSessions = require('../../../services/rdpSessions');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
+const config = require('../../../../config/default');
 
 const router = Router();
 
@@ -44,10 +45,12 @@ router.get('/rdp', (req, res) => {
     }
     const visibleRoutes = selfIp ? routes.filter(r => r.host !== selfIp) : routes;
 
-    // Attach online status
+    // Attach online status and resolved connect endpoint
     const statuses = rdpMonitor.getAllStatus();
+    const connOpts = { baseUrl: config.app.baseUrl, publicHost: config.rdp.publicHost };
     const enriched = visibleRoutes.map(r => ({
       ...r,
+      ...rdpService.resolveConnectEndpoint(r, connOpts),
       status: statuses[r.id] || { online: false, lastCheck: null },
     }));
 
@@ -160,11 +163,14 @@ router.get('/rdp/:id/connect', (req, res) => {
     }
 
     // Build connection info
+    const connectEp = rdpService.resolveConnectEndpoint(route, { baseUrl: config.app.baseUrl, publicHost: config.rdp.publicHost });
     const connection = {
       id: route.id,
       name: route.name,
       host: route.host,
       port: route.port,
+      connect_address: connectEp.connect_address,
+      connect_port: connectEp.connect_port,
       peer_hostname,
       peer_fqdn,
       external_hostname: route.external_hostname,
