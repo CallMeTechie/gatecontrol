@@ -2201,4 +2201,8 @@
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
   setInterval(loadGateways, 20000);
+
+  document.addEventListener('gc:peer', function () { loadPeers(); });
+  document.addEventListener('gc:gateway', function () { loadPeers(); });
+  document.addEventListener('gc:reconnected', function () { loadPeers(); });
 })();
