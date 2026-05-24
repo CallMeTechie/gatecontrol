@@ -27,12 +27,16 @@
 - pool load-balancing for L4 routes (TCP/UDP) — caddy-l4 proxy handler now renders multiple upstreams + selection_policy when a pool is in `load_balancing` mode; previously L4 collapsed to the first alive member regardless of mode
 - passive health checks on pool-LB reverse-proxy routes — drops a backend after 3× 5xx for 30 s without needing an active probe, gives free circuit-breaking even when gatewayHealth still thinks the peer is alive
 - `srv0` http server now declares `trusted_proxies` (RFC1918 + CGNAT + IPv6 ULA + loopback) and `client_ip_headers: [X-Forwarded-For]` so `ip_hash` LB and other client-IP-aware policies see the real client when GateControl runs behind a private LB or CDN
+- RDP `gateway` access-mode routes now resolve a public `connect_address` / `connect_port` and expose them on `GET /api/v1/client/rdp` (list) and `GET /api/v1/client/rdp/:id/connect`. Resolution by mode: `gateway` → `GC_RDP_PUBLIC_HOST` (or GC base-URL host) + `gateway_listen_port`; `external` / `both` → `external_hostname:external_port`; `internal` → `host:port`. New optional env `GC_RDP_PUBLIC_HOST` for deployments behind Cloudflare / NAT / reverse-proxy where the GC base-URL host doesn't pass the raw L4 RDP port.
+- RDP route wizard (gateway mode): host field now shows a hint that the LAN IP of the target goes here, adds an NLA note, and suppresses the peer autocomplete to avoid confusion in gateway mode.
+- **Compatibility note:** connecting to a gateway RDP route from the Pro / Android client requires the client build with gateway connect-address support (follow-up phases B/C — server-side changes are backward-compatible).
 
 ### Fixes
 - caddyReconciler: `extractCaddyRouteIds` now recurses into `subroute` handlers, so routes wrapped for forward-auth (route_auth without basic_auth, or ip_filter) are no longer reported as missing every 5 min. Fixes the perpetual `Caddy config diverged from DB missing_in_caddy:["gc_route_<id>"]` WARN and the loop-repair landmine under `GC_CADDY_AUTO_RECONCILE=1`
 - caddy-start.sh no longer tees stdout into `/data/caddy/caddy-stdout.log`. The file was an unrotated duplicate of the container's stdout (observed: 678 MB after 4 days). Caddy logs now flow only through Docker's log driver, which has rotation
 - csrf middleware no longer pre-generates tokens for fresh anonymous visitors. Bot scans of `/.git/config`, `/.env`, etc. previously created a 24h `sessions` row each (~11.5k anon rows in 24 h) because csrf-sync wrote `req.session.csrfToken` and bypassed `saveUninitialized:false`. Tokens are now minted only when a session has state worth protecting (authenticated user, or an existing token); the login page calls a new `ensureCsrfToken()` helper to keep the unauthenticated form flow working
 - injectLocals: the flash-message branch unconditionally wrote `req.session.flash = {}` on every request, which was a *second* source of session pollution independent of CSRF. Now only consumes & clears flash if there's actually something to consume; anon requests no longer mutate the session at all
+- RDP health monitor (`rdpMonitor.js`) now probes gateway routes via the loopback L4 listen port instead of the unreachable LAN host, and only reports the route as "online" when the linked gateway peer's heartbeat is still fresh — prevents false-positive "online" when the home gateway is dead.
 
 ---
 
