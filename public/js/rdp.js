@@ -659,6 +659,7 @@
       var am = document.getElementById('rdp-access-mode');
       if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
       var peers = await fetchPeers();
+      if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
       var filtered = filterPeers(peers, this.value);
       showSuggestions(filtered);
     });
@@ -668,6 +669,7 @@
       if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
       if (this.value) {
         var peers = await fetchPeers();
+        if (am && am.value === 'gateway') { suggestions.style.display = 'none'; return; }
         var filtered = filterPeers(peers, this.value);
         showSuggestions(filtered);
       }
@@ -1100,6 +1102,8 @@
   var originalOpenCreateModal = openCreateModal;
   openCreateModal = function () {
     originalOpenCreateModal();
+    var amEl = document.getElementById('rdp-access-mode');
+    if (amEl) amEl.dispatchEvent(new Event('change'));
     populateHomeGatewayPeers();
     showWizardStep(1);
   };
