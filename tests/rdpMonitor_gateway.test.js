@@ -23,3 +23,8 @@ test('gateway peer stale when last_seen older than threshold (epoch ms)', () => 
   assert.strictEqual(isGatewayStale(now - 10_000, 90_000, now), false);  // 10s old
   assert.strictEqual(isGatewayStale(null, 90_000, now), true);           // never seen
 });
+
+test('null access_mode defaults to internal', () => {
+  const t = resolveCheckTarget({ access_mode: null, host: '10.0.0.1', port: 3389 });
+  assert.deepStrictEqual(t, { host: '10.0.0.1', port: 3389 });
+});

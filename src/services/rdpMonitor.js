@@ -27,9 +27,17 @@ function isGatewayStale(lastSeenAt, thresholdMs, now = Date.now()) {
 // otherwise the local L4 listener accepts the connection but the dead gateway
 // never forwards it (false-positive "online").
 function isGatewayLive(route, db) {
+  // Only DIRECT single-peer gateway routes need a heartbeat gate: their L4
+  // listener stays up even when the peer is dead (no failover), so the loopback
+  // probe alone would false-positive "online". Pool-backed gateway routes
+  // (gateway_pool_id set, gateway_peer_id null) are intentionally NOT gated here —
+  // caddyConfig removes the L4 listener on pool outage, so the loopback probe is
+  // already accurate for them.
   if ((route.access_mode || 'internal') !== 'gateway' || !route.gateway_peer_id) return true;
   const meta = db.prepare('SELECT last_seen_at FROM gateway_meta WHERE peer_id = ?').get(route.gateway_peer_id);
   const row = db.prepare("SELECT value FROM settings WHERE key = 'gateway_down_threshold_s'").get();
+  // `|| 90` also guards a corrupt (non-numeric) setting value — intentionally
+  // safer than gatewayHealth's raw parseInt (which would yield NaN, i.e. "alive").
   const thresholdMs = (parseInt(row?.value ?? '90', 10) || 90) * 1000;
   return !isGatewayStale(meta?.last_seen_at ?? null, thresholdMs);
 }
