@@ -61,6 +61,7 @@ class StateMachine {
 }
 
 const { getDb } = require('../db/connection');
+const eventBus = require('./eventBus');
 
 let _snapshot = {};
 let _recoveryInterruptLogged = new Set();
@@ -128,6 +129,10 @@ function evaluatePeer(peerId) {
     went_down_at: updated.went_down_at,
     recovered_first_hb_at: updated.recovered_first_hb_at,
   };
+
+  if (transition) {
+    eventBus.publish('gateway', { peerId, alive: updated.alive === 1, transition });
+  }
 
   return { transition };
 }

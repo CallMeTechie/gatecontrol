@@ -4,6 +4,7 @@ const { getDb } = require('../db/connection');
 const wireguard = require('./wireguard');
 const activity = require('./activity');
 const logger = require('../utils/logger');
+const eventBus = require('./eventBus');
 
 let pollInterval = null;
 const previousState = new Map(); // pubkey -> isOnline
@@ -49,6 +50,7 @@ async function pollPeerStatus() {
           });
           logger.info({ peer: peer.name }, 'Peer disconnected');
         }
+        eventBus.publish('peer', { peerId: peer.id, name: peer.name, connected: wgPeer.isOnline });
       }
 
       previousState.set(wgPeer.publicKey, wgPeer.isOnline);

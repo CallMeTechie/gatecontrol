@@ -62,3 +62,28 @@ describe('eventBus', () => {
     assert.equal(bus.subscriberCount(), 0); // fully removed, no orphan
   });
 });
+
+describe('activity.log → eventBus', () => {
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const os = require('node:os');
+
+  it('publishes an activity event when a log row is written', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-act-'));
+    process.env.GC_DB_PATH = path.join(tmp, 'test.db');
+    process.env.GC_DATA_DIR = tmp;
+    ['../config/default', '../src/db/connection', '../src/db/migrations', '../src/services/eventBus', '../src/services/activity']
+      .forEach(p => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
+    require('../src/db/migrations').runMigrations();
+    const bus = require('../src/services/eventBus');
+    const activity = require('../src/services/activity');
+
+    const got = [];
+    bus.subscribe((evt) => { if (evt.type === 'activity') got.push(evt); });
+    activity.log('test_event', 'hello', { severity: 'info' });
+
+    assert.equal(got.length, 1);
+    assert.equal(got[0].payload.eventType, 'test_event');
+    assert.equal(typeof got[0].payload.id, 'number');
+  });
+});

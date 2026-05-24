@@ -10,6 +10,7 @@ const activity = require('./activity');
 const webhook = require('./webhook');
 const circuitBreaker = require('./circuitBreaker');
 const logger = require('../utils/logger');
+const eventBus = require('./eventBus');
 
 let pollerInterval = null;
 
@@ -181,6 +182,8 @@ async function checkRoute(route) {
       details: { routeId: route.id, domain: route.domain, status: newStatus, responseTime: result.responseTime },
     });
 
+    eventBus.publish('monitor', { routeId: route.id, domain: route.domain, status: newStatus });
+
     webhook.notify(eventType, message, {
       routeId: route.id,
       domain: route.domain,
@@ -220,6 +223,7 @@ async function checkRoute(route) {
   const cbResult = circuitBreaker.checkAndUpdate(route.id, result.up);
   if (cbResult && cbResult.statusChanged) {
     const cbStatus = cbResult.newStatus;
+    eventBus.publish('monitor', { routeId: route.id, domain: route.domain, circuit: cbStatus });
     if (cbStatus === 'open') {
       activity.log('circuit_breaker_open', `Circuit breaker opened for "${route.domain}" — returning 503`, {
         source: 'monitor',

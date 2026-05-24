@@ -3,6 +3,7 @@
 const { getDb } = require('../db/connection');
 const webhook = require('./webhook');
 const logger = require('../utils/logger');
+const eventBus = require('./eventBus');
 
 const IP_V4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
 const IP_V6_REGEX = /^[0-9a-fA-F:]+$/;
@@ -39,7 +40,7 @@ function log(eventType, message, options = {}) {
     ...options,
   };
 
-  db.prepare(`
+  const info = db.prepare(`
     INSERT INTO activity_log (event_type, message, details, source, ip_address, severity)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -50,6 +51,11 @@ function log(eventType, message, options = {}) {
     sanitizeIp(ipAddress),
     severity
   );
+
+  eventBus.publish('activity', {
+    id: info.lastInsertRowid, eventType, message, severity,
+    createdAt: new Date().toISOString(),
+  });
 
   // Fire webhook notifications (non-blocking)
   webhook.notify(eventType, message, details);
