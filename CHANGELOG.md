@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.0] — 2026-05-24
+
+### Features
+- RDP-over-gateway server support — connect endpoint + gateway-aware health + wizard UX
+
+---
+
 ## [1.62.3] — 2026-05-08
 
 ### Fixes
