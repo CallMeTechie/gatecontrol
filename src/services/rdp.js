@@ -682,6 +682,10 @@ function resolveConnectEndpoint(route, { baseUrl, publicHost } = {}) {
     if (!host) {
       try { host = new URL(baseUrl).hostname; } catch { host = null; }
     }
+    // If neither publicHost nor a parseable baseUrl yields a host, connect_address
+    // stays null. We intentionally do NOT throw: throwing would break the whole
+    // RDP list response for one misconfigured route. null degrades gracefully —
+    // clients fall back to `connect_address || host` (current behaviour).
     return {
       connect_address: host,
       connect_port: route.gateway_listen_port || route.port || 3389,

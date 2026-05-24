@@ -40,3 +40,13 @@ test('publicHost gilt NUR für gateway, nicht external', () => {
   const opts = { baseUrl: 'https://gc.example.com', publicHost: 'should.be.ignored' };
   assert.deepStrictEqual(resolveConnectEndpoint(r, opts), { connect_address: 'rdp.example.com', connect_port: 13389 });
 });
+
+test('gateway ohne publicHost und ohne gültige baseUrl → connect_address null (bewusst, kein Throw)', () => {
+  const r = { access_mode: 'gateway', host: '192.168.2.100', port: 3389, gateway_listen_port: 13389 };
+  assert.deepStrictEqual(resolveConnectEndpoint(r, {}), { connect_address: null, connect_port: 13389 });
+});
+
+test('both ohne external_hostname → fällt auf internal host:port zurück', () => {
+  const r = { access_mode: 'both', host: '10.8.0.5', port: 3389 };
+  assert.deepStrictEqual(resolveConnectEndpoint(r, { baseUrl: 'https://gc.example.com' }), { connect_address: '10.8.0.5', connect_port: 3389 });
+});
