@@ -1408,3 +1408,23 @@ input[type="file"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ── Inline-Help Tooltips (gc-tip) ───────────────────────── */
+.gc-tip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: 5px;
+  color: var(--text-3); cursor: help; vertical-align: middle;
+  border-radius: 50%; flex-shrink: 0;
+}
+.gc-tip:hover, .gc-tip:focus { color: var(--accent); outline: none; }
+#gc-tip-bubble {
+  position: fixed; display: none; max-width: 280px;
+  background: var(--bg-panel); color: var(--text-1);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px; font-size: 12px; line-height: 1.45;
+  white-space: pre-line; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  z-index: 10000; pointer-events: none;
+}
+.gc-port-error { border-color: var(--red) !important; }
+/* Domain-Feld bei L4-none ausgeblendet -> 2-Spalten-Reihe einspaltig kollabieren
+   (sonst leere Spalte). Bei flex-basierten .form-row wirkungslos = ok. */
+.wiz-row-2.gc-row-collapsed, .form-row.gc-row-collapsed { grid-template-columns: 1fr; }
