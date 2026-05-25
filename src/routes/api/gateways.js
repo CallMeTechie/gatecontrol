@@ -20,7 +20,7 @@ const router = Router();
  *     last_seen_at,                 // epoch ms
  *     health: { … full last_health body, includes telemetry },
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
- *                l4_listen_port, l4_protocol }],
+ *                l4_listen_port, l4_protocol, wol_enabled, wol_mac }],
  *   }
  */
 router.get('/', (req, res) => {
@@ -38,7 +38,7 @@ router.get('/', (req, res) => {
     const gatewaysSvc = require('../../services/gateways');
     const routeStmt = db.prepare(`
       SELECT id, domain, route_type, target_lan_host, target_lan_port,
-             l4_listen_port, l4_protocol
+             l4_listen_port, l4_protocol, wol_enabled, wol_mac
       FROM routes
       WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
       ORDER BY domain

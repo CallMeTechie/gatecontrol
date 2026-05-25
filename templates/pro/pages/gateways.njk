@@ -1,11 +1,13 @@
 {% extends theme + "/layout.njk" %}
 {% block content %}
 <div class="gw-fleet">
-<div class="page-h"><div><h1>{{ t('gateways.title') }}</h1><p class="page-sub">{{ t('gateways.subtitle') }}</p></div></div>
-<div id="fleet-kpis" class="kpis"></div>
-<div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
-<div id="fleet-grid" class="grid"></div>
-<div id="gw-modal" class="modal" hidden><div class="modal-body" id="gw-modal-body"></div></div>
+  <div id="fleet-view">
+    <div class="page-h"><div><h1>{{ t('gateways.title') }}</h1><p class="page-sub">{{ t('gateways.subtitle') }}</p></div></div>
+    <div id="fleet-kpis" class="kpis"></div>
+    <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
+    <div id="fleet-grid" class="grid"></div>
+  </div>
+  <div id="gw-detail-view" hidden></div>
 </div>
 {% endblock %}
 {% block scripts %}<script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}
