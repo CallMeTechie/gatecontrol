@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.3] — 2026-05-25
+
+### Änderungen
+- plain update.sh download + guide (drop setup-script/zip) (#106)
+
+---
+
 ## [1.69.2] — 2026-05-25
 
 ### Fixes
