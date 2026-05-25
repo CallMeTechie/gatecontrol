@@ -117,7 +117,15 @@
       'routes.domain_required': {{ t('routes.domain_required') | dump | safe }},
       'routes.target_port_required': {{ t('routes.target_port_required') | dump | safe }},
       'routes.type': {{ t('routes.type') | dump | safe }},
-      'routes.target_peer': {{ t('routes.target_peer') | dump | safe }}
+      'routes.target_peer': {{ t('routes.target_peer') | dump | safe }},
+      'gateways.online': {{ t('gateways.online') | dump | safe }},
+      'gateways.offline': {{ t('gateways.offline') | dump | safe }},
+      'gateways.degraded': {{ t('gateways.degraded') | dump | safe }},
+      'gateways.pending': {{ t('gateways.pending') | dump | safe }},
+      'gateways.version': {{ t('gateways.version') | dump | safe }},
+      'gateways.routes': {{ t('gateways.routes') | dump | safe }},
+      'gateways.kpi_total': {{ t('gateways.kpi_total') | dump | safe }},
+      'gateways.kpi_update': {{ t('gateways.kpi_update') | dump | safe }}
     }
   };
 </script>
