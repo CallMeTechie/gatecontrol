@@ -256,6 +256,9 @@ router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Rou
 // ─── Gateway API (uses own Bearer-token auth, not admin/session auth) ──
 router.use('/api/v1/gateway', apiLimiter, require('./api/gateway'));
 
+// ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
+router.get('/api/v1/events', requireAuth, require('./api/events'));
+
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 

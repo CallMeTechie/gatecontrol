@@ -266,4 +266,7 @@
     loadLogs(currentPage);
     if (accessLoaded) loadAccessLogs(accessPage);
   }, 15000);
+
+  document.addEventListener('gc:activity', function () { loadLogs(1); });
+  document.addEventListener('gc:reconnected', function () { loadLogs(1); });
 })();

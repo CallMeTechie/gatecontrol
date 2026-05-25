@@ -279,4 +279,8 @@
   window.addEventListener('beforeunload', () => {
     if (refreshTimer) clearInterval(refreshTimer);
   });
+
+  ['gc:gateway', 'gc:peer', 'gc:monitor', 'gc:reconnected'].forEach(function (ev) {
+    document.addEventListener(ev, function () { refreshAll(); });
+  });
 })();

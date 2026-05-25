@@ -17,6 +17,10 @@ router.use((req, res, next) => {
   next();
 });
 
+// Lightweight authed probe — the SSE client fetches this after repeated
+// reconnect failures: 200 = session alive, 401 = expired (client logs out).
+router.get('/ping', (req, res) => res.json({ ok: true }));
+
 router.use('/dashboard', require('./dashboard'));
 router.use('/system', require('./system'));
 router.use('/logs', require('./logs'));

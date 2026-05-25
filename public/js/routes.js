@@ -2998,6 +2998,9 @@
   loadPeers();
   setInterval(loadRoutes, 30000);
 
+  document.addEventListener('gc:monitor', function () { loadRoutes(); });
+  document.addEventListener('gc:reconnected', function () { loadRoutes(); });
+
   // -- RDP Port Hint ----------------------------------------------
   (function () {
     var portInput = document.getElementById('route-port') || document.getElementById('l4-listen-port') || document.getElementById('edit-l4-listen-port');
