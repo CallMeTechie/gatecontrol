@@ -61,18 +61,15 @@ test('stateDir defaults to /state and honors GATEWAY_STATE_DIR', () => {
   // and with GATEWAY_STATE_DIR=/data/state → '/data/state'
 });
 ```
-(Read `tests/config.test.js` first and copy its valid-env construction; assert `cfg.stateDir === '/state'` by default and respects `GATEWAY_STATE_DIR`.)
+(Read `tests/config.test.js` first and copy its valid-env construction + export name. `GATEWAY_STATE_DIR` is read from `process.env` (not the env file), so the override case sets `process.env.GATEWAY_STATE_DIR='/data/state'` before `loadConfig()` and deletes it after; assert `cfg.stateDir === '/state'` by default.)
 
 - [ ] **Step 2 — run, expect fail** (`stateDir` undefined). `npm test`.
 
-- [ ] **Step 3 — implement.** In `src/config.js`, add to the zod schema:
+- [ ] **Step 3 — implement.** Mirror `GATEWAY_ENV_PATH` (a `process.env`-only knob, NOT in the zod schema) so `config.stateDir` and `telemetry.js` (A3, which reads `process.env.GATEWAY_STATE_DIR` at module load) read the **same** surface — env-file values are not exported to `process.env`, so putting it in the zod schema would let the two diverge. In `src/config.js`, add to the returned config object (next to `gatewayToken`/`apiPort`):
 ```js
-GATEWAY_STATE_DIR: z.string().default('/state'),
+stateDir: process.env.GATEWAY_STATE_DIR || '/state',
 ```
-and to the returned config object (next to `gatewayToken`/`apiPort`):
-```js
-stateDir: parsed.GATEWAY_STATE_DIR,
-```
+(The A1 Step 1 test sets `process.env.GATEWAY_STATE_DIR` to assert the override.)
 
 - [ ] **Step 4 — run, expect pass.** `npm test`.
 

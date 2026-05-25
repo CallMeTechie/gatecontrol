@@ -182,7 +182,8 @@ requested_at, triggered_via} mode 0o600 → 200 `{ok:true, queued:true}`. Regist
 - Write `/state/last-pull` {request_id, pulled_at, image_digest:<running RepoDigest>, version, ok}.
 
 **`deploy/systemd/`** — `…-update.service` (oneshot→update.sh) + `…-update.path`
-(`PathChanged=/state/pending-update`).
+(`PathExists=/state/pending-update` — re-arms after update.sh removes the flag, edge-triggering
+on the next creation).
 
 **`docker-compose.example.yml`** — add `- ./gateway-state:/state` (rw) + comment.
 
