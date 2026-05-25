@@ -15,9 +15,10 @@ credential: the guest clicks the link and is in. Model: **"the link is the prote
 ## Model ("link = protection")
 
 - Share links can be created on **any** enabled HTTP route.
-- Creating the **first** share link on a route makes it **share-gated**: at its public domain the
-  route is reachable only with a valid share link (the admin reaches the upstream directly via
-  VPN/LAN, or via their own link). This reuses the existing route-auth forward-auth plumbing.
+- Creating the **first** share link on a route makes it **share-gated**: **anyone** reaching it via
+  its domain — public internet, the VPN, or the client services portal — needs a valid share link.
+  The only bypass is reaching the upstream service **directly at its LAN IP:port** (not via the
+  route's domain). This reuses the existing route-auth forward-auth plumbing.
 - A route that already has route-auth (email/OTP/TOTP) keeps it for normal users; a share link is
   an additional **guest bypass** that needs no login.
 - Guest experience: open `https://<route-domain>/route-auth/share/<token>` → redirected to `/`,
@@ -45,8 +46,9 @@ Caddy redirects to `/route-auth/login`. Reference: `src/routes/routeAuth.js`,
     should land the guest on a friendly **"invitation required"** page, not the email/OTP login
     form. Done by making the `/route-auth/login` page detect `auth_type === 'share'` and render a
     minimal "this link is invalid or expired — ask the owner for a new one" view (no form).
-- **Fail-closed:** a `'share'` route with zero valid links/sessions denies all guests at the domain
-  (only the admin via VPN/LAN). Revoking the last link does **not** auto-unprotect; the admin turns
+- **Fail-closed:** a `'share'` route with zero valid links/sessions denies everyone at the domain
+  (the admin reaches the service at its LAN IP:port directly, not via the domain). Revoking the last
+  link does **not** auto-unprotect; the admin turns
   sharing off explicitly (which deletes the `'share'` `route_auth` row + triggers one Caddy reload).
 - **Redeem URL reachability (verified):** the Caddy sibling proxy that routes `/route-auth/*` to the
   server (`buildRouteAuthProxy`, matches `path: ['/route-auth/*']`, placed **first** in the route's
@@ -91,15 +93,24 @@ CREATE TABLE route_auth_share_links (
 CREATE INDEX idx_share_links_token ON route_auth_share_links(token_hash);
 CREATE INDEX idx_share_links_route ON route_auth_share_links(route_id);
 ```
-Plus `ALTER TABLE route_auth_sessions ADD COLUMN share_link_id INTEGER;` (nullable; ties a guest
-session to the link that created it, so revoke can kill it).
+**Migration order (DA-r2 #4):** create `route_auth_share_links` **first**, then
+`ALTER TABLE route_auth_sessions ADD COLUMN share_link_id INTEGER REFERENCES
+route_auth_share_links(id) ON DELETE SET NULL;` (nullable; ties a guest session to its link so
+revoke can kill it; the FK SET-NULL prevents a dangling `share_link_id` when a link row is purged —
+`foreign_keys` PRAGMA is already ON, the existing CASCADEs rely on it). SQLite allows a column added
+via `ALTER TABLE ADD COLUMN` to carry a `REFERENCES … ON DELETE SET NULL` clause only when the
+default is NULL, which it is.
 
 A link is **valid** iff `revoked_at IS NULL AND expires_at > now AND (one_time = 0 OR redeemed_count = 0)`.
 
 ## Guest redeem flow
 
 `GET /route-auth/share/:token` (public; served via the existing Caddy `/route-auth/*` sibling
-proxy on the route domain — **no Caddy change**; rate-limited):
+proxy on the route domain — **no Caddy change**; rate-limited by a **dedicated, generous** limiter
+(DA-r2 #5) — NOT the 5-per-15-min `routeAuthLoginLimiter` (a shared budget would 429 legitimate
+guests behind one NAT). `req.ip` is the real client IP here — `trust proxy: 'loopback'` (app.js:21)
++ Caddy `reverse_proxy` auto-appends `X-Forwarded-For` — so keying on `req.ip` is correct; the
+256-bit token already defeats brute force, so this limiter is anti-noise/anti-DoS, set ~20/15min):
 1. `hash = sha256(token)`; look up the link by `token_hash`.
 2. Validate (exists, not revoked, not expired, and if `one_time` then `redeemed_count = 0`). On any
    failure → render the generic **"link invalid/expired"** page (200, no enumeration signal; never
@@ -111,10 +122,20 @@ proxy on the route domain — **no Caddy change**; rate-limited):
    only adds friction (daily re-click for reusable links) and, for one-time links, a hard lockout if
    the cookie drops (the link can't be re-redeemed). Session = link lifetime; `revoke` deletes the
    session immediately, so this adds no exposure window.
-4. Set the `gc.route.sid` cookie (same attributes as the normal route-auth login: httpOnly, secure,
-   sameSite, scoped to the route domain) and 302 → `/`.
+4. Set the `gc.route.sid` cookie — same attributes as the normal route-auth login: `httpOnly`,
+   `secure`, `sameSite:'strict'`, **`path:'/'` explicitly**, and **no `Domain` attribute**
+   (host-only, DA-r2 #1/#2 — so the session can't leak across sibling subdomains and verify() on
+   `/` always receives it). Then 302 → `/` with `Referrer-Policy: no-referrer` so the token doesn't
+   leak via Referer. SameSite=strict is fine: the 302 lands on the same domain (same-site
+   navigation), exactly like the existing login flow.
 
 The existing `verify()` then passes the guest through on subsequent requests.
+
+**Credential endpoints must reject `'share'` (DA-r2 #7):** `POST /route-auth/login`, `/send-code`,
+and `/verify-code` currently don't check `auth_type`. On a `'share'` route they fail closed (null
+hash → dummy-verify → false) but still pollute lockout rows and route-auth activity. Add an early
+guard in each: `if (authConfig.auth_type === 'share') return 404` — share routes have no password/
+OTP/TOTP flow, only token redeem.
 
 ## Admin API (session + CSRF; `requireFeature('share_links')`)
 
@@ -123,8 +144,10 @@ Mounted under the routes API (mirror `src/routes/api/routeAuth.js`):
   Validates the route exists + is an enabled HTTP route + is **not** basic-auth (else 409 "disable
   Basic Auth"). If the route has **no** `route_auth` row, this call would make a public route
   link-only → require `confirmGate: true` (else 409 `needs_gate_confirm` so the UI can show the
-  warning); then `ensureShareGate(routeId)` idempotently inserts the `auth_type='share'` row
-  (`INSERT … ON CONFLICT(route_id) DO NOTHING`, which also clears `basic_auth_enabled`) and flags
+  warning); then `ensureShareGate(routeId)` idempotently inserts the `auth_type='share'` row via a
+  **direct** `INSERT INTO route_auth (route_id, auth_type, ...) ON CONFLICT(route_id) DO NOTHING`
+  (it does **not** touch `basic_auth_enabled` — basic-auth routes are rejected upfront, so there is
+  nothing to clear, and silently stripping basic auth is explicitly forbidden, DA-r2 #6) and flags
   Caddy regen. If the route already has any `route_auth` row (email/otp/totp/share), just add the
   link — no confirm, no new row, no Caddy regen. Generate a 32-byte token (base64url), store its
   sha256, insert the link. **Return the full URL once** (`https://<domain>/route-auth/share/<token>`).
@@ -148,7 +171,13 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
 - A list of active links: label, expiry countdown, one-time/reusable, redeemed count, **Revoke**.
 - **Loud confirm** when creating the first link on an unprotected route (DA #2): a warning dialog
   "⚠ this route is currently public; a share link makes it reachable **only** via share links —
-  everyone else is locked out (you reach the service directly via VPN/LAN)" → sends `confirmGate:true`.
+  everyone reaching it by its domain (public, VPN, or the services portal) is locked out; reach the
+  service directly at its LAN address to bypass" → sends `confirmGate:true`.
+- **Client services portal coexistence (DA-r2 #3):** `src/routes/api/client/traffic.js` lists routes
+  as `{ url: https://<domain>, hasAuth: route_auth_enabled }`. A `'share'` route therefore appears
+  with `hasAuth:true` and its domain URL — clicking it lands a VPN/portal user on the gated domain
+  (correct, fail-closed; they need a link). Acceptable as-is; the portal label already conveys
+  "needs auth". No code change required there beyond confirming the badge isn't misleading.
 - If the route is currently share-only (`auth_type='share'`) with no active links: a "share-only,
   no active links — closed to guests" hint + a "turn sharing off" action.
 - **Route-auth section coexistence (DA #3):** when `auth_type='share'`, the existing email/OTP/TOTP
@@ -160,11 +189,16 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
 - Token: `crypto.randomBytes(32)` base64url; stored **sha256-hashed**; shown once.
 - Redeem is **atomic** (transaction) — one-time can't be double-redeemed under a race.
 - Generic invalid/expired page — **no token enumeration** (don't reveal existence; constant-ish response).
-- Rate-limit `GET /route-auth/share/:token` (reuse the route-auth limiter).
-- Guest sessions are bounded by the link expiry (+ a hard cap); revoke deletes them immediately.
+- Rate-limit `GET /route-auth/share/:token` with a **dedicated** generous limiter (DA-r2 #5), not
+  the login limiter; `req.ip` is the real client IP (trust-proxy loopback + Caddy XFF).
+- Guest sessions are bounded by the link expiry (no extra cap); revoke deletes them immediately.
 - Admin endpoints: session + CSRF + `share_links` feature gate.
-- Hard expiry + periodic cleanup (extend the existing route-auth 15-min cleanup to purge expired
-  links + their sessions).
+- Credential POST endpoints (`/login`, `/send-code`, `/verify-code`) reject `auth_type='share'`
+  early (DA-r2 #7) — no password/OTP/TOTP flow exists for share routes.
+- Hard expiry + periodic cleanup: extend the route-auth 15-min `runCleanup` to, **in order**,
+  (1) delete `route_auth_sessions` whose `share_link_id` points at an expired/revoked link, then
+  (2) delete the expired/revoked `route_auth_share_links` rows (DA-r2 #4). The FK `ON DELETE SET
+  NULL` is the safety net; explicit ordered deletes keep audit joins clean and avoid orphan rows.
 - The token rides in the URL (history/referrer): mitigated by short expiry + one-time; the redeem
   immediately 302s to `/` so the token isn't the landed URL. Set `Referrer-Policy: no-referrer` on
   the redeem response.
@@ -179,9 +213,12 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
 - Basic-auth routes → share links rejected (incompatible; see Architecture). The UI hides/​disables
   the share subsection with a hint when the route uses basic auth.
 - Clock: expiry compared in the DB (`datetime('now')`) consistently, like route_auth_otp.
-- `createOrUpdateAuth({auth_type:'share'})` logs a `route_auth_updated` activity entry — acceptable,
-  but the share-gating call should pass a label so the audit trail reads as "share enabled", not a
-  generic auth change.
+- `ensureShareGate` inserts the `'share'` row via a direct `INSERT … ON CONFLICT DO NOTHING` (not
+  `createOrUpdateAuth`) and logs a dedicated `share_enabled` activity event, so the audit trail
+  reads as "sharing enabled", not a generic `route_auth_updated`.
+- Non-browser / API / webhook targets: forward_auth answers an unauthenticated request with a 302
+  to an HTML page, so share links target **browser-reachable** routes. Out of scope to special-case
+  `Accept: application/json` (that's a forward_auth-wide behavior, not specific to this feature).
 
 ## Tier / i18n / Tests
 
@@ -205,9 +242,17 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
     gated + Caddy regen flagged (DA #2). Create on a basic-auth route → 409.
   - `ensureShareGate` idempotent: two calls leave exactly one `route_auth` row, no throw (DA #4).
   - Redeem path doesn't log the raw token (DA #5).
+  - Guest cookie attributes: `Set-Cookie` has `Path=/`, **no `Domain`** (host-only), `HttpOnly`,
+    `SameSite=Strict`; redeem response carries `Referrer-Policy: no-referrer` (DA-r2 #1/#2).
+  - Credential endpoints reject `'share'`: POST `/login` / `/send-code` / `/verify-code` on a
+    `'share'` route → 404, and create no lockout row (DA-r2 #7).
+  - Cleanup: an expired link + its guest session are both purged by `runCleanup`, in order, leaving
+    no orphan `share_link_id` (DA-r2 #4).
   - i18n parity.
 
 ## Devil's-advocate decisions (folded in)
+
+**Round 1 (inline):**
 
 1. **No session cap** — guest session expiry = link expiry (see redeem step 3). Prevents one-time
    lockout on cookie loss and daily re-click friction for reusable links.
@@ -232,6 +277,33 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
    gain a `route_auth`-flag check; only share-link **creation** is gated by `share_links`. A `'share'`
    gate must not be bypassable by toggling the `route_auth` license flag.
 
+**Round 2 (independent subagent review of the revised spec):**
+
+1. **Guest cookie attributes pinned** — explicit `Path=/`, **no `Domain`** (host-only), plus
+   `Referrer-Policy: no-referrer` on the redeem; SameSite=strict verified safe (same-site 302). Test
+   asserts the `Set-Cookie` shape. *(was: cookie path/scope ambiguity)*
+2. **Accurate "who is locked out" copy** — corrected Model/Architecture/confirm copy: the **domain**
+   is gated for everyone incl. VPN and the **client services portal** (`api/client/traffic.js` lists
+   it with `hasAuth:true`); only direct upstream LAN IP:port bypasses. The earlier "reach via
+   VPN/LAN" wording was wrong. *(was: misleading bypass model + unexamined portal consumer)*
+3. **`ensureShareGate` spec self-contradiction removed** — it does a direct `INSERT … ON CONFLICT DO
+   NOTHING` and does **not** clear `basic_auth_enabled` (basic-auth routes are rejected upfront; never
+   silently strip basic auth). *(was: an INSERT can't clear a `routes` column, and it contradicted the
+   no-silent-strip rule)*
+4. **Migration FK + ordered cleanup** — create the links table first, add `share_link_id` with
+   `REFERENCES … ON DELETE SET NULL`; `runCleanup` deletes orphaned guest sessions then expired links,
+   in order. *(was: dangling `share_link_id`, links never purged)*
+5. **Dedicated redeem rate-limiter** — generous, separate from the 5/15-min login limiter (which
+   would 429 legitimate guests behind one NAT). Keying on `req.ip` confirmed correct (trust-proxy
+   loopback + Caddy XFF — not a 127.0.0.1 bug). *(downgraded from the subagent's "High": no
+   pre-existing global-lockout, just don't share the login budget)*
+6. **Credential endpoints reject `'share'`** — early 404 guard in POST `/login`, `/send-code`,
+   `/verify-code` so a scanner can't pollute lockout/activity state on a share route. *(was:
+   reachable credential flows with side effects, though fail-closed)*
+
+Subagent's verdict: **Ship with changes** — no auth-bypass; the above were the load-bearing fixes,
+now folded in.
+
 ## Out of scope / future
 
 - Binding a link to a specific email / sending it via email (the link is the credential).
@@ -244,16 +316,19 @@ In the route edit modal, a **"Teilen / Share links"** subsection (Pro-gated, hid
 - `src/services/shareLinks.js` (new) — create/list/revoke/redeem/validity + `ensureShareGate` +
   `disableSharing` helpers. Separate module (route-auth service is already large); it requires the
   route-auth service only for `createSession`/session deletion helpers.
-- `src/routes/routeAuth.js` — `GET /route-auth/share/:token` + the share-only login-page branch +
-  `verify()` already passing guest sessions.
+- `src/routes/routeAuth.js` — `GET /route-auth/share/:token` (redeem; `path:'/'`, host-only cookie,
+  `Referrer-Policy: no-referrer`) + the share-only login-page branch + the early `auth_type==='share'`
+  → 404 guards in POST `/login` / `/send-code` / `/verify-code`; `verify()` already passes guest
+  sessions.
+- `src/middleware/rateLimit.js` — a new dedicated `shareRedeemLimiter` (~20/15min, keyed on `req.ip`).
 - `src/routes/api/routes.js` (or a new `src/routes/api/shareLinks.js`) — the 3–4 admin endpoints.
 - `src/services/caddyConfig.js` — `needsForwardAuth` already keys off `getAuthForRoute`, which now
   returns the `'share'` config; confirm no change needed beyond that.
 - `public/js/routes.js` + `templates/{default,pro}/pages/routes.njk` + `.../partials/modals/route-edit.njk`
   — the share subsection, the first-link confirm dialog, the `auth_type='share'` read-only state in
   the route-auth section, and the `'share'` auth badge label.
-- `src/routes/routeAuth.js` cleanup (`runCleanup`) + `src/services/routeAuth.js` — purge expired/
-  revoked share links (sessions already purged by `expires_at`).
+- `src/services/routeAuth.js` `runCleanup` — purge orphaned guest sessions then expired/revoked
+  share links, in order (DA-r2 #4).
 - `templates/{default,pro}/pages/route-auth-login.njk` — the `authType==='share'` "invitation
   required / link invalid or expired" branch (no form).
 - `src/services/license.js` — `share_links` flag.
