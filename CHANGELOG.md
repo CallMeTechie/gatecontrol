@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.1] — 2026-05-25
+
+### Fixes
+- show step-by-step guide content in setup card (#102)
+
+---
+
 ## [1.69.0] — 2026-05-25
 
 ### Features
