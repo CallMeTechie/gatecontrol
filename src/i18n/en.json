@@ -1469,5 +1469,10 @@
   "gateways.setup_guide": "Step-by-step guide",
   "gateways.setup_synology": "Synology (DSM)",
   "gateways.setup_linux": "Linux (systemd)",
-  "gateways.setup_readme_hint": "Full instructions are included in the downloaded bundle's README."
+  "gateways.setup_readme_hint": "Full instructions are included in the downloaded bundle's README.",
+  "gateways.setup_syn_1": "Download the setup script (above) and copy it to the Synology.",
+  "gateways.setup_syn_2": "Run it as root via SSH — it adds the /state volume and recreates the gateway.",
+  "gateways.setup_syn_3": "Create a DSM Task Scheduler entry (user root, repeat every 1 minute) with the command the script prints.",
+  "gateways.setup_lin_1": "Run the setup script (above) as root — it adds the /state volume and recreates the gateway.",
+  "gateways.setup_lin_2": "It installs and enables the systemd .path/.service units automatically — done."
 }

@@ -229,9 +229,22 @@
     body.appendChild(acts);
     var d = el('details');
     d.appendChild(el('summary', null, T('gateways.setup_guide', 'Step-by-step guide')));
-    d.appendChild(el('div', null, T('gateways.setup_synology', 'Synology (DSM)')));
-    d.appendChild(el('div', null, T('gateways.setup_linux', 'Linux (systemd)')));
-    body.appendChild(el('p', null, T('gateways.setup_readme_hint', 'Full instructions are included in the downloaded bundle\'s README.')));
+    function steps(hostKey, hostDefault, stepKeys) {
+      d.appendChild(el('h4', 'gw-setup-host', T(hostKey, hostDefault)));
+      var ol = el('ol');
+      stepKeys.forEach(function (sk) { ol.appendChild(el('li', null, T(sk[0], sk[1]))); });
+      d.appendChild(ol);
+    }
+    steps('gateways.setup_synology', 'Synology (DSM)', [
+      ['gateways.setup_syn_1', 'Download the setup script (above) and copy it to the Synology.'],
+      ['gateways.setup_syn_2', 'Run it as root via SSH — it adds the /state volume and recreates the gateway.'],
+      ['gateways.setup_syn_3', 'Create a DSM Task Scheduler entry (user root, repeat every 1 minute) with the command the script prints.'],
+    ]);
+    steps('gateways.setup_linux', 'Linux (systemd)', [
+      ['gateways.setup_lin_1', 'Run the setup script (above) as root — it adds the /state volume and recreates the gateway.'],
+      ['gateways.setup_lin_2', 'It installs and enables the systemd .path/.service units automatically — done.'],
+    ]);
+    d.appendChild(el('p', 'gw-setup-hint', T('gateways.setup_readme_hint', 'Full instructions are included in the downloaded bundle\'s README.')));
     body.appendChild(d);
     c.appendChild(body);
     return c;
