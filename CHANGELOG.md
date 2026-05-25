@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.3] — 2026-05-25
+
+### Fixes
+- cache-bust all local css/js assets (#98)
+
+---
+
 ## [1.66.2] — 2026-05-25
 
 ### Fixes
