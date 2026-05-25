@@ -823,6 +823,32 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'gateway_meta', 'update_request_id'),
   },
+  {
+    version: 45,
+    name: 'create_route_auth_share_links',
+    sql: `
+      CREATE TABLE IF NOT EXISTS route_auth_share_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        label TEXT,
+        created_by_user_id INTEGER,
+        one_time INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        redeemed_count INTEGER NOT NULL DEFAULT 0,
+        last_redeemed_at TEXT,
+        last_redeemed_ip TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_share_links_token ON route_auth_share_links(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_share_links_route ON route_auth_share_links(route_id);
+      ALTER TABLE route_auth_sessions ADD COLUMN share_link_id INTEGER REFERENCES route_auth_share_links(id) ON DELETE SET NULL;
+    `,
+    detect: (db) => hasColumn(db, 'route_auth_sessions', 'share_link_id'),
+  },
 ];
 
 module.exports = { migrations };
