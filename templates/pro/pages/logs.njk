@@ -122,6 +122,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/js/logs.js"></script>
-<script src="/js/rdp-history.js" nonce="{{ nonce }}"></script>
+<script src="/js/logs.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-history.js?v={{ appVersion }}" nonce="{{ nonce }}"></script>
 {% endblock %}
