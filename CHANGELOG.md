@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.64.0] — 2026-05-25
+
+### Features
+- clearer route wizard — contextual domain/SNI field, blocked-port hints, tooltips (#94)
+
+---
+
+## [Unreleased]
+
+### Änderungen
+- Route-Wizard & Edit-Modal: kontextabhängiges Domain-/SNI-Feld (bei L4 ohne TLS ausgeblendet), Hinweise + Live-Prüfung auf gesperrte Ports, Tooltips, klarere TLS-Modus-Texte
+
+---
+
+## [1.63.1] — 2026-05-24
+
+### Änderungen
+- use npm ci for deterministic, lockfile-faithful installs (#91)
+
+---
+
 ## [1.63.0] — 2026-05-24
 
 ### Features

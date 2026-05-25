@@ -282,6 +282,18 @@
         ? ':' + (r.l4_listen_port || '') + ' → ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')'
         : '→ ' + escapeHtml(peerLabel) + ' (' + escapeHtml(target) + ')';
 
+      const l4ShortTitle = (r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || '');
+      let titleText;
+      let showDescLine = !!r.description;
+      if (r.domain) {
+        titleText = escapeHtml(r.domain);
+      } else if (r.route_type === 'l4') {
+        if (r.description) { titleText = escapeHtml(r.description); showDescLine = false; }
+        else { titleText = l4ShortTitle; }
+      } else {
+        titleText = '';
+      }
+
       // r.id is a numeric DB id, safe for attribute use; checked is a static string
       var batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
       var batchCbHtml = batchMode ? '<div class="batch-checkbox-wrap" style="display:flex;align-items:center;padding-right:10px"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></div>' : '';
@@ -292,9 +304,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         </div>
         <div style="flex:1;min-width:0">
-          <div class="route-domain">${escapeHtml(r.domain)}</div>
+          <div class="route-domain">${titleText}</div>
           <div class="route-target">${targetDisplay}</div>
-          ${r.description ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
+          ${showDescLine ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div class="route-tags">
           ${statusTag}${monitorTag}${cbTag}${debugTag}${botTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
@@ -306,7 +318,7 @@
           <button class="icon-btn" title="Toggle" data-action="toggle" data-id="${r.id}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
           </button>
-          <button class="icon-btn" title="Delete" data-action="delete" data-id="${r.id}" data-domain="${escapeHtml(r.domain)}">
+          <button class="icon-btn" title="Delete" data-action="delete" data-id="${r.id}" data-domain="${titleText}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
           </button>
         </div>
@@ -395,7 +407,10 @@
     const basic_auth_user = fd.get('basic_auth_user') ? fd.get('basic_auth_user').trim() : '';
     const basic_auth_password = fd.get('basic_auth_password') ? fd.get('basic_auth_password').trim() : '';
 
-    if (!domain) {
+    const submitRouteType = document.getElementById('route-type')?.value || 'http';
+    const submitTlsMode = document.getElementById('l4-tls-mode')?.value || 'none';
+    const submitIsL4None = submitRouteType === 'l4' && submitTlsMode === 'none';
+    if (!domain && !submitIsL4None) {
       alert(GC.t['routes.domain_required'] || 'Domain is required');
       return;
     }
@@ -498,6 +513,9 @@
         payload.l4_protocol = document.getElementById('l4-protocol').value;
         payload.l4_listen_port = document.getElementById('l4-listen-port').value;
         payload.l4_tls_mode = document.getElementById('l4-tls-mode').value;
+      }
+      if (routeType === 'l4' && payload.l4_tls_mode === 'none') {
+        payload.domain = '';
       }
       if (basic_auth_enabled) {
         payload.basic_auth_user = basic_auth_user;
@@ -689,10 +707,13 @@
     if (n !== 1) return true;
     const domainEl = document.getElementById('create-route-domain');
     const domain = (domainEl && domainEl.value || '').trim();
-    if (!domain) return wizardError('routes.domain_required', 'Domain is required', domainEl);
+    const tlsModeC = (document.getElementById('l4-tls-mode') || {}).value || 'none';
+    const isL4None = isL4Route() && tlsModeC === 'none';
+    if (!domain && !isL4None) return wizardError('routes.domain_required', 'Domain is required', domainEl);
     if (isL4Route()) {
       const lpEl = document.getElementById('l4-listen-port');
       if (!lpEl || !lpEl.value.trim()) return wizardError('routes.l4_listen_port_required', 'Listen-Port erforderlich', lpEl);
+      if (!checkListenPortBlocked('l4-listen-port', 'l4-listen-port-error')) { try { lpEl.focus(); } catch (_) {} return false; }
       return true;
     }
     const tk = (document.getElementById('create-route-target-kind') || {}).value || 'peer';
@@ -763,11 +784,11 @@
     const backendHttpsEl = document.querySelector('#route-form [data-field="backend_https"]');
     const backendHttpsOn = backendHttpsEl && backendHttpsEl.classList.contains('on');
 
-    const rows = [
-      [(GC.t && GC.t['routes.domain']) || 'Domain', domain],
-      [(GC.t && GC.t['routes.type']) || 'Typ', type.toUpperCase()],
-      [(GC.t && GC.t['routes.target_peer']) || 'Ziel', target],
-    ];
+    const reviewIsL4None = isL4Route() && ((document.getElementById('l4-tls-mode') || {}).value || 'none') === 'none';
+    const rows = [];
+    if (!reviewIsL4None) rows.push([(GC.t && GC.t['routes.domain']) || 'Domain', domain]);
+    rows.push([(GC.t && GC.t['routes.type']) || 'Typ', type.toUpperCase()]);
+    rows.push([(GC.t && GC.t['routes.target_peer']) || 'Ziel', target]);
     if (!isL4Route()) {
       rows.push([(GC.t && GC.t['routes.force_https']) || 'HTTPS', httpsOn ? '✓' : '—']);
       rows.push([(GC.t && GC.t['routes.backend_https']) || 'Backend HTTPS', backendHttpsOn ? '✓' : '—']);
@@ -1553,8 +1574,13 @@
       const basic_auth_user = (document.getElementById('edit-route-auth-user') || {}).value || '';
       const basic_auth_password = (document.getElementById('edit-route-auth-pass') || {}).value || '';
 
-      if (!domain || !target_port) {
-        showError('edit-route-error', 'Domain and port are required');
+      const editTlsMode = document.getElementById('edit-l4-tls-mode')?.value || 'none';
+      const editIsL4 = document.getElementById('edit-route-type')?.value === 'l4';
+      const editIsL4None = editIsL4 && editTlsMode === 'none';
+      if (!domain && !editIsL4None) { showError('edit-route-error', GC.t['routes.domain_required'] || 'Domain is required'); return; }
+      if (!target_port) { showError('edit-route-error', GC.t['routes.target_port_required'] || 'Target port is required'); return; }
+      if (editIsL4 && !checkListenPortBlocked('edit-l4-listen-port', 'edit-l4-listen-port-error')) {
+        showError('edit-route-error', (document.getElementById('edit-l4-listen-port-error') || {}).textContent || 'Port reserved');
         return;
       }
 
@@ -1634,6 +1660,9 @@
           payload.l4_protocol = document.getElementById('edit-l4-protocol').value;
           payload.l4_listen_port = document.getElementById('edit-l4-listen-port').value;
           payload.l4_tls_mode = document.getElementById('edit-l4-tls-mode').value;
+        }
+        if (editRouteType === 'l4' && payload.l4_tls_mode === 'none') {
+          payload.domain = '';
         }
 
         // Target-kind (peer vs gateway)
@@ -1813,6 +1842,32 @@
     });
   }
 
+  function applyDomainContext(routeType, tlsMode, input, wrap, label, ctxHint) {
+    if (!input) return;
+    const isL4None = routeType === 'l4' && tlsMode === 'none';
+    const row = wrap ? wrap.parentElement : null;
+    if (isL4None) {
+      if (wrap) wrap.style.display = 'none';
+      if (row) row.classList.add('gc-row-collapsed');
+      input.required = false;
+      input.value = '';
+      if (ctxHint) ctxHint.style.display = 'none';
+    } else {
+      if (wrap) wrap.style.display = '';
+      if (row) row.classList.remove('gc-row-collapsed');
+      input.required = true;
+      const isSni = routeType === 'l4';
+      const lt = label ? label.querySelector('.gc-label-text') : null;
+      if (lt) lt.textContent = isSni
+        ? (GC.t['routes.l4_sni_label'] || 'SNI hostname')
+        : (GC.t['routes.domain'] || 'Domain');
+      if (ctxHint) {
+        if (isSni) { ctxHint.textContent = GC.t['routes.l4_sni_required_hint'] || ''; ctxHint.style.display = ''; }
+        else { ctxHint.style.display = 'none'; }
+      }
+    }
+  }
+
   function updateFieldVisibility() {
     const routeType = document.getElementById('route-type')?.value || 'http';
     const l4Fields = document.getElementById('l4-fields');
@@ -1820,13 +1875,14 @@
     if (l4Fields) l4Fields.style.display = routeType === 'l4' ? 'block' : 'none';
     if (httpFields) httpFields.style.display = routeType === 'http' ? 'block' : 'none';
 
-    const domainInput = document.getElementById('route-domain');
-    const tlsMode = document.getElementById('l4-tls-mode')?.value;
-    if (routeType === 'l4' && tlsMode === 'none' && domainInput) {
-      domainInput.required = false;
-    } else if (domainInput) {
-      domainInput.required = true;
-    }
+    const tlsMode = document.getElementById('l4-tls-mode')?.value || 'none';
+    applyDomainContext(
+      routeType, tlsMode,
+      document.getElementById('create-route-domain'),
+      document.getElementById('create-route-domain-wrap'),
+      document.getElementById('create-route-domain-label'),
+      document.getElementById('create-route-domain-ctx-hint')
+    );
 
     updateTlsHint('l4-tls-mode', 'l4-tls-hint');
   }
@@ -1846,6 +1902,15 @@
       var tabBtn = document.querySelector('.edit-route-tabs .tab[data-edit-tab="' + tab + '"]');
       if (tabBtn) tabBtn.style.display = isL4 ? 'none' : '';
     });
+
+    const editTlsMode = document.getElementById('edit-l4-tls-mode')?.value || 'none';
+    applyDomainContext(
+      routeType, editTlsMode,
+      document.getElementById('edit-route-domain'),
+      document.getElementById('edit-route-domain-wrap'),
+      document.getElementById('edit-route-domain-label'),
+      document.getElementById('edit-route-domain-ctx-hint')
+    );
 
     updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
   }
@@ -2492,20 +2557,97 @@
     });
   }
 
+  // ─── Inline-Help Tooltips (gc-tip) ───────────────────────
+  (function setupGcTips() {
+    let bubble = document.getElementById('gc-tip-bubble');
+    if (!bubble) {
+      bubble = document.createElement('div');
+      bubble.id = 'gc-tip-bubble';
+      document.body.appendChild(bubble);
+    }
+    function show(tip) {
+      const text = tip.getAttribute('data-tip');
+      if (!text) return;
+      bubble.textContent = text;
+      bubble.style.display = 'block';
+      const r = tip.getBoundingClientRect();
+      const bb = bubble.getBoundingClientRect();
+      let top = r.bottom + 6;
+      if (top + bb.height > window.innerHeight - 8) top = r.top - bb.height - 6;
+      let left = r.left + r.width / 2 - bb.width / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - bb.width - 8));
+      bubble.style.top = top + 'px';
+      bubble.style.left = left + 'px';
+    }
+    function hide() { bubble.style.display = 'none'; }
+    function tipFrom(e) { return e.target && e.target.closest ? e.target.closest('.gc-tip') : null; }
+    document.addEventListener('mouseover', (e) => { const t = tipFrom(e); if (t) show(t); });
+    document.addEventListener('mouseout', (e) => { if (tipFrom(e)) hide(); });
+    document.addEventListener('focusin', (e) => { const t = tipFrom(e); if (t) show(t); });
+    document.addEventListener('focusout', (e) => { if (tipFrom(e)) hide(); });
+    document.addEventListener('click', (e) => {
+      const t = tipFrom(e);
+      if (t) { e.preventDefault(); if (bubble.style.display === 'block') hide(); else show(t); }
+      else if (e.target !== bubble) hide();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+  })();
+
+  // ─── L4 blocked-port validation ──────────────────────────
+  const PORT_SVC = { 22: 'SSH', 53: 'DNS', 80: 'Caddy HTTP', 443: 'Caddy HTTPS', 2019: 'Caddy Admin', 3000: 'GateControl', 51820: 'WireGuard' };
+  function parsePortRangeClient(str) {
+    if (!str || typeof str !== 'string') return null;
+    const t = str.trim();
+    const m = t.match(/^(\d+)-(\d+)$/);
+    if (m) { const s = parseInt(m[1], 10), e = parseInt(m[2], 10); return (s >= 1 && e <= 65535 && s <= e) ? { start: s, end: e } : null; }
+    if (/^\d+$/.test(t)) { const n = parseInt(t, 10); if (n >= 1 && n <= 65535) return { start: n, end: n }; }
+    return null;
+  }
+  function firstBlockedPort(str, blocked) {
+    const range = parsePortRangeClient(str);
+    if (!range) return null;
+    for (let p = range.start; p <= range.end; p++) { if (blocked.indexOf(p) !== -1) return p; }
+    return null;
+  }
+  function checkListenPortBlocked(inputId, errId) {
+    const input = document.getElementById(inputId);
+    const errEl = document.getElementById(errId);
+    if (!input) return true;
+    const blocked = (input.dataset.blockedPorts || '').split(',').map((x) => parseInt(x, 10)).filter((n) => !isNaN(n));
+    const hit = input.value ? firstBlockedPort(input.value, blocked) : null;
+    if (hit != null) {
+      input.classList.add('gc-port-error');
+      if (errEl) {
+        const svc = PORT_SVC[hit];
+        const tpl = svc ? (GC.t['routes.l4_port_reserved'] || 'Port {port} is reserved ({service}).')
+                        : (GC.t['routes.l4_port_reserved_generic'] || 'Port {port} is reserved by the system.');
+        errEl.textContent = tpl.replace('{port}', hit).replace('{service}', svc || '');
+        errEl.style.display = '';
+      }
+      return false;
+    }
+    input.classList.remove('gc-port-error');
+    if (errEl) errEl.style.display = 'none';
+    return true;
+  }
+
   // ─── L4 listen port auto-fill ───────────────────────────
-  function setupPortAutofill(portId, listenPortId) {
+  function setupPortAutofill(portId, listenPortId, errId) {
     document.getElementById(portId)?.addEventListener('input', function() {
       const listenPort = document.getElementById(listenPortId);
       if (listenPort && !listenPort.dataset.userModified) {
         listenPort.value = this.value;
+        checkListenPortBlocked(listenPortId, errId);
       }
     });
-    document.getElementById(listenPortId)?.addEventListener('input', function() {
-      this.dataset.userModified = 'true';
-    });
+    const lp = document.getElementById(listenPortId);
+    if (lp) {
+      lp.addEventListener('input', function() { this.dataset.userModified = 'true'; checkListenPortBlocked(listenPortId, errId); });
+      lp.addEventListener('change', function() { checkListenPortBlocked(listenPortId, errId); });
+    }
   }
-  setupPortAutofill('route-port', 'l4-listen-port');
-  setupPortAutofill('edit-route-port', 'edit-l4-listen-port');
+  setupPortAutofill('route-port', 'l4-listen-port', 'l4-listen-port-error');
+  setupPortAutofill('edit-route-port', 'edit-l4-listen-port', 'edit-l4-listen-port-error');
 
   // ─── DNS check ──────────────────────────────────────────
   async function checkDns(domain, hintEl, inputEl) {

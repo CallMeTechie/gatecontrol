@@ -55,6 +55,7 @@ const COMMUNITY_FALLBACK = {
   gateway_pool_load_balancing: false,
   gateway_pools_limit: 0,
   realtime_events: true,
+  gateway_fleet: true,
 };
 
 let cachedPlan = 'community';
