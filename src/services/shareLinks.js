@@ -76,4 +76,66 @@ function disableSharing(routeId) {
   return tx();
 }
 
-module.exports = { hashToken, generateToken, createShareLink, ensureShareGate, disableSharing };
+/**
+ * Atomically redeem a token: validate, bump redeemed_count, create a guest
+ * route_auth_session bound to the link with expiry = link expiry. Returns
+ * { sessionId, expiresAt, routeId } or null if the token is invalid/expired/
+ * revoked/already-used (one_time).
+ */
+function redeemShareLink(token, ip) {
+  const db = getDb();
+  const tokenHash = hashToken(token);
+  const tx = db.transaction(() => {
+    const link = db.prepare(`
+      SELECT * FROM route_auth_share_links
+      WHERE token_hash = ?
+        AND revoked_at IS NULL
+        AND expires_at > datetime('now')
+        AND (one_time = 0 OR redeemed_count = 0)
+    `).get(tokenHash);
+    if (!link) return null;
+    db.prepare(`
+      UPDATE route_auth_share_links
+      SET redeemed_count = redeemed_count + 1,
+          last_redeemed_at = datetime('now'),
+          last_redeemed_ip = ?
+      WHERE id = ?
+    `).run(ip || null, link.id);
+    const sessionId = crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO route_auth_sessions
+        (id, route_id, email, ip_address, two_factor_pending, expires_at, share_link_id)
+      VALUES (?, ?, 'share', ?, 0, ?, ?)
+    `).run(sessionId, link.route_id, ip || null, link.expires_at, link.id);
+    return { sessionId, expiresAt: link.expires_at, routeId: link.route_id };
+  });
+  return tx();
+}
+
+/** Active (non-revoked, non-expired) links for a route. Never returns the token. */
+function listShareLinks(routeId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT id, label, one_time, expires_at, redeemed_count, last_redeemed_at, created_at
+    FROM route_auth_share_links
+    WHERE route_id = ? AND revoked_at IS NULL AND expires_at > datetime('now')
+    ORDER BY created_at DESC
+  `).all(routeId);
+}
+
+/** Revoke a link and delete its guest sessions. Returns false if not found / already revoked. */
+function revokeShareLink(routeId, linkId) {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const r = db.prepare(`
+      UPDATE route_auth_share_links SET revoked_at = datetime('now')
+      WHERE id = ? AND route_id = ? AND revoked_at IS NULL
+    `).run(linkId, routeId);
+    if (r.changes === 0) return false;
+    db.prepare('DELETE FROM route_auth_sessions WHERE share_link_id = ?').run(linkId);
+    return true;
+  });
+  return tx();
+}
+
+module.exports = { hashToken, generateToken, createShareLink, ensureShareGate, disableSharing, redeemShareLink, listShareLinks, revokeShareLink };
