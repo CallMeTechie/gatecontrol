@@ -1393,5 +1393,19 @@
   "activity.pool_outage_started": "Pool {name}: all gateways offline",
   "activity.pool_outage_resolved": "Pool {name}: at least one gateway back online",
   "pool_outage.title": "Service unavailable",
-  "pool_outage.body": "This service is temporarily unreachable — all gateways are offline. Please try again later."
+  "pool_outage.body": "This service is temporarily unreachable — all gateways are offline. Please try again later.",
+
+  "nav.gateways": "Gateways",
+  "gateways.title": "Gateways",
+  "gateways.subtitle": "Fleet overview from heartbeat telemetry",
+  "gateways.online": "Online",
+  "gateways.offline": "Offline",
+  "gateways.degraded": "Degraded",
+  "gateways.pending": "Pending",
+  "gateways.update_available": "Update available",
+  "gateways.version_check_unavailable": "Latest-version check unavailable",
+  "gateways.routes": "Routes",
+  "gateways.version": "Version",
+  "gateways.kpi_total": "Gateways",
+  "gateways.kpi_update": "Update"
 }

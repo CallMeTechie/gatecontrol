@@ -193,6 +193,7 @@ const pages = [
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
+  { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
 pages.forEach(({ path, template, titleKey }) => {
