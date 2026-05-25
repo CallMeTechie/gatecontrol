@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.0] — 2026-05-25
+
+### Features
+- real-time event bus (SSE) for live admin UI (#93)
+
+---
+
 ## [1.65.0] — 2026-05-25
 
 ### Features
