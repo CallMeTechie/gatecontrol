@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.0] — 2026-05-25
+
+### Features
+- gateway fleet dashboard (roadmap #2a) (#95)
+
+---
+
 ## [1.64.0] — 2026-05-25
 
 ### Features
