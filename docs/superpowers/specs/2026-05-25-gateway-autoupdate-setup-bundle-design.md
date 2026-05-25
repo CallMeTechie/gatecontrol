@@ -31,17 +31,22 @@ A new card **"Auto-Update einrichten"** in the detail view:
 ## Server endpoints
 
 Under `/api/v1/gateways` (session-authed via `requireAuth`; **GET → no CSRF**, confirmed by
-`src/routes/api/index.js:10-18`; `gateway_fleet`-gated via `license.hasFeature`; 404 for unknown/
-non-gateway/disabled peer):
+`src/routes/api/index.js:10-18`; `gateway_fleet`-gated via `license.hasFeature`). Guard order
+**matches the existing `POST /:id/update`** (DA2 #4): **404** (unknown/non-gateway/disabled peer)
+**then 403** (`gateway_fleet` off). The UI download buttons are gated on the same
+`license.features.gateway_fleet` so unlicensed users never click into a 403.
 
 - `GET /:id/setup-script` → `text/plain; charset=utf-8`, `Content-Disposition: attachment; filename="gatecontrol-gateway-setup-<slug>.sh"`. Body = tailored `setup.sh`.
 - `GET /:id/setup-bundle.zip` → `application/zip`, attachment `…-<slug>.zip`. Store-only ZIP with: `setup.sh`, `update.sh`, `systemd/gatecontrol-gateway-update.service`, `systemd/gatecontrol-gateway-update.path`, `docker-compose.state-snippet.yml`, `README.md`.
 
 ### Slug + name safety (DA #4 — `sanitize()` is trim-only, do NOT use it)
 
-- **`<slug>` (filename):** `String(name).toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 64)`;
-  if empty → `gateway-<id>`. This value is the ONLY thing interpolated into the
-  `Content-Disposition` header → no CR/LF can survive the whitelist (prevents header injection).
+- **`<slug>` (filename):** lowercase → `[^a-z0-9._-]`→`-` → collapse runs of `-`/`.` to one →
+  trim leading/trailing `-`/`.` → `slice(0, 64)`; if the result is **empty OR all-punctuation** →
+  `gateway-<id>` (so names like `..`, `-rf`, or all-CJK don't yield weird/hidden filenames). This
+  is the ONLY value interpolated into the `Content-Disposition` header (quoted) → no CR/LF survives
+  the whitelist (prevents header injection). (Note: `PEER_NAME_RE` already forbids quotes/`$`/`;`/
+  control chars, so body-escaping is defense-in-depth, not load-bearing — but kept.)
 - **Gateway name in the script body:** emitted ONLY as a single-quoted shell var
   `GATEWAY_NAME='<escaped>'` where `<escaped>` = name with CR/LF stripped and `'` → `'\''`. Never
   placed in a free-text comment, never used to build executable shell. (Mirror the existing
@@ -61,11 +66,17 @@ non-gateway/disabled peer):
 ### Template source files + drift guard (DA #3)
 
 `update.sh`, the two systemd units, and the compose snippet are **vendored copies** of the gateway
-repo's `deploy/` files, in `src/services/gatewaySetup/templates/`. To prevent silent drift:
-- Each vendored file carries a header `# vendored-from: gatecontrol-gateway@<tag> (deploy/<name>)`.
-- **CI drift check** (`test.yml` job or a unit test): fetch the gateway repo's `deploy/update.sh` +
-  units at the pinned tag and `diff` against the vendored copies; **fail on mismatch**. The bundle
-  is pinned to the **latest gateway release tag**, not `main`.
+repo's `deploy/` files, in `src/services/gatewaySetup/templates/`. To prevent silent drift (DA2 #1):
+- Vendored files are **byte-identical to upstream** (no injected header — an injected
+  `# vendored-from:` line would make the diff always mismatch). Keep `update.sh`'s upstream shebang
+  verbatim (it is `#!/usr/bin/env bash`, NOT sh — vendor it as-is; only our own `setup.sh` is POSIX sh).
+- Provenance lives in a **separate manifest** `src/services/gatewaySetup/templates/VENDORED.md`:
+  the gateway **release tag** each file was vendored from (the bundle pins to a release tag, not `main`).
+- **CI drift check** (gateway repo is public → fetchable without creds): fetch each
+  `deploy/<name>` at the manifest's tag and **byte-`diff`** against the vendored copy; **fail on
+  mismatch**. No header-stripping needed since the copies are byte-identical.
+- `setup.sh` does not duplicate `update.sh`; at bundle-render time the server reads the vendored
+  `update.sh` template and embeds its content into the rendered `setup.sh` (single source).
 
 ## The setup script (`setup.sh`, POSIX sh, runs as root)
 
@@ -80,14 +91,24 @@ If not root → re-exec via `sudo` (or abort with a hint). Order — **fail befo
 3. From the matched container's labels: `COMPOSE_DIR` = `com.docker.compose.project.working_dir`,
    `SERVICE` = `com.docker.compose.service` (args override). **Verify** `$COMPOSE_DIR/docker-compose.yml`
    exists AND defines service `$SERVICE` (else abort).
-4. **Idempotency check:** if the `/state` mount is already in the compose AND `gateway-state/`
-   exists AND `update.sh` is present AND the container is healthy → **skip the recreate** (DA #2),
-   jump to step 7 (trigger). Only proceed to edit+recreate when something is missing.
-5. **Edit the compose (DA #7):** back up to `docker-compose.yml.bak-<ts>`. Tolerant insert of
-   `      - ./gateway-state:/state` after the line matching `:/config:ro` (whitespace/quote
-   tolerant); skip if the exact mount string already present. `mkdir -p gateway-state`. **Verify:**
-   the mount is now present AND `docker compose -f … config` still parses — else restore the backup
-   and abort, pointing at `docker-compose.state-snippet.yml` for a manual edit.
+4. **Idempotency check (DA2 #2):** skip the recreate (→ jump to step 8, trigger) ONLY if ALL hold:
+   `/state` mount present in the compose AND `gateway-state/` exists AND `update.sh` present AND
+   the container healthy **AND the running image version ≥ 1.10.0** (the min with the self-update
+   route + `state_dir_writable` telemetry). Read the running version via
+   `docker exec <cid> node -p "require('./package.json').version"`. If the mount is present but the
+   image is older (or version can't be read), do **not** skip — proceed to recreate (the pull
+   brings ≥1.10.0). This prevents the "mount present but old image → `state_dir_writable` false
+   forever, script falsely reports done" trap.
+5. **Edit the compose (DA #7 + DA2 #3):** back up to `docker-compose.yml.bak-<ts>`. Insert the
+   `/state` mount **within the `$SERVICE` block's `volumes:` list only** — not by a global
+   `:/config:ro` match (which could land it on a different service or wrong indent). Track the
+   current service while scanning; find the `:/config:ro` anchor *inside `$SERVICE`*, copy that
+   line's exact leading whitespace for the inserted `- ./gateway-state:/state`; skip if the exact
+   mount string already present in that block. `mkdir -p gateway-state`. **Verify on the right
+   service:** run `docker compose -f … config` and confirm `/state` is attached to `$SERVICE`
+   (parse the rendered config / inspect), not merely "string present somewhere". If the compose
+   uses **long-form volume syntax** (no `:/config:ro` anchor) or verification fails → restore the
+   backup and abort, pointing at `docker-compose.state-snippet.yml` for a manual edit.
 6. **Write `update.sh`** into `$COMPOSE_DIR` (embedded heredoc; chmod +x) — the vendored copy.
 7. **Recreate (only if step 5 changed anything), detached + health-gated + auto-rollback:** print
    "⚠ Deine SSH-Verbindung kann abbrechen, falls sie durch diesen Gateway läuft — reconnecte und
@@ -107,9 +128,12 @@ If not root → re-exec via `sudo` (or abort with a hint). Order — **fail befo
 ## ZIP writer (in-repo, no dependency — DA #5)
 
 `src/utils/zip.js`: `createZip([{name, data}]) → Buffer`, **store-only** (method 0), GP-bit-flag
-`0`, version-needed `20`, **no data descriptors** (sizes known up front), correct CRC-32, local
-file headers, central directory, EOCD. Central-dir `relative offset of local header`, EOCD
-`cd size` + `cd offset` must be byte-exact. DOS date/time = a fixed constant; external attrs `0`.
+`0`, version-needed `20`, **no data descriptors** (sizes known up front), local file headers,
+central directory, EOCD. Central-dir `relative offset of local header`, EOCD `cd size`/`cd offset`
+byte-exact; DOS date/time = a fixed constant; external attrs `0`; entry names ASCII (constants).
+**The writer computes CRC-32 itself** (bitwise/table, little-endian) — so the test's `zlib.crc32`
+is a genuinely *independent* oracle (DA2 #5). `data` accepted as `Buffer`; zero-length entries
+(CRC `0x00000000`) handled.
 
 ## Security
 
@@ -134,8 +158,9 @@ file headers, central directory, EOCD. Central-dir `relative offset of local hea
 **Server** (node:test, `NODE_ENV=test`, 40% c8):
 - `src/utils/zip.js`: build a zip of known files; **independent-oracle validation** — decode each
   entry using offsets hardcoded in the TEST (not the writer's own parser), assert CRC-32 against
-  `zlib.crc32`/a checked-in reference, sizes + central-dir offsets exact; plus a CI step piping the
-  buffer through system `unzip -t` (Linux runner). Hostile/empty file sets.
+  `zlib.crc32` (independent — the writer rolls its own), sizes + central-dir offsets exact. Include
+  an **empty-file entry** (CRC `0x00000000`, off-by-one magnet). Plus a CI step running system
+  `unzip -t` on the buffer and **asserting its exit status is 0** (no `| …` that swallows the code).
 - `gatewaySetup` service: substitution fills name/image/paths; bundle file list complete; slug
   sanitization incl. **hostile names** (`a\nb`, `$(id)`, `'; reboot #`, `../../x`) → safe single-
   line filename, rendered script passes `bash -n`, no unescaped name, `GATEWAY_NAME='…'` single line.
@@ -144,7 +169,8 @@ file headers, central directory, EOCD. Central-dir `relative offset of local hea
   `tests/gateway_api_list.test.js`: login + agent.)
 - `setup.sh` rendered → `bash -n` clean; assert it contains the detach/rollback guard, the
   "skip-if-unchanged" branch, the compose-binary detection, and the case-insensitive match.
-- **Drift check** (DA #3): vendored `update.sh`/units match the gateway repo's pinned-tag `deploy/`.
+- **Drift check** (DA #3 + DA2 #1): vendored files **byte-identical** to the gateway repo's
+  `deploy/<name>` at the manifest's release tag (no header strip — copies carry no injected line).
 - i18n parity for new keys.
 
 ## i18n
