@@ -18,6 +18,7 @@
 - `src/services/gatewaySetup.js` (new) — render tailored script + bundle file list.
 - `src/routes/api/gateways.js` (modify) — two GET endpoints.
 - `public/js/gateways.js` (modify) — "Auto-Update einrichten" card.
+- `public/css/{app,pro}.css` (modify) — `.gw-fleet .gw-setup` styling (details/summary, actions row, `.done` secondary).
 - `src/i18n/{en,de}.json` + `templates/{default,pro}/layout.njk` (modify) — i18n + GC.t.
 - `scripts/check-vendored-templates.js` (new) + `.github/workflows/test.yml` (modify) — drift check + `unzip -t`.
 - `docs/feature-gateway-autoupdate-setup-bundle.md` (new).
@@ -352,8 +353,13 @@ test('renderScript embeds update.sh + single-quotes/escapes name + lowercase ima
   const s = gs.renderScript({ id: 7, name: "weird ' name" });
   const m = s.match(/^GATEWAY_NAME=.*$/m);
   assert.ok(m && m[0].indexOf("'\\''") !== -1, "name single-quote-escaped on one line");
-  assert.match(s, /gateway-state:\/state/);                         // update.sh embedded
+  assert.equal(s.indexOf('{{UPDATE_SH}}'), -1, 'UPDATE_SH placeholder consumed');
+  assert.match(s, /GATEWAY_STATE_DIR:-\/state/);                    // string unique to update.sh → embed proven
   assert.match(s, /ghcr\.io\/callmetechie\/gatecontrol-gateway:latest/); // lowercase image
+});
+test('renderScript does not interpret $-sequences in the name (replace footgun)', () => {
+  const s = gs.renderScript({ id: 7, name: '$& $$ end' });
+  assert.match(s, /^GATEWAY_NAME='\$& \$\$ end'$/m); // literal $&/$$ preserved on one line
 });
 
 test('buildBundleFiles lists all expected entries', () => {
@@ -386,15 +392,18 @@ function _slug(name, id) {
 function _shQuote(name) {
   return String(name == null ? '' : name).replace(/[\r\n]+/g, ' ').replace(/'/g, `'\\''`);
 }
+// NOTE: all replacements use the FUNCTION form `() => value` so that `$`-sequences
+// (`$&`, `$$`, `` $` ``, `$'`, `$1`) in the value are NOT interpreted by String.replace
+// (a real footgun — a name like `$&` or an embedded script with `$$` would corrupt).
 function _fill(tpl, gw) {
   return tpl
-    .replace(/\{\{GATEWAY_NAME\}\}/g, _shQuote(gw.name))
-    .replace(/\{\{GATEWAY_IMAGE\}\}/g, IMAGE)
-    .replace(/\{\{DEFAULT_COMPOSE_DIR\}\}/g, DEFAULT_COMPOSE_DIR)
-    .replace(/\{\{SERVICE\}\}/g, SERVICE);
+    .replace(/\{\{GATEWAY_NAME\}\}/g, () => _shQuote(gw.name))
+    .replace(/\{\{GATEWAY_IMAGE\}\}/g, () => IMAGE)
+    .replace(/\{\{DEFAULT_COMPOSE_DIR\}\}/g, () => DEFAULT_COMPOSE_DIR)
+    .replace(/\{\{SERVICE\}\}/g, () => SERVICE);
 }
 function renderScript(gw) {
-  return _fill(read('setup.sh'), gw).replace(/\{\{UPDATE_SH\}\}/g, read('update.sh').replace(/\s+$/, ''));
+  return _fill(read('setup.sh'), gw).replace(/\{\{UPDATE_SH\}\}/g, () => read('update.sh').replace(/\s+$/, ''));
 }
 function buildBundleFiles(gw) {
   return [
@@ -466,14 +475,26 @@ router.get('/:id/setup-bundle.zip', (req, res) => {
 
 - [ ] **Step 1 — implement** (verify `node --check` + `grep -c innerHTML` === 0). In `renderDetail(g)`, after the existing cards, append a new card via `el()`. Compute `migrated = !!(g.health && g.health.telemetry && g.health.telemetry.state_dir_writable)`.
   - `var c = el('div','gw gw-setup' + (migrated ? ' done' : ''));`
-  - top: `el('div','top')` with `el('h3', null, T('gateways.setup_title','Set up auto-update'))` + a status pill/span `el('span','pill ' + (migrated?'online':'pending'), migrated ? T('gateways.setup_done','✓ Set up') : T('gateways.setup_pending','⚠ Not set up yet'))`.
+  - top: `el('div','top')` with `el('h3', null, T('gateways.setup_title','Set up auto-update'))` + a **plain status span** (NOT `.pill` — `.pill` capitalizes + adds a `::before` dot which would double the glyph): `el('span','gw-setup-status ' + (migrated?'done':'pending'), migrated ? T('gateways.setup_done','✓ Set up') : T('gateways.setup_pending','⚠ Not set up yet'))`.
   - body: when `!migrated`, a note `el('div','note', T('gateways.setup_note', '…'))`; then a row with two anchor downloads:
     `var a1=el('a','recheck','⬇ '+T('gateways.setup_download_script','Setup script')); a1.href='/api/v1/gateways/'+g.peer_id+'/setup-script';`
     `var a2=el('a','recheck','⬇ '+T('gateways.setup_download_zip','ZIP (all files)')); a2.href='/api/v1/gateways/'+g.peer_id+'/setup-bundle.zip';`
     then a `el('details')` containing `el('summary',null,T('gateways.setup_guide','Step-by-step guide'))` + two short labelled blocks (`T('gateways.setup_synology')`, `T('gateways.setup_linux')`) noting the full steps are in the downloaded README.
   - Append the card to the detail `grid`/root.
-- [ ] **Step 2 — verify:** `node --check public/js/gateways.js`; `grep -c innerHTML public/js/gateways.js` → 0.
-- [ ] **Step 3 — commit:** `git commit -am "feat(gateways-ui): Auto-Update einrichten card (downloads + guide + note)"`
+- [ ] **Step 2 — CSS** (append to the `.gw-fleet` block in BOTH `public/css/app.css` and `public/css/pro.css` — they're byte-duplicated; use design tokens):
+```css
+.gw-fleet .gw-setup .gw-setup-status { font-size: 12px; font-weight: 600; }
+.gw-fleet .gw-setup .gw-setup-status.done { color: var(--green); }
+.gw-fleet .gw-setup .gw-setup-status.pending { color: var(--amber); }
+.gw-fleet .gw-setup .gw-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.gw-fleet .gw-setup details { margin-top: 8px; font-size: 13px; }
+.gw-fleet .gw-setup details > summary { cursor: pointer; color: var(--text-2); }
+.gw-fleet .gw-setup details[open] > summary { margin-bottom: 8px; }
+.gw-fleet .gw.gw-setup.done { opacity: .85; }   /* secondary when already set up */
+```
+(The download links reuse the existing `.recheck` button-link style; the note reuses `.note`.)
+- [ ] **Step 3 — verify:** `node --check public/js/gateways.js`; `grep -c innerHTML public/js/gateways.js` → 0.
+- [ ] **Step 4 — commit:** `git commit -am "feat(gateways-ui): Auto-Update einrichten card (downloads + guide + note) + CSS"`
 
 ## Task T6: i18n + GC.t
 
@@ -491,8 +512,8 @@ gateways.setup_guide           = "Step-by-step guide" / "Schritt-für-Schritt-An
 gateways.setup_synology        = "Synology (DSM)" / "Synology (DSM)"
 gateways.setup_linux           = "Linux (systemd)" / "Linux (systemd)"
 ```
-Add all 9 to BOTH json files (trailing-comma rule) and to the `gateways.*` group of `window.GC.t` in BOTH layouts.
-- [ ] **Step 2 — verify** JSON valid + parity test green + both layouts compile (nunjucks `getTemplate(f,true)`).
+Add all 9 to BOTH json files AND to the `gateways.*` group of `window.GC.t` in BOTH layouts. **Comma fix:** in all four files the current last gateways key is `gateways.last_pull_never` followed by `}` with NO trailing comma — add a comma after it before appending the new keys (last new key `gateways.setup_linux` gets no trailing comma).
+- [ ] **Step 2 — extend the parity test** (`tests/i18n_update_keys.test.js`): besides en/de JSON, assert each of the 9 `gateways.setup_*` keys appears in BOTH `templates/default/layout.njk` AND `templates/pro/layout.njk` GC.t blocks (read each file, check `"'" + key + "':"` present). Without this, a key missing from one layout silently falls back to the English default and no test catches it. Then verify JSON valid + both layouts compile (nunjucks `getTemplate(f,true)`).
 - [ ] **Step 3 — commit:** `git commit -am "feat(i18n): gateway setup-bundle strings (en+de) + GC.t"`
 
 ## Task T7: CI drift check + zip validity
@@ -506,13 +527,13 @@ node -e "const {createZip}=require('./src/utils/zip');require('fs').writeFileSyn
 unzip -t /tmp/b.zip
 ```
 (`unzip -t` exits non-zero on a corrupt archive → fails the job; do not pipe it.)
-- [ ] **Step 3 — run the drift check locally** (if network allows) — expect pass against v1.10.1.
+- [ ] **Step 3 — run the drift check locally** (if network allows) — expect pass against v1.10.1. Note: `unzip` may not be installed on the dev host; the `unzip -t` validity step is for CI (`ubuntu-latest` ships `unzip`). The zip's own structure/CRC is already covered by `tests/zip.test.js` (T1).
 - [ ] **Step 4 — commit:** `git commit -am "ci: vendored-template drift check + zip validity (unzip -t)"`
 
 ## Task T8: docs + finish
 
 - [ ] **Step 1 — `docs/feature-gateway-autoupdate-setup-bundle.md`** (force-add): overview, the card, the two downloads, the tailored setup.sh (auto-detect + detached recreate + trigger), the vendoring/drift policy, security.
-- [ ] **Step 2 — full suite:** `NODE_ENV=test node --test --test-force-exit tests/` green (the pre-existing `tests/api.test.js` wg-peer test may fail on a host with `wg` — ignore; skipped in CI). `node --check public/js/gateways.js`.
+- [ ] **Step 2 — full suite:** `NODE_ENV=test node --test --test-force-exit tests/`. On a dev host **with `wg` installed**, the `tests/api.test.js` peer/route tests RUN (gated `{skip:!hasWg}`) and may fail if Caddy/WireGuard can't fully operate in the sandbox — that's pre-existing + environmental, NOT a regression; CI (`ubuntu-latest`, no `wg`) SKIPS them. Treat only NEW failures as real. `node --check public/js/gateways.js`.
 - [ ] **Step 3 — push + open PR:** `feat: gateway auto-update setup bundle (detail-view download + guide)`.
 
 ---

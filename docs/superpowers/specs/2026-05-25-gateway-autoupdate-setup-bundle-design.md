@@ -191,7 +191,9 @@ New flat keys (de+en) + both `layout.njk` GC.t: `gateways.setup_title`, `gateway
 - `src/utils/zip.js` (new) — store-only zip writer.
 - `src/services/gatewaySetup.js` (new) — render tailored script + bundle file set from templates.
 - `src/services/gatewaySetup/templates/` (new) — `setup.sh`, `update.sh`, `systemd/*.{service,path}`,
-  `docker-compose.state-snippet.yml`, `README.md` (each with a `# vendored-from:` header).
+  `docker-compose.state-snippet.yml`, `README.md`, `VENDORED.md`. Vendored files (`update.sh`,
+  systemd units) are **byte-identical to upstream — no injected header**; provenance/tag lives in
+  `VENDORED.md` (so the CI byte-diff drift check can pass).
 - `src/routes/api/gateways.js` (modify) — two GET endpoints.
 - `public/js/gateways.js` (modify) — the "Auto-Update einrichten" card.
 - `src/i18n/{en,de}.json` + `templates/{default,pro}/layout.njk` (modify) — i18n + GC.t.
