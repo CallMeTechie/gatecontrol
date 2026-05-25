@@ -1459,5 +1459,15 @@
   "gateways.release_notes": "Release-Notes",
   "gateways.lbl_image_digest": "Image",
   "gateways.lbl_last_pull": "Letztes Pull",
-  "gateways.last_pull_never": "nie"
+  "gateways.last_pull_never": "nie",
+  "gateways.setup_title": "Auto-Update einrichten",
+  "gateways.setup_note": "Der automatische Update-Button funktioniert erst nach diesem einmaligen Host-Setup.",
+  "gateways.setup_done": "✓ Eingerichtet",
+  "gateways.setup_pending": "⚠ Noch nicht eingerichtet",
+  "gateways.setup_download_script": "Setup-Script",
+  "gateways.setup_download_zip": "ZIP (alle Dateien)",
+  "gateways.setup_guide": "Schritt-für-Schritt-Anleitung",
+  "gateways.setup_synology": "Synology (DSM)",
+  "gateways.setup_linux": "Linux (systemd)",
+  "gateways.setup_readme_hint": "Die vollständige Anleitung liegt in der README des heruntergeladenen Bundles."
 }

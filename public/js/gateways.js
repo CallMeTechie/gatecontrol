@@ -207,6 +207,35 @@
     c.appendChild(foot);
     return c;
   }
+  function setupCard(g) {
+    var t = (g.health && g.health.telemetry) || {};
+    var migrated = !!t.state_dir_writable;
+    var c = el('div', 'gw gw-setup' + (migrated ? ' done' : ''));
+    var top = el('div', 'top');
+    top.appendChild(el('h3', null, T('gateways.setup_title', 'Set up auto-update')));
+    top.appendChild(el('span', 'gw-setup-status ' + (migrated ? 'done' : 'pending'), migrated ? T('gateways.setup_done', '✓ Set up') : T('gateways.setup_pending', '⚠ Not set up yet')));
+    c.appendChild(top);
+    var body = el('div', 'body');
+    if (!migrated) {
+      body.appendChild(el('div', 'note', T('gateways.setup_note', 'The automatic Update button only works after this one-time host setup.')));
+    }
+    var acts = el('div', 'gw-actions');
+    var a1 = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_script', 'Setup script'));
+    a1.href = '/api/v1/gateways/' + g.peer_id + '/setup-script';
+    acts.appendChild(a1);
+    var a2 = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_zip', 'ZIP (all files)'));
+    a2.href = '/api/v1/gateways/' + g.peer_id + '/setup-bundle.zip';
+    acts.appendChild(a2);
+    body.appendChild(acts);
+    var d = el('details');
+    d.appendChild(el('summary', null, T('gateways.setup_guide', 'Step-by-step guide')));
+    d.appendChild(el('div', null, T('gateways.setup_synology', 'Synology (DSM)')));
+    d.appendChild(el('div', null, T('gateways.setup_linux', 'Linux (systemd)')));
+    body.appendChild(el('p', null, T('gateways.setup_readme_hint', 'Full instructions are included in the downloaded bundle\'s README.')));
+    body.appendChild(d);
+    c.appendChild(body);
+    return c;
+  }
   function renderDetail(g) {
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Zurück zur Flotte')); back.dataset.act = 'back';
@@ -216,6 +245,7 @@
     grid2.appendChild(versionsCard(g));
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
+    grid2.appendChild(setupCard(g));
     root.appendChild(grid2);
     detailView.replaceChildren(root);
   }

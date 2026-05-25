@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
+const gatewaySetup = require('../../services/gatewaySetup');
+const { createZip } = require('../../utils/zip');
 
 const router = Router();
 
@@ -151,6 +153,32 @@ router.post('/:id/update', async (req, res) => {
     `Gateway ${id} update requested (target ${target || 'latest'})`,
     { source: 'admin', severity: 'info', details: { peer_id: id, target, request_id: requestId } });
   res.json({ ok: true, queued: true });
+});
+
+function _setupGatewayOr4xx(req, res) {
+  const id = Number(req.params.id);
+  const row = getDb().prepare(`SELECT p.id, p.name, p.peer_type, p.enabled
+    FROM peers p JOIN gateway_meta gm ON gm.peer_id = p.id WHERE p.id = ?`).get(id);
+  if (!row || row.peer_type !== 'gateway' || !row.enabled) { res.status(404).json({ ok: false, error: 'not_found' }); return null; }
+  if (!require('../../services/license').hasFeature('gateway_fleet')) { res.status(403).json({ ok: false, error: 'gateway_fleet not licensed' }); return null; }
+  return { id: row.id, name: row.name };
+}
+
+router.get('/:id/setup-script', (req, res) => {
+  const gw = _setupGatewayOr4xx(req, res); if (!gw) return;
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="gatecontrol-gateway-setup-${gatewaySetup.slug(gw)}.sh"`);
+  res.set('Cache-Control', 'no-store');
+  res.send(gatewaySetup.renderScript(gw));
+});
+
+router.get('/:id/setup-bundle.zip', (req, res) => {
+  const gw = _setupGatewayOr4xx(req, res); if (!gw) return;
+  const zip = createZip(gatewaySetup.buildBundleFiles(gw));
+  res.set('Content-Type', 'application/zip');
+  res.set('Content-Disposition', `attachment; filename="gatecontrol-gateway-setup-${gatewaySetup.slug(gw)}.zip"`);
+  res.set('Cache-Control', 'no-store');
+  res.send(zip);
 });
 
 module.exports = router;

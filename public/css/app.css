@@ -1485,5 +1485,13 @@ input[type="file"] {
 .gw-fleet .gw-routes .sub { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
 .gw-fleet .gw-routes .num { font-family: var(--font-mono); color: var(--text-2); white-space: nowrap; }
 .gw-fleet .gw-empty { color: var(--text-3); font-size: 13px; padding: 4px 0; }
+.gw-fleet .gw-setup .gw-setup-status { font-size: 12px; font-weight: 600; }
+.gw-fleet .gw-setup .gw-setup-status.done { color: var(--green); }
+.gw-fleet .gw-setup .gw-setup-status.pending { color: var(--amber); }
+.gw-fleet .gw-setup .gw-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.gw-fleet .gw-setup details { margin-top: 8px; font-size: 13px; }
+.gw-fleet .gw-setup details > summary { cursor: pointer; color: var(--text-2); }
+.gw-fleet .gw-setup details[open] > summary { margin-bottom: 8px; }
+.gw-fleet .gw.gw-setup.done { opacity: .85; }
 @media (max-width: 760px) { .gw-fleet .kpis { grid-template-columns: repeat(2, 1fr); } .gw-fleet .grid.two { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .gw-fleet .row3 { grid-template-columns: 1fr 1fr; } }
