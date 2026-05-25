@@ -3065,6 +3065,10 @@ table tbody tr:last-child td { border-bottom: none; }
 .gw-fleet .gw-setup details { margin-top: 8px; font-size: 13px; }
 .gw-fleet .gw-setup details > summary { cursor: pointer; color: var(--text-2); }
 .gw-fleet .gw-setup details[open] > summary { margin-bottom: 8px; }
+.gw-fleet .gw-setup details h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
+.gw-fleet .gw-setup details ol { margin: 0 0 6px; padding-left: 20px; }
+.gw-fleet .gw-setup details ol li { margin: 2px 0; }
+.gw-fleet .gw-setup .gw-setup-hint { color: var(--text-3); font-size: 12px; margin: 6px 0 0; }
 .gw-fleet .gw.gw-setup.done { opacity: .85; }
 @media (max-width: 760px) { .gw-fleet .kpis { grid-template-columns: repeat(2, 1fr); } .gw-fleet .grid.two { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .gw-fleet .row3 { grid-template-columns: 1fr 1fr; } }
