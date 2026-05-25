@@ -21,6 +21,64 @@
   }
   function ago(ms) { if (!ms) return '—'; var s = Math.round((Date.now() - ms) / 1000); return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
   function metricRow(parent, label, value, p, lvl) { var m = el('div', 'metric'); m.appendChild(el('span', null, label)); m.appendChild(el('span', null, value)); parent.appendChild(m); parent.appendChild(bar(p, lvl)); }
+  function fmtGB(n) { return n ? (Math.round(n / 1e9 * 10) / 10) + ' GB' : '—'; }
+
+  // Formatted drilldown panel (safe DOM) — replaces the raw last_health JSON dump.
+  function detail(g) {
+    var h = g.health || {}, t = h.telemetry || {};
+    var box = el('div', 'gwd');
+    var hd = el('div', 'gwd-head');
+    var hb = el('div'); hb.appendChild(el('h2', null, g.name)); hb.appendChild(el('div', 'host', (g.hostname || '') + ' · ' + (g.ip || '')));
+    hd.appendChild(hb); hd.appendChild(el('span', 'pill ' + status(g), T('gateways.' + status(g), status(g)))); box.appendChild(hd);
+
+    box.appendChild(el('h3', 'gwd-sec', 'Versionen & System'));
+    var kvw = el('div', 'gwd-kv');
+    function kv(k, v) { var r = el('div', 'gwd-row'); r.appendChild(el('span', 'k', k)); if (typeof v === 'string') r.appendChild(el('span', 'v', v)); else r.appendChild(v); kvw.appendChild(r); }
+    var vv = el('span', 'v', (t.gateway_version || '—') + ' '); if (g.update_available) vv.appendChild(el('span', 'badge drift', '↑ ' + latest));
+    kv(T('gateways.version', 'Version'), vv);
+    kv('Node', t.node_version || '—');
+    kv('wg-tools', t.wg_tools_version || '—');
+    kv('OS', (t.os_platform || '—') + (t.os_release ? ' ' + t.os_release : ''));
+    kv('Arch', t.arch || '—');
+    kv('CPU-Kerne', String(t.cpu_cores || '—'));
+    kv('Default-Gateway', t.default_gateway_ip || '—');
+    kv('DNS', (t.dns_resolvers || []).join(', ') || '—');
+    kv('Config', h.config_hash ? '✓ ' + String(h.config_hash).slice(0, 10) : '—');
+    box.appendChild(kvw);
+
+    box.appendChild(el('h3', 'gwd-sec', 'Ressourcen'));
+    var res = el('div');
+    var cores = t.cpu_cores || 1, la = t.cpu_load_avg || [];
+    metricRow(res, 'CPU-Last (1/5/15m)', la.length ? la.map(function (x) { return Number(x).toFixed(2); }).join(' · ') : '—', pct(la[0] || 0, cores), (pct(la[0] || 0, cores) > 90 ? 'bad' : null));
+    if (t.mem_total) metricRow(res, 'RAM', fmtGB(t.mem_used) + ' / ' + fmtGB(t.mem_total), pct(t.mem_used, t.mem_total), null);
+    if (t.disk && t.disk.total) metricRow(res, 'Disk', fmtGB(t.disk.used) + ' / ' + fmtGB(t.disk.total), pct(t.disk.used, t.disk.total), (pct(t.disk.used, t.disk.total) > 85 ? 'bad' : (pct(t.disk.used, t.disk.total) > 70 ? 'warn' : null)));
+    box.appendChild(res);
+
+    box.appendChild(el('h3', 'gwd-sec', 'Health-Checks'));
+    var hcw = el('div', 'gwd-checks');
+    function chk(label, ok) { var c = el('span', 'gwd-chk ' + (ok ? 'ok' : 'bad')); c.appendChild(el('span', 'dot')); c.appendChild(el('span', null, label)); hcw.appendChild(c); }
+    chk('HTTP-Proxy', h.http_proxy_healthy);
+    chk('Mgmt-API', h.api_healthy);
+    chk('DNS', h.dns_resolve_ok);
+    chk('WG' + (h.wg_handshake_age_s != null ? ' (' + h.wg_handshake_age_s + 's)' : ''), h.wg_handshake_age_s != null && h.wg_handshake_age_s < 180);
+    box.appendChild(hcw);
+
+    var routes = h.route_reachability || [];
+    var upN = routes.filter(function (r) { return r.reachable; }).length;
+    box.appendChild(el('h3', 'gwd-sec', T('gateways.routes', 'Routes') + ' (' + upN + ' / ' + routes.length + ')'));
+    if (routes.length) {
+      var tbl = el('table', 'gwd-table');
+      routes.forEach(function (r) {
+        var tr = el('tr');
+        tr.appendChild(el('td', null, r.domain || ('#' + r.route_id)));
+        var sc = el('td'); sc.appendChild(el('span', 'pill ' + (r.reachable ? 'online' : 'offline'), r.reachable ? 'OK' : 'offline')); tr.appendChild(sc);
+        tr.appendChild(el('td', 'mono', r.latency_ms != null ? r.latency_ms + ' ms' : '—'));
+        tbl.appendChild(tr);
+      });
+      box.appendChild(tbl);
+    } else { box.appendChild(el('div', 'gwd-empty', '—')); }
+    return box;
+  }
 
   function card(g) {
     var t = (g.health && g.health.telemetry) || {};
@@ -65,7 +123,7 @@
     var rc = e.target.closest('.recheck'); if (rc) { e.stopPropagation(); probe(rc.dataset.id); return; }
     var c = e.target.closest('.gw'); if (!c) return;
     var g = last.find(function (x) { return String(x.peer_id) === c.dataset.id; });
-    if (g) { modalBody.replaceChildren(el('pre', null, JSON.stringify(g.health, null, 2))); modal.hidden = false; }
+    if (g) { modalBody.replaceChildren(detail(g)); modal.hidden = false; }
   });
   modal.addEventListener('click', function (e) { if (e.target === modal) modal.hidden = true; }); // backdrop-only close
   function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function () {}); }
