@@ -147,6 +147,7 @@
         '      - /etc/wireguard',
         '    volumes:',
         '      - ./config:/config:ro',
+        '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
         '    environment:',
         '      - LOG_LEVEL=info',
         '      - GATEWAY_ENV_PATH=/config/gateway.env'
