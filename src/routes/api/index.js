@@ -30,6 +30,7 @@ router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
 router.use('/tags', require('./tags'));
 router.use('/routes/:id/auth', require('./routeAuth'));
+router.use('/routes/:id/share-links', require('./shareLinks'));
 router.use('/routes', require('./routes'));
 router.use('/settings', require('./settings'));
 router.use('/smtp', require('./smtp'));
