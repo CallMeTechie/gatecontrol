@@ -480,7 +480,17 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             roll_size_mb: 10,
             roll_keep: 3,
           },
-          encoder: { format: 'json' },
+          encoder: {
+            format: 'filter',
+            wrap: { format: 'json' },
+            fields: {
+              'request>uri': {
+                filter: 'regexp',
+                regexp: '/route-auth/share/[^/?]+',
+                value: '/route-auth/share/REDACTED',
+              },
+            },
+          },
           include: ['http.log.access'],
         },
       },
