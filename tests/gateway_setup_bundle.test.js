@@ -37,15 +37,10 @@ test('buildBundleFiles lists all expected entries', () => {
   assert.deepEqual(names, ['README.md','docker-compose.state-snippet.yml','setup.sh','systemd/gatecontrol-gateway-update.path','systemd/gatecontrol-gateway-update.service','update.sh']);
 });
 
-test('rendered setup.sh passes bash -n syntax check', { skip: !require('node:child_process').spawnSync('bash', ['--version']).status === 0 }, () => {
+test('rendered setup.sh passes bash -n syntax check', { skip: require('node:child_process').spawnSync('bash', ['--version']).status !== 0 }, () => {
   const os = require('node:os');
   const fs = require('node:fs');
   const { spawnSync } = require('node:child_process');
-  const which = spawnSync('bash', ['--version']);
-  if (which.status !== 0 && which.error) {
-    // bash not available — skip gracefully
-    return;
-  }
   const script = gs.renderScript({ id: 1, name: 'x' });
   const tmp = require('node:path').join(os.tmpdir(), `gatecontrol-setup-test-${process.pid}.sh`);
   fs.writeFileSync(tmp, script, 'utf8');

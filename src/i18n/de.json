@@ -1468,5 +1468,6 @@
   "gateways.setup_download_zip": "ZIP (alle Dateien)",
   "gateways.setup_guide": "Schritt-für-Schritt-Anleitung",
   "gateways.setup_synology": "Synology (DSM)",
-  "gateways.setup_linux": "Linux (systemd)"
+  "gateways.setup_linux": "Linux (systemd)",
+  "gateways.setup_readme_hint": "Die vollständige Anleitung liegt in der README des heruntergeladenen Bundles."
 }
