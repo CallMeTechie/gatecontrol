@@ -476,10 +476,11 @@ router.get('/:id/setup-bundle.zip', (req, res) => {
 - [ ] **Step 1 — implement** (verify `node --check` + `grep -c innerHTML` === 0). In `renderDetail(g)`, after the existing cards, append a new card via `el()`. Compute `migrated = !!(g.health && g.health.telemetry && g.health.telemetry.state_dir_writable)`.
   - `var c = el('div','gw gw-setup' + (migrated ? ' done' : ''));`
   - top: `el('div','top')` with `el('h3', null, T('gateways.setup_title','Set up auto-update'))` + a **plain status span** (NOT `.pill` — `.pill` capitalizes + adds a `::before` dot which would double the glyph): `el('span','gw-setup-status ' + (migrated?'done':'pending'), migrated ? T('gateways.setup_done','✓ Set up') : T('gateways.setup_pending','⚠ Not set up yet'))`.
-  - body: when `!migrated`, a note `el('div','note', T('gateways.setup_note', '…'))`; then a row with two anchor downloads:
-    `var a1=el('a','recheck','⬇ '+T('gateways.setup_download_script','Setup script')); a1.href='/api/v1/gateways/'+g.peer_id+'/setup-script';`
-    `var a2=el('a','recheck','⬇ '+T('gateways.setup_download_zip','ZIP (all files)')); a2.href='/api/v1/gateways/'+g.peer_id+'/setup-bundle.zip';`
-    then a `el('details')` containing `el('summary',null,T('gateways.setup_guide','Step-by-step guide'))` + two short labelled blocks (`T('gateways.setup_synology')`, `T('gateways.setup_linux')`) noting the full steps are in the downloaded README.
+  - body: when `!migrated`, a note `el('div','note', T('gateways.setup_note', '…'))`; then a `gw-actions` WRAPPER div holding the two anchor downloads (the CSS styles `.gw-actions` — the wrapper must exist):
+    `var acts = el('div','gw-actions');`
+    `var a1=el('a','recheck','⬇ '+T('gateways.setup_download_script','Setup script')); a1.href='/api/v1/gateways/'+g.peer_id+'/setup-script'; acts.appendChild(a1);`
+    `var a2=el('a','recheck','⬇ '+T('gateways.setup_download_zip','ZIP (all files)')); a2.href='/api/v1/gateways/'+g.peer_id+'/setup-bundle.zip'; acts.appendChild(a2);`
+    append `acts` to the body; then a `el('details')` containing `el('summary',null,T('gateways.setup_guide','Step-by-step guide'))` + two short labelled blocks (`T('gateways.setup_synology')`, `T('gateways.setup_linux')`) noting the full steps are in the downloaded README.
   - Append the card to the detail `grid`/root.
 - [ ] **Step 2 — CSS** (append to the `.gw-fleet` block in BOTH `public/css/app.css` and `public/css/pro.css` — they're byte-duplicated; use design tokens):
 ```css
