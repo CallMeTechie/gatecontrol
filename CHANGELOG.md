@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.1] — 2026-05-25
+
+### Fixes
+- style fleet page (scoped .gw-fleet CSS, both themes) + server-rack nav icon (#96)
+
+---
+
 ## [1.66.0] — 2026-05-25
 
 ### Features
