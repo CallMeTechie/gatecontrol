@@ -89,4 +89,16 @@ const gatewayPairLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayPairLimiter };
+// Guest share-link redeem. Generous (the 256-bit token defeats brute force;
+// this is anti-noise/anti-DoS) and SEPARATE from the 5/15-min login limiter so
+// legitimate guests behind one NAT don't 429 each other. req.ip is the real
+// client IP (trust proxy 'loopback' + Caddy X-Forwarded-For).
+const shareRedeemLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+});
+
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayPairLimiter, shareRedeemLimiter };
