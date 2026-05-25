@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.0] — 2026-05-25
+
+### Features
+- gateway auto-update trigger (#2b) (#100)
+
+---
+
 ## [1.67.0] — 2026-05-25
 
 ### Features
