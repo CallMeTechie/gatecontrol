@@ -25,7 +25,7 @@
 - Create `deploy/systemd/gatecontrol-gateway-update.{service,path}`.
 - Modify `docker-compose.example.yml` — add `./gateway-state:/state` (rw).
 - Create `docs/auto-update.md` — Linux + Synology host setup + dry-run verify.
-- Tests: `tests/api_self_update.test.js`, extend `tests/telemetry*.test.js` (or new `tests/telemetry_lastpull.test.js`).
+- Tests: `tests/api_self_update.test.js`, `tests/telemetry_lastpull.test.js` (new — telemetry has no existing test file).
 
 **Server (`/root/gatecontrol`)**
 - Modify `src/db/migrationList.js` — migration v44: 3 `gateway_meta` columns.
@@ -82,7 +82,7 @@ stateDir: parsed.GATEWAY_STATE_DIR,
 
 **Files:** Create `src/api/routes/selfUpdate.js`; Modify `src/bootstrap.js`; Test `tests/api_self_update.test.js`
 
-- [ ] **Step 1 — failing test** (`tests/api_self_update.test.js`), mirroring `tests/api_wol.test.js` structure (build an app via `createApiServer` with a temp stateDir, send requests with the `X-Gateway-Token`):
+- [ ] **Step 1 — failing test** (`tests/api_self_update.test.js`). **`supertest` is NOT a dependency** in this repo, and existing API tests do NOT use `createApiServer`'s `routerFactories` — they build a bare `express()` app and drive a real port with raw `node:http`. Read `tests/api_wol.test.js` and copy its `postJson` helper. Skeleton:
 
 ```js
 'use strict';
@@ -91,63 +91,58 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
-const request = require('supertest'); // if used by api_wol.test.js; else use http like that file
-const { createApiServer } = require('../src/api/server');
+const http = require('node:http');
+const express = require('express');
+const { createAuthMiddleware } = require('../src/api/middleware/auth');
 const { createSelfUpdateRouter } = require('../src/api/routes/selfUpdate');
 
 const TOKEN = 'a'.repeat(64);
-function appWith(stateDir) {
-  return createApiServer({
-    bindIp: '127.0.0.1', port: 0, expectedToken: TOKEN,
-    routerFactories: { '/api': () => { const r = require('express').Router(); r.use(createSelfUpdateRouter({ stateDir })); return r; } },
+function serve(stateDir) {
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createAuthMiddleware({ expectedToken: TOKEN }), createSelfUpdateRouter({ stateDir }));
+  return app.listen(0, '127.0.0.1');
+}
+function post(srv, body, token = TOKEN) {
+  const data = body == null ? '' : JSON.stringify(body);
+  return new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: srv.address().port, path: '/api/self-update', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...(token ? { 'X-Gateway-Token': token } : {}) } },
+      (res) => { let b = ''; res.on('data', c => b += c); res.on('end', () => resolve({ status: res.statusCode, body: b ? JSON.parse(b) : {} })); });
+    req.end(data);
   });
 }
 
 test('writes pending-update flag and returns queued', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'));
-  const app = appWith(dir);
-  const res = await request(app).post('/api/self-update')
-    .set('X-Gateway-Token', TOKEN).send({ request_id: 'rid-1', target_version: '1.9.4' });
-  assert.equal(res.status, 200);
-  assert.equal(res.body.queued, true);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-')); const srv = serve(dir);
+  const res = await post(srv, { request_id: 'rid-1', target_version: '1.9.4' }); srv.close();
+  assert.equal(res.status, 200); assert.equal(res.body.queued, true);
   const flag = JSON.parse(fs.readFileSync(path.join(dir, 'pending-update'), 'utf8'));
-  assert.equal(flag.request_id, 'rid-1');
-  assert.equal(flag.target_version, '1.9.4');
-  assert.equal(flag.triggered_via, 'server-push');
+  assert.equal(flag.request_id, 'rid-1'); assert.equal(flag.target_version, '1.9.4'); assert.equal(flag.triggered_via, 'server-push');
 });
-
 test('requires request_id', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'));
-  const res = await request(appWith(dir)).post('/api/self-update').set('X-Gateway-Token', TOKEN).send({});
-  assert.equal(res.status, 400);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-')); const srv = serve(dir);
+  const res = await post(srv, {}); srv.close(); assert.equal(res.status, 400);
 });
-
-test('401/403 without valid token', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'));
-  const res = await request(appWith(dir)).post('/api/self-update').send({ request_id: 'x' });
-  assert.equal(res.status, 401);
+test('401 without token', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-')); const srv = serve(dir);
+  const res = await post(srv, { request_id: 'x' }, null); srv.close(); assert.equal(res.status, 401);
 });
-
 test('cooldown: same request_id already in last-pull is skipped', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'));
   fs.writeFileSync(path.join(dir, 'last-pull'), JSON.stringify({ request_id: 'rid-1', ok: true, pulled_at: Date.now() }));
-  const res = await request(appWith(dir)).post('/api/self-update')
-    .set('X-Gateway-Token', TOKEN).send({ request_id: 'rid-1' });
-  assert.equal(res.status, 200);
-  assert.equal(res.body.skipped, 'cooldown');
+  const srv = serve(dir); const res = await post(srv, { request_id: 'rid-1' }); srv.close();
+  assert.equal(res.status, 200); assert.equal(res.body.skipped, 'cooldown');
   assert.equal(fs.existsSync(path.join(dir, 'pending-update')), false);
 });
-
 test('new request_id after a failed pull is NOT cooled down', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'));
   fs.writeFileSync(path.join(dir, 'last-pull'), JSON.stringify({ request_id: 'old', ok: false, pulled_at: Date.now() }));
-  const res = await request(appWith(dir)).post('/api/self-update')
-    .set('X-Gateway-Token', TOKEN).send({ request_id: 'new' });
-  assert.equal(res.status, 200);
-  assert.equal(res.body.queued, true);
+  const srv = serve(dir); const res = await post(srv, { request_id: 'new' }); srv.close();
+  assert.equal(res.status, 200); assert.equal(res.body.queued, true);
 });
 ```
-(First read `tests/api_wol.test.js` — if it uses raw `http` instead of `supertest`, copy that harness exactly.)
+(auth.js returns **401** for a missing token, 403 for a wrong/length-mismatched one — the 401 assertion is correct.)
 
 - [ ] **Step 2 — run, expect fail** (module missing). `npm test`.
 
@@ -399,13 +394,15 @@ Unit=gatecontrol-gateway-update.service
 [Install]
 WantedBy=multi-user.target
 ```
+(`PathExists` is intentional — `update.sh` `rm -f`s the flag on consume, so the unit re-arms and edge-triggers on the next creation. This supersedes the spec's earlier `PathChanged` wording.)
 
 - [ ] **Step 4 — modify `docker-compose.example.yml`.** Under the gateway service `volumes:` add (keep `/config:ro`):
 ```yaml
       - ./gateway-state:/state          # rw: self-update flag + last-pull marker (#2b)
 ```
+Note: the service has `read_only: true`, but a bind mount stays writable (read_only locks only the container rootfs) — the companion's `fs.writeFile('/state/…')` and the `W_OK` check work. Do not add a tmpfs or drop `read_only`.
 
-- [ ] **Step 5 — create `docs/auto-update.md`** documenting: the `/state` volume; Linux systemd `.path`+`.service` install (`systemctl enable --now gatecontrol-gateway-update.path`); Synology DSM Task Scheduler (user-defined script running `/opt/gatecontrol-gateway/deploy/update.sh` every 1–2 min, root); the poll-interval latency; the lockfile; and a **dry-run verify**: `echo '{"request_id":"dryrun"}' > ./gateway-state/pending-update` then confirm `update.sh` consumed it and wrote `gateway-state/last-pull` with `"request_id":"dryrun"`. Include the rollback-path note.
+- [ ] **Step 5 — create `docs/auto-update.md`** documenting: the `/state` volume; Linux systemd `.path`+`.service` install (`systemctl enable --now gatecontrol-gateway-update.path`); Synology DSM Task Scheduler (user-defined script running `/opt/gatecontrol-gateway/deploy/update.sh` every 1–2 min, root); the poll-interval latency; the lockfile; the side-effect files the operator will see in the compose dir (`.update.lock`, `docker-compose.rollback.yml`, `update.log` — add to `.gitignore`/`.dockerignore`); and a **dry-run verify**: `echo '{"request_id":"dryrun"}' > ./gateway-state/pending-update` then confirm `update.sh` consumed it and wrote `gateway-state/last-pull` with `"request_id":"dryrun"`. Include the rollback-path note (verify the override actually pins the old digest and the container returns).
 
 - [ ] **Step 6 — commit:** `git commit -am "feat(deploy): self-update host script + systemd units + /state volume + docs"`
 
@@ -435,7 +432,11 @@ WantedBy=multi-user.target
   },
 ```
 
-- [ ] **Step 2 — verify migration runs.** Run: `NODE_ENV=test node -e "require('./src/db/connection').getDb(); console.log('migrated')"` (the connection runs migrations on open). Expected: prints `migrated`, no error.
+- [ ] **Step 2 — verify migration runs.** Migrations are run by `src/db/migrations.js` `runMigrations()` (called from `src/server.js` + every test), NOT by `getDb()`. Run:
+```
+NODE_ENV=test node -e "require('./src/db/migrations').runMigrations(); const {getDb}=require('./src/db/connection'); console.log(getDb().pragma('table_info(gateway_meta)').some(c=>c.name==='update_request_id')?'migrated':'MISSING')"
+```
+Expected: prints `migrated`.
 
 - [ ] **Step 3 — commit:** `git commit -am "feat(db): migration v44 — gateway_meta update tracking columns"`
 
@@ -488,14 +489,20 @@ test('_deriveUpdateState: unknown(sticky) after timeout with no match', () => {
   const r = row({ update_request_id: 'rid', update_requested_at: Date.now() - TIMEOUT - 1000, update_target_version: '1.9.4' });
   assert.equal(gw._deriveUpdateState(r, { last_pull_request_id: null }).state, 'unknown');
 });
+test('_deriveUpdateState: null target → done only if reported version parses', () => {
+  const base = { update_request_id: 'rid', update_requested_at: Date.now(), update_target_version: null };
+  assert.equal(gw._deriveUpdateState(row(base), { last_pull_request_id: 'rid', last_pull_ok: true, gateway_version: '1.9.4' }).state, 'done');
+  assert.equal(gw._deriveUpdateState(row(base), { last_pull_request_id: 'rid', last_pull_ok: true, gateway_version: 'unknown' }).state, 'failed');
+});
 ```
 
 - [ ] **Step 2 — run, expect fail.** `NODE_ENV=test node --test tests/gateway_update_state.test.js`.
 
 - [ ] **Step 3 — implement helpers** in `src/services/gateways.js` (near `_mergeHealth`; reuse the file's existing `decrypt`, `http`, `_peerIp`, `getDb`, `logger`, `require('./activity')`, and `compareVersions` from `../utils/version`):
 ```js
+// NOTE: `crypto` and `http` are ALREADY required at the top of gateways.js — do NOT
+// re-declare them (it is a SyntaxError). Only `compareVersions` is new here.
 const { compareVersions } = require('../utils/version');
-const crypto = require('node:crypto');
 const UPDATE_TIMEOUT_MS = Number(process.env.GC_UPDATE_TIMEOUT_MS || 15 * 60 * 1000);
 
 function _normalizeTargetVersion(v) {
@@ -516,7 +523,13 @@ function _deriveUpdateState(row, telemetry) {
     const target = row.update_target_version;
     const reported = t.gateway_version;
     const parses = (x) => /^\d+(\.\d+){0,2}$/.test(String(x == null ? '' : x).replace(/^v/i, '').split('-')[0]);
-    const versionOk = !target || (parses(reported) && parses(target) && compareVersions(reported, target) >= 0);
+    // The reported version must ALWAYS parse — an `unknown`/unparseable build is never "done".
+    // With a target: require reported >= target. Without a target (GitHub cold/offline/test):
+    // fall back to "reported version parses" so update-to-latest still works, but a broken
+    // build reporting `unknown` is still classified failed.
+    const versionOk = target
+      ? (parses(reported) && parses(target) && compareVersions(reported, target) >= 0)
+      : parses(reported);
     if (ok && versionOk) return { state: 'done' };
     return { state: 'failed' };
   }
@@ -565,7 +578,10 @@ Add to `module.exports`: `notifySelfUpdate, markUpdateRequested, _clearUpdateTra
 
 **Files:** Modify `src/routes/api/gateways.js`; Test `tests/api_gateway_update.test.js`
 
-- [ ] **Step 1 — failing test** (`tests/api_gateway_update.test.js`) — mirror `tests/api_gateways_fleet.test.js` harness (in-memory DB seed of a gateway peer + gateway_meta). Cover: 200 queued (stub `notifySelfUpdate`→`{ok:true,queued:true}`, telemetry has `state_dir_writable:true`); 200 `queued:false` when stub returns `{skipped:'cooldown'}` AND assert columns NOT set; 404 unknown peer; 403 when `gateway_fleet` feature off; 409 when telemetry lacks `state_dir_writable`. Use the project's existing way of stubbing service methods + faking session auth (copy from `api_gateways_fleet.test.js`).
+- [ ] **Step 1 — failing test** (`tests/api_gateway_update.test.js`). Mirror **`tests/gateway_api_list.test.js`** (NOT `api_gateways_fleet.test.js`, which tests the service directly with no HTTP/login/CSRF). That file shows the real harness: `createApp()` + the login flow (form `_csrf` → session → API `csrfToken`) + a `supertest.agent` (`supertest` IS a devDependency). Seed a gateway's telemetry via `gateways.handleHeartbeat(peerId, { telemetry: { state_dir_writable: true, gateway_version: '1.9.3' } })` (handleHeartbeat stores the whole health object verbatim, so nested `telemetry` survives and `GET '/'` reads `health.telemetry`).
+  - **Stub the push:** the route does a lazy `require('../../services/gateways')` per call, so set `require('../src/services/gateways').notifySelfUpdate = async () => ({ ok: true, queued: true })` before the request (restore after).
+  - **Target version:** `getLatestVersion()` returns `null` under `NODE_ENV=test`; for a case asserting a concrete persisted `update_target_version`, call `require('../src/services/gatewayRelease')._setCache('1.9.4')` first.
+  - Cover: **200 `queued:true`** (state_dir_writable seeded, stub ok); **200 `queued:false` + cooldown** (stub returns `{skipped:'cooldown'}`) and assert `gateway_meta.update_request_id` is still NULL; **404** unknown/non-gateway; **403** with `gateway_fleet` off — `gateway_fleet` defaults TRUE, so call `require('../src/services/license')._overrideForTest({ gateway_fleet: false })` before and reset `{ gateway_fleet: true }` after (it mutates a shared cache); **409** when telemetry lacks `state_dir_writable`; CSRF enforced for session callers (agent sends the header).
 
 - [ ] **Step 2 — run, expect fail.** `NODE_ENV=test node --test tests/api_gateway_update.test.js`.
 
@@ -607,16 +623,25 @@ router.post('/:id/update', async (req, res) => {
   res.json({ ok: true, queued: true });
 });
 ```
-In `GET '/'`, after building each gateway object, derive + clear-on-terminal:
+In `GET '/'`: extend the `rows` SELECT to also fetch `gm.update_request_id, gm.update_requested_at,
+gm.update_target_version`. **Inside the `rows.map((row) => …)` closure** (where `row` and the
+parsed `health` are in scope — NOT the later `for (const g of gateways)` loop, where `row` is
+undefined and the object exposes `peer_id` not `id`), attach to the returned object:
 ```js
-const st = gatewaysSvc._deriveUpdateState(
-  { update_request_id: row.update_request_id, update_requested_at: row.update_requested_at, update_target_version: row.update_target_version },
-  health.telemetry || {});
-g.update_state = st.state;
-g.update_target_version = row.update_target_version || null;
-if (st.state === 'done' || st.state === 'failed') gatewaysSvc._clearUpdateTracking(row.id);
+const _ust = gatewaysSvc._deriveUpdateState(row, health.telemetry || {});
+// ...in the returned object literal:
+update_state: _ust.state,
+update_target_version: row.update_target_version || null,
+update_requested_at: row.update_requested_at || null,   // client uses this for "started {x} ago"
 ```
-(Extend the `rows` SELECT in `GET '/'` to also fetch `gm.update_request_id, gm.update_requested_at, gm.update_target_version`.)
+Then AFTER the map, clear terminal states (use `g.peer_id`, since `row` is out of scope here):
+```js
+for (const g of gateways) {
+  if (g.update_state === 'done' || g.update_state === 'failed') gatewaysSvc._clearUpdateTracking(g.peer_id);
+}
+```
+(`_deriveUpdateState(row, …)` reads `row.update_request_id/_requested_at/_target_version` directly,
+so passing the full `row` works.)
 
 - [ ] **Step 4 — run, expect pass.** `NODE_ENV=test node --test tests/api_gateway_update.test.js`.
 
@@ -677,9 +702,9 @@ if (st.state === 'done' || st.state === 'failed') gatewaysSvc._clearUpdateTracki
   - Render a secondary GitHub "Release-Notes" link (`T('gateways.release_notes')` → `GW_RELEASES`, target _blank).
   - If `g.health.telemetry.state_dir_writable` AND `g.update_available`: render `<button class="gw-update" data-act="update" data-id=…>` `T('gateways.update_to','Update auf')+' '+latest`; set `disabled` when `us==='updating'`.
   - If telemetry lacks `state_dir_writable` but `update_available`: render the disabled button with `title=T('gateways.update_not_migrated')`.
-  - Render a lifecycle banner element under the header when `us!=='idle'`: updating→`update_running`, done→`update_done`, failed→`update_failed`, unknown→`update_unknown` (+ a `data-act="dismiss"` button for unknown).
+  - Render a lifecycle banner element under the header when `us!=='idle'`: updating→`update_running`, done→`update_done`, failed→`update_failed`, unknown→`update_unknown` (+ a `data-act="dismiss"` button for unknown). The `{x}` placeholder is NOT auto-interpolated (no existing GC.t string uses it) — the client must substitute: `update_running` → `T('gateways.update_running','…').replace('{x}', ago(g.update_requested_at))` (so the GET payload must include `update_requested_at` — added in B3); `update_done` → `.replace('{x}', g.update_target_version || latest || '—')`.
 - In `versionsCard(g)`: add a `kvRow(T('gateways.lbl_image_digest'), shortDigest)` (last 12 of `telemetry.image_digest` after `sha256:` or '—') and `kvRow(T('gateways.lbl_last_pull'), telemetry.last_pull_at ? ago(telemetry.last_pull_at) : T('gateways.last_pull_never'))`.
-- In the `detailView` click handler: add `data-act="update"` → `confirm(T('gateways.update_confirm'))` then `POST /api/v1/gateways/<id>/update` with `X-CSRF-Token`; on `{queued:true}` toast `update_requested`, on `{reason:'cooldown'}` toast `update_cooldown`; then `load()`. Add `data-act="dismiss"` → POST nothing, just locally hide (server clears on next terminal/timeout; optional: call a dismiss — out of scope, just hide).
+- In the `detailView` click handler: add `data-act="update"` → `confirm(T('gateways.update_confirm'))` then `POST /api/v1/gateways/<id>/update` with `X-CSRF-Token`; the project's toast global is **`window.showToast(msg, type)`** (defined in `public/js/app.js`, used by other pages — there is no local toast in gateways.js), guard with `typeof window.showToast === 'function'`: on `{queued:true}` → `window.showToast(T('gateways.update_requested'), 'success')`, on `{reason:'cooldown'}` → `window.showToast(T('gateways.update_cooldown'), 'error')`; then `load()`. Add `data-act="dismiss"` → just locally hide the banner (server clears on next terminal/timeout; no dedicated dismiss endpoint).
 
 - [ ] **Step 2 — verify.** `node --check public/js/gateways.js`; `grep -c innerHTML public/js/gateways.js` → 0.
 
@@ -695,7 +720,7 @@ if (st.state === 'done' || st.state === 'failed') gatewaysSvc._clearUpdateTracki
 
 ## Task B7: finish Part B
 
-- [ ] **Step 1 — full test + lint.** `NODE_ENV=test npx c8 --check-coverage --lines 40 node --test tests/`; `npx eslint src/ public/js/gateways.js` (if configured). Fix any gate failures.
+- [ ] **Step 1 — full test (match CI).** CI runs `npx c8 --reporter=text --lines 40 npm test` where `npm test` = `node --test --test-force-exit tests/` (the `--test-force-exit` matters — the SSE/mock servers can leave open handles). Use exactly that. Do NOT add `--check-coverage` (CI doesn't fail under-40% as a hard gate locally) and there is no eslint config in this repo, so syntax-check the client with `node --check public/js/gateways.js` instead. (Per project convention, the authoritative test run is CI/GitHub Actions; local per-file runs are for the TDD loop.)
 - [ ] **Step 2 — push branch, open PR** in the server repo titled `feat: gateway auto-update trigger (#2b)`.
 
 ---
