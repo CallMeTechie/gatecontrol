@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.64.0] — 2026-05-25
+
+### Features
+- clearer route wizard — contextual domain/SNI field, blocked-port hints, tooltips (#94)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
