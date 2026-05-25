@@ -202,8 +202,12 @@ rollback-path test note.
 
 ## Error handling / edge cases
 
-- Companion unreachable → `notifySelfUpdate` `{ok:false}`; columns still set → resolves via
-  timeout. `/state` unmounted → 500 + button hidden (no `state_dir_writable`).
+- Companion unreachable → `notifySelfUpdate` `{ok:false}`; the push failed *synchronously* (we
+  know it never reached the gateway), so the endpoint returns `{queued:false, reason:'unreachable'}`
+  and does NOT set tracking columns — showing "updating" for the full timeout would be misleading
+  when we already know it failed. The admin retries. (The timeout/"unknown" path is for the case
+  where the push *succeeded* but the gateway never reports back.) `/state` unmounted → 500 + button
+  hidden (no `state_dir_writable`).
 - New image broken → digest-pinned rollback; if even that fails → server timeout → "unknown".
 - "Already current" no-op → pull "up to date", recreate same version, `ok:true`, version satisfied
   → **done** (with honest "bereits aktuell" wording when version unchanged).

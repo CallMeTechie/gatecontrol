@@ -130,7 +130,7 @@
     } else { cfgVal = T('gateways.config_unknown', 'unbekannt'); }
     body.appendChild(kvRow(T('gateways.lbl_config_hash', 'Config-Hash'), cfgVal));
     var shortDigest = '—';
-    if (t.image_digest) { var di = String(t.image_digest).replace(/^sha256:/, ''); shortDigest = di.slice(-12); }
+    if (t.image_digest) { var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8); shortDigest = di.slice(-12); }
     body.appendChild(kvRow(T('gateways.lbl_image_digest', 'Image'), shortDigest));
     body.appendChild(kvRow(T('gateways.lbl_last_pull', 'Last pull'), t.last_pull_at ? ago(t.last_pull_at) : T('gateways.last_pull_never', 'never')));
     c.appendChild(body);

@@ -141,6 +141,9 @@ router.post('/:id/update', async (req, res) => {
     return res.json({ ok: true, queued: false, reason: 'cooldown' });
   }
   if (!r || r.ok === false) {
+    // The push failed synchronously — we KNOW it didn't reach the gateway, so do
+    // NOT set tracking columns (that would show a misleading "updating" banner for
+    // the full timeout). Surface unreachable immediately; the admin retries.
     return res.json({ ok: true, queued: false, reason: 'unreachable' });
   }
   gateways.markUpdateRequested(id, requestId, target);
