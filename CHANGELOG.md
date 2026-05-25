@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.2] — 2026-05-25
+
+### Fixes
+- bake /state volume into generated gateway compose (#103)
+
+---
+
 ## [1.69.1] — 2026-05-25
 
 ### Fixes
