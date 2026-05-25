@@ -681,6 +681,57 @@ function cleanupExpiredPairingCodes() {
   return db.prepare('DELETE FROM gateway_pairing_codes WHERE expires_at <= ?').run(Date.now()).changes;
 }
 
+// Self-check fields the gateway's GET /api/status returns. NOT telemetry/
+// hostname/config_hash — those are heartbeat-only and MUST be preserved.
+const SELF_CHECK_FIELDS = ['http_proxy_healthy', 'api_healthy', 'tcp_listeners', 'wg_handshake_age_s', 'dns_resolve_ok', 'route_reachability', 'overall_healthy'];
+
+function _mergeHealth(stored, fresh) {
+  const merged = { ...(stored && typeof stored === 'object' ? stored : {}) };
+  if (fresh && typeof fresh === 'object') for (const k of SELF_CHECK_FIELDS) if (k in fresh) merged[k] = fresh[k];
+  return merged;
+}
+
+async function refreshHealth(peerId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, p.peer_type, gm.api_port, gm.push_token_encrypted, gm.last_health
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row || row.peer_type !== 'gateway') return null;
+
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+  const fresh = await new Promise((resolve) => {
+    let body = '';
+    const req = http.request({ host: ip, port: row.api_port, path: '/api/status', method: 'GET', timeout: 5000,
+      headers: { 'X-Gateway-Token': pushToken } }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      res.on('data', (c) => { body += c; if (body.length > 65536) req.destroy(); });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+
+  if (!fresh) {
+    // Hard connection failure: pump offlineThreshold failures into the SM so the
+    // gateway transitions to 'offline' immediately rather than waiting for
+    // several probe cycles. A TCP refusal means the gateway is definitively down.
+    const sm = _getSm(peerId);
+    const needed = sm.offlineThreshold || 3;
+    for (let i = 0; i < needed; i++) recordProbeResult(peerId, false);
+    return { reachable: false };
+  }
+  let stored = {};
+  try { stored = row.last_health ? JSON.parse(row.last_health) : {}; } catch { stored = {}; }
+  const merged = _mergeHealth(stored, fresh);
+  db.prepare('UPDATE gateway_meta SET last_health = ?, last_seen_at = ? WHERE peer_id = ?')
+    .run(JSON.stringify(merged), Date.now(), peerId);
+  recordProbeResult(peerId, true);
+  return { reachable: true };
+}
+
 module.exports = {
   DEFAULT_API_PORT,
   createGateway,
@@ -698,6 +749,8 @@ module.exports = {
   createPairingCode,
   redeemPairingCode,
   cleanupExpiredPairingCodes,
+  _mergeHealth,
+  refreshHealth,
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
   _smCache,

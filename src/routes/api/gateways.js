@@ -77,11 +77,26 @@ router.get('/', (req, res) => {
       };
     });
 
-    res.json({ ok: true, gateways });
+    const latestVersion = require('../../services/gatewayRelease').getLatestVersion();
+    const { compareVersions } = require('../../utils/version');
+    for (const g of gateways) {
+      const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
+      g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);
+    }
+    res.json({ ok: true, gateways, latest_version: latestVersion });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list gateways');
     res.status(500).json({ ok: false, error: req.t ? req.t('common.error') : 'Error' });
   }
+});
+
+// On-demand fresh-health re-check (session-authed; /api/v1 CSRF middleware guards
+// this POST for session callers; token-auth exempt). Update action = 2b, not here.
+router.post('/:id/probe', async (req, res) => {
+  const peerId = parseInt(req.params.id, 10);
+  const result = await require('../../services/gateways').refreshHealth(peerId);
+  if (result === null) return res.status(404).json({ ok: false, error: 'not a gateway' });
+  res.json({ ok: true, reachable: result.reachable });
 });
 
 module.exports = router;
