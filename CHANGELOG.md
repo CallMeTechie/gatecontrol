@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.0] — 2026-05-25
+
+### Features
+- gateway auto-update setup bundle (detail-view download + guide) (#101)
+
+---
+
 ## [1.68.0] — 2026-05-25
 
 ### Features
