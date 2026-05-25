@@ -1242,6 +1242,7 @@
     setRouteAuthShareManaged(false);
 
     // Load route auth config from API
+    var authIsShareManaged = false;
     try {
       var authData = await api.get('/api/routes/' + id + '/auth');
       if (authData.ok && authData.data) {
@@ -1253,6 +1254,7 @@
         if (auth.auth_type === 'share') {
           // Share-managed routes have no credential flow — show a read-only
           // note and skip building the email/OTP/TOTP selector.
+          authIsShareManaged = true;
           setRouteAuthShareManaged(true);
         } else {
           setRouteAuthShareManaged(false);
@@ -1284,6 +1286,10 @@
     }
 
     updateEditAuthTypeUI();
+    // updateEditAuthTypeUI() unconditionally re-shows #edit-ra-single-factor for
+    // 'route' auth. For share-managed routes the read-only note must win, so
+    // re-apply the hide after the generic selector pass.
+    if (authIsShareManaged) setRouteAuthShareManaged(true);
 
     setToggleGroup('edit-route-type-group', 'edit-route-type', route.route_type || 'http');
     if (route.route_type === 'l4') {
@@ -3141,6 +3147,11 @@
   async function loadShareLinks(routeId) {
     var list = document.getElementById('share-links-list');
     if (!list) return;
+    // The secret URL box and create form are siblings of the list (not children),
+    // so clearing the list alone would leak a previously shown one-time URL across
+    // modal reopens — including for a different route. Remove them explicitly.
+    document.getElementById('share-link-url-once')?.remove();
+    document.getElementById('share-link-create-form')?.remove();
     list.textContent = '';
     try {
       var res = await shareFetch('/api/v1/routes/' + routeId + '/share-links');
@@ -3148,7 +3159,7 @@
       var data = await res.json();
       var links = (data && data.links) || [];
       if (!links.length) {
-        list.appendChild(el('div', { class: 'form-hint', text: shareT('routes.no_routes', 'No share links yet.') }));
+        list.appendChild(el('div', { class: 'form-hint', text: shareT('route_auth.share_none', 'No share links yet.') }));
         return;
       }
       links.forEach(function (link) {
