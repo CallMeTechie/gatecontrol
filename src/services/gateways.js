@@ -715,12 +715,11 @@ async function refreshHealth(peerId) {
   });
 
   if (!fresh) {
-    // Hard connection failure: pump offlineThreshold failures into the SM so the
-    // gateway transitions to 'offline' immediately rather than waiting for
-    // several probe cycles. A TCP refusal means the gateway is definitively down.
-    const sm = _getSm(peerId);
-    const needed = sm.offlineThreshold || 3;
-    for (let i = 0; i < needed; i++) recordProbeResult(peerId, false);
+    // Connect failure → feed a SINGLE probe failure into the state machine
+    // (consistent with the background prober; respects the SM's hysteresis &
+    // cooldown — do NOT pump synthetic failures, which corrupt flap/window
+    // tracking). The caller surfaces `reachable: false` for immediate UI feedback.
+    recordProbeResult(peerId, false);
     return { reachable: false };
   }
   let stored = {};

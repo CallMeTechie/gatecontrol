@@ -51,10 +51,11 @@ describe('gateways fleet service', () => {
     assert.equal(lh.telemetry.gateway_version, '1.8.0');
     assert.notEqual(gateways.getHealthStatus(peerId), 'offline');
   });
-  it('on connect failure marks the gateway offline via the state machine', async () => {
-    db.prepare('UPDATE gateway_meta SET api_port = 1 WHERE peer_id = ?').run(peerId);
+  it('on connect failure reports unreachable; repeated failures converge the SM to offline', async () => {
+    db.prepare('UPDATE gateway_meta SET api_port = 1 WHERE peer_id = ?').run(peerId); // port 1 → ECONNREFUSED
     const r = await gateways.refreshHealth(peerId);
-    assert.equal(r.reachable, false);
-    assert.equal(gateways.getHealthStatus(peerId), 'offline');
+    assert.equal(r.reachable, false);                              // immediate honest result
+    for (let i = 0; i < 4; i++) await gateways.refreshHealth(peerId); // each feeds ONE failure (no pump)
+    assert.equal(gateways.getHealthStatus(peerId), 'offline');     // SM converges via hysteresis
   });
 });

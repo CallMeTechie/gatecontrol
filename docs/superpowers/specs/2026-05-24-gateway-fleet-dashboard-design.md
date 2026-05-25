@@ -42,7 +42,7 @@ The API already returns `status` from `gateways.getHealthStatus(peerId)` — the
 - **degraded** — API `status === 'online'` **but** `health.overall_healthy === false` (the gateway's *own* health: http-proxy / mgmt-api / wg-handshake / dns). **Per-route LAN unreachability does NOT set "degraded"** — a gateway is healthy even if an optional LAN target (e.g. a powered-off device) is down. Route reachability is shown informationally (`x/y` + drilldown), not as a gateway status.
 - **online** — otherwise.
 
-The `refreshHealth` re-check feeds the **same** state machine via `gateways.recordProbeResult(peerId, reachable)` so the displayed `status` actually reflects the probe (a failed probe → state machine → `offline`, not a stale `online`).
+The `refreshHealth` re-check feeds the **same** state machine via a **single** `gateways.recordProbeResult(peerId, reachable)` call (consistent with the background prober — it does **not** pump synthetic failures or bypass the SM's hysteresis/cooldown). The endpoint returns `reachable` so the UI can surface a failed re-check immediately; the persisted `status` then converges through the SM over the next probe cycles (no instant flip from one probe — that would defeat the anti-flap design).
 
 Fleet KPIs: total · online · offline · update-available · degraded.
 
