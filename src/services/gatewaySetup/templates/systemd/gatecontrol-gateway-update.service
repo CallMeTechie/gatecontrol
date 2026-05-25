@@ -1,6 +1,0 @@
-[Unit]
-Description=GateControl Gateway self-update (oneshot)
-
-[Service]
-Type=oneshot
-ExecStart=/opt/gatecontrol-gateway/deploy/update.sh

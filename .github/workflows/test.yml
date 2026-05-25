@@ -29,11 +29,6 @@ jobs:
       - name: Vendored template drift check
         run: node scripts/check-vendored-templates.js
 
-      - name: Zip validity
-        run: |
-          node -e "const {createZip}=require('./src/utils/zip');require('fs').writeFileSync('/tmp/b.zip',createZip([{name:'a',data:Buffer.from('x')},{name:'e',data:Buffer.from('')}]))"
-          unzip -t /tmp/b.zip
-
       - name: Run tests with coverage
         run: npx c8 --reporter=text --reporter=lcov --lines 40 npm test
         env:

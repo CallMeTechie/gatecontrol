@@ -5,7 +5,6 @@ const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const gatewaySetup = require('../../services/gatewaySetup');
-const { createZip } = require('../../utils/zip');
 
 const router = Router();
 
@@ -157,28 +156,21 @@ router.post('/:id/update', async (req, res) => {
 
 function _setupGatewayOr4xx(req, res) {
   const id = Number(req.params.id);
-  const row = getDb().prepare(`SELECT p.id, p.name, p.peer_type, p.enabled
+  const row = getDb().prepare(`SELECT p.id, p.peer_type, p.enabled
     FROM peers p JOIN gateway_meta gm ON gm.peer_id = p.id WHERE p.id = ?`).get(id);
   if (!row || row.peer_type !== 'gateway' || !row.enabled) { res.status(404).json({ ok: false, error: 'not_found' }); return null; }
   if (!require('../../services/license').hasFeature('gateway_fleet')) { res.status(403).json({ ok: false, error: 'gateway_fleet not licensed' }); return null; }
-  return { id: row.id, name: row.name };
+  return { id: row.id };
 }
 
-router.get('/:id/setup-script', (req, res) => {
-  const gw = _setupGatewayOr4xx(req, res); if (!gw) return;
+// Serve the generic gateway update.sh for the "set up auto-update" guide (the host drops it next
+// to its compose and runs it via a 1-minute trigger). No tailoring — the script is generic.
+router.get('/:id/update-sh', (req, res) => {
+  if (!_setupGatewayOr4xx(req, res)) return;
   res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.set('Content-Disposition', `attachment; filename="gatecontrol-gateway-setup-${gatewaySetup.slug(gw)}.sh"`);
+  res.set('Content-Disposition', 'attachment; filename="update.sh"');
   res.set('Cache-Control', 'no-store');
-  res.send(gatewaySetup.renderScript(gw));
-});
-
-router.get('/:id/setup-bundle.zip', (req, res) => {
-  const gw = _setupGatewayOr4xx(req, res); if (!gw) return;
-  const zip = createZip(gatewaySetup.buildBundleFiles(gw));
-  res.set('Content-Type', 'application/zip');
-  res.set('Content-Disposition', `attachment; filename="gatecontrol-gateway-setup-${gatewaySetup.slug(gw)}.zip"`);
-  res.set('Cache-Control', 'no-store');
-  res.send(zip);
+  res.send(gatewaySetup.readUpdateSh());
 });
 
 module.exports = router;

@@ -9,7 +9,7 @@ test('all new gateway update keys exist in en + de', () => {
   for (const k of KEYS) { assert.ok(k in en, 'missing en: '+k); assert.ok(k in de, 'missing de: '+k); }
 });
 
-const SETUP_KEYS = ['gateways.setup_title','gateways.setup_note','gateways.setup_done','gateways.setup_pending','gateways.setup_download_script','gateways.setup_download_zip','gateways.setup_guide','gateways.setup_synology','gateways.setup_linux','gateways.setup_readme_hint','gateways.setup_syn_1','gateways.setup_syn_2','gateways.setup_syn_3','gateways.setup_lin_1','gateways.setup_lin_2'];
+const SETUP_KEYS = ['gateways.setup_title','gateways.setup_note','gateways.setup_done','gateways.setup_pending','gateways.setup_download_update','gateways.setup_guide','gateways.setup_synology','gateways.setup_linux','gateways.setup_syn_1','gateways.setup_syn_2','gateways.setup_lin_1','gateways.setup_lin_2','gateways.setup_legacy_hint'];
 test('setup_* keys present in en+de + both layout GC.t blocks', () => {
   const dflt = fs.readFileSync('templates/default/layout.njk','utf8');
   const pro = fs.readFileSync('templates/pro/layout.njk','utf8');

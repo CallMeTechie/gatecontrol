@@ -1464,15 +1464,13 @@
   "gateways.setup_note": "Der automatische Update-Button funktioniert erst nach diesem einmaligen Host-Setup.",
   "gateways.setup_done": "✓ Eingerichtet",
   "gateways.setup_pending": "⚠ Noch nicht eingerichtet",
-  "gateways.setup_download_script": "Setup-Script",
-  "gateways.setup_download_zip": "ZIP (alle Dateien)",
+  "gateways.setup_download_update": "update.sh herunterladen",
   "gateways.setup_guide": "Schritt-für-Schritt-Anleitung",
   "gateways.setup_synology": "Synology (DSM)",
   "gateways.setup_linux": "Linux (systemd)",
-  "gateways.setup_readme_hint": "Die vollständige Anleitung liegt in der README des heruntergeladenen Bundles.",
-  "gateways.setup_syn_1": "Setup-Script (oben) herunterladen und auf die Synology kopieren.",
-  "gateways.setup_syn_2": "Als root per SSH ausführen — es ergänzt das /state-Volume und startet den Gateway neu.",
-  "gateways.setup_syn_3": "Im DSM-Aufgabenplaner eine Aufgabe anlegen (Benutzer root, alle 1 Minute) mit dem Befehl, den das Script ausgibt.",
-  "gateways.setup_lin_1": "Setup-Script (oben) als root ausführen — es ergänzt das /state-Volume und startet den Gateway neu.",
-  "gateways.setup_lin_2": "Es installiert und aktiviert die systemd-.path/.service-Units automatisch — fertig."
+  "gateways.setup_syn_1": "Lege update.sh in den Ordner der docker-compose.yml deines Gateways.",
+  "gateways.setup_syn_2": "DSM → Aufgabenplaner → Erstellen → benutzerdef. Script (Benutzer root, alle 1 Minute) mit diesem Befehl:",
+  "gateways.setup_lin_1": "Lege update.sh in den Ordner der docker-compose.yml deines Gateways.",
+  "gateways.setup_lin_2": "Jede Minute ausführen (cron oder systemd-.path auf /state/pending-update) mit diesem Befehl:",
+  "gateways.setup_legacy_hint": "Gateway vor Auto-Update angelegt? Dann zusätzlich '- ./gateway-state:/state' in die compose-volumes eintragen und den Container einmal neu erstellen."
 }
