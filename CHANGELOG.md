@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.2] — 2026-05-25
+
+### Fixes
+- formatted drilldown detail view (#97)
+
+---
+
 ## [1.66.1] — 2026-05-25
 
 ### Fixes
