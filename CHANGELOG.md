@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.67.0] — 2026-05-25
+
+### Features
+- full-page detail view matching mockup (#99)
+
+---
+
 ## [1.66.3] — 2026-05-25
 
 ### Fixes
