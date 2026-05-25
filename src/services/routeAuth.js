@@ -41,11 +41,26 @@ function runCleanup() {
       WHERE used = 1 OR expires_at <= datetime('now')
     `).run();
 
+    // Orphan guest sessions of expired/revoked share links, then the links
+    const expiredShareSessions = db.prepare(`
+      DELETE FROM route_auth_sessions
+      WHERE share_link_id IN (
+        SELECT id FROM route_auth_share_links
+        WHERE revoked_at IS NOT NULL OR expires_at <= datetime('now')
+      )
+    `).run();
+    const expiredShareLinks = db.prepare(`
+      DELETE FROM route_auth_share_links
+      WHERE revoked_at IS NOT NULL OR expires_at <= datetime('now')
+    `).run();
+
     logger.debug(
       {
         expiredSessions: expiredSessions.changes,
         stalePending: stalePending.changes,
         expiredOtps: expiredOtps.changes,
+        expiredShareSessions: expiredShareSessions.changes,
+        expiredShareLinks: expiredShareLinks.changes,
       },
       'Route auth session cleanup complete'
     );
@@ -489,6 +504,7 @@ module.exports = {
   // Cleanup
   startSessionCleanup,
   stopSessionCleanup,
+  _runCleanupForTest: runCleanup,
   // CRUD
   getAuthForRoute,
   getAuthByDomain,
