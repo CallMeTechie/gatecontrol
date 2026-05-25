@@ -3,7 +3,8 @@
 const { Router } = require('express');
 const config = require('../../config/default');
 const { i18nMiddleware } = require('../middleware/i18n');
-const { routeAuthLoginLimiter, routeAuthCodeLimiter } = require('../middleware/rateLimit');
+const { routeAuthLoginLimiter, routeAuthCodeLimiter, shareRedeemLimiter } = require('../middleware/rateLimit');
+const shareLinks = require('../services/shareLinks');
 const {
   getAuthByDomain,
   verifySession,
@@ -76,6 +77,7 @@ function setSessionCookie(res, sessionId, maxAge) {
     httpOnly: true,
     secure: config.app.baseUrl.startsWith('https'),
     sameSite: 'strict',
+    path: '/',
     maxAge,
   });
 }
@@ -111,6 +113,28 @@ router.get('/verify', (req, res) => {
 
     return res.sendStatus(200);
   })().catch(() => res.sendStatus(500));
+});
+
+// GET /route-auth/share/:token — redeem a share link (the token IS the
+// credential; no login). Reached via the Caddy /route-auth/* sibling proxy
+// (bypasses forward_auth), so it works even when the route is share-gated.
+router.get('/share/:token', shareRedeemLimiter, (req, res) => {
+  (async () => {
+    res.set('Referrer-Policy', 'no-referrer');
+    const result = shareLinks.redeemShareLink(req.params.token, req.ip);
+    if (!result) {
+      // Generic invalid/expired view — no enumeration signal.
+      return res.status(200).render(`${res.locals.theme}/pages/route-auth-login.njk`, {
+        domain: req.query.route || req.headers['x-forwarded-host'] || req.headers.host || '',
+        redirect: '/', authType: 'share', shareInvalid: true,
+        twoFactorEnabled: false, twoFactorMethod: null, is2faStep2: false,
+        maskedEmail: '', routeCsrfToken: '', branding: null,
+      });
+    }
+    const maxAge = new Date(result.expiresAt).getTime() - Date.now();
+    setSessionCookie(res, result.sessionId, maxAge > 0 ? maxAge : 1000);
+    return res.redirect('/');
+  })().catch((err) => res.status(500).send(err.message));
 });
 
 // GET /route-auth/login — render login page
