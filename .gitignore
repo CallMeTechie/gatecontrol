@@ -10,3 +10,6 @@ documentation/
 gatecontrol-image.tar.gz
 LizenzDokumentation/
 demo/
+
+# test coverage output
+coverage/

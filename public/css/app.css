@@ -1495,6 +1495,7 @@ input[type="file"] {
 .gw-fleet .gw-setup details h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
 .gw-fleet .gw-setup details ol { margin: 0 0 6px; padding-left: 20px; }
 .gw-fleet .gw-setup details ol li { margin: 2px 0; }
+.gw-fleet .gw-setup .gw-setup-cmd { font-family: var(--font-mono); font-size: 11px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; margin: 0 0 8px; white-space: pre-wrap; word-break: break-all; color: var(--text-2); }
 .gw-fleet .gw-setup .gw-setup-hint { color: var(--text-3); font-size: 12px; margin: 6px 0 0; }
 .gw-fleet .gw.gw-setup.done { opacity: .85; }
 @media (max-width: 760px) { .gw-fleet .kpis { grid-template-columns: repeat(2, 1fr); } .gw-fleet .grid.two { grid-template-columns: 1fr; } }

@@ -1,4 +1,0 @@
-# Add this to your gateway service's volumes: (keep the existing config:ro line)
-    volumes:
-      - ./config:/config:ro
-      - ./gateway-state:/state

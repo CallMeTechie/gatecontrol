@@ -14,9 +14,7 @@ const TEMPLATES_DIR = path.join(__dirname, '..', 'src', 'services', 'gatewaySetu
 
 // Files to check: local path relative to templates/ → upstream path relative to deploy/
 const VENDORED_FILES = [
-  { local: 'update.sh',                                  upstream: 'update.sh' },
-  { local: 'systemd/gatecontrol-gateway-update.service', upstream: 'systemd/gatecontrol-gateway-update.service' },
-  { local: 'systemd/gatecontrol-gateway-update.path',    upstream: 'systemd/gatecontrol-gateway-update.path' },
+  { local: 'update.sh', upstream: 'update.sh' },
 ];
 
 function parseTag(md) {

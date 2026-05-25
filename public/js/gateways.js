@@ -220,13 +220,11 @@
       body.appendChild(el('div', 'note', T('gateways.setup_note', 'The automatic Update button only works after this one-time host setup.')));
     }
     var acts = el('div', 'gw-actions');
-    var a1 = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_script', 'Setup script'));
-    a1.href = '/api/v1/gateways/' + g.peer_id + '/setup-script';
-    acts.appendChild(a1);
-    var a2 = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_zip', 'ZIP (all files)'));
-    a2.href = '/api/v1/gateways/' + g.peer_id + '/setup-bundle.zip';
-    acts.appendChild(a2);
+    var dl = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_update', 'Download update.sh'));
+    dl.href = '/api/v1/gateways/' + g.peer_id + '/update-sh';
+    acts.appendChild(dl);
     body.appendChild(acts);
+    var CMD = 'PATH=/usr/local/bin:$PATH GATEWAY_STATE_DIR=<compose-dir>/gateway-state <compose-dir>/update.sh';
     var d = el('details');
     d.appendChild(el('summary', null, T('gateways.setup_guide', 'Step-by-step guide')));
     function steps(hostKey, hostDefault, stepKeys) {
@@ -234,17 +232,17 @@
       var ol = el('ol');
       stepKeys.forEach(function (sk) { ol.appendChild(el('li', null, T(sk[0], sk[1]))); });
       d.appendChild(ol);
+      d.appendChild(el('pre', 'gw-setup-cmd', CMD));
     }
     steps('gateways.setup_synology', 'Synology (DSM)', [
-      ['gateways.setup_syn_1', 'Download the setup script (above) and copy it to the Synology.'],
-      ['gateways.setup_syn_2', 'Run it as root via SSH — it adds the /state volume and recreates the gateway.'],
-      ['gateways.setup_syn_3', 'Create a DSM Task Scheduler entry (user root, repeat every 1 minute) with the command the script prints.'],
+      ['gateways.setup_syn_1', "Put update.sh into your gateway's docker-compose folder."],
+      ['gateways.setup_syn_2', 'DSM → Task Scheduler → Create → user-defined script (user root, repeat every 1 minute) with this command:'],
     ]);
     steps('gateways.setup_linux', 'Linux (systemd)', [
-      ['gateways.setup_lin_1', 'Run the setup script (above) as root — it adds the /state volume and recreates the gateway.'],
-      ['gateways.setup_lin_2', 'It installs and enables the systemd .path/.service units automatically — done.'],
+      ['gateways.setup_lin_1', "Put update.sh into your gateway's docker-compose folder."],
+      ['gateways.setup_lin_2', 'Run it every minute (cron, or a systemd .path watching /state/pending-update) with this command:'],
     ]);
-    d.appendChild(el('p', 'gw-setup-hint', T('gateways.setup_readme_hint', 'Full instructions are included in the downloaded bundle\'s README.')));
+    d.appendChild(el('p', 'gw-setup-hint', T('gateways.setup_legacy_hint', "Gateway created before auto-update? Also add '- ./gateway-state:/state' to its compose volumes and recreate the container once.")));
     body.appendChild(d);
     c.appendChild(body);
     return c;

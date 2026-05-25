@@ -5,5 +5,3 @@ Byte-identical copies of `gatecontrol-gateway` `deploy/` at the tag below. The C
 
 - tag: v1.10.1
 - update.sh ← deploy/update.sh
-- systemd/gatecontrol-gateway-update.service ← deploy/systemd/gatecontrol-gateway-update.service
-- systemd/gatecontrol-gateway-update.path ← deploy/systemd/gatecontrol-gateway-update.path
