@@ -199,17 +199,24 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     const redirectTo = safeRedirect(redirect);
     const domain = req.body.domain || req.headers['x-forwarded-host'] || req.headers.host;
 
+    // Resolve authConfig early so share-route guard can fire before CSRF check.
+    const authConfig = domain ? getAuthByDomain(domain) : null;
+
+    if (!authConfig) {
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
     // CSRF: verify HMAC-signed token from body or header (bound to domain)
     const csrfToken = _csrf || req.headers['x-csrf-token'];
     if (!verifySignedCsrf(csrfToken, domain)) {
       const logger = require('../utils/logger');
       logger.warn({ hasBody: !!req.body, csrfLen: csrfToken?.length, csrfStart: csrfToken?.substring(0, 12) }, 'CSRF failed');
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
-    }
-    const authConfig = domain ? getAuthByDomain(domain) : null;
-
-    if (!authConfig) {
-      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
     // Check account lockout
@@ -276,6 +283,11 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
     // Verify pending 2FA session exists before allowing code resend
     const sessionId = req.cookies && req.cookies[COOKIE_SID];
     const pendingSession = sessionId ? getSession(sessionId) : null;
@@ -308,6 +320,11 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
     if (!authConfig) {
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
