@@ -336,6 +336,14 @@
         <button type="submit" class="btn-primary" id="verify-btn">{{ t('route_auth.verify') }}</button>
       </form>
 
+    {# ── share ─────────────────────────────────────────── #}
+    {% elif authType == 'share' %}
+
+      <div class="ra-share-invitation">
+        <h2>{{ t('route_auth.share_invite_title') }}</h2>
+        <p>{{ t('route_auth.share_invite_body') if not shareInvalid else t('route_auth.share_invalid_body') }}</p>
+      </div>
+
     {% endif %}
 
   </div>
