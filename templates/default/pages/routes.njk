@@ -1,4 +1,5 @@
 {% extends theme + "/layout.njk" %}
+{% import theme + "/partials/_tip.njk" as ui with context %}
 
 {% block content %}
 <div class="page-header">
@@ -107,12 +108,13 @@
         </div>
 
         <div class="wiz-row-2">
-          <div>
-            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.domain') }}</label>
+          <div id="create-route-domain-wrap">
+            <label id="create-route-domain-label" style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
             <input type="text" id="create-route-domain" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253"
               data-dns-checking="{{ t('routes.dns_checking') }}"
               data-dns-ok="{{ t('routes.dns_ok') }}"
               data-dns-warning="{{ t('routes.dns_warning') }}">
+            <small id="create-route-domain-ctx-hint" class="form-hint" style="display:none"></small>
             <small id="create-route-dns-hint" class="form-hint" style="display:none"></small>
           </div>
           <div>
@@ -122,7 +124,7 @@
         </div>
 
         <div style="margin-bottom:14px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_target_kind') }}</label>
+          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_target_kind') }}{{ ui.tip('routes.tip_target_kind') }}</label>
           <select class="form-select" id="create-route-target-kind" name="target_kind" style="width:100%;padding:8px 12px">
             <option value="peer">{{ t('route_target_peer') }}</option>
             <option value="gateway">{{ t('route_target_gateway') }}</option>
@@ -190,7 +192,7 @@
         <div id="l4-fields" style="display:none">
           <div class="wiz-row-2">
             <div class="form-group" style="margin-bottom:0">
-              <label>{{ t('routes.l4_protocol') }}</label>
+              <label>{{ t('routes.l4_protocol') }}{{ ui.tip('routes.tip_l4_protocol') }}</label>
               <div class="toggle-group" id="l4-protocol-group">
                 <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
                 <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
@@ -198,18 +200,20 @@
               <input type="hidden" name="l4_protocol" id="l4-protocol" value="tcp">
             </div>
             <div class="form-group" style="margin-bottom:0">
-              <label>{{ t('routes.l4_listen_port') }}</label>
-              <input type="text" id="l4-listen-port" name="l4_listen_port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}">
+              <label>{{ t('routes.l4_listen_port') }}{{ ui.tip('routes.tip_l4_listen_port') }}</label>
+              <input type="text" id="l4-listen-port" name="l4_listen_port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}" data-blocked-ports="{{ (l4BlockedPorts or []) | join(',') }}">
+              {% if l4BlockedPorts %}<small class="form-hint">{{ t('routes.l4_blocked_ports_prefix') }} {{ l4BlockedPorts | join(', ') }} {{ t('routes.l4_blocked_ports_suffix') }}</small>{% endif %}
+              <small id="l4-listen-port-error" class="form-hint" style="display:none;color:var(--red)"></small>
             </div>
           </div>
           <div class="form-group">
-            <label>{{ t('routes.l4_tls_mode') }}</label>
+            <label>{{ t('routes.l4_tls_mode') }}{{ ui.tip('routes.tip_l4_tls_mode') }}</label>
             <select id="l4-tls-mode" name="l4_tls_mode" class="form-select">
               <option value="none">{{ t('routes.tls_none') }}</option>
               <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
               <option value="terminate">{{ t('routes.tls_terminate') }}</option>
             </select>
-            <small id="l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
+            <small id="l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-passthrough="{{ t('routes.tls_passthrough_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
           </div>
         </div>
         </div> {# /step 1 #}

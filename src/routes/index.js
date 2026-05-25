@@ -210,6 +210,9 @@ pages.forEach(({ path, template, titleKey }) => {
       try {
         extraLocals.gatewayPools = require('../services/gatewayPool').listPools();
       } catch { extraLocals.gatewayPools = []; }
+      try {
+        extraLocals.l4BlockedPorts = require('../../config/default').l4.blockedPorts;
+      } catch { extraLocals.l4BlockedPorts = []; }
     }
 
     if (template === 'gateway-pools') {

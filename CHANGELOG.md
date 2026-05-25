@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Route-Wizard & Edit-Modal: kontextabhängiges Domain-/SNI-Feld (bei L4 ohne TLS ausgeblendet), Hinweise + Live-Prüfung auf gesperrte Ports, Tooltips, klarere TLS-Modus-Texte
+
+---
+
 ## [1.63.1] — 2026-05-24
 
 ### Änderungen

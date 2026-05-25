@@ -110,7 +110,16 @@
       'gateway_pools.select_all': {{ t('gateway_pools.select_all') | dump | safe }},
       'gateway_pools.select_none': {{ t('gateway_pools.select_none') | dump | safe }},
       'rdp.host_hint.default': {{ t('rdp.host_hint.default') | dump | safe }},
-      'rdp.host_hint.gateway': {{ t('rdp.host_hint.gateway') | dump | safe }}
+      'rdp.host_hint.gateway': {{ t('rdp.host_hint.gateway') | dump | safe }},
+      'routes.domain': {{ t('routes.domain') | dump | safe }},
+      'routes.l4_sni_label': {{ t('routes.l4_sni_label') | dump | safe }},
+      'routes.l4_sni_required_hint': {{ t('routes.l4_sni_required_hint') | dump | safe }},
+      'routes.l4_port_reserved': {{ t('routes.l4_port_reserved') | dump | safe }},
+      'routes.l4_port_reserved_generic': {{ t('routes.l4_port_reserved_generic') | dump | safe }},
+      'routes.domain_required': {{ t('routes.domain_required') | dump | safe }},
+      'routes.target_port_required': {{ t('routes.target_port_required') | dump | safe }},
+      'routes.type': {{ t('routes.type') | dump | safe }},
+      'routes.target_peer': {{ t('routes.target_peer') | dump | safe }}
     }
   };
 </script>
