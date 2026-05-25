@@ -74,12 +74,34 @@
     var act = el('div', 'gw-detail-actions');
     var rc = el('button', 'recheck', '↻ ' + T('gateways.recheck', 'Neu prüfen')); rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck';
     act.appendChild(rc);
-    if (g.update_available && latest) {
-      var up = el('a', 'gw-update', T('gateways.update_to', 'Update auf') + ' ' + latest);
-      up.href = GW_RELEASES; up.target = '_blank'; up.rel = 'noopener';
+    var rel = el('a', 'gw-relnotes', T('gateways.release_notes', 'Release notes'));
+    rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener';
+    act.appendChild(rel);
+    if (g.update_available) {
+      var migrated = !!(g.health && g.health.telemetry && g.health.telemetry.state_dir_writable);
+      var up = el('button', 'gw-update', T('gateways.update_to', 'Update auf') + ' ' + (latest || ''));
+      up.dataset.act = 'update'; up.dataset.id = g.peer_id;
+      if (!migrated) { up.disabled = true; up.title = T('gateways.update_not_migrated', 'Gateway not migrated for in-place updates'); }
+      if (g.update_state === 'updating') up.disabled = true;
       act.appendChild(up);
     }
     ph.appendChild(act);
+    if (g.update_state && g.update_state !== 'idle') {
+      var banner = el('div', 'gw-update-banner ' + g.update_state);
+      if (g.update_state === 'updating') {
+        banner.textContent = T('gateways.update_running', 'Update läuft … ({x})').replace('{x}', ago(g.update_requested_at));
+      } else if (g.update_state === 'done') {
+        banner.textContent = T('gateways.update_done', 'Update auf {x} abgeschlossen').replace('{x}', g.update_target_version || latest || '—');
+      } else if (g.update_state === 'failed') {
+        banner.textContent = T('gateways.update_failed', 'Update fehlgeschlagen');
+      } else if (g.update_state === 'unknown') {
+        banner.appendChild(document.createTextNode(T('gateways.update_unknown', 'Update-Status unbekannt') + ' '));
+        var dm = el('button', 'gw-update-dismiss', T('gateways.update_dismiss', 'Ausblenden'));
+        dm.dataset.act = 'dismiss';
+        banner.appendChild(dm);
+      }
+      ph.appendChild(banner);
+    }
     return ph;
   }
   function versionsCard(g) {
@@ -107,6 +129,10 @@
       cfgVal.appendChild(el('code', null, String(h.config_hash).slice(0, 8)));
     } else { cfgVal = T('gateways.config_unknown', 'unbekannt'); }
     body.appendChild(kvRow(T('gateways.lbl_config_hash', 'Config-Hash'), cfgVal));
+    var shortDigest = '—';
+    if (t.image_digest) { var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8); shortDigest = di.slice(-12); }
+    body.appendChild(kvRow(T('gateways.lbl_image_digest', 'Image'), shortDigest));
+    body.appendChild(kvRow(T('gateways.lbl_last_pull', 'Last pull'), t.last_pull_at ? ago(t.last_pull_at) : T('gateways.last_pull_never', 'never')));
     c.appendChild(body);
     return c;
   }
@@ -239,7 +265,25 @@
   });
   detailView.addEventListener('click', function (e) {
     if (e.target.closest('[data-act="back"]')) { goFleet(); return; }
-    var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); }
+    var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
+    var up = e.target.closest('[data-act="update"]');
+    if (up) {
+      if (!confirm(T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'))) return;
+      var id = up.dataset.id;
+      fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/update', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (typeof window.showToast === 'function') {
+            window.showToast(
+              j.reason === 'cooldown' ? T('gateways.update_cooldown', 'Update auf Cooldown — bitte später erneut versuchen') : T('gateways.update_requested', 'Update angefordert'),
+              j.reason === 'cooldown' ? 'error' : 'success');
+          }
+          load();
+        }).catch(function () {});
+      return;
+    }
+    var dm = e.target.closest('[data-act="dismiss"]');
+    if (dm) { var b = dm.closest('.gw-update-banner'); if (b && b.parentNode) b.parentNode.removeChild(b); }
   });
   window.addEventListener('hashchange', route);
 

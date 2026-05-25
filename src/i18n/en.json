@@ -1446,5 +1446,18 @@
   "gateways.sub_heartbeat": "last heartbeat",
   "gateways.foot_listeners": "L4 listeners active",
   "gateways.foot_probes": "TCP probes every 15 s",
-  "gateways.foot_wol": "WoL available for"
+  "gateways.foot_wol": "WoL available for",
+  "gateways.update_confirm": "Update this gateway to the newest published version?",
+  "gateways.update_requested": "Update requested (may take a few minutes)",
+  "gateways.update_running": "Update running (started {x} ago)",
+  "gateways.update_done": "Updated to {x}",
+  "gateways.update_failed": "Update failed — rolled back",
+  "gateways.update_unknown": "Update status unknown — check the gateway",
+  "gateways.update_dismiss": "Dismiss",
+  "gateways.update_cooldown": "Please wait a moment before retrying",
+  "gateways.update_not_migrated": "This gateway is not set up for auto-update yet",
+  "gateways.release_notes": "Release notes",
+  "gateways.lbl_image_digest": "Image",
+  "gateways.lbl_last_pull": "Last pull",
+  "gateways.last_pull_never": "never"
 }

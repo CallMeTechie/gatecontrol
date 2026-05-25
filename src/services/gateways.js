@@ -685,6 +685,72 @@ function cleanupExpiredPairingCodes() {
 // hostname/config_hash — those are heartbeat-only and MUST be preserved.
 const SELF_CHECK_FIELDS = ['http_proxy_healthy', 'api_healthy', 'tcp_listeners', 'wg_handshake_age_s', 'dns_resolve_ok', 'route_reachability', 'overall_healthy'];
 
+// ─── Gateway self-update lifecycle helpers ────────────────────────────────
+
+const { compareVersions } = require('../utils/version');
+const UPDATE_TIMEOUT_MS = Number(process.env.GC_UPDATE_TIMEOUT_MS || 15 * 60 * 1000);
+
+function _normalizeTargetVersion(v) {
+  if (v == null) return null;
+  const s = String(v).trim().replace(/^v/i, '');
+  return s || null;
+}
+
+// Pure: derive update lifecycle. Completion matched by request_id (skew-proof);
+// timestamps are display-only. The reported version must always parse — an
+// `unknown`/unparseable build is never "done".
+function _deriveUpdateState(row, telemetry) {
+  const rid = row && row.update_request_id;
+  if (!rid) return { state: 'idle' };
+  const t = telemetry || {};
+  const matched = t.last_pull_request_id && t.last_pull_request_id === rid;
+  if (matched) {
+    const ok = t.last_pull_ok === true;
+    const target = row.update_target_version;
+    const reported = t.gateway_version;
+    const parses = (x) => /^\d+(\.\d+){0,2}$/.test(String(x == null ? '' : x).replace(/^v/i, '').split('-')[0]);
+    const versionOk = target
+      ? (parses(reported) && parses(target) && compareVersions(reported, target) >= 0)
+      : parses(reported);
+    if (ok && versionOk) return { state: 'done' };
+    return { state: 'failed' };
+  }
+  if (Date.now() - (row.update_requested_at || 0) > UPDATE_TIMEOUT_MS) return { state: 'unknown' };
+  return { state: 'updating' };
+}
+
+function markUpdateRequested(peerId, requestId, targetVersion) {
+  getDb().prepare(`UPDATE gateway_meta SET update_request_id=?, update_requested_at=?, update_target_version=? WHERE peer_id=?`)
+    .run(requestId, Date.now(), _normalizeTargetVersion(targetVersion), peerId);
+}
+
+function _clearUpdateTracking(peerId) {
+  getDb().prepare(`UPDATE gateway_meta SET update_request_id=NULL, update_requested_at=NULL, update_target_version=NULL WHERE peer_id=?`).run(peerId);
+}
+
+async function notifySelfUpdate(peerId, { request_id, target_version } = {}) {
+  const db = getDb();
+  const row = db.prepare(`SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id WHERE gm.peer_id = ?`).get(peerId);
+  if (!row) return { ok: false };
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+  const payload = JSON.stringify({ request_id, target_version });
+  return new Promise((resolve) => {
+    let body = '';
+    const req = http.request({
+      host: ip, port: row.api_port, path: '/api/self-update', method: 'POST', timeout: 5000,
+      headers: { 'X-Gateway-Token': pushToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, (res) => {
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { const j = JSON.parse(body); resolve({ ok: res.statusCode === 200, skipped: j.skipped, queued: j.queued }); } catch { resolve({ ok: res.statusCode === 200 }); } });
+    });
+    req.on('error', (err) => { logger.warn({ err: err.message, peerId }, 'Gateway self-update push failed'); resolve({ ok: false }); });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false }); });
+    req.end(payload);
+  });
+}
+
 function _mergeHealth(stored, fresh) {
   const merged = { ...(stored && typeof stored === 'object' ? stored : {}) };
   if (fresh && typeof fresh === 'object') for (const k of SELF_CHECK_FIELDS) if (k in fresh) merged[k] = fresh[k];
@@ -753,4 +819,10 @@ module.exports = {
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
   _smCache,
+  notifySelfUpdate,
+  markUpdateRequested,
+  _clearUpdateTracking,
+  _deriveUpdateState,
+  _normalizeTargetVersion,
+  UPDATE_TIMEOUT_MS,
 };

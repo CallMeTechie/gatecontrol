@@ -813,6 +813,16 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'original_peer_id'),
   },
+  {
+    version: 44,
+    name: 'gateway_meta_update_tracking',
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN update_request_id TEXT;
+      ALTER TABLE gateway_meta ADD COLUMN update_requested_at INTEGER;
+      ALTER TABLE gateway_meta ADD COLUMN update_target_version TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'update_request_id'),
+  },
 ];
 
 module.exports = { migrations };
