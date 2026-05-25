@@ -11,8 +11,8 @@
 **Conventions (read once):**
 - Tests run via `node --test --test-force-exit tests/`. Test harness: `tests/helpers/setup.js` exports `setup/teardown/getAgent/getCsrf`; admin agent is authed; CSRF header is `X-CSRF-Token`. API base prefix is `/api/v1`.
 - `license._overrideForTest({...})` mutates the shared feature cache (Object.assign) — set what you need; the harness already unlocks most flags in `setup()`.
-- Client JS: **no `innerHTML`** (PreToolUse hook blocks it) — use `document.createElement` / `textContent` / the existing `el()` helper.
-- i18n: every user-facing string in `src/i18n/{en,de}.json`; client-side strings must also be whitelisted in `templates/{default,pro}/layout.njk` (`'key': {{ t('key') | dump | safe }}`) and read via `window.GC.t` / the page's `T(k,d)` helper.
+- Client JS: **no `innerHTML`** (PreToolUse hook blocks it) — use `document.createElement` / `textContent`. Note: an `el()` helper exists in `gateways.js`/`dns.js` but **not** in `public/js/routes.js` — in routes.js use `document.createElement` directly (or define a small local `el()` at the top of the new code).
+- i18n: every user-facing string in `src/i18n/{en,de}.json` (files are **flat dotted keys**, no nesting). Client-side strings must also be whitelisted in `templates/{default,pro}/layout.njk` (`'key': {{ t('key') | dump | safe }}`) and read in routes.js as `(window.GC.t && window.GC.t['key']) || 'fallback'` (there is **no** `T()` helper in routes.js). CSRF for fetch calls is `window.GC.csrfToken`.
 - Two themes: `templates/default/...` and `templates/pro/...` — most template edits must be applied to **both**.
 - `git` is available; commit after each task. **No `Co-Authored-By` trailer.** Do not push until the finish step.
 
@@ -174,7 +174,7 @@ let routeId;
 beforeEach(async () => {
   await setup();
   const db = getDb();
-  const r = db.prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('app.example.com','10.0.0.5',8080,1)").run();
+  const r = db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('app.example.com','10.0.0.5',8080,1)").run();
   routeId = r.lastInsertRowid;
 });
 afterEach(teardown);
@@ -269,7 +269,7 @@ let routeId;
 beforeEach(async () => {
   await setup();
   const db = getDb();
-  routeId = db.prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('g.example.com','10.0.0.6',80,1)").run().lastInsertRowid;
+  routeId = db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('g.example.com','10.0.0.6',80,1)").run().lastInsertRowid;
 });
 afterEach(teardown);
 
@@ -393,7 +393,7 @@ let routeId;
 beforeEach(async () => {
   await setup();
   const db = getDb();
-  routeId = db.prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('r.example.com','10.0.0.7',80,1)").run().lastInsertRowid;
+  routeId = db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('r.example.com','10.0.0.7',80,1)").run().lastInsertRowid;
 });
 afterEach(teardown);
 
@@ -550,7 +550,7 @@ const { getDb } = require('../src/db/connection');
 let routeId;
 beforeEach(async () => {
   await setup();
-  routeId = getDb().prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('c.example.com','10.0.0.8',80,1)").run().lastInsertRowid;
+  routeId = getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('c.example.com','10.0.0.8',80,1)").run().lastInsertRowid;
 });
 afterEach(teardown);
 
@@ -558,11 +558,15 @@ test('runCleanup purges expired share links and their guest sessions', () => {
   const svc = require('../src/services/shareLinks');
   const routeAuth = require('../src/services/routeAuth');
   const db = getDb();
-  const { id, token } = svc.createShareLink(routeId, { expiresInHours: 1, oneTime: false });
+  const { id, token } = svc.createShareLink(routeId, { expiresInHours: 5, oneTime: false });
   const r = svc.redeemShareLink(token, '1.1.1.1');
-  // force-expire both link and session into the past
-  db.prepare("UPDATE route_auth_share_links SET expires_at = datetime('now','-2 hours') WHERE id = ?").run(id);
-  db.prepare("UPDATE route_auth_sessions SET expires_at = datetime('now','-2 hours') WHERE id = ?").run(r.sessionId);
+  // REVOKE the link but keep the guest session's expiry in the FUTURE, so only
+  // the new ordered cleanup (orphan-session-of-revoked-link) can remove it —
+  // the pre-existing `expires_at <= now` delete must NOT be what purges it.
+  db.prepare("UPDATE route_auth_share_links SET revoked_at = datetime('now') WHERE id = ?").run(id);
+  // (revokeShareLink would delete the session itself; here we set revoked_at
+  //  directly to leave the session in place and prove cleanup removes it.)
+  assert.ok(new Date(db.prepare('SELECT expires_at FROM route_auth_sessions WHERE id = ?').get(r.sessionId).expires_at).getTime() > Date.now());
   routeAuth._runCleanupForTest();
   assert.equal(db.prepare('SELECT COUNT(*) c FROM route_auth_share_links WHERE id = ?').get(id).c, 0);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM route_auth_sessions WHERE id = ?').get(r.sessionId).c, 0);
@@ -686,7 +690,7 @@ const { getDb } = require('../src/db/connection');
 let routeId;
 beforeEach(async () => {
   await setup();
-  routeId = getDb().prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('s.example.com','10.0.0.9',80,1)").run().lastInsertRowid;
+  routeId = getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('s.example.com','10.0.0.9',80,1)").run().lastInsertRowid;
 });
 afterEach(teardown);
 
@@ -778,6 +782,74 @@ git commit -m "feat: guest share-link redeem endpoint"
 
 ---
 
+### Task 8b: Redact the share token from the Caddy access log (DA-r1 #5)
+
+The token rides in the URL path; `caddyConfig.js` writes every request URI to `/data/caddy/access.log` with no redaction. The browser/referrer side is handled (302-to-`/` + `Referrer-Policy: no-referrer`), but our own access log would capture the plaintext token. Redact it at the log encoder.
+
+**Files:**
+- Modify: `src/services/caddyConfig.js` (the `logging.logs.access.encoder` block, ~line 483)
+- Test: `tests/share_links_log_redaction.test.js` (new) — assert the generated config redacts the token.
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+'use strict';
+const { test, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const { setup, teardown } = require('./helpers/setup');
+
+beforeEach(setup);
+afterEach(teardown);
+
+test('generated Caddy config redacts the share token in the access log URI', () => {
+  const { buildCaddyConfig } = require('../src/services/caddyConfig');
+  const cfg = buildCaddyConfig();           // adjust to the real exported builder name
+  const enc = cfg.logging.logs.access.encoder;
+  const json = JSON.stringify(enc);
+  assert.match(json, /route-auth\\?\/share/); // a filter targeting the share path exists
+  assert.match(json, /REDACTED/);
+});
+```
+
+(During Step 2, confirm the real exported function that returns the full config object — it may be `buildCaddyConfig`/`generateConfig`; grep `module.exports` in `src/services/caddyConfig.js`. If the builder needs args, pass what the existing caddyConfig tests pass, e.g. `tests/caddyConfig_*.test.js`.)
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `node --test --test-force-exit tests/share_links_log_redaction.test.js`
+Expected: FAIL (no REDACTED / no filter).
+
+- [ ] **Step 3: Add a `filter` log encoder** wrapping the existing JSON encoder. In `src/services/caddyConfig.js`, replace the access log `encoder: { format: 'json' }` with:
+
+```js
+          encoder: {
+            format: 'filter',
+            wrap: { format: 'json' },
+            fields: {
+              'request>uri': {
+                filter: 'regexp',
+                regexp: '/route-auth/share/[^/?]+',
+                value: '/route-auth/share/REDACTED',
+              },
+            },
+          },
+```
+
+**Fallback (low-risk guard):** if the `filter` encoder shape is not supported by the deployed Caddy version (validate by POSTing the generated config to a local Caddy admin in a scratch check, or consult the Caddy version in the gateway image), do NOT ship a config Caddy rejects — instead keep `format: 'json'` and document the residual in the Task 14 doc: "the share token appears in the host-local, size-rolled Caddy access log; mitigated by short expiry + one-time + no-referrer; full log redaction deferred pending the `filter` encoder." Adjust this task's test accordingly (skip with a comment) if taking the fallback. Prefer the filter if it validates.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `node --test --test-force-exit tests/share_links_log_redaction.test.js`
+Expected: PASS (or test skipped + residual documented, per fallback).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/services/caddyConfig.js tests/share_links_log_redaction.test.js
+git commit -m "feat: redact share token from Caddy access log"
+```
+
+---
+
 ### Task 9: Reject `auth_type='share'` on credential endpoints
 
 **Files:**
@@ -796,7 +868,7 @@ const { getDb } = require('../src/db/connection');
 beforeEach(async () => {
   await setup();
   const db = getDb();
-  const routeId = db.prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('share.example.com','10.0.0.10',80,1)").run().lastInsertRowid;
+  const routeId = db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('share.example.com','10.0.0.10',80,1)").run().lastInsertRowid;
   db.prepare("INSERT INTO route_auth (route_id, auth_type) VALUES (?, 'share')").run(routeId);
 });
 afterEach(teardown);
@@ -808,7 +880,7 @@ test('POST /route-auth/login on a share route → 404, no lockout side effects',
 });
 ```
 
-(Note: CSRF — the `/route-auth/login` POST checks a signed CSRF token; the guard must run **before** CSRF so an attacker without a token still gets 404. Place the `auth_type==='share'` check immediately after `getAuthByDomain` resolves, which is after the CSRF check in the current code. To keep the test simple and the guard meaningful, move the share check to right after `const authConfig = ... getAuthByDomain(domain)` and return 404 regardless of CSRF. Verify the CSRF check doesn't 403 first: if it does, the test should expect 403→ instead assert `!= 200` and no session. Prefer: add the share guard immediately after computing `domain` + `authConfig`, before CSRF, so 404 wins.)
+(Why this matters: in the current `/login` handler, CSRF is verified at line ~180 **before** `authConfig` is computed at line ~185. The test POSTs with no CSRF token, so without intervention it would get 403, not 404. The implementer MUST, in `/login`, compute `domain` (already available ~line 176) + `authConfig = getAuthByDomain(domain)` and run the `auth_type==='share'` 404 guard **above** the CSRF block, so the 404 wins for a token-less request. This is a hard requirement, not optional.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -824,7 +896,7 @@ Expected: FAIL (likely 403 CSRF or 401, not 404).
     }
 ```
 
-To make the guard win over CSRF for `/login` (so the test's no-token POST returns 404), compute `authConfig` and run this guard **before** the CSRF verification block in `/login`. For `/send-code` and `/verify-code`, place it right after their existing `if (!authConfig) 404`.
+**Placement (unambiguous):** in POST `/login`, move the `domain` + `authConfig = getAuthByDomain(domain)` computation **above** the CSRF verification block and run the `auth_type==='share'` → 404 guard there (so a token-less request gets 404, satisfying the test). In POST `/send-code` and POST `/verify-code`, place the guard immediately after their existing `if (!authConfig) return 404` (CSRF already 403s a token-less scanner there, and those paths aren't exercised by the test — but the guard still prevents share-route credential attempts from authenticated-CSRF callers).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -860,7 +932,7 @@ let agent, csrf, routeId;
 beforeEach(async () => {
   await setup();
   agent = getAgent(); csrf = getCsrf();
-  routeId = getDb().prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('api.example.com','10.0.0.11',80,1)").run().lastInsertRowid;
+  routeId = getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('api.example.com','10.0.0.11',80,1)").run().lastInsertRowid;
 });
 afterEach(teardown);
 
@@ -1032,7 +1104,7 @@ const { getDb } = require('../src/db/connection');
 
 beforeEach(async () => {
   await setup();
-  const rid = getDb().prepare("INSERT INTO routes (domain, target_lan_host, target_lan_port, enabled) VALUES ('inv.example.com','10.0.0.12',80,1)").run().lastInsertRowid;
+  const rid = getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('inv.example.com','10.0.0.12',80,1)").run().lastInsertRowid;
   getDb().prepare("INSERT INTO route_auth (route_id, auth_type) VALUES (?, 'share')").run(rid);
 });
 afterEach(teardown);
@@ -1050,19 +1122,17 @@ test('login page for a share route shows the invitation copy, no password form',
 Run: `node --test --test-force-exit tests/share_links_login_page.test.js`
 Expected: FAIL (renders empty/garbage or includes a password field).
 
-- [ ] **Step 3: Add the branch.** In **both** `route-auth-login.njk` files, find the auth-method conditional (`{% if authType == 'email_password' %}` … chain). Add a leading branch so `share` short-circuits the password/OTP forms:
+- [ ] **Step 3: Add the branch.** In **both** `route-auth-login.njk` files the auth conditional chain does NOT start with `email_password` — it starts at `{% if is2faStep2 and twoFactorMethod == 'email_code' %}` (default ~line 53 / pro ~line 352), and `authType == 'email_password'` is itself an `{% elif %}` arm (default ~199 / pro ~498). So add `share` as a **new `{% elif %}` arm inside the existing chain** — do NOT introduce a new leading `{% if %}` (that would split the if/elif chain and produce invalid Nunjucks). Insert it right after the `{% elif authType == 'totp' %}` block and before the chain's closing `{% else %}`/`{% endif %}`:
 
 ```jinja
-{% if authType == 'share' %}
+{% elif authType == 'share' %}
   <div class="ra-share-invite">
     <h2>{{ t('route_auth.share_invite_title') }}</h2>
     <p>{{ t('route_auth.share_invite_body') if not shareInvalid else t('route_auth.share_invalid_body') }}</p>
   </div>
-{% elif authType == 'email_password' %}
-  {# ...existing... #}
 ```
 
-Keep the rest of the chain unchanged (the existing `{% elif %}`/`{% else %}` arms remain). Match each theme's existing markup/classes.
+A share route has `twoFactorEnabled=false` and `is2faStep2=false`, so it falls through the earlier 2FA arms and correctly hits this `{% elif %}`. Leave all existing arms unchanged. Match each theme's existing markup/classes.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1089,7 +1159,7 @@ This task has no server test (pure client/template). Verify by lint + manual smo
 
 - [ ] **Step 1: `'share'` auth badge + read-only state (no behavior break).**
   - In `public/js/routes.js` around line 251 where `methodLabels[r.route_auth_type]` builds the auth badge, ensure a `'share'` entry resolves to a localized label: add `share: (GC.t && GC.t['route_auth.method_share']) || 'Share link'` to the `methodLabels` map.
-  - Around line 1261 (`var method = auth.auth_type || 'email_password'`), add: if `auth.auth_type === 'share'`, render a read-only note (`T('route_auth.share_managed','Managed by share links')`) and **skip** building the email/OTP/TOTP selector for that route.
+  - Around line 1261 (`var method = auth.auth_type || 'email_password'`), add: if `auth.auth_type === 'share'`, render a read-only note (`(GC.t && GC.t['route_auth.share_managed']) || 'Managed by share links'`) and **skip** building the email/OTP/TOTP selector for that route.
 
 - [ ] **Step 2: Add the share subsection container** to both `route-edit.njk` files, inside the auth section (near line 210), gated by the Pro flag:
 
@@ -1103,13 +1173,13 @@ This task has no server test (pure client/template). Verify by lint + manual smo
 {% endif %}
 ```
 
-- [ ] **Step 3: Wire the client logic** in `public/js/routes.js` (use `el()`/`createElement`/`textContent`, **never `innerHTML`**):
+- [ ] **Step 3: Wire the client logic** in `public/js/routes.js` (use `document.createElement`/`textContent`, **never `innerHTML`**; define a small local `el(tag, props, children)` helper at the top of the new block if it reduces repetition):
   - On opening the route-edit modal, set `#share-links-section`'s `data-route-id` and call `loadShareLinks(routeId)` → `GET /api/v1/routes/:id/share-links` → render rows (label, expiry, one-time/reusable, redeemed count, **Revoke** button).
   - `#share-link-create` opens a small inline form (expiry select `1`/`24`/`168` hours, one-time checkbox, optional label) → `POST /api/v1/routes/:id/share-links`.
-    - On `409 needs_gate_confirm`: show a confirm dialog with the warning copy (`T('route_auth.share_gate_warning', ...)`) → retry with `confirmGate: true`.
-    - On `201`: show the returned `url` **once** in a read-only field with a Copy button + warning (`T('route_auth.share_copy_warning', ...)`); refresh the list.
+    - On `409 needs_gate_confirm`: show a confirm dialog with the warning copy (`(GC.t && GC.t['route_auth.share_gate_warning']) || '...'`) → retry with `confirmGate: true`.
+    - On `201`: show the returned `url` **once** in a read-only field with a Copy button + warning (`(GC.t && GC.t['route_auth.share_copy_warning']) || '...'`); refresh the list.
   - Revoke button → `DELETE /api/v1/routes/:id/share-links/:linkId` → refresh.
-  - All POST/DELETE include `X-CSRF-Token: GC.csrfToken`.
+  - All POST/DELETE include the header `X-CSRF-Token: window.GC.csrfToken` (matching the existing fetch calls in routes.js).
 
 - [ ] **Step 4: Lint**
 
@@ -1148,9 +1218,10 @@ const keys = [
   'route_auth.share_gate_warning', 'route_auth.share_copy_warning',
 ];
 test('all share-link i18n keys exist in en + de', () => {
+  // i18n files are FLAT — literal dotted keys, NOT nested objects.
   for (const k of keys) {
-    assert.ok(k.split('.').reduce((o, p) => o && o[p], en), `en missing ${k}`);
-    assert.ok(k.split('.').reduce((o, p) => o && o[p], de), `de missing ${k}`);
+    assert.ok(k in en, `en missing ${k}`);
+    assert.ok(k in de, `de missing ${k}`);
   }
 });
 ```
@@ -1160,21 +1231,21 @@ test('all share-link i18n keys exist in en + de', () => {
 Run: `node --test --test-force-exit tests/share_links_i18n.test.js`
 Expected: FAIL.
 
-- [ ] **Step 3: Add the keys** to `src/i18n/en.json` and `src/i18n/de.json` under the existing `route_auth` object. English values e.g.:
+- [ ] **Step 3: Add the keys** to `src/i18n/en.json` and `src/i18n/de.json` as **flat top-level dotted keys** (the files are flat — `"route_auth.method_totp": "TOTP"` — there is NO nested `route_auth` object; `translate()` does a flat `locale[key]` lookup, so nesting would make `t()` echo the raw key). Add, in en.json:
 
 ```
-"method_share": "Share link",
-"share_managed": "Managed by share links",
-"share_invite_title": "Private access",
-"share_invite_body": "Open the share link you were given to access this service.",
-"share_invalid_body": "This link is invalid or has expired — ask the owner for a new one.",
-"share_links_title": "Share links",
-"share_create": "Create share link",
-"share_gate_warning": "This route is currently public. A share link makes it reachable only via share links — everyone reaching it by its domain (incl. over VPN) is locked out.",
-"share_copy_warning": "Anyone with this link gets in. Copy it now — it won't be shown again."
+"route_auth.method_share": "Share link",
+"route_auth.share_managed": "Managed by share links",
+"route_auth.share_invite_title": "Private access",
+"route_auth.share_invite_body": "Open the share link you were given to access this service.",
+"route_auth.share_invalid_body": "This link is invalid or has expired — ask the owner for a new one.",
+"route_auth.share_links_title": "Share links",
+"route_auth.share_create": "Create share link",
+"route_auth.share_gate_warning": "This route is currently public. A share link makes it reachable only via share links — everyone reaching it by its domain (incl. over VPN) is locked out.",
+"route_auth.share_copy_warning": "Anyone with this link gets in. Copy it now — it won't be shown again."
 ```
 
-German equivalents in `de.json` (translate appropriately).
+German equivalents (same flat keys) in `de.json`, translated appropriately.
 
 - [ ] **Step 4: Whitelist client-read keys** in **both** `layout.njk` files, next to the existing `route_auth.method_*` lines (~line 61-63):
 
@@ -1232,6 +1303,7 @@ git commit -m "docs: ephemeral share-links feature writeup"
 
 ## Self-review notes (spec coverage)
 
-- Data model + session column → Task 1. License flag → Task 2. Service (token/create/validity/gate/disable/redeem/list/revoke) → Tasks 3-5. Cleanup → Task 6. Rate limiter → Task 7. Redeem endpoint + cookie attrs + Referrer-Policy → Task 8. Credential guards (DA-r2 #7) → Task 9. Admin API + confirmGate + basic-auth reject + Caddy regen (DA-r2 #6, #2) → Task 10. Login share branch → Task 11. UI + `'share'` coexistence (DA #3) → Task 12. i18n + GC.t → Task 13. Docs + verify → Task 14.
-- DA decisions: no session cap (Task 5 test asserts expiry = link expiry); host-only cookie + path:'/' + no-referrer (Task 8 test); idempotent gate (Task 4 test); enforcement row-driven not license-gated (verify() untouched — only creation gated). Token-not-logged: confirm the default request logger doesn't log full paths for `/route-auth/share/*`; if it does, add redaction in Task 8 (check `src/utils/logger`/morgan config during implementation).
-- Open implementation check (flag if it bites): confirm `route_auth_sessions.email` is `NOT NULL` (it is) so `'share'` sentinel is valid; confirm `syncToCaddy` is the correct exported name in `src/services/routes.js` (used by `api/routeAuth.js`).
+- Data model + session column → Task 1. License flag → Task 2. Service (token/create/validity/gate/disable/redeem/list/revoke) → Tasks 3-5. Cleanup → Task 6. Rate limiter → Task 7. Redeem endpoint + cookie attrs + Referrer-Policy → Task 8. Caddy access-log token redaction (DA-r1 #5) → Task 8b. Credential guards (DA-r2 #7) → Task 9. Admin API + confirmGate + basic-auth reject + Caddy regen (DA-r2 #6, #2) → Task 10. Login share branch → Task 11. UI + `'share'` coexistence (DA #3) → Task 12. i18n + GC.t → Task 13. Docs + verify → Task 14.
+- DA decisions: no session cap (Task 5 test asserts expiry = link expiry); host-only cookie + path:'/' + no-referrer (Task 8 test); idempotent gate (Task 4 test); enforcement row-driven not license-gated (verify() untouched — only creation gated); token redaction in the Caddy access log (Task 8b — Node has no request logger, verified by both plan reviews; only the Caddy access log captures URIs).
+- Verified during plan review (no longer open): `route_auth_sessions.email` IS `NOT NULL` (sentinel valid); `syncToCaddy` IS a named export of `src/services/routes.js`; `route_auth.route_id` IS `UNIQUE` (ON CONFLICT valid); `routes` requires `target_ip`/`target_port` (NOT `target_lan_*`) — all test INSERTs use them; i18n is **flat dotted keys** (Task 13 uses `k in en`); the login conditional chain starts at `is2faStep2` so `share` is a new `{% elif %}` arm (Task 11); `routes.js` has no `T()`/`el()` helper (Task 12 uses `(GC.t&&GC.t['k'])||'…'` + `document.createElement` + `window.GC.csrfToken`); `res.locals.theme` is set on `/route-auth`; the Caddy `/route-auth/*` sibling proxy is first in the route list so the redeem bypasses forward_auth.
+- NIT (implementer awareness): the global error handler (`app.js:~188`) logs `req.path` on unhandled throws — the redeem handler's local `.catch` prevents reaching it in normal flow; don't add new throws above that catch. The migration `detect:` closure is dead code for a fresh v45 (runner selects by version) but kept to mirror siblings — harmless.
