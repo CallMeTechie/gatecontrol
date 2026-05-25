@@ -1459,5 +1459,14 @@
   "gateways.release_notes": "Release notes",
   "gateways.lbl_image_digest": "Image",
   "gateways.lbl_last_pull": "Last pull",
-  "gateways.last_pull_never": "never"
+  "gateways.last_pull_never": "never",
+  "gateways.setup_title": "Set up auto-update",
+  "gateways.setup_note": "The automatic Update button only works after this one-time host setup.",
+  "gateways.setup_done": "✓ Set up",
+  "gateways.setup_pending": "⚠ Not set up yet",
+  "gateways.setup_download_script": "Setup script",
+  "gateways.setup_download_zip": "ZIP (all files)",
+  "gateways.setup_guide": "Step-by-step guide",
+  "gateways.setup_synology": "Synology (DSM)",
+  "gateways.setup_linux": "Linux (systemd)"
 }
