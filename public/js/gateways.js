@@ -67,7 +67,7 @@
     var g = last.find(function (x) { return String(x.peer_id) === c.dataset.id; });
     if (g) { modalBody.replaceChildren(el('pre', null, JSON.stringify(g.health, null, 2))); modal.hidden = false; }
   });
-  modal.addEventListener('click', function () { modal.hidden = true; });
+  modal.addEventListener('click', function (e) { if (e.target === modal) modal.hidden = true; }); // backdrop-only close
   function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function () {}); }
   var deb = null; function refresh() { clearTimeout(deb); deb = setTimeout(load, 1000); }
   document.addEventListener('gc:gateway', refresh);
