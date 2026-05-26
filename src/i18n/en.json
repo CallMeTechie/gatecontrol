@@ -1490,5 +1490,21 @@
   "gateways.setup_syn_2": "DSM → Task Scheduler → Create → user-defined script (user root, repeat every 1 minute) with this command:",
   "gateways.setup_lin_1": "Put update.sh into your gateway's docker-compose folder.",
   "gateways.setup_lin_2": "Run it every minute (cron, or a systemd .path watching /state/pending-update) with this command:",
-  "gateways.setup_legacy_hint": "Gateway created before auto-update? Also add '- ./gateway-state:/state' to its compose volumes and recreate the container once."
+  "gateways.setup_legacy_hint": "Gateway created before auto-update? Also add '- ./gateway-state:/state' to its compose volumes and recreate the container once.",
+
+  "access.title": "Access windows",
+  "access.add_rule": "Add rule",
+  "access.mode_allow": "Allow",
+  "access.mode_block": "Block",
+  "access.schedule": "Schedule",
+  "access.valid_from": "Valid from",
+  "access.valid_until": "Valid until",
+  "access.label": "Label",
+  "access.state_allowed": "Allowed now",
+  "access.state_blocked": "Blocked now",
+  "access.delete": "Delete rule",
+  "access.err_schedule": "Invalid schedule — use e.g. Mo-Fr 09:00-17:00",
+  "access.err_date_order": "'Valid from' must be before 'valid until'",
+  "access.err_mode": "Invalid mode — use 'allow' or 'block'",
+  "access.target_not_found": "Route or peer not found"
 }
