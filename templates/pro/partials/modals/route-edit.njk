@@ -346,6 +346,17 @@
           <button type="button" class="btn btn-sm" id="share-link-create">{{ t('route_auth.share_create') }}</button>
         </div>
         {% endif %}
+
+        {% if license.features.access_windows %}
+        <div class="form-section" id="access-windows-section" data-target-id="">
+          <label class="form-label">
+            {{ t('access.title') }}
+            <span id="access-state-badge" style="margin-left:8px;font-size:12px"></span>
+          </label>
+          <div id="access-rules-list"></div>
+          <div id="access-rules-form"></div>
+        </div>
+        {% endif %}
       </div>
 
       {# ═══ TAB: Security ══════════════════════════════ #}

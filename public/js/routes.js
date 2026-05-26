@@ -1592,6 +1592,13 @@
       loadShareLinks(id);
     }
 
+    // Access windows (Pro: access_windows — section only present when the flag is on)
+    var accessSection = document.getElementById('access-windows-section');
+    if (accessSection) {
+      accessSection.setAttribute('data-target-id', String(id));
+      loadAccessRules(id);
+    }
+
     currentEditRouteId = id;
     stopTracePolling();
     openModal('modal-edit-route');
@@ -3384,6 +3391,180 @@
       var routeId = section && section.getAttribute('data-route-id');
       if (routeId) showShareCreateForm(Number(routeId));
     });
+  }
+
+  // ─── Access windows (scheduled access control) ───────────────────────────
+  // Mirrors the share-links subsection: a state badge, a rule list and an
+  // add-rule form, all driven by /api/v1/routes/:id/access-rules. Safe-DOM only
+  // (el()/textContent — never innerHTML); CSRF via shareFetch().
+
+  function accessFmtBounds(rule) {
+    var parts = [];
+    if (rule.valid_from) parts.push(shareT('access.valid_from', 'Valid from') + ': ' + rule.valid_from);
+    if (rule.valid_until) parts.push(shareT('access.valid_until', 'Valid until') + ': ' + rule.valid_until);
+    return parts.join(' · ');
+  }
+
+  function renderAccessRuleRow(targetId, rule) {
+    var isBlock = rule.mode === 'block';
+    var chip = el('span', {
+      style: 'display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;'
+        + (isBlock
+          ? 'background:rgba(229,72,77,0.15);color:var(--red,#e5484d)'
+          : 'background:rgba(48,164,108,0.15);color:var(--green,#30a46c)'),
+      text: isBlock ? shareT('access.mode_block', 'Block') : shareT('access.mode_allow', 'Allow'),
+    });
+
+    var lines = [el('div', { style: 'font-size:12px;font-family:var(--font-mono);color:var(--text-1)', text: rule.schedule || '' })];
+    var bounds = accessFmtBounds(rule);
+    if (bounds) lines.push(el('div', { style: 'font-size:11px;color:var(--text-2)', text: bounds }));
+    if (rule.label) lines.push(el('div', { style: 'font-size:11px;color:var(--text-2)', text: rule.label }));
+
+    var info = el('div', { style: 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px' }, lines);
+
+    var delBtn = el('button', {
+      type: 'button',
+      class: 'btn btn-sm',
+      text: shareT('access.delete', 'Delete rule'),
+    });
+    delBtn.addEventListener('click', function () {
+      deleteAccessRule(targetId, rule.id);
+    });
+
+    return el('div', {
+      style: 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)',
+    }, [chip, info, delBtn]);
+  }
+
+  function renderAccessStateBadge(state) {
+    var badge = document.getElementById('access-state-badge');
+    if (!badge) return;
+    badge.textContent = '';
+    if (state === 'denied') {
+      badge.appendChild(document.createTextNode('🔴 ' + shareT('access.state_blocked', 'Blocked now')));
+      badge.style.color = 'var(--red,#e5484d)';
+    } else {
+      badge.appendChild(document.createTextNode('🟢 ' + shareT('access.state_allowed', 'Allowed now')));
+      badge.style.color = 'var(--green,#30a46c)';
+    }
+  }
+
+  async function loadAccessRules(targetId) {
+    var list = document.getElementById('access-rules-list');
+    if (!list) return;
+    list.textContent = '';
+    var badge = document.getElementById('access-state-badge');
+    if (badge) badge.textContent = '';
+    try {
+      var res = await shareFetch('/api/v1/routes/' + targetId + '/access-rules');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      renderAccessStateBadge(data && data.state);
+      var rules = (data && data.rules) || [];
+      if (!rules.length) {
+        list.appendChild(el('div', { class: 'form-hint', text: shareT('access.title', 'Access windows') + ' —' }));
+      } else {
+        rules.forEach(function (rule) {
+          list.appendChild(renderAccessRuleRow(targetId, rule));
+        });
+      }
+      renderAccessAddForm(targetId);
+    } catch (err) {
+      list.appendChild(el('div', { class: 'form-hint', text: err.message }));
+    }
+  }
+
+  function renderAccessAddForm(targetId) {
+    var formWrap = document.getElementById('access-rules-form');
+    if (!formWrap) return;
+    formWrap.textContent = '';
+
+    var modeSelect = el('select', { class: 'form-select', style: 'flex:0 0 110px' }, [
+      el('option', { value: 'allow', text: shareT('access.mode_allow', 'Allow') }),
+      el('option', { value: 'block', text: shareT('access.mode_block', 'Block') }),
+    ]);
+
+    var scheduleInput = el('input', {
+      type: 'text',
+      class: 'form-input',
+      placeholder: 'Mo-Fr 09:00-17:00',
+      style: 'flex:1;font-family:var(--font-mono)',
+    });
+
+    var fromInput = el('input', { type: 'date', class: 'form-input', style: 'flex:1' });
+    var untilInput = el('input', { type: 'date', class: 'form-input', style: 'flex:1' });
+
+    var labelInput = el('input', {
+      type: 'text',
+      class: 'form-input',
+      maxlength: '120',
+      placeholder: shareT('access.label', 'Label'),
+      style: 'flex:1',
+    });
+
+    var errBox = el('div', { class: 'form-error', style: 'display:none;font-size:12px' });
+
+    var submitBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: shareT('access.add_rule', 'Add rule') });
+    submitBtn.addEventListener('click', function () {
+      addAccessRule(targetId, {
+        mode: modeSelect.value,
+        schedule: scheduleInput.value.trim(),
+        valid_from: fromInput.value || undefined,
+        valid_until: untilInput.value || undefined,
+        label: labelInput.value.trim() || undefined,
+      }, errBox);
+    });
+
+    formWrap.appendChild(el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:8px' }, [
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [modeSelect, scheduleInput]),
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [
+        el('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
+          shareT('access.valid_from', 'Valid from'), fromInput,
+        ]),
+        el('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
+          shareT('access.valid_until', 'Valid until'), untilInput,
+        ]),
+      ]),
+      labelInput,
+      errBox,
+      el('div', {}, [submitBtn]),
+    ]));
+  }
+
+  async function addAccessRule(targetId, body, errBox) {
+    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+    var payload = { mode: body.mode, schedule: body.schedule };
+    if (body.valid_from) payload.valid_from = body.valid_from;
+    if (body.valid_until) payload.valid_until = body.valid_until;
+    if (body.label) payload.label = body.label;
+    try {
+      var res = await shareFetch('/api/v1/routes/' + targetId + '/access-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 201) {
+        await loadAccessRules(targetId);
+        return;
+      }
+      var errData = await res.json().catch(function () { return {}; });
+      var msg = (errData && errData.error) || ('HTTP ' + res.status);
+      if (errBox) { errBox.textContent = msg; errBox.style.display = ''; }
+      else if (typeof window.showToast === 'function') window.showToast(msg, 'error');
+    } catch (err) {
+      if (errBox) { errBox.textContent = err.message; errBox.style.display = ''; }
+      else if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+    }
+  }
+
+  async function deleteAccessRule(targetId, ruleId) {
+    try {
+      var res = await shareFetch('/api/v1/routes/' + targetId + '/access-rules/' + ruleId, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await loadAccessRules(targetId);
+    } catch (err) {
+      if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+    }
   }
 })();
 

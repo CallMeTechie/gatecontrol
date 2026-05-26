@@ -82,6 +82,16 @@
           </button>
         </div>
       </div>
+      {% if license.features.access_windows %}
+      <div class="form-section" id="access-windows-section" data-target-id="">
+        <label class="form-label">
+          {{ t('access.title') }}
+          <span id="access-state-badge" style="margin-left:8px;font-size:12px"></span>
+        </label>
+        <div id="access-rules-list"></div>
+        <div id="access-rules-form"></div>
+      </div>
+      {% endif %}
       <div id="edit-peer-error" class="form-error" style="display:none"></div>
     </div>
     <div class="modal-footer">
