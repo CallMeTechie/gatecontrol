@@ -548,6 +548,11 @@ router.put('/:id',
       wol_enabled: req.body.wol_enabled,
       wol_mac: req.body.wol_mac,
     });
+    // Mutual exclusivity: enabling Basic Auth removes any existing route_auth row
+    // (symmetric to createOrUpdateAuth, which clears basic_auth_enabled when route-auth is set).
+    if (route.basic_auth_enabled) {
+      try { require('../../services/routeAuth').deleteAuth(req.params.id, req.ip); } catch {}
+    }
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {
       try { const cb = require('../../services/circuitBreaker'); cb.resetStatus(req.params.id); } catch {}

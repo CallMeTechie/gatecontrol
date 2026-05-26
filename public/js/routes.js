@@ -245,7 +245,7 @@
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
         : '';
       let routeAuthTags = '';
-      if (r.route_auth_enabled && r.route_type !== 'l4') {
+      if (r.route_auth_enabled && !r.basic_auth_enabled && r.route_type !== 'l4') {
         // Auth method badge
         const methodLabels = { email_password: GC.t['route_auth.method_email_password'] || 'Email & Password', email_code: GC.t['route_auth.method_email_code'] || 'Email & Code', totp: GC.t['route_auth.method_totp'] || 'TOTP', share: (GC.t && GC.t['route_auth.method_share']) || 'Share link' };
         const methodLabel = methodLabels[r.route_auth_type] || r.route_auth_type;
@@ -1241,12 +1241,22 @@
     // Reset any share-managed read-only state from a previously edited route
     setRouteAuthShareManaged(false);
 
-    // Load route auth config from API
+    // Load route auth config from API. A route can carry two auth truths at
+    // once (basic_auth_enabled AND a route_auth row); Caddy resolves this with
+    // Basic Auth winning (caddyConfig.js). The "effective active method" mirrors
+    // that precedence and drives both the SELECTED tab and the green indicator:
+    //   basic_auth_enabled        -> 'basic'
+    //   else route_auth row exists -> 'route'
+    //   else                       -> 'none'
     var authIsShareManaged = false;
+    var hasRouteAuth = false;
     try {
       var authData = await api.get('/api/routes/' + id + '/auth');
       if (authData.ok && authData.data) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'route');
+        // Always populate the route-auth fields from the API data so that
+        // switching to the Route-Auth tab shows the prior values, even when
+        // Basic Auth is the effective-active method (dead route_auth row).
+        hasRouteAuth = true;
         var auth = authData.data;
         var email = auth.email || '';
         var sessionAge = String(auth.session_max_age || 86400000);
@@ -1276,13 +1286,23 @@
           }
           if (raDuration) raDuration.value = sessionAge;
         }
-      } else if (route.basic_auth_enabled) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
       }
     } catch (err) {
-      if (route.basic_auth_enabled) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
-      }
+      // Auth fetch failed — fall back to whatever the route record tells us.
+    }
+
+    // Effective-active method: Basic wins over a (possibly dead) route_auth row.
+    var activeMethod = route.basic_auth_enabled ? 'basic' : (hasRouteAuth ? 'route' : 'none');
+    // Select the tab matching the effective-active method (blue ".on").
+    setToggleGroup('edit-auth-type-group', 'edit-auth-type', activeMethod);
+    // Green indicator: mark the active method's tab. Reset on every open, then
+    // set once. This is independent of ".on" (blue selected/visited) so green
+    // stays put while the user clicks around between tabs.
+    var authTypeGroupEl = document.getElementById('edit-auth-type-group');
+    if (authTypeGroupEl) {
+      authTypeGroupEl.querySelectorAll('.toggle-btn').forEach(function (b) {
+        b.classList.toggle('method-active', b.dataset.value === activeMethod);
+      });
     }
 
     updateEditAuthTypeUI();
@@ -3099,6 +3119,15 @@
     return (GC.t && GC.t[key]) || fallback;
   }
 
+  function shareErrMsg(code) {
+    var map = {
+      disable_basic_auth: shareT('route_auth.share_err_basic_auth', 'This route uses HTTP Basic Auth. Disable Basic Auth before creating a share link.'),
+      l4_not_supported: shareT('route_auth.share_err_l4', 'Share links are only available for HTTP routes.'),
+      invalid_expiry: shareT('route_auth.share_err_expiry', 'Please choose a valid expiry time.'),
+    };
+    return map[code] || code;
+  }
+
   // Toggle the route-auth credential selector vs. a read-only "share managed"
   // note. The note element is created on demand (it is not in the template).
   function setRouteAuthShareManaged(managed) {
@@ -3271,11 +3300,11 @@
           }
           return;
         }
-        throw new Error((conflict && conflict.error) || 'HTTP 409');
+        throw new Error(shareErrMsg((conflict && conflict.error) || 'HTTP 409'));
       }
       if (res.status !== 201) {
         var errBody = await res.json().catch(function () { return {}; });
-        throw new Error((errBody && errBody.error) || ('HTTP ' + res.status));
+        throw new Error(shareErrMsg((errBody && errBody.error) || ('HTTP ' + res.status)));
       }
       var data = await res.json();
       if (form && form.parentNode) form.parentNode.removeChild(form);
