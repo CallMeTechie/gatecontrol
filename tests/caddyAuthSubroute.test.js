@@ -68,10 +68,25 @@ describe('caddyAuthSubroute: buildAuthHandlerChain', () => {
     const handlers = buildAuthHandlerChain({
       route: baseRoute, reverseProxy, customHeaders: null, mirrorTargets: null,
     });
-    assert.equal(handlers.length, 2);
+    assert.equal(handlers.length, 3);
     assert.equal(handlers[0].handler, 'reverse_proxy', 'forward-auth subrequest first');
     assert.equal(handlers[0].rewrite.uri, '/route-auth/verify');
-    assert.equal(handlers[1], reverseProxy, 'final handler is the route reverseProxy');
+    assert.equal(handlers[1].handler, 'headers', 'session-cookie strip sits before the upstream');
+    assert.ok(handlers[1].request.replace.Cookie[0].search_regexp.includes('sid'));
+    assert.equal(handlers[2], reverseProxy, 'final handler is the route reverseProxy');
+  });
+
+  it('strips the gc.route.sid session cookie from the upstream request (not from forward-auth)', () => {
+    const handlers = buildAuthHandlerChain({
+      route: baseRoute, reverseProxy, customHeaders: null, mirrorTargets: null,
+    });
+    // forward_auth (index 0) keeps the cookie for verification; the strip is the
+    // handler immediately before the upstream reverseProxy.
+    const strip = handlers[handlers.length - 2];
+    assert.equal(strip.handler, 'headers');
+    assert.ok(strip.request && strip.request.replace && strip.request.replace.Cookie);
+    assert.equal(strip.request.replace.Cookie[0].replace, '');
+    assert.equal(handlers[handlers.length - 1], reverseProxy);
   });
 
   it('debug_enabled prepends a trace handler ABOVE forward-auth', () => {
@@ -163,6 +178,7 @@ describe('caddyAuthSubroute: buildAuthHandlerChain', () => {
     assert.equal(order[4], 'rate_limit');
     assert.equal(order[5], 'mirror');
     assert.equal(order[6], 'encode');
-    assert.equal(handlers[7], reverseProxy);
+    assert.equal(order[7], 'headers'); // gc.route.sid strip, just before the upstream
+    assert.equal(handlers[8], reverseProxy);
   });
 });

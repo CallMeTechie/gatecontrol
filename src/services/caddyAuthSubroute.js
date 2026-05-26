@@ -103,6 +103,22 @@ function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTarge
     handlers.push({ handler: 'encode', encodings: { zstd: {}, brotli: {}, gzip: {} } });
   }
 
+  // Strip GateControl's own route-auth session cookie (gc.route.sid) from the
+  // request before it reaches the upstream. forward_auth above has already used
+  // it for verification, and the upstream app has no business seeing it. Crucially,
+  // some upstreams (e.g. the Speedport router UI) CLEAR cookies they don't
+  // recognize by replying `Set-Cookie: gc.route.sid=deleted; Expires=<past>` — that
+  // deleted the guest's session mid-session and bounced them back to the login page.
+  // Leaves all other cookies intact.
+  handlers.push({
+    handler: 'headers',
+    request: {
+      replace: {
+        Cookie: [{ search_regexp: 'gc\\.route\\.sid=[^;]*;?\\s*', replace: '' }],
+      },
+    },
+  });
+
   handlers.push(reverseProxy);
   return handlers;
 }
