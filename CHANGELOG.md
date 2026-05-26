@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.5] — 2026-05-26
+
+### Änderungen
+- rebuild release (transient GHCR 'unknown blob' push failure on 1.70.4)
+
+---
+
 ## [1.70.4] — 2026-05-26
 
 ### Fixes
