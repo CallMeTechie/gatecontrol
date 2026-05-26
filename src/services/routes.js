@@ -609,7 +609,13 @@ async function remove(id) {
   const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
   if (!route) throw new Error('Route not found');
 
-  db.prepare('DELETE FROM routes WHERE id = ?').run(id);
+  // Delete the row and its access rules atomically. A later Caddy-sync
+  // rollback (reinsertRouteRow) restores the route row but NOT its rules —
+  // intentional: a route being deleted has moot access rules.
+  db.transaction(() => {
+    db.prepare('DELETE FROM routes WHERE id = ?').run(id);
+    require('./accessRules').deleteForTarget('route', id);
+  })();
 
   // Sync to Caddy — rollback DB delete on failure. Re-insert every
   // column of the original row (not just the hard-coded core set),
@@ -706,8 +712,12 @@ async function batch(action, ids) {
   } else if (action === 'disable') {
     db.prepare(`UPDATE routes SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
   } else if (action === 'delete') {
-    db.prepare(`DELETE FROM route_peer_acl WHERE route_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM routes WHERE id IN (${placeholders})`).run(...ids);
+    // Delete rows + their access rules atomically (one transaction).
+    db.transaction(() => {
+      db.prepare(`DELETE FROM route_peer_acl WHERE route_id IN (${placeholders})`).run(...ids);
+      db.prepare(`DELETE FROM routes WHERE id IN (${placeholders})`).run(...ids);
+      db.prepare(`DELETE FROM access_rules WHERE target_type = 'route' AND target_id IN (${placeholders})`).run(...ids);
+    })();
   }
 
   await withCaddySync(syncToCaddy, () => {
