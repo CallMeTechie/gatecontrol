@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.6] — 2026-05-26
+
+### Fixes
+- strip gc.route.sid session cookie from upstream request (Speedport cleared it, killing route-auth sessions) (#112)
+
+---
+
 ## [1.70.5] — 2026-05-26
 
 ### Änderungen
