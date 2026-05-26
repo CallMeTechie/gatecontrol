@@ -259,13 +259,17 @@ test('requestCaddySync coalesces concurrent calls into one syncToCaddy', async (
     `monitor.js:21-36` (move it here; `require('./routes').syncToCaddy` lazily inside). Update
     `monitor.js` to `const { requestCaddySync } = require('./caddySync')` and delete its local copy.
   - **Serialize `syncToCaddy` itself** (closes DA-r1 #2 for ALL callers without rerouting): add a
-    module-level promise chain in `caddyConfig.js` around the read-prev → build → `POST /load` → verify
-    → rollback critical section (mirror `peers.js:_wgRewriteChain`), so concurrent callers
-    (CRUD's `withCaddySync`, the reconciler's `requestCaddySync`, monitor) run **one at a time** — no
-    overlapping `/load`, no stale-`previousConfig` clobber. CRUD keeps `withCaddySync` (its DB-rollback
-    semantics are preserved); the chain only serializes execution.
-  - Add a test that two concurrent `syncToCaddy()` calls don't interleave (e.g. instrument an
-    in-flight counter that never exceeds 1).
+    module-level promise chain in `caddyConfig.js` (mirror `peers.js:_wgRewriteChain`) that wraps the
+    **whole** `syncToCaddy` body — i.e. `function syncToCaddy(){ _chain = _chain.then(_syncToCaddyInner).catch(_syncToCaddyInner); return _chain; }`
+    with the existing logic moved into `_syncToCaddyInner` — so concurrent callers (CRUD's
+    `withCaddySync`, the reconciler's `requestCaddySync`, monitor) run **one at a time**, no overlapping
+    `/load`, no stale-`previousConfig` clobber. Keep the `NODE_ENV==='test'` early-return inside
+    `_syncToCaddyInner`. CRUD keeps `withCaddySync` (DB-rollback semantics preserved); the chain only
+    serializes execution.
+  - The coalesce test (Step 1) is the behavioral check. A strict "in-flight counter ≤ 1" test is
+    skipped because `syncToCaddy` early-returns under `NODE_ENV=test` (the critical section never runs in
+    tests, making such a counter vacuous) — the serialization is a structural mirror of the already-proven
+    `_wgRewriteChain`; rely on the existing `caddyConfig_*` suite staying green for regression.
 - [ ] **Step 4:** PASS. **Step 5:** commit `refactor: shared coalesced requestCaddySync + serialized syncToCaddy`.
 
 Note: with `syncToCaddy` internally serialized, the reconciler safely uses `requestCaddySync` and CRUD
@@ -293,24 +297,30 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown } = require('./helpers/setup');
 const { getDb } = require('../src/db/connection');
-let peers, wireguard, origSync, peerId;
+let peers, wireguard, accessRules, origSync, origIsDenied, peerId;
 beforeEach(async () => {
   await setup();
   wireguard = require('../src/services/wireguard'); origSync = wireguard.syncConfig;
   wireguard.syncConfig = async () => null;              // no real `wg`
+  accessRules = require('../src/services/accessRules'); origIsDenied = accessRules.isDenied;
   peers = require('../src/services/peers');
   peerId = getDb().prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('p1','PUBKEY_P1=','10.8.0.5/32',1)").run().lastInsertRowid;
 });
-afterEach(() => { wireguard.syncConfig = origSync; teardown(); });
+afterEach(() => { wireguard.syncConfig = origSync; accessRules.isDenied = origIsDenied; teardown(); });
 
 test('denied peer is omitted from the rewritten WG config; allowed peer present', async () => {
+  // Stub isDenied for deterministic, clock-independent assertion (schedule->state is covered in T4).
+  accessRules.isDenied = () => false;
   await peers.rewriteWgConfig();
   assert.match(fs.readFileSync(wgFile,'utf8'), /PUBKEY_P1=/);          // allowed -> present
-  require('../src/services/accessRules').createRule({ target_type:'peer', target_id:peerId, mode:'block', schedule:'Mo-So 00:00-23:59' });
+  accessRules.isDenied = (t, id) => t === 'peer' && id === peerId;     // deny our peer
   await peers.rewriteWgConfig();
   assert.doesNotMatch(fs.readFileSync(wgFile,'utf8'), /PUBKEY_P1=/);   // denied -> omitted
 });
 ```
+(Stubbing `accessRules.isDenied` keeps this test deterministic; the schedule→denied mapping is tested
+in Task 4. Note: `_rewriteWgConfigInner` must call `require('./accessRules').isDenied(...)` so the stub
+on the module export is observed — do not destructure `isDenied` at module top.)
 - [ ] **Step 2:** run → FAIL. **Step 3:** in `_rewriteWgConfigInner`, capture `const now = new Date()`
   at the top, then after `SELECT * FROM peers WHERE enabled = 1` add
   `.filter(p => !require('./accessRules').isDenied('peer', p.id, now))`. **Step 4:** PASS. (Also confirm
@@ -334,7 +344,10 @@ test('denied peer is omitted from the rewritten WG config; allowed peer present'
   1. **Orphan sweep — two explicit statements:**
      `DELETE FROM access_rules WHERE target_type='route' AND target_id NOT IN (SELECT id FROM routes)` and
      `DELETE FROM access_rules WHERE target_type='peer' AND target_id NOT IN (SELECT id FROM peers)`.
-  2. Compute the current deny-set: `SELECT DISTINCT target_type,target_id FROM access_rules` → for each, `isDenied(type,id,now)`.
+  2. Compute the current deny-set: `SELECT DISTINCT target_type,target_id FROM access_rules` → for each,
+     `isDenied(type,id,now)`. **For `peer` targets, only include the peer if it is `enabled=1`** (per spec:
+     the reconciler excludes `enabled=0` peers, so a license-disabled peer never triggers a spurious
+     `removePeer`/transition log — `_rewriteWgConfigInner` already omits `enabled=0` peers from the file).
   3. Diff vs `lastDenied`. For each peer that became denied (in current, not in last), look up its key
      (`SELECT public_key FROM peers WHERE id=?`) and `await wireguard.removePeer(public_key)`. Track
      `routesChanged` / `peersChanged`. **Activity-log every transition in both directions** —
