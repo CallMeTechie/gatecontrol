@@ -849,6 +849,27 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'route_auth_sessions', 'share_link_id'),
   },
+  {
+    version: 46,
+    name: 'create_access_rules',
+    sql: `
+      CREATE TABLE IF NOT EXISTS access_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL,
+        target_id INTEGER NOT NULL,
+        mode TEXT NOT NULL,
+        schedule TEXT NOT NULL,
+        valid_from TEXT,
+        valid_until TEXT,
+        label TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_access_rules_target ON access_rules(target_type, target_id);
+    `,
+    detect: (db) => hasColumn(db, 'access_rules', 'mode'),
+  },
 ];
 
 module.exports = { migrations };
