@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.0] — 2026-05-26
+
+### Features
+- ephemeral share links (#3) (#107)
+
+---
+
 ## [1.69.3] — 2026-05-25
 
 ### Änderungen
