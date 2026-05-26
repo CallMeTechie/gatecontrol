@@ -502,8 +502,10 @@ async function rewriteWgConfig() {
 }
 
 async function _rewriteWgConfigInner() {
+  const now = new Date();
   const db = getDb();
-  const peers = db.prepare('SELECT * FROM peers WHERE enabled = 1').all();
+  const peers = db.prepare('SELECT * FROM peers WHERE enabled = 1').all()
+    .filter(p => !require('./accessRules').isDenied('peer', p.id, now));
 
   try {
     // Read existing config to preserve Interface section
