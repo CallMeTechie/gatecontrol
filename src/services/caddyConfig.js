@@ -626,7 +626,17 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 // ─── Push config to Caddy Admin API ─────────────────────
 let lastGoodConfig = null;
 
-async function syncToCaddy() {
+// Serialize all Caddy syncs through one promise chain so concurrent callers
+// (CRUD's withCaddySync, the access reconciler's requestCaddySync, the
+// monitor's coalesced sync) run one at a time — no overlapping POST /load, no
+// stale-previousConfig clobber. Mirrors peers.js:_wgRewriteChain.
+let _syncChain = Promise.resolve();
+function syncToCaddy() {
+  _syncChain = _syncChain.then(_syncToCaddyInner, _syncToCaddyInner);
+  return _syncChain;
+}
+
+async function _syncToCaddyInner() {
   // Production-safety: skip sync in test env. caddyAdminClient's
   // caddyApi() also guards individually, but skipping the whole sync
   // here avoids even building the config and spares test runs from
