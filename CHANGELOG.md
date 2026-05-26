@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.3] — 2026-05-26
+
+### Fixes
+- show share-link URL after creation + clipboard copy icon (#110)
+
+---
+
 ## [1.70.2] — 2026-05-26
 
 ### Änderungen
