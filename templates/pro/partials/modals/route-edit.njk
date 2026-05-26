@@ -338,6 +338,14 @@
             </div>
           </div>
         </div>
+
+        {% if license.features.share_links %}
+        <div class="form-section" id="share-links-section" data-route-id="">
+          <label class="form-label">{{ t('route_auth.share_links_title') }}</label>
+          <div id="share-links-list"></div>
+          <button type="button" class="btn btn-sm" id="share-link-create">{{ t('route_auth.share_create') }}</button>
+        </div>
+        {% endif %}
       </div>
 
       {# ═══ TAB: Security ══════════════════════════════ #}

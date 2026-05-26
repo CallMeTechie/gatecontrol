@@ -3,7 +3,8 @@
 const { Router } = require('express');
 const config = require('../../config/default');
 const { i18nMiddleware } = require('../middleware/i18n');
-const { routeAuthLoginLimiter, routeAuthCodeLimiter } = require('../middleware/rateLimit');
+const { routeAuthLoginLimiter, routeAuthCodeLimiter, shareRedeemLimiter } = require('../middleware/rateLimit');
+const shareLinks = require('../services/shareLinks');
 const {
   getAuthByDomain,
   verifySession,
@@ -76,6 +77,7 @@ function setSessionCookie(res, sessionId, maxAge) {
     httpOnly: true,
     secure: config.app.baseUrl.startsWith('https'),
     sameSite: 'strict',
+    path: '/',
     maxAge,
   });
 }
@@ -111,6 +113,28 @@ router.get('/verify', (req, res) => {
 
     return res.sendStatus(200);
   })().catch(() => res.sendStatus(500));
+});
+
+// GET /route-auth/share/:token — redeem a share link (the token IS the
+// credential; no login). Reached via the Caddy /route-auth/* sibling proxy
+// (bypasses forward_auth), so it works even when the route is share-gated.
+router.get('/share/:token', shareRedeemLimiter, (req, res) => {
+  (async () => {
+    res.set('Referrer-Policy', 'no-referrer');
+    const result = shareLinks.redeemShareLink(req.params.token, req.ip);
+    if (!result) {
+      // Generic invalid/expired view — no enumeration signal.
+      return res.status(200).render(`${res.locals.theme}/pages/route-auth-login.njk`, {
+        domain: req.query.route || req.headers['x-forwarded-host'] || req.headers.host || '',
+        redirect: '/', authType: 'share', shareInvalid: true,
+        twoFactorEnabled: false, twoFactorMethod: null, is2faStep2: false,
+        maskedEmail: '', routeCsrfToken: '', branding: null,
+      });
+    }
+    const maxAge = new Date(result.expiresAt).getTime() - Date.now();
+    setSessionCookie(res, result.sessionId, maxAge > 0 ? maxAge : 1000);
+    return res.redirect('/');
+  })().catch((err) => res.status(500).send(err.message));
 });
 
 // GET /route-auth/login — render login page
@@ -175,17 +199,24 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     const redirectTo = safeRedirect(redirect);
     const domain = req.body.domain || req.headers['x-forwarded-host'] || req.headers.host;
 
+    // Resolve authConfig early so share-route guard can fire before CSRF check.
+    const authConfig = domain ? getAuthByDomain(domain) : null;
+
+    if (!authConfig) {
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
     // CSRF: verify HMAC-signed token from body or header (bound to domain)
     const csrfToken = _csrf || req.headers['x-csrf-token'];
     if (!verifySignedCsrf(csrfToken, domain)) {
       const logger = require('../utils/logger');
       logger.warn({ hasBody: !!req.body, csrfLen: csrfToken?.length, csrfStart: csrfToken?.substring(0, 12) }, 'CSRF failed');
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
-    }
-    const authConfig = domain ? getAuthByDomain(domain) : null;
-
-    if (!authConfig) {
-      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
     // Check account lockout
@@ -252,6 +283,11 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
     // Verify pending 2FA session exists before allowing code resend
     const sessionId = req.cookies && req.cookies[COOKIE_SID];
     const pendingSession = sessionId ? getSession(sessionId) : null;
@@ -284,6 +320,11 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
     if (!authConfig) {
+      return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
+    }
+
+    if (authConfig.auth_type === 'share') {
+      // Share routes have no password/OTP/TOTP flow — only token redeem.
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 

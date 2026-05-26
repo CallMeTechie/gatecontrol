@@ -247,7 +247,7 @@
       let routeAuthTags = '';
       if (r.route_auth_enabled && r.route_type !== 'l4') {
         // Auth method badge
-        const methodLabels = { email_password: GC.t['route_auth.method_email_password'] || 'Email & Password', email_code: GC.t['route_auth.method_email_code'] || 'Email & Code', totp: GC.t['route_auth.method_totp'] || 'TOTP' };
+        const methodLabels = { email_password: GC.t['route_auth.method_email_password'] || 'Email & Password', email_code: GC.t['route_auth.method_email_code'] || 'Email & Code', totp: GC.t['route_auth.method_totp'] || 'TOTP', share: (GC.t && GC.t['route_auth.method_share']) || 'Share link' };
         const methodLabel = methodLabels[r.route_auth_type] || r.route_auth_type;
         routeAuthTags += '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> ' + escapeHtml(methodLabel) + '</span>';
         // 2FA badge
@@ -1238,7 +1238,11 @@
     var authPass = document.getElementById('edit-route-auth-pass');
     if (authPass) authPass.value = '';
 
+    // Reset any share-managed read-only state from a previously edited route
+    setRouteAuthShareManaged(false);
+
     // Load route auth config from API
+    var authIsShareManaged = false;
     try {
       var authData = await api.get('/api/routes/' + id + '/auth');
       if (authData.ok && authData.data) {
@@ -1247,23 +1251,31 @@
         var email = auth.email || '';
         var sessionAge = String(auth.session_max_age || 86400000);
 
-        if (auth.two_factor_enabled) {
-          if (ra2fa) ra2fa.classList.add('on');
-          // Populate 2FA fields
-          var tfaEmail = document.getElementById('edit-ra-2fa-email');
-          if (tfaEmail) tfaEmail.value = email;
-          // Set Factor 2 method
-          var f2method = auth.two_factor_method || 'email_code';
-          document.getElementById('edit-ra-method').value = f2method;
-          setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', f2method);
+        if (auth.auth_type === 'share') {
+          // Share-managed routes have no credential flow — show a read-only
+          // note and skip building the email/OTP/TOTP selector.
+          authIsShareManaged = true;
+          setRouteAuthShareManaged(true);
         } else {
-          // Single factor — populate single factor fields
-          var method = auth.auth_type || 'email_password';
-          setToggleGroup('edit-ra-method-group', 'edit-ra-method', method);
-          var sfEmail = document.getElementById('edit-ra-email');
-          if (sfEmail) sfEmail.value = email;
+          setRouteAuthShareManaged(false);
+          if (auth.two_factor_enabled) {
+            if (ra2fa) ra2fa.classList.add('on');
+            // Populate 2FA fields
+            var tfaEmail = document.getElementById('edit-ra-2fa-email');
+            if (tfaEmail) tfaEmail.value = email;
+            // Set Factor 2 method
+            var f2method = auth.two_factor_method || 'email_code';
+            document.getElementById('edit-ra-method').value = f2method;
+            setToggleGroup('edit-ra-2fa-method-group', 'edit-ra-method', f2method);
+          } else {
+            // Single factor — populate single factor fields
+            var method = auth.auth_type || 'email_password';
+            setToggleGroup('edit-ra-method-group', 'edit-ra-method', method);
+            var sfEmail = document.getElementById('edit-ra-email');
+            if (sfEmail) sfEmail.value = email;
+          }
+          if (raDuration) raDuration.value = sessionAge;
         }
-        if (raDuration) raDuration.value = sessionAge;
       } else if (route.basic_auth_enabled) {
         setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
       }
@@ -1274,6 +1286,10 @@
     }
 
     updateEditAuthTypeUI();
+    // updateEditAuthTypeUI() unconditionally re-shows #edit-ra-single-factor for
+    // 'route' auth. For share-managed routes the read-only note must win, so
+    // re-apply the hide after the generic selector pass.
+    if (authIsShareManaged) setRouteAuthShareManaged(true);
 
     setToggleGroup('edit-route-type-group', 'edit-route-type', route.route_type || 'http');
     if (route.route_type === 'l4') {
@@ -1548,6 +1564,14 @@
     editModal.querySelectorAll('.edit-route-panel').forEach(function(p) { p.style.display = p.dataset.panel === 'general' ? '' : 'none'; });
     var debugTab = document.querySelector('[data-edit-tab="debug"]');
     if (debugTab) debugTab.style.display = (route.route_type === 'l4') ? 'none' : '';
+
+    // Share links (Pro: share_links — section only present when the flag is on)
+    var shareSection = document.getElementById('share-links-section');
+    if (shareSection) {
+      shareSection.setAttribute('data-route-id', String(id));
+      loadShareLinks(id);
+    }
+
     currentEditRouteId = id;
     stopTracePolling();
     openModal('modal-edit-route');
@@ -3050,6 +3074,259 @@
       radio.addEventListener('change', checkRdpPort);
     });
   })();
+
+  // ─── Share links (Pro: share_links) ───────────────────
+  // Tiny DOM builder so we never touch innerHTML (a hook blocks it).
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        if (k === 'class') node.className = props[k];
+        else if (k === 'text') node.textContent = props[k];
+        else if (k === 'dataset') Object.keys(props[k]).forEach(function (d) { node.dataset[d] = props[k][d]; });
+        else if (k === 'style') node.setAttribute('style', props[k]);
+        else node.setAttribute(k, props[k]);
+      });
+    }
+    (children || []).forEach(function (c) {
+      if (c == null) return;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function shareT(key, fallback) {
+    return (GC.t && GC.t[key]) || fallback;
+  }
+
+  // Toggle the route-auth credential selector vs. a read-only "share managed"
+  // note. The note element is created on demand (it is not in the template).
+  function setRouteAuthShareManaged(managed) {
+    var fields = document.getElementById('edit-route-auth-fields');
+    if (!fields) return;
+    var single = document.getElementById('edit-ra-single-factor');
+    var twoFa = document.getElementById('edit-ra-2fa-view');
+    var note = document.getElementById('edit-ra-share-managed-note');
+    if (managed) {
+      if (single) single.style.display = 'none';
+      if (twoFa) twoFa.style.display = 'none';
+      if (!note) {
+        note = el('div', {
+          id: 'edit-ra-share-managed-note',
+          class: 'form-hint',
+          style: 'margin:8px 0',
+          text: shareT('route_auth.share_managed', 'Managed by share links'),
+        });
+        fields.appendChild(note);
+      } else {
+        note.textContent = shareT('route_auth.share_managed', 'Managed by share links');
+        note.style.display = '';
+      }
+    } else {
+      if (single) single.style.display = '';
+      if (note) note.style.display = 'none';
+    }
+  }
+
+  function shareFetch(url, options) {
+    var opts = options || {};
+    opts.headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+    if (opts.method && opts.method !== 'GET') {
+      opts.headers['X-CSRF-Token'] = window.GC.csrfToken;
+    }
+    return fetch(url, opts);
+  }
+
+  function formatShareExpiry(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString();
+  }
+
+  async function loadShareLinks(routeId) {
+    var list = document.getElementById('share-links-list');
+    if (!list) return;
+    // The secret URL box and create form are siblings of the list (not children),
+    // so clearing the list alone would leak a previously shown one-time URL across
+    // modal reopens — including for a different route. Remove them explicitly.
+    document.getElementById('share-link-url-once')?.remove();
+    document.getElementById('share-link-create-form')?.remove();
+    list.textContent = '';
+    try {
+      var res = await shareFetch('/api/v1/routes/' + routeId + '/share-links');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      var links = (data && data.links) || [];
+      if (!links.length) {
+        list.appendChild(el('div', { class: 'form-hint', text: shareT('route_auth.share_none', 'No share links yet.') }));
+        return;
+      }
+      links.forEach(function (link) {
+        list.appendChild(renderShareLinkRow(routeId, link));
+      });
+    } catch (err) {
+      list.appendChild(el('div', { class: 'form-hint', text: err.message }));
+    }
+  }
+
+  function renderShareLinkRow(routeId, link) {
+    var meta = [];
+    if (link.label) meta.push(link.label);
+    meta.push(formatShareExpiry(link.expires_at));
+    meta.push(link.one_time ? shareT('route_auth.share_one_time', 'One-time') : shareT('route_auth.share_reusable', 'Reusable'));
+    meta.push(shareT('route_auth.share_redeemed', 'Redeemed') + ': ' + (link.redeemed_count || 0));
+
+    var info = el('div', { style: 'flex:1;min-width:0' }, [
+      el('div', { style: 'font-size:12px;color:var(--text-2)', text: meta.join(' · ') }),
+    ]);
+    var revokeBtn = el('button', {
+      type: 'button',
+      class: 'btn btn-sm',
+      text: shareT('route_auth.share_revoke', 'Revoke'),
+    });
+    revokeBtn.addEventListener('click', function () {
+      revokeShareLink(routeId, link.id);
+    });
+    return el('div', {
+      style: 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)',
+    }, [info, revokeBtn]);
+  }
+
+  async function revokeShareLink(routeId, linkId) {
+    try {
+      var res = await shareFetch('/api/v1/routes/' + routeId + '/share-links/' + linkId, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      loadShareLinks(routeId);
+    } catch (err) {
+      if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+    }
+  }
+
+  function showShareCreateForm(routeId) {
+    var list = document.getElementById('share-links-list');
+    if (!list) return;
+    if (document.getElementById('share-link-create-form')) return;
+
+    var expirySelect = el('select', { id: 'share-link-expiry', class: 'form-select', style: 'flex:1' }, [
+      el('option', { value: '1', text: '1 h' }),
+      el('option', { value: '24', text: '24 h' }),
+      el('option', { value: '168', text: '168 h' }),
+    ]);
+    expirySelect.value = '24';
+
+    var oneTime = el('input', { type: 'checkbox', id: 'share-link-one-time' });
+    var oneTimeLabel = el('label', { style: 'display:flex;align-items:center;gap:6px;font-size:12px' }, [
+      oneTime,
+      shareT('route_auth.share_one_time', 'One-time'),
+    ]);
+
+    var labelInput = el('input', {
+      type: 'text',
+      id: 'share-link-label',
+      class: 'form-input',
+      maxlength: '120',
+      placeholder: shareT('route_auth.share_label', 'Label (optional)'),
+      style: 'flex:1',
+    });
+
+    var submitBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: shareT('route_auth.share_create', 'Create share link') });
+    submitBtn.addEventListener('click', function () {
+      createShareLink(routeId, {
+        expiresInHours: Number(expirySelect.value),
+        oneTime: oneTime.checked,
+        label: labelInput.value.trim(),
+      }, false, form);
+    });
+
+    var form = el('div', {
+      id: 'share-link-create-form',
+      style: 'display:flex;flex-direction:column;gap:8px;margin-top:8px',
+    }, [
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [expirySelect, oneTimeLabel]),
+      labelInput,
+      submitBtn,
+    ]);
+    list.parentNode.insertBefore(form, list.nextSibling);
+  }
+
+  async function createShareLink(routeId, body, confirmGate, form) {
+    var payload = {
+      expiresInHours: body.expiresInHours,
+      oneTime: body.oneTime,
+    };
+    if (body.label) payload.label = body.label;
+    if (confirmGate) payload.confirmGate = true;
+    try {
+      var res = await shareFetch('/api/v1/routes/' + routeId + '/share-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 409) {
+        var conflict = await res.json().catch(function () { return {}; });
+        if (conflict && conflict.error === 'needs_gate_confirm') {
+          if (window.confirm(shareT('route_auth.share_gate_warning', 'This route is currently public. A share link makes it reachable only via share links.'))) {
+            return createShareLink(routeId, body, true, form);
+          }
+          return;
+        }
+        throw new Error((conflict && conflict.error) || 'HTTP 409');
+      }
+      if (res.status !== 201) {
+        var errBody = await res.json().catch(function () { return {}; });
+        throw new Error((errBody && errBody.error) || ('HTTP ' + res.status));
+      }
+      var data = await res.json();
+      if (form && form.parentNode) form.parentNode.removeChild(form);
+      showShareUrlOnce(routeId, data.url);
+      loadShareLinks(routeId);
+    } catch (err) {
+      if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+    }
+  }
+
+  function showShareUrlOnce(routeId, url) {
+    var list = document.getElementById('share-links-list');
+    if (!list) return;
+    var existing = document.getElementById('share-link-url-once');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+    var urlField = el('input', {
+      type: 'text',
+      class: 'form-input',
+      readonly: 'readonly',
+      style: 'flex:1;font-family:var(--font-mono)',
+    });
+    urlField.value = url || '';
+
+    var copyBtn = el('button', { type: 'button', class: 'btn btn-sm', text: shareT('common.copy', 'Copy') });
+    copyBtn.addEventListener('click', function () {
+      urlField.focus();
+      urlField.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(urlField.value).catch(function () {});
+      }
+    });
+
+    var box = el('div', {
+      id: 'share-link-url-once',
+      style: 'display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)',
+    }, [
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [urlField, copyBtn]),
+      el('div', { class: 'form-hint', text: shareT('route_auth.share_copy_warning', "Anyone with this link gets in. Copy it now — it won't be shown again.") }),
+    ]);
+    list.parentNode.insertBefore(box, list.nextSibling);
+  }
+
+  var shareCreateBtn = document.getElementById('share-link-create');
+  if (shareCreateBtn) {
+    shareCreateBtn.addEventListener('click', function () {
+      var section = document.getElementById('share-links-section');
+      var routeId = section && section.getAttribute('data-route-id');
+      if (routeId) showShareCreateForm(Number(routeId));
+    });
+  }
 })();
 
 (() => {
