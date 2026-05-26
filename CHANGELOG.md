@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.2] — 2026-05-26
+
+### Änderungen
+- trigger release build for #109 (Actions outage recovery)
+
+---
+
 ## [1.70.1] — 2026-05-26
 
 ### Änderungen
