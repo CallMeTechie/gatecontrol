@@ -7,6 +7,15 @@ const supertest = require('supertest');
 
 // Set test env before any imports
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-'));
+// Remove THIS process's temp dir on any exit — normal, process.exit(), or
+// `--test-force-exit`. Registered immediately after creation so even a throw in
+// the requires below can't leak the dir. This (plus the afterEach teardown())
+// is what keeps /tmp from filling across many runs.
+process.on('exit', () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ } });
+// Self-heal: sweep gc-test-* dirs left by prior runs that were hard-killed
+// (SIGKILL/OOM) before any exit handler could fire. Only dirs idle >2h are
+// removed, so a concurrently-running test process's fresh dir is never touched.
+cleanupStaleTestDirs(os.tmpdir(), 'gc-test-', 2 * 60 * 60 * 1000, tmpDir);
 const dbPath = path.join(tmpDir, 'test.db');
 process.env.NODE_ENV = 'test';
 process.env.GC_DB_PATH = dbPath;
@@ -114,4 +123,27 @@ function teardown() {
   } catch {}
 }
 
-module.exports = { setup, teardown, getAgent, getCsrf };
+/**
+ * Remove leftover temp dirs from prior test runs that were hard-killed before
+ * their exit handler / teardown() could fire. Only dirs whose mtime is older
+ * than `staleMs` are removed, so a concurrently-running test process's fresh
+ * dir is never touched. `excludePath` (this process's own dir) is always kept.
+ * Best-effort: never throws.
+ */
+function cleanupStaleTestDirs(root, prefix, staleMs, excludePath) {
+  let entries;
+  try { entries = fs.readdirSync(root); } catch { return; }
+  const now = Date.now();
+  for (const name of entries) {
+    if (!name.startsWith(prefix)) continue;
+    const p = path.join(root, name);
+    if (p === excludePath) continue;
+    try {
+      if (now - fs.statSync(p).mtimeMs > staleMs) {
+        fs.rmSync(p, { recursive: true, force: true });
+      }
+    } catch { /* ignore individual entry */ }
+  }
+}
+
+module.exports = { setup, teardown, getAgent, getCsrf, cleanupStaleTestDirs };
