@@ -76,7 +76,15 @@ function setSessionCookie(res, sessionId, maxAge) {
   res.cookie(COOKIE_SID, sessionId, {
     httpOnly: true,
     secure: config.app.baseUrl.startsWith('https'),
-    sameSite: 'strict',
+    // Lax, not Strict: the session cookie must survive navigations that follow a
+    // CROSS-SITE arrival — exactly the share-link guest flow (link opened from an
+    // email/chat app) and proxied upstreams that bounce through their own login
+    // pages. Strict withholds the cookie on those navigations → forward_auth then
+    // 302s the user back to /route-auth/login mid-session. Lax is sent on same-site
+    // requests and top-level GET navigations, which covers both. CSRF is unaffected:
+    // the state-changing POST endpoints use their own HMAC-signed CSRF tokens
+    // (verifySignedCsrf), not the cookie's SameSite attribute.
+    sameSite: 'lax',
     path: '/',
     maxAge,
   });
