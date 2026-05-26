@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.1] — 2026-05-26
+
+### Änderungen
+- harden harness temp-dir cleanup to keep /tmp from filling (#108)
+
+---
+
 ## [1.70.0] — 2026-05-26
 
 ### Features
