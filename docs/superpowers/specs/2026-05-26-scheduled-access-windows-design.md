@@ -43,11 +43,14 @@ CREATE INDEX IF NOT EXISTS idx_access_rules_target ON access_rules(target_type, 
 ```
 Polymorphic target → no FK. **Cascade-delete must cover every delete path** (DA-r1 #5): the single
 `routes.delete`/`peers.delete` AND the **batch** `routes.batch('delete')` (routes.js:710) /
-`peers.batch('delete')` (peers.js:645), each **inside the same DB transaction** as the row delete so
-it can't half-commit. Because `routes`/`peers` use `INTEGER PRIMARY KEY` (rowid **reuse** is possible
-without `AUTOINCREMENT` — verify in the migration), a leaked rule could later misfire on a reused id.
-So the `accessReconciler` also runs a periodic **orphan sweep**: delete `access_rules` whose
-`target_id` no longer exists for its `target_type`.
+`peers.batch('delete')` (peers.js:645). Emit the `DELETE FROM access_rules WHERE target_type=? AND
+target_id IN (...)` in the **same statement sequence** as the row delete; if the existing batch delete
+isn't already wrapped in a real `db.transaction` (DA-r2: routes.js batch only wraps a rollback closure,
+not the delete), wrap row-delete + rule-delete in one `db.transaction` so they can't half-commit.
+`routes`/`peers` are `INTEGER PRIMARY KEY AUTOINCREMENT` (verified) so id **reuse cannot happen** — the
+orphan risk is only a *missed* cascade path / backup-restore. Keep a periodic **orphan sweep** in the
+reconciler (delete `access_rules` whose `target_id` no longer exists for its `target_type`) as cheap
+belt-and-suspenders, not as the id-reuse guard.
 
 **Date-bound semantics (precise — no lexical string compares; DA-r1 #4):** `valid_from`/`valid_until`
 are `'YYYY-MM-DD'`. Parse to **local civil time** (matching `parseMaintenanceActive`, which uses local
@@ -100,8 +103,12 @@ A singleton interval service (mirrors the `monitor.js` pattern; `unref()`'d; `wi
 - The deny-set is also consulted **at config-build time** (below), so a rebuild triggered by any other
   cause already reflects current windows.
 
-`caddyConfig` + WG generation call `accessRules.isDenied(targetType, id)` (which calls `evaluate` and
-caches per build) when emitting each route/peer:
+`caddyConfig` + WG generation call **`accessRules.isDenied(targetType, id, now)` with an explicit
+`now`** captured once at the entry of each build function (`buildCaddyConfig` is synchronous + stateless
+and `_rewriteWgConfigInner` is separate — DA-r2; do not rely on a shared module-level cache that could
+serve stale results to the long-lived detection loops). Any per-`(type,id)` memoization is created
+fresh per build call and discarded when it returns. A route and a peer are independent targets, so they
+need not share a clock. When emitting each route/peer:
 
 - **HTTP route denied:** replace the route's handler chain with a `static_response` 403 + a rendered
   "access window" page (Nunjucks, i18n, shows the human-readable schedule). Mirrors the existing
@@ -109,8 +116,9 @@ caches per build) when emitting each route/peer:
 - **L4 route denied:** omit the L4 listener from the generated `layer4` app (connection refused —
   the only real L4 option). This is a silent RST with no user-facing page, unlike HTTP. Compensate
   (DA-r1 #6): activity-log the L4 transition with the schedule in details, and surface the
-  "blocked now" badge + next-transition in the route UI so support can distinguish "outside window"
-  from an outage. Document this asymmetry in the feature doc.
+  **"blocked now" badge + the human-readable schedule** in the route UI so support can distinguish
+  "outside window" from an outage (computing the exact *next transition* is **deferred** — DA-r2 scope;
+  state badge + schedule text suffice). Document this asymmetry in the feature doc.
 - **Peer denied:** the WG config generator (`peers.js:_rewriteWgConfigInner`, today a bare
   `SELECT * FROM peers WHERE enabled = 1`) must become **deny-set-aware** — effective inclusion =
   `peer.enabled === 1 AND !isDenied('peer', peer.id)`. The window gate is **separate** from the manual
@@ -124,24 +132,48 @@ independently. Adding the reconciler as a 4th uncoordinated caller risks racing 
 `previousConfig` rollback clobbering a good config) and, via the TLS self-test, an auto Caddy restart
 that drops live connections — on a 60 s cadence near window boundaries.
 
-**Required before/with this feature:** a single shared, **debounced + serialized** `requestCaddySync()`
-(promote the monitor's `pendingSync` pattern into a shared module) that route/peer CRUD, license
-enforcement, monitor, AND the reconciler all funnel through — no direct parallel `syncToCaddy`. All WG
-writes go through the existing `_wgRewriteChain` (peers.js:496). The reconciler never builds its own
-parallel sync path.
+**Required before/with this feature:** a single shared, **coalesced + serialized** `requestCaddySync()`
+that route/peer CRUD, license enforcement, monitor, AND the reconciler all funnel through — no direct
+parallel `syncToCaddy`. **Coalesced, not time-debounced** (DA-r2): promote the monitor's existing
+`pendingSync` pattern, which collapses bursts on a single `setImmediate` (sub-ms) — do NOT introduce a
+timer delay, because a security-relevant *deny* must not sit behind a debounce window or get coalesced-
+away behind an unrelated edit. All WG file writes go through the existing `_wgRewriteChain`
+(peers.js:496). The imperative **`removePeer` is called DIRECTLY by the reconciler** (not via the sync
+module), so a coalesced/dropped Caddy sync can never drop a live disconnect. Per-target there is no
+Caddy↔WG overlap (a route deny only touches Caddy; a peer deny only touches WG), so the split chains
+are safe.
 
-**Boot order:** migrations → `accessRules` queryable → `accessReconciler.start()` performs **one
-synchronous reconcile before the server accepts traffic** → the first Caddy/WG build already consults
-`isDenied`. Combined with the pure `evaluate`, this makes the feature fail-closed across restarts/redeploys.
+**Boot / fail-closed — pinned to the REAL boot paths (DA-r2 BLOCKER).** `server.js` calls
+`app.listen()` first and runs sync hooks afterwards (some on `setTimeout`); in production
+`GC_CADDY_CONFIG_PRELOADED=1` skips the initial Caddy sync entirely (Caddy boots from the JSON that
+`bin/export-caddy-config.js` generates in `entrypoint.sh`). So there is **no** "reconcile before traffic"
+hook to use. Fail-closed therefore rests on:
+1. **Routes:** `buildCaddyConfig()` consults `isDenied('route', id, now)` — this runs in
+   `export-caddy-config.js` at container start, so the preloaded Caddy config is already correct.
+2. **Peers:** `_rewriteWgConfigInner` consults `isDenied('peer', id, now)` — so the boot WG file rewrite
+   (server.js `setTimeout`) emits the correct `wg0.conf` without denied peers.
+3. **Live disconnect at boot:** `accessReconciler.start()` runs an initial reconcile that calls
+   `removePeer(public_key)` for **every peer in the initial deny-set** (not just diffs) — because the
+   in-memory last-applied set is empty at boot, an already-denied *live* peer produces no transition and
+   would otherwise stay connected. Documented worst case: a peer denied before a restart stays connected
+   until the boot WG sync + first reconcile (≤ ~60 s + boot).
 
-**Churn:** most ticks are no-ops (deny-set unchanged). A transition = one debounced Caddy resync and/or
-one chained WG reconfigure. Acceptable.
+**License-enforcement WG path — explicitly out of scope (DA-r2).** `license.enforceLimitsInternal`
+sets `enabled=0` then calls `wireguard.syncConfig()` (file-only `syncconf`, no rewrite, no `removePeer`),
+so a license-disabled peer is not live-disconnected today — a **pre-existing** latent gap, NOT introduced
+or claimed-fixed by this feature. The reconciler's deny-set excludes `enabled=0` peers from builds (no
+oscillation with license), but does not `removePeer` a license-disabled peer (it's not a window
+transition). Leave this as-is; note it in the doc.
+
+**Churn:** most ticks are no-ops (deny-set unchanged). A transition = one coalesced Caddy resync and/or
+one chained WG reconfigure (+ `removePeer` on allow→deny). Acceptable.
 
 ## Admin API (session + CSRF; `requireFeature('access_windows')`)
 
 Mounted like `routeAuth`:
 - `GET  /api/v1/routes/:id/access-rules` · `GET /api/v1/peers/:id/access-rules` — list a target's rules
-  + the current `state` (allowed/denied) + next transition (optional).
+  + the current `state` (allowed/denied) + the active/matched rule. (Next-transition computation is
+  deferred — DA-r2; not required for v1.)
 - `POST /api/v1/routes/:id/access-rules` · `POST /api/v1/peers/:id/access-rules` — create
   `{ mode, schedule, valid_from?, valid_until?, label? }`. Validates (400 on any failure): mode ∈
   {allow,block}; **schedule via a new `parseSchedule(str) → { windows, errors }`** (separate from the
