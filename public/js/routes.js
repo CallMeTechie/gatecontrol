@@ -3308,8 +3308,11 @@
       }
       var data = await res.json();
       if (form && form.parentNode) form.parentNode.removeChild(form);
+      // Refresh the list FIRST — loadShareLinks() removes any #share-link-url-once
+      // box at its start, so it must run before we show the new one (otherwise the
+      // freshly generated URL would be wiped immediately).
+      await loadShareLinks(routeId);
       showShareUrlOnce(routeId, data.url);
-      loadShareLinks(routeId);
     } catch (err) {
       if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
     }
@@ -3329,12 +3332,38 @@
     });
     urlField.value = url || '';
 
-    var copyBtn = el('button', { type: 'button', class: 'btn btn-sm', text: shareT('common.copy', 'Copy') });
+    function svgEl(name, attrs) {
+      var n = document.createElementNS('http://www.w3.org/2000/svg', name);
+      Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      return n;
+    }
+    function copyIcon() {
+      var s = svgEl('svg', { width: '15', height: '15', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+      s.appendChild(svgEl('rect', { x: '9', y: '9', width: '13', height: '13', rx: '2', ry: '2' }));
+      s.appendChild(svgEl('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }));
+      return s;
+    }
+    function checkIcon() {
+      var s = svgEl('svg', { width: '15', height: '15', viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--green)', 'stroke-width': '2.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+      s.appendChild(svgEl('path', { d: 'M20 6 9 17l-5-5' }));
+      return s;
+    }
+
+    var copyLabel = shareT('common.copy', 'Copy');
+    var copyBtn = el('button', { type: 'button', class: 'btn btn-sm', title: copyLabel, 'aria-label': copyLabel, style: 'display:flex;align-items:center;justify-content:center;padding:8px 10px' });
+    copyBtn.appendChild(copyIcon());
     copyBtn.addEventListener('click', function () {
       urlField.focus();
       urlField.select();
+      var showCopied = function () {
+        copyBtn.textContent = '';
+        copyBtn.appendChild(checkIcon());
+        setTimeout(function () { copyBtn.textContent = ''; copyBtn.appendChild(copyIcon()); }, 1500);
+      };
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(urlField.value).catch(function () {});
+        navigator.clipboard.writeText(urlField.value).then(showCopied).catch(function () {});
+      } else {
+        try { document.execCommand('copy'); showCopied(); } catch (e) { /* clipboard unavailable */ }
       }
     });
 
