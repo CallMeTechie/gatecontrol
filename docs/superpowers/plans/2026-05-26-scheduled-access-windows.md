@@ -165,17 +165,24 @@ test('block wins over allow', () => {
   addRule({ mode:'block', schedule:'Mo 09:00-12:00' });
   assert.equal(svc.evaluate('route',1,MON10).state, 'denied'); // block matches 10:00
 });
-test('date bounds: inactive after valid_until end-of-day', () => {
-  addRule({ valid_until:'2026-06-01' });
-  assert.equal(svc.evaluate('route',1,new Date(2026,5,1,23,59,59)).state, 'allowed');
-  assert.equal(svc.evaluate('route',1,new Date(2026,5,2,10,0,0)).state, 'denied'); // allow rule out of date -> no applicable allow -> default... see note
+test('date bounds: allow active through valid_until end-of-day; default-open after', () => {
+  addRule({ valid_until:'2026-06-01' });                                   // allow Mo-Fr 09-17 until 2026-06-01
+  assert.equal(svc.evaluate('route',1,new Date(2026,5,1,10,0,0)).state, 'allowed');  // Mon in window + in date
+  assert.equal(svc.evaluate('route',1,new Date(2026,5,1,20,0,0)).state, 'denied');   // Mon out of window + in date
+  // after valid_until the only allow rule is out of date -> no applicable allow, no block -> default-open
+  assert.equal(svc.evaluate('route',1,new Date(2026,5,2,20,0,0)).state, 'allowed');
+});
+test('in-date block denies regardless of allow', () => {
+  svc.createRule({ target_type:'route', target_id:1, mode:'block', schedule:'Mo 09:00-23:00', valid_until:'2026-06-30' });
+  assert.equal(svc.evaluate('route',1,new Date(2026,5,1,10,0,0)).state, 'denied');
 });
 test('disabled rule ignored', () => {
   const r = addRule({}); svc.updateRule(r.id, { enabled: 0 });
   assert.equal(svc.evaluate('route',1,MON10).state, 'allowed'); // back to default-open
 });
 ```
-NOTE on the date-bounds test: once the only allow rule is out of its date bounds, there are **no applicable allow rules and no block** → default-open (`allowed`). Assert that explicitly (it documents the truth-table). Adjust the assertion to `allowed` and add a separate case where an in-date block rule denies.
+Truth-table reminder: once the only allow rule falls out of its date bounds, there are no applicable
+allow rules and no matching block → **default-open** (`allowed`). The tests above assert this directly.
 - [ ] **Step 2:** run → FAIL. **Step 3:** implement `src/services/accessRules.js`:
 ```js
 'use strict';
@@ -247,9 +254,23 @@ test('requestCaddySync coalesces concurrent calls into one syncToCaddy', async (
 });
 ```
 (Run with `NODE_ENV=test`; this test stubs `routes.syncToCaddy` so it doesn't hit Caddy.)
-- [ ] **Step 2:** run → FAIL (no module). **Step 3:** create `src/services/caddySync.js` with the exact `pendingSync` coalescer currently in `monitor.js:21-36` (move it here, `require('./routes').syncToCaddy` lazily inside). Update `monitor.js` to `const { requestCaddySync } = require('./caddySync')` and delete its local copy. **Step 4:** PASS. **Step 5:** commit `refactor: shared coalesced requestCaddySync (caddySync.js)`.
+- [ ] **Step 2:** run → FAIL (no module). **Step 3:**
+  - Create `src/services/caddySync.js` with the exact `pendingSync` coalescer currently in
+    `monitor.js:21-36` (move it here; `require('./routes').syncToCaddy` lazily inside). Update
+    `monitor.js` to `const { requestCaddySync } = require('./caddySync')` and delete its local copy.
+  - **Serialize `syncToCaddy` itself** (closes DA-r1 #2 for ALL callers without rerouting): add a
+    module-level promise chain in `caddyConfig.js` around the read-prev → build → `POST /load` → verify
+    → rollback critical section (mirror `peers.js:_wgRewriteChain`), so concurrent callers
+    (CRUD's `withCaddySync`, the reconciler's `requestCaddySync`, monitor) run **one at a time** — no
+    overlapping `/load`, no stale-`previousConfig` clobber. CRUD keeps `withCaddySync` (its DB-rollback
+    semantics are preserved); the chain only serializes execution.
+  - Add a test that two concurrent `syncToCaddy()` calls don't interleave (e.g. instrument an
+    in-flight counter that never exceeds 1).
+- [ ] **Step 4:** PASS. **Step 5:** commit `refactor: shared coalesced requestCaddySync + serialized syncToCaddy`.
 
-Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should call `requestCaddySync()` instead of `syncToCaddy()` directly where safe — but keep that change minimal and out of this task to avoid churn; the reconciler (Task 7) uses `requestCaddySync`.
+Note: with `syncToCaddy` internally serialized, the reconciler safely uses `requestCaddySync` and CRUD
+keeps `withCaddySync`; rerouting every caller is unnecessary. Document this in Task 13 (the
+per-target non-overlap + internal serialization make the design race-free).
 
 ---
 
@@ -257,13 +278,44 @@ Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should c
 
 **Files:** Modify `src/services/peers.js` `_rewriteWgConfigInner` (line ~504); Test `tests/access_wg_deny.test.js`.
 
-- [ ] **Step 1: failing test** — create an enabled peer + a current 'block' rule on it; assert the rewritten config omits its `[Peer]` block.
+- [ ] **Step 1: failing test** (`tests/access_wg_deny.test.js`). The test env has no WG config file and
+  `_rewriteWgConfigInner` early-returns if the file is missing — so **seed a temp `GC_WG_CONFIG_PATH`
+  with an `[Interface]` section BEFORE requiring the harness**, and **stub `wireguard.syncConfig` to a
+  no-op** so it never shells out to a real `wg`. Peer INSERT must satisfy NOT-NULL `name`,
+  `public_key`, `allowed_ips`.
 ```js
-// setup: insert peer (enabled=1) with a public_key; add access_rules block rule covering NOW for ('peer', peerId);
-// call peers.rewriteWgConfig(); read the generated config file (config.wireguard.configPath) and assert the pubkey is absent.
+'use strict';
+const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+const wgFile = path.join(os.mkdtempSync(path.join(os.tmpdir(),'gc-wg-')), 'wg0.conf');
+fs.writeFileSync(wgFile, '[Interface]\nPrivateKey = AA==\nListenPort = 51820\n');
+process.env.GC_WG_CONFIG_PATH = wgFile;                 // BEFORE setup requires config
+const { test, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const { setup, teardown } = require('./helpers/setup');
+const { getDb } = require('../src/db/connection');
+let peers, wireguard, origSync, peerId;
+beforeEach(async () => {
+  await setup();
+  wireguard = require('../src/services/wireguard'); origSync = wireguard.syncConfig;
+  wireguard.syncConfig = async () => null;              // no real `wg`
+  peers = require('../src/services/peers');
+  peerId = getDb().prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('p1','PUBKEY_P1=','10.8.0.5/32',1)").run().lastInsertRowid;
+});
+afterEach(() => { wireguard.syncConfig = origSync; teardown(); });
+
+test('denied peer is omitted from the rewritten WG config; allowed peer present', async () => {
+  await peers.rewriteWgConfig();
+  assert.match(fs.readFileSync(wgFile,'utf8'), /PUBKEY_P1=/);          // allowed -> present
+  require('../src/services/accessRules').createRule({ target_type:'peer', target_id:peerId, mode:'block', schedule:'Mo-So 00:00-23:59' });
+  await peers.rewriteWgConfig();
+  assert.doesNotMatch(fs.readFileSync(wgFile,'utf8'), /PUBKEY_P1=/);   // denied -> omitted
+});
 ```
-(Find the config path + how existing WG tests read it — grep `tests/*wg*`, `tests/*peer*`. If no file in test env, assert `_rewriteWgConfigInner` filters the peer out by stubbing the writer; prefer the established WG-test approach.)
-- [ ] **Step 2:** run → FAIL. **Step 3:** in `_rewriteWgConfigInner`, after loading `SELECT * FROM peers WHERE enabled = 1`, filter: `.filter(p => !require('./accessRules').isDenied('peer', p.id, new Date()))`. Capture `now` once at the top of the function. **Step 4:** PASS. **Step 5:** commit `feat: WG config omits access-denied peers`.
+- [ ] **Step 2:** run → FAIL. **Step 3:** in `_rewriteWgConfigInner`, capture `const now = new Date()`
+  at the top, then after `SELECT * FROM peers WHERE enabled = 1` add
+  `.filter(p => !require('./accessRules').isDenied('peer', p.id, now))`. **Step 4:** PASS. (Also confirm
+  during impl that `wireguard.syncConfig` is safe/no-op under `NODE_ENV=test`; the stub guards the test
+  regardless.) **Step 5:** commit `feat: WG config omits access-denied peers`.
 
 ---
 
@@ -271,20 +323,37 @@ Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should c
 
 **Files:** Create `src/services/accessReconciler.js`; wire `start()` into server boot (`src/server.js`); Test `tests/access_reconciler.test.js`.
 
-- [ ] **Step 1: failing test** — drive transitions with a stubbed clock + stubbed sync/removePeer:
-  - allow→deny transition for a peer calls `wireguard.removePeer(pubkey)` once and requests a caddy sync.
-  - no-op tick (deny-set unchanged) does nothing.
-  - `start()` issues `removePeer` for an already-denied peer in the **initial** deny-set (boot live-disconnect).
-  - orphan sweep deletes a rule whose target no longer exists.
-  Use dependency injection or `require` stubbing for `wireguard.removePeer` and `caddySync.requestCaddySync`.
-- [ ] **Step 2:** run → FAIL. **Step 3:** implement: module state `lastDenied = new Set()` of `"type:id"`. `reconcile(now=new Date())`:
-  1. orphan sweep: delete `access_rules` where target row missing.
-  2. compute current deny-set over all targets that have rules (`evaluate`).
-  3. diff vs `lastDenied`: for each newly-denied **peer**, `await wireguard.removePeer(pubkey)`; collect whether any route or peer changed.
-  4. if changed: `await require('./caddySync').requestCaddySync()` (routes) and `await require('./peers').rewriteWgConfig()` (peers, via the chain); activity-log each transition.
-  5. set `lastDenied`.
-  `reconcileNow()` = `reconcile()`. `start()`: treat `lastDenied` as empty, run one `reconcile()` (so initial denied peers get `removePeer`), then `setInterval(reconcile, 60000).unref()`. `stop()` clears the interval. Wire `accessReconciler.start()` into the server start hooks (`src/server.js`, alongside the other startup tasks — after migrations/WG init).
-- [ ] **Step 4:** PASS. **Step 5:** commit `feat: accessReconciler (transitions, live peer disconnect, orphan sweep)`.
+- [ ] **Step 1: failing test** — stub `wireguard.removePeer` + `caddySync.requestCaddySync` +
+  `peers.rewriteWgConfig` (count calls); insert peers/routes + rules; drive `reconcile(now)` with explicit clocks:
+  - **allow→deny** for a peer calls `removePeer(peer.public_key)` once + requests a caddy sync; activity-logged.
+  - **deny→allow** for a peer: peer no longer in deny-set, `rewriteWgConfig` called (re-adds); activity-logged `access_window_allowed`.
+  - **no-op tick** (deny-set unchanged) calls neither removePeer nor requestCaddySync.
+  - **`start()` boot:** an already-denied peer in the **initial** deny-set gets `removePeer` (empty `lastDenied` → treated as transition); an already-denied **L4 route** in the initial set is **activity-logged** (not silent).
+  - **orphan sweep** deletes a rule whose target row no longer exists.
+- [ ] **Step 2:** run → FAIL. **Step 3:** implement. Module state `lastDenied = new Set()` of `"type:id"`. `reconcile(now = new Date())`:
+  1. **Orphan sweep — two explicit statements:**
+     `DELETE FROM access_rules WHERE target_type='route' AND target_id NOT IN (SELECT id FROM routes)` and
+     `DELETE FROM access_rules WHERE target_type='peer' AND target_id NOT IN (SELECT id FROM peers)`.
+  2. Compute the current deny-set: `SELECT DISTINCT target_type,target_id FROM access_rules` → for each, `isDenied(type,id,now)`.
+  3. Diff vs `lastDenied`. For each peer that became denied (in current, not in last), look up its key
+     (`SELECT public_key FROM peers WHERE id=?`) and `await wireguard.removePeer(public_key)`. Track
+     `routesChanged` / `peersChanged`. **Activity-log every transition in both directions** —
+     `access_window_denied` / `access_window_allowed` with `{target_type, target_id, schedule}` — and on
+     `start()`'s first run, log/disconnect the **entire** initial deny-set (since `lastDenied` is empty),
+     so boot-time denies (incl. L4 routes) are not silent.
+  4. If `routesChanged`: `await require('./caddySync').requestCaddySync()`. If `peersChanged`:
+     `await require('./peers').rewriteWgConfig()` (serialized via `_wgRewriteChain`). `removePeer` is
+     called **directly** (step 3), never through the coalesced sync, so it can't be dropped.
+  5. `lastDenied = current`.
+  `reconcileNow()` = `await reconcile()`. `start()`: run one `await reconcile()` (initial set treated as
+  transitions), then `this._timer = setInterval(() => reconcile().catch(()=>{}), 60000); this._timer.unref();`.
+  `stop()` clears the timer.
+- [ ] **Step 3b: wire boot + shutdown.** In `src/server.js`, call `accessReconciler.start()` **alongside
+  the other start hooks** (next to `startMonitor()` / `caddyReconciler.startReconciler()` in the
+  `app.listen` callback — NOT gated on the deferred 2 s WG `setTimeout`; `start()`'s own initial
+  `reconcile()` issues `removePeer` + a WG rewrite independently, and `_wgRewriteChain` serializes it
+  against the boot rewrite, so order is safe). Add `accessReconciler.stop()` to the shutdown stoppers array.
+- [ ] **Step 4:** PASS. **Step 5:** commit `feat: accessReconciler (transitions, live peer disconnect, orphan sweep, boot)`.
 
 ---
 
@@ -292,9 +361,28 @@ Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should c
 
 **Files:** Modify `src/services/caddyConfig.js` (`buildCaddyConfig`); Create `src/services/caddyAccessWindow.js`; Test `tests/access_caddy_build.test.js`.
 
-- [ ] **Step 1: failing test** — build the config (the real exported builder, e.g. `buildCaddyConfig()`) for: a denied HTTP route → its server route handler is a `static_response` (403), not the reverse_proxy; an allowed route → normal; a denied L4 route → absent from the `layer4` app. Stub `accessRules.isDenied` to force states.
-- [ ] **Step 2:** run → FAIL. **Step 3:** in `buildCaddyConfig`, capture `const now = new Date()` once; for each HTTP route, `if (require('./accessRules').isDenied('route', route.id, now))` → emit a route whose handler is `{ handler:'static_response', status_code:403, body: caddyAccessWindow.renderAccessWindowPage({...}), headers:{'Content-Type':['text/html; charset=utf-8']} }` instead of the normal handler chain (skip forward_auth). For L4 routes, exclude denied ones from `activeL4Routes`. Create `caddyAccessWindow.js` mirroring `caddyMaintenance.renderMaintenancePage` (render an "access window" njk page; reuse `gateway-offline.njk` or add a small template — keep it simple, i18n keys via the `t`=identity global).
-- [ ] **Step 4:** PASS + run existing `tests/caddyConfig_*.test.js` to confirm no regression. **Step 5:** commit `feat: caddy emits 403 access-window page / omits denied L4`.
+- [ ] **Step 1: failing test** — build the config (real builder, e.g. `buildCaddyConfig()`) for: a denied
+  HTTP route → its server route handler is a `static_response` (403), not the reverse_proxy; an allowed
+  route → normal; a denied L4 route → absent from the `layer4` app. Stub `accessRules.isDenied` to force
+  states. Also assert the **no-rules common case** is unchanged (the existing `caddyConfig_contract`
+  determinism + a fixture with no `access_rules` rows still byte-identical).
+- [ ] **Step 2:** run → FAIL. **Step 3:**
+  - In `buildCaddyConfig`, capture `const now = new Date()` once. **Short-circuit:** call
+    `accessRules.anyRulesExist()` (a new cheap `SELECT 1 FROM access_rules LIMIT 1`) once; if false, skip
+    all `isDenied` checks entirely → the no-rules path is a true no-op and output is byte-identical
+    (protects the `caddyConfig_contract` determinism test + adds zero per-route query cost for the
+    common case). Add `anyRulesExist()` to `accessRules.js`.
+  - For each HTTP route, `if (rulesExist && require('./accessRules').isDenied('route', route.id, now))`
+    → emit a route whose handler is `{ handler:'static_response', status_code:403, body: <html>,
+    headers:{'Content-Type':['text/html; charset=utf-8']} }` instead of the normal chain (skip forward_auth).
+  - For L4, exclude denied routes from `activeL4Routes` (gated on `rulesExist`).
+  - Create `caddyAccessWindow.js` `renderAccessWindowPage(ctx)` mirroring
+    `caddyMaintenance.renderMaintenancePage` BUT — since it renders server-side with `t = identity`
+    (which returns the key, not localized text) — the template must **hardcode the human-readable
+    copy** (a short bilingual DE/EN "Access is only permitted during the configured hours" page), NOT
+    `t('access.page_title')`. The body must contain **no `now`/timestamp** string (determinism). Show
+    the route's human-readable schedule (passed in `ctx`).
+- [ ] **Step 4:** PASS + run existing `tests/caddyConfig_*.test.js` (esp. `caddyConfig_contract`) to confirm no regression. **Step 5:** commit `feat: caddy emits 403 access-window page / omits denied L4`.
 
 ---
 
@@ -302,8 +390,19 @@ Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should c
 
 **Files:** Modify `src/services/routes.js` (delete + `batch('delete')`); Modify `src/services/peers.js` (delete + `batch('delete')`); Test `tests/access_cascade_delete.test.js`.
 
-- [ ] **Step 1: failing test** — create a route + a peer, add rules to each; delete the route (single) and the peer (via batch); assert `access_rules` for both targets are gone.
-- [ ] **Step 2:** run → FAIL. **Step 3:** in each delete path call `require('./accessRules').deleteForTarget('route'|'peer', id)` in the same statement sequence as the row delete (wrap in a `db.transaction` if the existing path isn't already transactional). **Step 4:** PASS. **Step 5:** commit `feat: cascade-delete access rules with route/peer`.
+- [ ] **Step 1: failing test** — create a route + a peer, add rules to each; delete the route (single
+  `routes.remove`) and the peer (via `peers.batch('delete', [...])`); assert `access_rules` for both
+  targets are gone. (For peers also test single `peers.remove`.)
+- [ ] **Step 2:** run → FAIL. **Step 3:** all four paths — `routes.remove`, `routes.batch('delete')`,
+  `peers.remove`, `peers.batch('delete')` — must delete the target's `access_rules` **in the same DB
+  transaction** as the row delete. The single deletes (`routes.remove` ~607, `peers.remove` ~239) are
+  **not** currently `db.transaction`-wrapped (their `withCaddySync`/rollback is a Caddy-failure
+  compensator, not a transaction) → wrap `row-delete + deleteForTarget` in one `db.transaction(() => {…})`.
+  The batch paths (`routes.batch` ~710, `peers.batch` ~646) likewise wrap the bulk `DELETE … WHERE id IN
+  (…)` + a matching `DELETE FROM access_rules WHERE target_type=? AND target_id IN (…)`. **Note:** a
+  later Caddy-sync rollback (`reinsertRouteRow`) restores the route row but **not** its rules — that's
+  intentional and acceptable (a route being deleted has moot rules); do NOT attempt to snapshot/restore
+  rules. **Step 4:** PASS. **Step 5:** commit `feat: cascade-delete access rules with route/peer`.
 
 ---
 
@@ -311,8 +410,18 @@ Note for later tasks: route/peer CRUD + `license.enforceLimitsInternal` should c
 
 **Files:** Create `src/routes/api/accessRules.js`; mount in `src/routes/api/index.js`; Test `tests/access_rules_api.test.js`.
 
-- [ ] **Step 1: failing test** — CRUD happy path; 400 on bad mode / unparseable schedule / `valid_from>valid_until`; 403 without `access_windows` (override false); 404 unknown target; GET returns `state`.
-- [ ] **Step 2:** run → FAIL. **Step 3:** create the router (`Router({mergeParams:true})`); derive `target_type` from a mount param or two mounts. POST validates via `parseSchedule` (reject `errors.length || !windows.length`) + mode + date order; calls `accessRules.createRule` then `require('../../services/accessReconciler').reconcileNow()`. GET lists rules + `evaluate().state`. PUT/DELETE update/delete + `reconcileNow()`. All `requireFeature('access_windows')`. Mount BEFORE `/routes` and `/peers`:
+- [ ] **Step 1: failing test** — CRUD happy path; 400 on bad mode / unparseable schedule (use a garbage
+  schedule like `'Montag 9-17'`) / `valid_from>valid_until`; **403 without the flag** — the harness sets
+  `access_windows: true`, so this case must `require('../src/services/license')._overrideForTest({ access_windows:false })`
+  before the call and reset after; 404 unknown target; GET returns `{ rules, state, rule }` (the matched/active rule for the badge).
+- [ ] **Step 2:** run → FAIL. **Step 3:** the router is a **factory** closing over `target_type`
+  (`module.exports = (target_type) => { const router = Router({ mergeParams:true }); …; return router; }`)
+  — note this differs from `routeAuth.js` (which exports a plain Router); don't copy its shape. POST
+  validates via `parseSchedule` (reject if `errors.length || !windows.length`) + mode ∈ {allow,block} +
+  date order; verifies the target row exists (404 else); `accessRules.createRule` then `await
+  require('../../services/accessReconciler').reconcileNow()`. GET returns `{ ok, rules: listRules(...),
+  state: evaluate(...).state, rule: evaluate(...).reason.rule || null }`. PUT/DELETE + `reconcileNow()`.
+  All under `requireFeature('access_windows')`. Mount BEFORE `/routes` and `/peers`:
 ```js
 router.use('/routes/:id/access-rules', require('./accessRules')('route'));
 router.use('/peers/:id/access-rules', require('./accessRules')('peer'));
@@ -326,7 +435,14 @@ router.use('/peers/:id/access-rules', require('./accessRules')('peer'));
 
 **Files:** `src/i18n/{en,de}.json`; both `layout.njk`; Test `tests/access_windows_i18n.test.js`.
 
-- [ ] Flat keys (en+de): `access.title`, `access.add_rule`, `access.mode_allow`, `access.mode_block`, `access.schedule`, `access.valid_from`, `access.valid_until`, `access.label`, `access.state_allowed`, `access.state_blocked`, `access.delete`, `access.err_schedule`, `access.err_date_order`, `access.page_title`, `access.page_body` (the 403 page). Test asserts `k in en && k in de` for the client-read subset; run `tests/i18n_update_keys.test.js`. Whitelist the client-read keys in both `layout.njk`. Commit `feat: access-windows i18n + GC.t`.
+- [ ] Flat keys (en+de) for the **UI** (client): `access.title`, `access.add_rule`, `access.mode_allow`,
+  `access.mode_block`, `access.schedule`, `access.valid_from`, `access.valid_until`, `access.label`,
+  `access.state_allowed`, `access.state_blocked`, `access.delete`, `access.err_schedule`,
+  `access.err_date_order`. (The 403 access-window PAGE is rendered server-side with `t = identity`, so
+  its copy is **hardcoded bilingual in the njk template**, NOT i18n keys — Task 8.) Test asserts
+  `k in en && k in de` for these keys (the existing `tests/i18n_update_keys.test.js` only checks
+  hardcoded gateway lists, so it won't validate these — your own test is the real check; still run it to
+  confirm no regression). Whitelist the client-read keys in both `layout.njk`. Commit `feat: access-windows i18n + GC.t`.
 
 ---
 
