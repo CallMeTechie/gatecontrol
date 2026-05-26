@@ -1241,12 +1241,22 @@
     // Reset any share-managed read-only state from a previously edited route
     setRouteAuthShareManaged(false);
 
-    // Load route auth config from API
+    // Load route auth config from API. A route can carry two auth truths at
+    // once (basic_auth_enabled AND a route_auth row); Caddy resolves this with
+    // Basic Auth winning (caddyConfig.js). The "effective active method" mirrors
+    // that precedence and drives both the SELECTED tab and the green indicator:
+    //   basic_auth_enabled        -> 'basic'
+    //   else route_auth row exists -> 'route'
+    //   else                       -> 'none'
     var authIsShareManaged = false;
+    var hasRouteAuth = false;
     try {
       var authData = await api.get('/api/routes/' + id + '/auth');
       if (authData.ok && authData.data) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'route');
+        // Always populate the route-auth fields from the API data so that
+        // switching to the Route-Auth tab shows the prior values, even when
+        // Basic Auth is the effective-active method (dead route_auth row).
+        hasRouteAuth = true;
         var auth = authData.data;
         var email = auth.email || '';
         var sessionAge = String(auth.session_max_age || 86400000);
@@ -1276,13 +1286,23 @@
           }
           if (raDuration) raDuration.value = sessionAge;
         }
-      } else if (route.basic_auth_enabled) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
       }
     } catch (err) {
-      if (route.basic_auth_enabled) {
-        setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'basic');
-      }
+      // Auth fetch failed — fall back to whatever the route record tells us.
+    }
+
+    // Effective-active method: Basic wins over a (possibly dead) route_auth row.
+    var activeMethod = route.basic_auth_enabled ? 'basic' : (hasRouteAuth ? 'route' : 'none');
+    // Select the tab matching the effective-active method (blue ".on").
+    setToggleGroup('edit-auth-type-group', 'edit-auth-type', activeMethod);
+    // Green indicator: mark the active method's tab. Reset on every open, then
+    // set once. This is independent of ".on" (blue selected/visited) so green
+    // stays put while the user clicks around between tabs.
+    var authTypeGroupEl = document.getElementById('edit-auth-type-group');
+    if (authTypeGroupEl) {
+      authTypeGroupEl.querySelectorAll('.toggle-btn').forEach(function (b) {
+        b.classList.toggle('method-active', b.dataset.value === activeMethod);
+      });
     }
 
     updateEditAuthTypeUI();

@@ -718,6 +718,13 @@ a { color: inherit; text-decoration: none; }
   background: var(--accent);
   color: #fff;
 }
+/* Green = effective-active auth method. Scoped to the auth-type group so its
+   #id specificity beats the blue .on (green wins when a tab is both active and
+   visited) and other toggle-groups stay blue. */
+#edit-auth-type-group .toggle-btn.method-active {
+  background: var(--green);
+  color: #fff;
+}
 
 /* ─── Form Select & Hint ───────────────────────────────── */
 .form-select {
