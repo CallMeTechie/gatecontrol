@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.4] — 2026-05-26
+
+### Fixes
+- route-auth session cookie SameSite=Lax so share-link sessions survive cross-site arrival (#111)
+
+---
+
 ## [1.70.3] — 2026-05-26
 
 ### Fixes
