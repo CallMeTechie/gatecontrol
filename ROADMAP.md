@@ -63,6 +63,7 @@ The gateway scans its LAN (mDNS / SSDP / ARP) and suggests devices/ports as rout
 ## 📥 Carried over from backlog
 
 - **ASN filter per route** — autonomous-system allow/deny lists (the unbuilt half of the former "Geo-/ASN filter" item). Needs an IP→ASN source; ip2location.io may already return ASN on the existing per-IP lookup, so this could land as a 4th `asn` rule type on the IP filter. Tier: Pro.
+- **True ARP sweep for LAN discovery** — optional add-on to #8: a raw-socket ARP sweep (requires `NET_RAW` on the gateway container) to also surface LAN hosts that have *no* open common ports — beyond the v1 TCP-connect sweep, which finds liveness + open ports without `NET_RAW`. Deferred from #8 v1. Tier: Pro (gateway).
 - **Log streaming** — Activity/access logs → Syslog / Loki / ELK (Pino transports).
 - **WireGuard 2FA** — second factor on the VPN connect itself, not just the web login.
 - **Device approval** — new peers stay `pending` until an admin confirms.
