@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.7] — 2026-05-27
+
+### Dokumentation
+- #8 discovery — address devil's-advocate round 2 (request_id reconciliation, ingest validation/escaping, capability flag in phase 2, ingest rate-limit, SSDP no-fetch, drop min-version); active-scan default off confirmed
+
+---
+
 ## [1.72.6] — 2026-05-27
 
 ### Dokumentation
