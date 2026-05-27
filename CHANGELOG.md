@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.2] — 2026-05-27
+
+### Dokumentation
+- resolve #5 — geo/country filter already shipped; ASN → backlog
+
+---
+
 ## [1.72.1] — 2026-05-27
 
 ### Fixes
