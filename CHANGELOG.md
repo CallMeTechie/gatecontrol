@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.71.0] — 2026-05-27
+
+### Features
+- scheduled access windows (#4) (#113)
+
+---
+
 ## [1.70.6] — 2026-05-26
 
 ### Fixes
