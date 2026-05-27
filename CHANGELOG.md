@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.6] — 2026-05-27
+
+### Dokumentation
+- #8 discovery — address devil's-advocate round 1 (capability detection, multicast binding, active-scan opt-in, request_id, phasing, SSE scoping, cancel, staleness re-probe)
+
+---
+
 ## [1.72.5] — 2026-05-27
 
 ### Dokumentation
