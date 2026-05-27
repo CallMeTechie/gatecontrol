@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.0] — 2026-05-27
+
+### Features
+- access windows in create-route modal (#114)
+
+---
+
 ## [1.71.0] — 2026-05-27
 
 ### Features
