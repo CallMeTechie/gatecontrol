@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.1] — 2026-05-27
+
+### Fixes
+- access-windows rule builder — day toggles + time pickers + labels + CSS (#115)
+
+---
+
 ## [1.72.0] — 2026-05-27
 
 ### Features
