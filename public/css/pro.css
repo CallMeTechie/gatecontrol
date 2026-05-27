@@ -1345,7 +1345,7 @@ a:hover { text-decoration: underline; }
 .field-invalid { border-color: var(--red) !important; }
 
 /* Native input fallback */
-input[type=text], input[type=search], input[type=password], input[type=email], input[type=number], select {
+input[type=text], input[type=search], input[type=password], input[type=email], input[type=number], input[type=time], input[type=date], select {
   background: var(--bg-input);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
@@ -1363,6 +1363,8 @@ input[type=text]:focus,
 input[type=search]:focus,
 input[type=password]:focus,
 input[type=email]:focus,
+input[type=time]:focus,
+input[type=date]:focus,
 select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);

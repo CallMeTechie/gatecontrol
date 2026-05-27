@@ -835,6 +835,13 @@
     currentWizardStep = 1;
     createAccessRules.length = 0;
     renderCreateAccessRules();
+    var createForm = document.getElementById('create-access-rules-form');
+    if (createForm) {
+      renderAccessRuleForm(createForm, function (rule) {
+        createAccessRules.push(rule);
+        renderCreateAccessRules();
+      });
+    }
     routeModalOverlay.style.display = 'flex';
     showWizardStep(1);
     setTimeout(() => {
@@ -3496,61 +3503,154 @@
     }
   }
 
+  // Week order (Mo..So). Used to map day codes to indices for contiguity
+  // detection when building the server-side schedule string.
+  var ACCESS_DAY_CODES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+  // Builds the legacy `Mo-Fr 09:00-17:00` schedule string the server parser
+  // still expects. `dayCodes` is a subset of ACCESS_DAY_CODES in week order.
+  // Contiguous (length > 1) → range; single → one day; non-contiguous → list.
+  function buildScheduleString(dayCodes, from, to) {
+    if (!dayCodes || !dayCodes.length) return '';
+    var idx = dayCodes.map(function (d) { return ACCESS_DAY_CODES.indexOf(d); });
+    var first = idx[0];
+    var last = idx[idx.length - 1];
+    var contiguous = (last - first) === (idx.length - 1);
+    if (dayCodes.length > 1 && contiguous) {
+      return ACCESS_DAY_CODES[first] + '-' + ACCESS_DAY_CODES[last] + ' ' + from + '-' + to;
+    }
+    if (dayCodes.length === 1) {
+      return dayCodes[0] + ' ' + from + '-' + to;
+    }
+    return dayCodes.map(function (d) { return d + ' ' + from + '-' + to; }).join('; ');
+  }
+
+  // Shared access-rule builder used by BOTH the edit modal and the create
+  // wizard. Renders labelled controls (mode toggle, day multi-select, time +
+  // date pickers, optional label), validates, builds the schedule string and
+  // invokes onAdd({ mode, schedule, valid_from, valid_until, label }). On a
+  // successful add (onAdd returns a non-false value) the day/time/date/label
+  // controls reset. Safe-DOM only (el()/textContent — never innerHTML).
+  function renderAccessRuleForm(container, onAdd) {
+    if (!container) return;
+    container.textContent = '';
+
+    function lbl(key, fallback) {
+      return el('label', { class: 'form-label' }, [shareT(key, fallback)]);
+    }
+    function lblOpt(key, fallback) {
+      return el('label', { class: 'form-label' }, [
+        shareT(key, fallback) + ' (' + shareT('access.optional', 'optional') + ')',
+      ]);
+    }
+
+    // Mode toggle (single-select).
+    var selectedMode = 'allow';
+    var modeAllowBtn = el('button', { type: 'button', class: 'toggle-btn on', text: shareT('access.mode_allow', 'Allow') });
+    var modeBlockBtn = el('button', { type: 'button', class: 'toggle-btn', text: shareT('access.mode_block', 'Block') });
+    function selectMode(mode) {
+      selectedMode = mode;
+      modeAllowBtn.className = 'toggle-btn' + (mode === 'allow' ? ' on' : '');
+      modeBlockBtn.className = 'toggle-btn' + (mode === 'block' ? ' on' : '');
+    }
+    modeAllowBtn.addEventListener('click', function () { selectMode('allow'); });
+    modeBlockBtn.addEventListener('click', function () { selectMode('block'); });
+    var modeGroup = el('div', { class: 'toggle-group' }, [modeAllowBtn, modeBlockBtn]);
+
+    // Day multi-select toggles (Mo..So).
+    var dayBtns = ACCESS_DAY_CODES.map(function (code) {
+      var btn = el('button', { type: 'button', class: 'toggle-btn', text: code });
+      btn.dataset.day = code;
+      btn.addEventListener('click', function () {
+        if (btn.className.indexOf('on') >= 0) btn.className = 'toggle-btn';
+        else btn.className = 'toggle-btn on';
+      });
+      return btn;
+    });
+    var dayGroup = el('div', { class: 'toggle-group' }, dayBtns);
+    function selectedDays() {
+      return dayBtns.filter(function (b) { return b.className.indexOf('on') >= 0; })
+        .map(function (b) { return b.dataset.day; });
+    }
+
+    // Time pickers.
+    var fromTime = el('input', { type: 'time', class: 'form-input' });
+    var toTime = el('input', { type: 'time', class: 'form-input' });
+
+    // Optional date bounds.
+    var fromDate = el('input', { type: 'date', class: 'form-input' });
+    var untilDate = el('input', { type: 'date', class: 'form-input' });
+
+    // Optional label.
+    var labelInput = el('input', { type: 'text', class: 'form-input', maxlength: '120' });
+
+    var errBox = el('small', { class: 'form-hint', style: 'display:none;color:var(--red,#e5484d)' });
+    var addBtn = el('button', { type: 'button', class: 'btn btn-sm', text: shareT('access.add_rule', 'Add rule') });
+
+    addBtn.addEventListener('click', function () {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+      var days = selectedDays();
+      if (!days.length) {
+        errBox.textContent = shareT('access.err_days', 'Select at least one day');
+        errBox.style.display = '';
+        return;
+      }
+      var von = fromTime.value;
+      var bis = toTime.value;
+      if (!von || !bis) {
+        errBox.textContent = shareT('access.err_time', 'Select a from and to time');
+        errBox.style.display = '';
+        return;
+      }
+      var schedule = buildScheduleString(days, von, bis);
+      var ok = onAdd({
+        mode: selectedMode,
+        schedule: schedule,
+        valid_from: fromDate.value || null,
+        valid_until: untilDate.value || null,
+        label: labelInput.value.trim() || null,
+      });
+      // onAdd may be async/POST-based (returns undefined) or sync (returns
+      // truthy). Only block reset on an explicit false.
+      if (ok === false) return;
+      dayBtns.forEach(function (b) { b.className = 'toggle-btn'; });
+      fromTime.value = '';
+      toTime.value = '';
+      fromDate.value = '';
+      untilDate.value = '';
+      labelInput.value = '';
+    });
+
+    container.appendChild(el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:8px' }, [
+      el('div', { class: 'form-group' }, [lbl('access.mode', 'Mode'), modeGroup]),
+      el('div', { class: 'form-group' }, [lbl('access.days', 'Days'), dayGroup]),
+      el('div', { class: 'form-row' }, [
+        el('div', { class: 'form-group' }, [lbl('access.time_from', 'From'), fromTime]),
+        el('div', { class: 'form-group' }, [lbl('access.time_to', 'To'), toTime]),
+      ]),
+      el('div', { class: 'form-row' }, [
+        el('div', { class: 'form-group' }, [lblOpt('access.valid_from', 'Valid from'), fromDate]),
+        el('div', { class: 'form-group' }, [lblOpt('access.valid_until', 'Valid until'), untilDate]),
+      ]),
+      el('div', { class: 'form-group' }, [lblOpt('access.label', 'Label'), labelInput]),
+      el('div', {}, [addBtn]),
+      errBox,
+    ]));
+  }
+
   function renderAccessAddForm(targetId) {
     var formWrap = document.getElementById('access-rules-form');
     if (!formWrap) return;
-    formWrap.textContent = '';
-
-    var modeSelect = el('select', { class: 'form-select', style: 'flex:0 0 110px' }, [
-      el('option', { value: 'allow', text: shareT('access.mode_allow', 'Allow') }),
-      el('option', { value: 'block', text: shareT('access.mode_block', 'Block') }),
-    ]);
-
-    var scheduleInput = el('input', {
-      type: 'text',
-      class: 'form-input',
-      placeholder: 'Mo-Fr 09:00-17:00',
-      style: 'flex:1;font-family:var(--font-mono)',
+    var errBox = el('div', { class: 'form-error', style: 'display:none' });
+    renderAccessRuleForm(formWrap, function (rule) {
+      // addAccessRule POSTs then re-renders the whole form via loadAccessRules
+      // on success (which resets it anyway), and keeps inputs on error. Return
+      // false so the builder's own reset never fires for the edit modal.
+      addAccessRule(targetId, rule, errBox);
+      return false;
     });
-
-    var fromInput = el('input', { type: 'date', class: 'form-input', style: 'flex:1' });
-    var untilInput = el('input', { type: 'date', class: 'form-input', style: 'flex:1' });
-
-    var labelInput = el('input', {
-      type: 'text',
-      class: 'form-input',
-      maxlength: '120',
-      placeholder: shareT('access.label', 'Label'),
-      style: 'flex:1',
-    });
-
-    var errBox = el('div', { class: 'form-error', style: 'display:none;font-size:12px' });
-
-    var submitBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: shareT('access.add_rule', 'Add rule') });
-    submitBtn.addEventListener('click', function () {
-      addAccessRule(targetId, {
-        mode: modeSelect.value,
-        schedule: scheduleInput.value.trim(),
-        valid_from: fromInput.value || undefined,
-        valid_until: untilInput.value || undefined,
-        label: labelInput.value.trim() || undefined,
-      }, errBox);
-    });
-
-    formWrap.appendChild(el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:8px' }, [
-      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [modeSelect, scheduleInput]),
-      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [
-        el('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
-          shareT('access.valid_from', 'Valid from'), fromInput,
-        ]),
-        el('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
-          shareT('access.valid_until', 'Valid until'), untilInput,
-        ]),
-      ]),
-      labelInput,
-      errBox,
-      el('div', {}, [submitBtn]),
-    ]));
+    formWrap.appendChild(errBox);
   }
 
   async function addAccessRule(targetId, body, errBox) {
@@ -3627,42 +3727,9 @@
     });
   }
 
-  function addCreateAccessRule() {
-    var errBox = document.getElementById('create-access-err');
-    var modeEl = document.getElementById('create-access-mode');
-    var scheduleEl = document.getElementById('create-access-schedule');
-    var fromEl = document.getElementById('create-access-from');
-    var untilEl = document.getElementById('create-access-until');
-    var labelEl = document.getElementById('create-access-label');
-
-    var schedule = (scheduleEl && scheduleEl.value || '').trim();
-    if (!schedule) {
-      if (errBox) {
-        errBox.textContent = (GC.t && GC.t['access.err_schedule']) || 'Invalid schedule';
-        errBox.style.display = '';
-      }
-      return;
-    }
-
-    var rule = { mode: (modeEl && modeEl.value) || 'allow', schedule: schedule };
-    var from = fromEl && fromEl.value;
-    var until = untilEl && untilEl.value;
-    var label = (labelEl && labelEl.value || '').trim();
-    if (from) rule.valid_from = from;
-    if (until) rule.valid_until = until;
-    if (label) rule.label = label;
-    createAccessRules.push(rule);
-
-    if (scheduleEl) scheduleEl.value = '';
-    if (fromEl) fromEl.value = '';
-    if (untilEl) untilEl.value = '';
-    if (labelEl) labelEl.value = '';
-    if (errBox) { errBox.textContent = ''; errBox.style.display = 'none'; }
-    renderCreateAccessRules();
-  }
-
-  var createAccessAddBtn = document.getElementById('create-access-add');
-  if (createAccessAddBtn) createAccessAddBtn.addEventListener('click', addCreateAccessRule);
+  // The create-route access form is rendered by renderAccessRuleForm() from
+  // openRouteWizard(); rules are buffered in createAccessRules and POSTed after
+  // the route is created. No standalone add handler is needed here anymore.
 })();
 
 (() => {

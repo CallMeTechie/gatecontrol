@@ -427,18 +427,7 @@
           <div id="create-access-windows-section" style="margin-top:14px">
             <label class="form-label">{{ t('access.title') }}</label>
             <div id="create-access-rules-list"></div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-              <select id="create-access-mode" class="form-select" style="flex:0 0 auto;padding:8px 12px">
-                <option value="allow">{{ t('access.mode_allow') }}</option>
-                <option value="block">{{ t('access.mode_block') }}</option>
-              </select>
-              <input id="create-access-schedule" placeholder="Mo-Fr 09:00-17:00" style="flex:1;min-width:140px;padding:8px 12px">
-              <input id="create-access-from" type="date" title="{{ t('access.valid_from') }}" style="padding:8px 12px">
-              <input id="create-access-until" type="date" title="{{ t('access.valid_until') }}" style="padding:8px 12px">
-              <input id="create-access-label" placeholder="{{ t('access.label') }}" style="flex:0 0 120px;padding:8px 12px">
-              <button type="button" class="btn btn-sm" id="create-access-add">{{ t('access.add_rule') }}</button>
-            </div>
-            <small id="create-access-err" class="form-hint" style="display:none"></small>
+            <div id="create-access-rules-form"></div>
           </div>
           {% endif %}
           </div> {# /step 3 #}
