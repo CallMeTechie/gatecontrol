@@ -1161,6 +1161,13 @@
       }
     }
 
+    // Access windows (Pro: access_windows — section only present when the flag is on)
+    var accessSection = document.getElementById('access-windows-section');
+    if (accessSection) {
+      accessSection.setAttribute('data-target-id', String(id));
+      loadAccessRules(id);
+    }
+
     hideError('edit-peer-error');
     clearFieldErrors();
     openModal('modal-edit-peer');
@@ -2206,4 +2213,206 @@
   document.addEventListener('gc:peer', function () { loadPeers(); });
   document.addEventListener('gc:gateway', function () { loadPeers(); });
   document.addEventListener('gc:reconnected', function () { loadPeers(); });
+
+  // ─── Access windows (scheduled access control) ───────────────────────────
+  // A Pro-gated subsection in the peer-edit modal: a state badge, a rule list
+  // and an add-rule form, driven by /api/v1/peers/:id/access-rules. Safe-DOM
+  // only (el()/textContent — never innerHTML); CSRF via the X-CSRF-Token header.
+
+  function accessT(key, fallback) {
+    return (typeof GC !== 'undefined' && GC.t && GC.t[key]) || fallback;
+  }
+
+  function accessEl(tag, props, children) {
+    var node = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        if (k === 'class') node.className = props[k];
+        else if (k === 'text') node.textContent = props[k];
+        else if (k === 'style') node.setAttribute('style', props[k]);
+        else node.setAttribute(k, props[k]);
+      });
+    }
+    (children || []).forEach(function (c) {
+      if (c == null) return;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function accessFetch(url, options) {
+    var opts = options || {};
+    opts.headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+    if (opts.method && opts.method !== 'GET') {
+      opts.headers['X-CSRF-Token'] = window.GC.csrfToken;
+    }
+    return fetch(url, opts);
+  }
+
+  function accessFmtBounds(rule) {
+    var parts = [];
+    if (rule.valid_from) parts.push(accessT('access.valid_from', 'Valid from') + ': ' + rule.valid_from);
+    if (rule.valid_until) parts.push(accessT('access.valid_until', 'Valid until') + ': ' + rule.valid_until);
+    return parts.join(' · ');
+  }
+
+  function renderAccessRuleRow(targetId, rule) {
+    var isBlock = rule.mode === 'block';
+    var chip = accessEl('span', {
+      style: 'display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;'
+        + (isBlock
+          ? 'background:rgba(229,72,77,0.15);color:var(--red,#e5484d)'
+          : 'background:rgba(48,164,108,0.15);color:var(--green,#30a46c)'),
+      text: isBlock ? accessT('access.mode_block', 'Block') : accessT('access.mode_allow', 'Allow'),
+    });
+
+    var lines = [accessEl('div', { style: 'font-size:12px;font-family:var(--font-mono);color:var(--text-1)', text: rule.schedule || '' })];
+    var bounds = accessFmtBounds(rule);
+    if (bounds) lines.push(accessEl('div', { style: 'font-size:11px;color:var(--text-2)', text: bounds }));
+    if (rule.label) lines.push(accessEl('div', { style: 'font-size:11px;color:var(--text-2)', text: rule.label }));
+
+    var info = accessEl('div', { style: 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px' }, lines);
+
+    var delBtn = accessEl('button', {
+      type: 'button',
+      class: 'btn btn-sm',
+      text: accessT('access.delete', 'Delete rule'),
+    });
+    delBtn.addEventListener('click', function () {
+      deleteAccessRule(targetId, rule.id);
+    });
+
+    return accessEl('div', {
+      style: 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)',
+    }, [chip, info, delBtn]);
+  }
+
+  function renderAccessStateBadge(state) {
+    var badge = document.getElementById('access-state-badge');
+    if (!badge) return;
+    badge.textContent = '';
+    if (state === 'denied') {
+      badge.appendChild(document.createTextNode('🔴 ' + accessT('access.state_blocked', 'Blocked now')));
+      badge.style.color = 'var(--red,#e5484d)';
+    } else {
+      badge.appendChild(document.createTextNode('🟢 ' + accessT('access.state_allowed', 'Allowed now')));
+      badge.style.color = 'var(--green,#30a46c)';
+    }
+  }
+
+  async function loadAccessRules(targetId) {
+    var list = document.getElementById('access-rules-list');
+    if (!list) return;
+    list.textContent = '';
+    var badge = document.getElementById('access-state-badge');
+    if (badge) badge.textContent = '';
+    try {
+      var res = await accessFetch('/api/v1/peers/' + targetId + '/access-rules');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      renderAccessStateBadge(data && data.state);
+      var rules = (data && data.rules) || [];
+      if (!rules.length) {
+        list.appendChild(accessEl('div', { class: 'form-hint', text: accessT('access.title', 'Access windows') + ' —' }));
+      } else {
+        rules.forEach(function (rule) {
+          list.appendChild(renderAccessRuleRow(targetId, rule));
+        });
+      }
+      renderAccessAddForm(targetId);
+    } catch (err) {
+      list.appendChild(accessEl('div', { class: 'form-hint', text: err.message }));
+    }
+  }
+
+  function renderAccessAddForm(targetId) {
+    var formWrap = document.getElementById('access-rules-form');
+    if (!formWrap) return;
+    formWrap.textContent = '';
+
+    var modeSelect = accessEl('select', { class: 'form-select', style: 'flex:0 0 110px' }, [
+      accessEl('option', { value: 'allow', text: accessT('access.mode_allow', 'Allow') }),
+      accessEl('option', { value: 'block', text: accessT('access.mode_block', 'Block') }),
+    ]);
+
+    var scheduleInput = accessEl('input', {
+      type: 'text',
+      class: 'form-input',
+      placeholder: 'Mo-Fr 09:00-17:00',
+      style: 'flex:1;font-family:var(--font-mono)',
+    });
+
+    var fromInput = accessEl('input', { type: 'date', class: 'form-input', style: 'flex:1' });
+    var untilInput = accessEl('input', { type: 'date', class: 'form-input', style: 'flex:1' });
+
+    var labelInput = accessEl('input', {
+      type: 'text',
+      class: 'form-input',
+      maxlength: '120',
+      placeholder: accessT('access.label', 'Label'),
+      style: 'flex:1',
+    });
+
+    var errBox = accessEl('div', { class: 'form-error', style: 'display:none;font-size:12px' });
+
+    var submitBtn = accessEl('button', { type: 'button', class: 'btn btn-primary btn-sm', text: accessT('access.add_rule', 'Add rule') });
+    submitBtn.addEventListener('click', function () {
+      addAccessRule(targetId, {
+        mode: modeSelect.value,
+        schedule: scheduleInput.value.trim(),
+        valid_from: fromInput.value || undefined,
+        valid_until: untilInput.value || undefined,
+        label: labelInput.value.trim() || undefined,
+      }, errBox);
+    });
+
+    formWrap.appendChild(accessEl('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:8px' }, [
+      accessEl('div', { style: 'display:flex;gap:8px;align-items:center' }, [modeSelect, scheduleInput]),
+      accessEl('div', { style: 'display:flex;gap:8px;align-items:center' }, [
+        accessEl('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
+          accessT('access.valid_from', 'Valid from'), fromInput,
+        ]),
+        accessEl('label', { style: 'flex:1;font-size:11px;color:var(--text-2);display:flex;flex-direction:column;gap:2px' }, [
+          accessT('access.valid_until', 'Valid until'), untilInput,
+        ]),
+      ]),
+      labelInput,
+      errBox,
+      accessEl('div', {}, [submitBtn]),
+    ]));
+  }
+
+  async function addAccessRule(targetId, body, errBox) {
+    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+    var payload = { mode: body.mode, schedule: body.schedule };
+    if (body.valid_from) payload.valid_from = body.valid_from;
+    if (body.valid_until) payload.valid_until = body.valid_until;
+    if (body.label) payload.label = body.label;
+    try {
+      var res = await accessFetch('/api/v1/peers/' + targetId + '/access-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 201) {
+        await loadAccessRules(targetId);
+        return;
+      }
+      var errData = await res.json().catch(function () { return {}; });
+      var msg = (errData && errData.error) || ('HTTP ' + res.status);
+      if (errBox) { errBox.textContent = msg; errBox.style.display = ''; }
+    } catch (err) {
+      if (errBox) { errBox.textContent = err.message; errBox.style.display = ''; }
+    }
+  }
+
+  async function deleteAccessRule(targetId, ruleId) {
+    try {
+      var res = await accessFetch('/api/v1/peers/' + targetId + '/access-rules/' + ruleId, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await loadAccessRules(targetId);
+    } catch (err) {
+      showError('edit-peer-error', err.message);
+    }
+  }
 })();

@@ -44,6 +44,7 @@ const { buildTlsAutomation } = require('./caddyTlsAutomation');
 const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubroute');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
+const { renderAccessWindowPage } = require('./caddyAccessWindow');
 const {
   caddyApi,
   _caddyApi,
@@ -129,6 +130,23 @@ function buildPoolOutageBlock(route) {
   };
 }
 
+// Human-readable schedule for a route's access-window 403 page. Joins the
+// schedules of the route's enabled allow-rules so the visitor learns when the
+// route is reachable; returns '' when none (e.g. denial is via a block rule or
+// the route has no allow-rules). Best-effort — never throws into the builder.
+function humanScheduleForRoute(routeId) {
+  try {
+    const rules = require('./accessRules').listRules('route', routeId);
+    return rules
+      .filter(r => r.enabled && r.mode === 'allow' && r.schedule)
+      .map(r => String(r.schedule).trim())
+      .filter(Boolean)
+      .join('; ');
+  } catch {
+    return '';
+  }
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
  * Build Caddy configuration JSON. Overloaded:
@@ -158,12 +176,42 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const httpRoutes = routes.filter(r => r.route_type !== 'l4');
   const l4Routes = routes.filter(r => r.route_type === 'l4');
 
+  // Scheduled access windows: consult accessRules at build time so denial is
+  // fail-closed across restarts. anyRulesExist() is a cheap short-circuit —
+  // when no access_rules exist (the common case) we skip every per-route
+  // isDenied() check, so this code path is a true no-op and the emitted config
+  // is byte-identical to before the feature existed. require('./accessRules')
+  // is resolved inline so test stubs on the module export are observed.
+  const now = new Date();
+  const rulesExist = require('./accessRules').anyRulesExist();
+
   const caddyRoutes = {};
   // Pre-assembled route entries (e.g. pool-outage 503 blocks) that bypass
   // the caddyRoutes dict and are merged directly into serverRoutes.
   const serverRoutes_pending = [];
 
   for (const route of httpRoutes) {
+    // Scheduled access window — denied right now → serve a 403 page instead of
+    // proxying. This replaces the entire normal handler chain (no upstream, no
+    // forward_auth, no basic_auth). Gated on rulesExist so the no-rules case is
+    // a true no-op.
+    if (rulesExist && require('./accessRules').isDenied('route', route.id, now)) {
+      const html = renderAccessWindowPage({ schedule: humanScheduleForRoute(route.id) });
+      caddyRoutes[route.domain] = {
+        listen: route.https_enabled ? [':443'] : [':80'],
+        routes: [{
+          '@id': `gc_route_${route.id}`,
+          handle: [{
+            handler: 'static_response',
+            status_code: 403,
+            headers: { 'Content-Type': ['text/html; charset=utf-8'] },
+            body: html,
+          }],
+        }],
+      };
+      continue;
+    }
+
     // Determine target IP: if linked to a peer, use peer's WG IP; otherwise use target_ip
     let targetIp = route.target_ip;
     if (route.peer_id && route.allowed_ips) {
@@ -578,6 +626,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   if (l4Routes.length > 0) {
     const activeL4Routes = [];
     for (const route of l4Routes) {
+      // Scheduled access window — denied right now → omit the L4 listener
+      // entirely (no static_response possible at layer4; the connection simply
+      // is not accepted). Gated on rulesExist for the no-op no-rules case.
+      if (rulesExist && require('./accessRules').isDenied('route', route.id, now)) continue;
       if (route.target_kind === 'gateway' && route.target_pool_id) {
         // Pool-aware: skip listener if pool is in outage. For load_balancing
         // mode we hand the FULL alive set + lb_policy to the L4 builder so
@@ -626,7 +678,17 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 // ─── Push config to Caddy Admin API ─────────────────────
 let lastGoodConfig = null;
 
-async function syncToCaddy() {
+// Serialize all Caddy syncs through one promise chain so concurrent callers
+// (CRUD's withCaddySync, the access reconciler's requestCaddySync, the
+// monitor's coalesced sync) run one at a time — no overlapping POST /load, no
+// stale-previousConfig clobber. Mirrors peers.js:_wgRewriteChain.
+let _syncChain = Promise.resolve();
+function syncToCaddy() {
+  _syncChain = _syncChain.then(_syncToCaddyInner, _syncToCaddyInner);
+  return _syncChain;
+}
+
+async function _syncToCaddyInner() {
   // Production-safety: skip sync in test env. caddyAdminClient's
   // caddyApi() also guards individually, but skipping the whole sync
   // here avoids even building the config and spares test runs from

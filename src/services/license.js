@@ -17,6 +17,7 @@ const COMMUNITY_FALLBACK = {
   http_routes: 1,
   l4_routes: 0,
   route_auth: false,
+  access_windows: false,
   share_links: false,
   custom_branding: false,
   ip_access_control: false,

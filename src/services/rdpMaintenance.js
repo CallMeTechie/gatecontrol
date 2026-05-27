@@ -112,7 +112,22 @@ function parseMaintenanceActive(schedule, now = new Date()) {
   return false;
 }
 
+function parseSchedule(str) {
+  const windows = []; const errors = [];
+  const lines = String(str || '').split(/[\n;]+/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const m = line.match(SCHEDULE_LINE_RE);
+    if (!m) { errors.push(line); continue; }
+    const [, dStart, dEnd, h1, m1, h2, m2] = m;
+    if (DAY_MAP[dStart] === undefined || (dEnd !== undefined && DAY_MAP[dEnd] === undefined)) { errors.push(line); continue; }
+    if (+h1 > 23 || +h2 > 23 || +m1 > 59 || +m2 > 59) { errors.push(line); continue; }
+    windows.push({ dStart, dEnd: dEnd || dStart, h1: +h1, m1: +m1, h2: +h2, m2: +m2 });
+  }
+  return { windows, errors };
+}
+
 module.exports = {
   isInMaintenanceWindow,
   parseMaintenanceActive,
+  parseSchedule,
 };

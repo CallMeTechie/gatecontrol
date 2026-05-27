@@ -76,6 +76,7 @@ async function setup() {
     gateway_pool_load_balancing: true,
     gateway_pools_limit: 100,
     share_links: true,
+    access_windows: true,
   });
 
   app = createApp();

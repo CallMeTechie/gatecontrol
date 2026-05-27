@@ -1490,5 +1490,21 @@
   "gateways.setup_syn_2": "DSM → Aufgabenplaner → Erstellen → benutzerdef. Script (Benutzer root, alle 1 Minute) mit diesem Befehl:",
   "gateways.setup_lin_1": "Lege update.sh in den Ordner der docker-compose.yml deines Gateways.",
   "gateways.setup_lin_2": "Jede Minute ausführen (cron oder systemd-.path auf /state/pending-update) mit diesem Befehl:",
-  "gateways.setup_legacy_hint": "Gateway vor Auto-Update angelegt? Dann zusätzlich '- ./gateway-state:/state' in die compose-volumes eintragen und den Container einmal neu erstellen."
+  "gateways.setup_legacy_hint": "Gateway vor Auto-Update angelegt? Dann zusätzlich '- ./gateway-state:/state' in die compose-volumes eintragen und den Container einmal neu erstellen.",
+
+  "access.title": "Zeitfenster",
+  "access.add_rule": "Regel hinzufügen",
+  "access.mode_allow": "Erlauben",
+  "access.mode_block": "Sperren",
+  "access.schedule": "Zeitplan",
+  "access.valid_from": "Gültig ab",
+  "access.valid_until": "Gültig bis",
+  "access.label": "Bezeichnung",
+  "access.state_allowed": "Aktuell erlaubt",
+  "access.state_blocked": "Aktuell gesperrt",
+  "access.delete": "Regel löschen",
+  "access.err_schedule": "Ungültiger Zeitplan — z. B. Mo-Fr 09:00-17:00",
+  "access.err_date_order": "'Gültig ab' muss vor 'Gültig bis' liegen",
+  "access.err_mode": "Ungültiger Modus — 'allow' oder 'block' verwenden",
+  "access.target_not_found": "Route oder Peer nicht gefunden"
 }

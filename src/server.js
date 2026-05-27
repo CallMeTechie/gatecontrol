@@ -142,6 +142,17 @@ async function start() {
     const gatewayHealth = require('./services/gatewayHealth');
     gatewayHealth.startWatchdog();
 
+    // Scheduled access-windows reconciler — 60s tick that diffs the deny-set
+    // and live-disconnects newly-denied peers + re-syncs Caddy/WG. start()'s
+    // own initial reconcile() treats the entire boot deny-set as transitions
+    // (so boot-time denies are enforced, not silent) and issues removePeer +
+    // a WG rewrite independently; _wgRewriteChain serializes it against the
+    // deferred boot rewrite, so it is intentionally NOT gated on the 2s WG
+    // setTimeout. Best-effort: a failure here must not block boot.
+    require('./services/accessReconciler').start().catch((err) => {
+      logger.warn({ err: err.message }, 'access reconciler initial run skipped');
+    });
+
     // Boot reconcile: transitions only fire on state CHANGES. If a peer
     // was already offline when the container started, no alive_to_down
     // ever fires, so its routes would stay stuck on the dead peer forever.
@@ -298,6 +309,7 @@ const shutdown = createShutdownHandler({
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
     () => require('./services/caddyReconciler').stopReconciler(),
+    () => require('./services/accessReconciler').stop(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,

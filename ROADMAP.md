@@ -6,25 +6,30 @@ Each item notes the **repos** it touches and the intended **licence tier**. New 
 
 ---
 
-## 🔜 Next up (in progress)
+## ✅ Shipped (2026-05)
 
-### 1. Real-time event bus (SSE) — server → UI & clients
-A server-side event stream (`GET /api/events`, Server-Sent Events) that pushes peer / route / gateway state changes live, replacing UI polling and feeding client push notifications ("route down", security alerts).
-- **Repos:** server (event source + endpoint + live UI); Windows / Android clients consume later.
-- **Builds on:** WebSocket support shipped in gateway 1.9.2; Windows backlog item "server pushes events via WebSocket".
-- **Tier:** Community (live web UI) + Pro (client push / external fan-out).
+### 1. Real-time event bus (SSE) — server → UI & clients ✅
+Server-Sent Events (`GET /api/v1/events`) pushing peer / route / gateway state changes live; replaced UI polling on dashboard/peers/routes/logs.
+- Shipped: **server 1.66.0** (PR #93). Tier: Community (live UI) + Pro flag for fan-out.
 
-### 2. Gateway fleet dashboard
-A fleet overview built from the telemetry every gateway already sends each heartbeat (versions, CPU/RAM/disk, default gateway, DNS resolvers) into `gateway_meta.last_health` — with a **version-drift badge** ("gateway X = 1.8.0, current = 1.9.2").
-- **Repos:** server (UI page + read API over existing telemetry).
-- **Builds on:** existing heartbeat telemetry; feeds the parked **gateway auto-update** (image-digest comparison).
-- **Tier:** Community.
+### 2. Gateway fleet dashboard + auto-update ✅
+- **2a — Fleet dashboard:** `/gateways` overview from heartbeat telemetry (versions, CPU/RAM/disk, DNS) with a version-drift badge. Shipped: **server 1.65.0** (PR #95). Tier: Community.
+- **2b — Gateway auto-update:** admin-triggered, Option A (host flag-file + `update.sh` + DSM/systemd/cron trigger; no docker.sock). Digest-pinned rollback, request_id-matched state machine. Shipped: **server 1.68.0** (PR #100) + companion 1.10.1 (PR #8/#9); verified end-to-end on nas3.
 
-### 3. Ephemeral share links
-Generate a time-limited (or one-time) link to a single proxied service for guests — no VPN access or account required (cf. Cloudflare Access / Tailscale Funnel share).
-- **Repos:** server (token model + route-auth integration + UI).
-- **Builds on:** existing route-auth (email-OTP / IP-whitelist).
-- **Tier:** Pro.
+### 3. Ephemeral share links ✅
+Time-limited / one-time link granting a guest access to a single proxied route — no VPN, no account; the 32-byte token in the URL is the credential. Pro (`share_links`). Model "link = protection": the first link on an unprotected route makes it share-gated; on a route that already has auth it's a guest bypass.
+- Shipped: **server 1.70.0** (PR #107), then live-hardened through **1.70.6**:
+  - auth-method clarity + green active-method tab + Basic⊻Route-Auth mutual exclusivity (PR #109)
+  - share-URL shown after creation + clipboard copy icon (PR #110)
+  - route-auth cookie `SameSite=Lax` (PR #111)
+  - **strip `gc.route.sid` from upstream requests** — fixed guest sessions dying behind devices (e.g. Speedport) that clear unknown cookies (PR #112)
+- Repos: server. Tier: Pro.
+
+---
+
+## 🔜 Next up
+
+_Nothing actively in progress — pick the next item from the planned candidates below._
 
 ---
 
@@ -59,7 +64,6 @@ The gateway scans its LAN (mDNS / SSDP / ARP) and suggests devices/ports as rout
 - **Device approval** — new peers stay `pending` until an admin confirms.
 - **Split DNS** — per-domain DNS routing (internal names → internal resolver).
 - **HTTP cache (souin)** / **WAF (coraza)** — per-route Caddy plugins.
-- **Gateway auto-update** — parked; plan = host cron/systemd + flag-file (Option A), not Watchtower.
 - **Windows client** — server-profile switching; English i18n.
 
 ## 🧱 Strategic / tech-debt
@@ -70,4 +74,4 @@ The gateway scans its LAN (mDNS / SSDP / ARP) and suggests devices/ports as rout
 
 ---
 
-_Status legend: 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-24._
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-26._

@@ -11,29 +11,9 @@ const webhook = require('./webhook');
 const circuitBreaker = require('./circuitBreaker');
 const logger = require('../utils/logger');
 const eventBus = require('./eventBus');
+const { requestCaddySync } = require('./caddySync');
 
 let pollerInterval = null;
-
-// Coalesce rapid syncToCaddy() calls from parallel check cycles. Without
-// this a flapping upstream would trigger one Caddy admin-API POST /load per
-// circuit-breaker state transition, and a batchSize=10 parallel check
-// could push 10 syncs at once that racily overwrite each other's config.
-let pendingSync = null;
-async function requestCaddySync() {
-  if (pendingSync) return pendingSync;
-  pendingSync = (async () => {
-    // One tick to let a burst of near-simultaneous state changes land
-    // before we actually POST /load once for all of them.
-    await new Promise(r => setImmediate(r));
-    try {
-      const { syncToCaddy } = require('./routes');
-      await syncToCaddy();
-    } finally {
-      pendingSync = null;
-    }
-  })();
-  return pendingSync;
-}
 
 /**
  * Get monitoring settings

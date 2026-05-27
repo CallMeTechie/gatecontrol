@@ -242,7 +242,11 @@ async function remove(id) {
   if (!peer) throw new Error('Peer not found');
 
   const publicKey = peer.public_key;
-  db.prepare('DELETE FROM peers WHERE id = ?').run(id);
+  // Delete the peer row and its access rules atomically.
+  db.transaction(() => {
+    db.prepare('DELETE FROM peers WHERE id = ?').run(id);
+    require('./accessRules').deleteForTarget('peer', id);
+  })();
 
   // Unlink routes pointing to this peer
   db.prepare('UPDATE routes SET peer_id = NULL WHERE peer_id = ?').run(id);
@@ -502,8 +506,10 @@ async function rewriteWgConfig() {
 }
 
 async function _rewriteWgConfigInner() {
+  const now = new Date();
   const db = getDb();
-  const peers = db.prepare('SELECT * FROM peers WHERE enabled = 1').all();
+  const peers = db.prepare('SELECT * FROM peers WHERE enabled = 1').all()
+    .filter(p => !require('./accessRules').isDenied('peer', p.id, now));
 
   try {
     // Read existing config to preserve Interface section
@@ -643,8 +649,12 @@ async function batch(action, ids) {
   } else if (action === 'disable') {
     db.prepare(`UPDATE peers SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
   } else if (action === 'delete') {
-    db.prepare(`DELETE FROM peers WHERE id IN (${placeholders})`).run(...ids);
-    db.prepare(`UPDATE routes SET peer_id = NULL WHERE peer_id IN (${placeholders})`).run(...ids);
+    // Delete rows + their access rules atomically (one transaction).
+    db.transaction(() => {
+      db.prepare(`DELETE FROM peers WHERE id IN (${placeholders})`).run(...ids);
+      db.prepare(`UPDATE routes SET peer_id = NULL WHERE peer_id IN (${placeholders})`).run(...ids);
+      db.prepare(`DELETE FROM access_rules WHERE target_type = 'peer' AND target_id IN (${placeholders})`).run(...ids);
+    })();
   }
 
   await rewriteWgConfig();
