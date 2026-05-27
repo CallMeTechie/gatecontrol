@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.3] — 2026-05-27
+
+### Dokumentation
+- add true-ARP-sweep as deferred add-on to #8 LAN discovery
+
+---
+
 ## [1.72.2] — 2026-05-27
 
 ### Dokumentation
