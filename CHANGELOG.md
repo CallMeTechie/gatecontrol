@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.4] — 2026-05-27
+
+### Dokumentation
+- gateway LAN service discovery (#8) design
+
+---
+
 ## [1.72.3] — 2026-05-27
 
 ### Dokumentation
