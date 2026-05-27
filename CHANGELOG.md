@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.5] — 2026-05-27
+
+### Dokumentation
+- #8 discovery — service categories (include/exclude) + configurable subnet cap/timeout
+
+---
+
 ## [1.72.4] — 2026-05-27
 
 ### Dokumentation
