@@ -549,6 +549,24 @@
             console.error('Route auth config failed:', raErr);
           }
         }
+        // Flush buffered access-window rules to the freshly created route.
+        if (data.route && data.route.id && createAccessRules.length) {
+          for (const ar of createAccessRules) {
+            const arPayload = { mode: ar.mode, schedule: ar.schedule };
+            if (ar.valid_from) arPayload.valid_from = ar.valid_from;
+            if (ar.valid_until) arPayload.valid_until = ar.valid_until;
+            if (ar.label) arPayload.label = ar.label;
+            try {
+              await shareFetch('/api/v1/routes/' + data.route.id + '/access-rules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(arPayload),
+              });
+            } catch (arErr) {
+              console.error('Access rule create failed:', arErr);
+            }
+          }
+        }
         routeForm.reset();
         // Reset toggles
         if (httpsToggle) httpsToggle.classList.add('on');
@@ -585,6 +603,8 @@
         if (cmrFields) cmrFields.style.display = 'none';
         createMirrorTargets.length = 0;
         renderCreateMirrorTargets();
+        createAccessRules.length = 0;
+        renderCreateAccessRules();
         renderUserCheckboxes('create-route-user-ids', [], 'create-route-user-cb');
         createIpFilterRules.length = 0;
         renderIpFilterRules('create', createIpFilterRules);
@@ -813,6 +833,8 @@
   function openRouteWizard() {
     if (!routeModalOverlay) return;
     currentWizardStep = 1;
+    createAccessRules.length = 0;
+    renderCreateAccessRules();
     routeModalOverlay.style.display = 'flex';
     showWizardStep(1);
     setTimeout(() => {
@@ -3566,6 +3588,81 @@
       if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
     }
   }
+
+  // ─── Access windows: create-route modal (buffer then POST) ───────────────
+  // A new route has no id until created, so access rules are buffered
+  // client-side here and POSTed after the route exists (see create-submit).
+  var createAccessRules = [];
+
+  function renderCreateAccessRules() {
+    var list = document.getElementById('create-access-rules-list');
+    if (!list) return;
+    list.textContent = '';
+    createAccessRules.forEach(function (rule, idx) {
+      var isBlock = rule.mode === 'block';
+      var chip = el('span', {
+        style: 'display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;'
+          + (isBlock
+            ? 'background:rgba(229,72,77,0.15);color:var(--red,#e5484d)'
+            : 'background:rgba(48,164,108,0.15);color:var(--green,#30a46c)'),
+        text: isBlock ? shareT('access.mode_block', 'Block') : shareT('access.mode_allow', 'Allow'),
+      });
+
+      var lines = [el('div', { style: 'font-size:12px;font-family:var(--font-mono);color:var(--text-1)', text: rule.schedule || '' })];
+      var bounds = accessFmtBounds(rule);
+      if (bounds) lines.push(el('div', { style: 'font-size:11px;color:var(--text-2)', text: bounds }));
+      if (rule.label) lines.push(el('div', { style: 'font-size:11px;color:var(--text-2)', text: rule.label }));
+
+      var info = el('div', { style: 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px' }, lines);
+
+      var delBtn = el('button', { type: 'button', class: 'btn btn-sm', title: shareT('access.delete', 'Delete rule'), text: '✕' });
+      delBtn.addEventListener('click', function () {
+        createAccessRules.splice(idx, 1);
+        renderCreateAccessRules();
+      });
+
+      list.appendChild(el('div', {
+        style: 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)',
+      }, [chip, info, delBtn]));
+    });
+  }
+
+  function addCreateAccessRule() {
+    var errBox = document.getElementById('create-access-err');
+    var modeEl = document.getElementById('create-access-mode');
+    var scheduleEl = document.getElementById('create-access-schedule');
+    var fromEl = document.getElementById('create-access-from');
+    var untilEl = document.getElementById('create-access-until');
+    var labelEl = document.getElementById('create-access-label');
+
+    var schedule = (scheduleEl && scheduleEl.value || '').trim();
+    if (!schedule) {
+      if (errBox) {
+        errBox.textContent = (GC.t && GC.t['access.err_schedule']) || 'Invalid schedule';
+        errBox.style.display = '';
+      }
+      return;
+    }
+
+    var rule = { mode: (modeEl && modeEl.value) || 'allow', schedule: schedule };
+    var from = fromEl && fromEl.value;
+    var until = untilEl && untilEl.value;
+    var label = (labelEl && labelEl.value || '').trim();
+    if (from) rule.valid_from = from;
+    if (until) rule.valid_until = until;
+    if (label) rule.label = label;
+    createAccessRules.push(rule);
+
+    if (scheduleEl) scheduleEl.value = '';
+    if (fromEl) fromEl.value = '';
+    if (untilEl) untilEl.value = '';
+    if (labelEl) labelEl.value = '';
+    if (errBox) { errBox.textContent = ''; errBox.style.display = 'none'; }
+    renderCreateAccessRules();
+  }
+
+  var createAccessAddBtn = document.getElementById('create-access-add');
+  if (createAccessAddBtn) createAccessAddBtn.addEventListener('click', addCreateAccessRule);
 })();
 
 (() => {
