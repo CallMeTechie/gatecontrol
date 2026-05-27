@@ -31,7 +31,7 @@ create a working route from a discovered device in one click — without ever ty
 
 | # | Decision | Choice |
 |---|----------|--------|
-| 1 | Discovery method | **Hybrid**: passive mDNS + passive SSDP + active TCP-connect sweep |
+| 1 | Discovery method | **Hybrid**: passive mDNS + SSDP (always) + active TCP-connect sweep as a **separate opt-in** (`discovery_active_scan`, default off — §4.3) |
 | 2 | Trigger / freshness | **On-demand** + short server-side cache (10 min TTL); no auto-scan on modal open |
 | 3 | UI placement | **Route-create modal (primary)** + "Erkannte Geräte" section on gateway detail page |
 | 4 | Consent / scope | **Opt-in per gateway** (default off), own auto-detected subnet only |
@@ -41,6 +41,7 @@ create a working route from a discovered device in one click — without ever ty
 | 7 | Capabilities | **No `NET_RAW`** — TCP-connect sweep + `/proc/net/arp` read for MACs; container caps unchanged |
 | 8 | Port/service scope | **Service categories** (web/media/remote_access/file_sharing/printers/databases/iot) with an **include/exclude** mode + checkboxes; filters active **and** passive results. No free-text |
 | 9 | Limits | **Subnet-size cap & scan timeout configurable** via gateway env (`GC_DISCOVERY_MAX_PREFIX` default `/22`, `GC_DISCOVERY_TIMEOUT_MS` default 45 s) |
+| 10 | Gateway compatibility | UI shown only when the gateway's telemetry signals discovery support + min companion version (**capability detection**, not licence alone) — mixed-fleet safe |
 
 ---
 
@@ -85,6 +86,13 @@ Three sources run in parallel, merged per device by IP.
   `LOCATION`, `ST`, `SERVER`. Hand-rolled over `dgram` (the codebase already uses `dgram` for WoL).
 - Yields: device URL/host, device type, server string.
 
+**Multicast egress binding (both passive sources) — required.** The companion runs
+`network_mode: host` with WireGuard up, so a multicast socket without an explicit interface can
+leave via `gatecontrol0` or a Docker bridge → silently zero results, or queries leaking over the
+tunnel. Both mDNS and SSDP **must** bind the multicast socket to each detected physical-LAN
+interface (`socket.setMulticastInterface()` / bind to the LAN IP; `addMembership(group, lanAddr)`)
+and send once per LAN subnet. Multi-homed behaviour is explicitly tested (§13).
+
 ### 4.3 Active TCP-connect sweep (replaces raw ARP)
 - For each host in the target subnet(s), attempt TCP connect to a **curated common-port list**
   with a short per-attempt timeout (~400 ms) and bounded concurrency.
@@ -97,6 +105,15 @@ Three sources run in parallel, merged per device by IP.
 
 The active sweep does not use a flat port list — the effective ports come from the **discovery
 categories** (§4.4), so the admin controls exactly what is probed.
+
+**Separately toggleable + conservative (refines decision #1).** The active sweep is a distinct
+per-gateway switch `discovery_active_scan` (**default off**): enabling discovery gives the
+near-zero-risk passive sources (mDNS/SSDP) immediately, while the active port-probe is a
+deliberate, clearly-labelled opt-in. *Rationale:* an active LAN port-scan can trip a customer
+IDS / segmentation appliance (UniFi/Firewalla/…) and get the **gateway** — the proxy for every
+route at that site — quarantined, i.e. a site-wide outage. When enabled, the sweep stays gentle
+(low concurrency default + small random jitter between connects) and the UI states plainly that
+the gateway will actively scan the LAN.
 
 ### 4.4 Discovery categories — include / exclude (admin-controlled)
 Discovery is scoped by **named service categories**, not a flat port list, so the admin can
@@ -180,9 +197,14 @@ would defeat discovery.
 ```json
 { "request_id": "uuid", "devices": [ /* §4.6 */ ], "done": false }
 ```
-- Server resolves `peer_id` from the authenticated gateway token (never trusts a peer_id in the body).
-- Server validates `request_id` against the in-flight scan it started for that gateway; **unsolicited
-  or mismatched `request_id` ⇒ 409, dropped** (prevents a gateway injecting results for a forged scan).
+- Server resolves `peer_id` from the authenticated **Bearer token** — results are always bound to
+  that peer; a `peer_id` in the body is never trusted. This (not request_id strictness) is the real
+  authorization boundary: the gateway is the user's own, already-authenticated device.
+- `request_id` is used for **correlation/dedup only — not hard rejection.** A callback whose
+  request_id doesn't match a known in-flight scan (e.g. the server restarted mid-scan, §5.4) is
+  still **accepted** into a fresh cache entry for that enabled peer, rather than dropped — otherwise
+  an honest scan silently yields "0 devices" after any deploy. Results from a gateway whose
+  discovery is **disabled** are ignored.
 - Server merges devices into the cache (dedupe by IP, union ports) and publishes SSE.
 
 ### 5.3 SSE event (server → UI)
@@ -191,6 +213,10 @@ New event type on the existing `GET /api/v1/events` bus:
 event: gateway_discovery
 data: { "peer_id": 79, "request_id": "uuid", "devices": [...], "done": false, "timed_out": false }
 ```
+**Authorization scoping:** the `/api/v1/events` stream is admin-only, and `gateway_discovery`
+carries a sensitive LAN inventory — so it is delivered only to authorized admin sessions via the
+EventBus filter, never fanned out to every subscriber. Where the bus allows, prefer delivering
+only to sessions that own/triggered that gateway's scan (filter on `peer_id` / `request_id`).
 
 ### 5.4 Async robustness (the cost of decision #5 — must be handled)
 - **In-flight tracking:** server keeps `{ peer_id → { request_id, started_at, subnets } }` in memory.
@@ -199,7 +225,13 @@ data: { "peer_id": 79, "request_id": "uuid", "devices": [...], "done": false, "t
   UI spinner never hangs forever.
 - **SSE reconnect:** on (re)connect the client calls `GET /gateways/:id/discovered`, which returns the
   current cache **and** in-flight status, so a dropped SSE connection mid-scan recovers gracefully.
-- **One scan per gateway at a time:** a second trigger while one is in flight returns `409`.
+- **One scan per gateway at a time**, but an **explicit retry may force-clear/cancel** the
+  in-flight entry — so a hung or crashed-gateway scan never locks rescans for the full
+  `timeout_ms + 15 s`. A passive (non-forced) second trigger still returns `409`. The UI shows
+  "läuft seit Xs — abbrechen" while a scan is in flight.
+- **Server-restart caveat:** in-flight state is in memory; a restart aborts tracking (late results
+  are still accepted per §5.2). The UI distinguishes "no in-flight scan + empty cache" (offer a
+  scan) from "scan completed, 0 devices" (show empty result) — it must never conflate the two.
 
 ---
 
@@ -211,6 +243,7 @@ ALTER TABLE gateway_meta ADD COLUMN discovery_enabled       INTEGER NOT NULL DEF
 ALTER TABLE gateway_meta ADD COLUMN discovery_subnets       TEXT;  -- JSON array of selected CIDRs; NULL = primary auto-detected only
 ALTER TABLE gateway_meta ADD COLUMN discovery_category_mode TEXT NOT NULL DEFAULT 'include';  -- 'include' | 'exclude'
 ALTER TABLE gateway_meta ADD COLUMN discovery_categories    TEXT;  -- JSON array of category keys; NULL = all categories (full scan)
+ALTER TABLE gateway_meta ADD COLUMN discovery_active_scan   INTEGER NOT NULL DEFAULT 0;  -- 0 = passive only (mDNS/SSDP); 1 = also active TCP-connect sweep
 ```
 
 ### 6.2 Telemetry payload (gateway → server, gains one field)
@@ -230,6 +263,11 @@ checkboxes without the server hard-coding them:
 ```jsonc
 "lan_discovery_categories": [ { "key": "web", "label": "Web" }, { "key": "iot", "label": "IoT / Smart home" }, … ]
 ```
+The presence of `lan_discovery_categories` (together with the reported companion `gateway_version`)
+is the **capability signal**: the server shows the discovery UI for a gateway only when it reports
+support **and** meets the minimum companion version — never on licence alone. Older gateways (the
+mixed fleet is real — peers lag versions between deploys) simply don't show the feature, instead of
+surfacing a button that 404s on `/api/lan-scan`.
 
 ### 6.3 Ephemeral result cache (server, in-memory)
 ```
@@ -259,23 +297,27 @@ All under `/api/v1/gateways/:id`, session + CSRF + `requireFeature('gateway_lan_
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `PUT`  | `/discovery-settings` | `{ enabled, subnets[], category_mode, categories[] }` — `subnets[]` validated ⊆ gateway-reported `lan_subnets` (multi-subnet gated by `gateway_lan_discovery_multi_subnet`); `category_mode` ∈ {`include`,`exclude`}; `categories[]` validated ⊆ gateway-reported category keys. |
-| `POST` | `/discover` | Trigger a scan. Requires `discovery_enabled`; resolves subnets (clamped to primary unless multi-subnet licensed) **and** `category_mode`/`categories` from settings; `409` if already in flight; calls `notifyLanScan`. |
+| `PUT`  | `/discovery-settings` | `{ enabled, active_scan, subnets[], category_mode, categories[] }` — `subnets[]` validated ⊆ gateway-reported `lan_subnets` (multi-subnet gated by `gateway_lan_discovery_multi_subnet`); `active_scan` toggles the active TCP sweep (passive-only when false); `category_mode` ∈ {`include`,`exclude`}; `categories[]` validated ⊆ gateway-reported category keys. |
+| `POST` | `/discover` | Trigger a scan. Requires `discovery_enabled` **and** the gateway reporting discovery capability (§6.2); resolves subnets (clamped to primary unless multi-subnet licensed) **+** `active_scan` **+** `category_mode`/`categories` from settings; `409` if already in flight unless `force:true` (cancels the stale in-flight); calls `notifyLanScan`. |
 | `GET`  | `/discovered` | Return cached devices + in-flight status for this gateway (SSE-reconnect fallback). |
 
-New service function `gateways.notifyLanScan(peerId, { subnets, category_mode, categories, request_id, timeout_ms })`
-mirrors the existing `notifyWol` (http.request over tunnel, X-Gateway-Token).
+New service function `gateways.notifyLanScan(peerId, { subnets, active_scan, category_mode, categories, request_id, timeout_ms })`
+mirrors the existing `notifyWol` (http.request over tunnel, X-Gateway-Token). It no-ops (returns a
+clear "unsupported" result) if the gateway's telemetry doesn't signal discovery capability.
 
 ---
 
 ## 9. UI
 
 ### 9.1 Route-create modal (primary entry)
-- When `target_kind = gateway` and a gateway is selected **and** that gateway has `discovery_enabled`,
-  show a **"LAN scannen / Vorschläge"** button next to the LAN-host/port fields.
+- When `target_kind = gateway` and a gateway is selected **and** it has `discovery_enabled` **and**
+  reports discovery capability (§6.2), show a **"LAN scannen / Vorschläge"** button next to the
+  LAN-host/port fields. (No capability → button hidden, not a dead 404 button.)
 - No auto-scan on open: if cached results exist (<10 min) they render immediately; the button (re)scans.
-- Results list streams in via SSE; each row shows hostname · IP · ports (with source badge) and an
-  **"Übernehmen"** action that:
+- Results list streams in via SSE; each row shows hostname · IP · ports (with source badge) **and a
+  "zuletzt gesehen vor X min" age**, and an **"Übernehmen"** action that:
+  - **re-probes** the chosen `host:port` via the gateway's existing `/api/probe` first, so a stale
+    (DHCP-moved) entry is caught instead of silently creating a route to the wrong host,
   - fills `create-route-lan-host` + `create-route-lan-port`,
   - pre-fills `create-route-wol-mac` if a MAC is known (and ticks WoL),
   - classifies the chosen port → **HTTP** (sets `https_enabled` for 443/8443) or **L4** route,
@@ -283,9 +325,12 @@ mirrors the existing `notifyWol` (http.request over tunnel, X-Gateway-Token).
 - Devices/ports that already have a route on this gateway are flagged ("bereits geroutet").
 
 ### 9.2 Gateway detail page
+The whole discovery block renders only for gateways that report discovery capability (§6.2).
 - New **"Erkannte Geräte"** section (renders the cache) + a **"LAN scannen"** button.
 - A **discovery settings** sub-panel:
   - enable toggle;
+  - **active-scan toggle** (`discovery_active_scan`, default off) with an **inline warning** that the
+    gateway will actively port-probe the LAN (may trip a LAN IDS); passive mDNS/SSDP run regardless;
   - **subnet checkboxes** (list = gateway-reported `lan_subnets`; multiple selection only enabled
     with `gateway_lan_discovery_multi_subnet`);
   - **category mode** toggle (`include` / `exclude`) + **category checkboxes** (list = the
@@ -307,6 +352,13 @@ and `routes.suggested.*` key namespaces. Client strings exposed via `GC.t`.
   (`GC_DISCOVERY_TIMEOUT_MS`, default 45 s) + concurrency cap — all configurable; default target `/24`.
 - **Service scope:** category include/exclude (no full 1–65535 scan); the filter applies to the active
   sweep **and** to passive mDNS/SSDP results, so an excluded category (e.g. `iot`) is genuinely hidden.
+- **Active scan is opt-in (default off)** and clearly labelled — passive discovery (mDNS/SSDP) is
+  near-zero-risk; the active port-probe is the only part that can trip a LAN IDS or quarantine the
+  gateway, so it is a deliberate switch, run gently (low concurrency + jitter).
+- **Capability-gated UI:** discovery surfaces only for gateways that report support + a minimum
+  companion version — never on licence alone — so a mixed-version fleet can't reach a dead 404 button.
+- **SSE scoping:** the discovery event is delivered only to authorized admin sessions (§5.3), not
+  fanned out to every subscriber.
 - **Rate-limit:** one scan per gateway in flight; cache TTL discourages hammering.
 - **Auth:** server→gateway `X-Gateway-Token`; gateway→server `Bearer`; `request_id` strictly bound to the
   authenticated gateway's in-flight scan.
@@ -315,21 +367,32 @@ and `routes.suggested.*` key namespaces. Client strings exposed via `GC.t`.
 
 ---
 
-## 11. Repos & build sequence
+## 11. Repos, phases & release ordering
 
-**A. `gatecontrol-gateway` (companion)**
-1. Telemetry: add `lan_subnets` + the available-category catalogue to the health/telemetry payload (small, harmless — ships first).
-2. Discovery module (`src/discovery/`): mDNS + SSDP + TCP-connect sweep + `/proc/net/arp` MAC enrichment.
-3. `POST /api/lan-scan` endpoint (X-Gateway-Token, async 202) + results-callback client (Bearer, batched).
-4. Version bump (CI auto-bumps on push).
+This is a two-repo feature with a **hard release dependency**: the server UI needs gateways that
+already report `lan_subnets` + the category catalogue (capability signal, §6.2) and expose
+`/api/lan-scan`. Build and ship it as **three separately releasable, individually mergeable phases**,
+in order. The server must always tolerate gateways that haven't reached a given phase (capability
+detection, §6.2 / §9) — never assume support.
 
-**B. `gatecontrol` (server)**
-5. Migration: `gateway_meta` discovery columns (`discovery_enabled`, `discovery_subnets`, `discovery_category_mode`, `discovery_categories`); license flags.
-6. `gateways.notifyLanScan` + ingest endpoint `POST /api/v1/gateway/discovery` + ephemeral cache +
-   in-flight tracking/timeout + SSE `gateway_discovery` event.
-7. Admin API: `PUT /discovery-settings`, `POST /discover`, `GET /discovered`.
-8. UI: route-modal picker + gateway-detail section + settings panel.
-9. i18n en/de; `docs/feature-gateway-lan-discovery.md`.
+**Phase 1 — Gateway telemetry (companion; ships & deploys first).** Add `lan_subnets` + the
+available-category catalogue to the heartbeat/telemetry payload. Harmless on its own; it's the
+capability signal the server later keys off. Version bump.
+
+**Phase 2 — Gateway discovery engine (companion).** New `src/discovery/` module: mDNS + SSDP
+(multicast **bound to the LAN interface(s)**, §4.1/§4.2) + the **opt-in** active TCP-connect sweep +
+`/proc/net/arp` MAC enrichment; `POST /api/lan-scan` (X-Gateway-Token, async 202; validates subnets
+against its own interfaces; honours `active_scan` + categories) + the batched results-callback client
+(Bearer). Version bump. Until a given gateway reaches this phase, the server simply doesn't show
+discovery for it.
+
+**Phase 3 — Server (`gatecontrol`).** Migration: `gateway_meta` discovery columns
+(`discovery_enabled`, `discovery_active_scan`, `discovery_subnets`, `discovery_category_mode`,
+`discovery_categories`) + licence flags. `gateways.notifyLanScan` + ingest endpoint
+`POST /api/v1/gateway/discovery` + ephemeral cache + in-flight tracking/timeout/cancel + **scoped**
+SSE `gateway_discovery` event. Admin API `PUT /discovery-settings`, `POST /discover` (force/cancel),
+`GET /discovered`. UI: route-modal picker + gateway-detail section + settings panel, **all
+capability-gated**. i18n en/de; `docs/feature-gateway-lan-discovery.md`.
 
 ---
 
@@ -345,11 +408,16 @@ and `routes.suggested.*` key namespaces. Client strings exposed via `GC.t`.
 ## 13. Testing strategy (CI only — no local test runs)
 
 - **Gateway:** unit tests for the mDNS/SSDP parsers and the TCP-sweep with mocked sockets/`dgram`;
+  **multicast socket bound to the LAN interface** (multi-homed mock — not `gatecontrol0`/docker);
   interface-guard rejects foreign subnets; configurable subnet-size cap; `/proc/net/arp` parser;
-  **category resolution** (include vs exclude → effective port set) and **passive-result filtering**
-  (excluded category dropped, uncategorised always kept).
-- **Server:** ingest endpoint (request_id correlation, peer_id from token, rejects mismatched/unsolicited);
-  cache TTL + merge/dedup; orphaned-scan timeout emits terminal event; `discovery-settings` validation
-  (subnets ⊆ reported + multi-subnet gating; `category_mode` enum; `categories` ⊆ reported keys);
-  API feature guards; HTTP/L4 classification helper.
+  **`active_scan` off ⇒ no TCP sweep (passive only)**; **category resolution** (include vs exclude →
+  effective port set) and **passive-result filtering** (excluded category dropped, uncategorised kept).
+- **Server:** ingest endpoint (peer_id from token; **late/orphan results accepted into a fresh cache
+  entry**; results from a discovery-disabled gateway ignored); cache TTL + merge/dedup; orphaned-scan
+  timeout emits terminal event; **force/cancel clears in-flight**; **`notifyLanScan` no-ops without a
+  capability signal**; **SSE event scoped to the authorized session** (not global fan-out);
+  `discovery-settings` validation (subnets ⊆ reported + multi-subnet gating; `category_mode` enum;
+  `categories` ⊆ reported keys); API feature + capability guards; HTTP/L4 classification helper.
+- **Integration:** "Übernehmen" on a stale cache entry **re-probes via `/api/probe`** before filling
+  the route fields; UI distinguishes "no in-flight + empty cache" from "completed, 0 devices".
 - Coverage gate held per project convention; tests run via GitHub Actions.
