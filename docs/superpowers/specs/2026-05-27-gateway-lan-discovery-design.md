@@ -41,7 +41,8 @@ create a working route from a discovered device in one click — without ever ty
 | 7 | Capabilities | **No `NET_RAW`** — TCP-connect sweep + `/proc/net/arp` read for MACs; container caps unchanged |
 | 8 | Port/service scope | **Service categories** (web/media/remote_access/file_sharing/printers/databases/iot) with an **include/exclude** mode + checkboxes; filters active **and** passive results. No free-text |
 | 9 | Limits | **Subnet-size cap & scan timeout configurable** via gateway env (`GC_DISCOVERY_MAX_PREFIX` default `/22`, `GC_DISCOVERY_TIMEOUT_MS` default 45 s) |
-| 10 | Gateway compatibility | UI shown only when the gateway's telemetry signals discovery support + min companion version (**capability detection**, not licence alone) — mixed-fleet safe |
+| 10 | Gateway compatibility | UI shown only when the gateway emits a dedicated `lan_discovery: true` flag (set in Phase 2 when `/api/lan-scan` exists) — not licence, not a min-version constant; mixed-fleet safe |
+| 11 | Ingest trust | LAN data is untrusted: server validates/clamps device payloads, rate-limits ingest per peer, escapes all LAN-origin strings on render (no stored XSS); `current_request_id` reconciliation (no cross-scan pollution) |
 
 ---
 
@@ -85,6 +86,9 @@ Three sources run in parallel, merged per device by IP.
 - Send `M-SEARCH * ssdp:all` to `239.255.255.250:1900`, collect unicast responses; parse
   `LOCATION`, `ST`, `SERVER`. Hand-rolled over `dgram` (the codebase already uses `dgram` for WoL).
 - Yields: device URL/host, device type, server string.
+- **Do not fetch the `LOCATION` URL** — only extract host:port from it. Fetching a LAN-controlled URL
+  from the gateway (which sits on both the LAN and the tunnel) is an SSRF surface. If UPnP device XML
+  is ever needed, bound size + timeout and never follow off-subnet redirects.
 
 **Multicast egress binding (both passive sources) — required.** The companion runs
 `network_mode: host` with WireGuard up, so a multicast socket without an explicit interface can
@@ -198,14 +202,24 @@ would defeat discovery.
 { "request_id": "uuid", "devices": [ /* §4.6 */ ], "done": false }
 ```
 - Server resolves `peer_id` from the authenticated **Bearer token** — results are always bound to
-  that peer; a `peer_id` in the body is never trusted. This (not request_id strictness) is the real
-  authorization boundary: the gateway is the user's own, already-authenticated device.
-- `request_id` is used for **correlation/dedup only — not hard rejection.** A callback whose
-  request_id doesn't match a known in-flight scan (e.g. the server restarted mid-scan, §5.4) is
-  still **accepted** into a fresh cache entry for that enabled peer, rather than dropped — otherwise
-  an honest scan silently yields "0 devices" after any deploy. Results from a gateway whose
-  discovery is **disabled** are ignored.
-- Server merges devices into the cache (dedupe by IP, union ports) and publishes SSE.
+  that peer; a `peer_id` in the body is never trusted. This (not request_id strictness) is the
+  authorization boundary: the gateway is the user's own, already-authenticated device. Results from
+  a discovery-**disabled** peer are ignored.
+- **request_id reconciliation (resolves the cancel ⇄ late-result tension):** the server holds one
+  `current_request_id` per peer (set when it issues a scan via `POST /discover`).
+  - a batch **matching** `current_request_id` is merged into that scan's set (dedupe by IP, union ports);
+  - a batch with a **non-matching** request_id is **dropped while a current exists** — so a cancelled
+    or superseded scan can never pollute a newer one;
+  - if **no current exists** (server restarted mid-scan, or the scan was force-cancelled), a batch
+    from an enabled peer is **adopted** as the new current — so an honest scan's late results aren't
+    lost after a deploy. Each scan is its own set; a new request_id supersedes the previous set
+    rather than merging across scans.
+- **Ingest validation (LAN data is untrusted):** reject/clamp the payload — each `ip` a valid IPv4
+  inside a scanned subnet, `port` ∈ 1–65535, `mac` well-formed; cap devices-per-scan, ports-per-
+  device, batch count and total payload size; **rate-limit ingest per peer** (the request_id gate is
+  no longer the throttle). LAN-origin strings (hostname, `service_hint`, SSDP `SERVER`) are stored
+  raw but **escaped on render** (safe-DOM) — never interpolated into HTML.
+- Server updates the peer's cache set and publishes the scoped SSE event.
 
 ### 5.3 SSE event (server → UI)
 New event type on the existing `GET /api/v1/events` bus:
@@ -225,13 +239,14 @@ only to sessions that own/triggered that gateway's scan (filter on `peer_id` / `
   UI spinner never hangs forever.
 - **SSE reconnect:** on (re)connect the client calls `GET /gateways/:id/discovered`, which returns the
   current cache **and** in-flight status, so a dropped SSE connection mid-scan recovers gracefully.
-- **One scan per gateway at a time**, but an **explicit retry may force-clear/cancel** the
-  in-flight entry — so a hung or crashed-gateway scan never locks rescans for the full
-  `timeout_ms + 15 s`. A passive (non-forced) second trigger still returns `409`. The UI shows
-  "läuft seit Xs — abbrechen" while a scan is in flight.
-- **Server-restart caveat:** in-flight state is in memory; a restart aborts tracking (late results
-  are still accepted per §5.2). The UI distinguishes "no in-flight scan + empty cache" (offer a
-  scan) from "scan completed, 0 devices" (show empty result) — it must never conflate the two.
+- **One scan per gateway at a time.** The gateway itself **rejects a concurrent `/api/lan-scan` with
+  409** (its scan self-terminates within `GC_DISCOVERY_TIMEOUT_MS`); there is **no remote abort**.
+  An explicit **cancel** clears the server's `current_request_id` + in-flight timer so the spinner
+  never hangs — but a rescan issued immediately after may be briefly refused by the gateway
+  ("Gateway scannt noch") until its in-flight scan ends. The UI shows "läuft seit Xs — abbrechen".
+- **Server-restart caveat:** in-flight state is in memory; a restart drops `current_request_id`
+  (late results are then adopted per §5.2). The UI distinguishes "no in-flight scan + empty cache"
+  (offer a scan) from "scan completed, 0 devices" (show empty result) — it must never conflate the two.
 
 ---
 
@@ -263,11 +278,12 @@ checkboxes without the server hard-coding them:
 ```jsonc
 "lan_discovery_categories": [ { "key": "web", "label": "Web" }, { "key": "iot", "label": "IoT / Smart home" }, … ]
 ```
-The presence of `lan_discovery_categories` (together with the reported companion `gateway_version`)
-is the **capability signal**: the server shows the discovery UI for a gateway only when it reports
-support **and** meets the minimum companion version — never on licence alone. Older gateways (the
-mixed fleet is real — peers lag versions between deploys) simply don't show the feature, instead of
-surfacing a button that 404s on `/api/lan-scan`.
+**Capability signal — a dedicated flag, set in Phase 2.** The gateway emits `lan_discovery: true` in
+telemetry **only once the `/api/lan-scan` endpoint actually exists** (Phase 2, §11) — not merely when
+it reports `lan_subnets`/categories (Phase 1 data). The server shows the discovery UI for a gateway
+only when this flag is present — never on licence alone, and **not** on a hard-coded min-version
+constant (which would just drift). Older gateways — and gateways still between Phase 1 and Phase 2 —
+simply don't show the feature, instead of surfacing a button that 404s on `/api/lan-scan`.
 
 ### 6.3 Ephemeral result cache (server, in-memory)
 ```
@@ -319,7 +335,9 @@ clear "unsupported" result) if the gateway's telemetry doesn't signal discovery 
   - **re-probes** the chosen `host:port` via the gateway's existing `/api/probe` first, so a stale
     (DHCP-moved) entry is caught instead of silently creating a route to the wrong host,
   - fills `create-route-lan-host` + `create-route-lan-port`,
-  - pre-fills `create-route-wol-mac` if a MAC is known (and ticks WoL),
+  - pre-fills `create-route-wol-mac` **if a MAC is known** — MACs come from the ARP cache populated
+    by the **active** sweep, so in the default passive-only mode they're absent unless the per-host
+    re-probe above captures one; the WoL prefill simply doesn't appear when no MAC is available,
   - classifies the chosen port → **HTTP** (sets `https_enabled` for 443/8443) or **L4** route,
   - suggests a `domain` from the hostname.
 - Devices/ports that already have a route on this gateway are flagged ("bereits geroutet").
@@ -359,6 +377,10 @@ and `routes.suggested.*` key namespaces. Client strings exposed via `GC.t`.
   companion version — never on licence alone — so a mixed-version fleet can't reach a dead 404 button.
 - **SSE scoping:** the discovery event is delivered only to authorized admin sessions (§5.3), not
   fanned out to every subscriber.
+- **Untrusted LAN data:** discovered records are validated/clamped on ingest (IP within subnet, port
+  range, MAC format, bounded counts/size, per-peer rate-limit) and all LAN-origin strings are escaped
+  on render — a malicious LAN device cannot inject stored XSS into the admin UI or flood the cache.
+  The gateway never fetches a device-supplied `LOCATION` URL (SSRF, §4.2).
 - **Rate-limit:** one scan per gateway in flight; cache TTL discourages hammering.
 - **Auth:** server→gateway `X-Gateway-Token`; gateway→server `Bearer`; `request_id` strictly bound to the
   authenticated gateway's in-flight scan.
@@ -376,15 +398,17 @@ in order. The server must always tolerate gateways that haven't reached a given 
 detection, §6.2 / §9) — never assume support.
 
 **Phase 1 — Gateway telemetry (companion; ships & deploys first).** Add `lan_subnets` + the
-available-category catalogue to the heartbeat/telemetry payload. Harmless on its own; it's the
-capability signal the server later keys off. Version bump.
+available-category catalogue to the heartbeat/telemetry payload (**data only — it does NOT set the
+`lan_discovery` capability flag**, so the server won't yet offer discovery for a Phase-1-only gateway).
+Version bump.
 
 **Phase 2 — Gateway discovery engine (companion).** New `src/discovery/` module: mDNS + SSDP
 (multicast **bound to the LAN interface(s)**, §4.1/§4.2) + the **opt-in** active TCP-connect sweep +
 `/proc/net/arp` MAC enrichment; `POST /api/lan-scan` (X-Gateway-Token, async 202; validates subnets
 against its own interfaces; honours `active_scan` + categories) + the batched results-callback client
-(Bearer). Version bump. Until a given gateway reaches this phase, the server simply doesn't show
-discovery for it.
+(Bearer). On reaching this phase the gateway sets **`lan_discovery: true`** in telemetry — the
+capability flag the server gates the UI on (§6.2). Version bump. Until a given gateway reaches this
+phase, the server simply doesn't show discovery for it.
 
 **Phase 3 — Server (`gatecontrol`).** Migration: `gateway_meta` discovery columns
 (`discovery_enabled`, `discovery_active_scan`, `discovery_subnets`, `discovery_category_mode`,
@@ -412,12 +436,17 @@ capability-gated**. i18n en/de; `docs/feature-gateway-lan-discovery.md`.
   interface-guard rejects foreign subnets; configurable subnet-size cap; `/proc/net/arp` parser;
   **`active_scan` off ⇒ no TCP sweep (passive only)**; **category resolution** (include vs exclude →
   effective port set) and **passive-result filtering** (excluded category dropped, uncategorised kept).
-- **Server:** ingest endpoint (peer_id from token; **late/orphan results accepted into a fresh cache
-  entry**; results from a discovery-disabled gateway ignored); cache TTL + merge/dedup; orphaned-scan
-  timeout emits terminal event; **force/cancel clears in-flight**; **`notifyLanScan` no-ops without a
-  capability signal**; **SSE event scoped to the authorized session** (not global fan-out);
+- **Server:** ingest endpoint — peer_id from token; **`current_request_id` reconciliation**
+  (matching merges; non-matching dropped while a current exists; adopted when none → restart-safe;
+  new scan supersedes, no cross-scan merge); results from a discovery-disabled gateway ignored;
+  **ingest validation** (bad IP / out-of-subnet / bad port / bad MAC rejected; oversized payload
+  clamped) and **per-peer ingest rate-limit**; cache TTL; orphaned-scan timeout emits terminal event;
+  **cancel clears `current_request_id`**; **`notifyLanScan` no-ops without the `lan_discovery` flag**;
+  capability gate hides UI for a Phase-1-only gateway; **SSE event scoped to the authorized session**;
   `discovery-settings` validation (subnets ⊆ reported + multi-subnet gating; `category_mode` enum;
   `categories` ⊆ reported keys); API feature + capability guards; HTTP/L4 classification helper.
+- **Escaping/SSRF:** a discovered hostname/service string containing markup is rendered escaped (no
+  XSS); the SSDP parser extracts host:port without ever fetching the `LOCATION` URL.
 - **Integration:** "Übernehmen" on a stale cache entry **re-probes via `/api/probe`** before filling
   the route fields; UI distinguishes "no in-flight + empty cache" from "completed, 0 devices".
 - Coverage gate held per project convention; tests run via GitHub Actions.
