@@ -88,6 +88,7 @@ router.get('/', (req, res) => {
     const latestVersion = require('../../services/gatewayRelease').getLatestVersion();
     const { compareVersions } = require('../../utils/version');
     for (const g of gateways) {
+      g.discovery = require('../../services/gateways').getDiscoverySettings(g.peer_id) || { enabled: 0, active_scan: 0 };
       const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
       g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);
       // Terminal lifecycle states are surfaced once, then cleared so the
