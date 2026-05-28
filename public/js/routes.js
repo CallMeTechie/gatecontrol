@@ -3730,6 +3730,120 @@
   // The create-route access form is rendered by renderAccessRuleForm() from
   // openRouteWizard(); rules are buffered in createAccessRules and POSTed after
   // the route is created. No standalone add handler is needed here anymore.
+
+  // HTTP-class ports → suggest an HTTP route (https for 443/8443); else L4. (spec §9.1, per-port.)
+  var SUGGEST_HTTP_PORTS = [80, 443, 8080, 8443, 8000, 8081, 3000, 5000, 8096, 32400, 9000, 8123, 631];
+  function classifyPort(port) {
+    var isHttp = SUGGEST_HTTP_PORTS.indexOf(port) !== -1;
+    return { routeType: isHttp ? 'http' : 'l4', https: port === 443 || port === 8443 };
+  }
+  function suggestDomainFrom(hostname) {
+    if (!hostname) return '';
+    return String(hostname).replace(/\.local\.?$/i, '').replace(/[^a-zA-Z0-9.-]/g, '').toLowerCase();
+  }
+
+  function initSuggestPicker() {
+    var box = document.getElementById('create-route-suggest');
+    if (!box) return; // feature not licensed → block not rendered
+    var gwSel = document.getElementById('create-route-gateway-peer');
+    var tkSel = document.getElementById('create-route-target-kind');
+    var btn = document.getElementById('create-route-scan-btn');
+    var statusEl = document.getElementById('create-route-suggest-status');
+    var listEl = document.getElementById('create-route-suggest-list');
+    var T = function (k, d) { return (window.GC && GC.t && GC.t[k]) || d; };
+    var capable = {}; // peerId -> reports lan_discovery (telemetry)
+    var enabled = {}; // peerId -> discovery_enabled (settings)
+
+    // §9.1: show only when target=gateway AND the gateway reports capability AND
+    // discovery is enabled on it. Otherwise show a hint and hide the scan button.
+    function refreshCapability() {
+      var pid = gwSel && gwSel.value;
+      if (!(tkSel && tkSel.value === 'gateway') || !pid) { box.style.display = 'none'; return; }
+      box.style.display = '';
+      if (capable[pid] !== true) { statusEl.textContent = T('routes.suggested.unavailable', ''); btn.style.display = 'none'; return; }
+      if (enabled[pid] !== true) { statusEl.textContent = T('gateways.discovery.not_enabled', ''); btn.style.display = 'none'; return; }
+      btn.style.display = ''; statusEl.textContent = '';
+    }
+    // Load gateway capability + enabled-state once (from the fleet endpoint).
+    fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+      (d.gateways || []).forEach(function (g) {
+        var tel = (g.health && g.health.telemetry) || {};
+        capable[String(g.peer_id)] = tel.lan_discovery === true;
+        enabled[String(g.peer_id)] = !!(g.discovery && g.discovery.enabled);
+      });
+      refreshCapability();
+    }).catch(function () {});
+    if (gwSel) gwSel.addEventListener('change', refreshCapability);
+    if (tkSel) tkSel.addEventListener('change', refreshCapability);
+
+    function ageNote(updatedAt) {
+      if (!updatedAt) return '';
+      var mins = Math.max(0, Math.round((Date.now() - updatedAt) / 60000));
+      return T('gateways.discovery.last_seen_min', 'results from {n} min ago').replace('{n}', mins);
+    }
+
+    function renderDevices(devices, updatedAt) {
+      listEl.replaceChildren();
+      if (!devices || !devices.length) { statusEl.textContent = T('gateways.discovery.no_devices', ''); return; }
+      statusEl.textContent = ageNote(updatedAt);
+      devices.forEach(function (dev) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)';
+        var info = document.createElement('div');
+        var name = document.createElement('div'); name.style.fontSize = '12px';
+        name.textContent = (dev.hostname || dev.ip) + ' · ' + dev.ip; // textContent = safe (untrusted LAN)
+        var ports = document.createElement('div'); ports.style.cssText = 'font-size:11px;color:var(--text-2)';
+        ports.textContent = (dev.ports || []).map(function (p) { return p.port; }).join(', ');
+        info.appendChild(name); info.appendChild(ports);
+        var adopt = document.createElement('button');
+        adopt.type = 'button'; adopt.className = 'btn btn-secondary'; adopt.style.fontSize = '11px';
+        adopt.textContent = T('routes.suggested.adopt', 'Use');
+        adopt.addEventListener('click', function () { adoptDevice(dev); });
+        row.appendChild(info); row.appendChild(adopt);
+        listEl.appendChild(row);
+      });
+    }
+
+    function adoptDevice(dev) {
+      var firstPort = (dev.ports && dev.ports[0] && dev.ports[0].port) || '';
+      var cls = firstPort ? classifyPort(firstPort) : { routeType: 'http', https: false };
+      var hostI = document.getElementById('create-route-lan-host'); if (hostI) hostI.value = dev.ip;
+      var portI = document.getElementById('create-route-lan-port'); if (portI && firstPort) portI.value = firstPort;
+      // Switch the modal to HTTP/L4 by setting #route-type and calling the modal's
+      // own field-visibility refresh (a 'change' event on the hidden input is a no-op).
+      var rt = document.getElementById('route-type');
+      if (rt) { rt.value = cls.routeType; if (typeof updateFieldVisibility === 'function') updateFieldVisibility(); }
+      var dom = document.getElementById('create-route-domain'); if (dom && !dom.value) dom.value = suggestDomainFrom(dev.hostname);
+      if (dev.mac) { var wolCb = document.getElementById('create-route-wol-enabled'); var macI = document.getElementById('create-route-wol-mac');
+        if (wolCb) { wolCb.checked = true; wolCb.dispatchEvent(new Event('change')); } if (macI) macI.value = dev.mac; }
+    }
+
+    function loadCached(pid) {
+      fetch('/api/v1/gateways/' + pid + '/discovered', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d.ok) renderDevices(d.devices, d.updated_at); }).catch(function () {});
+    }
+
+    btn.addEventListener('click', function () {
+      var pid = gwSel.value; if (!pid) return;
+      statusEl.textContent = T('gateways.discovery.scanning', 'Scanning…');
+      api.post('/api/v1/gateways/' + pid + '/discover', {})
+        .then(function () { loadCached(pid); })
+        .catch(function () { statusEl.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
+    });
+    // When a gateway is (re)selected, show its cached results without auto-scanning.
+    if (gwSel) gwSel.addEventListener('change', function () { if (gwSel.value && capable[gwSel.value] && enabled[gwSel.value]) loadCached(gwSel.value); });
+
+    // Live results via SSE (filtered by the selected gateway).
+    document.addEventListener('gc:gateway_discovery', function (e) {
+      var p = e.detail || {};
+      if (gwSel && String(p.peer_id) === String(gwSel.value)) {
+        renderDevices(p.devices, Date.now());
+        if (p.done && p.timed_out) statusEl.textContent = T('gateways.discovery.timed_out', '');
+      }
+    });
+  }
+  initSuggestPicker();
 })();
 
 (() => {
