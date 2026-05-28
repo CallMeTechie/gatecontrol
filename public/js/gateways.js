@@ -75,6 +75,18 @@
     var act = el('div', 'gw-detail-actions');
     var rc = el('button', 'recheck', '↻ ' + T('gateways.recheck', 'Neu prüfen')); rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck';
     act.appendChild(rc);
+    // Discovery-settings gear, only when the gateway reports the capability flag.
+    var tel0 = (g.health && g.health.telemetry) || {};
+    if (tel0.lan_discovery === true) {
+      var ds = el('button', 'recheck');
+      ds.appendChild(discGearIcon()); // static DOM-built SVG
+      ds.title = T('gateways.discovery.settings_tooltip', 'Discovery-Einstellungen');
+      ds.setAttribute('aria-label', T('gateways.discovery.settings_tooltip', 'Discovery-Einstellungen'));
+      ds.dataset.id = g.peer_id;
+      ds.dataset.act = 'disc-settings';
+      ds.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center';
+      act.appendChild(ds);
+    }
     var rel = el('a', 'gw-relnotes', T('gateways.release_notes', 'Release notes'));
     rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener';
     act.appendChild(rel);
@@ -260,15 +272,121 @@
   }
 
   // Build a card frame matching the other detail-page cards: outer `.gw` →
-  // `.top` (header with h3) + `.body` (padded content area). The CSS lives in
-  // `.gw-fleet .gw .top {...}` / `.gw-fleet .gw .body {...}` — without these
-  // two wrappers the heading and content render unstyled.
-  function _discCard(title) {
+  // `.top` (header with h3 + optional right-aligned action node) + `.body`
+  // (padded content area). The CSS lives in `.gw-fleet .gw .top {...}` /
+  // `.gw-fleet .gw .body {...}` (justify-content: space-between on .top).
+  function _discCard(title, actionNode) {
     var card = el('div', 'gw');
-    var top = el('div', 'top'); top.appendChild(el('h3', null, title)); card.appendChild(top);
+    var top = el('div', 'top');
+    top.appendChild(el('h3', null, title));
+    if (actionNode) top.appendChild(actionNode);
+    card.appendChild(top);
     var body = el('div', 'body');
     card.appendChild(body);
     return { card: card, body: body };
+  }
+
+  // Build a Lucide-style icon entirely via the DOM (no innerHTML, no XSS surface).
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function _icon(size, paths) {
+    var s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('width', String(size));
+    s.setAttribute('height', String(size));
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    paths.forEach(function (p) {
+      var n = document.createElementNS(SVG_NS, p.tag);
+      Object.keys(p.attrs).forEach(function (k) { n.setAttribute(k, p.attrs[k]); });
+      s.appendChild(n);
+    });
+    return s;
+  }
+  function discGearIcon() {
+    return _icon(16, [
+      { tag: 'circle', attrs: { cx: '12', cy: '12', r: '3' } },
+      { tag: 'path', attrs: { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' } },
+    ]);
+  }
+  function discScanIcon() {
+    return _icon(16, [
+      { tag: 'circle', attrs: { cx: '11', cy: '11', r: '8' } },
+      { tag: 'path', attrs: { d: 'm21 21-4.3-4.3' } },
+    ]);
+  }
+
+  // Well-known port → friendly service label (used only when service_hint is absent).
+  var DISC_WELL_KNOWN = {
+    21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 110: 'POP3',
+    139: 'SMB', 143: 'IMAP', 443: 'HTTPS', 445: 'SMB', 515: 'LPD', 548: 'AFP', 631: 'IPP',
+    1883: 'MQTT', 2049: 'NFS', 3000: 'HTTP', 3306: 'MySQL', 3389: 'RDP', 5000: 'HTTP',
+    5432: 'PostgreSQL', 5683: 'CoAP', 5900: 'VNC', 6379: 'Redis', 8000: 'HTTP',
+    8080: 'HTTP', 8081: 'HTTP', 8096: 'Jellyfin', 8123: 'HomeAssistant', 8200: 'DLNA',
+    8443: 'HTTPS', 9000: 'HTTP', 9100: 'Print', 27017: 'MongoDB', 32400: 'Plex',
+  };
+  function discPortLabel(p) {
+    var hint = p && p.service_hint;
+    if (hint) return String(hint).replace(/^_/, '').replace(/\._(tcp|udp)$/, '').replace(/^urn:[^:]+:device:/, '').replace(/:\d+$/, '');
+    return Object.prototype.hasOwnProperty.call(DISC_WELL_KNOWN, p.port) ? DISC_WELL_KNOWN[p.port] : '';
+  }
+  function discSourceLabel(src) { return T('gateways.discovery.source_' + src, String(src).toUpperCase()); }
+  function discSourceTagClass(src) {
+    return src === 'mdns' ? 'tag-blue' : src === 'ssdp' ? 'tag-purple' : src === 'tcp' ? 'tag-grey' : 'tag-neutral';
+  }
+
+  // One device row in the discovered-devices list. Hostname/IP/MAC + per-port
+  // chips with service hints + source chips on the primary line. All untrusted
+  // strings render via `el()` (textContent) — never `innerHTML`.
+  function discDeviceRow(dev, isFirst) {
+    var row = el('div', null);
+    row.style.cssText = 'padding:10px 0' + (isFirst ? '' : ';border-top:1px solid var(--border)');
+
+    var primary = el('div', null);
+    primary.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px';
+    var name = el('div', null, dev.hostname || dev.ip);
+    name.style.cssText = 'font-weight:600;font-size:14px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    primary.appendChild(name);
+
+    var chips = el('div', null);
+    chips.style.cssText = 'display:flex;gap:4px;flex-shrink:0';
+    (dev.sources || []).forEach(function (s) {
+      var t = el('span', 'tag ' + discSourceTagClass(s), discSourceLabel(s));
+      t.style.cssText = 'font-size:10px;padding:2px 6px;line-height:1.2';
+      chips.appendChild(t);
+    });
+    primary.appendChild(chips);
+    row.appendChild(primary);
+
+    var meta = el('div', null);
+    meta.style.cssText = 'font-size:12px;color:var(--text-2);font-family:var(--font-mono);margin-top:3px;letter-spacing:-0.01em';
+    meta.textContent = dev.ip + (dev.mac ? '  ·  ' + dev.mac : '');
+    row.appendChild(meta);
+
+    var ports = Array.isArray(dev.ports) ? dev.ports : [];
+    if (ports.length) {
+      var pwrap = el('div', null);
+      pwrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px';
+      ports.forEach(function (p) {
+        var chip = el('span', 'tag tag-neutral');
+        chip.style.cssText = 'font-size:11px;padding:3px 8px;display:inline-flex;align-items:center;gap:5px';
+        var num = el('span', null, p.port);
+        num.style.cssText = 'font-family:var(--font-mono);font-weight:600';
+        chip.appendChild(num);
+        var label = discPortLabel(p);
+        if (label) {
+          var sep = el('span', null, '·'); sep.style.cssText = 'color:var(--text-3)'; chip.appendChild(sep);
+          chip.appendChild(el('span', null, label));
+        }
+        pwrap.appendChild(chip);
+      });
+      row.appendChild(pwrap);
+    }
+
+    return row;
   }
   // Surface the actual server error from the response JSON (e.g. `discovery_disabled`,
   // `capability_unavailable`, `gateway_lan_discovery not licensed`) instead of the
@@ -287,108 +405,215 @@
     }).catch(function () { return fallback; });
   }
 
-  function discoverySettingsCard(g) {
+  // Populate a container (the modal-body) with the discovery settings form for
+  // gateway `g`. Closes the modal on a successful save (with a brief "saved"
+  // confirmation). Extracted from the previous in-grid settings card.
+  function populateDiscoverySettingsForm(g, body) {
     var tel = (g.health && g.health.telemetry) || {};
-    var frame = _discCard(T('gateways.discovery.title', 'LAN device discovery'));
-    var body = frame.body;
-    if (tel.lan_discovery !== true) { body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.'))); return frame.card; }
+    if (tel.lan_discovery !== true) {
+      body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.')));
+      return;
+    }
     body.appendChild(discMuted(T('gateways.discovery.subtitle', '')));
 
     var subnets = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
     var cats = Array.isArray(tel.lan_discovery_categories) ? tel.lan_discovery_categories : [];
     var multi = !!(window.GC && GC.features && GC.features.gateway_lan_discovery_multi_subnet);
 
+    function section(titleKey, titleFallback) {
+      var h = el('div', null, T(titleKey, titleFallback));
+      h.style.cssText = 'font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-2);margin:14px 0 6px';
+      return h;
+    }
+    function rowToggle(labelText, input, warn) {
+      var row = el('label', null);
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0';
+      row.appendChild(input);
+      var txt = el('span', null, labelText); txt.style.cssText = 'flex:1';
+      row.appendChild(txt);
+      if (warn) {
+        var w = discMuted(warn);
+        w.style.cssText = 'font-size:11px;color:var(--text-3);flex:0 0 auto;max-width:55%;text-align:right;line-height:1.35';
+        row.appendChild(w);
+      }
+      return row;
+    }
+
     var enableCb = el('input'); enableCb.type = 'checkbox';
     var activeCb = el('input'); activeCb.type = 'checkbox';
-    var modeSel = el('select'); ['include', 'exclude'].forEach(function (m) { var o = el('option', null, T('gateways.discovery.mode_' + m, m)); o.value = m; modeSel.appendChild(o); });
+    var modeSel = el('select');
+    modeSel.style.cssText = 'padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary)';
+    ['include', 'exclude'].forEach(function (m) { var o = el('option', null, T('gateways.discovery.mode_' + m, m)); o.value = m; modeSel.appendChild(o); });
     var subBoxes = subnets.map(function (s) { var c = el('input'); c.type = 'checkbox'; c.value = s.cidr; c.checked = !!s.primary; if (!multi && !s.primary) c.disabled = true; return { cb: c, s: s }; });
     var catBoxes = cats.map(function (c0) { var c = el('input'); c.type = 'checkbox'; c.value = c0.key; c.checked = true; return { cb: c, c: c0 }; });
 
-    function rowToggle(labelText, input, warn) {
-      var row = el('label', null); row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0';
-      row.appendChild(input); row.appendChild(el('span', null, labelText));
-      if (warn) { var w = discMuted(warn); w.style.marginLeft = '8px'; row.appendChild(w); }
-      return row;
-    }
-    body.appendChild(rowToggle(T('gateways.discovery.enable', ''), enableCb));
-    body.appendChild(rowToggle(T('gateways.discovery.active_scan', ''), activeCb, T('gateways.discovery.active_scan_warn', '')));
+    body.appendChild(section('gateways.discovery.title', 'Discovery'));
+    body.appendChild(rowToggle(T('gateways.discovery.enable', 'Discovery aktivieren'), enableCb));
+    body.appendChild(rowToggle(T('gateways.discovery.active_scan', 'Aktiver Portscan'), activeCb, T('gateways.discovery.active_scan_warn', '')));
 
-    body.appendChild(discMuted(T('gateways.discovery.subnets', '')));
+    body.appendChild(section('gateways.discovery.subnets', 'Subnets to scan'));
     subBoxes.forEach(function (sb) { body.appendChild(rowToggle(sb.s.cidr + (sb.s.primary ? ' ★' : ''), sb.cb)); });
-    if (!multi) body.appendChild(discMuted(T('gateways.discovery.multi_subnet_locked', '')));
+    if (!multi) {
+      var locked = discMuted(T('gateways.discovery.multi_subnet_locked', ''));
+      locked.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:4px';
+      body.appendChild(locked);
+    }
 
-    var modeRow = el('div', null); modeRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0';
-    modeRow.appendChild(el('span', null, T('gateways.discovery.category_mode', ''))); modeRow.appendChild(modeSel); body.appendChild(modeRow);
-    body.appendChild(discMuted(T('gateways.discovery.categories', '')));
-    catBoxes.forEach(function (cb) { body.appendChild(rowToggle(cb.c.label, cb.cb)); });
+    body.appendChild(section('gateways.discovery.categories', 'Categories'));
+    var modeRow = el('div', null);
+    modeRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0';
+    var modeLbl = el('span', null, T('gateways.discovery.category_mode', 'Category mode'));
+    modeLbl.style.cssText = 'flex:1';
+    modeRow.appendChild(modeLbl); modeRow.appendChild(modeSel);
+    body.appendChild(modeRow);
+    var catGrid = el('div', null);
+    catGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 12px;margin-top:4px';
+    catBoxes.forEach(function (cb) { catGrid.appendChild(rowToggle(cb.c.label, cb.cb)); });
+    body.appendChild(catGrid);
 
-    // Prefill from saved settings exposed in the fleet payload (Task 2b).
+    // Prefill from saved settings (Task 2b fleet payload).
     enableCb.checked = !!(g.discovery && g.discovery.enabled);
     activeCb.checked = !!(g.discovery && g.discovery.active_scan);
+    if (g.discovery && g.discovery.category_mode === 'exclude') modeSel.value = 'exclude';
 
-    var saveBtn = el('button', 'btn btn-primary', T('gateways.discovery.save', 'Save')); saveBtn.type = 'button';
-    var saveMsg = discMuted('');
+    var footer = el('div', null);
+    footer.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)';
+    var saveMsg = el('div', null);
+    saveMsg.style.cssText = 'font-size:12px;color:var(--text-2);margin-right:auto';
+    var cancelBtn = el('button', 'btn', T('gateways.discovery.cancel', 'Cancel'));
+    cancelBtn.type = 'button';
+    cancelBtn.setAttribute('data-close-modal', '');
+    var saveBtn = el('button', 'btn btn-primary', T('gateways.discovery.save', 'Save'));
+    saveBtn.type = 'button';
     saveBtn.addEventListener('click', function () {
       var payload = {
-        enabled: enableCb.checked, active_scan: activeCb.checked,
+        enabled: enableCb.checked,
+        active_scan: activeCb.checked,
         subnets: subBoxes.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; }),
         category_mode: modeSel.value,
         categories: catBoxes.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; }),
       };
-      fetch('/api/v1/gateways/' + g.peer_id + '/discovery-settings', { method: 'PUT', credentials: 'same-origin', headers: discCsrfHeaders(), body: JSON.stringify(payload) })
-        .then(function (r) {
-          if (r.ok) { saveMsg.textContent = T('gateways.discovery.saved', 'Saved'); return; }
-          return _discErrText(r, T('gateways.discovery.scan_failed', 'Failed')).then(function (t) { saveMsg.textContent = t; });
-        })
-        .catch(function () { saveMsg.textContent = T('gateways.discovery.scan_failed', 'Failed'); });
+      saveBtn.disabled = true;
+      fetch('/api/v1/gateways/' + g.peer_id + '/discovery-settings', {
+        method: 'PUT', credentials: 'same-origin', headers: discCsrfHeaders(), body: JSON.stringify(payload),
+      }).then(function (r) {
+        saveBtn.disabled = false;
+        if (r.ok) {
+          saveMsg.textContent = T('gateways.discovery.saved', 'Saved');
+          // Reflect in-memory so the modal next time prefills correctly + the
+          // empty-state hint in the devices card knows enabled.
+          g.discovery = g.discovery || {};
+          g.discovery.enabled = payload.enabled ? 1 : 0;
+          g.discovery.active_scan = payload.active_scan ? 1 : 0;
+          g.discovery.category_mode = payload.category_mode;
+          setTimeout(function () { if (window.closeModal) window.closeModal('gw-discovery-modal-overlay'); }, 500);
+          return;
+        }
+        return _discErrText(r, T('gateways.discovery.scan_failed', 'Save failed')).then(function (t) { saveMsg.textContent = t; });
+      }).catch(function () { saveBtn.disabled = false; saveMsg.textContent = T('gateways.discovery.scan_failed', 'Save failed'); });
     });
-    var actions = el('div', null); actions.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px';
-    actions.appendChild(saveBtn); actions.appendChild(saveMsg); body.appendChild(actions);
-    return frame.card;
+    footer.appendChild(saveMsg);
+    footer.appendChild(cancelBtn);
+    footer.appendChild(saveBtn);
+    body.appendChild(footer);
+  }
+
+  // Opens the discovery settings modal for the gateway with the given peer id,
+  // populating it fresh from the in-memory `last` snapshot.
+  function openDiscoverySettings(id) {
+    var g = last.find(function (x) { return String(x.peer_id) === String(id); });
+    if (!g) return;
+    var bodyEl = document.getElementById('gw-discovery-modal-body');
+    if (!bodyEl) return;
+    bodyEl.replaceChildren();
+    populateDiscoverySettingsForm(g, bodyEl);
+    if (window.openModal) window.openModal('gw-discovery-modal-overlay');
   }
 
   function discoveredDevicesCard(g) {
     var tel = (g.health && g.health.telemetry) || {};
-    var frame = _discCard(T('gateways.discovery.devices_title', 'Discovered devices'));
+
+    // Title-row scan icon button (right-aligned in the .top row by .gw .top's
+    // justify-content: space-between).
+    var scanBtn = el('button', null);
+    scanBtn.type = 'button';
+    scanBtn.appendChild(discScanIcon()); // static DOM-built SVG, no user data
+    scanBtn.title = T('gateways.discovery.scan_tooltip', 'Scan LAN');
+    scanBtn.setAttribute('aria-label', T('gateways.discovery.scan_tooltip', 'Scan LAN'));
+    scanBtn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;transition:background 120ms ease, color 120ms ease';
+    scanBtn.addEventListener('mouseenter', function () { this.style.background = 'var(--bg-hover, var(--bg-body))'; this.style.color = 'var(--text-primary)'; });
+    scanBtn.addEventListener('mouseleave', function () { this.style.background = 'none'; this.style.color = 'var(--text-2)'; });
+
+    var frame = _discCard(T('gateways.discovery.devices_title', 'Discovered devices'), scanBtn);
     var body = frame.body;
-    if (tel.lan_discovery !== true) { body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.'))); return frame.card; }
-    var scanBtn = el('button', 'btn btn-secondary', T('gateways.discovery.scan_button', 'Scan LAN')); scanBtn.type = 'button';
-    var status = discMuted('');
+
+    if (tel.lan_discovery !== true) {
+      scanBtn.disabled = true; scanBtn.style.opacity = '0.4'; scanBtn.style.cursor = 'not-allowed';
+      body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.')));
+      return frame.card;
+    }
+
+    var status = el('div', null);
+    status.style.cssText = 'font-size:12px;color:var(--text-2);min-height:18px';
     var list = el('div', null);
+
+    function emptyState() {
+      var msg = (g.discovery && !g.discovery.enabled)
+        ? T('gateways.discovery.not_enabled', 'Erst Discovery aktivieren und speichern.')
+        : T('gateways.discovery.never_scanned', 'Noch nicht gescannt — Scan-Icon klicken, um zu starten.');
+      var box = el('div', null, msg);
+      box.style.cssText = 'padding:18px 0;text-align:center;color:var(--text-3);font-size:13px';
+      return box;
+    }
+    function statusLine(devices, done, timedOut, updatedAt) {
+      var parts = [];
+      if (devices && devices.length) {
+        var key = devices.length === 1 ? 'gateways.discovery.devices_count_one' : 'gateways.discovery.devices_count_other';
+        parts.push(T(key, devices.length + ' devices').replace('{n}', devices.length));
+      }
+      if (done && timedOut) parts.push(T('gateways.discovery.timed_out', 'Scan timed out'));
+      else if (updatedAt) parts.push(discAgeNote(updatedAt));
+      return parts.join('  ·  ');
+    }
     function render(devices, done, timedOut, updatedAt) {
       list.replaceChildren();
-      if (!devices || !devices.length) { list.appendChild(discMuted(T('gateways.discovery.no_devices', ''))); }
-      else devices.forEach(function (dev) {
-        var row = el('div', null); row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)';
-        row.appendChild(el('div', null, (dev.hostname || dev.ip) + ' · ' + dev.ip)); // el() → textContent (safe)
-        row.appendChild(discMuted((dev.ports || []).map(function (p) { return p.port; }).join(', ')));
-        list.appendChild(row);
-      });
-      status.textContent = (done && timedOut) ? T('gateways.discovery.timed_out', '') : discAgeNote(updatedAt);
+      if (!devices || !devices.length) {
+        list.appendChild(emptyState());
+      } else {
+        devices.forEach(function (dev, i) { list.appendChild(discDeviceRow(dev, i === 0)); });
+      }
+      status.textContent = statusLine(devices, done, timedOut, updatedAt);
     }
+
     function loadCached() {
       fetch('/api/v1/gateways/' + g.peer_id + '/discovered', { credentials: 'same-origin' })
         .then(function (r) {
-          if (r.ok) return r.json().then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); });
+          if (r.ok) return r.json().then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); else render([], false, false, null); });
           // 403 (license-locked) or 404 — surface so the admin knows why the card is empty.
+          render([], false, false, null);
           return _discErrText(r, '').then(function (t) { if (t) status.textContent = t; });
         }).catch(function () {});
     }
     scanBtn.addEventListener('click', function () {
       status.textContent = T('gateways.discovery.scanning', 'Scanning…');
-      fetch('/api/v1/gateways/' + g.peer_id + '/discover', { method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: '{}' })
-        .then(function (r) {
-          if (r.ok || r.status === 202) { status.textContent = ''; loadCached(); return; }
-          return _discErrText(r, T('gateways.discovery.scan_failed', 'Scan failed')).then(function (t) { status.textContent = t; });
-        })
-        .catch(function () { status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
+      fetch('/api/v1/gateways/' + g.peer_id + '/discover', {
+        method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: '{}',
+      }).then(function (r) {
+        if (r.ok || r.status === 202) { status.textContent = T('gateways.discovery.scanning', 'Scanning…'); loadCached(); return; }
+        return _discErrText(r, T('gateways.discovery.scan_failed', 'Scan failed')).then(function (t) { status.textContent = t; });
+      }).catch(function () { status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
     });
+
+    // Replace the previous SSE listener so it doesn't pile up across renderDetail re-runs.
     if (_discoveryListener) document.removeEventListener('gc:gateway_discovery', _discoveryListener);
     _discoveryListener = function (e) {
-      var p = e.detail || {}; if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now());
+      var p = e.detail || {};
+      if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now());
     };
     document.addEventListener('gc:gateway_discovery', _discoveryListener);
-    body.appendChild(scanBtn); body.appendChild(status); body.appendChild(list);
+
+    body.appendChild(status);
+    body.appendChild(list);
     loadCached();
     return frame.card;
   }
@@ -403,7 +628,6 @@
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
     grid2.appendChild(discoveredDevicesCard(g));
-    grid2.appendChild(discoverySettingsCard(g));
     grid2.appendChild(setupCard(g));
     root.appendChild(grid2);
     detailView.replaceChildren(root);
@@ -455,6 +679,7 @@
   detailView.addEventListener('click', function (e) {
     if (e.target.closest('[data-act="back"]')) { goFleet(); return; }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
+    var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var up = e.target.closest('[data-act="update"]');
     if (up) {
       if (!confirm(T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'))) return;
