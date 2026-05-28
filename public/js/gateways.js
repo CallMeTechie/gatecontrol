@@ -75,8 +75,8 @@
     var act = el('div', 'gw-detail-actions');
     var rc = el('button', 'recheck', '↻ ' + T('gateways.recheck', 'Neu prüfen')); rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck';
     act.appendChild(rc);
-    // Discovery-settings gear, only when the gateway reports the capability flag.
     var tel0 = (g.health && g.health.telemetry) || {};
+    // Discovery-settings gear, only when the gateway reports the capability flag.
     if (tel0.lan_discovery === true) {
       var ds = el('button', 'recheck');
       ds.appendChild(discGearIcon()); // static DOM-built SVG
@@ -87,6 +87,16 @@
       ds.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center';
       act.appendChild(ds);
     }
+    // Auto-update setup, color-coded: green when migrated, amber when pending.
+    var setupDone = !!tel0.state_dir_writable;
+    var su = el('button', 'recheck');
+    su.appendChild(discPackageIcon());
+    su.title = T(setupDone ? 'gateways.setup.tooltip_done' : 'gateways.setup.tooltip_pending', setupDone ? 'Auto-update is set up' : 'Auto-update needs setup');
+    su.setAttribute('aria-label', su.title);
+    su.dataset.id = g.peer_id;
+    su.dataset.act = 'setup';
+    su.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center;color:' + (setupDone ? 'var(--green,#16a34a)' : 'var(--amber,#d97706)');
+    act.appendChild(su);
     var rel = el('a', 'gw-relnotes', T('gateways.release_notes', 'Release notes'));
     rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener';
     act.appendChild(rel);
@@ -198,7 +208,11 @@
       rr.forEach(function (r) {
         var rc = cfgById[r.route_id] || {};
         var tr = el('tr');
-        tr.appendChild(el('td', null, r.domain || rc.domain || ('#' + r.route_id)));
+        // Prefer the user-configured domain (`rc.domain`) over the gateway's
+        // synthetic `l4:<port>` reachability label — L4 routes don't carry a
+        // real domain on the gateway side so the synthetic value would shadow
+        // the friendly name the admin actually chose.
+        tr.appendChild(el('td', null, rc.domain || r.domain || ('#' + r.route_id)));
         tr.appendChild(el('td', 'sub', rc.target_lan_host ? rc.target_lan_host + (rc.target_lan_port ? ':' + rc.target_lan_port : '') : '—'));
         var sc = el('td'); sc.appendChild(el('span', 'pill ' + (r.reachable ? 'online' : 'offline'), r.reachable ? T('gateways.reachable', 'erreichbar') : T('gateways.unreachable', 'nicht erreichbar'))); tr.appendChild(sc);
         tr.appendChild(el('td', 'num', r.latency_ms != null ? r.latency_ms + ' ms' : '—'));
@@ -220,32 +234,46 @@
     c.appendChild(foot);
     return c;
   }
-  function setupCard(g) {
+  // Auto-update setup form populated into the modal body (previously the
+  // standalone `setupCard` in the right-column grid). Same content, modal frame.
+  function populateSetupForm(g, body) {
     var t = (g.health && g.health.telemetry) || {};
     var migrated = !!t.state_dir_writable;
-    var c = el('div', 'gw gw-setup' + (migrated ? ' done' : ''));
-    var top = el('div', 'top');
-    top.appendChild(el('h3', null, T('gateways.setup_title', 'Set up auto-update')));
-    top.appendChild(el('span', 'gw-setup-status ' + (migrated ? 'done' : 'pending'), migrated ? T('gateways.setup_done', '✓ Set up') : T('gateways.setup_pending', '⚠ Not set up yet')));
-    c.appendChild(top);
-    var body = el('div', 'body');
+
+    var status = el('div', null);
+    status.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;margin-bottom:14px;'
+      + (migrated ? 'background:var(--green-light,rgba(34,197,94,0.15));color:var(--green-text,var(--green,#16a34a))'
+                  : 'background:var(--amber-light,rgba(245,158,11,0.15));color:var(--amber-text,var(--amber,#d97706))');
+    status.textContent = migrated ? T('gateways.setup_done', '✓ Set up') : T('gateways.setup_pending', '⚠ Not set up yet');
+    body.appendChild(status);
+
     if (!migrated) {
-      body.appendChild(el('div', 'note', T('gateways.setup_note', 'The automatic Update button only works after this one-time host setup.')));
+      var note = el('div', null, T('gateways.setup_note', 'The automatic Update button only works after this one-time host setup.'));
+      note.style.cssText = 'background:var(--bg-body);padding:10px 12px;border-radius:6px;border-left:3px solid var(--amber,#d97706);font-size:13px;margin-bottom:14px';
+      body.appendChild(note);
     }
-    var acts = el('div', 'gw-actions');
-    var dl = el('a', 'recheck', '⬇ ' + T('gateways.setup_download_update', 'Download update.sh'));
+
+    var dl = el('a', 'btn btn-primary', '⬇ ' + T('gateways.setup_download_update', 'Download update.sh'));
     dl.href = '/api/v1/gateways/' + g.peer_id + '/update-sh';
-    acts.appendChild(dl);
-    body.appendChild(acts);
+    dl.style.cssText = 'display:inline-flex;align-items:center;gap:6px;text-decoration:none';
+    body.appendChild(dl);
+
     var CMD = 'PATH=/usr/local/bin:$PATH GATEWAY_STATE_DIR=<compose-dir>/gateway-state <compose-dir>/update.sh';
     var d = el('details');
-    d.appendChild(el('summary', null, T('gateways.setup_guide', 'Step-by-step guide')));
+    d.style.cssText = 'margin-top:16px';
+    var sum = el('summary', null, T('gateways.setup_guide', 'Step-by-step guide'));
+    sum.style.cssText = 'cursor:pointer;font-weight:600;padding:6px 0';
+    d.appendChild(sum);
     function steps(hostKey, hostDefault, stepKeys) {
-      d.appendChild(el('h4', 'gw-setup-host', T(hostKey, hostDefault)));
-      var ol = el('ol');
+      var h = el('h4', null, T(hostKey, hostDefault));
+      h.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-2);margin:14px 0 6px';
+      d.appendChild(h);
+      var ol = el('ol'); ol.style.cssText = 'margin:0 0 10px 20px;padding:0;font-size:13px;line-height:1.5';
       stepKeys.forEach(function (sk) { ol.appendChild(el('li', null, T(sk[0], sk[1]))); });
       d.appendChild(ol);
-      d.appendChild(el('pre', 'gw-setup-cmd', CMD));
+      var pre = el('pre', null, CMD);
+      pre.style.cssText = 'background:var(--bg-body);padding:10px 12px;border-radius:6px;font-size:11px;font-family:var(--font-mono);overflow-x:auto;border:1px solid var(--border);margin:0';
+      d.appendChild(pre);
     }
     steps('gateways.setup_synology', 'Synology (DSM)', [
       ['gateways.setup_syn_1', "Put update.sh into your gateway's docker-compose folder."],
@@ -255,10 +283,19 @@
       ['gateways.setup_lin_1', "Put update.sh into your gateway's docker-compose folder."],
       ['gateways.setup_lin_2', 'Run it every minute (cron, or a systemd .path watching /state/pending-update) with this command:'],
     ]);
-    d.appendChild(el('p', 'gw-setup-hint', T('gateways.setup_legacy_hint', "Gateway created before auto-update? Also add '- ./gateway-state:/state' to its compose volumes and recreate the container once.")));
+    var hint = el('p', null, T('gateways.setup_legacy_hint', "Gateway created before auto-update? Also add '- ./gateway-state:/state' to its compose volumes and recreate the container once."));
+    hint.style.cssText = 'font-size:12px;color:var(--text-2);margin:12px 0 0;line-height:1.45';
+    d.appendChild(hint);
     body.appendChild(d);
-    c.appendChild(body);
-    return c;
+  }
+  function openSetupModal(id) {
+    var g = last.find(function (x) { return String(x.peer_id) === String(id); });
+    if (!g) return;
+    var bodyEl = document.getElementById('gw-setup-modal-body');
+    if (!bodyEl) return;
+    bodyEl.replaceChildren();
+    populateSetupForm(g, bodyEl);
+    if (window.openModal) window.openModal('gw-setup-modal-overlay');
   }
   // ── LAN Discovery cards ───────────────────────────────────────────────────
   // Inline-muted helper — there is no `.muted` CSS class in the gateway-detail view.
@@ -318,6 +355,24 @@
       { tag: 'path', attrs: { d: 'm21 21-4.3-4.3' } },
     ]);
   }
+  // Lucide "package" — used for the auto-update setup indicator.
+  function discPackageIcon() {
+    return _icon(16, [
+      { tag: 'path', attrs: { d: 'M16.5 9.4 7.5 4.21' } },
+      { tag: 'path', attrs: { d: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z' } },
+      { tag: 'polyline', attrs: { points: '3.27 6.96 12 12.01 20.73 6.96' } },
+      { tag: 'line', attrs: { x1: '12', y1: '22.08', x2: '12', y2: '12' } },
+    ]);
+  }
+  // Inject the spin keyframe once (used by the scan-icon during a running scan).
+  // `<style>.textContent =` is the safe equivalent of an innerHTML CSS injection.
+  (function injectSpinKeyframes() {
+    if (document.getElementById('gw-css-inject')) return;
+    var s = document.createElement('style');
+    s.id = 'gw-css-inject';
+    s.textContent = '@keyframes gw-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  })();
 
   // Well-known port → friendly service label (used only when service_hint is absent).
   var DISC_WELL_KNOWN = {
@@ -328,9 +383,21 @@
     8080: 'HTTP', 8081: 'HTTP', 8096: 'Jellyfin', 8123: 'HomeAssistant', 8200: 'DLNA',
     8443: 'HTTPS', 9000: 'HTTP', 9100: 'Print', 27017: 'MongoDB', 32400: 'Plex',
   };
+  // Generic / uninformative SSDP Search-Target values that show up on essentially
+  // every UPnP device — render them as "no hint" so the well-known port label can
+  // win (or the chip stays clean with just the port number).
+  var DISC_SSDP_GENERIC = { 'upnp:rootdevice': 1, 'ssdp:all': 1, 'urn:schemas-upnp-org:device:Basic:1': 1 };
   function discPortLabel(p) {
-    var hint = p && p.service_hint;
-    if (hint) return String(hint).replace(/^_/, '').replace(/\._(tcp|udp)$/, '').replace(/^urn:[^:]+:device:/, '').replace(/:\d+$/, '');
+    var hint = p && p.service_hint ? String(p.service_hint) : '';
+    if (hint && !DISC_SSDP_GENERIC[hint]) {
+      // mDNS: `_http._tcp` / `_airplay._tcp.local` → http, airplay
+      var m = hint.match(/^_([^.]+)\._(?:tcp|udp)(?:\.local\.?)?$/);
+      if (m) return m[1];
+      // SSDP URN: `urn:schemas-upnp-org:device:MediaServer:1` → MediaServer
+      var u = hint.match(/^urn:[^:]+:(?:device|service):([^:]+)(?::\d+)?$/);
+      if (u) return u[1];
+      return hint.length > 24 ? hint.slice(0, 22) + '…' : hint;
+    }
     return Object.prototype.hasOwnProperty.call(DISC_WELL_KNOWN, p.port) ? DISC_WELL_KNOWN[p.port] : '';
   }
   function discSourceLabel(src) { return T('gateways.discovery.source_' + src, String(src).toUpperCase()); }
@@ -361,10 +428,18 @@
     primary.appendChild(chips);
     row.appendChild(primary);
 
-    var meta = el('div', null);
-    meta.style.cssText = 'font-size:12px;color:var(--text-2);font-family:var(--font-mono);margin-top:3px;letter-spacing:-0.01em';
-    meta.textContent = dev.ip + (dev.mac ? '  ·  ' + dev.mac : '');
-    row.appendChild(meta);
+    // Meta line: never repeat the IP when it's already the primary line
+    // (i.e. no hostname). If hostname is present, show both IP + MAC; otherwise
+    // only the MAC. Skip the line entirely when there's nothing to add.
+    var metaParts = [];
+    if (dev.hostname) metaParts.push(dev.ip);
+    if (dev.mac) metaParts.push(dev.mac);
+    if (metaParts.length) {
+      var meta = el('div', null);
+      meta.style.cssText = 'font-size:12px;color:var(--text-2);font-family:var(--font-mono);margin-top:3px;letter-spacing:-0.01em';
+      meta.textContent = metaParts.join('  ·  ');
+      row.appendChild(meta);
+    }
 
     var ports = Array.isArray(dev.ports) ? dev.ports : [];
     if (ports.length) {
@@ -534,15 +609,23 @@
     var tel = (g.health && g.health.telemetry) || {};
 
     // Title-row scan icon button (right-aligned in the .top row by .gw .top's
-    // justify-content: space-between).
+    // justify-content: space-between). The SVG itself is stored so we can spin
+    // it via inline animation while a scan is running.
     var scanBtn = el('button', null);
     scanBtn.type = 'button';
-    scanBtn.appendChild(discScanIcon()); // static DOM-built SVG, no user data
+    var scanIconNode = discScanIcon();
+    scanBtn.appendChild(scanIconNode);
     scanBtn.title = T('gateways.discovery.scan_tooltip', 'Scan LAN');
     scanBtn.setAttribute('aria-label', T('gateways.discovery.scan_tooltip', 'Scan LAN'));
     scanBtn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;transition:background 120ms ease, color 120ms ease';
-    scanBtn.addEventListener('mouseenter', function () { this.style.background = 'var(--bg-hover, var(--bg-body))'; this.style.color = 'var(--text-primary)'; });
-    scanBtn.addEventListener('mouseleave', function () { this.style.background = 'none'; this.style.color = 'var(--text-2)'; });
+    scanBtn.addEventListener('mouseenter', function () { if (this.disabled) return; this.style.background = 'var(--bg-hover, var(--bg-body))'; this.style.color = 'var(--text-primary)'; });
+    scanBtn.addEventListener('mouseleave', function () { if (this.disabled) return; this.style.background = 'none'; this.style.color = 'var(--text-2)'; });
+    function setScanRunning(running) {
+      scanBtn.disabled = !!running;
+      scanBtn.style.opacity = running ? '0.65' : '1';
+      scanBtn.style.cursor = running ? 'wait' : 'pointer';
+      scanIconNode.style.animation = running ? 'gw-spin 0.9s linear infinite' : '';
+    }
 
     var frame = _discCard(T('gateways.discovery.devices_title', 'Discovered devices'), scanBtn);
     var body = frame.body;
@@ -575,7 +658,7 @@
       else if (updatedAt) parts.push(discAgeNote(updatedAt));
       return parts.join('  ·  ');
     }
-    function render(devices, done, timedOut, updatedAt) {
+    function render(devices, done, timedOut, updatedAt, inFlight) {
       list.replaceChildren();
       if (!devices || !devices.length) {
         list.appendChild(emptyState());
@@ -583,32 +666,53 @@
         devices.forEach(function (dev, i) { list.appendChild(discDeviceRow(dev, i === 0)); });
       }
       status.textContent = statusLine(devices, done, timedOut, updatedAt);
+      // Stop the spinner once the gateway reports a terminal batch.
+      if (done) setScanRunning(false);
+      // Surface a discoverability hint when the only data we have is passive
+      // (no TCP-sweep) — explains the "only one port" feel without active scan.
+      if (done && devices && devices.length && !(g.discovery && g.discovery.active_scan)) {
+        var allPassive = devices.every(function (d) { return !(d.sources || []).some(function (s) { return s === 'tcp'; }); });
+        if (allPassive) {
+          var hint = el('div', null, T('gateways.discovery.active_scan_hint', 'Tip: enable Active port scan in the settings to find more ports.'));
+          hint.style.cssText = 'font-size:11px;color:var(--text-3);font-style:italic;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)';
+          list.appendChild(hint);
+        }
+      }
     }
 
     function loadCached() {
       fetch('/api/v1/gateways/' + g.peer_id + '/discovered', { credentials: 'same-origin' })
         .then(function (r) {
-          if (r.ok) return r.json().then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); else render([], false, false, null); });
+          if (r.ok) return r.json().then(function (d) {
+            if (d.ok) {
+              render(d.devices, d.done, d.timed_out, d.updated_at, d.in_flight);
+              // If the server says a scan is still in flight when we mount,
+              // keep the spinner running until the terminal SSE arrives.
+              if (d.in_flight) setScanRunning(true);
+            } else render([], false, false, null);
+          });
           // 403 (license-locked) or 404 — surface so the admin knows why the card is empty.
           render([], false, false, null);
           return _discErrText(r, '').then(function (t) { if (t) status.textContent = t; });
         }).catch(function () {});
     }
     scanBtn.addEventListener('click', function () {
+      setScanRunning(true);
       status.textContent = T('gateways.discovery.scanning', 'Scanning…');
       fetch('/api/v1/gateways/' + g.peer_id + '/discover', {
         method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: '{}',
       }).then(function (r) {
         if (r.ok || r.status === 202) { status.textContent = T('gateways.discovery.scanning', 'Scanning…'); loadCached(); return; }
+        setScanRunning(false);
         return _discErrText(r, T('gateways.discovery.scan_failed', 'Scan failed')).then(function (t) { status.textContent = t; });
-      }).catch(function () { status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
+      }).catch(function () { setScanRunning(false); status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
     });
 
     // Replace the previous SSE listener so it doesn't pile up across renderDetail re-runs.
     if (_discoveryListener) document.removeEventListener('gc:gateway_discovery', _discoveryListener);
     _discoveryListener = function (e) {
       var p = e.detail || {};
-      if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now());
+      if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now(), !p.done);
     };
     document.addEventListener('gc:gateway_discovery', _discoveryListener);
 
@@ -628,7 +732,6 @@
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
     grid2.appendChild(discoveredDevicesCard(g));
-    grid2.appendChild(setupCard(g));
     root.appendChild(grid2);
     detailView.replaceChildren(root);
   }
@@ -680,6 +783,7 @@
     if (e.target.closest('[data-act="back"]')) { goFleet(); return; }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
+    var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
     var up = e.target.closest('[data-act="update"]');
     if (up) {
       if (!confirm(T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'))) return;
