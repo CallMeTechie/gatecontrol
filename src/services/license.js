@@ -58,6 +58,8 @@ const COMMUNITY_FALLBACK = {
   gateway_pools_limit: 0,
   realtime_events: true,
   gateway_fleet: true,
+  gateway_lan_discovery: false,
+  gateway_lan_discovery_multi_subnet: false,
 };
 
 let cachedPlan = 'community';
