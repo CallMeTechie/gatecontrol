@@ -417,6 +417,61 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
 }
 
 /**
+ * Push a LAN scan command to a Gateway over the tunnel.
+ * Returns the Gateway's response body or null on error.
+ */
+async function notifyLanScan(peerId, { request_id, subnets, category_mode, categories, active_scan, timeout_ms = 45000 }) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return null;
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+  const payload = JSON.stringify({ request_id, subnets, category_mode, categories, active_scan, timeout_ms });
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: ip, port: row.api_port, path: '/api/lan-scan', method: 'POST', timeout: 7000,
+      headers: { 'X-Gateway-Token': pushToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, (res) => {
+      let body = ''; res.on('data', c => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on('error', (err) => { logger.warn({ err: err.message, peerId }, 'Gateway lan-scan trigger failed'); resolve(null); });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(payload);
+  });
+}
+
+/**
+ * Get the LAN discovery settings for a gateway peer.
+ * Returns the parsed settings object or null if not found.
+ */
+function getDiscoverySettings(peerId) {
+  const db = getDb();
+  const r = db.prepare(`SELECT discovery_enabled, discovery_active_scan, discovery_subnets, discovery_category_mode, discovery_categories FROM gateway_meta WHERE peer_id=?`).get(peerId);
+  if (!r) return null;
+  const parse = (s) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+  return {
+    enabled: r.discovery_enabled, active_scan: r.discovery_active_scan,
+    subnets: parse(r.discovery_subnets) || [],
+    category_mode: r.discovery_category_mode || 'include',
+    categories: parse(r.discovery_categories) || [],
+  };
+}
+
+/**
+ * Persist LAN discovery settings for a gateway peer.
+ */
+function setDiscoverySettings(peerId, { enabled, active_scan, subnets, category_mode, categories }) {
+  const db = getDb();
+  db.prepare(`UPDATE gateway_meta SET discovery_enabled=?, discovery_active_scan=?, discovery_subnets=?, discovery_category_mode=?, discovery_categories=? WHERE peer_id=?`)
+    .run(enabled ? 1 : 0, active_scan ? 1 : 0, JSON.stringify(subnets || []), category_mode === 'exclude' ? 'exclude' : 'include', JSON.stringify(categories || []), peerId);
+}
+
+/**
  * Build the gateway.env file content from peer data + tokens.
  * Shared helper used by createGateway (on initial creation) and
  * rotateGatewayTokens (on re-pairing).
@@ -808,6 +863,9 @@ module.exports = {
   recordTrafficSnapshot,
   notifyConfigChanged,
   notifyWol,
+  notifyLanScan,
+  getDiscoverySettings,
+  setDiscoverySettings,
   getHealthStatus,
   rotateGatewayTokens,
   buildEnvForPeer,

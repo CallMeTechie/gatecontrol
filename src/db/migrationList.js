@@ -870,6 +870,18 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'access_rules', 'mode'),
   },
+  {
+    version: 47,
+    name: 'gateway_meta_discovery',
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN discovery_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE gateway_meta ADD COLUMN discovery_active_scan INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE gateway_meta ADD COLUMN discovery_subnets TEXT;
+      ALTER TABLE gateway_meta ADD COLUMN discovery_category_mode TEXT NOT NULL DEFAULT 'include';
+      ALTER TABLE gateway_meta ADD COLUMN discovery_categories TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'discovery_enabled'),
+  },
 ];
 
 module.exports = { migrations };

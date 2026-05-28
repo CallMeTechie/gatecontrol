@@ -178,6 +178,13 @@
             <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('route_wol_mac') }}</label>
             <input type="text" id="create-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" style="width:100%;padding:8px 12px">
           </div>
+          {% if license.features.gateway_lan_discovery %}
+          <div id="create-route-suggest" style="display:none;margin-bottom:14px;border-top:1px solid var(--border);padding-top:12px">
+            <button type="button" class="btn btn-secondary" id="create-route-scan-btn" style="font-size:12px">{{ t('routes.suggested.button') }}</button>
+            <div id="create-route-suggest-status" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+            <div id="create-route-suggest-list" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+          </div>
+          {% endif %}
         </div>
 
         <div id="create-route-pool-fields" style="display:none">

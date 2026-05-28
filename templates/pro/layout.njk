@@ -45,6 +45,7 @@
     csrfToken: '{{ csrfToken }}',
     language: '{{ language }}',
     baseUrl: '{{ baseUrl }}',
+    features: { gateway_lan_discovery_multi_subnet: {{ ('true' if license.features.gateway_lan_discovery_multi_subnet else 'false') | safe }} },
     t: {
       'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
       'peers.online': {{ t('peers.online') | dump | safe }},
@@ -227,7 +228,31 @@
       'access.state_blocked': {{ t('access.state_blocked') | dump | safe }},
       'access.delete': {{ t('access.delete') | dump | safe }},
       'access.err_schedule': {{ t('access.err_schedule') | dump | safe }},
-      'access.err_date_order': {{ t('access.err_date_order') | dump | safe }}
+      'access.err_date_order': {{ t('access.err_date_order') | dump | safe }},
+      'gateways.discovery.title': {{ t('gateways.discovery.title') | dump | safe }},
+      'gateways.discovery.subtitle': {{ t('gateways.discovery.subtitle') | dump | safe }},
+      'gateways.discovery.devices_title': {{ t('gateways.discovery.devices_title') | dump | safe }},
+      'gateways.discovery.scan_button': {{ t('gateways.discovery.scan_button') | dump | safe }},
+      'gateways.discovery.scanning': {{ t('gateways.discovery.scanning') | dump | safe }},
+      'gateways.discovery.scan_failed': {{ t('gateways.discovery.scan_failed') | dump | safe }},
+      'gateways.discovery.not_enabled': {{ t('gateways.discovery.not_enabled') | dump | safe }},
+      'gateways.discovery.enable': {{ t('gateways.discovery.enable') | dump | safe }},
+      'gateways.discovery.active_scan': {{ t('gateways.discovery.active_scan') | dump | safe }},
+      'gateways.discovery.active_scan_warn': {{ t('gateways.discovery.active_scan_warn') | dump | safe }},
+      'gateways.discovery.subnets': {{ t('gateways.discovery.subnets') | dump | safe }},
+      'gateways.discovery.categories': {{ t('gateways.discovery.categories') | dump | safe }},
+      'gateways.discovery.category_mode': {{ t('gateways.discovery.category_mode') | dump | safe }},
+      'gateways.discovery.mode_include': {{ t('gateways.discovery.mode_include') | dump | safe }},
+      'gateways.discovery.mode_exclude': {{ t('gateways.discovery.mode_exclude') | dump | safe }},
+      'gateways.discovery.save': {{ t('gateways.discovery.save') | dump | safe }},
+      'gateways.discovery.saved': {{ t('gateways.discovery.saved') | dump | safe }},
+      'gateways.discovery.multi_subnet_locked': {{ t('gateways.discovery.multi_subnet_locked') | dump | safe }},
+      'gateways.discovery.no_devices': {{ t('gateways.discovery.no_devices') | dump | safe }},
+      'gateways.discovery.last_seen_min': {{ t('gateways.discovery.last_seen_min') | dump | safe }},
+      'gateways.discovery.timed_out': {{ t('gateways.discovery.timed_out') | dump | safe }},
+      'routes.suggested.button': {{ t('routes.suggested.button') | dump | safe }},
+      'routes.suggested.adopt': {{ t('routes.suggested.adopt') | dump | safe }},
+      'routes.suggested.unavailable': {{ t('routes.suggested.unavailable') | dump | safe }}
     }
   };
 </script>

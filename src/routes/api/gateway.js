@@ -138,4 +138,20 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+/** POST /api/v1/gateway/discovery — LAN-scan results stream from the gateway. */
+router.post('/discovery', express.json({ limit: '512kb' }), (req, res) => {
+  const peerId = req.gateway.peer_id;
+  const { request_id, devices, done } = req.body || {};
+  if (typeof request_id !== 'string' || !request_id) return res.status(400).json({ error: 'request_id_required' });
+  const r = require('../../services/discoveryCache').ingest(peerId, request_id, devices, done === true);
+  if (!r.accepted) return res.status(202).json({ ok: true, accepted: false, reason: r.reason }); // dropped (stale/rate) — not an error
+  const snap = require('../../services/discoveryCache').get(peerId);
+  // Scoped to admin SSE sessions (the /api/v1/events stream is requireAuth-only);
+  // the UI filters by peer_id. Spec §5.3.
+  require('../../services/eventBus').publish('gateway_discovery', {
+    peer_id: peerId, request_id, devices: snap.devices, done: snap.done, timed_out: snap.timed_out,
+  });
+  res.status(200).json({ ok: true });
+});
+
 module.exports = router;

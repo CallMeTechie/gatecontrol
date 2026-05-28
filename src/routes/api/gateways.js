@@ -88,6 +88,7 @@ router.get('/', (req, res) => {
     const latestVersion = require('../../services/gatewayRelease').getLatestVersion();
     const { compareVersions } = require('../../utils/version');
     for (const g of gateways) {
+      g.discovery = require('../../services/gateways').getDiscoverySettings(g.peer_id) || { enabled: 0, active_scan: 0 };
       const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
       g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);
       // Terminal lifecycle states are surfaced once, then cleared so the
@@ -152,6 +153,101 @@ router.post('/:id/update', async (req, res) => {
     `Gateway ${id} update requested (target ${target || 'latest'})`,
     { source: 'admin', severity: 'info', details: { peer_id: id, target, request_id: requestId } });
   res.json({ ok: true, queued: true });
+});
+
+// Read a gateway's reported LAN subnets + capability flag from last_health.
+function _gatewayTelemetry(id) {
+  const db = getDb();
+  const row = db.prepare(`SELECT p.peer_type, p.enabled, gm.last_health FROM peers p JOIN gateway_meta gm ON gm.peer_id=p.id WHERE p.id=?`).get(id);
+  if (!row || row.peer_type !== 'gateway' || !row.enabled) return null;
+  let tel = {};
+  try { tel = (JSON.parse(row.last_health || '{}').telemetry) || {}; } catch { tel = {}; }
+  return tel;
+}
+
+router.put('/:id/discovery-settings', require('../../middleware/license').requireFeature('gateway_lan_discovery'), (req, res) => {
+  const id = Number(req.params.id);
+  const tel = _gatewayTelemetry(id);
+  if (!tel) return res.status(404).json({ ok: false, error: 'not_found' });
+  const reported = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
+  const reportedCidrs = new Set(reported.map(s => s.cidr));
+  const primaryCidr = (reported.find(s => s.primary) || reported[0] || {}).cidr;
+  const reportedCats = new Set((tel.lan_discovery_categories || []).map(c => c.key));
+
+  const { enabled, active_scan, subnets, category_mode, categories } = req.body || {};
+  const subs = Array.isArray(subnets) ? subnets : [];
+  for (const c of subs) if (!reportedCidrs.has(c)) return res.status(400).json({ ok: false, error: 'subnet_not_reported', cidr: c });
+  const license = require('../../services/license');
+  const isMulti = subs.length > 1 || (subs.length === 1 && subs[0] !== primaryCidr);
+  if (isMulti && !license.hasFeature('gateway_lan_discovery_multi_subnet')) {
+    return res.status(403).json({ ok: false, error: 'gateway_lan_discovery_multi_subnet not licensed' });
+  }
+  if (category_mode !== undefined && !['include', 'exclude'].includes(category_mode)) return res.status(400).json({ ok: false, error: 'bad_category_mode' });
+  const cats = Array.isArray(categories) ? categories.filter(k => reportedCats.has(k)) : [];
+
+  require('../../services/gateways').setDiscoverySettings(id, {
+    enabled: enabled === true || enabled === 1, active_scan: active_scan === true || active_scan === 1,
+    subnets: subs, category_mode, categories: cats,
+  });
+  res.json({ ok: true });
+});
+
+router.post('/:id/discover', require('../../middleware/license').requireFeature('gateway_lan_discovery'), async (req, res) => {
+  const id = Number(req.params.id);
+  const tel = _gatewayTelemetry(id);
+  if (!tel) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (tel.lan_discovery !== true) return res.status(409).json({ ok: false, error: 'capability_unavailable' }); // gateway too old / Phase 1-only
+
+  const gateways = require('../../services/gateways');
+  const settings = gateways.getDiscoverySettings(id);
+  if (!settings || !settings.enabled) return res.status(409).json({ ok: false, error: 'discovery_disabled' });
+
+  const discoveryCache = require('../../services/discoveryCache');
+  const force = req.body && req.body.force === true;
+  if (discoveryCache.inFlight(id) && !force) return res.status(409).json({ ok: false, error: 'scan_in_progress' });
+  if (force) discoveryCache.cancel(id);
+
+  // Resolve subnets: clamp to the primary unless multi-subnet is licensed.
+  const license = require('../../services/license');
+  const reported = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
+  const primaryCidr = (reported.find(s => s.primary) || reported[0] || {}).cidr;
+  let subnets = (settings.subnets && settings.subnets.length) ? settings.subnets : (primaryCidr ? [primaryCidr] : []);
+  if (!license.hasFeature('gateway_lan_discovery_multi_subnet')) subnets = primaryCidr ? [primaryCidr] : [];
+  if (subnets.length === 0) return res.status(409).json({ ok: false, error: 'no_subnet' });
+
+  const SCAN_TIMEOUT_MS = 45000;            // sent to the gateway (matches its default GC_DISCOVERY_TIMEOUT_MS)
+  const graceMs = SCAN_TIMEOUT_MS + 15000;  // §5.4: declare orphaned after timeout + 15s
+  const requestId = require('node:crypto').randomUUID();
+  discoveryCache.begin(id, requestId, graceMs);
+  const r = await gateways.notifyLanScan(id, {
+    request_id: requestId, subnets, category_mode: settings.category_mode, categories: settings.categories,
+    active_scan: !!settings.active_scan, timeout_ms: SCAN_TIMEOUT_MS,
+  });
+  if (!r || r.accepted !== true) { discoveryCache.cancel(id); return res.status(502).json({ ok: false, error: 'gateway_unreachable' }); }
+
+  // §10 audit log.
+  require('../../services/activity').log('gateway_scan_triggered',
+    `Gateway ${id} LAN scan requested (${subnets.join(', ')})`,
+    { source: 'admin', severity: 'info', details: { peer_id: id, request_id: requestId, subnets, active_scan: !!settings.active_scan } });
+
+  // §5.4 terminal SSE event if the gateway never reports `done` within the grace —
+  // so the admin UI spinner never hangs. get() lazily marks done+timed_out once past grace.
+  setTimeout(() => {
+    const snap = discoveryCache.get(id);
+    if (snap && snap.request_id === requestId && snap.timed_out) {
+      require('../../services/eventBus').publish('gateway_discovery',
+        { peer_id: id, request_id: requestId, devices: snap.devices, done: true, timed_out: true });
+    }
+  }, graceMs + 250).unref();
+
+  res.status(202).json({ ok: true, request_id: requestId, subnets_scanned: subnets });
+});
+
+router.get('/:id/discovered', require('../../middleware/license').requireFeature('gateway_lan_discovery'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!_gatewayTelemetry(id)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const snap = require('../../services/discoveryCache').get(id);
+  res.json({ ok: true, devices: snap ? snap.devices : [], in_flight: snap ? snap.in_flight : false, done: snap ? snap.done : false, timed_out: snap ? snap.timed_out : false, updated_at: snap ? snap.updated_at : null });
 });
 
 function _setupGatewayOr4xx(req, res) {
