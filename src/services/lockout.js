@@ -44,21 +44,24 @@ function isLocked(identifier) {
   if (!cfg.enabled) return { locked: false, remainingSeconds: 0 };
 
   const db = getDb();
-  const since = new Date(Date.now() - cfg.duration * 60 * 1000).toISOString();
-
+  // failed_at is stored via datetime('now') → 'YYYY-MM-DD HH:MM:SS' (space, UTC).
+  // Compute the cutoff with the SAME SQLite formatter so the string comparison
+  // is valid. A JS toISOString() value ('...T...Z') sorts before the space-
+  // separated failed_at at char 10 (' ' < 'T'), which silently made the count
+  // always 0 and the lockout never trigger. cleanup() already uses this pattern.
   const count = db.prepare(`
     SELECT COUNT(*) as cnt FROM login_attempts
-    WHERE identifier = ? AND failed_at >= ?
-  `).get(identifier, since);
+    WHERE identifier = ? AND failed_at >= datetime('now', '-' || ? || ' minutes')
+  `).get(identifier, cfg.duration);
 
   if (count.cnt >= cfg.maxAttempts) {
     // Find the oldest relevant attempt to calculate remaining time
     const oldest = db.prepare(`
       SELECT failed_at FROM login_attempts
-      WHERE identifier = ? AND failed_at >= ?
+      WHERE identifier = ? AND failed_at >= datetime('now', '-' || ? || ' minutes')
       ORDER BY failed_at ASC
       LIMIT 1
-    `).get(identifier, since);
+    `).get(identifier, cfg.duration);
 
     const expiresAt = new Date(oldest.failed_at + 'Z').getTime() + cfg.duration * 60 * 1000;
     const remainingSeconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
@@ -86,15 +89,15 @@ function getLockedAccounts() {
   if (!cfg.enabled) return [];
 
   const db = getDb();
-  const since = new Date(Date.now() - cfg.duration * 60 * 1000).toISOString();
-
+  // Same datetime('now', ...) cutoff as isLocked() — see the note there for why
+  // a JS toISOString() string would never match the space-separated failed_at.
   const rows = db.prepare(`
     SELECT identifier, type, COUNT(*) as attempts, MIN(failed_at) as first_attempt
     FROM login_attempts
-    WHERE failed_at >= ?
+    WHERE failed_at >= datetime('now', '-' || ? || ' minutes')
     GROUP BY identifier
     HAVING attempts >= ?
-  `).all(since, cfg.maxAttempts);
+  `).all(cfg.duration, cfg.maxAttempts);
 
   return rows.map(row => {
     const expiresAt = new Date(row.first_attempt + 'Z').getTime() + cfg.duration * 60 * 1000;
