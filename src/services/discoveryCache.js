@@ -87,14 +87,20 @@ function ingest(peerId, requestId, rawDevices, done) {
   if (!_rateOk(peerId)) return { accepted: false, reason: 'rate_limited' };
   const devices = sanitizeDevices(rawDevices);
   let e = cache.get(peerId);
-  if (e && !e.done && e.requestId && e.requestId !== requestId) {
+  // Block only a still-in-flight scan: if the prior entry's grace window has
+  // expired, it is effectively a tombstone and a new requestId may take over.
+  if (e && !e.done && e.requestId && e.requestId !== requestId
+      && (_now() - e.startedAt) <= (e.graceMs || SCAN_GRACE_MS)) {
     return { accepted: false, reason: 'stale_request' };
   }
   if (!e || e.requestId !== requestId) {
     e = { requestId, devices: new Map(), done: false, timedOut: false, startedAt: e ? e.startedAt : _now(), updatedAt: _now() };
     cache.set(peerId, e);
   }
-  for (const d of devices) e.devices.set(d.ip, _mergeDevice(e.devices.get(d.ip), d));
+  for (const d of devices) {
+    if (!e.devices.has(d.ip) && e.devices.size >= MAX_DEVICES) break;
+    e.devices.set(d.ip, _mergeDevice(e.devices.get(d.ip), d));
+  }
   e.done = !!done;
   e.updatedAt = _now();
   return { accepted: true, count: e.devices.size };

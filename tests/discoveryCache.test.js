@@ -54,3 +54,15 @@ test('get() lazily marks a scan timed_out after its grace window', async () => {
   assert.equal(snap.timed_out, true);
   assert.equal(cache.inFlight(11), false);
 });
+
+test('ingest adopts a new requestId once the prior scan grace has expired (timed-out orphan)', async () => {
+  cache._reset();
+  cache.begin(13, 'oldreq', 20); // 20ms grace
+  await new Promise(r => setTimeout(r, 40));
+  // get() has NOT been called → e.done is still false even though grace expired
+  const r = cache.ingest(13, 'newreq', [{ ip: '192.168.1.7', ports: [] }], false);
+  assert.equal(r.accepted, true, 'a new requestId should be adopted after the orphan grace expires');
+  const snap = cache.get(13);
+  assert.equal(snap.request_id, 'newreq');
+  assert.equal(snap.devices.length, 1);
+});
