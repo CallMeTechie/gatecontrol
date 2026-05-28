@@ -10,6 +10,7 @@
   var detailView = document.getElementById('gw-detail-view');
   var GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
   var last = [], latest = '', openId = null, routed = false;
+  var _discoveryListener = null; // replaced on every discoveredDevicesCard build to avoid leak on renderDetail re-runs
 
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; }
   function bar(p, lvl) { var b = el('div', 'bar'); var i = el('span', lvl ? 'fill ' + lvl : 'fill'); i.style.width = Math.max(0, Math.min(100, p)) + '%'; b.appendChild(i); return b; }
@@ -247,6 +248,113 @@
     c.appendChild(body);
     return c;
   }
+  // ── LAN Discovery cards ───────────────────────────────────────────────────
+  // Inline-muted helper — there is no `.muted` CSS class in the gateway-detail view.
+  function discMuted(txt) { var d = el('div', null, txt); d.style.cssText = 'font-size:12px;color:var(--text-2)'; return d; }
+  // Raw fetch + CSRF, matching gateways.js's convention (it does not use window.api).
+  function discCsrfHeaders() { return { 'Content-Type': 'application/json', 'X-CSRF-Token': (window.GC && GC.csrfToken) || '' }; }
+  function discAgeNote(updatedAt) {
+    if (!updatedAt) return '';
+    var mins = Math.max(0, Math.round((Date.now() - updatedAt) / 60000));
+    return T('gateways.discovery.last_seen_min', 'results from {n} min ago').replace('{n}', mins);
+  }
+
+  function discoverySettingsCard(g) {
+    var tel = (g.health && g.health.telemetry) || {};
+    var card = el('div', 'gw'); // 'gw' = the detail-page card class used by the other cards
+    card.appendChild(el('h3', null, T('gateways.discovery.title', 'LAN device discovery')));
+    if (tel.lan_discovery !== true) { card.appendChild(discMuted(T('routes.suggested.unavailable', ''))); return card; }
+    card.appendChild(discMuted(T('gateways.discovery.subtitle', '')));
+
+    var subnets = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
+    var cats = Array.isArray(tel.lan_discovery_categories) ? tel.lan_discovery_categories : [];
+    var multi = !!(window.GC && GC.features && GC.features.gateway_lan_discovery_multi_subnet);
+
+    var enableCb = el('input'); enableCb.type = 'checkbox';
+    var activeCb = el('input'); activeCb.type = 'checkbox';
+    var modeSel = el('select'); ['include', 'exclude'].forEach(function (m) { var o = el('option', null, T('gateways.discovery.mode_' + m, m)); o.value = m; modeSel.appendChild(o); });
+    var subBoxes = subnets.map(function (s) { var c = el('input'); c.type = 'checkbox'; c.value = s.cidr; c.checked = !!s.primary; if (!multi && !s.primary) c.disabled = true; return { cb: c, s: s }; });
+    var catBoxes = cats.map(function (c0) { var c = el('input'); c.type = 'checkbox'; c.value = c0.key; c.checked = true; return { cb: c, c: c0 }; });
+
+    function rowToggle(labelText, input, warn) {
+      var row = el('label', null); row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0';
+      row.appendChild(input); row.appendChild(el('span', null, labelText));
+      if (warn) { var w = discMuted(warn); w.style.marginLeft = '8px'; row.appendChild(w); }
+      return row;
+    }
+    card.appendChild(rowToggle(T('gateways.discovery.enable', ''), enableCb));
+    card.appendChild(rowToggle(T('gateways.discovery.active_scan', ''), activeCb, T('gateways.discovery.active_scan_warn', '')));
+
+    card.appendChild(discMuted(T('gateways.discovery.subnets', '')));
+    subBoxes.forEach(function (sb) { card.appendChild(rowToggle(sb.s.cidr + (sb.s.primary ? ' ★' : ''), sb.cb)); });
+    if (!multi) card.appendChild(discMuted(T('gateways.discovery.multi_subnet_locked', '')));
+
+    var modeRow = el('div', null); modeRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0';
+    modeRow.appendChild(el('span', null, T('gateways.discovery.category_mode', ''))); modeRow.appendChild(modeSel); card.appendChild(modeRow);
+    card.appendChild(discMuted(T('gateways.discovery.categories', '')));
+    catBoxes.forEach(function (cb) { card.appendChild(rowToggle(cb.c.label, cb.cb)); });
+
+    // Prefill from saved settings exposed in the fleet payload (Task 2b).
+    enableCb.checked = !!(g.discovery && g.discovery.enabled);
+    activeCb.checked = !!(g.discovery && g.discovery.active_scan);
+
+    var saveBtn = el('button', 'btn btn-primary', T('gateways.discovery.save', 'Save')); saveBtn.type = 'button';
+    var saveMsg = discMuted('');
+    saveBtn.addEventListener('click', function () {
+      var payload = {
+        enabled: enableCb.checked, active_scan: activeCb.checked,
+        subnets: subBoxes.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; }),
+        category_mode: modeSel.value,
+        categories: catBoxes.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; }),
+      };
+      fetch('/api/v1/gateways/' + g.peer_id + '/discovery-settings', { method: 'PUT', credentials: 'same-origin', headers: discCsrfHeaders(), body: JSON.stringify(payload) })
+        .then(function (r) { saveMsg.textContent = r.ok ? T('gateways.discovery.saved', 'Saved') : T('gateways.discovery.scan_failed', 'Failed'); })
+        .catch(function () { saveMsg.textContent = T('gateways.discovery.scan_failed', 'Failed'); });
+    });
+    var actions = el('div', null); actions.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px';
+    actions.appendChild(saveBtn); actions.appendChild(saveMsg); card.appendChild(actions);
+    return card;
+  }
+
+  function discoveredDevicesCard(g) {
+    var tel = (g.health && g.health.telemetry) || {};
+    var card = el('div', 'gw');
+    card.appendChild(el('h3', null, T('gateways.discovery.devices_title', 'Discovered devices')));
+    if (tel.lan_discovery !== true) { card.appendChild(discMuted(T('routes.suggested.unavailable', ''))); return card; }
+    var scanBtn = el('button', 'btn btn-secondary', T('gateways.discovery.scan_button', 'Scan LAN')); scanBtn.type = 'button';
+    var status = discMuted('');
+    var list = el('div', null);
+    function render(devices, done, timedOut, updatedAt) {
+      list.replaceChildren();
+      if (!devices || !devices.length) { list.appendChild(discMuted(T('gateways.discovery.no_devices', ''))); }
+      else devices.forEach(function (dev) {
+        var row = el('div', null); row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)';
+        row.appendChild(el('div', null, (dev.hostname || dev.ip) + ' · ' + dev.ip)); // el() → textContent (safe)
+        row.appendChild(discMuted((dev.ports || []).map(function (p) { return p.port; }).join(', ')));
+        list.appendChild(row);
+      });
+      status.textContent = (done && timedOut) ? T('gateways.discovery.timed_out', '') : discAgeNote(updatedAt);
+    }
+    function loadCached() {
+      fetch('/api/v1/gateways/' + g.peer_id + '/discovered', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); }).then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); }).catch(function () {});
+    }
+    scanBtn.addEventListener('click', function () {
+      status.textContent = T('gateways.discovery.scanning', 'Scanning…');
+      fetch('/api/v1/gateways/' + g.peer_id + '/discover', { method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: '{}' })
+        .then(function (r) { if (!r.ok) throw new Error('scan'); status.textContent = ''; loadCached(); })
+        .catch(function () { status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
+    });
+    if (_discoveryListener) document.removeEventListener('gc:gateway_discovery', _discoveryListener);
+    _discoveryListener = function (e) {
+      var p = e.detail || {}; if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now());
+    };
+    document.addEventListener('gc:gateway_discovery', _discoveryListener);
+    card.appendChild(scanBtn); card.appendChild(status); card.appendChild(list);
+    loadCached();
+    return card;
+  }
+
   function renderDetail(g) {
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Zurück zur Flotte')); back.dataset.act = 'back';
@@ -256,6 +364,8 @@
     grid2.appendChild(versionsCard(g));
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
+    grid2.appendChild(discoveredDevicesCard(g));
+    grid2.appendChild(discoverySettingsCard(g));
     grid2.appendChild(setupCard(g));
     root.appendChild(grid2);
     detailView.replaceChildren(root);

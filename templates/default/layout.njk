@@ -43,6 +43,7 @@
     csrfToken: '{{ csrfToken }}',
     language: '{{ language }}',
     baseUrl: '{{ baseUrl }}',
+    features: { gateway_lan_discovery_multi_subnet: {{ ('true' if license.features.gateway_lan_discovery_multi_subnet else 'false') | safe }} },
     t: {
       'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
       'peers.online': {{ t('peers.online') | dump | safe }},
