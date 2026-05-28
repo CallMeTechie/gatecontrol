@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.0] — 2026-05-28
+
+### Features
+- LAN discovery Phase 3 — server backend + admin UI (closes Roadmap #8) (#116)
+
+---
+
 ## [1.72.7] — 2026-05-27
 
 ### Dokumentation
