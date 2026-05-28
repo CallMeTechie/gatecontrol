@@ -191,6 +191,64 @@ router.put('/:id/discovery-settings', require('../../middleware/license').requir
   res.json({ ok: true });
 });
 
+router.post('/:id/discover', require('../../middleware/license').requireFeature('gateway_lan_discovery'), async (req, res) => {
+  const id = Number(req.params.id);
+  const tel = _gatewayTelemetry(id);
+  if (!tel) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (tel.lan_discovery !== true) return res.status(409).json({ ok: false, error: 'capability_unavailable' }); // gateway too old / Phase 1-only
+
+  const gateways = require('../../services/gateways');
+  const settings = gateways.getDiscoverySettings(id);
+  if (!settings || !settings.enabled) return res.status(409).json({ ok: false, error: 'discovery_disabled' });
+
+  const discoveryCache = require('../../services/discoveryCache');
+  const force = req.body && req.body.force === true;
+  if (discoveryCache.inFlight(id) && !force) return res.status(409).json({ ok: false, error: 'scan_in_progress' });
+  if (force) discoveryCache.cancel(id);
+
+  // Resolve subnets: clamp to the primary unless multi-subnet is licensed.
+  const license = require('../../services/license');
+  const reported = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
+  const primaryCidr = (reported.find(s => s.primary) || reported[0] || {}).cidr;
+  let subnets = (settings.subnets && settings.subnets.length) ? settings.subnets : (primaryCidr ? [primaryCidr] : []);
+  if (!license.hasFeature('gateway_lan_discovery_multi_subnet')) subnets = primaryCidr ? [primaryCidr] : [];
+  if (subnets.length === 0) return res.status(409).json({ ok: false, error: 'no_subnet' });
+
+  const SCAN_TIMEOUT_MS = 45000;            // sent to the gateway (matches its default GC_DISCOVERY_TIMEOUT_MS)
+  const graceMs = SCAN_TIMEOUT_MS + 15000;  // §5.4: declare orphaned after timeout + 15s
+  const requestId = require('node:crypto').randomUUID();
+  discoveryCache.begin(id, requestId, graceMs);
+  const r = await gateways.notifyLanScan(id, {
+    request_id: requestId, subnets, category_mode: settings.category_mode, categories: settings.categories,
+    active_scan: !!settings.active_scan, timeout_ms: SCAN_TIMEOUT_MS,
+  });
+  if (!r || r.accepted !== true) { discoveryCache.cancel(id); return res.status(502).json({ ok: false, error: 'gateway_unreachable' }); }
+
+  // §10 audit log.
+  require('../../services/activity').log('gateway_scan_triggered',
+    `Gateway ${id} LAN scan requested (${subnets.join(', ')})`,
+    { source: 'admin', severity: 'info', details: { peer_id: id, request_id: requestId, subnets, active_scan: !!settings.active_scan } });
+
+  // §5.4 terminal SSE event if the gateway never reports `done` within the grace —
+  // so the admin UI spinner never hangs. get() lazily marks done+timed_out once past grace.
+  setTimeout(() => {
+    const snap = discoveryCache.get(id);
+    if (snap && snap.request_id === requestId && snap.timed_out) {
+      require('../../services/eventBus').publish('gateway_discovery',
+        { peer_id: id, request_id: requestId, devices: snap.devices, done: true, timed_out: true });
+    }
+  }, graceMs + 250).unref();
+
+  res.status(202).json({ ok: true, request_id: requestId, subnets_scanned: subnets });
+});
+
+router.get('/:id/discovered', require('../../middleware/license').requireFeature('gateway_lan_discovery'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!_gatewayTelemetry(id)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const snap = require('../../services/discoveryCache').get(id);
+  res.json({ ok: true, devices: snap ? snap.devices : [], in_flight: snap ? snap.in_flight : false, done: snap ? snap.done : false, timed_out: snap ? snap.timed_out : false, updated_at: snap ? snap.updated_at : null });
+});
+
 function _setupGatewayOr4xx(req, res) {
   const id = Number(req.params.id);
   const row = getDb().prepare(`SELECT p.id, p.peer_type, p.enabled
