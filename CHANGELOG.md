@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.1] — 2026-05-28
+
+### Fixes
+- discovery cards use .top/.body card frame + surface real API errors
+
+---
+
 ## [1.73.0] — 2026-05-28
 
 ### Features
