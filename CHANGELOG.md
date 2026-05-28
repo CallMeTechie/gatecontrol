@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.1] — 2026-05-28
+
+### Fixes
+- SSDP/upnp:rootdevice hint cleanup, dedupe IP in device row, l4 domain precedence, scan-icon spinner, auto-update card → modal with green/orange icon
+
+---
+
 ## [1.74.0] — 2026-05-28
 
 ### Features
