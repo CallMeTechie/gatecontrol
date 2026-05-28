@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.0] — 2026-05-28
+
+### Features
+- discovery settings → gear icon modal, richer device rows, scan icon in title
+
+---
+
 ## [1.73.1] — 2026-05-28
 
 ### Fixes
