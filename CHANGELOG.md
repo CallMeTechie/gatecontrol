@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.3] — 2026-05-28
+
+### Fixes
+- account lockout never triggered (timestamp format mismatch)
+
+---
+
 ## [1.74.2] — 2026-05-28
 
 ### Fixes
