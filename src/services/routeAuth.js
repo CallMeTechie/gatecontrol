@@ -25,7 +25,7 @@ function runCleanup() {
 
     // Expired sessions
     const expiredSessions = db.prepare(`
-      DELETE FROM route_auth_sessions WHERE expires_at <= datetime('now')
+      DELETE FROM route_auth_sessions WHERE datetime(expires_at) <= datetime('now')
     `).run();
 
     // Stale 2FA pending sessions older than 5 minutes
@@ -38,7 +38,7 @@ function runCleanup() {
     // Used or expired OTPs
     const expiredOtps = db.prepare(`
       DELETE FROM route_auth_otp
-      WHERE used = 1 OR expires_at <= datetime('now')
+      WHERE used = 1 OR datetime(expires_at) <= datetime('now')
     `).run();
 
     // Orphan guest sessions of expired/revoked share links, then the links
@@ -46,12 +46,12 @@ function runCleanup() {
       DELETE FROM route_auth_sessions
       WHERE share_link_id IN (
         SELECT id FROM route_auth_share_links
-        WHERE revoked_at IS NOT NULL OR expires_at <= datetime('now')
+        WHERE revoked_at IS NOT NULL OR datetime(expires_at) <= datetime('now')
       )
     `).run();
     const expiredShareLinks = db.prepare(`
       DELETE FROM route_auth_share_links
-      WHERE revoked_at IS NOT NULL OR expires_at <= datetime('now')
+      WHERE revoked_at IS NOT NULL OR datetime(expires_at) <= datetime('now')
     `).run();
 
     logger.debug(
@@ -244,7 +244,7 @@ function verifySession(sessionId, routeId) {
     WHERE id = ?
       AND route_id = ?
       AND two_factor_pending = 0
-      AND expires_at > datetime('now')
+      AND datetime(expires_at) > datetime('now')
   `).get(sessionId, routeId);
 }
 
@@ -255,7 +255,7 @@ function getSession(sessionId) {
   const db = getDb();
   return db.prepare(`
     SELECT * FROM route_auth_sessions
-    WHERE id = ? AND expires_at > datetime('now')
+    WHERE id = ? AND datetime(expires_at) > datetime('now')
   `).get(sessionId);
 }
 
@@ -273,7 +273,7 @@ function completeTwoFactor(sessionId) {
     WHERE ras.id = ?
       AND ras.two_factor_pending = 1
       AND ras.created_at > datetime('now', '-5 minutes')
-      AND ras.expires_at > datetime('now')
+      AND datetime(ras.expires_at) > datetime('now')
   `).get(sessionId);
 
   if (!session) return null;
@@ -382,7 +382,7 @@ function verifyOtp(routeId, email, code) {
       WHERE route_id = ?
         AND email = ?
         AND used = 0
-        AND expires_at > datetime('now')
+        AND datetime(expires_at) > datetime('now')
       ORDER BY created_at DESC
       LIMIT 1
     `).get(routeId, email);

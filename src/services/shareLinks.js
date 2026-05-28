@@ -90,7 +90,7 @@ function redeemShareLink(token, ip) {
       SELECT * FROM route_auth_share_links
       WHERE token_hash = ?
         AND revoked_at IS NULL
-        AND expires_at > datetime('now')
+        AND datetime(expires_at) > datetime('now')
         AND (one_time = 0 OR redeemed_count = 0)
     `).get(tokenHash);
     if (!link) return null;
@@ -118,7 +118,7 @@ function listShareLinks(routeId) {
   return db.prepare(`
     SELECT id, label, one_time, expires_at, redeemed_count, last_redeemed_at, created_at
     FROM route_auth_share_links
-    WHERE route_id = ? AND revoked_at IS NULL AND expires_at > datetime('now')
+    WHERE route_id = ? AND revoked_at IS NULL AND datetime(expires_at) > datetime('now')
     ORDER BY created_at DESC
   `).all(routeId);
 }
