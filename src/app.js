@@ -51,7 +51,7 @@ function createApp() {
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/v1/gateway/')) return next();
     const len = parseInt(req.headers['content-length'] || '0', 10);
-    const MAX_GATEWAY_BODY = 16 * 1024;
+    const MAX_GATEWAY_BODY = req.path === '/api/v1/gateway/discovery' ? 512 * 1024 : 16 * 1024;
     if (len > MAX_GATEWAY_BODY) {
       return res.status(413).json({ ok: false, error: 'Payload too large' });
     }
