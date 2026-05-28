@@ -154,6 +154,43 @@ router.post('/:id/update', async (req, res) => {
   res.json({ ok: true, queued: true });
 });
 
+// Read a gateway's reported LAN subnets + capability flag from last_health.
+function _gatewayTelemetry(id) {
+  const db = getDb();
+  const row = db.prepare(`SELECT p.peer_type, p.enabled, gm.last_health FROM peers p JOIN gateway_meta gm ON gm.peer_id=p.id WHERE p.id=?`).get(id);
+  if (!row || row.peer_type !== 'gateway' || !row.enabled) return null;
+  let tel = {};
+  try { tel = (JSON.parse(row.last_health || '{}').telemetry) || {}; } catch { tel = {}; }
+  return tel;
+}
+
+router.put('/:id/discovery-settings', require('../../middleware/license').requireFeature('gateway_lan_discovery'), (req, res) => {
+  const id = Number(req.params.id);
+  const tel = _gatewayTelemetry(id);
+  if (!tel) return res.status(404).json({ ok: false, error: 'not_found' });
+  const reported = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
+  const reportedCidrs = new Set(reported.map(s => s.cidr));
+  const primaryCidr = (reported.find(s => s.primary) || reported[0] || {}).cidr;
+  const reportedCats = new Set((tel.lan_discovery_categories || []).map(c => c.key));
+
+  const { enabled, active_scan, subnets, category_mode, categories } = req.body || {};
+  const subs = Array.isArray(subnets) ? subnets : [];
+  for (const c of subs) if (!reportedCidrs.has(c)) return res.status(400).json({ ok: false, error: 'subnet_not_reported', cidr: c });
+  const license = require('../../services/license');
+  const isMulti = subs.length > 1 || (subs.length === 1 && subs[0] !== primaryCidr);
+  if (isMulti && !license.hasFeature('gateway_lan_discovery_multi_subnet')) {
+    return res.status(403).json({ ok: false, error: 'gateway_lan_discovery_multi_subnet not licensed' });
+  }
+  if (category_mode !== undefined && !['include', 'exclude'].includes(category_mode)) return res.status(400).json({ ok: false, error: 'bad_category_mode' });
+  const cats = Array.isArray(categories) ? categories.filter(k => reportedCats.has(k)) : [];
+
+  require('../../services/gateways').setDiscoverySettings(id, {
+    enabled: enabled === true || enabled === 1, active_scan: active_scan === true || active_scan === 1,
+    subnets: subs, category_mode, categories: cats,
+  });
+  res.json({ ok: true });
+});
+
 function _setupGatewayOr4xx(req, res) {
   const id = Number(req.params.id);
   const row = getDb().prepare(`SELECT p.id, p.peer_type, p.enabled
