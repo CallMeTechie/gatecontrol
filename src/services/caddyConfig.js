@@ -266,7 +266,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // Parse custom headers
     let customHeaders = null;
     if (route.custom_headers) {
-      try { customHeaders = JSON.parse(route.custom_headers); } catch {}
+      try {
+        customHeaders = JSON.parse(route.custom_headers);
+      } catch (err) {
+        logger.warn({ routeId: route.id, err: err.message }, 'Invalid JSON in route.custom_headers — ignoring custom headers for this route');
+      }
     }
 
     // Parse mirror targets — resolve peer IPs from peer_id. Cap at 5 so
@@ -288,7 +292,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             logger.warn({ routeId: route.id, got: rawMirrorTargets.length, cap: MIRROR_MAX }, 'Mirror targets exceed cap, truncating');
           }
         }
-      } catch {}
+      } catch (err) {
+        logger.warn({ routeId: route.id, err: err.message }, 'Invalid JSON in route.mirror_targets — disabling mirroring for this route');
+      }
     }
 
     // Gateway-offline: serve maintenance page instead of proxying
