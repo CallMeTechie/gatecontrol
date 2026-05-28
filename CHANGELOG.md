@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.4] — 2026-05-28
+
+### Fixes
+- route-auth sessions, OTPs & share links never expired by time
+
+---
+
 ## [1.74.3] — 2026-05-28
 
 ### Fixes
