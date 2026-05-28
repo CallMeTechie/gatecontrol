@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.2] — 2026-05-28
+
+### Fixes
+- log malformed JSON in route custom_headers/mirror_targets
+
+---
+
 ## [1.74.1] — 2026-05-28
 
 ### Fixes
