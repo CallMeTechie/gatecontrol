@@ -259,12 +259,40 @@
     return T('gateways.discovery.last_seen_min', 'results from {n} min ago').replace('{n}', mins);
   }
 
+  // Build a card frame matching the other detail-page cards: outer `.gw` →
+  // `.top` (header with h3) + `.body` (padded content area). The CSS lives in
+  // `.gw-fleet .gw .top {...}` / `.gw-fleet .gw .body {...}` — without these
+  // two wrappers the heading and content render unstyled.
+  function _discCard(title) {
+    var card = el('div', 'gw');
+    var top = el('div', 'top'); top.appendChild(el('h3', null, title)); card.appendChild(top);
+    var body = el('div', 'body');
+    card.appendChild(body);
+    return { card: card, body: body };
+  }
+  // Surface the actual server error from the response JSON (e.g. `discovery_disabled`,
+  // `capability_unavailable`, `gateway_lan_discovery not licensed`) instead of the
+  // generic "Scan failed", so the admin can self-diagnose.
+  function _discErrText(r, fallback) {
+    return r.json().then(function (d) {
+      var err = d && d.error ? String(d.error) : '';
+      if (!err) return fallback;
+      if (/not licensed|feature_not_available|gateway_lan_discovery/i.test(err)) return T('gateways.discovery.feature_locked', 'LAN-Erkennung ist im aktuellen Plan nicht aktiviert.');
+      if (err === 'discovery_disabled') return T('gateways.discovery.not_enabled', 'Erst Discovery aktivieren und speichern.');
+      if (err === 'capability_unavailable') return T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.');
+      if (err === 'scan_in_progress') return T('gateways.discovery.scanning', 'Scan läuft bereits…');
+      if (err === 'no_subnet') return T('gateways.discovery.no_subnet', 'Kein scanbares Subnetz konfiguriert.');
+      if (err === 'gateway_unreachable') return T('gateways.discovery.gateway_unreachable', 'Gateway nicht erreichbar.');
+      return fallback + ' (' + err + ')';
+    }).catch(function () { return fallback; });
+  }
+
   function discoverySettingsCard(g) {
     var tel = (g.health && g.health.telemetry) || {};
-    var card = el('div', 'gw'); // 'gw' = the detail-page card class used by the other cards
-    card.appendChild(el('h3', null, T('gateways.discovery.title', 'LAN device discovery')));
-    if (tel.lan_discovery !== true) { card.appendChild(discMuted(T('routes.suggested.unavailable', ''))); return card; }
-    card.appendChild(discMuted(T('gateways.discovery.subtitle', '')));
+    var frame = _discCard(T('gateways.discovery.title', 'LAN device discovery'));
+    var body = frame.body;
+    if (tel.lan_discovery !== true) { body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.'))); return frame.card; }
+    body.appendChild(discMuted(T('gateways.discovery.subtitle', '')));
 
     var subnets = Array.isArray(tel.lan_subnets) ? tel.lan_subnets : [];
     var cats = Array.isArray(tel.lan_discovery_categories) ? tel.lan_discovery_categories : [];
@@ -282,17 +310,17 @@
       if (warn) { var w = discMuted(warn); w.style.marginLeft = '8px'; row.appendChild(w); }
       return row;
     }
-    card.appendChild(rowToggle(T('gateways.discovery.enable', ''), enableCb));
-    card.appendChild(rowToggle(T('gateways.discovery.active_scan', ''), activeCb, T('gateways.discovery.active_scan_warn', '')));
+    body.appendChild(rowToggle(T('gateways.discovery.enable', ''), enableCb));
+    body.appendChild(rowToggle(T('gateways.discovery.active_scan', ''), activeCb, T('gateways.discovery.active_scan_warn', '')));
 
-    card.appendChild(discMuted(T('gateways.discovery.subnets', '')));
-    subBoxes.forEach(function (sb) { card.appendChild(rowToggle(sb.s.cidr + (sb.s.primary ? ' ★' : ''), sb.cb)); });
-    if (!multi) card.appendChild(discMuted(T('gateways.discovery.multi_subnet_locked', '')));
+    body.appendChild(discMuted(T('gateways.discovery.subnets', '')));
+    subBoxes.forEach(function (sb) { body.appendChild(rowToggle(sb.s.cidr + (sb.s.primary ? ' ★' : ''), sb.cb)); });
+    if (!multi) body.appendChild(discMuted(T('gateways.discovery.multi_subnet_locked', '')));
 
     var modeRow = el('div', null); modeRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0';
-    modeRow.appendChild(el('span', null, T('gateways.discovery.category_mode', ''))); modeRow.appendChild(modeSel); card.appendChild(modeRow);
-    card.appendChild(discMuted(T('gateways.discovery.categories', '')));
-    catBoxes.forEach(function (cb) { card.appendChild(rowToggle(cb.c.label, cb.cb)); });
+    modeRow.appendChild(el('span', null, T('gateways.discovery.category_mode', ''))); modeRow.appendChild(modeSel); body.appendChild(modeRow);
+    body.appendChild(discMuted(T('gateways.discovery.categories', '')));
+    catBoxes.forEach(function (cb) { body.appendChild(rowToggle(cb.c.label, cb.cb)); });
 
     // Prefill from saved settings exposed in the fleet payload (Task 2b).
     enableCb.checked = !!(g.discovery && g.discovery.enabled);
@@ -308,19 +336,22 @@
         categories: catBoxes.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; }),
       };
       fetch('/api/v1/gateways/' + g.peer_id + '/discovery-settings', { method: 'PUT', credentials: 'same-origin', headers: discCsrfHeaders(), body: JSON.stringify(payload) })
-        .then(function (r) { saveMsg.textContent = r.ok ? T('gateways.discovery.saved', 'Saved') : T('gateways.discovery.scan_failed', 'Failed'); })
+        .then(function (r) {
+          if (r.ok) { saveMsg.textContent = T('gateways.discovery.saved', 'Saved'); return; }
+          return _discErrText(r, T('gateways.discovery.scan_failed', 'Failed')).then(function (t) { saveMsg.textContent = t; });
+        })
         .catch(function () { saveMsg.textContent = T('gateways.discovery.scan_failed', 'Failed'); });
     });
     var actions = el('div', null); actions.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px';
-    actions.appendChild(saveBtn); actions.appendChild(saveMsg); card.appendChild(actions);
-    return card;
+    actions.appendChild(saveBtn); actions.appendChild(saveMsg); body.appendChild(actions);
+    return frame.card;
   }
 
   function discoveredDevicesCard(g) {
     var tel = (g.health && g.health.telemetry) || {};
-    var card = el('div', 'gw');
-    card.appendChild(el('h3', null, T('gateways.discovery.devices_title', 'Discovered devices')));
-    if (tel.lan_discovery !== true) { card.appendChild(discMuted(T('routes.suggested.unavailable', ''))); return card; }
+    var frame = _discCard(T('gateways.discovery.devices_title', 'Discovered devices'));
+    var body = frame.body;
+    if (tel.lan_discovery !== true) { body.appendChild(discMuted(T('routes.suggested.unavailable', 'Dieses Gateway unterstützt keine Discovery.'))); return frame.card; }
     var scanBtn = el('button', 'btn btn-secondary', T('gateways.discovery.scan_button', 'Scan LAN')); scanBtn.type = 'button';
     var status = discMuted('');
     var list = el('div', null);
@@ -337,12 +368,19 @@
     }
     function loadCached() {
       fetch('/api/v1/gateways/' + g.peer_id + '/discovered', { credentials: 'same-origin' })
-        .then(function (r) { return r.json(); }).then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); }).catch(function () {});
+        .then(function (r) {
+          if (r.ok) return r.json().then(function (d) { if (d.ok) render(d.devices, d.done, d.timed_out, d.updated_at); });
+          // 403 (license-locked) or 404 — surface so the admin knows why the card is empty.
+          return _discErrText(r, '').then(function (t) { if (t) status.textContent = t; });
+        }).catch(function () {});
     }
     scanBtn.addEventListener('click', function () {
       status.textContent = T('gateways.discovery.scanning', 'Scanning…');
       fetch('/api/v1/gateways/' + g.peer_id + '/discover', { method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: '{}' })
-        .then(function (r) { if (!r.ok) throw new Error('scan'); status.textContent = ''; loadCached(); })
+        .then(function (r) {
+          if (r.ok || r.status === 202) { status.textContent = ''; loadCached(); return; }
+          return _discErrText(r, T('gateways.discovery.scan_failed', 'Scan failed')).then(function (t) { status.textContent = t; });
+        })
         .catch(function () { status.textContent = T('gateways.discovery.scan_failed', 'Scan failed'); });
     });
     if (_discoveryListener) document.removeEventListener('gc:gateway_discovery', _discoveryListener);
@@ -350,9 +388,9 @@
       var p = e.detail || {}; if (String(p.peer_id) === String(g.peer_id)) render(p.devices, p.done, p.timed_out, Date.now());
     };
     document.addEventListener('gc:gateway_discovery', _discoveryListener);
-    card.appendChild(scanBtn); card.appendChild(status); card.appendChild(list);
+    body.appendChild(scanBtn); body.appendChild(status); body.appendChild(list);
     loadCached();
-    return card;
+    return frame.card;
   }
 
   function renderDetail(g) {
