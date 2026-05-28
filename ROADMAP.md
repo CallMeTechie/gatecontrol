@@ -36,6 +36,13 @@ Time-based access control for any proxied **route** (HTTP + L4) or **VPN peer** 
 Per-route **country / IP / CIDR** allow-deny lists already exist via the per-route IP filter (`ip_filter_enabled` / `ip_filter_mode` / `ip_filter_rules`) — rule types `ip`, `cidr`, `country`. Country is resolved through **ip2location.io** (per-request, 24 h in-memory cache; API key under Settings). UI type selector + i18n (en/de) in place. This item was logged in error during the 2026-05-24 planning sweep. The only genuinely new part — **ASN filtering** — was never built and moves to the backlog below.
 - Repos: server. Tier: Pro (`ip_access_control`).
 
+### 8. LAN service discovery at the gateway ✅
+The gateway scans its own LAN (passive mDNS + SSDP always, optional active TCP-connect sweep) on demand and streams results back to the server. The admin reviews discovered devices on the gateway detail page and one-click-adopts them as routes via a new picker in the *Create route* modal. No new container capabilities (no `NET_RAW`); SSDP `LOCATION` is never fetched (no SSRF); untrusted LAN strings are sanitised on ingest and rendered via `textContent` only. Three phases:
+- **Phase 1 — gateway telemetry** (`gatecontrol-gateway` 1.11.0, PR #10): heartbeat reports `lan_subnets` + `lan_discovery_categories`. No capability flag yet (mixed-fleet safety).
+- **Phase 2 — gateway engine + endpoint** (`gatecontrol-gateway` 1.12.0, PR #11): scan engine under `src/discovery/` + new `POST /api/lan-scan`; advertises `lan_discovery: true` in telemetry.
+- **Phase 3 — server backend + UI** (this PR): migration #47 + 2 licence flags + ephemeral discoveryCache with `current_request_id` reconciliation + Bearer ingest + SSE event + 3 admin endpoints + UI cards on the gateway detail page + scan/suggest picker in the route-create modal + en/de i18n + feature doc.
+- See `docs/feature-gateway-lan-discovery.md`. Repos: gateway + server. Tier: Pro (`gateway_lan_discovery`; multi-subnet add-on `gateway_lan_discovery_multi_subnet`).
+
 ---
 
 ## 🔜 Next up
@@ -53,10 +60,6 @@ A statuspage-style overview per proxied service generated from `monitor.js` upti
 ### 7. Native alert channels for homelab
 Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook alerting.
 - **Repos:** server (notification adapters + settings UI). **Tier:** Community.
-
-### 8. LAN service discovery at the gateway
-The gateway scans its LAN (mDNS / SSDP / ARP) and suggests devices/ports as routes in the UI — trivial onboarding of services behind a gateway.
-- **Repos:** gateway (discovery) + server (suggestion UI). **Builds on:** the gateway companion. **Tier:** Pro.
 
 ---
 
@@ -79,4 +82,4 @@ The gateway scans its LAN (mDNS / SSDP / ARP) and suggests devices/ports as rout
 
 ---
 
-_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-27._
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-28._
