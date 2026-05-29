@@ -417,17 +417,37 @@ The in-UI backup does **not** include Caddy certificates — those are re-issued
 
 ### Automatic update
 
+`update.sh` is a host-side helper (it is **not** part of the container image) that keeps the server on the latest GHCR image. Run it from the deployment directory:
+
 ```bash
 cd /opt/gatecontrol
 ./update.sh
 ```
 
-`update.sh` pulls the latest image from GHCR, recreates the container only if a new image was actually pulled, and logs to `/var/log/gatecontrol-update.log`. Safe to schedule via cron or a systemd timer:
+What it does:
+
+1. Pulls `ghcr.io/callmetechie/gatecontrol:latest` (a pull failure aborts).
+2. Compares the **running container's image digest** against the `:latest` digest — *not* the `docker pull` output. (`docker pull` reporting "Image is up to date" is a no-op whenever `:latest` was already pulled locally while the container still runs an older image — which would otherwise skip the update silently.)
+3. Equal → logs `Already up to date` and exits 0 (no recreate).
+4. Different (or no container running yet) → `docker compose up -d --force-recreate --wait`, which blocks until the container's healthcheck passes. A broken image is therefore reported as a **failed deploy** (exit 1), not a silently unhealthy box.
+5. Logs to `/var/log/gatecontrol-update.log` and stdout.
+
+**Run it from the deployment directory** (`/opt/gatecontrol`). The script refuses (exit 3) to recreate the container from any directory other than the one it was actually deployed from: running it from the source checkout would use that copy's `docker-compose.yml`, mount a different `/data` volume, and wipe the live database.
+
+#### Schedule it
+
+Add a host cron job (as root, pointing at the **deployment** directory):
 
 ```
 # /etc/cron.d/gatecontrol-update
-0 3 * * * root /opt/gatecontrol/update.sh
+*/5 * * * * root /opt/gatecontrol/update.sh
 ```
+
+`*/5` (every 5 minutes) tracks `:latest` closely — the server picks up each release within minutes. For less churn, use a daily window instead, e.g. `0 3 * * *`. A systemd timer works equally well.
+
+**No automatic rollback:** if a new image is broken the deploy fails (logged, exit 1) but the container is not rolled back to the previous version — your monitoring must catch an unhealthy container and alert.
+
+Tunables (environment variables): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
 
 ### Manual update
 
