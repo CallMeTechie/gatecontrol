@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.8] — 2026-05-29
+
+### Fixes
+- guard update.sh against recreating from the wrong project dir
+
+---
+
 ## [1.74.7] — 2026-05-29
 
 ### Fixes
