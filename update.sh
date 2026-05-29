@@ -39,6 +39,26 @@ if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   exit 2
 fi
 
+# Safety guard: refuse to recreate the live container from a DIFFERENT project
+# directory than the one it was actually deployed from. The source repo and the
+# deploy dir both contain a docker-compose.yml, but with different /data volumes
+# (repo: a named volume; deploy: the real ./data bind-mount). Recreating from
+# the wrong dir silently swaps the container onto the wrong/empty volume and
+# wipes the live database. Compare the running container's compose working-dir
+# label against COMPOSE_DIR. Skipped on first install (no running container).
+DEPLOYED_DIR="$(docker inspect "$CONTAINER" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)"
+if [ -n "$DEPLOYED_DIR" ]; then
+  CANON_COMPOSE="$(readlink -f "$COMPOSE_DIR" 2>/dev/null || echo "$COMPOSE_DIR")"
+  CANON_DEPLOYED="$(readlink -f "$DEPLOYED_DIR" 2>/dev/null || echo "$DEPLOYED_DIR")"
+  if [ "$CANON_COMPOSE" != "$CANON_DEPLOYED" ]; then
+    log "ERROR: container '$CONTAINER' was deployed from '$DEPLOYED_DIR' but this"
+    log "       script runs from '$COMPOSE_DIR'. Recreating here would mount a"
+    log "       different /data volume and could wipe the live database. Run from"
+    log "       '$DEPLOYED_DIR' instead (or: COMPOSE_DIR='$DEPLOYED_DIR' $0)."
+    exit 3
+  fi
+fi
+
 log "Checking for updates ($COMPOSE_DIR)..."
 
 # Always pull so local :latest reflects the registry. Pull failures are fatal
