@@ -248,6 +248,96 @@
     return Math.floor(diff / 86400) + 'd ago';
   }
 
+  // ─── Auto-update status (header) ────────────────────
+  function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
+
+  function auAgo(s) { if (s == null) return '—'; return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
+
+  function renderAutoUpdate(d) {
+    var host = document.getElementById('au-status'); if (!host) return;
+    host.replaceChildren();
+    var pill = document.createElement('span'); pill.className = 'au-pill ';
+    var dot = document.createElement('span'); dot.className = 'au-dot'; pill.appendChild(dot);
+    var label = document.createElement('span');
+    if (d.status === 'active') {
+      pill.className += 'au-active';
+      label.textContent = T('autoupdate.active', 'Auto-update active') + ' · ' +
+        T('autoupdate.last_checked', 'checked {x} ago').replace('{x}', auAgo(d.age_s));
+    } else if (d.status === 'stale') {
+      pill.className += 'au-red';
+      label.textContent = T('autoupdate.stale', 'Cron no longer running?');
+    } else {
+      pill.className += 'au-amber';
+      label.textContent = T('autoupdate.not_configured', 'Auto-update not set up');
+    }
+    pill.appendChild(label); host.appendChild(pill);
+
+    var badge = document.createElement('span'); badge.className = 'au-badge';
+    badge.textContent = (d.mode === 'manual' ? T('autoupdate.mode_manual', 'Manual') : T('autoupdate.mode_auto', 'Automatic'))
+      + (d.running_version ? ' · v' + d.running_version : '');
+    host.appendChild(badge);
+
+    if (d.mode_mismatch) {
+      var w = document.createElement('span'); w.className = 'au-pill au-red';
+      w.textContent = T('autoupdate.mismatch', 'Mode mismatch — host update.sh is outdated');
+      host.appendChild(w);
+    } else if (d.mode_pending) {
+      var p = document.createElement('span'); p.className = 'au-badge';
+      p.textContent = T('autoupdate.pending', 'Mode applies on the next cron run');
+      host.appendChild(p);
+    }
+
+    var recheck = document.createElement('button'); recheck.className = 'btn btn-ghost';
+    recheck.textContent = T('autoupdate.recheck', 'Re-check');
+    recheck.addEventListener('click', loadAutoUpdate); host.appendChild(recheck);
+
+    var setup = document.createElement('button'); setup.className = 'btn btn-ghost';
+    setup.textContent = T('autoupdate.setup', 'Set up');
+    setup.addEventListener('click', openAuSetup); host.appendChild(setup);
+
+    if (d.mode === 'manual') {
+      var trig = document.createElement('button'); trig.className = 'btn btn-primary';
+      trig.textContent = T('autoupdate.trigger', 'Update now');
+      if (d.status !== 'active') { trig.disabled = true; trig.title = T('autoupdate.not_configured', 'Auto-update not set up'); }
+      trig.addEventListener('click', triggerAuUpdate); host.appendChild(trig);
+    }
+  }
+
+  function loadAutoUpdate() {
+    window.api.get('/api/system/auto-update').then(renderAutoUpdate).catch(function () {});
+  }
+
+  function triggerAuUpdate() {
+    window.api.post('/api/system/auto-update/trigger', {}).then(function (j) {
+      if (window.showToast) window.showToast(T('autoupdate.trigger_queued', 'Update queued'), (j && j.queued) ? 'success' : 'error');
+      loadAutoUpdate();
+    }).catch(function () {});
+  }
+
+  function openAuSetup() {
+    var body = document.getElementById('au-setup-body'); if (!body) return;
+    document.getElementById('au-setup-title').textContent = T('autoupdate.setup_title', 'Set up auto-update');
+    body.replaceChildren();
+    var dl = document.createElement('a'); dl.className = 'btn btn-primary';
+    dl.textContent = '⬇ ' + T('autoupdate.download', 'Download update.sh');
+    dl.href = '/api/v1/system/update-sh';
+    body.appendChild(dl);
+    var det = document.createElement('details'); det.style.marginTop = '14px';
+    var sum = document.createElement('summary'); sum.textContent = T('autoupdate.guide', 'Step-by-step guide');
+    det.appendChild(sum);
+    var pre = document.createElement('pre');
+    pre.textContent = '# /etc/cron.d/gatecontrol-update\n*/5 * * * * root /opt/gatecontrol/update.sh';
+    pre.style.cssText = 'background:var(--bg-base, #f0ede7);padding:10px 12px;border-radius:6px;font-size:11px;overflow-x:auto;border:1px solid var(--border)';
+    det.appendChild(pre);
+    var note = document.createElement('p'); note.style.cssText = 'font-size:12px;color:var(--text-2)';
+    note.textContent = 'update.sh muss aus /opt/gatecontrol laufen. */5 ist Pflicht. Kein Auto-Rollback → Monitoring.';
+    det.appendChild(note);
+    body.appendChild(det);
+    if (window.openModal) window.openModal('au-setup-modal-overlay');
+  }
+  // No custom close handler — the modal closes via the global
+  // [data-close-modal] handler in app.js.
+
   // ─── Tab switching for chart ────────────────────────
   document.querySelectorAll('.tabs .tab[data-period]').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -269,10 +359,12 @@
       refreshActivity(),
       refreshChart('1h'),
     ]);
+    loadAutoUpdate();
   }
 
   // ─── Init ──────────────────────────────────────────
   refreshAll();
+  loadAutoUpdate();
   refreshTimer = setInterval(refreshAll, REFRESH_INTERVAL);
 
   // Cleanup on page leave
