@@ -3180,11 +3180,11 @@ table tbody tr:last-child td { border-bottom: none; }
 .au-pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px;
   font-size:12px; font-weight:600; }
 .au-pill .au-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-.au-active  { background: var(--green-lt, var(--green-light)); color: var(--green, var(--green-text)); border:1px solid var(--green-bd, var(--green-border)); }
+.au-active  { background: var(--green-lt, var(--green-light)); color: var(--green-text, var(--green)); border:1px solid var(--green-bd, var(--green-border)); }
 .au-active  .au-dot { background: var(--green, #16a34a); }
-.au-amber   { background: var(--amber-lt, rgba(217,119,6,0.1)); color: var(--amber, #b45309); border:1px solid var(--amber-bd, rgba(217,119,6,0.4)); }
+.au-amber   { background: var(--amber-lt, rgba(217,119,6,0.1)); color: var(--amber-text, var(--amber, #92400E)); border:1px solid var(--amber-bd, rgba(217,119,6,0.4)); }
 .au-amber   .au-dot { background: var(--amber, #b45309); }
-.au-red     { background: var(--red-lt, var(--red-light)); color: var(--red, var(--red-text)); border:1px solid var(--red-bd, var(--red-border)); }
+.au-red     { background: var(--red-lt, var(--red-light)); color: var(--red-text, var(--red)); border:1px solid var(--red-bd, var(--red-border)); }
 .au-red     .au-dot { background: var(--red, #dc2626); }
 .au-badge   { font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px;
   background: var(--bg-base, #f0ede7); color: var(--text-2); border:1px solid var(--border); }
