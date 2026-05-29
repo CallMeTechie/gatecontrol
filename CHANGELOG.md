@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.6] — 2026-05-29
+
+### Fixes
+- update.sh recreates on running-vs-latest digest mismatch, not pull output
+
+---
+
 ## [1.74.5] — 2026-05-29
 
 ### Fixes
