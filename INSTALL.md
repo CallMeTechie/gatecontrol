@@ -443,11 +443,22 @@ Add a host cron job (as root, pointing at the **deployment** directory):
 */5 * * * * root /opt/gatecontrol/update.sh
 ```
 
-`*/5` (every 5 minutes) tracks `:latest` closely — the server picks up each release within minutes. For less churn, use a daily window instead, e.g. `0 3 * * *`. A systemd timer works equally well.
+`*/5` (every 5 minutes) is **required** for this feature, in both modes — the dashboard's update status, the freshness check, and the "Update now" trigger all rely on the script running at least every 5 minutes. A daily interval (e.g. `0 3 * * *`) is **not suitable** here: it would leave a manual "Update now" request unprocessed for up to 24 hours and make the dashboard show a permanent false "stale" status. A systemd timer with the same 5-minute cadence works equally well.
+
+#### Mode (Automatic / Manual)
+
+The update **mode** is chosen in the server's **Settings → Auto-Update** card. The same `*/5` cron runs in both modes — only what it *does* per run differs:
+
+- **Automatic** — every cron run compares digests and **deploys** whenever `:latest` differs from the running container. The server tracks each release within minutes, fully unattended.
+- **Manual** — every cron run only **polls** the `pending-update` flag written by the **"Update now"** button in the dashboard. No flag → it does nothing (no recreate, no churn). When you click "Update now", the flag is set and the next cron run (within 5 minutes) performs the deploy. This is why `*/5` is mandatory even in Manual mode: a slower interval delays your manual trigger by the full cron period.
 
 **No automatic rollback:** if a new image is broken the deploy fails (logged, exit 1) but the container is not rolled back to the previous version — your monitoring must catch an unhealthy container and alert.
 
 Tunables (environment variables): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
+
+#### Upgrading from an older `update.sh`
+
+If you already run `update.sh` from cron from a previous GateControl version, you must **replace it once** with the current (mode-aware) version shipped with this release. The older script does not understand the Automatic/Manual mode or the `pending-update` flag. Until you swap it in, the dashboard shows a **`mode_mismatch`** warning and **Manual mode will not actually take effect** — the stale script keeps deploying (or skipping) regardless of the mode you selected in Settings. Copy the new `update.sh` into the deployment directory and the warning clears on the next cron run.
 
 ### Manual update
 
