@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.9] — 2026-05-29
+
+### Dokumentation
+- document server auto-update setup (matches hardened update.sh)
+
+---
+
 ## [1.74.8] — 2026-05-29
 
 ### Fixes
