@@ -68,7 +68,21 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 recreate() {
-  ( cd "$COMPOSE_DIR" && docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1 )
+  # Happy path: --force-recreate + --wait. On failure, recover with a clean
+  # down+up: `docker compose up --force-recreate` can intermittently leave the
+  # new container stuck in "Created" (host networking + fixed container_name
+  # rename race), taking the service down with no retry. A `down` clears the
+  # stuck/partial container, then a fresh `up` brings it back. Returns the
+  # recovery up's status, so a genuinely broken image still reports failure.
+  (
+    cd "$COMPOSE_DIR" || exit 1
+    if docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1; then
+      exit 0
+    fi
+    log "recreate failed — clean down+up recovery (host-net/name race)"
+    docker compose down >>"$LOG" 2>&1 || true
+    docker compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1
+  )
 }
 
 needs_update() { # echoes "yes" if running image != :latest

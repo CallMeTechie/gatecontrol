@@ -6,7 +6,8 @@ PASS=0; FAIL=0
 ok(){ echo "  ok - $1"; PASS=$((PASS+1)); }
 no(){ echo "  NOT OK - $1"; FAIL=$((FAIL+1)); }
 
-newbox(){ # $1=running $2=latest $3=workdir_label  → exports SBX, CALLS, prepends shim to PATH
+newbox(){ # $1=running $2=latest $3=workdir_label [$4=force-recreate-exit, default 0] → exports SBX, CALLS, prepends shim
+  local FR="${4:-0}"
   SBX="$(mktemp -d)"; mkdir -p "$SBX/bin" "$SBX/data"
   printf 'services:\n  gatecontrol:\n    image: x\n' >"$SBX/docker-compose.yml"
   CALLS="$SBX/calls"; : >"$CALLS"
@@ -14,7 +15,13 @@ newbox(){ # $1=running $2=latest $3=workdir_label  → exports SBX, CALLS, prepe
 #!/usr/bin/env bash
 echo "\$*" >>"$CALLS"
 case "\$1" in
-  pull|compose) exit 0 ;;
+  pull) exit 0 ;;
+  compose)
+    for __a in "\$@"; do
+      [ "\$__a" = down ] && exit 0                 # down always ok
+      [ "\$__a" = --force-recreate ] && exit $FR    # force-recreate up: baked result (0 ok, 1 = race fail)
+    done
+    exit 0 ;;                                        # recovery up (no --force-recreate)
   image) [ "\$2" = inspect ] && { echo "$2"; exit 0; } ;;
   inspect) case "\$4" in *Labels*) echo "$3";; *Image*) echo "$1";; *) echo "";; esac; exit 0 ;;
 esac
@@ -43,6 +50,14 @@ printf '{"mode":"auto"}\n' >"$SBX/data/.auto-update-config.json"
 echo '{}' >"$SBX/data/pending-update"
 run >/dev/null
 [ -f "$SBX/data/pending-update" ] && no "auto must remove orphan flag" || ok "auto removes orphan flag"
+rm -rf "$SBX"
+
+# 4) recreate race recovery: --force-recreate up fails → clean down+up recovers → updated
+newbox OLD NEW __SELF__ 1; sed -i "s#__SELF__#$SBX#" "$SBX/bin/docker"
+printf '{"mode":"auto"}\n' >"$SBX/data/.auto-update-config.json"   # auto, running(OLD)!=latest(NEW) → recreate
+code="$(run)"
+{ [ "$code" = 0 ] && grep -q '"action":"updated"' "$SBX/data/.auto-update-state.json"; } && ok "recreate recovers via down+up → updated" || no "recreate recovery (code=$code)"
+grep -q 'compose down' "$SBX/calls" && ok "recovery invoked compose down" || no "recovery did not run down"
 rm -rf "$SBX"
 
 echo "update_sh.test.sh: $PASS passed, $FAIL failed"
