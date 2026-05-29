@@ -109,22 +109,9 @@
       act.appendChild(up);
     }
     ph.appendChild(act);
-    if (g.update_state && g.update_state !== 'idle') {
-      var banner = el('div', 'gw-update-banner ' + g.update_state);
-      if (g.update_state === 'updating') {
-        banner.textContent = T('gateways.update_running', 'Update läuft … ({x})').replace('{x}', ago(g.update_requested_at));
-      } else if (g.update_state === 'done') {
-        banner.textContent = T('gateways.update_done', 'Update auf {x} abgeschlossen').replace('{x}', g.update_target_version || latest || '—');
-      } else if (g.update_state === 'failed') {
-        banner.textContent = T('gateways.update_failed', 'Update fehlgeschlagen');
-      } else if (g.update_state === 'unknown') {
-        banner.appendChild(document.createTextNode(T('gateways.update_unknown', 'Update-Status unbekannt') + ' '));
-        var dm = el('button', 'gw-update-dismiss', T('gateways.update_dismiss', 'Ausblenden'));
-        dm.dataset.act = 'dismiss';
-        banner.appendChild(dm);
-      }
-      ph.appendChild(banner);
-    }
+    // Update progress is surfaced via a global, colour-coded toast (see
+    // reconcileUpdateToast, driven from render()) — NOT inline. Inline status
+    // text reflowed the action row's buttons/icons on every status change.
     return ph;
   }
   function versionsCard(g) {
@@ -757,8 +744,82 @@
     if (m) showDetail(decodeURIComponent(m[1])); else showFleet();
   }
 
+  // ── Gateway update toast ────────────────────────────────────────────────
+  // Update progress shows as a colour-coded toast (bottom-right, stacked),
+  // pulsing while running and static when terminal — instead of inline card
+  // text that reflowed the action row on every status change. The toast lives
+  // on document.body, so it survives the periodic full re-render of the view.
+  var GW_UPDATE_DONE_MS = 20000; // keep the "done" toast ~20s, then fade out
+  var _gwToasts = {};            // peerId → { state, sig, node, dot, msg, timer, closeBtn }
+  var _gwToastAcked = {};        // peerId → last terminal sig already shown+dismissed
+
+  function _gwToastStack() {
+    var s = document.getElementById('gw-update-toast-stack');
+    if (!s) { s = el('div'); s.id = 'gw-update-toast-stack'; document.body.appendChild(s); }
+    return s;
+  }
+  function dismissUpdateToast(peerId, ackSig) {
+    var t = _gwToasts[peerId];
+    if (!t) return;
+    if (t.timer) clearTimeout(t.timer);
+    if (ackSig) _gwToastAcked[peerId] = ackSig;
+    var node = t.node;
+    node.classList.remove('show');
+    setTimeout(function () { if (node.parentNode) node.parentNode.removeChild(node); }, 300);
+    delete _gwToasts[peerId];
+  }
+  // state: 'updating' | 'done' | 'failed' | 'unknown'
+  function showUpdateToast(peerId, state, version) {
+    var sig = state + ':' + (version || '');
+    var t = _gwToasts[peerId];
+    if (t && t.sig === sig) return; // already showing this exact state — no-op (don't reset timers)
+    if (!t) {
+      t = { dot: el('span', 'gw-toast-dot'), msg: el('span', 'gw-toast-msg'), node: el('div', 'gw-toast') };
+      t.node.setAttribute('role', 'status');
+      t.node.setAttribute('aria-live', 'polite');
+      t.node.appendChild(t.dot); t.node.appendChild(t.msg);
+      _gwToastStack().appendChild(t.node);
+      requestAnimationFrame(function () { t.node.classList.add('show'); });
+      _gwToasts[peerId] = t;
+    } else if (t.closeBtn) { t.node.removeChild(t.closeBtn); t.closeBtn = null; }
+    if (t.timer) { clearTimeout(t.timer); t.timer = null; }
+    t.sig = sig; t.state = state;
+    t.node.className = 'gw-toast show gw-toast-' + state;
+    if (state === 'updating') {
+      t.msg.textContent = T('gateways.update_running', 'Update läuft …');
+    } else if (state === 'done') {
+      t.msg.textContent = T('gateways.update_done', 'Update auf Version {x} abgeschlossen').replace('{x}', version || latest || '—');
+      t.timer = setTimeout(function () { dismissUpdateToast(peerId, sig); }, GW_UPDATE_DONE_MS);
+    } else { // failed | unknown — persist until the operator dismisses it
+      t.msg.textContent = (state === 'failed')
+        ? T('gateways.update_failed', 'Update fehlgeschlagen')
+        : T('gateways.update_unknown', 'Update-Status unbekannt');
+      var x = el('button', 'gw-toast-close', '✕');
+      x.setAttribute('aria-label', T('gateways.update_dismiss', 'Verwerfen'));
+      x.addEventListener('click', function () { dismissUpdateToast(peerId, sig); });
+      t.node.appendChild(x); t.closeBtn = x;
+    }
+  }
+  function reconcileUpdateToast(g) {
+    var st = g.update_state;
+    if (!st || st === 'idle') {
+      // No active update. Clear a lingering "updating" toast; terminal toasts
+      // self-dismiss via their own timer / close button. Reset the ack so a
+      // future update is shown again.
+      var cur = _gwToasts[g.peer_id];
+      if (cur && cur.state === 'updating') dismissUpdateToast(g.peer_id);
+      delete _gwToastAcked[g.peer_id];
+      return;
+    }
+    var version = g.update_target_version || latest || '';
+    // Don't re-pop a terminal toast we already showed and dismissed.
+    if (st !== 'updating' && _gwToastAcked[g.peer_id] === st + ':' + version) return;
+    showUpdateToast(g.peer_id, st, version);
+  }
+
   function render(data) {
     last = data.gateways || []; latest = data.latest_version || ''; warn.hidden = !!data.latest_version;
+    last.forEach(function (g) { reconcileUpdateToast(g); });
     var on = 0, off = 0, deg = 0, upd = 0;
     last.forEach(function (g) { var s = status(g); if (s === 'online') on++; else if (s === 'offline') off++; else if (s === 'degraded') deg++; if (g.update_available) upd++; });
     kpis.replaceChildren(
@@ -791,17 +852,19 @@
       fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/update', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          if (typeof window.showToast === 'function') {
-            window.showToast(
-              j.reason === 'cooldown' ? T('gateways.update_cooldown', 'Update auf Cooldown — bitte später erneut versuchen') : T('gateways.update_requested', 'Update angefordert'),
-              j.reason === 'cooldown' ? 'error' : 'success');
+          if (j.reason === 'cooldown') {
+            if (typeof window.showToast === 'function') {
+              window.showToast(T('gateways.update_cooldown', 'Update auf Cooldown — bitte später erneut versuchen'), 'error');
+            }
+          } else {
+            // Optimistic: show the pulsing "running" toast immediately; the poll
+            // cycle then keeps it in sync (→ done/failed) from server state.
+            showUpdateToast(id, 'updating', latest);
           }
           load();
         }).catch(function () {});
       return;
     }
-    var dm = e.target.closest('[data-act="dismiss"]');
-    if (dm) { var b = dm.closest('.gw-update-banner'); if (b && b.parentNode) b.parentNode.removeChild(b); }
   });
   window.addEventListener('hashchange', route);
 
