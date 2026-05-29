@@ -1,22 +1,13 @@
 #!/bin/bash
-# GateControl Auto-Update Script
-# Pulls the latest image from GHCR and recreates the container when the RUNNING
-# container's image differs from :latest.
+# GateControl Auto-Update Script — mode-aware.
 #
-# The recreate decision is based on the running container's image digest vs the
-# :latest digest — NOT on `docker pull`'s "Image is up to date" message. That
-# message is a no-op whenever :latest was already pulled locally while the
-# container still runs an OLDER image (e.g. a prior pull without a recreate, or
-# a half-finished deploy). The old logic then exited 0 without recreating, so
-# the running container silently stayed on the stale version.
-#
-# The compose project directory is derived from the script's own location
-# (so the script works regardless of where the deployment lives) but can
-# be overridden with the COMPOSE_DIR environment variable for unusual
-# layouts or CI pipelines.
-#
-# Resolves symlinks so callers can place a symlink in PATH if they want.
-
+# Mode comes from $DATA_DIR/.auto-update-config.json (written by the server):
+#   "auto"   → track :latest (recreate when the running image != :latest)
+#   "manual" → only update when the server dropped a pending-update flag
+# Each run writes a status marker to $DATA_DIR/.auto-update-state.json (read by
+# the dashboard). Recreate decision uses the running container's image digest vs
+# :latest (not the pull output). Refuses to recreate from a different project dir
+# than the one the container was deployed from (would mount the wrong /data).
 set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]:-$0}")"
@@ -24,76 +15,92 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 COMPOSE_DIR="${COMPOSE_DIR:-$SCRIPT_DIR}"
 IMAGE="${GC_IMAGE:-ghcr.io/callmetechie/gatecontrol:latest}"
 CONTAINER="${GC_CONTAINER:-gatecontrol}"
+DATA_DIR="${GC_DATA_DIR:-$COMPOSE_DIR/data}"
 LOG="${GC_UPDATE_LOG:-/var/log/gatecontrol-update.log}"
 WAIT_TIMEOUT="${GC_WAIT_TIMEOUT:-150}"
 
-# Log to both the logfile (best-effort) and stdout (so manual/interactive runs
-# show progress, and cron captures it too).
+CONFIG_FILE="$DATA_DIR/.auto-update-config.json"
+STATE_FILE="$DATA_DIR/.auto-update-state.json"
+FLAG_FILE="$DATA_DIR/pending-update"
+
 log() { local m; m="[$(date -Iseconds)] $*"; echo "$m"; echo "$m" >>"$LOG" 2>/dev/null || true; }
 
-# docker-compose.yml is mandatory in the resolved directory — if it is
-# missing, fail loudly instead of quietly running in the wrong place.
+# Atomic write: temp + rename (rename is atomic on the same fs) so a concurrent
+# reader never sees a half-written/empty file. Marker is 644 (container UID 101
+# must read it).
+write_state() { # $1=action $2=mode
+  local tmp ok="true"; [ "$1" = "failed" ] && ok="false"
+  tmp="$(mktemp "${STATE_FILE}.XXXXXX")" || return 0
+  printf '{"checked_at":"%s","action":"%s","mode":"%s","ok":%s}\n' \
+    "$(date -Iseconds)" "$1" "$2" "$ok" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$STATE_FILE"
+}
+
+# Overlap lock — only if flock is available; never abort the update because flock
+# is missing (the script is published and runs on unknown hosts).
+if command -v flock >/dev/null 2>&1 && exec 9>"${TMPDIR:-/tmp}/gc-update.lock" 2>/dev/null; then
+  flock -n 9 2>/dev/null || { log "another update.sh run holds the lock — skipping"; exit 0; }
+else
+  log "no overlap lock (flock missing or lock dir unwritable) — continuing"
+fi
+
 if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   echo "ERROR: no docker-compose.yml in $COMPOSE_DIR" >&2
-  echo "       Set COMPOSE_DIR explicitly or move this script next to docker-compose.yml." >&2
+  echo "       Set COMPOSE_DIR or run from the deployment directory." >&2
   exit 2
 fi
 
-# Safety guard: refuse to recreate the live container from a DIFFERENT project
-# directory than the one it was actually deployed from. The source repo and the
-# deploy dir both contain a docker-compose.yml, but with different /data volumes
-# (repo: a named volume; deploy: the real ./data bind-mount). Recreating from
-# the wrong dir silently swaps the container onto the wrong/empty volume and
-# wipes the live database. Compare the running container's compose working-dir
-# label against COMPOSE_DIR. Skipped on first install (no running container).
+# Directory guard: do not recreate the live container from a different project
+# dir than it was deployed from.
 DEPLOYED_DIR="$(docker inspect "$CONTAINER" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)"
 if [ -n "$DEPLOYED_DIR" ]; then
-  CANON_COMPOSE="$(readlink -f "$COMPOSE_DIR" 2>/dev/null || echo "$COMPOSE_DIR")"
-  CANON_DEPLOYED="$(readlink -f "$DEPLOYED_DIR" 2>/dev/null || echo "$DEPLOYED_DIR")"
-  if [ "$CANON_COMPOSE" != "$CANON_DEPLOYED" ]; then
-    log "ERROR: container '$CONTAINER' was deployed from '$DEPLOYED_DIR' but this"
-    log "       script runs from '$COMPOSE_DIR'. Recreating here would mount a"
-    log "       different /data volume and could wipe the live database. Run from"
-    log "       '$DEPLOYED_DIR' instead (or: COMPOSE_DIR='$DEPLOYED_DIR' $0)."
+  C="$(readlink -f "$COMPOSE_DIR" 2>/dev/null || echo "$COMPOSE_DIR")"
+  D="$(readlink -f "$DEPLOYED_DIR" 2>/dev/null || echo "$DEPLOYED_DIR")"
+  if [ "$C" != "$D" ]; then
+    log "ERROR: '$CONTAINER' deployed from '$DEPLOYED_DIR' but running from '$COMPOSE_DIR' — refusing (would mount wrong /data). exit 3"
     exit 3
   fi
 fi
 
-log "Checking for updates ($COMPOSE_DIR)..."
-
-# Always pull so local :latest reflects the registry. Pull failures are fatal
-# (don't proceed to compare against a stale local tag).
-if ! docker pull "$IMAGE" >>"$LOG" 2>&1; then
-  log "ERROR: docker pull '$IMAGE' failed — aborting"
-  exit 1
+# Read mode (default auto on missing/corrupt config).
+MODE="auto"
+if [ -f "$CONFIG_FILE" ]; then
+  if grep -q '"mode"[[:space:]]*:[[:space:]]*"manual"' "$CONFIG_FILE" 2>/dev/null; then MODE="manual"; fi
 fi
 
-LATEST_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
-RUNNING_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
+recreate() {
+  cd "$COMPOSE_DIR"
+  docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1
+}
 
-if [ -z "$LATEST_ID" ]; then
-  log "ERROR: could not resolve image id for '$IMAGE' after pull — aborting"
-  exit 1
-fi
+needs_update() { # echoes "yes" if running image != :latest
+  local latest running
+  latest="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
+  running="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
+  [ -z "$latest" ] && { echo "err"; return; }
+  if [ -n "$running" ] && [ "$running" = "$latest" ]; then echo "no"; else echo "yes"; fi
+}
 
-# Recreate ONLY when the running image differs from :latest (or no container
-# is running yet). This is the digest-based check that fixes the silent no-op.
-if [ -n "$RUNNING_ID" ] && [ "$RUNNING_ID" = "$LATEST_ID" ]; then
-  log "Already up to date (running ${RUNNING_ID#sha256:})"
+if [ "$MODE" = "manual" ]; then
+  if [ ! -f "$FLAG_FILE" ]; then
+    log "manual mode, no pending-update — no-op"; write_state noop manual; exit 0
+  fi
+  rm -f "$FLAG_FILE"                       # consume the trigger
+  if ! docker pull "$IMAGE" >>"$LOG" 2>&1; then log "pull failed"; write_state failed manual; exit 1; fi
+  case "$(needs_update)" in
+    no)  log "manual trigger but already on latest — no recreate"; write_state noop manual; exit 0 ;;
+    err) log "could not resolve :latest digest"; write_state failed manual; exit 1 ;;
+  esac
+  log "manual trigger — recreating"
+  if recreate; then write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
   exit 0
 fi
 
-log "Update needed: running=${RUNNING_ID:-<none>} -> latest=${LATEST_ID#sha256:}"
-
-cd "$COMPOSE_DIR"
-# --force-recreate guarantees the swap even when compose considers the service
-# config unchanged; --wait blocks until the container's healthcheck passes so a
-# broken image is reported as a failed deploy instead of a silent unhealthy box.
-if docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1; then
-  NEW_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
-  log "Update complete and healthy (now ${NEW_ID#sha256:})"
-else
-  STATUS="$(docker ps -a --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null || true)"
-  log "ERROR: recreate/healthcheck failed (status: ${STATUS:-unknown}) — check 'docker logs $CONTAINER'"
-  exit 1
-fi
+# auto mode
+rm -f "$FLAG_FILE" 2>/dev/null || true     # clear any orphaned flag from a prior manual session
+if ! docker pull "$IMAGE" >>"$LOG" 2>&1; then log "pull failed"; write_state failed auto; exit 1; fi
+case "$(needs_update)" in
+  no)  log "auto: already up to date"; write_state noop auto; exit 0 ;;
+  err) log "could not resolve :latest digest"; write_state failed auto; exit 1 ;;
+esac
+log "auto: update needed — recreating"
+if recreate; then write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
