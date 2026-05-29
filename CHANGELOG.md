@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.0] — 2026-05-29
+
+### Features
+- server auto-update — mode toggle, dashboard status, setup guide (#117)
+
+---
+
 ## [1.74.9] — 2026-05-29
 
 ### Dokumentation
