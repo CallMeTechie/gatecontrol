@@ -272,6 +272,13 @@
     }
     pill.appendChild(label); host.appendChild(pill);
 
+    if (d.last_action === 'failed') {
+      var fail = document.createElement('span');
+      fail.className = 'au-pill au-red';
+      fail.textContent = T('autoupdate.failed', 'Last update failed');
+      host.appendChild(fail);
+    }
+
     var badge = document.createElement('span'); badge.className = 'au-badge';
     badge.textContent = (d.mode === 'manual' ? T('autoupdate.mode_manual', 'Manual') : T('autoupdate.mode_auto', 'Automatic'))
       + (d.running_version ? ' · v' + d.running_version : '');
