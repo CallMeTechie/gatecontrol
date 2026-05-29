@@ -251,7 +251,7 @@
   // ─── Auto-update status (header) ────────────────────
   function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
 
-  function auAgo(s) { if (s == null) return '—'; return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
+  function auAgo(s) { if (s == null) return '—'; return s < 60 ? T('autoupdate.ago_seconds','{x}s').replace('{x}', s) : T('autoupdate.ago_minutes','{x}m').replace('{x}', Math.round(s/60)); }
 
   function renderAutoUpdate(d) {
     var host = document.getElementById('au-status'); if (!host) return;
@@ -319,7 +319,7 @@
     document.getElementById('au-setup-title').textContent = T('autoupdate.setup_title', 'Set up auto-update');
     body.replaceChildren();
     var dl = document.createElement('a'); dl.className = 'btn btn-primary';
-    dl.textContent = '⬇ ' + T('autoupdate.download', 'Download update.sh');
+    dl.textContent = T('autoupdate.download', '⬇ Download update.sh');
     dl.href = '/api/v1/system/update-sh';
     body.appendChild(dl);
     var det = document.createElement('details'); det.style.marginTop = '14px';
@@ -330,7 +330,7 @@
     pre.style.cssText = 'background:var(--bg-base, #f0ede7);padding:10px 12px;border-radius:6px;font-size:11px;overflow-x:auto;border:1px solid var(--border)';
     det.appendChild(pre);
     var note = document.createElement('p'); note.style.cssText = 'font-size:12px;color:var(--text-2)';
-    note.textContent = 'update.sh muss aus /opt/gatecontrol laufen. */5 ist Pflicht. Kein Auto-Rollback → Monitoring.';
+    note.textContent = T('autoupdate.setup_note', 'update.sh must run from /opt/gatecontrol. */5 interval is required. No auto-rollback — monitor separately.');
     det.appendChild(note);
     body.appendChild(det);
     if (window.openModal) window.openModal('au-setup-modal-overlay');
