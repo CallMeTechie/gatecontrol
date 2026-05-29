@@ -40,6 +40,11 @@ async function start() {
     logger.warn({ err: err.message }, 'Tags backfill failed (non-fatal)');
   }
 
+  // Project the configured auto-update mode onto the /data volume so the host
+  // update.sh sees the current mode even after a fresh/restored data dir.
+  try { require('./services/autoUpdate').syncConfigFileOnBoot(); }
+  catch (err) { logger.warn({ err: err.message }, 'auto-update config sync skipped'); }
+
   // Validate license (never throws — falls back to Community mode internally)
   const licenseInfo = await validateLicense();
   logger.info(`License: ${licenseInfo.plan} plan`);

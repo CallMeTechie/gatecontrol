@@ -92,6 +92,22 @@ async function main() {
     }
   }
 
+  // Local vendored copy: server update.sh must equal the repo-root update.sh.
+  // (No upstream URL — this script lives in this repo, so compare on disk.)
+  try {
+    const rootSh = fs.readFileSync(path.join(__dirname, '..', 'update.sh'));
+    const vendSh = fs.readFileSync(path.join(__dirname, '..', 'src/services/systemSetup/templates/update.sh'));
+    if (!rootSh.equals(vendSh)) {
+      console.error('DRIFT: src/services/systemSetup/templates/update.sh != repo-root update.sh');
+      failed = true;
+    } else {
+      console.log('  OK  src/services/systemSetup/templates/update.sh == repo-root update.sh');
+    }
+  } catch (e) {
+    console.error(`DRIFT: cannot compare server update.sh: ${e.message}`);
+    failed = true;
+  }
+
   if (failed) {
     console.error(`\nVendored template drift detected — update local copies or bump the tag in VENDORED.md.`);
     process.exit(1);

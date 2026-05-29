@@ -443,11 +443,22 @@ Host-Cron-Job (als root, auf das **Deploy**-Verzeichnis zeigend):
 */5 * * * * root /opt/gatecontrol/update.sh
 ```
 
-`*/5` (alle 5 Minuten) folgt `:latest` eng — der Server zieht jeden Release binnen Minuten nach. Für weniger Änderungsrauschen ein Tagesfenster nutzen, z.B. `0 3 * * *`. Ein systemd-Timer funktioniert genauso.
+`*/5` (alle 5 Minuten) ist für dieses Feature **Pflicht**, in beiden Modi — der Update-Status im Dashboard, die Aktualitätsprüfung und der „Update jetzt"-Trigger setzen alle voraus, dass das Skript mindestens alle 5 Minuten läuft. Ein Tagesintervall (z.B. `0 3 * * *`) ist hier **ungeeignet**: Eine manuelle „Update jetzt"-Anforderung bliebe bis zu 24 Stunden unbearbeitet liegen, und das Dashboard zeigte dauerhaft einen falschen „veraltet"-Status. Ein systemd-Timer mit derselben 5-Minuten-Taktung funktioniert genauso.
+
+#### Modus (Automatisch / Manuell)
+
+Der Update-**Modus** wird in der Server-Karte **Einstellungen → Auto-Update** gewählt. Derselbe `*/5`-Cron läuft in beiden Modi — nur was er pro Lauf *tut*, unterscheidet sich:
+
+- **Automatisch** — jeder Cron-Lauf vergleicht die Digests und **deployt**, sobald `:latest` vom laufenden Container abweicht. Der Server zieht jeden Release binnen Minuten nach, vollständig unbeaufsichtigt.
+- **Manuell** — jeder Cron-Lauf **pollt** nur das `pending-update`-Flag, das der Button **„Update jetzt"** im Dashboard schreibt. Kein Flag → er tut nichts (kein Recreate, kein Änderungsrauschen). Beim Klick auf „Update jetzt" wird das Flag gesetzt und der nächste Cron-Lauf (binnen 5 Minuten) führt den Deploy aus. Genau deshalb ist `*/5` auch im Manuell-Modus Pflicht: Ein langsameres Intervall verzögert deinen manuellen Trigger um die volle Cron-Periode.
 
 **Kein automatisches Rollback:** Ist ein neues Image kaputt, scheitert der Deploy (geloggt, Exit 1), der Container wird aber nicht auf die Vorversion zurückgerollt — dein Monitoring muss einen ungesunden Container erkennen und alarmieren.
 
 Stellschrauben (Umgebungsvariablen): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (Default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
+
+#### Upgrade von einer älteren `update.sh`
+
+Falls du `update.sh` bereits aus einer früheren GateControl-Version per Cron betreibst, musst du sie **einmalig** durch die aktuelle (modusbewusste) Version aus diesem Release ersetzen. Das ältere Skript kennt weder den Automatisch/Manuell-Modus noch das `pending-update`-Flag. Solange du es nicht austauschst, zeigt das Dashboard eine **`mode_mismatch`**-Warnung und der **Manuell-Modus wird nicht wirksam** — das veraltete Skript deployt (bzw. überspringt) weiter, unabhängig vom in den Einstellungen gewählten Modus. Kopiere die neue `update.sh` ins Deploy-Verzeichnis, dann verschwindet die Warnung beim nächsten Cron-Lauf.
 
 ### Manuelles Update
 

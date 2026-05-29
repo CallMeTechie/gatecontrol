@@ -3,6 +3,8 @@
 const { Router } = require('express');
 const system = require('../../services/system');
 const dns = require('../../services/dns');
+const autoUpdate = require('../../services/autoUpdate');
+const systemSetup = require('../../services/systemSetup');
 const { requireFeature } = require('../../middleware/license');
 
 const router = Router();
@@ -76,6 +78,47 @@ router.get('/dns/records', requireFeature('internal_dns'), (req, res) => {
     res.json({ ok: true, status, staticRecords, peers });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'DNS records unavailable' });
+  }
+});
+
+// ── Auto-Update ──────────────────────────────────────────────
+router.get('/auto-update', (req, res) => {
+  try { res.json({ ok: true, ...autoUpdate.getStatus() }); }
+  catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+router.put('/auto-update', (req, res) => {
+  const { mode } = req.body || {};
+  if (mode !== 'auto' && mode !== 'manual') {
+    return res.status(400).json({ ok: false, error: 'invalid mode' });
+  }
+  try {
+    res.json({ ok: true, ...autoUpdate.setMode(mode) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/auto-update/trigger', (req, res) => {
+  try {
+    const result = autoUpdate.requestUpdate();
+    if (result.reason === 'not_manual_mode') {
+      return res.status(409).json({ ok: false, error: 'not_manual_mode' });
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/update-sh', (req, res) => {
+  try {
+    const content = systemSetup.readUpdateSh();
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="update.sh"');
+    res.send(content);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'update.sh unavailable' });
   }
 });
 

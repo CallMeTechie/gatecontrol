@@ -25,6 +25,7 @@
     <div class="page-sub">{{ t('dashboard.subtitle') }}</div>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+    <span id="au-status" class="au-actions"></span>
     <button class="btn btn-ghost" id="btn-reload">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       {{ t('dashboard.reload') }}
@@ -162,6 +163,17 @@
     <div class="card-body">
       <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)" id="uptime-value">—</div>
     </div>
+  </div>
+</div>
+
+<!-- Auto-update setup modal -->
+<div class="modal-overlay" id="au-setup-modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="au-setup-title"></span>
+      <button class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
+    </div>
+    <div class="modal-body" id="au-setup-body"></div>
   </div>
 </div>
 {% endblock %}
