@@ -1032,6 +1032,31 @@
   }
 })();
 
+// ─── Auto-Update Mode ─────────────────────────────────
+(function initAutoUpdateMode() {
+  var card = document.getElementById('card-autoupdate');
+  if (!card) return;
+  window.api.get('/api/system/auto-update').then(function (d) {
+    var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
+    if (el) el.checked = true;
+  }).catch(function () {});
+  var save = document.getElementById('au-mode-save');
+  if (save) {
+    save.addEventListener('click', function () {
+      var sel = card.querySelector('input[name="au-mode"]:checked');
+      var mode = sel ? sel.value : 'auto';
+      window.api.put('/api/system/auto-update', { mode: mode }).then(function (j) {
+        if (window.showToast) {
+          window.showToast(
+            (window.GC && GC.t && GC.t['autoupdate.saved']) || 'Mode saved',
+            (j && j.ok) ? 'success' : 'error'
+          );
+        }
+      }).catch(function () {});
+    });
+  }
+})();
+
 
 // ── Machine Binding Settings ──────────────────────────
 (async function () {
