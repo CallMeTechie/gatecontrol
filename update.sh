@@ -31,8 +31,8 @@ log() { local m; m="[$(date -Iseconds)] $*"; echo "$m"; echo "$m" >>"$LOG" 2>/de
 write_state() { # $1=action $2=mode
   local tmp ok="true"; [ "$1" = "failed" ] && ok="false"
   tmp="$(mktemp "${STATE_FILE}.XXXXXX")" || return 0
-  printf '{"checked_at":"%s","action":"%s","mode":"%s","ok":%s}\n' \
-    "$(date -Iseconds)" "$1" "$2" "$ok" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$STATE_FILE"
+  { printf '{"checked_at":"%s","action":"%s","mode":"%s","ok":%s}\n' \
+    "$(date -Iseconds)" "$1" "$2" "$ok" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$STATE_FILE"; } || true
 }
 
 # Overlap lock — only if flock is available; never abort the update because flock
@@ -68,8 +68,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 recreate() {
-  cd "$COMPOSE_DIR"
-  docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1
+  ( cd "$COMPOSE_DIR" && docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1 )
 }
 
 needs_update() { # echoes "yes" if running image != :latest
