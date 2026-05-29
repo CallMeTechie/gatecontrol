@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.5] — 2026-05-29
+
+### Fixes
+- gateway update status as a toast, not inline card text
+
+---
+
 ## [1.74.4] — 2026-05-28
 
 ### Fixes
