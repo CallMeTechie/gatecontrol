@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.1] — 2026-05-29
+
+### Fixes
+- recover update.sh recreate from host-net/name race (down+up retry)
+
+---
+
 ## [1.75.0] — 2026-05-29
 
 ### Features
