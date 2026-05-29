@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.7] — 2026-05-29
+
+### Fixes
+- mirror update-toast CSS into pro.css (was invisible on Pro theme)
+
+---
+
 ## [1.74.6] — 2026-05-29
 
 ### Fixes
