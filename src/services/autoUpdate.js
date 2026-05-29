@@ -17,7 +17,8 @@ const VALID_MODES = ['auto', 'manual'];
 const TRIGGER_COOLDOWN_MS = 30 * 1000;
 
 function staleAfterMs() {
-  const min = parseInt(settings.get('auto_update.stale_after_min', '60'), 10) || 60;
+  const raw = parseInt(settings.get('auto_update.stale_after_min', '60'), 10);
+  const min = (isNaN(raw) || raw <= 0) ? 60 : raw;
   return min * 60 * 1000;
 }
 function getMode() {
