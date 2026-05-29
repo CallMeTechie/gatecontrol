@@ -1,6 +1,14 @@
 #!/bin/bash
 # GateControl Auto-Update Script
-# Pulls the latest image from GHCR and recreates the container if updated.
+# Pulls the latest image from GHCR and recreates the container when the RUNNING
+# container's image differs from :latest.
+#
+# The recreate decision is based on the running container's image digest vs the
+# :latest digest — NOT on `docker pull`'s "Image is up to date" message. That
+# message is a no-op whenever :latest was already pulled locally while the
+# container still runs an OLDER image (e.g. a prior pull without a recreate, or
+# a half-finished deploy). The old logic then exited 0 without recreating, so
+# the running container silently stayed on the stale version.
 #
 # The compose project directory is derived from the script's own location
 # (so the script works regardless of where the deployment lives) but can
@@ -9,13 +17,19 @@
 #
 # Resolves symlinks so callers can place a symlink in PATH if they want.
 
-set -e
+set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]:-$0}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 COMPOSE_DIR="${COMPOSE_DIR:-$SCRIPT_DIR}"
 IMAGE="${GC_IMAGE:-ghcr.io/callmetechie/gatecontrol:latest}"
+CONTAINER="${GC_CONTAINER:-gatecontrol}"
 LOG="${GC_UPDATE_LOG:-/var/log/gatecontrol-update.log}"
+WAIT_TIMEOUT="${GC_WAIT_TIMEOUT:-150}"
+
+# Log to both the logfile (best-effort) and stdout (so manual/interactive runs
+# show progress, and cron captures it too).
+log() { local m; m="[$(date -Iseconds)] $*"; echo "$m"; echo "$m" >>"$LOG" 2>/dev/null || true; }
 
 # docker-compose.yml is mandatory in the resolved directory — if it is
 # missing, fail loudly instead of quietly running in the wrong place.
@@ -25,26 +39,41 @@ if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   exit 2
 fi
 
-echo "[$(date -Iseconds)] Checking for updates ($COMPOSE_DIR)..." >> "$LOG"
+log "Checking for updates ($COMPOSE_DIR)..."
 
-# Pull latest image
-PULL_OUTPUT=$(docker pull "$IMAGE" 2>&1)
+# Always pull so local :latest reflects the registry. Pull failures are fatal
+# (don't proceed to compare against a stale local tag).
+if ! docker pull "$IMAGE" >>"$LOG" 2>&1; then
+  log "ERROR: docker pull '$IMAGE' failed — aborting"
+  exit 1
+fi
 
-if echo "$PULL_OUTPUT" | grep -q "Image is up to date"; then
-  echo "[$(date -Iseconds)] Already up to date" >> "$LOG"
+LATEST_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
+RUNNING_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
+
+if [ -z "$LATEST_ID" ]; then
+  log "ERROR: could not resolve image id for '$IMAGE' after pull — aborting"
+  exit 1
+fi
+
+# Recreate ONLY when the running image differs from :latest (or no container
+# is running yet). This is the digest-based check that fixes the silent no-op.
+if [ -n "$RUNNING_ID" ] && [ "$RUNNING_ID" = "$LATEST_ID" ]; then
+  log "Already up to date (running ${RUNNING_ID#sha256:})"
   exit 0
 fi
 
-echo "[$(date -Iseconds)] New image found, updating..." >> "$LOG"
-echo "$PULL_OUTPUT" >> "$LOG"
+log "Update needed: running=${RUNNING_ID:-<none>} -> latest=${LATEST_ID#sha256:}"
 
-# Recreate container with new image
 cd "$COMPOSE_DIR"
-docker compose up -d --force-recreate gatecontrol >> "$LOG" 2>&1
-
-echo "[$(date -Iseconds)] Update complete" >> "$LOG"
-
-# Wait for health check
-sleep 35
-STATUS=$(docker ps --filter name=gatecontrol --format '{{.Status}}')
-echo "[$(date -Iseconds)] Container status: $STATUS" >> "$LOG"
+# --force-recreate guarantees the swap even when compose considers the service
+# config unchanged; --wait blocks until the container's healthcheck passes so a
+# broken image is reported as a failed deploy instead of a silent unhealthy box.
+if docker compose up -d --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" "$CONTAINER" >>"$LOG" 2>&1; then
+  NEW_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
+  log "Update complete and healthy (now ${NEW_ID#sha256:})"
+else
+  STATUS="$(docker ps -a --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null || true)"
+  log "ERROR: recreate/healthcheck failed (status: ${STATUS:-unknown}) — check 'docker logs $CONTAINER'"
+  exit 1
+fi
