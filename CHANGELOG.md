@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.2] — 2026-05-30
+
+### Fixes
+- RDP gateway route port conflict returns 409 with suggested free port instead of 500
+
+---
+
 ## [1.75.1] — 2026-05-29
 
 ### Fixes
