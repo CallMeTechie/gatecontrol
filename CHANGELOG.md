@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.3] — 2026-05-30
+
+### Fixes
+- surface RDP route validation errors in UI instead of silently closing; trim WoL MAC
+
+---
+
 ## [1.75.2] — 2026-05-30
 
 ### Fixes
