@@ -864,7 +864,7 @@
       remote_app: document.getElementById('rdp-remote-app').value || null,
       start_program: document.getElementById('rdp-start-program').value || null,
       wol_enabled: document.getElementById('rdp-wol-enabled').checked,
-      wol_mac_address: document.getElementById('rdp-wol-mac').value || null,
+      wol_mac_address: (document.getElementById('rdp-wol-mac').value || '').trim() || null,
       maintenance_enabled: document.getElementById('rdp-maintenance-enabled').checked,
       health_check_enabled: document.getElementById('rdp-health-check').checked,
       credential_rotation_enabled: document.getElementById('rdp-credential-rotation-enabled').checked,
@@ -881,10 +881,20 @@
     data.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
 
     try {
-      if (editingId) {
-        await api.patch('/api/v1/rdp/' + editingId, data);
-      } else {
-        await api.post('/api/v1/rdp', data);
+      var result = editingId
+        ? await api.patch('/api/v1/rdp/' + editingId, data)
+        : await api.post('/api/v1/rdp', data);
+      // Validation/conflict errors (400/403/409/429) come back as data with
+      // ok:false instead of throwing — surface them instead of silently
+      // closing the modal as if the save had succeeded.
+      if (result && result.ok === false) {
+        var msg = result.error || 'Failed to save RDP route';
+        if (result.fields) {
+          var firstField = Object.keys(result.fields)[0];
+          if (firstField) msg = result.fields[firstField];
+        }
+        alert(msg);
+        return;
       }
       closeRdpModal();
       loadRoutes();

@@ -111,8 +111,9 @@ function validateRdpRoute(data, isUpdate = false) {
     errors.color_depth = 'Color depth must be 8, 15, 16, 24, or 32';
   }
 
-  if (data.wol_mac_address !== undefined && data.wol_mac_address !== null && data.wol_mac_address !== '') {
-    if (!MAC_RE.test(data.wol_mac_address)) {
+  if (data.wol_mac_address !== undefined && data.wol_mac_address !== null) {
+    const mac = String(data.wol_mac_address).trim();
+    if (mac !== '' && !MAC_RE.test(mac)) {
       errors.wol_mac_address = 'Invalid MAC address format (expected AA:BB:CC:DD:EE:FF)';
     }
   }
@@ -362,7 +363,7 @@ async function create(data) {
     data.remote_app || null,
     data.start_program || null,
     data.wol_enabled ? 1 : 0,
-    data.wol_mac_address || null,
+    data.wol_mac_address ? String(data.wol_mac_address).trim() || null : null,
     data.maintenance_enabled ? 1 : 0,
     data.maintenance_schedule ? (typeof data.maintenance_schedule === 'string' ? data.maintenance_schedule : JSON.stringify(data.maintenance_schedule)) : null,
     data.sharing_enabled ? 1 : 0,

@@ -71,6 +71,16 @@ describe('RDP API', () => {
     assert.equal(res.body.ok, false);
   });
 
+  it('POST /api/v1/rdp accepts a MAC with surrounding whitespace (trimmed)', async () => {
+    const res = await agent
+      .post('/api/v1/rdp')
+      .set('X-CSRF-Token', csrf)
+      .send({ name: 'Padded MAC', host: '10.0.0.9', port: 3389, wol_enabled: true, wol_mac_address: '  BC:24:11:24:29:AC  ' })
+      .expect(201);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.route.wol_mac_address, 'BC:24:11:24:29:AC', 'MAC must be stored trimmed');
+  });
+
   it('GET /api/v1/rdp/:id returns route', async () => {
     const res = await agent.get(`/api/v1/rdp/${rdpRouteId}`).expect(200);
     assert.equal(res.body.ok, true);
