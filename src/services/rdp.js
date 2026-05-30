@@ -199,6 +199,68 @@ function getById(id, includeCredentials = false) {
   return stripSensitive(row);
 }
 
+// The effective public listen port a gateway-mode RDP route will bind on the
+// server's L4 listener. Mirrors the fallback chain in _syncLinkedL4Route so
+// the pre-flight conflict check and the actual L4 row agree.
+function _effectiveListenPort(row) {
+  return parseInt(row.gateway_listen_port || row.port || 3389, 10);
+}
+
+// Returns the id of an *enabled* L4 route already occupying the given TCP
+// listen port without TLS — the only conflict class for gateway RDP links
+// (see l4.validatePortConflicts; TLS routes multiplex via SNI). null = free.
+// excludeL4RouteId lets an update ignore the route's own linked L4 row.
+function _findListenPortConflict(listenPort, excludeL4RouteId) {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT id FROM routes
+       WHERE route_type = 'l4'
+         AND l4_protocol = 'tcp'
+         AND l4_tls_mode = 'none'
+         AND l4_listen_port = ?
+         AND enabled = 1
+         AND id != ?`
+  ).get(String(listenPort), excludeL4RouteId == null ? -1 : excludeL4RouteId);
+  return row ? row.id : null;
+}
+
+// Next free TCP listen port above startPort not used by an enabled no-TLS L4
+// route and not reserved. null if none within a sane window.
+function _suggestFreeListenPort(startPort, excludeL4RouteId) {
+  const db = getDb();
+  const { isPortBlocked } = require('../utils/validate');
+  const used = new Set(
+    db.prepare(
+      `SELECT l4_listen_port FROM routes
+         WHERE route_type = 'l4' AND l4_protocol = 'tcp' AND l4_tls_mode = 'none'
+           AND enabled = 1 AND id != ?`
+    ).all(excludeL4RouteId == null ? -1 : excludeL4RouteId)
+      .map(r => parseInt(r.l4_listen_port, 10))
+  );
+  const begin = Math.max(1, parseInt(startPort, 10) || 3389);
+  for (let p = begin + 1; p <= 65535 && p <= begin + 2000; p++) {
+    if (!used.has(p) && !isPortBlocked(p)) return p;
+  }
+  return null;
+}
+
+// Throw a structured 409 if a gateway RDP route's listen port collides with an
+// existing enabled L4 listener. Centralised so create() and update() stay in
+// lock-step and surface the same machine-readable shape to the route layer.
+function _assertListenPortFree(listenPort, excludeL4RouteId) {
+  const conflictRouteId = _findListenPortConflict(listenPort, excludeL4RouteId);
+  if (conflictRouteId == null) return;
+  const suggestedPort = _suggestFreeListenPort(listenPort, excludeL4RouteId);
+  const err = new Error(
+    `Gateway listen port ${listenPort} is already in use by another route`
+    + (suggestedPort ? ` — next free port: ${suggestedPort}` : '')
+  );
+  err.code = 'GATEWAY_PORT_CONFLICT';
+  err.statusCode = 409;
+  err.conflict = { port: parseInt(listenPort, 10), conflictRouteId, suggestedPort };
+  throw err;
+}
+
 async function create(data) {
   const errors = validateRdpRoute(data, false);
   if (errors) {
@@ -217,6 +279,13 @@ async function create(data) {
     if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
       throw new Error('gateway_pool_empty');
     }
+  }
+
+  // Pre-flight: reject a gateway listen-port collision *before* inserting, so
+  // we return a clean 409 with a suggested free port instead of inserting,
+  // failing the Caddy sync, and rolling back with an opaque 500.
+  if (data.access_mode === 'gateway') {
+    _assertListenPortFree(_effectiveListenPort(data), null);
   }
 
   const db = getDb();
@@ -432,6 +501,14 @@ async function update(id, data) {
     if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
       throw new Error('gateway_pool_empty');
     }
+  }
+
+  // Pre-flight the listen-port collision before persisting (the linked-L4
+  // sync below swallows errors, so without this an update onto a taken port
+  // would silently succeed and leave the gateway route stale). Self-excluded
+  // via the route's own linked L4 id so re-saving on the same port is fine.
+  if (merged.access_mode === 'gateway') {
+    _assertListenPortFree(_effectiveListenPort(merged), existing.gateway_l4_route_id || null);
   }
 
   const sets = [];

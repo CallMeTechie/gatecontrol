@@ -1211,6 +1211,8 @@
   "error.rdp.delete": "Failed to delete RDP route",
   "error.rdp.toggle": "Failed to toggle RDP route",
   "error.rdp.not_found": "RDP route not found",
+  "error.rdp.port_conflict": "Public listen port {{port}} is already used by another gateway route. Pick a different port — {{suggested}} is free.",
+  "error.rdp.port_conflict_no_free": "Public listen port {{port}} is already used by another gateway route. Please choose a different port.",
   "error.rdp.credentials": "Failed to manage credentials",
   "error.rdp.wol_not_configured": "Wake-on-LAN is not configured for this route",
   "error.rdp.wol_failed": "Failed to send Wake-on-LAN packet",

@@ -45,13 +45,24 @@ function apiUrl(url) {
   return url;
 }
 
+// Build an Error from a non-ok response, preferring the server's own
+// `error` message (e.g. a 409 port-conflict explanation) over the opaque
+// "API error: <status>" so the user sees what actually went wrong.
+async function apiError(res) {
+  try {
+    const body = await res.json().then(handleCsrfRotation);
+    if (body && body.error) return new Error(body.error);
+  } catch { /* non-JSON body — fall through */ }
+  return new Error(`API error: ${res.status}`);
+}
+
 window.api = {
   async get(url) {
     url = apiUrl(url);
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
     });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw await apiError(res);
     try { return await res.json(); } catch { throw new Error('Invalid response from server'); }
   },
 
@@ -76,7 +87,7 @@ window.api = {
     if (res.status === 429) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
     }
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw await apiError(res);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
@@ -100,7 +111,7 @@ window.api = {
     if (res.status === 429) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
     }
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw await apiError(res);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
@@ -124,7 +135,7 @@ window.api = {
     if (res.status === 429) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Too many requests'); }
     }
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw await apiError(res);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 
@@ -140,7 +151,7 @@ window.api = {
     if (res.status === 403) {
       try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Forbidden'); }
     }
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw await apiError(res);
     try { return await res.json().then(handleCsrfRotation); } catch { throw new Error('Invalid response from server'); }
   },
 };

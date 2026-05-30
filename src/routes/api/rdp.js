@@ -11,6 +11,25 @@ const { requireFeature, requireFeatureField } = require('../../middleware/licens
 
 const router = Router();
 
+// Maps a gateway listen-port collision thrown by the service layer onto a
+// 409 with a translated, actionable message (incl. a suggested free port).
+// Returns true if it handled the error, false otherwise.
+function handlePortConflict(req, res, err) {
+  if (err.code !== 'GATEWAY_PORT_CONFLICT') return false;
+  const c = err.conflict || {};
+  const msg = c.suggestedPort
+    ? req.t('error.rdp.port_conflict', { port: c.port, suggested: c.suggestedPort })
+    : req.t('error.rdp.port_conflict_no_free', { port: c.port });
+  res.status(409).json({
+    ok: false,
+    error: msg,
+    code: err.code,
+    fields: { gateway_listen_port: msg },
+    conflict: c,
+  });
+  return true;
+}
+
 // All RDP routes require the remote_desktop feature
 router.use(requireFeature('remote_desktop'));
 
@@ -192,6 +211,7 @@ router.post('/',
     res.status(201).json({ ok: true, route });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create RDP route');
+    if (handlePortConflict(req, res, err)) return;
     if (err.fields) {
       return res.status(400).json({ ok: false, error: err.message, fields: err.fields });
     }
@@ -233,6 +253,7 @@ router.patch('/:id',
     if (err.message === 'RDP route not found') {
       return res.status(404).json({ ok: false, error: req.t('error.rdp.not_found') });
     }
+    if (handlePortConflict(req, res, err)) return;
     if (err.fields) {
       return res.status(400).json({ ok: false, error: err.message, fields: err.fields });
     }

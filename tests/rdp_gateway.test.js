@@ -104,6 +104,80 @@ describe('rdp gateway access-mode — auto-linked L4 route', () => {
     );
   });
 
+  it('rejects a second gateway route on an already-used listen port with a 409 conflict', async () => {
+    const first = await rdp.create({
+      name: 'rdp-port-a', host: '192.168.1.60', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId,
+      gateway_listen_port: 4100, credential_mode: 'none',
+    });
+    assert.ok(first.gateway_l4_route_id, 'first route links its L4 row');
+
+    await assert.rejects(
+      () => rdp.create({
+        name: 'rdp-port-b', host: '192.168.1.61', port: 3389,
+        access_mode: 'gateway', gateway_peer_id: gwPeerId,
+        gateway_listen_port: 4100, credential_mode: 'none',
+      }),
+      (err) => {
+        assert.equal(err.code, 'GATEWAY_PORT_CONFLICT');
+        assert.equal(err.statusCode, 409);
+        assert.equal(err.conflict.port, 4100);
+        assert.equal(err.conflict.conflictRouteId, first.gateway_l4_route_id);
+        assert.ok(err.conflict.suggestedPort > 4100, 'suggests a higher free port');
+        assert.equal(typeof err.message, 'string');
+        return true;
+      }
+    );
+
+    // The rejected create must not leave an orphan rdp_routes row behind.
+    const orphan = db.prepare("SELECT COUNT(*) c FROM rdp_routes WHERE name = 'rdp-port-b'").get().c;
+    assert.equal(orphan, 0, 'no orphan RDP row after a rejected create');
+  });
+
+  it('rejects updating a gateway route onto an already-used listen port', async () => {
+    const a = await rdp.create({
+      name: 'rdp-upd-a', host: '192.168.1.62', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId,
+      gateway_listen_port: 4200, credential_mode: 'none',
+    });
+    const b = await rdp.create({
+      name: 'rdp-upd-b', host: '192.168.1.63', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId,
+      gateway_listen_port: 4201, credential_mode: 'none',
+    });
+
+    await assert.rejects(
+      () => rdp.update(b.id, { gateway_listen_port: 4200 }),
+      (err) => {
+        assert.equal(err.code, 'GATEWAY_PORT_CONFLICT');
+        assert.equal(err.statusCode, 409);
+        return true;
+      }
+    );
+
+    // The conflicting port must NOT have been persisted.
+    const bRow = db.prepare('SELECT gateway_listen_port FROM rdp_routes WHERE id = ?').get(b.id);
+    assert.equal(bRow.gateway_listen_port, 4201, 'rejected update must not persist the conflicting port');
+
+    await rdp.remove(a.id);
+    await rdp.remove(b.id);
+  });
+
+  it('allows re-saving the same gateway route on its own port (no self-conflict)', async () => {
+    const r = await rdp.create({
+      name: 'rdp-self', host: '192.168.1.64', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId,
+      gateway_listen_port: 4300, credential_mode: 'none',
+    });
+    // Updating an unrelated field must not trip the conflict check against
+    // the route's own linked L4 listener.
+    await rdp.update(r.id, { description: 'renamed' });
+    const row = db.prepare('SELECT description, gateway_listen_port FROM rdp_routes WHERE id = ?').get(r.id);
+    assert.equal(row.description, 'renamed');
+    assert.equal(row.gateway_listen_port, 4300);
+    await rdp.remove(r.id);
+  });
+
   it('toggling the RDP route propagates the enabled flag to the linked L4 row', async () => {
     const r = await rdp.create({
       name: 'rdp-toggle', host: '192.168.1.54', port: 3389,
