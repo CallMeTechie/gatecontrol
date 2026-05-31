@@ -43,6 +43,13 @@ The gateway scans its own LAN (passive mDNS + SSDP always, optional active TCP-c
 - **Phase 3 — server backend + UI** (this PR): migration #47 + 2 licence flags + ephemeral discoveryCache with `current_request_id` reconciliation + Bearer ingest + SSE event + 3 admin endpoints + UI cards on the gateway detail page + scan/suggest picker in the route-create modal + en/de i18n + feature doc.
 - See `docs/feature-gateway-lan-discovery.md`. Repos: gateway + server. Tier: Pro (`gateway_lan_discovery`; multi-subnet add-on `gateway_lan_discovery_multi_subnet`).
 
+### 9. RDP over gateway — connect via server `connect_address` ✅
+Pro/Android clients reach **gateway-mode RDP routes** (`access_mode=gateway`) through a server-issued `connect_address` instead of a direct peer IP, so RDP works for hosts that are only reachable behind a Home Gateway. The server adds the connect endpoint, a **gateway-aware RDP health monitor** (loopback probe + gateway-peer heartbeat gate), **RDP wizard UX** (host hint, NLA note, peer-autocomplete suppressed in gateway mode) and a `GC_RDP_PUBLIC_HOST` override for Cloudflare/NAT/reverse-proxy setups. Builds on the underlying gateway-routing architecture (`access_mode=gateway`, commit `cfd8eb9`). Three phases:
+- **Phase A — server** (`connect_address` endpoint + gateway-aware health + wizard UX): shipped **server 1.63.0** (commit `5c3d90b`). Deployed and verified live on **1.75.3**.
+- **Phase B — Pro client:** PR #5, merged 2026-05-24.
+- **Phase C — Android client:** PR #12, merged 2026-05-24.
+- See `docs/feature-rdp-via-gateway.md` (+ `docs/feature-rdp-via-l4-gateway.md`). Repos: server + windows-client-pro + android-client. Tier: Pro.
+
 ---
 
 ## 🔜 Next up
@@ -82,4 +89,4 @@ Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook al
 
 ---
 
-_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-28._
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-31._
