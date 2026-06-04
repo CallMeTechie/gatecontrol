@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { isPrivateIpv4 } = require('../src/utils/validate');
+const { isPrivateIpv4, isLoopbackHost } = require('../src/utils/validate');
 
 describe('isPrivateIpv4', () => {
   it('accepts RFC1918 private ranges', () => {
@@ -23,7 +23,6 @@ describe('isPrivateIpv4', () => {
 });
 
 describe('isLoopbackHost', () => {
-  const { isLoopbackHost } = require('../src/utils/validate');
   it('detects 127.0.0.0/8 and loopback names', () => {
     assert.equal(isLoopbackHost('127.0.0.1'), true);
     assert.equal(isLoopbackHost('127.0.1.1'), true);
@@ -38,5 +37,6 @@ describe('isLoopbackHost', () => {
     assert.equal(isLoopbackHost('example.com'), false);
     assert.equal(isLoopbackHost(''), false);
     assert.equal(isLoopbackHost(null), false);
+    assert.equal(isLoopbackHost('127.999.0.0'), false);
   });
 });

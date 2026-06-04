@@ -51,7 +51,8 @@ function isLoopbackHost(h) {
   if (!h) return false;
   const s = String(h).trim().toLowerCase();
   if (_LOOPBACK_NAMES.has(s)) return true;
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
+  // 127.0.0.0/8 — require a well-formed IPv4 (valid octets), like isPrivateIpv4.
+  return s.startsWith('127.') && !validateIp(s);
 }
 
 function validatePort(port) {
