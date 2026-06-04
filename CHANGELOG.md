@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.1] — 2026-06-04
+
+### Fixes
+- capture heartbeat lan_ip from telemetry-nested payload (#120)
+
+---
+
 ## [1.76.0] — 2026-06-04
 
 ### Features
