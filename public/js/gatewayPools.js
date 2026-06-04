@@ -416,10 +416,18 @@ function renderMigrateForm() {
   const list = document.getElementById('migrate-routes-list');
   while (list.firstChild) list.removeChild(list.firstChild);
 
+  // Mode toggle is static markup in the template; wire its re-render here BEFORE
+  // any early return so relocate mode is reachable even with zero pools (a
+  // permanent move to a gateway doesn't need a pool).
+  const migrateMode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
+  document.querySelectorAll('input[name="migrate-mode"]').forEach(function(el){
+    el.onchange = renderMigrateForm;
+  });
+
   const pools = MIGRATE_CANDIDATES.pools || [];
   const routes = MIGRATE_CANDIDATES.routes || [];
 
-  if (pools.length === 0) {
+  if (migrateMode === 'pool' && pools.length === 0) {
     const p = document.createElement('p');
     p.style.color = 'var(--text-3)';
     p.textContent = tr('gateway_pools.no_pools_for_migration', 'No pools available — create a pool first.');
@@ -546,12 +554,7 @@ function renderMigrateForm() {
   });
 
   // ── Mode branch: pool (default) vs. permanent relocate ──────────────────
-  const mode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
-  document.querySelectorAll('input[name="migrate-mode"]').forEach(function(el) {
-    el.addEventListener('change', renderMigrateForm);
-  });
-
-  if (mode === 'relocate') {
+  if (migrateMode === 'relocate') {
     const poolGroupEl = document.getElementById('migrate-target-pool');
     if (poolGroupEl) poolGroupEl.parentNode.style.display = 'none';
 
