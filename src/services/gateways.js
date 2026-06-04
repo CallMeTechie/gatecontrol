@@ -5,6 +5,7 @@ const http = require('node:http');
 const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { hashToken } = require('../middleware/gatewayAuth');
+const { isLoopbackHost } = require('../utils/validate');
 const license = require('./license');
 const peers = require('./peers');
 const activity = require('./activity');
@@ -107,16 +108,18 @@ function getGatewayConfig(peerId) {
   `).all(peerId, peerId);
 
   const l4Routes = db.prepare(`
-    SELECT id, l4_listen_port AS listen_port, target_lan_host, target_lan_port,
-           wol_enabled, wol_mac
-    FROM routes
-    WHERE target_kind = 'gateway' AND enabled = 1
-      AND route_type = 'l4'
+    SELECT r.id, r.l4_listen_port AS listen_port, r.target_lan_host, r.target_lan_port,
+           r.original_peer_id, gm_home.lan_ip AS home_lan_ip,
+           r.wol_enabled, r.wol_mac
+    FROM routes r
+    LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = r.original_peer_id
+    WHERE r.target_kind = 'gateway' AND r.enabled = 1
+      AND r.route_type = 'l4'
       AND (
-        target_peer_id = ?
-        OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
+        r.target_peer_id = ?
+        OR r.target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
       )
-    ORDER BY id
+    ORDER BY r.id
   `).all(peerId, peerId);
 
   return {
@@ -144,21 +147,32 @@ function getGatewayConfig(peerId) {
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
-    l4_routes: l4Routes.map(r => ({
-      id: r.id,
-      // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
-      // like "8000-8100" fits). The shared config-hash schema however
-      // requires a plain number — ranges don't apply to gateway L4
-      // anyway (a Node net.createServer listener binds a single port).
-      // Coerce to number; fall through to the original value if that
-      // fails so a misuse surfaces loudly instead of silently hashing
-      // wrong data.
-      listen_port: Number.isFinite(Number(r.listen_port)) ? Number(r.listen_port) : r.listen_port,
-      target_lan_host: r.target_lan_host,
-      target_lan_port: r.target_lan_port,
-      wol_enabled: !!r.wol_enabled,
-      ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
-    })),
+    l4_routes: l4Routes.map(r => {
+      // Loopback L4 target that has failed over to a sibling: rewrite to the
+      // home gateway's LAN IP (this peer is the sibling, not the home). If the
+      // home LAN IP is unknown, omit the listener (fail closed — no header /
+      // 502 possible at layer 4; a missing listener = connection refused).
+      let lanHost = r.target_lan_host;
+      if (isLoopbackHost(lanHost) && r.original_peer_id != null) {
+        if (r.home_lan_ip) lanHost = r.home_lan_ip;
+        else return null;
+      }
+      return {
+        id: r.id,
+        // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
+        // like "8000-8100" fits). The shared config-hash schema however
+        // requires a plain number — ranges don't apply to gateway L4
+        // anyway (a Node net.createServer listener binds a single port).
+        // Coerce to number; fall through to the original value if that
+        // fails so a misuse surfaces loudly instead of silently hashing
+        // wrong data.
+        listen_port: Number.isFinite(Number(r.listen_port)) ? Number(r.listen_port) : r.listen_port,
+        target_lan_host: lanHost,
+        target_lan_port: r.target_lan_port,
+        wol_enabled: !!r.wol_enabled,
+        ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
+      };
+    }).filter(Boolean),
   };
 }
 
