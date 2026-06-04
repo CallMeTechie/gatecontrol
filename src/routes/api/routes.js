@@ -129,6 +129,8 @@ function resolveError(req, err, fallbackKey) {
 // new LAN target is written explicitly (the old host's LAN IP is dead).
 // Registered before any '/:id' param route so the literal path isn't shadowed.
 router.post('/relocate', async (req, res) => {
+  // No license gate: re-pinning a route's gateway target is base functionality
+  // (parity with the ungated PUT /:id target edit), not a premium pool feature.
   const db = getDb();
   const targetPeerId = parseInt(req.body && req.body.target_peer_id, 10);
   const items = Array.isArray(req.body && req.body.items) ? req.body.items : null;
@@ -165,7 +167,7 @@ router.post('/relocate', async (req, res) => {
   try {
     await require('../../services/caddyConfig').syncToCaddy();
   } catch (err) {
-    logger.error({ err: err.message }, 'caddy resync after relocate failed');
+    logger.error({ error: err.message }, 'caddy resync after relocate failed');
   }
   res.json({ ok: true, moved });
 });
