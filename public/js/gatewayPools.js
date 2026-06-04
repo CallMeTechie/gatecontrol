@@ -515,7 +515,11 @@ function renderMigrateForm() {
       // Default-uncheck loopback routes — moving "ssh.*→127.0.0.1" to a pool
       // means the upstream changes machine on failover, which is rarely
       // desired. User can opt-in by checking manually.
-      const isLoopback = r.target_ip === '127.0.0.1' || r.target_ip === '::1' || r.target_ip === 'localhost';
+      // Use the REAL backend the gateway forwards to (target_lan_host), not the
+      // legacy target_ip placeholder which is always 127.0.0.1 for gateway routes.
+      const lanHost = r.target_lan_host || '';
+      const isLoopback = lanHost === '::1' || lanHost.toLowerCase() === 'localhost'
+        || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lanHost);
       cb.checked = !isLoopback;
 
       const label = document.createElement('span');
@@ -524,7 +528,7 @@ function renderMigrateForm() {
       domSpan.textContent = r.domain;
       const tgtSpan = document.createElement('span');
       tgtSpan.style.cssText = 'color:var(--text-3);font-family:var(--font-mono);font-size:11px;margin-left:8px';
-      tgtSpan.textContent = '→ ' + r.target_ip + ':' + r.target_port;
+      tgtSpan.textContent = '→ ' + (r.target_lan_host || r.target_ip) + ':' + (r.target_lan_port || r.target_port);
       label.appendChild(domSpan);
       label.appendChild(tgtSpan);
 
