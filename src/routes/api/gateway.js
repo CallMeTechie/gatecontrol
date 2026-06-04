@@ -124,8 +124,15 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   // accept RFC1918 private IPv4 — a heartbeat is authenticated but the value
   // is self-reported and becomes a forwarding target for OTHER gateways.
   // Write only on change to avoid needless churn.
-  if (body.lan_ip && typeof body.lan_ip === 'string' && isPrivateIpv4(body.lan_ip.trim())) {
-    const ip = body.lan_ip.trim();
+  //
+  // The companion nests all of collectTelemetry() under `telemetry`
+  // (gateway bootstrap: `health.telemetry = collectTelemetry()`), so lan_ip
+  // arrives as body.telemetry.lan_ip — a sibling of telemetry.lan_subnets /
+  // telemetry.gateway_version. Read it there; keep a top-level fallback so a
+  // companion that reports it at the root still works.
+  const reportedLanIp = (body.telemetry && body.telemetry.lan_ip) || body.lan_ip;
+  if (reportedLanIp && typeof reportedLanIp === 'string' && isPrivateIpv4(reportedLanIp.trim())) {
+    const ip = reportedLanIp.trim();
     const db = require('../../db/connection').getDb();
     const cur = db.prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
     if (cur && cur.lan_ip !== ip) {

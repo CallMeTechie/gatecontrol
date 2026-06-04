@@ -60,22 +60,32 @@ describe('gateway API: heartbeat lan_ip capture', () => {
   }
 
   describe('heartbeat: lan_ip capture', () => {
-    it('stores a valid private lan_ip', async () => {
-      await sendHeartbeat({ lan_ip: '192.168.2.228' });
+    // The real companion nests all of collectTelemetry() under `telemetry`
+    // (gateway bootstrap.js: `health.telemetry = collectTelemetry()`), so
+    // lan_ip arrives as body.telemetry.lan_ip — NOT top-level. The server must
+    // read it there (sibling of telemetry.lan_subnets / telemetry.gateway_version).
+    it('stores a valid private lan_ip from the real telemetry-nested payload', async () => {
+      await sendHeartbeat({ telemetry: { lan_ip: '192.168.2.228' } });
       const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
       assert.equal(row.lan_ip, '192.168.2.228');
     });
+    it('also accepts a top-level lan_ip (forward-compatible fallback)', async () => {
+      getDb().prepare('UPDATE gateway_meta SET lan_ip = NULL WHERE peer_id = ?').run(peerId);
+      await sendHeartbeat({ lan_ip: '192.168.9.9' });
+      const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
+      assert.equal(row.lan_ip, '192.168.9.9');
+    });
     it('ignores a public/invalid lan_ip', async () => {
       getDb().prepare('UPDATE gateway_meta SET lan_ip = NULL WHERE peer_id = ?').run(peerId);
-      await sendHeartbeat({ lan_ip: '8.8.8.8' });
-      await sendHeartbeat({ lan_ip: 'garbage' });
+      await sendHeartbeat({ telemetry: { lan_ip: '8.8.8.8' } });
+      await sendHeartbeat({ telemetry: { lan_ip: 'garbage' } });
       const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
       assert.equal(row.lan_ip, null);
     });
     it('only writes on change (no-op when unchanged)', async () => {
-      await sendHeartbeat({ lan_ip: '10.1.2.3' });
+      await sendHeartbeat({ telemetry: { lan_ip: '10.1.2.3' } });
       const before = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
-      await sendHeartbeat({ lan_ip: '10.1.2.3' });
+      await sendHeartbeat({ telemetry: { lan_ip: '10.1.2.3' } });
       const after = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
       assert.equal(before.lan_ip, '10.1.2.3');
       assert.equal(after.lan_ip, '10.1.2.3');

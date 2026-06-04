@@ -21,6 +21,12 @@
 ### Fixed
 - Route migration modal showed `127.0.0.1` (legacy placeholder `target_ip`) for gateway routes
   instead of the actual backend `target_lan_host`.
+- Loopback failover: the heartbeat `lan_ip` was never captured into `gateway_meta.lan_ip` because
+  the companion nests it under `telemetry` (`body.telemetry.lan_ip`, a sibling of `lan_subnets`)
+  while the server read it top-level (`body.lan_ip`) — so the column stayed NULL and every
+  loopback failover hit the safe-degrade path (HTTP 502 / no L4 listener). The heartbeat handler
+  now reads `body.telemetry.lan_ip` (with a top-level fallback); the regression test was sending a
+  top-level payload the real gateway never emits, masking the bug.
 
 ---
 
