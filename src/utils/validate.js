@@ -30,6 +30,30 @@ function validateIp(ip) {
   return null;
 }
 
+// True only for RFC1918 private IPv4 (10/8, 172.16–31/12, 192.168/16).
+// Deliberately excludes loopback (127/8) and 0.0.0.0 — those are not valid
+// LAN forwarding targets and must not be trusted from a heartbeat.
+function isPrivateIpv4(ip) {
+  // validateIp returns an error STRING for invalid input, null when valid.
+  // A truthy return therefore means "invalid format" → not a private IP.
+  if (validateIp(ip)) return false;
+  const [a, b] = ip.trim().split('.').map(Number);
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+// A loopback target_lan_host is host-relative — only meaningful on the gateway
+// that actually serves the request. Covers 127.0.0.0/8 + the textual names.
+const _LOOPBACK_NAMES = new Set(['localhost', '::1', '0:0:0:0:0:0:0:1']);
+function isLoopbackHost(h) {
+  if (!h) return false;
+  const s = String(h).trim().toLowerCase();
+  if (_LOOPBACK_NAMES.has(s)) return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
+}
+
 function validatePort(port) {
   const num = typeof port === 'string' ? parseInt(port, 10) : port;
   if (!Number.isInteger(num) || num < 1 || num > 65535) {
@@ -183,4 +207,6 @@ module.exports = {
   validateL4TlsMode,
   isPortBlocked,
   parsePortRange,
+  isPrivateIpv4,
+  isLoopbackHost,
 };
