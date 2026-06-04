@@ -26,6 +26,7 @@ router.get('/migration-candidates', (req, res) => {
   const db = getDb();
   const routes = db.prepare(`
     SELECT r.id, r.domain, r.target_ip, r.target_port, r.target_peer_id,
+           r.target_lan_host, r.target_lan_port,
            p.name AS peer_name
     FROM routes r
     JOIN peers p ON p.id = r.target_peer_id
