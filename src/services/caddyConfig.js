@@ -56,6 +56,7 @@ const {
 } = require('./caddyAdminClient');
 
 const gatewayPool = require('./gatewayPool');
+const { isLoopbackHost } = require('../utils/validate');
 const gatewayHealth = require('./gatewayHealth');
 
 function _peerIp(allowedIps) {
@@ -165,11 +166,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const routes = Array.isArray(injectedRoutes) ? injectedRoutes : db.prepare(`
     SELECT r.*, p.allowed_ips, p.name AS peer_name,
            gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name,
-           gm.proxy_port AS target_peer_proxy_port
+           gm.proxy_port AS target_peer_proxy_port,
+           gm_home.lan_ip AS home_lan_ip
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
     LEFT JOIN peers gp ON gp.id = r.target_peer_id
     LEFT JOIN gateway_meta gm ON gm.peer_id = r.target_peer_id
+    LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = r.original_peer_id
     WHERE r.enabled = 1
   `).all();
 
@@ -246,6 +249,24 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       }
     }
 
+    // Loopback resolution: a gateway route whose target is 127.0.0.1 is
+    // host-relative. When it has failed over to a sibling (original_peer_id
+    // set), the sibling would forward to ITS OWN localhost. Rewrite to the
+    // home gateway's LAN IP (home_lan_ip, joined via original_peer_id). If the
+    // home LAN IP is unknown (old companion / never reported), fail closed
+    // with a maintenance page instead of silently mis-forwarding.
+    let effectiveLanHost = route.target_lan_host;
+    let loopbackOutage = false;
+    if (route.target_kind === 'gateway'
+        && isLoopbackHost(route.target_lan_host)
+        && route.original_peer_id != null) {
+      if (route.home_lan_ip) {
+        effectiveLanHost = route.home_lan_ip;
+      } else {
+        loopbackOutage = true;
+      }
+    }
+
     let upstreams;
     if (poolUpstreams) {
       // Pool route: upstreams already resolved
@@ -299,7 +320,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Gateway-offline: serve maintenance page instead of proxying
     let reverseProxy;
-    if (route.target_kind === 'gateway' && route.gateway_offline) {
+    if (route.target_kind === 'gateway' && (route.gateway_offline || loopbackOutage)) {
       const html = renderMaintenancePage({
         gateway_name: route.gateway_name || '',
         gateway_last_seen: route.gateway_last_seen || '',
@@ -335,7 +356,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
     if (reverseProxy.handler === 'reverse_proxy'
         && (gatewayPeerIp || poolUpstreams) && (route.target_lan_host || route.target_lan_port)) {
-      const lanTarget = `${route.target_lan_host}:${route.target_lan_port}`;
+      const lanTarget = `${effectiveLanHost}:${route.target_lan_port}`;
       reverseProxy.headers.request.set = {
         ...(reverseProxy.headers.request.set || {}),
         'X-Gateway-Target': [lanTarget],

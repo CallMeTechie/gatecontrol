@@ -882,6 +882,18 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'gateway_meta', 'discovery_enabled'),
   },
+  {
+    // Per-gateway LAN IP, self-reported via heartbeat. Used to rewrite a
+    // loopback X-Gateway-Target (127.0.0.1, host-relative) to the home
+    // gateway's real LAN address when a co-located service's route has
+    // failed over to a sibling. NULL = not yet reported / old companion.
+    version: 48,
+    name: 'gateway_meta_lan_ip',
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN lan_ip TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'lan_ip'),
+  },
 ];
 
 module.exports = { migrations };

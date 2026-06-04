@@ -241,6 +241,20 @@ async function remove(id) {
   const peer = db.prepare('SELECT * FROM peers WHERE id = ?').get(id);
   if (!peer) throw new Error('Peer not found');
 
+  // Block deleting a gateway that is the failover HOME of currently
+  // pivoted loopback routes. original_peer_id has FK ON DELETE SET NULL, so
+  // deleting here would silently null the home anchor and make the loopback
+  // resolution mis-forward to the sibling's own localhost. The admin must
+  // restore (bring the home back) or permanently relocate first.
+  {
+    const n = db.prepare(
+      "SELECT COUNT(*) AS n FROM routes WHERE original_peer_id = ? AND target_kind = 'gateway'"
+    ).get(id).n;
+    if (n > 0) {
+      throw new Error(`gateway_is_failover_home: ${n} route(s) are currently failed over to this gateway as their home; restore or permanently relocate them first`);
+    }
+  }
+
   const publicKey = peer.public_key;
   // Delete the peer row and its access rules atomically.
   db.transaction(() => {
@@ -649,6 +663,15 @@ async function batch(action, ids) {
   } else if (action === 'disable') {
     db.prepare(`UPDATE peers SET enabled = 0, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
   } else if (action === 'delete') {
+    // Block deleting any gateway that is the failover HOME of currently
+    // pivoted loopback routes (FK ON DELETE SET NULL would silently null
+    // the home anchor — see remove()). Guard before the transaction.
+    const homeBlocked = db.prepare(
+      `SELECT COUNT(*) AS n FROM routes WHERE target_kind = 'gateway' AND original_peer_id IN (${placeholders})`
+    ).get(...ids).n;
+    if (homeBlocked > 0) {
+      throw new Error(`gateway_is_failover_home: ${homeBlocked} route(s) are currently failed over to one of these gateways as their home; restore or permanently relocate them first`);
+    }
     // Delete rows + their access rules atomically (one transaction).
     db.transaction(() => {
       db.prepare(`DELETE FROM peers WHERE id IN (${placeholders})`).run(...ids);

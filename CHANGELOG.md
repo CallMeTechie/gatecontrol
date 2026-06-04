@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Gateway routes targeting services on the gateway host itself (`127.0.0.1`) now survive
+  automatic failover — for HTTP, L4/TCP (e.g., SSH), and RDP-over-gateway: as long as the route
+  is served by a sibling gateway, `127.0.0.1` is rewritten to the home gateway's LAN IP
+  (reported via heartbeat). If unknown, HTTP returns a 502 maintenance page and L4 omits the
+  listener (instead of misrouting to the wrong localhost).
+- Route migration modal: new mode "permanently move to gateway" with LAN target input,
+  live host search, and bulk-apply.
+
+### Fixed
+- Route migration modal showed `127.0.0.1` (legacy placeholder `target_ip`) for gateway routes
+  instead of the actual backend `target_lan_host`.
+
+---
+
 ## [1.75.3] — 2026-05-30
 
 ### Fixes

@@ -41,6 +41,9 @@ router.post('/batch', async (req, res) => {
     res.json({ ok: true, affected });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to batch operate on peers');
+    if (/gateway_is_failover_home/.test(err.message || '')) {
+      return res.status(409).json({ ok: false, error: req.t('error.peers.failover_home_blocked') });
+    }
     if (err.message.includes('not found')) {
       return res.status(404).json({ ok: false, error: req.t('error.batch.not_found') });
     }
@@ -240,6 +243,9 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete peer');
+    if (/gateway_is_failover_home/.test(err.message || '')) {
+      return res.status(409).json({ ok: false, error: req.t('error.peers.failover_home_blocked') });
+    }
     const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.delete');
     res.status(status).json({ ok: false, error });
   }
