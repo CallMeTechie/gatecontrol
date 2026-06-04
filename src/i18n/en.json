@@ -594,6 +594,12 @@
   "error.routes.l4_port_conflict": "Port conflict detected with another L4 route",
   "error.routes.l4_port_range_too_large": "Port range exceeds maximum allowed size",
   "error.routes.private_ip": "Private or loopback IPs are not allowed as direct route targets",
+  "error.routes.relocate_target_required": "Please select a target gateway.",
+  "error.routes.relocate_items_required": "No routes selected to move.",
+  "error.routes.relocate_target_not_found": "Target gateway not found or not enabled.",
+  "error.routes.relocate_item_invalid": "Invalid route selection.",
+  "error.routes.relocate_lan_host_invalid": "Invalid LAN target address.",
+  "error.routes.relocate_lan_port_invalid": "Invalid LAN target port.",
 
   "error.settings.profile_get": "Failed to get profile",
   "error.settings.profile_update": "Failed to update profile",

@@ -68,7 +68,7 @@ test('POST /api/v1/routes/relocate rejects an invalid target_lan_host (bad octet
     items: [{ id: rid, target_lan_host: '999.1.2.3', target_lan_port: 80 }],
   });
   assert.equal(res.status, 400);
-  assert.equal(res.body.error, 'target_lan_host_invalid');
+  assert.equal(res.body.code, 'target_lan_host_invalid');
 });
 
 test('POST /api/v1/routes/relocate rejects an invalid target_lan_port', async () => {
@@ -86,7 +86,7 @@ test('POST /api/v1/routes/relocate rejects an invalid target_lan_port', async ()
     items: [{ id: rid, target_lan_host: '192.168.5.10', target_lan_port: 0 }],
   });
   assert.equal(res.status, 400);
-  assert.equal(res.body.error, 'target_lan_port_invalid');
+  assert.equal(res.body.code, 'target_lan_port_invalid');
 });
 
 test('POST /api/v1/routes/relocate leaves a non-gateway route untouched (moved=0)', async () => {

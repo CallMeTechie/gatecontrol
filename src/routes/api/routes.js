@@ -134,21 +134,21 @@ router.post('/relocate', async (req, res) => {
   const db = getDb();
   const targetPeerId = parseInt(req.body && req.body.target_peer_id, 10);
   const items = Array.isArray(req.body && req.body.items) ? req.body.items : null;
-  if (!Number.isInteger(targetPeerId)) return res.status(400).json({ ok: false, error: 'target_peer_id_required' });
-  if (!items || items.length === 0) return res.status(400).json({ ok: false, error: 'items_required' });
+  if (!Number.isInteger(targetPeerId)) return res.status(400).json({ ok: false, code: 'target_peer_id_required', error: req.t('error.routes.relocate_target_required') });
+  if (!items || items.length === 0) return res.status(400).json({ ok: false, code: 'items_required', error: req.t('error.routes.relocate_items_required') });
 
   const gw = db.prepare("SELECT id FROM peers WHERE id = ? AND peer_type = 'gateway' AND enabled = 1").get(targetPeerId);
-  if (!gw) return res.status(400).json({ ok: false, error: 'target_gateway_not_found' });
+  if (!gw) return res.status(400).json({ ok: false, code: 'target_gateway_not_found', error: req.t('error.routes.relocate_target_not_found') });
 
   for (const it of items) {
-    if (!Number.isInteger(parseInt(it.id, 10))) return res.status(400).json({ ok: false, error: 'item_id_invalid' });
+    if (!Number.isInteger(parseInt(it.id, 10))) return res.status(400).json({ ok: false, code: 'item_id_invalid', error: req.t('error.routes.relocate_item_invalid') });
     const host = (it.target_lan_host || '').trim();
     const isLoopbackName = host.toLowerCase() === 'localhost';
     const looksIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
     if (looksIp ? validateIp(host) : (!isLoopbackName && !/^[a-zA-Z0-9.-]{1,255}$/.test(host))) {
-      return res.status(400).json({ ok: false, error: 'target_lan_host_invalid' });
+      return res.status(400).json({ ok: false, code: 'target_lan_host_invalid', error: req.t('error.routes.relocate_lan_host_invalid') });
     }
-    if (validatePort(it.target_lan_port)) return res.status(400).json({ ok: false, error: 'target_lan_port_invalid' });
+    if (validatePort(it.target_lan_port)) return res.status(400).json({ ok: false, code: 'target_lan_port_invalid', error: req.t('error.routes.relocate_lan_port_invalid') });
   }
 
   const upd = db.prepare(`UPDATE routes
