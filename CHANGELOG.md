@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.0] — 2026-06-04
+
+### Features
+- loopback failover — co-located services survive automatic failover (#119)
+
+---
+
 ## [Unreleased]
 
 ### Added
