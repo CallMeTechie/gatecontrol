@@ -544,6 +544,96 @@ function renderMigrateForm() {
       list.appendChild(row);
     });
   });
+
+  // ── Mode branch: pool (default) vs. permanent relocate ──────────────────
+  const mode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
+  document.querySelectorAll('input[name="migrate-mode"]').forEach(function(el) {
+    el.addEventListener('change', renderMigrateForm);
+  });
+
+  if (mode === 'relocate') {
+    const poolGroupEl = document.getElementById('migrate-target-pool');
+    if (poolGroupEl) poolGroupEl.parentNode.style.display = 'none';
+
+    // Target-gateway <select>, populated from /api/v1/gateways. On change, load
+    // that gateway's discovered hosts into the shared datalist.
+    const gwGroup = document.createElement('div');
+    gwGroup.className = 'form-group';
+    const gwLbl = document.createElement('label');
+    gwLbl.className = 'form-label';
+    gwLbl.textContent = tr('gateway_pools.relocate_target_gateway', 'Target gateway');
+    const gwSel = document.createElement('select');
+    gwSel.id = 'relocate-target-gateway';
+    gwSel.className = 'form-input';
+    gwGroup.appendChild(gwLbl);
+    gwGroup.appendChild(gwSel);
+    list.insertBefore(gwGroup, list.firstChild);
+    gwSel.addEventListener('change', function() { loadRelocateHosts(gwSel.value); });
+    fetch('/api/v1/gateways')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        const gateways = data && Array.isArray(data.gateways) ? data.gateways
+          : (Array.isArray(data) ? data : []);
+        gateways.forEach(function(g) {
+          const opt = document.createElement('option');
+          opt.value = g.peer_id || g.id;
+          opt.textContent = g.name || ('Gateway #' + (g.peer_id || g.id));
+          gwSel.appendChild(opt);
+        });
+        if (gwSel.value) loadRelocateHosts(gwSel.value);
+      })
+      .catch(function() { /* free-text entry still works without the list */ });
+
+    // Bulk-apply field (one IP applied to all visible relocate inputs).
+    const bulk = document.createElement('input');
+    bulk.type = 'text';
+    bulk.className = 'form-input';
+    bulk.placeholder = tr('gateway_pools.relocate_bulk_ip', 'Apply IP to all selected');
+    bulk.addEventListener('input', function() {
+      list.querySelectorAll('input[name="relocate-lan-host"]').forEach(function(inp) { inp.value = bulk.value; });
+    });
+    list.insertBefore(bulk, list.firstChild);
+
+    // Shared datalist for autocomplete from the target gateway's discovered hosts.
+    let dl = document.getElementById('relocate-host-options');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'relocate-host-options'; list.appendChild(dl); }
+
+    // Per-route LAN-host input, prefilled with current target_lan_host. The
+    // checkbox cb sits inside its row <label>; append the input to that row.
+    routes.forEach(function(r) {
+      const cb = list.querySelector('input[name="migrate-route"][value="' + r.id + '"]');
+      if (!cb) return;
+      const rowLabel = cb.closest('label');
+      if (!rowLabel) return;
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.name = 'relocate-lan-host';
+      inp.className = 'form-input';
+      inp.setAttribute('list', 'relocate-host-options');
+      inp.dataset.routeId = String(r.id);
+      inp.dataset.lanPort = String(r.target_lan_port || r.target_port || '');
+      inp.value = r.target_lan_host || '';
+      rowLabel.appendChild(inp);
+    });
+  }
+}
+
+function loadRelocateHosts(gatewayId) {
+  const dl = document.getElementById('relocate-host-options');
+  if (!dl || !gatewayId) return;
+  fetch('/api/v1/gateways/' + gatewayId + '/discovered')
+    .then(function(r) { if (!r.ok) return null; return r.json(); })
+    .then(function(data) {
+      if (!data || !Array.isArray(data.devices)) return; // 403/empty → no-op
+      while (dl.firstChild) dl.removeChild(dl.firstChild);
+      data.devices.forEach(function(d) {
+        const opt = document.createElement('option');
+        opt.value = d.ip;
+        opt.label = d.hostname ? (d.hostname + ' (' + d.ip + ')') : d.ip;
+        dl.appendChild(opt);
+      });
+    })
+    .catch(function() { /* silent: free-text entry always works */ });
 }
 
 function closeMigrateModal() {
@@ -551,6 +641,30 @@ function closeMigrateModal() {
 }
 
 async function handleMigrateSubmit() {
+  const mode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
+  if (mode === 'relocate') {
+    const gwSel = document.getElementById('relocate-target-gateway');
+    if (!gwSel || !gwSel.value) { alert(tr('gateway_pools.relocate_no_gateway', 'Select a target gateway')); return; }
+    const items = Array.from(document.querySelectorAll('input[name="migrate-route"]:checked')).map(function(cb) {
+      const inp = document.querySelector('input[name="relocate-lan-host"][data-route-id="' + cb.value + '"]');
+      return { id: parseInt(cb.value, 10),
+               target_lan_host: inp ? inp.value.trim() : '',
+               target_lan_port: inp ? parseInt(inp.dataset.lanPort, 10) : null };
+    });
+    if (items.length === 0) { alert(tr('gateway_pools.migrate_no_selection', 'Select at least one route')); return; }
+    const btn = document.getElementById('btn-migrate-submit'); if (btn) btn.disabled = true;
+    try {
+      const r = await fetch('/api/v1/routes/relocate', { method: 'POST', headers: jsonHeaders(),
+        body: JSON.stringify({ target_peer_id: parseInt(gwSel.value, 10), items: items }) });
+      const body = await r.json().catch(function() { return {}; });
+      if (!r.ok) throw new Error(body.error || ('http_' + r.status));
+      closeMigrateModal(); location.reload();
+    } catch (err) {
+      alert(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
+    } finally { if (btn) btn.disabled = false; }
+    return;
+  }
+
   const poolSel = document.getElementById('migrate-target-pool');
   if (!poolSel || !poolSel.value) {
     alert(tr('gateway_pools.no_pools_for_migration', 'No pools available'));

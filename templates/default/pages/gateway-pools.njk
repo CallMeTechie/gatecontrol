@@ -132,6 +132,11 @@
       <button class="modal-close" id="btn-migrate-cancel">&times;</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" id="migrate-mode-group">
+        <label class="form-label">{{ t('gateway_pools.migrate_mode') }}</label>
+        <label><input type="radio" name="migrate-mode" value="pool" checked> {{ t('gateway_pools.migrate_mode_pool') }}</label>
+        <label><input type="radio" name="migrate-mode" value="relocate"> {{ t('gateway_pools.migrate_mode_relocate') }}</label>
+      </div>
       <div id="migrate-routes-list"></div>
       <div class="modal-footer">
         <button type="button" class="btn" id="btn-migrate-cancel-footer">{{ t('common.cancel') }}</button>
