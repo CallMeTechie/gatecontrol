@@ -6,6 +6,7 @@ const { gatewayPairLimiter } = require('../../middleware/rateLimit');
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
+const { isPrivateIpv4 } = require('../../utils/validate');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -114,6 +115,21 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
       } catch (err) {
         logger.debug({ peerId, err: err.message }, 'Gateway heartbeat hostname rejected');
       }
+    }
+  }
+
+  // Opportunistic LAN-IP capture. Used to rewrite a loopback X-Gateway-Target
+  // to this gateway's real LAN address when one of its co-located routes has
+  // failed over to a sibling (see caddyConfig loopback resolution). Only
+  // accept RFC1918 private IPv4 — a heartbeat is authenticated but the value
+  // is self-reported and becomes a forwarding target for OTHER gateways.
+  // Write only on change to avoid needless churn.
+  if (body.lan_ip && typeof body.lan_ip === 'string' && isPrivateIpv4(body.lan_ip.trim())) {
+    const ip = body.lan_ip.trim();
+    const db = require('../../db/connection').getDb();
+    const cur = db.prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
+    if (cur && cur.lan_ip !== ip) {
+      db.prepare('UPDATE gateway_meta SET lan_ip = ? WHERE peer_id = ?').run(ip, peerId);
     }
   }
 
