@@ -5,6 +5,11 @@
 // reject-on-replay, per-route isolation, the no-routeId setup path, and that
 // the consumed code is actually persisted.
 
+const cryptoEnv = require('node:crypto');
+// Encryption requires a key (CI does not export one); set a throwaway before
+// anything loads config, matching the other encryption-dependent test files.
+process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || cryptoEnv.randomBytes(32).toString('hex');
+
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown } = require('./helpers/setup');

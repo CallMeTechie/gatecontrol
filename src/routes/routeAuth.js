@@ -156,7 +156,7 @@ router.get('/share/:token', shareRedeemLimiter, (req, res) => {
     const maxAge = new Date(result.expiresAt).getTime() - Date.now();
     setSessionCookie(res, result.sessionId, maxAge > 0 ? maxAge : 1000);
     return res.redirect('/');
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 // GET /route-auth/login — render login page
@@ -211,7 +211,7 @@ router.get('/login', (req, res) => {
         bg_image: routeData.branding_bg_image,
       } : null,
     });
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 // POST /route-auth/login — email & password login
@@ -424,7 +424,7 @@ router.post('/logout', (req, res) => {
     clearSessionCookie(res);
     const redirectTo = safeRedirect(req.body.redirect || req.query.redirect);
     res.redirect(redirectTo);
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 module.exports = router;
