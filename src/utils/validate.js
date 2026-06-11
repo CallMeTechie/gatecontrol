@@ -63,6 +63,23 @@ function validatePort(port) {
   return null;
 }
 
+// A gateway route's LAN forwarding host must be a plain hostname or IP. It is
+// interpolated into the X-Gateway-Target proxy header, and Caddy expands any
+// {…} placeholder token (e.g. {env.GC_ENCRYPTION_KEY}) in header values at
+// request time — so a placeholder here would exfiltrate server state to the
+// gateway companion. Reject braces (and anything outside a host/IP charset)
+// outright. Optional field: empty/undefined is allowed.
+function validateLanHost(host) {
+  if (host == null || host === '') return null;
+  if (typeof host !== 'string') return 'LAN host must be a string';
+  const trimmed = host.trim();
+  if (trimmed.length > 253) return 'LAN host too long (max 253 chars)';
+  // Allowlist: letters, digits, dot, hyphen, underscore (NetBIOS names) and
+  // colon (IPv6). Excludes braces, spaces, slashes and every other metachar.
+  if (!/^[a-zA-Z0-9._:-]+$/.test(trimmed)) return 'Invalid LAN host format';
+  return null;
+}
+
 function validateDescription(desc) {
   if (!desc) return null; // Optional field
   if (typeof desc !== 'string') return 'Description must be a string';
@@ -196,6 +213,7 @@ module.exports = {
   validateDomain,
   validateIp,
   validatePort,
+  validateLanHost,
   validateDescription,
   validateBasicAuthUser,
   validateBasicAuthPassword,

@@ -846,7 +846,31 @@ router.get('/:id/trace', asyncHandler(async (req, res) => {
     if (!fs.existsSync(logPath)) {
       return res.json({ ok: true, data: { entries: [] } });
     }
-    const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+    // Read only the tail of the log. caddy-stdout.log can grow to hundreds of
+    // MB; a full readFileSync would block the event loop for seconds and can
+    // OOM the process under concurrent traces. Entries are sorted newest-first
+    // and capped at `limit` (<=200), so the last few MB always hold more than
+    // enough candidates. Older traces simply fall outside the window.
+    const MAX_TRACE_BYTES = 8 * 1024 * 1024;
+    const stat = fs.statSync(logPath);
+    const start = Math.max(0, stat.size - MAX_TRACE_BYTES);
+    let text;
+    const fd = fs.openSync(logPath, 'r');
+    try {
+      const len = stat.size - start;
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, start);
+      text = buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    // When starting mid-file we likely cut a line in half — drop that partial
+    // leading fragment so JSON.parse doesn't choke on it.
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      if (nl !== -1) text = text.slice(nl + 1);
+    }
+    const lines = text.split('\n').filter(Boolean);
 
     // Merge incoming+outgoing pairs by request_id
     const requests = new Map();

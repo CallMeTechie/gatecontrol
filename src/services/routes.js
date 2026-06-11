@@ -2,7 +2,7 @@
 
 const { getDb } = require('../db/connection');
 const config = require('../../config/default');
-const { validateDomain, validatePort, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, parsePortRange } = require('../utils/validate');
+const { validateDomain, validatePort, validateLanHost, validateDescription, validateBasicAuthUser, validateBasicAuthPassword, validateIp, sanitize, validateL4Protocol, validateL4ListenPort, validateL4TlsMode, isPortBlocked, isLoopbackHost, parsePortRange } = require('../utils/validate');
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
@@ -103,6 +103,9 @@ async function create(data) {
   const portErr = validatePort(data.target_port);
   if (portErr) throw new Error(portErr);
 
+  const lanHostErr = validateLanHost(data.target_lan_host);
+  if (lanHostErr) throw new Error(lanHostErr);
+
   if (data.description) {
     const descErr = validateDescription(data.description);
     if (descErr) throw new Error(descErr);
@@ -143,6 +146,14 @@ async function create(data) {
     const ipErr = validateIp(data.target_ip);
     if (ipErr) throw new Error(ipErr);
     targetIp = sanitize(data.target_ip);
+  }
+
+  // Block reverse-proxying public traffic to the host's own privileged
+  // loopback services: :2019 (Caddy admin API), :3000 (GateControl), and
+  // :80/:443 (the public listener → proxy loop). Only loopback targets are
+  // restricted — a peer or LAN target on these ports stays valid.
+  if (isLoopbackHost(targetIp) && isPortBlocked(parseInt(data.target_port, 10))) {
+    throw new Error('Target port ' + data.target_port + ' is reserved for loopback targets');
   }
 
   // Validate and serialize custom_headers
@@ -331,6 +342,7 @@ async function update(id, data) {
   }
 
   validateIfProvided(data, 'target_port', validatePort);
+  validateIfProvided(data, 'target_lan_host', validateLanHost);
   validateIfProvided(data, 'description', validateDescription);
 
   validateBrandingFields(data);
@@ -382,6 +394,17 @@ async function update(id, data) {
       logger.warn({ routeId: id, peerId: route.peer_id }, 'Linked peer no longer exists, unlinking');
       data.peer_id = null;
     }
+  }
+
+  // Block reverse-proxying public traffic to the host's own privileged
+  // loopback services (Caddy admin :2019, GateControl :3000, public listener
+  // :80/:443). Mirrors the create() guard; uses the effective port (incoming
+  // override or stored value). Only loopback targets are restricted.
+  const effectiveTargetPort = data.target_port !== undefined
+    ? parseInt(data.target_port, 10)
+    : route.target_port;
+  if (isLoopbackHost(targetIp) && isPortBlocked(effectiveTargetPort)) {
+    throw new Error('Target port ' + effectiveTargetPort + ' is reserved for loopback targets');
   }
 
   // Serialize custom_headers for update
@@ -609,9 +632,13 @@ async function remove(id) {
   const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
   if (!route) throw new Error('Route not found');
 
-  // Delete the row and its access rules atomically. A later Caddy-sync
-  // rollback (reinsertRouteRow) restores the route row but NOT its rules —
-  // intentional: a route being deleted has moot access rules.
+  // Snapshot the access rules before deleting so a sync-failure rollback can
+  // restore them. Without this, a rolled-back delete brings the route row back
+  // but drops its time-based access windows — a route that was only protected
+  // by a schedule would silently become reachable around the clock.
+  const accessRulesSnapshot = require('./accessRules').listRules('route', id);
+
+  // Delete the row and its access rules atomically.
   db.transaction(() => {
     db.prepare('DELETE FROM routes WHERE id = ?').run(id);
     require('./accessRules').deleteForTarget('route', id);
@@ -621,7 +648,11 @@ async function remove(id) {
   // column of the original row (not just the hard-coded core set),
   // otherwise a rollback throws away ACLs / IP-filter / bot-blocker
   // config that the admin set up and leaves a half-castrated route.
-  await withCaddySync(syncToCaddy, () => reinsertRouteRow(db, route), 'route delete');
+  // The access rules are restored alongside the row.
+  await withCaddySync(syncToCaddy, () => {
+    reinsertRouteRow(db, route);
+    require('./accessRules').restoreRules(accessRulesSnapshot);
+  }, 'route delete');
 
   activity.log('route_deleted', `Route "${route.domain}" deleted`, {
     source: 'admin',
@@ -706,6 +737,11 @@ async function batch(action, ids) {
   // already solved.
   const snapshots = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
   const aclSnapshots = db.prepare(`SELECT * FROM route_peer_acl WHERE route_id IN (${placeholders})`).all(...ids);
+  // Access rules must also survive a delete-rollback (see remove()); a restored
+  // route would otherwise lose its scheduled access windows.
+  const accessRuleSnapshots = action === 'delete'
+    ? db.prepare(`SELECT * FROM access_rules WHERE target_type = 'route' AND target_id IN (${placeholders})`).all(...ids)
+    : [];
 
   if (action === 'enable') {
     db.prepare(`UPDATE routes SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
@@ -726,6 +762,7 @@ async function batch(action, ids) {
         for (const row of snapshots) reinsertRouteRow(db, row);
         const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
         for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
+        require('./accessRules').restoreRules(accessRuleSnapshots);
       } else {
         for (const row of snapshots) restoreRouteRow(db, row.id, row);
       }
