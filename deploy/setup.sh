@@ -103,6 +103,21 @@ if ! docker compose version &>/dev/null; then
 fi
 echo "  Docker Compose: OK ($(docker compose version --short))"
 
+# WireGuard-Kernelmodul — der Container laeuft bewusst ohne SYS_MODULE und
+# kann das Modul nicht selbst laden. Der Host muss es bereitstellen.
+if lsmod 2>/dev/null | grep -q '^wireguard'; then
+  echo "  WireGuard-Modul: OK (geladen)"
+elif modprobe wireguard 2>/dev/null; then
+  # Erfolgt auch bei in den Kernel eingebautem WireGuard (built-in).
+  echo "  WireGuard-Modul: OK (geladen)"
+  echo "wireguard" > /etc/modules-load.d/wireguard.conf 2>/dev/null || true
+else
+  echo "  WARNUNG: WireGuard-Kernelmodul nicht verfuegbar."
+  echo "           Bitte auf dem Host bereitstellen (z. B. 'modprobe wireguard'"
+  echo "           oder ein Kernel-/Paket mit WireGuard-Unterstuetzung installieren)."
+  echo "           Ohne das Modul kann GateControl keinen VPN-Tunnel aufbauen."
+fi
+
 echo ""
 echo "Alle Voraussetzungen erfuellt."
 
