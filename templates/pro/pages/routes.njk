@@ -115,8 +115,12 @@
         </div>
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.domain') or 'Domain' }}</label>
-          <input type="text" id="service-domain" maxlength="253" placeholder="service.example.com" style="width:100%;padding:8px 12px">
+          <input type="text" id="service-domain" maxlength="253" placeholder="service.example.com" style="width:100%;padding:8px 12px"
+            data-dns-checking="{{ t('routes.dns_checking') }}"
+            data-dns-ok="{{ t('routes.dns_ok') }}"
+            data-dns-warning="{{ t('routes.dns_warning') }}">
           <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('service_bundle.domain_hint') }}</div>
+          <small id="service-domain-dns-hint" class="form-hint" style="display:none"></small>
         </div>
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.description') or 'Description' }}</label>

@@ -1125,11 +1125,8 @@
 
   if (btnAdd) btnAdd.addEventListener('click', openRouteWizard);
   if (routeModalClose) routeModalClose.addEventListener('click', closeRouteWizard);
-  if (routeModalOverlay) {
-    routeModalOverlay.addEventListener('click', (e) => {
-      if (e.target === routeModalOverlay) closeRouteWizard();
-    });
-  }
+  // Intentionally NO overlay-click-to-close: a click outside the modal must not
+  // discard an in-progress route. Close only via the X button or Escape.
   if (wizardNext) wizardNext.addEventListener('click', goWizardNext);
   if (wizardPrev) wizardPrev.addEventListener('click', goWizardPrev);
   if (wizardSave) wizardSave.addEventListener('click', () => {
@@ -3606,7 +3603,42 @@
 
     openBtn.addEventListener('click', openWizard);
     el('service-modal-close').addEventListener('click', closeWizard);
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeWizard(); });
+    // Intentionally NO overlay-click-to-close: a click outside the modal must
+    // not discard an in-progress service. Close only via the X button or Escape.
+
+    // DNS check on the service domain (mirrors the route wizard): on blur, warn
+    // — but do not block — when the domain does not resolve to this server's
+    // public IP. Lets DNS-propagation / proxy setups still proceed.
+    (function () {
+      const domainInput = el('service-domain');
+      const dnsHint = el('service-domain-dns-hint');
+      if (!domainInput || !dnsHint) return;
+      domainInput.addEventListener('blur', async function () {
+        const domain = this.value.trim();
+        if (!domain) { dnsHint.style.display = 'none'; return; }
+        const checking = this.dataset.dnsChecking || 'Checking DNS...';
+        const okMsg = this.dataset.dnsOk || 'DNS OK';
+        const warnTpl = this.dataset.dnsWarning || 'Domain does not point to this server (expected: {{ip}})';
+        dnsHint.textContent = checking;
+        dnsHint.style.color = 'var(--text-3)';
+        dnsHint.style.display = '';
+        try {
+          const data = await api.post('/api/routes/check-dns', { domain: domain });
+          if (!data || !data.ok) { dnsHint.style.display = 'none'; return; }
+          if (data.resolves) {
+            dnsHint.textContent = okMsg;
+            dnsHint.style.color = 'var(--green, #4ade80)';
+          } else if (data.expected) {
+            dnsHint.textContent = warnTpl.replace('{{ip}}', data.expected);
+            dnsHint.style.color = 'var(--yellow, #facc15)';
+          } else {
+            dnsHint.style.display = 'none';
+          }
+        } catch (_) {
+          dnsHint.style.display = 'none';
+        }
+      });
+    })();
     el('service-target-kind').addEventListener('change', paintTargetFields);
     const addBtn = el('service-add-mapping');
     if (addBtn) addBtn.addEventListener('click', function () { addMappingRow(); });
