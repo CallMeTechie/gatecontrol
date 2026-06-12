@@ -215,6 +215,15 @@ function authenticate(rawToken) {
 
   if (!row) return null;
 
+  // Defense-in-depth: explicit timing-safe comparison of stored vs computed
+  // hash, mirroring gatewayAuth, to neutralise any theoretical timing leak
+  // from the b-tree index lookup.
+  const storedBuf = Buffer.from(row.token_hash, 'utf8');
+  const computedBuf = Buffer.from(tokenHash, 'utf8');
+  if (storedBuf.length !== computedBuf.length || !crypto.timingSafeEqual(storedBuf, computedBuf)) {
+    return null;
+  }
+
   // Check expiry
   if (row.expires_at) {
     const expiry = new Date(row.expires_at);

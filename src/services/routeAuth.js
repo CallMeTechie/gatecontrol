@@ -414,21 +414,51 @@ function verifyOtp(routeId, email, code) {
 // TOTP — replay prevention
 // ---------------------------------------------------------------------------
 
-const usedTotpCodes = new Map();
+// 3 x 30s periods — matches verifyTotp's window:1. A code older than this can
+// no longer validate, so replay records past it are safe to prune.
+const TOTP_REPLAY_WINDOW_MS = 90000;
 
+function _totpHash(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+// Atomically record a consumed TOTP code. Returns true if THIS call claimed it
+// (first use), false if it was already recorded (replay). The UNIQUE(route_id,
+// token_hash) constraint makes the claim race-safe across concurrent requests,
+// and persisting it in SQLite means the guard survives a process restart
+// (the previous in-memory map did not).
 function markTotpUsed(routeId, token) {
-  const key = `${routeId}:${token}`;
-  usedTotpCodes.set(key, Date.now());
-  // Cleanup old entries every time
-  const cutoff = Date.now() - 90000; // 90s = 3 windows
-  for (const [k, ts] of usedTotpCodes) {
-    if (ts < cutoff) usedTotpCodes.delete(k);
+  const db = getDb();
+  const now = Date.now();
+  let claimed = true;
+  try {
+    const info = db.prepare(
+      'INSERT OR IGNORE INTO route_auth_totp_used (route_id, token_hash, used_at) VALUES (?, ?, ?)'
+    ).run(routeId, _totpHash(token), now);
+    claimed = info.changes > 0;
+  } catch (err) {
+    // Fail open (treat as claimed) so a DB hiccup never blocks a valid login;
+    // the isTotpUsed pre-check still guards the common single-process case.
+    logger.warn({ err: err.message }, 'Failed to record used TOTP code');
   }
+  try {
+    db.prepare('DELETE FROM route_auth_totp_used WHERE used_at < ?').run(now - TOTP_REPLAY_WINDOW_MS);
+  } catch { /* opportunistic cleanup — ignore errors */ }
+  return claimed;
 }
 
 function isTotpUsed(routeId, token) {
-  const key = `${routeId}:${token}`;
-  return usedTotpCodes.has(key);
+  const cutoff = Date.now() - TOTP_REPLAY_WINDOW_MS;
+  try {
+    const row = getDb().prepare(
+      'SELECT 1 FROM route_auth_totp_used WHERE route_id = ? AND token_hash = ? AND used_at >= ?'
+    ).get(routeId, _totpHash(token), cutoff);
+    return !!row;
+  } catch (err) {
+    // Fail open on a read error so valid logins still work.
+    logger.warn({ err: err.message }, 'Failed to check TOTP replay state');
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +512,11 @@ function verifyTotp(encryptedSecret, token, routeId) {
   const delta = totp.validate({ token: String(token), window: 1 });
   if (delta === null) return false;
 
-  if (routeId) markTotpUsed(routeId, String(token));
+  // Atomically claim the code. A lost claim means a concurrent request
+  // consumed the same code first — treat that as a replay.
+  if (routeId && !markTotpUsed(routeId, String(token))) {
+    return false;
+  }
   return true;
 }
 

@@ -4,8 +4,13 @@ services:
     container_name: gatecontrol
     network_mode: host
     cap_add:
+      # NET_ADMIN is all the container needs to manage the wg0 interface.
+      # The wireguard kernel module must be provided by the HOST (loaded on
+      # most modern kernels; setup.sh loads it and persists it via
+      # modules-load.d). SYS_MODULE was intentionally dropped — it would let
+      # the container load ANY kernel module, a large privilege for no benefit
+      # once the host supplies the module.
       - NET_ADMIN
-      - SYS_MODULE
     volumes:
       - gatecontrol-data:/data
     env_file:

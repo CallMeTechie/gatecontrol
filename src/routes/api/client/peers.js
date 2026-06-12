@@ -72,21 +72,31 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
     let peer = null;
     let isNew = false;
 
-    // 1. Check if client already has a registered peerId
-    if (existingPeerId) {
-      peer = peers.getById(Number(existingPeerId));
-      if (peer) {
-        logger.info({ peerId: peer.id, hostname }, 'Client reconnected with existing peer');
+    // Adopting an existing peer (by id or hostname) is only safe for session
+    // auth (admin UI — already authorized for every peer). An unbound API
+    // token reaching this point must NOT be able to claim a foreign peer and
+    // receive its private key: peer ids are sequential and peer names are
+    // guessable. A token only ever obtains a peer via create-and-bind below;
+    // re-registration of an already-owned peer goes through the bound
+    // early-return path above. Admin onboarding that wants a token tied to a
+    // specific peer issues a pre-bound token (tokens.create({ peerId })).
+    if (!req.tokenAuth) {
+      // 1. Check if client already has a registered peerId
+      if (existingPeerId) {
+        peer = peers.getById(Number(existingPeerId));
+        if (peer) {
+          logger.info({ peerId: peer.id, hostname }, 'Client reconnected with existing peer');
+        }
       }
-    }
 
-    // 2. Check if a peer with same hostname already exists
-    if (!peer) {
-      const baseName = hostname.replace(/[^\w.\-]/g, '_').substring(0, 50);
-      const existing = db.prepare('SELECT * FROM peers WHERE name = ?').get(baseName);
-      if (existing) {
-        peer = existing;
-        logger.info({ peerId: peer.id, hostname }, 'Client matched existing peer by hostname');
+      // 2. Check if a peer with same hostname already exists
+      if (!peer) {
+        const baseName = hostname.replace(/[^\w.\-]/g, '_').substring(0, 50);
+        const existing = db.prepare('SELECT * FROM peers WHERE name = ?').get(baseName);
+        if (existing) {
+          peer = existing;
+          logger.info({ peerId: peer.id, hostname }, 'Client matched existing peer by hostname');
+        }
       }
     }
 
@@ -98,14 +108,24 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
         return res.status(400).json({ ok: false, error: req.t ? req.t('error.client.invalid_hostname') : 'Invalid hostname for peer name' });
       }
 
+      // Since a token-authenticated client never adopts an existing peer
+      // (see guard above), two distinct machines reporting the same hostname
+      // must each get their own peer. Disambiguate the name on collision so
+      // create() does not fail the unique-name constraint.
+      let uniqueName = baseName;
+      for (let suffix = 2; db.prepare('SELECT 1 FROM peers WHERE name = ?').get(uniqueName); suffix++) {
+        const tail = `-${suffix}`;
+        uniqueName = `${baseName.substring(0, 63 - tail.length)}${tail}`;
+      }
+
       peer = await peers.create({
-        name: baseName,
+        name: uniqueName,
         description: `${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`,
         tags: platform === 'android' ? 'mobile-client' : 'desktop-client',
       });
       isNew = true;
 
-      activity.log('client_registered', `${clientLabel(platform)} "${baseName}" registered`, {
+      activity.log('client_registered', `${clientLabel(platform)} "${uniqueName}" registered`, {
         source: 'api',
         severity: 'info',
         details: { peerId: peer.id, hostname, platform, clientVersion },

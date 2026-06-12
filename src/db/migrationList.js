@@ -894,6 +894,25 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'gateway_meta', 'lan_ip'),
   },
+  {
+    // Persist consumed TOTP codes so route-auth replay protection survives a
+    // process restart. The previous in-memory map was wiped on restart,
+    // leaving a <=90s window in which an intercepted code could be replayed.
+    // Rows past the 90s validation window are pruned opportunistically on
+    // each write; the UNIQUE constraint makes the "claim" race-safe.
+    version: 49,
+    name: 'route_auth_totp_used',
+    sql: `
+      CREATE TABLE IF NOT EXISTS route_auth_totp_used (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL,
+        used_at INTEGER NOT NULL,
+        UNIQUE(route_id, token_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_auth_totp_used_at ON route_auth_totp_used(used_at);
+    `,
+  },
 ];
 
 module.exports = { migrations };
