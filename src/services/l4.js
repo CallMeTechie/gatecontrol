@@ -2,6 +2,12 @@
 
 const { parsePortRange, isPortBlocked } = require('../utils/validate');
 
+// Lazy: keeps requiring this module free of config/db side effects (it is
+// also consumed by pure-validation unit tests without an app environment).
+function getDb() {
+  return require('../db/connection').getDb();
+}
+
 function buildL4Servers(routes) {
   if (!routes || routes.length === 0) return {};
 
@@ -139,4 +145,70 @@ function validatePortConflicts(routes) {
   return errors;
 }
 
-module.exports = { buildL4Servers, buildL4Route, validatePortConflicts };
+// Returns the id of an *enabled* L4 route already occupying the given listen
+// port without TLS — the only conflict class for plain port-forwards (TLS
+// routes multiplex via SNI, see validatePortConflicts). null = free.
+// excludeRouteIds lets an update ignore the caller's own L4 rows.
+function findListenPortConflict(listenPort, { protocol = 'tcp', excludeRouteIds = [] } = {}) {
+  const db = getDb();
+  const exclude = excludeRouteIds.filter((id) => id != null);
+  const placeholders = exclude.length ? exclude.map(() => '?').join(',') : '-1';
+  const row = db.prepare(
+    `SELECT id FROM routes
+       WHERE route_type = 'l4'
+         AND l4_protocol = ?
+         AND l4_tls_mode = 'none'
+         AND l4_listen_port = ?
+         AND enabled = 1
+         AND id NOT IN (${placeholders})`
+  ).get(protocol, String(listenPort), ...(exclude.length ? exclude : []));
+  return row ? row.id : null;
+}
+
+// Next free listen port above startPort not used by an enabled no-TLS L4
+// route of the same protocol and not reserved. null if none within a sane
+// window. Single ports only — for ranges callers get no suggestion.
+function suggestFreeListenPort(startPort, { protocol = 'tcp', excludeRouteIds = [] } = {}) {
+  const db = getDb();
+  const exclude = excludeRouteIds.filter((id) => id != null);
+  const placeholders = exclude.length ? exclude.map(() => '?').join(',') : '-1';
+  const used = new Set(
+    db.prepare(
+      `SELECT l4_listen_port FROM routes
+         WHERE route_type = 'l4' AND l4_protocol = ? AND l4_tls_mode = 'none'
+           AND enabled = 1 AND id NOT IN (${placeholders})`
+    ).all(protocol, ...(exclude.length ? exclude : []))
+      .map(r => parseInt(r.l4_listen_port, 10))
+  );
+  const begin = Math.max(1, parseInt(startPort, 10) || 3389);
+  for (let p = begin + 1; p <= 65535 && p <= begin + 2000; p++) {
+    if (!used.has(p) && !isPortBlocked(p)) return p;
+  }
+  return null;
+}
+
+// Throw a structured 409 if a no-TLS listen port collides with an existing
+// enabled L4 listener. Centralised so all orchestrators (RDP links, service
+// bundles) surface the same machine-readable shape to the route layer.
+function assertListenPortFree(listenPort, { protocol = 'tcp', excludeRouteIds = [], code = 'GATEWAY_PORT_CONFLICT' } = {}) {
+  const conflictRouteId = findListenPortConflict(listenPort, { protocol, excludeRouteIds });
+  if (conflictRouteId == null) return;
+  const suggestedPort = suggestFreeListenPort(listenPort, { protocol, excludeRouteIds });
+  const err = new Error(
+    `Listen port ${listenPort} is already in use by another route`
+    + (suggestedPort ? ` — next free port: ${suggestedPort}` : '')
+  );
+  err.code = code;
+  err.statusCode = 409;
+  err.conflict = { port: parseInt(listenPort, 10), conflictRouteId, suggestedPort };
+  throw err;
+}
+
+module.exports = {
+  buildL4Servers,
+  buildL4Route,
+  validatePortConflicts,
+  findListenPortConflict,
+  suggestFreeListenPort,
+  assertListenPortFree,
+};
