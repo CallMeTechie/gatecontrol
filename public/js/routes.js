@@ -12,6 +12,25 @@
   let batchMode = false;
   let batchSelected = new Set();
 
+  // ─── View state ──────────────────────────────────────────
+  // Lives outside the DOM (plus localStorage) because SSE events
+  // (gc:monitor / gc:reconnected) trigger full re-renders — any state kept
+  // only in the DOM would reset on every monitor tick.
+  const view = window.GCRoutesView;
+  function lsGet(k, d) { try { return localStorage.getItem(k) || d; } catch (_) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  function lsGetSet(k) { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch (_) { return new Set(); } }
+  function lsSetSet(k, s) { try { localStorage.setItem(k, JSON.stringify(Array.from(s))); } catch (_) {} }
+  const viewState = {
+    view: lsGet('gc_routes_view_v1', 'cards') === 'table' ? 'table' : 'cards',
+    sort: lsGet('gc_routes_sort_v1', 'domain'),
+    typeFilter: null,
+    statusFilter: null,
+    targetFilter: null,
+  };
+  const collapsedGroups = lsGetSet('gc_routes_groups_collapsed_v1');
+  const expandedBadges = new Set();
+
   // ─── Load routes ─────────────────────────────────────────
   async function loadRoutes() {
     try {
@@ -117,14 +136,10 @@
     }
   }
 
-  // ─── Render route list ───────────────────────────────────
-  function renderRoutes(routes) {
-    if (!routes.length) {
-      routesList.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">No routes configured</div>';
-      return;
-    }
-
-    routesList.innerHTML = routes.map(r => {
+  // ─── Render a single route (card or group sub-item) ──────
+  function renderRouteEntry(r, opts) {
+    opts = opts || {};
+    {
       // Gateway-routed routes show the LAN target behind the home gateway.
       // Peer-routed routes show the direct WG peer IP.
       const isGatewayRoute = r.target_kind === 'gateway';
@@ -293,15 +308,40 @@
       } else {
         titleText = '';
       }
+      if (opts.subItem) {
+        // The domain lives on the group header — sub-items show the
+        // protocol role instead, mirroring the approved mockup.
+        titleText = r.route_type === 'l4' ? l4ShortTitle : 'HTTP';
+        showDescLine = false;
+      }
+
+      // Badge budget: status/monitoring/circuit-breaker/L4 type are always
+      // visible; the first two feature badges follow, the rest collapse
+      // behind a "+N" toggle (expandedBadges survives SSE re-renders).
+      const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
+      const extraTags = [debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
+        backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
+        routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
+      let visibleExtras, moreBtn = '';
+      if (expandedBadges.has(String(r.id)) || extraTags.length <= 3) {
+        visibleExtras = extraTags.join('');
+      } else {
+        visibleExtras = extraTags.slice(0, 2).join('');
+        moreBtn = '<button type="button" class="tag tag-more" style="margin-left:4px" data-more-id="' + r.id + '">+' + (extraTags.length - 2) + '</button>';
+      }
 
       // r.id is a numeric DB id, safe for attribute use; checked is a static string
       var batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
       var batchCbHtml = batchMode ? '<div class="batch-checkbox-wrap" style="display:flex;align-items:center;padding-right:10px"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></div>' : '';
 
-      return `<div class="route-item${batchMode ? ' batch-mode' : ''}" data-route-id="${r.id}">
+      const typeIcon = r.route_type === 'l4'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>';
+
+      return `<div class="route-item${opts.subItem ? ' route-sub-item' : ''}${batchMode ? ' batch-mode' : ''}" data-route-id="${r.id}">
         ${batchCbHtml}
-        <div class="route-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <div class="route-icon${r.route_type === 'l4' ? ' route-icon-l4' : ''}">
+          ${typeIcon}
         </div>
         <div style="flex:1;min-width:0">
           <div class="route-domain">${titleText}</div>
@@ -309,7 +349,7 @@
           ${showDescLine ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div class="route-tags">
-          ${statusTag}${monitorTag}${cbTag}${debugTag}${botTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
+          ${primaryTags}${visibleExtras}${moreBtn}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -323,21 +363,183 @@
           </button>
         </div>
       </div>`;
-    }).join('');
+    }
   }
 
-  // ─── Search routes ──────────────────────────────────────
-  function applyRouteFilter() {
-    const q = routeSearch ? routeSearch.value.toLowerCase().trim() : '';
-    if (!q) return renderRoutes(allRoutes);
-    const filtered = allRoutes.filter(r =>
-      (r.domain && r.domain.toLowerCase().includes(q)) ||
-      (r.description && r.description.toLowerCase().includes(q)) ||
-      (r.peer_name && r.peer_name.toLowerCase().includes(q)) ||
-      (r.target_ip && r.target_ip.includes(q))
-    );
-    renderRoutes(filtered);
+  // ─── Group + table rendering ─────────────────────────────
+
+  function groupTargetLabel(g) {
+    const r = g.routes[0];
+    if (r.target_kind === 'gateway') {
+      if (r.target_pool_id != null) return 'Pool';
+      return 'Gateway · ' + (r.target_peer_name || '');
+    }
+    return r.peer_name ? ('Peer · ' + r.peer_name) : (r.target_ip || '');
   }
+
+  function statusDotClass(status) {
+    return status === 'down' ? 'red' : status === 'active' ? 'green' : 'amber';
+  }
+
+  function renderGroupCard(g) {
+    const collapsed = collapsedGroups.has(g.key);
+    const label = g.label != null
+      ? escapeHtml(g.label)
+      : escapeHtml(GC.t['routes.group_no_domain'] || 'Without domain');
+    const countTxt = (GC.t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+    const bundleTag = g.isBundle
+      ? '<span class="group-bundle-tag">' + escapeHtml(GC.t['service_bundle.badge'] || 'SERVICE') + '</span>'
+      : '';
+    const targetTag = g.key !== view.NO_DOMAIN_KEY
+      ? '<span class="group-target-tag">' + escapeHtml(groupTargetLabel(g)) + '</span>'
+      : '';
+    const routeIds = g.routes.map(function (r) { return r.id; }).join(',');
+
+    let actions = '';
+    if (g.isBundle) {
+      actions =
+        '<button type="button" class="icon-btn" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
+        + '<button type="button" class="icon-btn" data-gaction="bundle-ungroup" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.ungroup'] || 'Ungroup') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>'
+        + '<button type="button" class="icon-btn icon-btn-danger" data-gaction="bundle-delete" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(GC.t['service_bundle.delete'] || 'Delete service') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
+    } else if (g.key !== view.NO_DOMAIN_KEY) {
+      actions =
+        '<button type="button" class="icon-btn" data-gaction="group-domain" data-route-ids="' + routeIds + '" data-name="' + label + '" title="' + escapeHtml(GC.t['service_bundle.group_selected'] || 'Group as service') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>';
+    }
+
+    return '<div class="route-group' + (collapsed ? ' collapsed' : '') + '" data-gkey="' + escapeHtml(g.key) + '">'
+      + '<div class="route-group-head" data-gtoggle="' + escapeHtml(g.key) + '">'
+      + '<svg class="group-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>'
+      + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
+      + '<span class="group-label">' + label + '</span>'
+      + bundleTag + targetTag
+      + '<span class="group-meta">' + escapeHtml(countTxt) + '</span>'
+      + '<span class="group-spacer"></span>'
+      + '<div class="group-actions">' + actions + '</div>'
+      + '</div>'
+      + '<div class="route-group-body">'
+      + g.routes.map(function (r) { return renderRouteEntry(r, { subItem: true }); }).join('')
+      + '</div></div>';
+  }
+
+  function renderTableRow(r, opts) {
+    opts = opts || {};
+    const isGw = r.target_kind === 'gateway';
+    const targetTxt = isGw
+      ? ((r.target_lan_host || '?') + ':' + (r.target_lan_port || r.target_port || '?') + (r.target_peer_name ? ' · ' + r.target_peer_name : ''))
+      : (((r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip) || '') + ':' + r.target_port + (r.peer_name ? ' · ' + r.peer_name : ''));
+    const typeTag = r.route_type === 'l4'
+      ? '<span class="tag tag-info">' + (r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + escapeHtml(String(r.l4_listen_port || '')) + '</span>'
+      : '<span class="tag">HTTP</span>';
+    const status = view.routeStatus(r);
+    const statusTag = status === 'disabled'
+      ? '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.disabled'] || 'Disabled') + '</span>'
+      : status === 'down'
+        ? '<span class="tag tag-red"><span class="tag-dot"></span>DOWN</span>'
+        : '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.active'] || 'Active') + '</span>';
+    const monitorTxt = (r.monitoring_enabled && r.monitoring_status === 'up' && r.monitoring_response_time != null)
+      ? ' <span class="tag tag-green">UP ' + (parseInt(r.monitoring_response_time, 10) || 0) + 'ms</span>'
+      : '';
+    const domainTxt = opts.subRow
+      ? '<span style="color:var(--text-3)">└ ' + (r.domain ? escapeHtml(r.domain) : '—') + '</span>'
+      : (r.domain ? escapeHtml(r.domain) : '—');
+    const batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
+    const batchCell = batchMode
+      ? '<td class="td-batch"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></td>'
+      : '';
+    const delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
+    return '<tr data-route-id="' + r.id + '"' + (status === 'disabled' ? ' style="opacity:.6"' : '') + '>'
+      + batchCell
+      + '<td class="mono">' + domainTxt + '</td>'
+      + '<td>' + typeTag + '</td>'
+      + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
+      + '<td>' + statusTag + monitorTxt + '</td>'
+      + '<td class="td-actions">'
+      + '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + r.id + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
+      + '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + r.id + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
+      + '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + r.id + '" data-domain="' + delDomain + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>'
+      + '</td></tr>';
+  }
+
+  function renderTable(groups) {
+    const t = GC.t;
+    const batchHead = batchMode ? '<th class="td-batch"></th>' : '';
+    let rows = '';
+    for (const g of groups) {
+      if (!g.single && g.routes.length > 1) {
+        const label = g.label != null
+          ? escapeHtml(g.label)
+          : escapeHtml(t['routes.group_no_domain'] || 'Without domain');
+        const bundleTag = g.isBundle ? ' <span class="group-bundle-tag">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>' : '';
+        const countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+        rows += '<tr class="routes-table-group"><td colspan="' + (batchMode ? 6 : 5) + '">'
+          + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
+          + label + bundleTag + ' · ' + escapeHtml(countTxt)
+          + '</td></tr>';
+        rows += g.routes.map(function (r, i) { return renderTableRow(r, { subRow: i > 0 }); }).join('');
+      } else {
+        rows += g.routes.map(function (r) { return renderTableRow(r, {}); }).join('');
+      }
+    }
+    return '<div class="routes-table-wrap"><table class="routes-table"><thead><tr>'
+      + batchHead
+      + '<th>' + escapeHtml(t['routes.table_domain'] || 'Domain') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_type'] || 'Type') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_target'] || 'Target') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_status'] || 'Status') + '</th>'
+      + '<th class="td-actions">' + escapeHtml(t['routes.table_actions'] || 'Actions') + '</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  const GROUP_STATUS_ORDER = { down: 0, mixed: 1, disabled: 2, active: 3 };
+  function sortGroups(groups, key) {
+    // The no-domain bucket stays last in every ordering.
+    groups.sort(function (a, b) {
+      if (a.key === view.NO_DOMAIN_KEY) return 1;
+      if (b.key === view.NO_DOMAIN_KEY) return -1;
+      if (key === 'status') {
+        const d = GROUP_STATUS_ORDER[a.status] - GROUP_STATUS_ORDER[b.status];
+        if (d !== 0) return d;
+      } else if (key === 'type') {
+        const d = (a.routes[0].route_type === 'l4' ? 1 : 0) - (b.routes[0].route_type === 'l4' ? 1 : 0);
+        if (d !== 0) return d;
+      }
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+    return groups;
+  }
+
+  function render() {
+    const q = routeSearch ? routeSearch.value : '';
+    const hasFilter = !!(q.trim() || viewState.typeFilter || viewState.statusFilter || viewState.targetFilter);
+    const filtered = view.filterRoutes(allRoutes, {
+      q,
+      type: viewState.typeFilter,
+      status: viewState.statusFilter,
+      target: viewState.targetFilter,
+    });
+    if (!filtered.length) {
+      const msg = hasFilter
+        ? (GC.t['routes.no_match'] || 'No routes match the filter')
+        : (GC.t['routes.no_routes'] || 'No routes configured');
+      routesList.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">' + escapeHtml(msg) + '</div>';
+      return;
+    }
+    const groups = sortGroups(view.buildGroups(filtered), viewState.sort);
+    if (viewState.view === 'table') {
+      routesList.innerHTML = renderTable(groups);
+    } else {
+      routesList.innerHTML = groups.map(function (g) {
+        return g.single ? renderRouteEntry(g.routes[0], {}) : renderGroupCard(g);
+      }).join('');
+    }
+  }
+
+  // Kept as the historical entry point — every caller funnels into render().
+  function applyRouteFilter() { render(); }
 
   if (routeSearch) {
     routeSearch.addEventListener('input', () => applyRouteFilter());
@@ -346,17 +548,80 @@
   // ─── Route list action delegation ────────────────────────
   routesList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
+    if (btn) {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      switch (action) {
+        case 'edit': showEditModal(id); break;
+        case 'toggle': toggleRoute(id); break;
+        case 'delete': showConfirmDelete(id, btn.dataset.domain); break;
+      }
+      return;
+    }
 
-    const action = btn.dataset.action;
-    const id = btn.dataset.id;
+    // "+N" badge expander — state survives SSE re-renders
+    const more = e.target.closest('[data-more-id]');
+    if (more) {
+      const rid = String(more.dataset.moreId);
+      if (expandedBadges.has(rid)) expandedBadges.delete(rid);
+      else expandedBadges.add(rid);
+      render();
+      return;
+    }
 
-    switch (action) {
-      case 'edit': showEditModal(id); break;
-      case 'toggle': toggleRoute(id); break;
-      case 'delete': showConfirmDelete(id, btn.dataset.domain); break;
+    // Group lockstep actions (service bundles / group-as-service)
+    const gbtn = e.target.closest('[data-gaction]');
+    if (gbtn) {
+      handleGroupAction(gbtn);
+      return;
+    }
+
+    // Header click toggles collapse (ignored while selecting in batch mode)
+    const head = e.target.closest('[data-gtoggle]');
+    if (head && !batchMode) {
+      const key = head.dataset.gtoggle;
+      if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+      else collapsedGroups.add(key);
+      lsSetSet('gc_routes_groups_collapsed_v1', collapsedGroups);
+      render();
     }
   });
+
+  async function handleGroupAction(btn) {
+    const gaction = btn.dataset.gaction;
+    try {
+      if (gaction === 'bundle-toggle') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        const members = allRoutes.filter(function (r) { return r.bundle_id === bundleId; });
+        const allEnabled = members.length > 0 && members.every(function (r) { return r.enabled; });
+        await api.put('/api/v1/service-bundles/' + bundleId + '/toggle', { enabled: !allEnabled });
+        loadRoutes();
+      } else if (gaction === 'bundle-ungroup') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        if (!confirm(GC.t['service_bundle.confirm_ungroup'] || 'Ungroup this service? The routes are kept.')) return;
+        await api.del('/api/v1/service-bundles/' + bundleId + '?delete_routes=false');
+        loadRoutes();
+      } else if (gaction === 'bundle-delete') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        const msg = (GC.t['service_bundle.confirm_delete'] || 'Delete service "{{name}}" and all its routes?')
+          .replace('{{name}}', btn.dataset.name || '');
+        if (!confirm(msg)) return;
+        await api.del('/api/v1/service-bundles/' + bundleId);
+        loadRoutes();
+      } else if (gaction === 'group-domain') {
+        const ids = (btn.dataset.routeIds || '').split(',').map(Number).filter(Boolean);
+        if (!ids.length) return;
+        const data = await api.post('/api/v1/service-bundles/group', {
+          name: btn.dataset.name || '',
+          route_ids: ids,
+        });
+        if (!data.ok) { alert(data.error || (GC.t['common.error'] || 'Error')); return; }
+        loadRoutes();
+      }
+    } catch (err) {
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+    }
+  }
 
   // ─── Create form: target-kind (peer vs gateway vs pool) toggle ───
   (function initCreateTargetKindToggle() {
@@ -3023,12 +3288,13 @@
     updateBatchBar();
   });
 
-  // Click on route-item in batch mode toggles checkbox
+  // Click on a route entry in batch mode toggles its checkbox.
+  // [data-route-id] matches both card entries and table rows.
   routesList.addEventListener('click', function(e) {
     if (!batchMode) return;
     // Don't toggle if clicking action buttons or the checkbox itself
-    if (e.target.closest('[data-action]') || e.target.closest('.batch-checkbox')) return;
-    var item = e.target.closest('.route-item');
+    if (e.target.closest('[data-action]') || e.target.closest('[data-gaction]') || e.target.closest('.batch-checkbox')) return;
+    var item = e.target.closest('[data-route-id]');
     if (!item) return;
     var cb = item.querySelector('.batch-checkbox');
     if (!cb) return;
@@ -3072,6 +3338,59 @@
       executeBatchAction('delete');
     }
   });
+
+  // ─── Toolbar: filter chips, sort, view toggle ────────────
+  (function initToolbar() {
+    const chipBar = document.getElementById('route-filter-chips');
+    if (chipBar) {
+      chipBar.addEventListener('click', function (e) {
+        const chip = e.target.closest('.filter-chip');
+        if (!chip) return;
+        const dim = chip.dataset.dim;
+        const wasActive = chip.classList.contains('on');
+        chipBar.querySelectorAll('.filter-chip[data-dim="' + dim + '"]').forEach(function (c) {
+          c.classList.remove('on');
+        });
+        const field = dim === 'type' ? 'typeFilter' : dim === 'status' ? 'statusFilter' : 'targetFilter';
+        if (wasActive) {
+          viewState[field] = null;
+        } else {
+          chip.classList.add('on');
+          viewState[field] = chip.dataset.value;
+        }
+        render();
+      });
+    }
+
+    const sortSel = document.getElementById('route-sort');
+    if (sortSel) {
+      sortSel.value = viewState.sort;
+      sortSel.addEventListener('change', function () {
+        viewState.sort = sortSel.value;
+        lsSet('gc_routes_sort_v1', viewState.sort);
+        render();
+      });
+    }
+
+    const viewToggle = document.getElementById('route-view-toggle');
+    function paintViewToggle() {
+      if (!viewToggle) return;
+      viewToggle.querySelectorAll('[data-view]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.view === viewState.view);
+      });
+    }
+    if (viewToggle) {
+      paintViewToggle();
+      viewToggle.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-view]');
+        if (!b) return;
+        viewState.view = b.dataset.view === 'table' ? 'table' : 'cards';
+        lsSet('gc_routes_view_v1', viewState.view);
+        paintViewToggle();
+        render();
+      });
+    }
+  })();
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();

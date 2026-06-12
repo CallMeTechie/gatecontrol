@@ -26,10 +26,6 @@
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
-    <div class="input-wrap">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="search" id="route-search" placeholder="{{ t('routes.search') or 'Search routes...' }}">
-    </div>
     <button class="btn btn-ghost" id="btn-batch-routes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
       {{ t('batch.select') }}
@@ -37,6 +33,39 @@
     <button class="btn btn-primary" id="btn-add-route">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       {{ t('routes.add') }}
+    </button>
+  </div>
+</div>
+
+<!-- Routes toolbar: search + filter chips + sort + view toggle -->
+<div class="routes-toolbar">
+  <div class="input-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="route-search" placeholder="{{ t('routes.search') or 'Search routes...' }}">
+  </div>
+  <div class="filter-chips" id="route-filter-chips">
+    <button type="button" class="filter-chip" data-dim="type" data-value="http">{{ t('routes.type_http') }}</button>
+    <button type="button" class="filter-chip" data-dim="type" data-value="l4">{{ t('routes.type_l4') }}</button>
+    <span class="chip-sep"></span>
+    <button type="button" class="filter-chip" data-dim="status" data-value="active">{{ t('routes.filter_status_active') }}</button>
+    <button type="button" class="filter-chip" data-dim="status" data-value="disabled">{{ t('routes.filter_status_disabled') }}</button>
+    <button type="button" class="filter-chip" data-dim="status" data-value="down">{{ t('routes.filter_status_down') }}</button>
+    <span class="chip-sep"></span>
+    <button type="button" class="filter-chip" data-dim="target" data-value="peer">{{ t('routes.filter_target_peer') }}</button>
+    <button type="button" class="filter-chip" data-dim="target" data-value="gateway">{{ t('routes.filter_target_gateway') }}</button>
+    <button type="button" class="filter-chip" data-dim="target" data-value="pool">{{ t('routes.filter_target_pool') }}</button>
+  </div>
+  <select class="sort-select" id="route-sort">
+    <option value="domain">{{ t('routes.sort_domain') }}</option>
+    <option value="status">{{ t('routes.sort_status') }}</option>
+    <option value="type">{{ t('routes.sort_type') }}</option>
+  </select>
+  <div class="view-toggle" id="route-view-toggle">
+    <button type="button" data-view="cards" title="{{ t('routes.view_cards') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="18" height="7" rx="1"/></svg>
+    </button>
+    <button type="button" data-view="table" title="{{ t('routes.view_table') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
   </div>
 </div>
@@ -779,5 +808,6 @@
 
 {% block scripts %}
 <script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
+<script src="/js/routes-view.js?v={{ appVersion }}"></script>
 <script src="/js/routes.js?v={{ appVersion }}"></script>
 {% endblock %}
