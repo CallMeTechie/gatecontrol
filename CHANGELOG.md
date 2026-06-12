@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.4] — 2026-06-12
+
+### Fixes
+- wizards no longer close on outside click; DNS check in service wizard (#123)
+
+---
+
 ## [1.76.3] — 2026-06-12
 
 ### Änderungen
