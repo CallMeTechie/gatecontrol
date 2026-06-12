@@ -75,6 +75,7 @@ function sanitizeStickyCookieName(name) {
 }
 
 module.exports = {
+  CADDY_PLACEHOLDER_RE,
   BOT_BLOCKER_RANGES,
   escapeHtmlForDefender,
   buildDefenderConfig,

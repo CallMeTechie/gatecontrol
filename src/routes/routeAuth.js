@@ -43,6 +43,20 @@ function safeRedirect(url) {
   return url.startsWith('/') ? url : '/';
 }
 
+// Recover the full redirect target from the raw request URL. Caddy's
+// forward-auth 302 appends the original request URI verbatim as the LAST query
+// parameter (…&redirect=/page?a=1&b=2). Its own '&' separators make Express
+// parse req.query.redirect as only the first segment ("/page?a=1"), dropping
+// the rest. Slice everything after the first 'redirect=' marker instead so the
+// whole URI survives. Falls back to the parsed value for direct navigations
+// that carry no such marker. safeRedirect() still validates the result.
+function extractRedirect(req) {
+  const raw = req.originalUrl || '';
+  const marker = raw.indexOf('redirect=');
+  if (marker !== -1) return raw.slice(marker + 'redirect='.length);
+  return req.query.redirect;
+}
+
 function generateSignedCsrf(domain) {
   const timestamp = Date.now().toString(36);
   const random = crypto.randomBytes(16).toString('hex');
@@ -142,14 +156,14 @@ router.get('/share/:token', shareRedeemLimiter, (req, res) => {
     const maxAge = new Date(result.expiresAt).getTime() - Date.now();
     setSessionCookie(res, result.sessionId, maxAge > 0 ? maxAge : 1000);
     return res.redirect('/');
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 // GET /route-auth/login — render login page
 router.get('/login', (req, res) => {
   (async () => {
     const domain = req.query.route || req.headers['x-forwarded-host'] || req.headers.host;
-    const redirectTo = safeRedirect(req.query.redirect);
+    const redirectTo = safeRedirect(extractRedirect(req));
 
     const authConfig = domain ? getAuthByDomain(domain) : null;
 
@@ -197,7 +211,7 @@ router.get('/login', (req, res) => {
         bg_image: routeData.branding_bg_image,
       } : null,
     });
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 // POST /route-auth/login — email & password login
@@ -410,7 +424,10 @@ router.post('/logout', (req, res) => {
     clearSessionCookie(res);
     const redirectTo = safeRedirect(req.body.redirect || req.query.redirect);
     res.redirect(redirectTo);
-  })().catch((err) => res.status(500).send(err.message));
+  })().catch(() => res.sendStatus(500));
 });
 
 module.exports = router;
+// Exposed for unit testing; does not affect router mounting.
+module.exports.extractRedirect = extractRedirect;
+module.exports.safeRedirect = safeRedirect;

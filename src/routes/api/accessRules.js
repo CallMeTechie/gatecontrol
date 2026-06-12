@@ -94,12 +94,15 @@ module.exports = (target_type) => {
       }
 
       const { mode, schedule, valid_from, valid_until, label } = req.body;
-      accessRules.updateRule(Number(req.params.ruleId), {
+      const upd = accessRules.updateRule(Number(req.params.ruleId), {
         mode, schedule,
         valid_from: valid_from || null,
         valid_until: valid_until || null,
         label: label || null,
-      });
+      }, target_type, id);
+      if (!upd || upd.changes === 0) {
+        return res.status(404).json({ ok: false, error: req.t('access.target_not_found') });
+      }
       await require('../../services/accessReconciler').reconcileNow();
       res.json({ ok: true });
     })().catch((err) => { logger.error({ err: err.message }, 'access-rules handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
@@ -108,7 +111,11 @@ module.exports = (target_type) => {
   // DELETE /:ruleId — drop a rule, then reconcile.
   router.delete('/:ruleId', requireFeature('access_windows'), (req, res) => {
     (async () => {
-      accessRules.deleteRule(Number(req.params.ruleId));
+      const id = Number(req.params.id);
+      const del = accessRules.deleteRule(Number(req.params.ruleId), target_type, id);
+      if (!del || del.changes === 0) {
+        return res.status(404).json({ ok: false, error: req.t('access.target_not_found') });
+      }
       await require('../../services/accessReconciler').reconcileNow();
       res.json({ ok: true });
     })().catch((err) => { logger.error({ err: err.message }, 'access-rules handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });

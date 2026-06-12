@@ -65,7 +65,7 @@ describe('migration: service_bundles', () => {
     assert.equal(row.bundle_id, null);
   });
 
-  it('is recorded as version 50 (gap at 49 is intentional)', () => {
+  it('is recorded as version 50', () => {
     const row = getDb()
       .prepare('SELECT version, name FROM migration_history WHERE version = 50')
       .get();

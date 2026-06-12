@@ -52,6 +52,56 @@ install_package() {
   esac
 }
 
+# Set KEY=value in .env without exposing the value to sed/regex metacharacters.
+# A previous sed-based approach corrupted passwords containing |, & or \.
+# printf '%s' writes the value verbatim — no interpretation of any character.
+set_env() {
+  local key="$1" value="$2"
+  if [ -f .env ]; then
+    grep -v "^${key}=" .env > .env.tmp 2>/dev/null || true
+    mv .env.tmp .env
+  fi
+  printf '%s=%s\n' "$key" "$value" >> .env
+}
+
+# Install Docker from its official, GPG-verified package repository instead of
+# piping a remote script straight into a shell. Falls back to the upstream
+# convenience script only for unrecognised distros (downloaded to a file, with
+# a warning — never piped blind).
+install_docker() {
+  case "$OS" in
+    ubuntu|debian)
+      install_package ca-certificates curl
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL "https://download.docker.com/linux/${OS}/gpg" -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      local codename
+      codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${OS} ${codename} stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update -qq
+      apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      ;;
+    fedora)
+      dnf install -y -q dnf-plugins-core
+      dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+      dnf install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      ;;
+    centos|rhel|rocky|alma)
+      yum install -y -q yum-utils
+      yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+      yum install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      ;;
+    *)
+      echo "  WARNUNG: Unbekanntes OS — Rueckfall auf das offizielle Docker-Skript."
+      echo "           Es wird heruntergeladen und ausgefuehrt; nur fortfahren, wenn vertrauenswuerdig."
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      rm -f /tmp/get-docker.sh
+      ;;
+  esac
+}
+
 # ─── Voraussetzungen pruefen ────────────────────────────
 echo ""
 echo "Pruefe Voraussetzungen..."
@@ -73,7 +123,7 @@ echo "  openssl: OK"
 # Docker
 if ! command -v docker &>/dev/null; then
   echo "  Docker nicht gefunden, wird installiert..."
-  curl -fsSL https://get.docker.com | sh
+  install_docker
   systemctl enable --now docker
   echo "  Docker installiert und gestartet."
 else
@@ -102,6 +152,21 @@ if ! docker compose version &>/dev/null; then
   esac
 fi
 echo "  Docker Compose: OK ($(docker compose version --short))"
+
+# WireGuard-Kernelmodul — der Container laeuft bewusst ohne SYS_MODULE und
+# kann das Modul nicht selbst laden. Der Host muss es bereitstellen.
+if lsmod 2>/dev/null | grep -q '^wireguard'; then
+  echo "  WireGuard-Modul: OK (geladen)"
+elif modprobe wireguard 2>/dev/null; then
+  # Erfolgt auch bei in den Kernel eingebautem WireGuard (built-in).
+  echo "  WireGuard-Modul: OK (geladen)"
+  echo "wireguard" > /etc/modules-load.d/wireguard.conf 2>/dev/null || true
+else
+  echo "  WARNUNG: WireGuard-Kernelmodul nicht verfuegbar."
+  echo "           Bitte auf dem Host bereitstellen (z. B. 'modprobe wireguard'"
+  echo "           oder ein Kernel-/Paket mit WireGuard-Unterstuetzung installieren)."
+  echo "           Ohne das Modul kann GateControl keinen VPN-Tunnel aufbauen."
+fi
 
 echo ""
 echo "Alle Voraussetzungen erfuellt."
@@ -221,16 +286,16 @@ echo "Erstelle .env..."
 # Build .env from template
 cp .env.example .env
 
-# Apply user values
-sed -i "s|GC_BASE_URL=.*|GC_BASE_URL=${base_url}|" .env
-sed -i "s|GC_SECRET=.*|GC_SECRET=${gc_secret}|" .env
-sed -i "s|GC_ADMIN_USER=.*|GC_ADMIN_USER=${admin_user}|" .env
-sed -i "s|GC_ADMIN_PASSWORD=.*|GC_ADMIN_PASSWORD=${admin_password}|" .env
-sed -i "s|GC_WG_HOST=.*|GC_WG_HOST=${wg_host}|" .env
-sed -i "s|GC_CADDY_EMAIL=.*|GC_CADDY_EMAIL=${caddy_email}|" .env
-sed -i "s|GC_DEFAULT_LANGUAGE=.*|GC_DEFAULT_LANGUAGE=${language}|" .env
-sed -i "s|GC_NET_INTERFACE=.*|GC_NET_INTERFACE=${net_interface}|" .env
-sed -i "s|GC_ENCRYPTION_KEY=.*|GC_ENCRYPTION_KEY=${encryption_key}|" .env
+# Apply user values (metacharacter-safe — see set_env)
+set_env GC_BASE_URL "${base_url}"
+set_env GC_SECRET "${gc_secret}"
+set_env GC_ADMIN_USER "${admin_user}"
+set_env GC_ADMIN_PASSWORD "${admin_password}"
+set_env GC_WG_HOST "${wg_host}"
+set_env GC_CADDY_EMAIL "${caddy_email}"
+set_env GC_DEFAULT_LANGUAGE "${language}"
+set_env GC_NET_INTERFACE "${net_interface}"
+set_env GC_ENCRYPTION_KEY "${encryption_key}"
 
 # PostUp/PostDown are left empty — entrypoint.sh generates correct rules
 # based on GC_NET_INTERFACE and GC_WG_SUBNET automatically.

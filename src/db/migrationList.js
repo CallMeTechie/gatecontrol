@@ -895,14 +895,30 @@ const migrations = [
     detect: (db) => hasColumn(db, 'gateway_meta', 'lan_ip'),
   },
   {
-    // Version 49 is reserved for route_auth_totp_used (security/review-2026-06
-    // branch, PR #121). The runner tracks applied versions as a set, so the
-    // gap is harmless regardless of merge order.
-    //
+    // Persist consumed TOTP codes so route-auth replay protection survives a
+    // process restart. The previous in-memory map was wiped on restart,
+    // leaving a <=90s window in which an intercepted code could be replayed.
+    // Rows past the 90s validation window are pruned opportunistically on
+    // each write; the UNIQUE constraint makes the "claim" race-safe.
+    version: 49,
+    name: 'route_auth_totp_used',
+    sql: `
+      CREATE TABLE IF NOT EXISTS route_auth_totp_used (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL,
+        used_at INTEGER NOT NULL,
+        UNIQUE(route_id, token_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_auth_totp_used_at ON route_auth_totp_used(used_at);
+    `,
+  },
+  {
     // A service bundle groups routes that expose one host under one domain
     // (e.g. an HTTP route plus an SSH port-forward). The domain lives here
     // as a label for L4 members with tls_mode='none', which keep domain=NULL
-    // in the routes table.
+    // in the routes table. The unique-domain index is narrowed to HTTP rows
+    // so an HTTP route and L4 port-forwards may share one domain.
     version: 50,
     name: 'service_bundles',
     sql: `

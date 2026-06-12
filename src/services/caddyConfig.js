@@ -30,6 +30,7 @@ const { getAuthForRoute } = require('./routeAuth');
 const logger = require('../utils/logger');
 
 const {
+  CADDY_PLACEHOLDER_RE,
   BOT_BLOCKER_RANGES,
   buildDefenderConfig,
   sanitizeStickyCookieName,
@@ -356,12 +357,23 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
     if (reverseProxy.handler === 'reverse_proxy'
         && (gatewayPeerIp || poolUpstreams) && (route.target_lan_host || route.target_lan_port)) {
-      const lanTarget = `${effectiveLanHost}:${route.target_lan_port}`;
-      reverseProxy.headers.request.set = {
-        ...(reverseProxy.headers.request.set || {}),
-        'X-Gateway-Target': [lanTarget],
-        'X-Gateway-Target-Domain': [route.domain],
-      };
+      // Defense in depth: never interpolate a Caddy placeholder into the
+      // header value. Caddy expands {…} tokens (e.g. {env.GC_ENCRYPTION_KEY})
+      // at request time, so a placeholder reaching here — whether from a
+      // legacy row that predates the write-time validator or from a
+      // heartbeat-reported home_lan_ip — would leak server state to the
+      // gateway companion. Fail closed: skip the target header entirely.
+      if (CADDY_PLACEHOLDER_RE.test(String(effectiveLanHost))) {
+        logger.error({ routeId: route.id, domain: route.domain },
+          'LAN target contains a Caddy placeholder — refusing to set X-Gateway-Target');
+      } else {
+        const lanTarget = `${effectiveLanHost}:${route.target_lan_port}`;
+        reverseProxy.headers.request.set = {
+          ...(reverseProxy.headers.request.set || {}),
+          'X-Gateway-Target': [lanTarget],
+          'X-Gateway-Target-Domain': [route.domain],
+        };
+      }
     }
 
     // Pool load balancing policy + passive health checks. The selection

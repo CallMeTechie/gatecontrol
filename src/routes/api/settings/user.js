@@ -100,6 +100,16 @@ router.put('/password', async (req, res) => {
     db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
       .run(hash, req.session.userId);
 
+    // Invalidate every other session for this user so a stolen/forgotten
+    // session cannot survive a password change. The current session is kept
+    // alive (CSRF token is rotated just below).
+    if (req.sessionStore && typeof req.sessionStore.destroyByUserId === 'function') {
+      const removed = req.sessionStore.destroyByUserId(req.session.userId, req.sessionID);
+      if (removed > 0) {
+        logger.info({ userId: req.session.userId, removed }, 'Revoked other sessions after password change');
+      }
+    }
+
     activity.log('password_changed', 'Password changed', {
       source: 'admin',
       ipAddress: req.ip,
