@@ -99,6 +99,22 @@ function createBackup() {
     }
   } catch { /* table may not exist in very old DBs */ }
 
+  // ── service_bundles (optional feature table) ────────────────
+  // bundle_ref keeps the original id so routes' bundle_id can be
+  // re-mapped on restore (route rows themselves are exported id-less).
+  let serviceBundles = [];
+  try {
+    const sbCols = columnsOf(db, 'service_bundles');
+    if (sbCols.length > 0) {
+      serviceBundles = db.prepare('SELECT * FROM service_bundles').all().map(sb => {
+        const entry = pickColumns(sb, sbCols);
+        entry.bundle_ref = sb.id;
+        delete entry.id;
+        return entry;
+      });
+    }
+  } catch { /* table may not exist in pre-v50 DBs */ }
+
   // ── users ───────────────────────────────────────────────────
   let users = [];
   try {
@@ -185,6 +201,7 @@ function createBackup() {
       peers,
       routes,
       rdp_routes: rdpRoutes,
+      service_bundles: serviceBundles,
       users,
       api_tokens: apiTokens,
       tags,
@@ -277,6 +294,7 @@ function getBackupSummary(backup) {
     peers: (d.peers || []).length,
     routes: (d.routes || []).length,
     rdp_routes: (d.rdp_routes || []).length,
+    service_bundles: (d.service_bundles || []).length,
     users: (d.users || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
@@ -347,6 +365,7 @@ async function restoreBackup(backup) {
     peers,
     routes,
     rdp_routes: rdpRoutes = [],
+    service_bundles: serviceBundles = [],
     users = [],
     api_tokens: apiTokens = [],
     tags = [],
@@ -383,6 +402,7 @@ async function restoreBackup(backup) {
     db.prepare('DELETE FROM route_auth').run();
     try { db.prepare('DELETE FROM rdp_sessions').run(); } catch {}
     try { db.prepare('DELETE FROM rdp_routes').run(); } catch {}
+    try { db.prepare('DELETE FROM service_bundles').run(); } catch {}
     try { db.prepare('DELETE FROM api_tokens').run(); } catch {}
     try { db.prepare('DELETE FROM gateway_meta').run(); } catch {}
     db.prepare('DELETE FROM routes').run();
@@ -443,6 +463,18 @@ async function restoreBackup(backup) {
       try { dynamicInsert(db, 'tags', [], t); } catch (e) { logger.warn({ err: e.message, tag: t.name }, 'tag restore skipped'); }
     }
 
+    // Restore service_bundles, mapping the exported bundle_ref → new id
+    const bundleIdMap = new Map();
+    for (const sb of serviceBundles) {
+      try {
+        const row = { ...sb };
+        const result = dynamicInsert(db, 'service_bundles', ['bundle_ref'], row);
+        if (sb.bundle_ref != null) bundleIdMap.set(sb.bundle_ref, result.lastInsertRowid);
+      } catch (e) {
+        logger.warn({ err: e.message, name: sb.name }, 'service_bundle restore skipped');
+      }
+    }
+
     // Restore routes (dynamic columns), re-mapping peer_id/target_peer_id
     const routeIdByDomain = new Map();
     const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
@@ -450,6 +482,7 @@ async function restoreBackup(backup) {
       const row = { ...r };
       row.peer_id = r.peer_name ? (peerIdMap.get(r.peer_name) || null) : null;
       row.target_peer_id = r.target_peer_name ? (peerIdMap.get(r.target_peer_name) || null) : null;
+      if (row.bundle_id != null) row.bundle_id = bundleIdMap.get(row.bundle_id) || null;
       if (row.enabled === undefined) row.enabled = 1;
       row.circuit_breaker_status = 'closed';
       const excluded = ['peer_name', 'target_peer_name', 'acl_peer_names'];
@@ -559,6 +592,7 @@ async function restoreBackup(backup) {
     peers: peers.length,
     routes: routes.length,
     rdp_routes: rdpRoutes.length,
+    service_bundles: serviceBundles.length,
     users: users.length,
     api_tokens: apiTokens.length,
     tags: tags.length,
@@ -586,6 +620,7 @@ async function restoreBackup(backup) {
     peers: peers.length,
     routes: routes.length,
     rdp_routes: rdpRoutes.length,
+    service_bundles: serviceBundles.length,
     users: users.length,
     api_tokens: apiTokens.length,
     tags: tags.length,

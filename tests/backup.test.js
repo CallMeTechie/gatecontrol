@@ -165,4 +165,42 @@ describe('backup service', () => {
       /validation failed/
     );
   });
+
+  it('roundtrip: service bundles survive backup/restore with re-mapped ids', async () => {
+    clearData();
+    const db = getDb();
+    db.prepare('DELETE FROM service_bundles').run();
+
+    const bundleId = db.prepare(
+      "INSERT INTO service_bundles (name, domain) VALUES ('SSH Service', 'ssh.example.com')"
+    ).run().lastInsertRowid;
+    db.prepare(
+      "INSERT INTO routes (domain, target_ip, target_port, bundle_id, enabled) VALUES ('ssh.example.com', '10.8.0.5', 80, ?, 1)"
+    ).run(bundleId);
+    db.prepare(
+      "INSERT INTO routes (domain, target_ip, target_port, route_type, l4_protocol, l4_listen_port, l4_tls_mode, bundle_id, enabled) " +
+      "VALUES (NULL, '10.8.0.5', 22, 'l4', 'tcp', '2022', 'none', ?, 1)"
+    ).run(bundleId);
+
+    const data = backup.createBackup();
+    assert.equal(data.data.service_bundles.length, 1);
+    assert.equal(data.data.service_bundles[0].bundle_ref, bundleId);
+
+    await backup.restoreBackup(data);
+
+    const restoredBundle = db.prepare('SELECT * FROM service_bundles').get();
+    assert.equal(restoredBundle.name, 'SSH Service');
+    const members = db.prepare('SELECT * FROM routes WHERE bundle_id = ?').all(restoredBundle.id);
+    assert.equal(members.length, 2, 'both members re-link to the restored bundle');
+  });
+
+  it('restores pre-bundle backups without a service_bundles key', async () => {
+    clearData();
+    const db = getDb();
+    db.prepare('DELETE FROM service_bundles').run();
+    const data = backup.createBackup();
+    delete data.data.service_bundles;
+    await backup.restoreBackup(data);
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM service_bundles').get().c, 0);
+  });
 });
