@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.3] — 2026-06-12
+
+### Änderungen
+- Service bundles + routes list redesign (#122)
+
+---
+
 ## [1.76.2] — 2026-06-12
 
 ### Änderungen
