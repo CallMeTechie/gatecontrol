@@ -51,7 +51,13 @@ function apiUrl(url) {
 async function apiError(res) {
   try {
     const body = await res.json().then(handleCsrfRotation);
-    if (body && body.error) return new Error(body.error);
+    if (body && body.error) {
+      const err = new Error(body.error);
+      // Machine-readable payload (e.g. 409 port conflicts carry
+      // body.conflict.suggestedPort) for callers that can self-heal.
+      err.data = body;
+      return err;
+    }
   } catch { /* non-JSON body — fall through */ }
   return new Error(`API error: ${res.status}`);
 }

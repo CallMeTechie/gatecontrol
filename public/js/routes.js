@@ -12,6 +12,25 @@
   let batchMode = false;
   let batchSelected = new Set();
 
+  // ─── View state ──────────────────────────────────────────
+  // Lives outside the DOM (plus localStorage) because SSE events
+  // (gc:monitor / gc:reconnected) trigger full re-renders — any state kept
+  // only in the DOM would reset on every monitor tick.
+  const view = window.GCRoutesView;
+  function lsGet(k, d) { try { return localStorage.getItem(k) || d; } catch (_) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  function lsGetSet(k) { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch (_) { return new Set(); } }
+  function lsSetSet(k, s) { try { localStorage.setItem(k, JSON.stringify(Array.from(s))); } catch (_) {} }
+  const viewState = {
+    view: lsGet('gc_routes_view_v1', 'cards') === 'table' ? 'table' : 'cards',
+    sort: lsGet('gc_routes_sort_v1', 'domain'),
+    typeFilter: null,
+    statusFilter: null,
+    targetFilter: null,
+  };
+  const collapsedGroups = lsGetSet('gc_routes_groups_collapsed_v1');
+  const expandedBadges = new Set();
+
   // ─── Load routes ─────────────────────────────────────────
   async function loadRoutes() {
     try {
@@ -117,14 +136,10 @@
     }
   }
 
-  // ─── Render route list ───────────────────────────────────
-  function renderRoutes(routes) {
-    if (!routes.length) {
-      routesList.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">No routes configured</div>';
-      return;
-    }
-
-    routesList.innerHTML = routes.map(r => {
+  // ─── Render a single route (card or group sub-item) ──────
+  function renderRouteEntry(r, opts) {
+    opts = opts || {};
+    {
       // Gateway-routed routes show the LAN target behind the home gateway.
       // Peer-routed routes show the direct WG peer IP.
       const isGatewayRoute = r.target_kind === 'gateway';
@@ -293,15 +308,40 @@
       } else {
         titleText = '';
       }
+      if (opts.subItem) {
+        // The domain lives on the group header — sub-items show the
+        // protocol role instead, mirroring the approved mockup.
+        titleText = r.route_type === 'l4' ? l4ShortTitle : 'HTTP';
+        showDescLine = false;
+      }
+
+      // Badge budget: status/monitoring/circuit-breaker/L4 type are always
+      // visible; the first two feature badges follow, the rest collapse
+      // behind a "+N" toggle (expandedBadges survives SSE re-renders).
+      const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
+      const extraTags = [debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
+        backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
+        routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
+      let visibleExtras, moreBtn = '';
+      if (expandedBadges.has(String(r.id)) || extraTags.length <= 3) {
+        visibleExtras = extraTags.join('');
+      } else {
+        visibleExtras = extraTags.slice(0, 2).join('');
+        moreBtn = '<button type="button" class="tag tag-more" style="margin-left:4px" data-more-id="' + r.id + '">+' + (extraTags.length - 2) + '</button>';
+      }
 
       // r.id is a numeric DB id, safe for attribute use; checked is a static string
       var batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
       var batchCbHtml = batchMode ? '<div class="batch-checkbox-wrap" style="display:flex;align-items:center;padding-right:10px"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></div>' : '';
 
-      return `<div class="route-item${batchMode ? ' batch-mode' : ''}" data-route-id="${r.id}">
+      const typeIcon = r.route_type === 'l4'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>';
+
+      return `<div class="route-item${opts.subItem ? ' route-sub-item' : ''}${batchMode ? ' batch-mode' : ''}" data-route-id="${r.id}">
         ${batchCbHtml}
-        <div class="route-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <div class="route-icon${r.route_type === 'l4' ? ' route-icon-l4' : ''}">
+          ${typeIcon}
         </div>
         <div style="flex:1;min-width:0">
           <div class="route-domain">${titleText}</div>
@@ -309,7 +349,7 @@
           ${showDescLine ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">${escapeHtml(r.description)}</div>` : ''}
         </div>
         <div class="route-tags">
-          ${statusTag}${monitorTag}${cbTag}${debugTag}${botTag}${aclTag}${ipFilterTag}${rateLimitTag}${retryTag}${backendsTag}${stickyTag}${httpsTag}${backendHttpsTag}${compressTag}${authTag}${routeAuthTags}${headersTag}${mirrorTag}${l4Tags}
+          ${primaryTags}${visibleExtras}${moreBtn}
         </div>
         <div class="route-actions">
           <button class="icon-btn" title="Edit" data-action="edit" data-id="${r.id}">
@@ -323,21 +363,183 @@
           </button>
         </div>
       </div>`;
-    }).join('');
+    }
   }
 
-  // ─── Search routes ──────────────────────────────────────
-  function applyRouteFilter() {
-    const q = routeSearch ? routeSearch.value.toLowerCase().trim() : '';
-    if (!q) return renderRoutes(allRoutes);
-    const filtered = allRoutes.filter(r =>
-      (r.domain && r.domain.toLowerCase().includes(q)) ||
-      (r.description && r.description.toLowerCase().includes(q)) ||
-      (r.peer_name && r.peer_name.toLowerCase().includes(q)) ||
-      (r.target_ip && r.target_ip.includes(q))
-    );
-    renderRoutes(filtered);
+  // ─── Group + table rendering ─────────────────────────────
+
+  function groupTargetLabel(g) {
+    const r = g.routes[0];
+    if (r.target_kind === 'gateway') {
+      if (r.target_pool_id != null) return 'Pool';
+      return 'Gateway · ' + (r.target_peer_name || '');
+    }
+    return r.peer_name ? ('Peer · ' + r.peer_name) : (r.target_ip || '');
   }
+
+  function statusDotClass(status) {
+    return status === 'down' ? 'red' : status === 'active' ? 'green' : 'amber';
+  }
+
+  function renderGroupCard(g) {
+    const collapsed = collapsedGroups.has(g.key);
+    const label = g.label != null
+      ? escapeHtml(g.label)
+      : escapeHtml(GC.t['routes.group_no_domain'] || 'Without domain');
+    const countTxt = (GC.t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+    const bundleTag = g.isBundle
+      ? '<span class="group-bundle-tag">' + escapeHtml(GC.t['service_bundle.badge'] || 'SERVICE') + '</span>'
+      : '';
+    const targetTag = g.key !== view.NO_DOMAIN_KEY
+      ? '<span class="group-target-tag">' + escapeHtml(groupTargetLabel(g)) + '</span>'
+      : '';
+    const routeIds = g.routes.map(function (r) { return r.id; }).join(',');
+
+    let actions = '';
+    if (g.isBundle) {
+      actions =
+        '<button type="button" class="icon-btn" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
+        + '<button type="button" class="icon-btn" data-gaction="bundle-ungroup" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.ungroup'] || 'Ungroup') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>'
+        + '<button type="button" class="icon-btn icon-btn-danger" data-gaction="bundle-delete" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(GC.t['service_bundle.delete'] || 'Delete service') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
+    } else if (g.key !== view.NO_DOMAIN_KEY) {
+      actions =
+        '<button type="button" class="icon-btn" data-gaction="group-domain" data-route-ids="' + routeIds + '" data-name="' + label + '" title="' + escapeHtml(GC.t['service_bundle.group_selected'] || 'Group as service') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>';
+    }
+
+    return '<div class="route-group' + (collapsed ? ' collapsed' : '') + '" data-gkey="' + escapeHtml(g.key) + '">'
+      + '<div class="route-group-head" data-gtoggle="' + escapeHtml(g.key) + '">'
+      + '<svg class="group-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>'
+      + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
+      + '<span class="group-label">' + label + '</span>'
+      + bundleTag + targetTag
+      + '<span class="group-meta">' + escapeHtml(countTxt) + '</span>'
+      + '<span class="group-spacer"></span>'
+      + '<div class="group-actions">' + actions + '</div>'
+      + '</div>'
+      + '<div class="route-group-body">'
+      + g.routes.map(function (r) { return renderRouteEntry(r, { subItem: true }); }).join('')
+      + '</div></div>';
+  }
+
+  function renderTableRow(r, opts) {
+    opts = opts || {};
+    const isGw = r.target_kind === 'gateway';
+    const targetTxt = isGw
+      ? ((r.target_lan_host || '?') + ':' + (r.target_lan_port || r.target_port || '?') + (r.target_peer_name ? ' · ' + r.target_peer_name : ''))
+      : (((r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip) || '') + ':' + r.target_port + (r.peer_name ? ' · ' + r.peer_name : ''));
+    const typeTag = r.route_type === 'l4'
+      ? '<span class="tag tag-info">' + (r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + escapeHtml(String(r.l4_listen_port || '')) + '</span>'
+      : '<span class="tag">HTTP</span>';
+    const status = view.routeStatus(r);
+    const statusTag = status === 'disabled'
+      ? '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.disabled'] || 'Disabled') + '</span>'
+      : status === 'down'
+        ? '<span class="tag tag-red"><span class="tag-dot"></span>DOWN</span>'
+        : '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['routes.active'] || 'Active') + '</span>';
+    const monitorTxt = (r.monitoring_enabled && r.monitoring_status === 'up' && r.monitoring_response_time != null)
+      ? ' <span class="tag tag-green">UP ' + (parseInt(r.monitoring_response_time, 10) || 0) + 'ms</span>'
+      : '';
+    const domainTxt = opts.subRow
+      ? '<span style="color:var(--text-3)">└ ' + (r.domain ? escapeHtml(r.domain) : '—') + '</span>'
+      : (r.domain ? escapeHtml(r.domain) : '—');
+    const batchChecked = batchSelected.has(String(r.id)) ? ' checked' : '';
+    const batchCell = batchMode
+      ? '<td class="td-batch"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + batchChecked + '></td>'
+      : '';
+    const delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
+    return '<tr data-route-id="' + r.id + '"' + (status === 'disabled' ? ' style="opacity:.6"' : '') + '>'
+      + batchCell
+      + '<td class="mono">' + domainTxt + '</td>'
+      + '<td>' + typeTag + '</td>'
+      + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
+      + '<td>' + statusTag + monitorTxt + '</td>'
+      + '<td class="td-actions">'
+      + '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + r.id + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
+      + '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + r.id + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
+      + '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + r.id + '" data-domain="' + delDomain + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>'
+      + '</td></tr>';
+  }
+
+  function renderTable(groups) {
+    const t = GC.t;
+    const batchHead = batchMode ? '<th class="td-batch"></th>' : '';
+    let rows = '';
+    for (const g of groups) {
+      if (!g.single && g.routes.length > 1) {
+        const label = g.label != null
+          ? escapeHtml(g.label)
+          : escapeHtml(t['routes.group_no_domain'] || 'Without domain');
+        const bundleTag = g.isBundle ? ' <span class="group-bundle-tag">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>' : '';
+        const countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+        rows += '<tr class="routes-table-group"><td colspan="' + (batchMode ? 6 : 5) + '">'
+          + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
+          + label + bundleTag + ' · ' + escapeHtml(countTxt)
+          + '</td></tr>';
+        rows += g.routes.map(function (r, i) { return renderTableRow(r, { subRow: i > 0 }); }).join('');
+      } else {
+        rows += g.routes.map(function (r) { return renderTableRow(r, {}); }).join('');
+      }
+    }
+    return '<div class="routes-table-wrap"><table class="routes-table"><thead><tr>'
+      + batchHead
+      + '<th>' + escapeHtml(t['routes.table_domain'] || 'Domain') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_type'] || 'Type') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_target'] || 'Target') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_status'] || 'Status') + '</th>'
+      + '<th class="td-actions">' + escapeHtml(t['routes.table_actions'] || 'Actions') + '</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  const GROUP_STATUS_ORDER = { down: 0, mixed: 1, disabled: 2, active: 3 };
+  function sortGroups(groups, key) {
+    // The no-domain bucket stays last in every ordering.
+    groups.sort(function (a, b) {
+      if (a.key === view.NO_DOMAIN_KEY) return 1;
+      if (b.key === view.NO_DOMAIN_KEY) return -1;
+      if (key === 'status') {
+        const d = GROUP_STATUS_ORDER[a.status] - GROUP_STATUS_ORDER[b.status];
+        if (d !== 0) return d;
+      } else if (key === 'type') {
+        const d = (a.routes[0].route_type === 'l4' ? 1 : 0) - (b.routes[0].route_type === 'l4' ? 1 : 0);
+        if (d !== 0) return d;
+      }
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+    return groups;
+  }
+
+  function render() {
+    const q = routeSearch ? routeSearch.value : '';
+    const hasFilter = !!(q.trim() || viewState.typeFilter || viewState.statusFilter || viewState.targetFilter);
+    const filtered = view.filterRoutes(allRoutes, {
+      q,
+      type: viewState.typeFilter,
+      status: viewState.statusFilter,
+      target: viewState.targetFilter,
+    });
+    if (!filtered.length) {
+      const msg = hasFilter
+        ? (GC.t['routes.no_match'] || 'No routes match the filter')
+        : (GC.t['routes.no_routes'] || 'No routes configured');
+      routesList.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">' + escapeHtml(msg) + '</div>';
+      return;
+    }
+    const groups = sortGroups(view.buildGroups(filtered), viewState.sort);
+    if (viewState.view === 'table') {
+      routesList.innerHTML = renderTable(groups);
+    } else {
+      routesList.innerHTML = groups.map(function (g) {
+        return g.single ? renderRouteEntry(g.routes[0], {}) : renderGroupCard(g);
+      }).join('');
+    }
+  }
+
+  // Kept as the historical entry point — every caller funnels into render().
+  function applyRouteFilter() { render(); }
 
   if (routeSearch) {
     routeSearch.addEventListener('input', () => applyRouteFilter());
@@ -346,17 +548,80 @@
   // ─── Route list action delegation ────────────────────────
   routesList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
+    if (btn) {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      switch (action) {
+        case 'edit': showEditModal(id); break;
+        case 'toggle': toggleRoute(id); break;
+        case 'delete': showConfirmDelete(id, btn.dataset.domain); break;
+      }
+      return;
+    }
 
-    const action = btn.dataset.action;
-    const id = btn.dataset.id;
+    // "+N" badge expander — state survives SSE re-renders
+    const more = e.target.closest('[data-more-id]');
+    if (more) {
+      const rid = String(more.dataset.moreId);
+      if (expandedBadges.has(rid)) expandedBadges.delete(rid);
+      else expandedBadges.add(rid);
+      render();
+      return;
+    }
 
-    switch (action) {
-      case 'edit': showEditModal(id); break;
-      case 'toggle': toggleRoute(id); break;
-      case 'delete': showConfirmDelete(id, btn.dataset.domain); break;
+    // Group lockstep actions (service bundles / group-as-service)
+    const gbtn = e.target.closest('[data-gaction]');
+    if (gbtn) {
+      handleGroupAction(gbtn);
+      return;
+    }
+
+    // Header click toggles collapse (ignored while selecting in batch mode)
+    const head = e.target.closest('[data-gtoggle]');
+    if (head && !batchMode) {
+      const key = head.dataset.gtoggle;
+      if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+      else collapsedGroups.add(key);
+      lsSetSet('gc_routes_groups_collapsed_v1', collapsedGroups);
+      render();
     }
   });
+
+  async function handleGroupAction(btn) {
+    const gaction = btn.dataset.gaction;
+    try {
+      if (gaction === 'bundle-toggle') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        const members = allRoutes.filter(function (r) { return r.bundle_id === bundleId; });
+        const allEnabled = members.length > 0 && members.every(function (r) { return r.enabled; });
+        await api.put('/api/v1/service-bundles/' + bundleId + '/toggle', { enabled: !allEnabled });
+        loadRoutes();
+      } else if (gaction === 'bundle-ungroup') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        if (!confirm(GC.t['service_bundle.confirm_ungroup'] || 'Ungroup this service? The routes are kept.')) return;
+        await api.del('/api/v1/service-bundles/' + bundleId + '?delete_routes=false');
+        loadRoutes();
+      } else if (gaction === 'bundle-delete') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        const msg = (GC.t['service_bundle.confirm_delete'] || 'Delete service "{{name}}" and all its routes?')
+          .replace('{{name}}', btn.dataset.name || '');
+        if (!confirm(msg)) return;
+        await api.del('/api/v1/service-bundles/' + bundleId);
+        loadRoutes();
+      } else if (gaction === 'group-domain') {
+        const ids = (btn.dataset.routeIds || '').split(',').map(Number).filter(Boolean);
+        if (!ids.length) return;
+        const data = await api.post('/api/v1/service-bundles/group', {
+          name: btn.dataset.name || '',
+          route_ids: ids,
+        });
+        if (!data.ok) { alert(data.error || (GC.t['common.error'] || 'Error')); return; }
+        loadRoutes();
+      }
+    } catch (err) {
+      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+    }
+  }
 
   // ─── Create form: target-kind (peer vs gateway vs pool) toggle ───
   (function initCreateTargetKindToggle() {
@@ -3023,12 +3288,13 @@
     updateBatchBar();
   });
 
-  // Click on route-item in batch mode toggles checkbox
+  // Click on a route entry in batch mode toggles its checkbox.
+  // [data-route-id] matches both card entries and table rows.
   routesList.addEventListener('click', function(e) {
     if (!batchMode) return;
     // Don't toggle if clicking action buttons or the checkbox itself
-    if (e.target.closest('[data-action]') || e.target.closest('.batch-checkbox')) return;
-    var item = e.target.closest('.route-item');
+    if (e.target.closest('[data-action]') || e.target.closest('[data-gaction]') || e.target.closest('.batch-checkbox')) return;
+    var item = e.target.closest('[data-route-id]');
     if (!item) return;
     var cb = item.querySelector('.batch-checkbox');
     if (!cb) return;
@@ -3072,6 +3338,350 @@
       executeBatchAction('delete');
     }
   });
+
+  // ─── Service wizard (bundle = http + n× l4 in one shot) ──
+  (function initServiceWizard() {
+    const overlay = document.getElementById('service-modal-overlay');
+    const openBtn = document.getElementById('btn-add-service');
+    if (!overlay || !openBtn) return;
+
+    const steps = [1, 2, 3];
+    let step = 1;
+    const el = function (id) { return document.getElementById(id); };
+
+    function showError(msg) {
+      const box = el('service-error');
+      box.textContent = msg || '';
+      box.style.display = msg ? '' : 'none';
+    }
+
+    function hideConflict() {
+      const banner = el('service-conflict');
+      if (banner) banner.style.display = 'none';
+    }
+
+    function paintSteps() {
+      document.querySelectorAll('#service-wizard-steps .service-step-pill').forEach(function (p) {
+        const n = parseInt(p.dataset.sstep, 10);
+        p.classList.toggle('on', n === step);
+        p.classList.toggle('done', n < step);
+      });
+      steps.forEach(function (n) {
+        el('service-step-' + n).style.display = n === step ? '' : 'none';
+      });
+      el('service-back').style.visibility = step === 1 ? 'hidden' : '';
+      el('service-next').textContent = step === 3
+        ? (GC.t['service_bundle.create'] || 'Create service')
+        : (GC.t['service_bundle.next'] || 'Next');
+      showError('');
+    }
+
+    function targetKind() {
+      const sel = el('service-target-kind');
+      return sel ? sel.value : 'peer';
+    }
+
+    function paintTargetFields() {
+      const kind = targetKind();
+      el('service-peer-fields').style.display = kind === 'peer' ? '' : 'none';
+      el('service-gateway-fields').style.display = kind === 'gateway' ? '' : 'none';
+      const poolFields = el('service-pool-fields');
+      if (poolFields) poolFields.style.display = kind === 'pool' ? '' : 'none';
+      el('service-lan-host-field').style.display = kind === 'peer' ? 'none' : '';
+    }
+
+    function addMappingRow(values) {
+      const wrap = el('service-mappings');
+      if (!wrap) return;
+      values = values || {};
+      const row = document.createElement('div');
+      row.className = 'service-mapping-row';
+      const proto = document.createElement('select');
+      proto.style.cssText = 'padding:8px';
+      ['tcp', 'udp'].forEach(function (p) {
+        const o = document.createElement('option');
+        o.value = p; o.textContent = p.toUpperCase();
+        if (values.protocol === p) o.selected = true;
+        proto.appendChild(o);
+      });
+      const listen = document.createElement('input');
+      listen.type = 'text';
+      listen.className = 'service-listen-port';
+      listen.placeholder = '2022';
+      listen.style.cssText = 'width:100%;padding:8px 12px';
+      if (values.listen) listen.value = values.listen;
+      const arrow = document.createElement('span');
+      arrow.className = 'arrow';
+      arrow.textContent = '→';
+      const target = document.createElement('input');
+      target.type = 'number'; target.min = '1'; target.max = '65535';
+      target.className = 'service-target-port';
+      target.placeholder = '22';
+      target.style.cssText = 'width:100%;padding:8px 12px';
+      if (values.target) target.value = values.target;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon-btn icon-btn-danger';
+      del.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+      del.addEventListener('click', function () { row.remove(); hideConflict(); });
+      row.appendChild(proto); row.appendChild(listen); row.appendChild(arrow);
+      row.appendChild(target); row.appendChild(del);
+      wrap.appendChild(row);
+    }
+
+    function readMappings() {
+      const rows = document.querySelectorAll('#service-mappings .service-mapping-row');
+      const out = [];
+      for (const row of rows) {
+        const listen = row.querySelector('.service-listen-port').value.trim();
+        const target = row.querySelector('.service-target-port').value.trim();
+        const protocol = row.querySelector('select').value;
+        if (!listen && !target) continue; // empty row — ignore
+        out.push({ l4_protocol: protocol, l4_listen_port: listen, target_port: target, l4_tls_mode: 'none', _row: row });
+      }
+      return out;
+    }
+
+    function httpEnabled() {
+      const cb = el('service-http-enabled');
+      return !!(cb && cb.checked);
+    }
+
+    function validateStep() {
+      if (step === 1) {
+        if (!el('service-name').value.trim()) return GC.t['service_bundle.err_name'] || 'Please enter a name';
+        const kind = targetKind();
+        if (kind === 'peer' && !el('service-peer-select').value) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        if (kind === 'gateway' && !el('service-gateway-peer').value) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        if (kind !== 'peer' && !el('service-lan-host').value.trim()) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        return null;
+      }
+      if (step === 2) {
+        const mappings = readMappings();
+        if (!httpEnabled() && mappings.length === 0) return GC.t['service_bundle.err_no_exposure'] || 'Pick at least one exposure';
+        if (httpEnabled()) {
+          if (!el('service-domain').value.trim()) return GC.t['service_bundle.err_domain'] || 'Domain required';
+          if (!el('service-http-port').value.trim()) return GC.t['service_bundle.err_mapping'] || 'Missing port';
+        }
+        for (const m of mappings) {
+          if (!m.l4_listen_port || !m.target_port) return GC.t['service_bundle.err_mapping'] || 'Missing port';
+        }
+        return null;
+      }
+      return null;
+    }
+
+    function buildPayload() {
+      const kind = targetKind();
+      const target = { target_kind: kind === 'pool' ? 'gateway' : kind };
+      if (kind === 'peer') {
+        target.peer_id = parseInt(el('service-peer-select').value, 10) || null;
+      } else {
+        if (kind === 'pool') {
+          const poolSel = el('service-pool-select');
+          target.target_pool_id = poolSel ? (parseInt(poolSel.value, 10) || null) : null;
+        } else {
+          target.target_peer_id = parseInt(el('service-gateway-peer').value, 10) || null;
+        }
+        target.target_lan_host = el('service-lan-host').value.trim();
+      }
+      const payload = {
+        name: el('service-name').value.trim(),
+        domain: el('service-domain').value.trim() || undefined,
+        description: el('service-description').value.trim() || undefined,
+        target,
+        http: httpEnabled() ? {
+          target_port: parseInt(el('service-http-port').value, 10),
+          backend_https: !!el('service-http-backend-https').checked,
+        } : null,
+        l4: readMappings().map(function (m) {
+          return { l4_protocol: m.l4_protocol, l4_listen_port: m.l4_listen_port, target_port: parseInt(m.target_port, 10), l4_tls_mode: 'none' };
+        }),
+      };
+      return payload;
+    }
+
+    function renderReview() {
+      const p = buildPayload();
+      const box = el('service-review');
+      box.textContent = '';
+      const row = function (k, v) {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:grid;grid-template-columns:140px 1fr;padding:8px 12px;border-bottom:1px solid var(--border)';
+        const kEl = document.createElement('span');
+        kEl.style.cssText = 'color:var(--text-3);font-size:12px';
+        kEl.textContent = k;
+        const vEl = document.createElement('span');
+        vEl.style.cssText = 'font-family:var(--font-mono);font-size:12px';
+        vEl.textContent = v;
+        div.appendChild(kEl); div.appendChild(vEl);
+        box.appendChild(div);
+      };
+      row(GC.t['service_bundle.name'] || 'Name', p.name);
+      if (p.domain) row('Domain', p.domain);
+      const kind = targetKind();
+      let targetTxt;
+      if (kind === 'peer') {
+        const sel = el('service-peer-select');
+        targetTxt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+      } else if (kind === 'pool') {
+        const sel = el('service-pool-select');
+        targetTxt = 'Pool: ' + (sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '') + ' → ' + p.target.target_lan_host;
+      } else {
+        const sel = el('service-gateway-peer');
+        targetTxt = 'Gateway: ' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '') + ' → ' + p.target.target_lan_host;
+      }
+      row(GC.t['service_bundle.target'] || 'Target', targetTxt);
+      if (p.http) row(GC.t['service_bundle.http_service'] || 'HTTP', '→ :' + p.http.target_port);
+      p.l4.forEach(function (m) {
+        row(m.l4_protocol.toUpperCase() + ' :' + m.l4_listen_port, '→ :' + m.target_port);
+      });
+      const count = (p.http ? 1 : 0) + p.l4.length;
+      row('', (GC.t['service_bundle.review_creates'] || 'Creates {{count}} route(s)').replace('{{count}}', count));
+    }
+
+    function openWizard() {
+      step = 1;
+      el('service-name').value = '';
+      el('service-domain').value = '';
+      el('service-description').value = '';
+      if (el('service-http-enabled')) el('service-http-enabled').checked = true;
+      if (el('service-http-port')) el('service-http-port').value = '';
+      if (el('service-http-backend-https')) el('service-http-backend-https').checked = false;
+      const wrap = el('service-mappings');
+      if (wrap) { wrap.textContent = ''; addMappingRow(); }
+      hideConflict();
+      renderPeerOptions(el('service-peer-select'));
+      renderGatewayPeerOptions(el('service-gateway-peer'));
+      paintTargetFields();
+      paintSteps();
+      overlay.style.display = 'flex';
+    }
+
+    function closeWizard() { overlay.style.display = 'none'; }
+
+    // 409: highlight the colliding mapping and offer the suggested port
+    function showConflict(conflict, message) {
+      const banner = el('service-conflict');
+      if (!banner) { showError(message); return; }
+      el('service-conflict-msg').textContent = message;
+      const fixBtn = el('service-conflict-fix');
+      if (conflict.suggestedPort) {
+        fixBtn.style.display = '';
+        fixBtn.textContent = (GC.t['service_bundle.use_port'] || 'Use {{port}}').replace('{{port}}', conflict.suggestedPort);
+        fixBtn.onclick = function () {
+          const m = readMappings().find(function (x) { return String(x.l4_listen_port) === String(conflict.port); });
+          if (m) m._row.querySelector('.service-listen-port').value = String(conflict.suggestedPort);
+          hideConflict();
+        };
+      } else {
+        fixBtn.style.display = 'none';
+      }
+      banner.style.display = 'flex';
+      step = 2;
+      paintSteps();
+    }
+
+    async function submit() {
+      const btn = el('service-next');
+      btn.disabled = true;
+      try {
+        const data = await api.post('/api/v1/service-bundles', buildPayload());
+        if (data.ok) {
+          closeWizard();
+          loadRoutes();
+        } else if (data.conflict) {
+          showConflict(data.conflict, data.error || '');
+        } else {
+          showError(data.error || (GC.t['common.error'] || 'Error'));
+        }
+      } catch (err) {
+        // api helper throws on non-2xx — surface conflict payload when present
+        if (err && err.data && err.data.conflict) showConflict(err.data.conflict, err.data.error || err.message);
+        else showError(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    openBtn.addEventListener('click', openWizard);
+    el('service-modal-close').addEventListener('click', closeWizard);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeWizard(); });
+    el('service-target-kind').addEventListener('change', paintTargetFields);
+    const addBtn = el('service-add-mapping');
+    if (addBtn) addBtn.addEventListener('click', function () { addMappingRow(); });
+    const httpCb = el('service-http-enabled');
+    if (httpCb) httpCb.addEventListener('change', function () {
+      el('service-http-body').style.display = httpCb.checked ? '' : 'none';
+    });
+    el('service-back').addEventListener('click', function () {
+      if (step > 1) { step--; paintSteps(); }
+    });
+    el('service-next').addEventListener('click', function () {
+      const err = validateStep();
+      if (err) { showError(err); return; }
+      if (step < 3) {
+        step++;
+        if (step === 3) renderReview();
+        paintSteps();
+      } else {
+        submit();
+      }
+    });
+  })();
+
+  // ─── Toolbar: filter chips, sort, view toggle ────────────
+  (function initToolbar() {
+    const chipBar = document.getElementById('route-filter-chips');
+    if (chipBar) {
+      chipBar.addEventListener('click', function (e) {
+        const chip = e.target.closest('.filter-chip');
+        if (!chip) return;
+        const dim = chip.dataset.dim;
+        const wasActive = chip.classList.contains('on');
+        chipBar.querySelectorAll('.filter-chip[data-dim="' + dim + '"]').forEach(function (c) {
+          c.classList.remove('on');
+        });
+        const field = dim === 'type' ? 'typeFilter' : dim === 'status' ? 'statusFilter' : 'targetFilter';
+        if (wasActive) {
+          viewState[field] = null;
+        } else {
+          chip.classList.add('on');
+          viewState[field] = chip.dataset.value;
+        }
+        render();
+      });
+    }
+
+    const sortSel = document.getElementById('route-sort');
+    if (sortSel) {
+      sortSel.value = viewState.sort;
+      sortSel.addEventListener('change', function () {
+        viewState.sort = sortSel.value;
+        lsSet('gc_routes_sort_v1', viewState.sort);
+        render();
+      });
+    }
+
+    const viewToggle = document.getElementById('route-view-toggle');
+    function paintViewToggle() {
+      if (!viewToggle) return;
+      viewToggle.querySelectorAll('[data-view]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.view === viewState.view);
+      });
+    }
+    if (viewToggle) {
+      paintViewToggle();
+      viewToggle.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-view]');
+        if (!b) return;
+        viewState.view = b.dataset.view === 'table' ? 'table' : 'cards';
+        lsSet('gc_routes_view_v1', viewState.view);
+        paintViewToggle();
+        render();
+      });
+    }
+  })();
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();

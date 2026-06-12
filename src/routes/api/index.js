@@ -34,6 +34,7 @@ router.use('/routes/:id/auth', require('./routeAuth'));
 router.use('/routes/:id/share-links', require('./shareLinks'));
 router.use('/routes/:id/access-rules', require('./accessRules')('route'));
 router.use('/routes', require('./routes'));
+router.use('/service-bundles', require('./serviceBundles'));
 router.use('/settings', require('./settings'));
 router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));

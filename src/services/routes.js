@@ -27,6 +27,50 @@ function validateTargetExclusivity(data) {
   }
 }
 
+// ─── Domain availability ────────────────────────────────
+//
+// A domain may be shared between an HTTP route and L4 routes for the same
+// host (e.g. a web UI plus an SSH port-forward — the service-bundle case).
+// Real conflicts are only:
+//   - HTTP ↔ HTTP: one virtual host per domain.
+//   - L4-SNI ↔ L4-SNI on the same listener: Caddy cannot disambiguate two
+//     identical SNI matchers on one port (cross-port SNI reuse is fine,
+//     and tls_mode='none' rows carry the domain purely as a label).
+function assertDomainAvailable(db, { domain, routeType, tlsMode, listenPort, excludeId = null }) {
+  const rows = db.prepare(
+    'SELECT id, route_type, l4_tls_mode, l4_listen_port FROM routes WHERE domain = ? AND id != ?'
+  ).all(domain, excludeId == null ? -1 : excludeId);
+  if (rows.length === 0) return;
+
+  if (routeType !== 'l4') {
+    const httpDup = rows.find((r) => r.route_type !== 'l4');
+    if (httpDup) throw new Error('A route with this domain already exists');
+    return;
+  }
+
+  if (!tlsMode || tlsMode === 'none') return;
+  const sniDup = rows.find(
+    (r) => r.route_type === 'l4'
+      && r.l4_tls_mode && r.l4_tls_mode !== 'none'
+      && String(r.l4_listen_port) === String(listenPort)
+  );
+  if (sniDup) throw new Error('An L4 route with this domain already listens on this port (ambiguous SNI)');
+}
+
+// Drop bundle rows whose last member was just deleted. Scoped to the
+// touched ids (not a global sweep) so a bundle that is mid-creation —
+// row inserted, members not yet — can't be garbage-collected by an
+// unrelated delete.
+function cleanupEmptyBundles(db, bundleIds) {
+  const ids = [...new Set(bundleIds)].filter((id) => id != null);
+  for (const bundleId of ids) {
+    const member = db.prepare('SELECT id FROM routes WHERE bundle_id = ? LIMIT 1').get(bundleId);
+    if (!member) {
+      db.prepare('DELETE FROM service_bundles WHERE id = ?').run(bundleId);
+    }
+  }
+}
+
 // ─── CRUD Operations ────────────────────────────────────
 
 /**
@@ -38,11 +82,13 @@ function getAll({ limit = 250, offset = 0, type = null } = {}) {
     gp.name AS target_peer_name, gp.allowed_ips AS target_peer_ip, gp.enabled AS target_peer_enabled,
     ra.auth_type as route_auth_type, ra.two_factor_enabled as route_auth_2fa,
     ra.two_factor_method as route_auth_2fa_method, ra.session_max_age as route_auth_session_max_age,
-    CASE WHEN ra.id IS NOT NULL THEN 1 ELSE 0 END as route_auth_enabled
+    CASE WHEN ra.id IS NOT NULL THEN 1 ELSE 0 END as route_auth_enabled,
+    sb.name AS bundle_name, sb.domain AS bundle_domain
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
     LEFT JOIN peers gp ON gp.id = r.target_peer_id
-    LEFT JOIN route_auth ra ON ra.route_id = r.id`;
+    LEFT JOIN route_auth ra ON ra.route_id = r.id
+    LEFT JOIN service_bundles sb ON sb.id = r.bundle_id`;
   const params = [];
   if (type) {
     query += ' WHERE r.route_type = ?';
@@ -73,9 +119,13 @@ function getById(id) {
 }
 
 /**
- * Create a new route
+ * Create a new route.
+ *
+ * opts.skipSync: skip the Caddy sync and gateway push at the end — used by
+ * orchestrators (service bundles) that create several rows and want a single
+ * sync with their own compensating rollback. Callers own cleanup on failure.
  */
-async function create(data) {
+async function create(data, opts = {}) {
   const routeType = data.route_type || 'http';
 
   if (routeType === 'l4') {
@@ -116,10 +166,15 @@ async function create(data) {
   const db = getDb();
   const domain = data.domain ? sanitize(data.domain).toLowerCase() : null;
 
-  // Check for duplicate domain
+  // Check for duplicate domain (HTTP↔HTTP and same-listener SNI only —
+  // an HTTP route and an L4 port-forward may share one domain)
   if (domain) {
-    const existing = db.prepare('SELECT id FROM routes WHERE domain = ?').get(domain);
-    if (existing) throw new Error('A route with this domain already exists');
+    assertDomainAvailable(db, {
+      domain,
+      routeType,
+      tlsMode: data.l4_tls_mode,
+      listenPort: data.l4_listen_port,
+    });
   }
 
   // Validate basic auth credentials when enabled
@@ -151,8 +206,11 @@ async function create(data) {
   // Block reverse-proxying public traffic to the host's own privileged
   // loopback services: :2019 (Caddy admin API), :3000 (GateControl), and
   // :80/:443 (the public listener → proxy loop). Only loopback targets are
-  // restricted — a peer or LAN target on these ports stays valid.
-  if (isLoopbackHost(targetIp) && isPortBlocked(parseInt(data.target_port, 10))) {
+  // restricted — a peer or LAN target on these ports stays valid. Gateway
+  // routes are exempt: their target_ip is a legacy '127.0.0.1' placeholder,
+  // the real destination is target_lan_host behind the WG tunnel.
+  if ((data.target_kind || 'peer') !== 'gateway'
+      && isLoopbackHost(targetIp) && isPortBlocked(parseInt(data.target_port, 10))) {
     throw new Error('Target port ' + data.target_port + ' is reserved for loopback targets');
   }
 
@@ -264,11 +322,15 @@ async function create(data) {
     setAclPeers(routeId, data.acl_peers);
   }
 
-  // Sync to Caddy — rollback DB insert on failure
-  await withCaddySync(syncToCaddy, () => {
-    db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
-    db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
-  }, 'route create');
+  // Sync to Caddy — rollback DB insert on failure. Orchestrators creating
+  // several rows pass skipSync and run one sync (plus their own rollback)
+  // at the end instead.
+  if (!opts.skipSync) {
+    await withCaddySync(syncToCaddy, () => {
+      db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
+      db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
+    }, 'route create');
+  }
 
   activity.log('route_created', `Route "${domain}" created → ${targetIp}:${data.target_port}`, {
     source: 'admin',
@@ -287,7 +349,7 @@ async function create(data) {
   logger.info({ routeId, domain }, 'Route created');
 
   // Fire-and-forget push-notification for gateway peers
-  if (targetKind === 'gateway' && targetPeerId) {
+  if (!opts.skipSync && targetKind === 'gateway' && targetPeerId) {
     try {
       const gateways = require('./gateways');
       gateways.notifyConfigChanged(targetPeerId).catch(() => {});
@@ -337,8 +399,13 @@ async function update(id, data) {
     if (domainErr) throw new Error(domainErr);
 
     const domain = sanitize(data.domain).toLowerCase();
-    const dup = db.prepare('SELECT id FROM routes WHERE domain = ? AND id != ?').get(domain, id);
-    if (dup) throw new Error('A route with this domain already exists');
+    assertDomainAvailable(db, {
+      domain,
+      routeType,
+      tlsMode: data.l4_tls_mode !== undefined ? data.l4_tls_mode : route.l4_tls_mode,
+      listenPort: data.l4_listen_port !== undefined ? data.l4_listen_port : route.l4_listen_port,
+      excludeId: id,
+    });
   }
 
   validateIfProvided(data, 'target_port', validatePort);
@@ -399,11 +466,17 @@ async function update(id, data) {
   // Block reverse-proxying public traffic to the host's own privileged
   // loopback services (Caddy admin :2019, GateControl :3000, public listener
   // :80/:443). Mirrors the create() guard; uses the effective port (incoming
-  // override or stored value). Only loopback targets are restricted.
+  // override or stored value). Only loopback targets are restricted; gateway
+  // routes are exempt (their target_ip is a legacy '127.0.0.1' placeholder —
+  // the real destination is target_lan_host behind the WG tunnel).
   const effectiveTargetPort = data.target_port !== undefined
     ? parseInt(data.target_port, 10)
     : route.target_port;
-  if (isLoopbackHost(targetIp) && isPortBlocked(effectiveTargetPort)) {
+  const effectiveTargetKind = data.target_kind !== undefined
+    ? data.target_kind
+    : (route.target_kind || 'peer');
+  if (effectiveTargetKind !== 'gateway'
+      && isLoopbackHost(targetIp) && isPortBlocked(effectiveTargetPort)) {
     throw new Error('Target port ' + effectiveTargetPort + ' is reserved for loopback targets');
   }
 
@@ -589,6 +662,16 @@ async function update(id, data) {
   // silently reset to defaults when the rollback path fires.
   await withCaddySync(syncToCaddy, () => restoreRouteRow(db, id, snapshot), 'route update');
 
+  // Keep the bundle's display domain in step when the HTTP member's
+  // domain changes (the bundle domain is a pure label, no Caddy impact).
+  if (route.bundle_id && data.domain !== undefined && routeType !== 'l4') {
+    const newDomain = data.domain ? sanitize(data.domain).toLowerCase() : null;
+    if (newDomain && newDomain !== route.domain) {
+      db.prepare("UPDATE service_bundles SET domain = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(newDomain, route.bundle_id);
+    }
+  }
+
   activity.log('route_updated', `Route "${route.domain}" updated`, {
     source: 'admin',
     severity: 'info',
@@ -653,6 +736,8 @@ async function remove(id) {
     reinsertRouteRow(db, route);
     require('./accessRules').restoreRules(accessRulesSnapshot);
   }, 'route delete');
+
+  if (route.bundle_id) cleanupEmptyBundles(db, [route.bundle_id]);
 
   activity.log('route_deleted', `Route "${route.domain}" deleted`, {
     source: 'admin',
@@ -769,6 +854,10 @@ async function batch(action, ids) {
     });
     tx();
   }, `batch ${action}`);
+
+  if (action === 'delete') {
+    cleanupEmptyBundles(db, snapshots.map((r) => r.bundle_id));
+  }
 
   const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
   activity.log(

@@ -913,6 +913,33 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_route_auth_totp_used_at ON route_auth_totp_used(used_at);
     `,
   },
+  {
+    // A service bundle groups routes that expose one host under one domain
+    // (e.g. an HTTP route plus an SSH port-forward). The domain lives here
+    // as a label for L4 members with tls_mode='none', which keep domain=NULL
+    // in the routes table. The unique-domain index is narrowed to HTTP rows
+    // so an HTTP route and L4 port-forwards may share one domain.
+    version: 50,
+    name: 'service_bundles',
+    sql: `
+      CREATE TABLE IF NOT EXISTS service_bundles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        domain TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      ALTER TABLE routes ADD COLUMN bundle_id INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_routes_bundle ON routes(bundle_id);
+      DROP INDEX IF EXISTS idx_routes_domain_unique;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_domain_unique
+        ON routes(domain)
+        WHERE domain IS NOT NULL AND domain != ''
+          AND (route_type = 'http' OR route_type IS NULL);
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'bundle_id'),
+  },
 ];
 
 module.exports = { migrations };

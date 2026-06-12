@@ -24,6 +24,19 @@
 ## [Unreleased]
 
 ### Added
+- **Service bundles**: one wizard ("Create service") creates an optional HTTP route plus any
+  number of L4 port-forwards for the same domain/host in a single step — target chosen once,
+  members permanently linked (`service_bundles` table + `routes.bundle_id`, migration 50).
+  Lockstep enable/disable/delete, ungroup, and grouping of existing routes
+  (`POST /api/v1/service-bundles/group`). Port conflicts answer 409 with a suggested free port
+  (same pattern as RDP-via-gateway). Bundles are included in backup/restore.
+- **Routes list redesign**: routes sharing a domain (or a service bundle) are grouped into
+  collapsible cards with an aggregate status dot; switchable compact table view (persisted),
+  filter chips for type/status/target plus sorting, and a badge budget (status + top features,
+  rest behind a "+N" expander).
+- An HTTP route and L4 routes may now share one domain (the unique-domain rule is scoped to
+  HTTP↔HTTP and same-listener SNI collisions) — no more placeholder HTTP routes just to label
+  an SSH port-forward.
 - Gateway routes targeting services on the gateway host itself (`127.0.0.1`) now survive
   automatic failover — for HTTP, L4/TCP (e.g., SSH), and RDP-over-gateway: as long as the route
   is served by a sibling gateway, `127.0.0.1` is rewritten to the home gateway's LAN IP
