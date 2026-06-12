@@ -916,6 +916,11 @@ const migrations = [
       );
       ALTER TABLE routes ADD COLUMN bundle_id INTEGER;
       CREATE INDEX IF NOT EXISTS idx_routes_bundle ON routes(bundle_id);
+      DROP INDEX IF EXISTS idx_routes_domain_unique;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_domain_unique
+        ON routes(domain)
+        WHERE domain IS NOT NULL AND domain != ''
+          AND (route_type = 'http' OR route_type IS NULL);
     `,
     detect: (db) => hasColumn(db, 'routes', 'bundle_id'),
   },

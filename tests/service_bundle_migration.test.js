@@ -46,6 +46,14 @@ describe('migration: service_bundles', () => {
     assert.ok(idx, 'idx_routes_bundle must exist');
   });
 
+  it('narrows the unique domain index to http routes (L4 may share a domain)', () => {
+    const idx = getDb()
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_routes_domain_unique'")
+      .get();
+    assert.ok(idx, 'idx_routes_domain_unique must exist');
+    assert.match(idx.sql, /route_type = 'http'/, 'uniqueness must be scoped to http routes');
+  });
+
   it('leaves routes unbundled by default', () => {
     const db = getDb();
     db.prepare(
