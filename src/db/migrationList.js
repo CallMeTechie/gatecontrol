@@ -894,6 +894,31 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'gateway_meta', 'lan_ip'),
   },
+  {
+    // Version 49 is reserved for route_auth_totp_used (security/review-2026-06
+    // branch, PR #121). The runner tracks applied versions as a set, so the
+    // gap is harmless regardless of merge order.
+    //
+    // A service bundle groups routes that expose one host under one domain
+    // (e.g. an HTTP route plus an SSH port-forward). The domain lives here
+    // as a label for L4 members with tls_mode='none', which keep domain=NULL
+    // in the routes table.
+    version: 50,
+    name: 'service_bundles',
+    sql: `
+      CREATE TABLE IF NOT EXISTS service_bundles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        domain TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      ALTER TABLE routes ADD COLUMN bundle_id INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_routes_bundle ON routes(bundle_id);
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'bundle_id'),
+  },
 ];
 
 module.exports = { migrations };
