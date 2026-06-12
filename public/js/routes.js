@@ -3339,6 +3339,297 @@
     }
   });
 
+  // ─── Service wizard (bundle = http + n× l4 in one shot) ──
+  (function initServiceWizard() {
+    const overlay = document.getElementById('service-modal-overlay');
+    const openBtn = document.getElementById('btn-add-service');
+    if (!overlay || !openBtn) return;
+
+    const steps = [1, 2, 3];
+    let step = 1;
+    const el = function (id) { return document.getElementById(id); };
+
+    function showError(msg) {
+      const box = el('service-error');
+      box.textContent = msg || '';
+      box.style.display = msg ? '' : 'none';
+    }
+
+    function hideConflict() {
+      const banner = el('service-conflict');
+      if (banner) banner.style.display = 'none';
+    }
+
+    function paintSteps() {
+      document.querySelectorAll('#service-wizard-steps .service-step-pill').forEach(function (p) {
+        const n = parseInt(p.dataset.sstep, 10);
+        p.classList.toggle('on', n === step);
+        p.classList.toggle('done', n < step);
+      });
+      steps.forEach(function (n) {
+        el('service-step-' + n).style.display = n === step ? '' : 'none';
+      });
+      el('service-back').style.visibility = step === 1 ? 'hidden' : '';
+      el('service-next').textContent = step === 3
+        ? (GC.t['service_bundle.create'] || 'Create service')
+        : (GC.t['service_bundle.next'] || 'Next');
+      showError('');
+    }
+
+    function targetKind() {
+      const sel = el('service-target-kind');
+      return sel ? sel.value : 'peer';
+    }
+
+    function paintTargetFields() {
+      const kind = targetKind();
+      el('service-peer-fields').style.display = kind === 'peer' ? '' : 'none';
+      el('service-gateway-fields').style.display = kind === 'gateway' ? '' : 'none';
+      const poolFields = el('service-pool-fields');
+      if (poolFields) poolFields.style.display = kind === 'pool' ? '' : 'none';
+      el('service-lan-host-field').style.display = kind === 'peer' ? 'none' : '';
+    }
+
+    function addMappingRow(values) {
+      const wrap = el('service-mappings');
+      if (!wrap) return;
+      values = values || {};
+      const row = document.createElement('div');
+      row.className = 'service-mapping-row';
+      const proto = document.createElement('select');
+      proto.style.cssText = 'padding:8px';
+      ['tcp', 'udp'].forEach(function (p) {
+        const o = document.createElement('option');
+        o.value = p; o.textContent = p.toUpperCase();
+        if (values.protocol === p) o.selected = true;
+        proto.appendChild(o);
+      });
+      const listen = document.createElement('input');
+      listen.type = 'text';
+      listen.className = 'service-listen-port';
+      listen.placeholder = '2022';
+      listen.style.cssText = 'width:100%;padding:8px 12px';
+      if (values.listen) listen.value = values.listen;
+      const arrow = document.createElement('span');
+      arrow.className = 'arrow';
+      arrow.textContent = '→';
+      const target = document.createElement('input');
+      target.type = 'number'; target.min = '1'; target.max = '65535';
+      target.className = 'service-target-port';
+      target.placeholder = '22';
+      target.style.cssText = 'width:100%;padding:8px 12px';
+      if (values.target) target.value = values.target;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon-btn icon-btn-danger';
+      del.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+      del.addEventListener('click', function () { row.remove(); hideConflict(); });
+      row.appendChild(proto); row.appendChild(listen); row.appendChild(arrow);
+      row.appendChild(target); row.appendChild(del);
+      wrap.appendChild(row);
+    }
+
+    function readMappings() {
+      const rows = document.querySelectorAll('#service-mappings .service-mapping-row');
+      const out = [];
+      for (const row of rows) {
+        const listen = row.querySelector('.service-listen-port').value.trim();
+        const target = row.querySelector('.service-target-port').value.trim();
+        const protocol = row.querySelector('select').value;
+        if (!listen && !target) continue; // empty row — ignore
+        out.push({ l4_protocol: protocol, l4_listen_port: listen, target_port: target, l4_tls_mode: 'none', _row: row });
+      }
+      return out;
+    }
+
+    function httpEnabled() {
+      const cb = el('service-http-enabled');
+      return !!(cb && cb.checked);
+    }
+
+    function validateStep() {
+      if (step === 1) {
+        if (!el('service-name').value.trim()) return GC.t['service_bundle.err_name'] || 'Please enter a name';
+        const kind = targetKind();
+        if (kind === 'peer' && !el('service-peer-select').value) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        if (kind === 'gateway' && !el('service-gateway-peer').value) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        if (kind !== 'peer' && !el('service-lan-host').value.trim()) return GC.t['service_bundle.err_target'] || 'Please pick a target';
+        return null;
+      }
+      if (step === 2) {
+        const mappings = readMappings();
+        if (!httpEnabled() && mappings.length === 0) return GC.t['service_bundle.err_no_exposure'] || 'Pick at least one exposure';
+        if (httpEnabled()) {
+          if (!el('service-domain').value.trim()) return GC.t['service_bundle.err_domain'] || 'Domain required';
+          if (!el('service-http-port').value.trim()) return GC.t['service_bundle.err_mapping'] || 'Missing port';
+        }
+        for (const m of mappings) {
+          if (!m.l4_listen_port || !m.target_port) return GC.t['service_bundle.err_mapping'] || 'Missing port';
+        }
+        return null;
+      }
+      return null;
+    }
+
+    function buildPayload() {
+      const kind = targetKind();
+      const target = { target_kind: kind === 'pool' ? 'gateway' : kind };
+      if (kind === 'peer') {
+        target.peer_id = parseInt(el('service-peer-select').value, 10) || null;
+      } else {
+        if (kind === 'pool') {
+          const poolSel = el('service-pool-select');
+          target.target_pool_id = poolSel ? (parseInt(poolSel.value, 10) || null) : null;
+        } else {
+          target.target_peer_id = parseInt(el('service-gateway-peer').value, 10) || null;
+        }
+        target.target_lan_host = el('service-lan-host').value.trim();
+      }
+      const payload = {
+        name: el('service-name').value.trim(),
+        domain: el('service-domain').value.trim() || undefined,
+        description: el('service-description').value.trim() || undefined,
+        target,
+        http: httpEnabled() ? {
+          target_port: parseInt(el('service-http-port').value, 10),
+          backend_https: !!el('service-http-backend-https').checked,
+        } : null,
+        l4: readMappings().map(function (m) {
+          return { l4_protocol: m.l4_protocol, l4_listen_port: m.l4_listen_port, target_port: parseInt(m.target_port, 10), l4_tls_mode: 'none' };
+        }),
+      };
+      return payload;
+    }
+
+    function renderReview() {
+      const p = buildPayload();
+      const box = el('service-review');
+      box.textContent = '';
+      const row = function (k, v) {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:grid;grid-template-columns:140px 1fr;padding:8px 12px;border-bottom:1px solid var(--border)';
+        const kEl = document.createElement('span');
+        kEl.style.cssText = 'color:var(--text-3);font-size:12px';
+        kEl.textContent = k;
+        const vEl = document.createElement('span');
+        vEl.style.cssText = 'font-family:var(--font-mono);font-size:12px';
+        vEl.textContent = v;
+        div.appendChild(kEl); div.appendChild(vEl);
+        box.appendChild(div);
+      };
+      row(GC.t['service_bundle.name'] || 'Name', p.name);
+      if (p.domain) row('Domain', p.domain);
+      const kind = targetKind();
+      let targetTxt;
+      if (kind === 'peer') {
+        const sel = el('service-peer-select');
+        targetTxt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+      } else if (kind === 'pool') {
+        const sel = el('service-pool-select');
+        targetTxt = 'Pool: ' + (sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '') + ' → ' + p.target.target_lan_host;
+      } else {
+        const sel = el('service-gateway-peer');
+        targetTxt = 'Gateway: ' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '') + ' → ' + p.target.target_lan_host;
+      }
+      row(GC.t['service_bundle.target'] || 'Target', targetTxt);
+      if (p.http) row(GC.t['service_bundle.http_service'] || 'HTTP', '→ :' + p.http.target_port);
+      p.l4.forEach(function (m) {
+        row(m.l4_protocol.toUpperCase() + ' :' + m.l4_listen_port, '→ :' + m.target_port);
+      });
+      const count = (p.http ? 1 : 0) + p.l4.length;
+      row('', (GC.t['service_bundle.review_creates'] || 'Creates {{count}} route(s)').replace('{{count}}', count));
+    }
+
+    function openWizard() {
+      step = 1;
+      el('service-name').value = '';
+      el('service-domain').value = '';
+      el('service-description').value = '';
+      if (el('service-http-enabled')) el('service-http-enabled').checked = true;
+      if (el('service-http-port')) el('service-http-port').value = '';
+      if (el('service-http-backend-https')) el('service-http-backend-https').checked = false;
+      const wrap = el('service-mappings');
+      if (wrap) { wrap.textContent = ''; addMappingRow(); }
+      hideConflict();
+      renderPeerOptions(el('service-peer-select'));
+      renderGatewayPeerOptions(el('service-gateway-peer'));
+      paintTargetFields();
+      paintSteps();
+      overlay.style.display = 'flex';
+    }
+
+    function closeWizard() { overlay.style.display = 'none'; }
+
+    // 409: highlight the colliding mapping and offer the suggested port
+    function showConflict(conflict, message) {
+      const banner = el('service-conflict');
+      if (!banner) { showError(message); return; }
+      el('service-conflict-msg').textContent = message;
+      const fixBtn = el('service-conflict-fix');
+      if (conflict.suggestedPort) {
+        fixBtn.style.display = '';
+        fixBtn.textContent = (GC.t['service_bundle.use_port'] || 'Use {{port}}').replace('{{port}}', conflict.suggestedPort);
+        fixBtn.onclick = function () {
+          const m = readMappings().find(function (x) { return String(x.l4_listen_port) === String(conflict.port); });
+          if (m) m._row.querySelector('.service-listen-port').value = String(conflict.suggestedPort);
+          hideConflict();
+        };
+      } else {
+        fixBtn.style.display = 'none';
+      }
+      banner.style.display = 'flex';
+      step = 2;
+      paintSteps();
+    }
+
+    async function submit() {
+      const btn = el('service-next');
+      btn.disabled = true;
+      try {
+        const data = await api.post('/api/v1/service-bundles', buildPayload());
+        if (data.ok) {
+          closeWizard();
+          loadRoutes();
+        } else if (data.conflict) {
+          showConflict(data.conflict, data.error || '');
+        } else {
+          showError(data.error || (GC.t['common.error'] || 'Error'));
+        }
+      } catch (err) {
+        // api helper throws on non-2xx — surface conflict payload when present
+        if (err && err.data && err.data.conflict) showConflict(err.data.conflict, err.data.error || err.message);
+        else showError(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    openBtn.addEventListener('click', openWizard);
+    el('service-modal-close').addEventListener('click', closeWizard);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeWizard(); });
+    el('service-target-kind').addEventListener('change', paintTargetFields);
+    const addBtn = el('service-add-mapping');
+    if (addBtn) addBtn.addEventListener('click', function () { addMappingRow(); });
+    const httpCb = el('service-http-enabled');
+    if (httpCb) httpCb.addEventListener('change', function () {
+      el('service-http-body').style.display = httpCb.checked ? '' : 'none';
+    });
+    el('service-back').addEventListener('click', function () {
+      if (step > 1) { step--; paintSteps(); }
+    });
+    el('service-next').addEventListener('click', function () {
+      const err = validateStep();
+      if (err) { showError(err); return; }
+      if (step < 3) {
+        step++;
+        if (step === 3) renderReview();
+        paintSteps();
+      } else {
+        submit();
+      }
+    });
+  })();
+
   // ─── Toolbar: filter chips, sort, view toggle ────────────
   (function initToolbar() {
     const chipBar = document.getElementById('route-filter-chips');

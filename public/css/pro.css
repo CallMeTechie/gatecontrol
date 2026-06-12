@@ -1882,6 +1882,29 @@ table tbody tr:last-child td { border-bottom: none; }
   .route-item.route-sub-item { padding-left: 8px; }
 }
 
+
+.service-step-pill {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+}
+.service-step-pill.on { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.service-step-pill.done { color: var(--text-secondary); border-color: var(--accent); opacity: 0.7; }
+.service-mapping-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 24px 1fr 32px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.service-mapping-row .arrow { text-align: center; color: var(--text-muted); font-family: var(--font-mono); }
+
 /* ============================================================
    SECTION 18: ACTIVITY FEED
    ============================================================ */
