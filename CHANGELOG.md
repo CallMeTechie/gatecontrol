@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.2] — 2026-06-12
+
+### Änderungen
+- harden registration, sessions, routing, access rules + low-severity items (#121)
+
+---
+
 ## [1.76.1] — 2026-06-04
 
 ### Fixes
