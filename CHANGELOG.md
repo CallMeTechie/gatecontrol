@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.5] — 2026-06-13
+
+### Fixes
+- /summary reads nested cache.summary fields (stat cards were blank)
+
+---
+
 ## [1.76.4] — 2026-06-12
 
 ### Fixes
