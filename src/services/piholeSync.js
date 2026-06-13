@@ -19,7 +19,7 @@ const REVERT_AFTER = 2;
  * deps:
  *   loadConfig()      → { enabled, sync_interval_sec, manage_dns_chain, instances[] }
  *   clientFactory(inst) → piholeClient
- *   peersProvider()   → [{ id, name, ip }]
+ *   peersProvider()   → [{ id, name, ip }] — may be sync OR async
  *   eventBus          → { publish(type, payload) }
  *   dnsChain          → { apply(ips), revert() }
  *   now()             → Date.now() (ms) — injectable for tests
@@ -132,7 +132,7 @@ function createSync(deps) {
     }
 
     if (ok.length > 0) {
-      const peers = peersProvider();
+      const peers = await peersProvider();
       const peersByIp = {};
       for (const peer of peers) {
         peersByIp[peer.ip] = peer;

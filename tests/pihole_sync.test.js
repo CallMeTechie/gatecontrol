@@ -87,6 +87,21 @@ test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; reco
   assert.deepEqual(chainCalls, [['revert'], ['apply','10.8.0.5']]);
 });
 
+test('syncOnce awaits an async peersProvider', async () => {
+  const ok = { id:'p1',
+    getSummary: async()=>({queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}),
+    getHistory: async()=>[], getTopDomains: async()=>[], getTopClients: async()=>[{ip:'10.8.0.5',count:3}],
+    getQueryTypes: async()=>({}), getBlocking: async()=>({blocking:true}) };
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, instances:[{id:'p1'}] }),
+    clientFactory: () => ok,
+    peersProvider: async () => [{ id:5, name:'Laptop', ip:'10.8.0.5' }],
+    eventBus: { publish(){} }, dnsChain: { apply(){}, revert(){} }, loadDesired: () => null,
+  });
+  const cache = await sync.syncOnce();
+  assert.equal(cache.topClients[0].peerName, 'Laptop');
+});
+
 test('start() is idempotent — calling twice does not start a second interval', () => {
   const sync = createSync({
     loadConfig: () => ({ enabled:false, instances:[] }),
