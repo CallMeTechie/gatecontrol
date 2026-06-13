@@ -108,3 +108,14 @@ test('POST blocking 403 without license', async () => {
   const res = await agent.post('/api/v1/pihole/blocking').set('X-CSRF-Token', csrf).send({ enabled: true });
   assert.equal(res.status, 403);
 });
+
+test('POST blocking with negative timer still returns ok (treated as no timer)', async () => {
+  license._overrideForTest({ pihole_integration: true });
+  try {
+    const res = await agent.post('/api/v1/pihole/blocking').set('X-CSRF-Token', csrf).send({ enabled: true, timer: -5 });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  } finally {
+    license._overrideForTest({ pihole_integration: false });
+  }
+});

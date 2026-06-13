@@ -4,6 +4,7 @@ const { Router } = require('express');
 const { requireFeature } = require('../../middleware/license');
 const pihole = require('../../services/pihole');
 const activity = require('../../services/activity');
+const logger = require('../../utils/logger');
 
 const router = Router();
 
@@ -60,8 +61,8 @@ router.post('/blocking', (req, res) => {
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ ok: false, error: 'enabled must be a boolean' });
   }
-  const timerSec = Number.isInteger(timer) ? timer : undefined;
-  pihole.setBlocking(enabled, timerSec);
+  const timerSec = Number.isInteger(timer) && timer >= 1 ? timer : undefined;
+  pihole.setBlocking(enabled, timerSec).catch(err => logger.warn({ err: err.message }, 'pihole resync after setBlocking failed'));
   activity.log('pihole_blocking_changed', `Pi-hole blocking set to ${enabled}`, {
     source: req.user?.id || 'api',
     details: { enabled, timer: timerSec },
