@@ -45,5 +45,6 @@ router.use('/tokens', require('./tokens'));
 router.use('/license', require('./license'));
 router.use('/client', require('./client'));
 router.use('/rdp', require('./rdp'));
+router.use('/pihole', require('./pihole'));
 
 module.exports = router;
