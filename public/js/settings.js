@@ -1469,11 +1469,7 @@
       } else if (action === 'test') {
         btnLoading(btn);
         try {
-          var res = await api.post('/api/v1/settings/pihole/test', {
-            url: inst.url,
-            app_password: null,
-            verify_tls: inst.verify_tls !== false,
-          });
+          var res = await api.post('/api/v1/settings/pihole/test/' + encodeURIComponent(inst.id));
           if (res.ok && res.data && res.data.connected) {
             showToast((t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (res.data.version || '?') + ')');
           } else {
@@ -1500,7 +1496,7 @@
 
   var applyBtn = document.getElementById('btn-pihole-apply-instance');
   if (applyBtn) {
-    applyBtn.addEventListener('click', function () {
+    applyBtn.addEventListener('click', async function () {
       var label = document.getElementById('ph-inst-label').value.trim();
       var url = document.getElementById('ph-inst-url').value.trim();
       var dns_ip = document.getElementById('ph-inst-dns').value.trim();
@@ -1534,6 +1530,11 @@
       }
       renderInstances();
       hideInstanceForm();
+      try {
+        await savePihole(true);
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      }
     });
   }
 
@@ -1582,36 +1583,40 @@
     });
   }
 
+  async function savePihole(showSavedToast) {
+    var enabledEl = document.getElementById('pihole-enabled');
+    var chainEl = document.getElementById('pihole-manage-chain');
+    var intervalEl = document.getElementById('pihole-sync-interval');
+    var payload = {
+      enabled: enabledEl ? enabledEl.classList.contains('on') : false,
+      manage_dns_chain: chainEl ? chainEl.classList.contains('on') : false,
+      sync_interval_sec: intervalEl ? (parseInt(intervalEl.value, 10) || 30) : 30,
+      instances: phInstances.map(function (inst) {
+        var out = {
+          id: inst.id,
+          label: inst.label || '',
+          url: inst.url,
+          dns_ip: inst.dns_ip || '',
+          verify_tls: inst.verify_tls !== false,
+          password_set: !!inst.password_set,
+        };
+        if (inst.app_password) out.app_password = inst.app_password;
+        return out;
+      }),
+    };
+    var res = await api.put('/api/v1/settings/pihole', payload);
+    if (res.ok) {
+      if (showSavedToast) showToast(t['pihole.cfg.saved'] || 'Pi-hole settings saved');
+    } else {
+      showToast(res.error || 'Error', 'error');
+    }
+  }
+
   if (saveBtn) {
     saveBtn.addEventListener('click', async function () {
       btnLoading(saveBtn);
       try {
-        var enabledEl = document.getElementById('pihole-enabled');
-        var chainEl = document.getElementById('pihole-manage-chain');
-        var intervalEl = document.getElementById('pihole-sync-interval');
-        var payload = {
-          enabled: enabledEl ? enabledEl.classList.contains('on') : false,
-          manage_dns_chain: chainEl ? chainEl.classList.contains('on') : false,
-          sync_interval_sec: intervalEl ? (parseInt(intervalEl.value, 10) || 30) : 30,
-          instances: phInstances.map(function (inst) {
-            var out = {
-              id: inst.id,
-              label: inst.label || '',
-              url: inst.url,
-              dns_ip: inst.dns_ip || '',
-              verify_tls: inst.verify_tls !== false,
-              password_set: !!inst.password_set,
-            };
-            if (inst.app_password) out.app_password = inst.app_password;
-            return out;
-          }),
-        };
-        var res = await api.put('/api/v1/settings/pihole', payload);
-        if (res.ok) {
-          showToast(t['pihole.cfg.saved'] || 'Pi-hole settings saved');
-        } else {
-          showToast(res.error || 'Error', 'error');
-        }
+        await savePihole(true);
       } catch (err) {
         showToast(err.message || 'Error', 'error');
       } finally {

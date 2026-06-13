@@ -65,4 +65,19 @@ router.post('/pihole/test', requireFeature('pihole_integration'), async (req, re
   }
 });
 
+/**
+ * POST /api/v1/settings/pihole/test/:id — Test connection using the STORED password for an instance
+ */
+router.post('/pihole/test/:id', requireFeature('pihole_integration'), async (req, res) => {
+  const cfg = piholeConfig.load();
+  const inst = (cfg.instances || []).find(i => String(i.id) === String(req.params.id));
+  if (!inst) return res.status(404).json({ ok: false, error: 'instance not found' });
+  try {
+    const result = await pihole.testConnection({ url: inst.url, app_password: inst.app_password, verify_tls: inst.verify_tls });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;
