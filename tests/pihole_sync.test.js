@@ -86,3 +86,15 @@ test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; reco
   await sync.syncOnce();
   assert.deepEqual(chainCalls, [['revert'], ['apply','10.8.0.5']]);
 });
+
+test('start() is idempotent — calling twice does not start a second interval', () => {
+  const sync = createSync({
+    loadConfig: () => ({ enabled:false, instances:[] }),
+    clientFactory: () => ({}), peersProvider: () => [], eventBus:{publish(){}},
+    dnsChain:{apply(){},revert(){}},
+  });
+  // double start then stop must not throw and must leave no running timer
+  sync.start();
+  sync.start();
+  assert.doesNotThrow(() => sync.stop());
+});

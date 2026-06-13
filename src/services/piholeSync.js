@@ -75,8 +75,9 @@ function createSync(deps) {
     const desired = loadDesired();
     if (!desired) return;
 
+    // timer_ends_at is in seconds (Unix epoch seconds)
     const remaining = desired.timer_ends_at
-      ? Math.round(desired.timer_ends_at - now() / 1000)
+      ? Math.round(desired.timer_ends_at - (now() / 1000))
       : 0;
 
     // If a timer was set but it has already expired, enforce nothing
@@ -171,14 +172,22 @@ function createSync(deps) {
       if (ok.length === 0) {
         downCycles++;
         if (downCycles >= REVERT_AFTER && !chainReverted) {
-          dnsChain.revert();
+          try {
+            dnsChain.revert();
+          } catch (err) {
+            logger.warn({ err: err.message }, 'pihole dnsChain.revert() failed');
+          }
           chainReverted = true;
         }
       } else {
         downCycles = 0;
         if (chainReverted) {
           const dnsIps = config.instances.map(i => i.dns_ip).filter(Boolean);
-          dnsChain.apply(dnsIps);
+          try {
+            dnsChain.apply(dnsIps);
+          } catch (err) {
+            logger.warn({ err: err.message }, 'pihole dnsChain.apply() failed');
+          }
           chainReverted = false;
         }
       }
@@ -195,9 +204,13 @@ function createSync(deps) {
   }
 
   function start() {
+    if (intervalId) return;
     const config = loadConfig();
     const intervalMs = (config.sync_interval_sec || 60) * 1000;
-    intervalId = setInterval(syncOnce, intervalMs);
+    intervalId = setInterval(
+      () => syncOnce().catch(err => logger.warn({ err: err.message }, 'pihole sync cycle failed')),
+      intervalMs,
+    );
     if (intervalId.unref) intervalId.unref();
   }
 
