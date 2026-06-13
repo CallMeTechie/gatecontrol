@@ -14,6 +14,7 @@ const VALID_SCOPES = [
   'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup',
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
   'gateway',
+  'pihole', 'pihole:control',
 ];
 
 /**
@@ -30,6 +31,9 @@ const SCOPE_MAP = [
   ['/api/v1/client', 'client'],
   // Gateway scope
   ['/api/v1/gateway', 'gateway'],
+  // Pi-hole scopes (control path before base path)
+  ['/api/v1/pihole/blocking', 'pihole:control'],
+  ['/api/v1/pihole', 'pihole'],
   // Server resource scopes
   ['/api/v1/peers', 'peers'],
   ['/api/v1/routes', 'routes'],
