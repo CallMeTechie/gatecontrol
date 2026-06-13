@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.0] — 2026-06-13
+
+### Features
+- apply persists immediately + per-row test uses stored password (test/:id)
+
+---
+
 ## [1.77.0] — 2026-06-13
 
 ### Features
