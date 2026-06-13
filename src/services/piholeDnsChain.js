@@ -1,0 +1,95 @@
+'use strict';
+
+const fs = require('node:fs');
+
+const BEGIN = '# >>> gatecontrol-pihole >>>';
+const END = '# <<< gatecontrol-pihole <<<';
+
+let logger;
+try {
+  logger = require('../utils/logger');
+} catch {
+  logger = { info: () => {} };
+}
+
+/**
+ * Strip the managed BEGIN..END block from conf content (if present).
+ * @param {string} content
+ * @returns {string}
+ */
+function stripManaged(content) {
+  const escapedBegin = BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedEnd = END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\n?${escapedBegin}[\\s\\S]*?${escapedEnd}\\n?`, 'g');
+  return content.replace(re, '');
+}
+
+/**
+ * Remove plain top-level `server=` lines from content.
+ * @param {string} content
+ * @returns {string}
+ */
+function stripServerLines(content) {
+  return content
+    .split('\n')
+    .filter(line => !/^server=/.test(line))
+    .join('\n');
+}
+
+/**
+ * Factory for a dnsmasq upstream/ECS chain manager.
+ *
+ * @param {object} opts
+ * @param {string}   opts.confPath  - path to dnsmasq.conf
+ * @param {string[]} opts.defaults  - default upstream IPs to restore on revert
+ * @param {Function} opts.reload    - callback invoked after writing (e.g. to reload dnsmasq)
+ * @returns {{ apply(dnsIps: string[]): void, revert(): void }}
+ */
+function makeChain({ confPath, defaults, reload }) {
+  let lastApplied = 'default';
+
+  return {
+    apply(dnsIps) {
+      const key = 'managed:' + dnsIps.join(',');
+      if (lastApplied === key) return;
+
+      let content = fs.readFileSync(confPath, 'utf8');
+      content = stripManaged(content);
+      content = stripServerLines(content);
+
+      // Ensure content ends with a single newline before the block
+      content = content.trimEnd();
+
+      const block = [
+        '',
+        BEGIN,
+        'add-subnet=32,128',
+        ...dnsIps.map(ip => `server=${ip}`),
+        END,
+        '',
+      ].join('\n');
+
+      fs.writeFileSync(confPath, content + block);
+      lastApplied = key;
+      logger.info(`[piholeDnsChain] applied upstreams: ${dnsIps.join(', ')}`);
+      reload();
+    },
+
+    revert() {
+      if (lastApplied === 'default') return;
+
+      let content = fs.readFileSync(confPath, 'utf8');
+      content = stripManaged(content);
+      content = stripServerLines(content);
+      content = content.trimEnd();
+
+      const serverLines = defaults.map(ip => `server=${ip}`).join('\n');
+      fs.writeFileSync(confPath, content + '\n' + serverLines + '\n');
+      lastApplied = 'default';
+      logger.info('[piholeDnsChain] reverted to defaults');
+      reload();
+    },
+  };
+}
+
+module.exports = { makeChain, BEGIN, END };
