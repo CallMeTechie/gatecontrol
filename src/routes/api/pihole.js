@@ -19,17 +19,15 @@ function scopeFilter(req, items) {
 
 router.get('/summary', (req, res) => {
   const cache = pihole.getCache();
-  res.json({
-    ok: true,
-    data: {
-      queries: cache.queries,
-      gravity: cache.gravity,
-      clients: cache.clients,
-      blocking: cache.blocking,
-      attribution: cache.attribution,
-      lastSyncAt: cache.lastSyncAt,
-    },
-  });
+  const s = cache.summary || {};
+  res.json({ ok: true, data: {
+    queries: s.queries || null,
+    gravity: (s.gravity !== undefined ? s.gravity : null),
+    clients: s.clients || null,
+    blocking: cache.blocking,
+    attribution: cache.attribution,
+    lastSyncAt: cache.lastSyncAt,
+  } });
 });
 
 router.get('/history', (req, res) => {

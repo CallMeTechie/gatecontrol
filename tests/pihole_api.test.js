@@ -119,3 +119,20 @@ test('POST blocking with negative timer still returns ok (treated as no timer)',
     license._overrideForTest({ pihole_integration: false });
   }
 });
+
+test('GET /summary maps nested cache.summary fields (not top-level)', async () => {
+  license._overrideForTest({ pihole_integration: true });
+  const realGetCache = pihole.getCache;
+  pihole.getCache = () => ({ summary: { queries: { total: 100, blocked: 20, percent: 20 }, gravity: 500, clients: { active: 5 } }, blocking: { state: 'enabled', timer: null }, attribution: 'per_peer', lastSyncAt: 123 });
+  try {
+    const res = await agent.get('/api/v1/pihole/summary');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.queries.total, 100);
+    assert.equal(res.body.data.gravity, 500);
+    assert.equal(res.body.data.clients.active, 5);
+    assert.equal(res.body.data.attribution, 'per_peer');
+  } finally {
+    pihole.getCache = realGetCache;
+    license._overrideForTest({ pihole_integration: false });
+  }
+});
