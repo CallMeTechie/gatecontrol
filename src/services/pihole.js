@@ -71,10 +71,15 @@ function testConnection(instance) {
 
 function applyDnsChain() {
   const cfg = piholeConfig.load();
-  if (cfg.enabled && cfg.manage_dns_chain && cfg.instances.length) {
-    dnsChain.apply(cfg.instances.map(i => i.dns_ip).filter(Boolean));
-  } else {
-    dnsChain.revert();
+  try {
+    if (cfg.enabled && cfg.manage_dns_chain && cfg.instances.length) {
+      dnsChain.apply(cfg.instances.map(i => i.dns_ip).filter(Boolean));
+    } else {
+      dnsChain.revert();
+    }
+  } catch (err) {
+    const logger = require('../utils/logger');
+    logger.warn({ err: err.message }, 'pihole applyDnsChain failed (conf missing?)');
   }
 }
 

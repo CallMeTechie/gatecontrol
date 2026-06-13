@@ -289,6 +289,20 @@ async function flushPendingRebuild() {
 }
 
 // ────────────────────────────────────────────────────────────
+// dnsmasq reload
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Send SIGHUP to dnsmasq to reload its configuration.
+ * Tolerates dnsmasq being absent (pkill exits non-zero — treated as warning,
+ * not an error, so tests and cold-starts without dnsmasq don't throw).
+ */
+function reloadDnsmasq() {
+  try { require('node:child_process').execFileSync('pkill', ['-HUP', 'dnsmasq']); }
+  catch (err) { logger.warn({ err: err.message }, 'dnsmasq HUP failed'); }
+}
+
+// ────────────────────────────────────────────────────────────
 // Status
 // ────────────────────────────────────────────────────────────
 
@@ -332,10 +346,12 @@ module.exports = {
   normalizeHostname,
   strictHostnameAssert,
   reserveUniqueHostname,
+  extractPeerIp,
   renderHostsContent,
   rebuildNow,
   scheduleRebuild,
   flushPendingRebuild,
+  reloadDnsmasq,
   getStatus,
   RESERVED_HOSTNAMES,
 };

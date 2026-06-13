@@ -101,6 +101,11 @@ async function start() {
     startLicenseRefresh();
     startRdpMonitor();     // RDP health check monitor
 
+    // Pi-hole sync — best-effort; a missing dnsmasq.conf or misconfigured
+    // instance must never block server boot.
+    try { require('./services/pihole').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'pihole start failed'); }
+
     // Caddy reconciler — periodic detection-only check that the live
     // Caddy config matches the DB state via @id marker comparison.
     // Auto-repair is off by default; enable with GC_CADDY_AUTO_RECONCILE=1

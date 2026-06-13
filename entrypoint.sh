@@ -251,11 +251,33 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   echo "host-record=gateway.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
   echo "host-record=server.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
   echo "host-record=gc-server.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
-  # Upstream resolvers (comma-separated env var → one server= line each)
-  echo "$GC_DNSMASQ_UPSTREAMS" | tr ',' '\n' | while IFS= read -r upstream; do
-    upstream=$(echo "$upstream" | tr -d '[:space:]')
-    [ -n "$upstream" ] && echo "server=$upstream"
-  done
+  # Upstream resolvers: when a persisted pihole_config has enabled+manage_dns_chain
+  # with instances, route through the Pi-hole IPs and enable ECS add-subnet so
+  # Pi-hole sees the original client subnet. Falls back to GC_DNSMASQ_UPSTREAMS
+  # on any error so dnsmasq never starts without upstreams.
+  PIHOLE_UPSTREAMS=$(node -e '
+    try {
+      const db=require("better-sqlite3")(process.env.GC_DB_PATH||"/data/gatecontrol.db",{readonly:true});
+      const row=db.prepare("SELECT value FROM settings WHERE key=?").get("pihole_config");
+      if(!row) process.exit(0);
+      const c=JSON.parse(row.value);
+      if(c.enabled && c.manage_dns_chain && (c.instances||[]).length){
+        console.log((c.instances.map(i=>i.dns_ip).filter(Boolean)).join(","));
+      }
+    } catch(e){}
+  ' 2>/dev/null)
+  if [ -n "$PIHOLE_UPSTREAMS" ]; then
+    echo "add-subnet=32,128"
+    echo "$PIHOLE_UPSTREAMS" | tr ',' '\n' | while IFS= read -r pip; do
+      pip=$(echo "$pip" | tr -d '[:space:]')
+      [ -n "$pip" ] && echo "server=$pip"
+    done
+  else
+    echo "$GC_DNSMASQ_UPSTREAMS" | tr ',' '\n' | while IFS= read -r upstream; do
+      upstream=$(echo "$upstream" | tr -d '[:space:]')
+      [ -n "$upstream" ] && echo "server=$upstream"
+    done
+  fi
   # Hijack: return the VPN gateway IP for the configured API hostname.
   # Only emit when GC_API_HOST is a DNS name — IPv4 literals are skipped.
   if echo "$GC_API_HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
