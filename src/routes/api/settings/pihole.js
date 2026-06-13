@@ -4,15 +4,14 @@ const { Router } = require('express');
 const { requireFeature } = require('../../../middleware/license');
 const piholeConfig = require('../../../services/piholeConfig');
 const pihole = require('../../../services/pihole');
+const logger = require('../../../utils/logger');
 
 const router = Router();
-
-router.use(requireFeature('pihole_integration'));
 
 /**
  * GET /api/v1/settings/pihole — Return redacted pihole config
  */
-router.get('/pihole', (req, res) => {
+router.get('/pihole', requireFeature('pihole_integration'), (req, res) => {
   const cfg = piholeConfig.load();
   res.json({ ok: true, data: piholeConfig.redact(cfg) });
 });
@@ -20,7 +19,7 @@ router.get('/pihole', (req, res) => {
 /**
  * PUT /api/v1/settings/pihole — Save pihole config, preserving stored passwords
  */
-router.put('/pihole', (req, res) => {
+router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
   const body = req.body || {};
 
   if (!Array.isArray(body.instances)) {
@@ -48,8 +47,8 @@ router.put('/pihole', (req, res) => {
     instances,
   });
 
-  try { pihole.applyDnsChain(); } catch { /* dnsmasq conf may not exist */ }
-  pihole._sync.triggerResync().catch(() => {});
+  try { pihole.applyDnsChain(); } catch (err) { logger.warn({ error: err.message }, 'applyDnsChain failed after pihole save'); }
+  pihole._sync.triggerResync().catch((err) => { logger.warn({ error: err.message }, 'triggerResync failed after pihole save'); });
 
   res.json({ ok: true });
 });
@@ -57,7 +56,7 @@ router.put('/pihole', (req, res) => {
 /**
  * POST /api/v1/settings/pihole/test — Test connection to a pihole instance
  */
-router.post('/pihole/test', async (req, res) => {
+router.post('/pihole/test', requireFeature('pihole_integration'), async (req, res) => {
   try {
     const result = await pihole.testConnection(req.body);
     res.json({ ok: true, data: result });

@@ -34,3 +34,9 @@ test('PUT rejects non-array instances', async () => {
   const res = await agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send({ enabled:true, instances:'nope' });
   assert.equal(res.status, 400);
 });
+
+test('unlicensed pihole does NOT block other settings routes', async () => {
+  license._overrideForTest({ pihole_integration: false });
+  const res = await agent.get('/api/v1/settings/dns');
+  assert.notEqual(res.status, 403);
+});
