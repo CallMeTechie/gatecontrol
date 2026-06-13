@@ -42,3 +42,24 @@ test('revert restores default upstreams and removes managed block', () => {
   assert.doesNotMatch(c, /# >>> gatecontrol-pihole >>>/);
   assert.doesNotMatch(c, /add-subnet/);
 });
+
+test('revert is a no-op (no reload, no rewrite) when nothing is GC-managed', () => {
+  const before = fs.readFileSync(confPath, 'utf8');
+  let reloads2 = 0;
+  const ch = makeChain({ confPath, defaults: ['1.1.1.1', '8.8.8.8'], reload: () => { reloads2++; } });
+  // Simulate the disabled-on-boot scenario: lastApplied is not 'default' (force it)
+  // We call apply first to set lastApplied, then manually restore the file to pre-apply state
+  // so the managed block is absent — but instead, we use a fresh chain that directly
+  // sets lastApplied by calling a dummy apply then restoring file, or we can trigger
+  // via the internal state. The simplest approach: use a second chain that previously
+  // applied but the file was externally reverted (managed block gone).
+  // Easiest: just call revert() on a chain whose internal state was set by apply().
+  const ch2 = makeChain({ confPath, defaults: ['1.1.1.1', '8.8.8.8'], reload: () => { reloads2++; } });
+  ch2.apply(['10.8.0.5']); // sets lastApplied to managed, increments reloads2
+  reloads2 = 0; // reset counter
+  // Now restore the file externally to the no-managed-block state
+  fs.writeFileSync(confPath, before);
+  ch2.revert(); // managed block absent → should be a no-op
+  assert.equal(reloads2, 0, 'revert must not reload when no managed block is present');
+  assert.equal(fs.readFileSync(confPath, 'utf8'), before, 'revert must not rewrite file when no managed block is present');
+});

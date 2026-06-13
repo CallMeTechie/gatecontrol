@@ -78,7 +78,19 @@ function makeChain({ confPath, defaults, reload }) {
     revert() {
       if (lastApplied === 'default') return;
 
-      let content = fs.readFileSync(confPath, 'utf8');
+      let content;
+      try {
+        content = fs.readFileSync(confPath, 'utf8');
+      } catch {
+        lastApplied = 'default';
+        return;
+      }
+
+      if (!content.includes(BEGIN)) {
+        lastApplied = 'default';
+        return;
+      }
+
       content = stripManaged(content);
       content = stripServerLines(content);
       content = content.trimEnd();
