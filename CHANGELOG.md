@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.77.0] — 2026-06-13
+
+### Features
+- Pi-hole configuration tab in settings (instances CRUD + test + save)
+
+---
+
 ## [1.76.6] — 2026-06-13
 
 ### Fixes
