@@ -145,6 +145,7 @@
     <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
     <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
     <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
+    {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
   </div>
   <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
   <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
@@ -154,6 +155,7 @@
   <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
   <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
   <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
+  {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
 </div>
 
 {# ─── General Tab ─────────────────────────────────────── #}
@@ -963,6 +965,81 @@
     <button class="btn btn-primary" id="st-save" style="margin-top:12px">{{ t('data.save') }}</button>
   </div>
 </div>
+
+{# ─── Pi-hole Tab ───────────────────────────────────── #}
+{% if license.features.pihole_integration %}
+<div class="settings-panel" data-settings-panel="pihole" style="display:none">
+  <div class="two-col">
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span class="card-title">{{ t('pihole.cfg.title') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('pihole.cfg.enabled') }}</span>
+          <div class="toggle" id="pihole-enabled" data-managed="true"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <span style="font-size:13px">{{ t('pihole.cfg.manage_chain') }}</span>
+            <div class="toggle" id="pihole-manage-chain" data-managed="true"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('pihole.cfg.manage_chain_hint') }}</div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="pihole-sync-interval">{{ t('pihole.cfg.sync_interval') }}</label>
+          <input type="number" id="pihole-sync-interval" value="30" min="10" max="3600" style="width:100%">
+        </div>
+        <div style="display:flex;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-primary" id="btn-pihole-save">{{ t('pihole.cfg.save') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        <span class="card-title">{{ t('pihole.cfg.instances_title') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div id="pihole-instances-list"></div>
+        <div style="padding-top:8px;border-top:1px solid var(--border)">
+          <button class="btn btn-primary" id="btn-pihole-add-instance" style="font-size:12px">{{ t('pihole.cfg.add_instance') }}</button>
+        </div>
+        <div id="pihole-instance-form" style="display:none;flex-direction:column;gap:8px;padding:12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:4px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="ph-inst-label">{{ t('pihole.cfg.label') }}</label>
+            <input type="text" id="ph-inst-label" style="width:100%" maxlength="100">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="ph-inst-url">{{ t('pihole.cfg.url') }}</label>
+            <input type="text" id="ph-inst-url" placeholder="http://10.8.0.5:8080" style="width:100%">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="ph-inst-dns">{{ t('pihole.cfg.dns_ip') }}</label>
+            <input type="text" id="ph-inst-dns" placeholder="10.8.0.5" style="width:100%">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="ph-inst-password">{{ t('pihole.cfg.password') }}</label>
+            <input type="password" id="ph-inst-password" style="width:100%" autocomplete="new-password">
+            <small class="form-hint" id="ph-inst-password-hint" style="display:none">{{ t('pihole.cfg.password_keep_hint') }}</small>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-1, var(--bg-base));border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <span style="font-size:13px">{{ t('pihole.cfg.tls') }}</span>
+            <div class="toggle on" id="ph-inst-tls" data-managed="true"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-pihole-test-instance" style="font-size:12px">{{ t('pihole.cfg.test_connection') }}</button>
+            <button class="btn btn-primary" id="btn-pihole-apply-instance" style="font-size:12px">{{ t('pihole.cfg.apply') }}</button>
+            <button class="btn btn-ghost" id="btn-pihole-cancel-instance" style="font-size:12px">{{ t('pihole.cfg.cancel') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <section class="settings-section">
   <h3>{{ t('gateway_failover_settings.title') }}</h3>

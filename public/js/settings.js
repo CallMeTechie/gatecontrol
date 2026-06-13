@@ -1346,3 +1346,279 @@
     });
   }
 })();
+
+// ─── Pi-hole Settings ─────────────────────────────────
+(function () {
+  var phInstances = [];
+  var editingIndex = -1;
+  var t = window.GC && window.GC.t || {};
+
+  var saveBtn = document.getElementById('btn-pihole-save');
+  var addBtn = document.getElementById('btn-pihole-add-instance');
+  var instancesList = document.getElementById('pihole-instances-list');
+  var instanceForm = document.getElementById('pihole-instance-form');
+  if (!saveBtn && !addBtn && !instancesList) return;
+
+  async function loadPihole() {
+    try {
+      var data = await api.get('/api/v1/settings/pihole');
+      if (!data.ok) return;
+      var cfg = data.data;
+      var enabledEl = document.getElementById('pihole-enabled');
+      var chainEl = document.getElementById('pihole-manage-chain');
+      var intervalEl = document.getElementById('pihole-sync-interval');
+      if (enabledEl) enabledEl.classList.toggle('on', !!cfg.enabled);
+      if (chainEl) chainEl.classList.toggle('on', !!cfg.manage_dns_chain);
+      if (intervalEl) intervalEl.value = cfg.sync_interval_sec || 30;
+      phInstances = (cfg.instances || []).slice();
+      renderInstances();
+    } catch (err) {
+      console.error('Failed to load Pi-hole settings:', err);
+    }
+  }
+
+  function renderInstances() {
+    if (!instancesList) return;
+    instancesList.textContent = '';
+    if (phInstances.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'font-size:12px;color:var(--text-3);padding:8px 0';
+      empty.textContent = t['pihole.cfg.no_instances'] || 'No instances configured';
+      instancesList.appendChild(empty);
+      return;
+    }
+    phInstances.forEach(function (inst, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
+
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0';
+
+      var labelEl = document.createElement('div');
+      labelEl.style.cssText = 'font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      labelEl.textContent = inst.label || inst.url;
+      info.appendChild(labelEl);
+
+      var meta = document.createElement('div');
+      meta.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:2px';
+      var parts = [inst.url];
+      if (inst.dns_ip) parts.push('DNS: ' + inst.dns_ip);
+      parts.push(inst.password_set ? (t['pihole.cfg.password_set'] || 'set') : (t['pihole.cfg.no_password'] || '—'));
+      parts.push(inst.verify_tls !== false ? 'TLS ✓' : 'TLS ✗');
+      meta.textContent = parts.join(' · ');
+      info.appendChild(meta);
+      row.appendChild(info);
+
+      var actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:4px;flex-shrink:0';
+      var svgPaths = {
+        edit: '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+        test: '<polygon points="5 3 19 12 5 21 5 3"/>',
+        delete: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
+      };
+      ['edit', 'test', 'delete'].forEach(function (action) {
+        var btn = document.createElement('button');
+        btn.className = 'icon-btn';
+        btn.title = action.charAt(0).toUpperCase() + action.slice(1);
+        btn.dataset.phAction = action;
+        btn.dataset.phIdx = idx;
+        btn.style.cssText = 'width:24px;height:24px';
+        // Safe: only hardcoded SVG paths, no user input
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">' + svgPaths[action] + '</svg>';
+        actions.appendChild(btn);
+      });
+      row.appendChild(actions);
+      instancesList.appendChild(row);
+    });
+  }
+
+  function showInstanceForm(inst) {
+    if (!instanceForm) return;
+    document.getElementById('ph-inst-label').value = inst ? (inst.label || '') : '';
+    document.getElementById('ph-inst-url').value = inst ? (inst.url || '') : '';
+    document.getElementById('ph-inst-dns').value = inst ? (inst.dns_ip || '') : '';
+    document.getElementById('ph-inst-password').value = '';
+    var tlsEl = document.getElementById('ph-inst-tls');
+    if (tlsEl) tlsEl.classList.toggle('on', inst ? inst.verify_tls !== false : true);
+    var hint = document.getElementById('ph-inst-password-hint');
+    if (hint) hint.style.display = (inst && inst.password_set) ? '' : 'none';
+    instanceForm.style.display = 'flex';
+  }
+
+  function hideInstanceForm() {
+    if (instanceForm) instanceForm.style.display = 'none';
+    editingIndex = -1;
+  }
+
+  if (instancesList) {
+    instancesList.addEventListener('click', async function (e) {
+      var btn = e.target.closest('[data-ph-action]');
+      if (!btn) return;
+      var action = btn.dataset.phAction;
+      var idx = parseInt(btn.dataset.phIdx, 10);
+      var inst = phInstances[idx];
+      if (!inst) return;
+
+      if (action === 'delete') {
+        if (!confirm(t['pihole.cfg.confirm_delete'] || 'Delete this instance?')) return;
+        phInstances.splice(idx, 1);
+        renderInstances();
+      } else if (action === 'edit') {
+        editingIndex = idx;
+        showInstanceForm(inst);
+      } else if (action === 'test') {
+        btnLoading(btn);
+        try {
+          var res = await api.post('/api/v1/settings/pihole/test', {
+            url: inst.url,
+            app_password: null,
+            verify_tls: inst.verify_tls !== false,
+          });
+          if (res.ok && res.data && res.data.connected) {
+            showToast((t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (res.data.version || '?') + ')');
+          } else {
+            showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
+          }
+        } catch (err) {
+          showToast(err.message || 'Error', 'error');
+        } finally {
+          btnReset(btn);
+        }
+      }
+    });
+  }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', function () {
+      editingIndex = -1;
+      showInstanceForm(null);
+    });
+  }
+
+  var cancelBtn = document.getElementById('btn-pihole-cancel-instance');
+  if (cancelBtn) cancelBtn.addEventListener('click', hideInstanceForm);
+
+  var applyBtn = document.getElementById('btn-pihole-apply-instance');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', function () {
+      var label = document.getElementById('ph-inst-label').value.trim();
+      var url = document.getElementById('ph-inst-url').value.trim();
+      var dns_ip = document.getElementById('ph-inst-dns').value.trim();
+      var app_password = document.getElementById('ph-inst-password').value;
+      var tlsEl = document.getElementById('ph-inst-tls');
+      var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
+
+      if (!url) { showToast(t['pihole.cfg.url_required'] || 'URL required', 'error'); return; }
+
+      if (editingIndex >= 0) {
+        var existing = phInstances[editingIndex];
+        existing.label = label;
+        existing.url = url;
+        existing.dns_ip = dns_ip;
+        existing.verify_tls = verify_tls;
+        if (app_password) {
+          existing.app_password = app_password;
+          existing.password_set = true;
+        }
+      } else {
+        var newInst = {
+          id: Date.now().toString(),
+          label: label,
+          url: url,
+          dns_ip: dns_ip,
+          verify_tls: verify_tls,
+          password_set: !!app_password,
+        };
+        if (app_password) newInst.app_password = app_password;
+        phInstances.push(newInst);
+      }
+      renderInstances();
+      hideInstanceForm();
+    });
+  }
+
+  var testFormBtn = document.getElementById('btn-pihole-test-instance');
+  if (testFormBtn) {
+    testFormBtn.addEventListener('click', async function () {
+      var url = document.getElementById('ph-inst-url').value.trim();
+      var app_password = document.getElementById('ph-inst-password').value || null;
+      var tlsEl = document.getElementById('ph-inst-tls');
+      var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
+      if (!url) { showToast(t['pihole.cfg.url_required'] || 'URL required', 'error'); return; }
+      btnLoading(testFormBtn);
+      try {
+        var res = await api.post('/api/v1/settings/pihole/test', { url: url, app_password: app_password, verify_tls: verify_tls });
+        if (res.ok && res.data && res.data.connected) {
+          showToast((t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (res.data.version || '?') + ')');
+        } else {
+          showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      } finally {
+        btnReset(testFormBtn);
+      }
+    });
+  }
+
+  var tlsFormToggle = document.getElementById('ph-inst-tls');
+  if (tlsFormToggle) {
+    tlsFormToggle.addEventListener('click', function () {
+      tlsFormToggle.classList.toggle('on');
+    });
+  }
+
+  var enabledToggle = document.getElementById('pihole-enabled');
+  if (enabledToggle) {
+    enabledToggle.addEventListener('click', function () {
+      enabledToggle.classList.toggle('on');
+    });
+  }
+
+  var chainToggle = document.getElementById('pihole-manage-chain');
+  if (chainToggle) {
+    chainToggle.addEventListener('click', function () {
+      chainToggle.classList.toggle('on');
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async function () {
+      btnLoading(saveBtn);
+      try {
+        var enabledEl = document.getElementById('pihole-enabled');
+        var chainEl = document.getElementById('pihole-manage-chain');
+        var intervalEl = document.getElementById('pihole-sync-interval');
+        var payload = {
+          enabled: enabledEl ? enabledEl.classList.contains('on') : false,
+          manage_dns_chain: chainEl ? chainEl.classList.contains('on') : false,
+          sync_interval_sec: intervalEl ? (parseInt(intervalEl.value, 10) || 30) : 30,
+          instances: phInstances.map(function (inst) {
+            var out = {
+              id: inst.id,
+              label: inst.label || '',
+              url: inst.url,
+              dns_ip: inst.dns_ip || '',
+              verify_tls: inst.verify_tls !== false,
+              password_set: !!inst.password_set,
+            };
+            if (inst.app_password) out.app_password = inst.app_password;
+            return out;
+          }),
+        };
+        var res = await api.put('/api/v1/settings/pihole', payload);
+        if (res.ok) {
+          showToast(t['pihole.cfg.saved'] || 'Pi-hole settings saved');
+        } else {
+          showToast(res.error || 'Error', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Error', 'error');
+      } finally {
+        btnReset(saveBtn);
+      }
+    });
+  }
+
+  loadPihole();
+})();
