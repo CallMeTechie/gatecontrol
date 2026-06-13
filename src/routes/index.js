@@ -192,6 +192,7 @@ const pages = [
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
+  { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
