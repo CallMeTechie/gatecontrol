@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.6] — 2026-06-13
+
+### Fixes
+- dns chain revert is a no-op when nothing GC-managed (avoid boot reload for non-pihole installs)
+
+---
+
 ## [1.76.5] — 2026-06-13
 
 ### Fixes
