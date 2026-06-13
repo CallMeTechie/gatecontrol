@@ -45,6 +45,7 @@ const COMMUNITY_FALLBACK = {
   remote_desktop: false,
   split_tunnel_preset: false,
   internal_dns: false,
+  pihole_integration: false,
   gateway_peers: 1,
   gateway_http_targets: 3,
   gateway_tcp_routing: false,
