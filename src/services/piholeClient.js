@@ -123,8 +123,13 @@ function createClient(instance) {
     };
   }
 
-  function getHistory() {
-    return request('/api/history');
+  async function getHistory() {
+    const r = await request('/api/history');
+    return (r.history || []).map(h => ({
+      t: h.timestamp,
+      allowed: Math.max(0, (h.total || 0) - (h.blocked || 0)),
+      blocked: h.blocked || 0,
+    }));
   }
 
   function getTopDomains(blocked = false) {

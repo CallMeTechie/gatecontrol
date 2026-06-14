@@ -59,3 +59,16 @@ test('getSummary defaults gravity/active to 0 when /api/padd omits them', async 
   assert.equal(r.gravity.domains_being_blocked, 0);
   assert.equal(r.clients.active, 0);
 });
+
+test('getHistory unwraps .history → [{t,allowed,blocked}] with underflow guard', async () => {
+  const url = await serveFixtures('populated', [['/api/history', 'history']]);
+  const c = createClient({ id: 'p', url, app_password: 'x' });
+  const r = await c.getHistory();
+  const fx = FX('populated', 'history').history;
+  assert.equal(Array.isArray(r), true);
+  assert.equal(r.length, fx.length);
+  assert.equal(r[0].t, fx[0].timestamp);
+  assert.equal(r[0].blocked, fx[0].blocked);
+  assert.equal(r[0].allowed, Math.max(0, fx[0].total - fx[0].blocked));
+  assert.ok(r.every(p => p.allowed >= 0));
+});
