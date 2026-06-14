@@ -112,9 +112,15 @@ function createClient(instance) {
   // --- Public API ---
 
   async function getSummary() {
-    const data = await request('/api/stats/summary');
-    assertShape(data, ['queries.total', 'queries.blocked']);
-    return data;
+    const p = await request('/api/padd');
+    // Only the ESSENTIAL required paths are hard-asserted (queries.*). gravity_size/active_clients
+    // can be absent on a fresh/empty Pi-hole → default instead of throwing unsupported_version.
+    assertShape(p, ['queries.total', 'queries.blocked']);
+    return {
+      queries: { total: p.queries.total, blocked: p.queries.blocked },
+      gravity: { domains_being_blocked: p.gravity_size ?? 0 },
+      clients: { active: p.active_clients ?? 0 },
+    };
   }
 
   function getHistory() {
