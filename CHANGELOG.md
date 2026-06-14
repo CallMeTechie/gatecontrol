@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.0] — 2026-06-14
+
+### Features
+- dns_port support + connection test validates DNS path
+
+---
+
 ## [1.78.0] — 2026-06-13
 
 ### Features
