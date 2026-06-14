@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.1] — 2026-06-14
+
+### Fixes
+- reuse sync clients across cycles (avoid FTL login rate-limit) + port-correct chain re-apply
+
+---
+
 ## [1.79.0] — 2026-06-14
 
 ### Features
