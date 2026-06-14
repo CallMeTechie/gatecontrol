@@ -147,8 +147,9 @@ function createClient(instance) {
     return r.types || {};
   }
 
-  function getBlocking() {
-    return request('/api/dns/blocking');
+  async function getBlocking() {
+    const r = await request('/api/dns/blocking');
+    return { blocking: r.blocking === 'enabled', timer: (r.timer ?? null) };
   }
 
   function setBlocking(enabled, timer) {

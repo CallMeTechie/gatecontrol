@@ -97,3 +97,13 @@ test('top lists on EMPTY fixture → empty arrays, no throw', async () => {
   assert.deepEqual(await c.getTopDomains(true), []);
   assert.deepEqual(await c.getTopClients(), []);
 });
+
+test('getBlocking normalizes string "enabled"/"disabled" → boolean', async () => {
+  const url = await serveFixtures('populated', [['/api/dns/blocking', 'dns_blocking']]);
+  const c = createClient({ id: 'p', url, app_password: 'x' });
+  const r = await c.getBlocking();
+  const fx = FX('populated', 'dns_blocking');
+  assert.equal(typeof r.blocking, 'boolean');
+  assert.equal(r.blocking, fx.blocking === 'enabled');
+  assert.equal('timer' in r, true);
+});
