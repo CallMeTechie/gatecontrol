@@ -59,7 +59,8 @@ router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
 router.post('/pihole/test', requireFeature('pihole_integration'), async (req, res) => {
   try {
     const result = await pihole.testConnection(req.body);
-    res.json({ ok: true, data: result });
+    const dnsResult = await pihole.testDns(req.body.dns_ip, req.body.dns_port);
+    res.json({ ok: true, data: { ...result, dns: dnsResult } });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
@@ -74,7 +75,8 @@ router.post('/pihole/test/:id', requireFeature('pihole_integration'), async (req
   if (!inst) return res.status(404).json({ ok: false, error: 'instance not found' });
   try {
     const result = await pihole.testConnection({ url: inst.url, app_password: inst.app_password, verify_tls: inst.verify_tls });
-    res.json({ ok: true, data: result });
+    const dnsResult = await pihole.testDns(inst.dns_ip, inst.dns_port);
+    res.json({ ok: true, data: { ...result, dns: dnsResult } });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }

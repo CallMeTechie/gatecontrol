@@ -909,6 +909,11 @@
             <input type="text" id="ph-inst-dns" placeholder="10.8.0.5" style="width:100%">
           </div>
           <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="ph-inst-dns-port">{{ t('pihole.cfg.dns_port') }}</label>
+            <input type="number" id="ph-inst-dns-port" value="53" min="1" max="65535" style="width:100%">
+            <small class="form-hint">{{ t('pihole.cfg.dns_port_hint') }}</small>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
             <label class="form-label" for="ph-inst-password">{{ t('pihole.cfg.password') }}</label>
             <input type="password" id="ph-inst-password" style="width:100%" autocomplete="new-password">
             <small class="form-hint" id="ph-inst-password-hint" style="display:none">{{ t('pihole.cfg.password_keep_hint') }}</small>

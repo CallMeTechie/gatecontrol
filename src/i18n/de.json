@@ -1701,6 +1701,8 @@
   "pihole.cfg.label": "Bezeichnung",
   "pihole.cfg.url": "URL",
   "pihole.cfg.dns_ip": "DNS-IP",
+  "pihole.cfg.dns_port": "DNS-Port",
+  "pihole.cfg.dns_port_hint": "Meist 53. Nur ändern, wenn Pi-hole auf einem abweichenden Host-Port läuft, z. B. 5335.",
   "pihole.cfg.password": "App-Passwort",
   "pihole.cfg.password_keep_hint": "Leer lassen, um das gespeicherte Passwort beizubehalten",
   "pihole.cfg.tls": "TLS verifizieren",
@@ -1714,5 +1716,6 @@
   "pihole.cfg.test_failed": "Verbindung fehlgeschlagen",
   "pihole.cfg.saved": "Pi-hole-Einstellungen gespeichert",
   "pihole.cfg.url_required": "URL erforderlich",
-  "pihole.cfg.confirm_delete": "Diese Instanz löschen?"
+  "pihole.cfg.confirm_delete": "Diese Instanz löschen?",
+  "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port"
 }

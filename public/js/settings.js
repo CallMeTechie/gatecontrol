@@ -1437,12 +1437,28 @@
     document.getElementById('ph-inst-label').value = inst ? (inst.label || '') : '';
     document.getElementById('ph-inst-url').value = inst ? (inst.url || '') : '';
     document.getElementById('ph-inst-dns').value = inst ? (inst.dns_ip || '') : '';
+    var dnsPortEl = document.getElementById('ph-inst-dns-port');
+    if (dnsPortEl) dnsPortEl.value = inst ? (inst.dns_port || 53) : 53;
     document.getElementById('ph-inst-password').value = '';
     var tlsEl = document.getElementById('ph-inst-tls');
     if (tlsEl) tlsEl.classList.toggle('on', inst ? inst.verify_tls !== false : true);
     var hint = document.getElementById('ph-inst-password-hint');
     if (hint) hint.style.display = (inst && inst.password_set) ? '' : 'none';
     instanceForm.style.display = 'flex';
+  }
+
+  // Prefill dns_ip from the url host when dns_ip is empty
+  var urlInput = document.getElementById('ph-inst-url');
+  if (urlInput) {
+    urlInput.addEventListener('blur', function () {
+      var dnsEl = document.getElementById('ph-inst-dns');
+      if (dnsEl && !dnsEl.value.trim() && this.value.trim()) {
+        try {
+          var hostname = new URL(this.value.trim()).hostname;
+          if (hostname) dnsEl.value = hostname;
+        } catch (e) {}
+      }
+    });
   }
 
   function hideInstanceForm() {
@@ -1471,7 +1487,7 @@
         try {
           var res = await api.post('/api/v1/settings/pihole/test/' + encodeURIComponent(inst.id));
           if (res.ok && res.data && res.data.connected) {
-            showToast((t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (res.data.version || '?') + ')');
+            showToast(buildPiholeTestToast(res.data, inst.dns_port || 53));
           } else {
             showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
           }
@@ -1500,6 +1516,8 @@
       var label = document.getElementById('ph-inst-label').value.trim();
       var url = document.getElementById('ph-inst-url').value.trim();
       var dns_ip = document.getElementById('ph-inst-dns').value.trim();
+      var dnsPortEl = document.getElementById('ph-inst-dns-port');
+      var dns_port = dnsPortEl ? (parseInt(dnsPortEl.value, 10) || 53) : 53;
       var app_password = document.getElementById('ph-inst-password').value;
       var tlsEl = document.getElementById('ph-inst-tls');
       var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
@@ -1511,6 +1529,7 @@
         existing.label = label;
         existing.url = url;
         existing.dns_ip = dns_ip;
+        existing.dns_port = dns_port;
         existing.verify_tls = verify_tls;
         if (app_password) {
           existing.app_password = app_password;
@@ -1522,6 +1541,7 @@
           label: label,
           url: url,
           dns_ip: dns_ip,
+          dns_port: dns_port,
           verify_tls: verify_tls,
           password_set: !!app_password,
         };
@@ -1542,15 +1562,18 @@
   if (testFormBtn) {
     testFormBtn.addEventListener('click', async function () {
       var url = document.getElementById('ph-inst-url').value.trim();
+      var dns_ip_test = document.getElementById('ph-inst-dns').value.trim();
+      var dnsPortTestEl = document.getElementById('ph-inst-dns-port');
+      var dns_port_test = dnsPortTestEl ? (parseInt(dnsPortTestEl.value, 10) || 53) : 53;
       var app_password = document.getElementById('ph-inst-password').value || null;
       var tlsEl = document.getElementById('ph-inst-tls');
       var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
       if (!url) { showToast(t['pihole.cfg.url_required'] || 'URL required', 'error'); return; }
       btnLoading(testFormBtn);
       try {
-        var res = await api.post('/api/v1/settings/pihole/test', { url: url, app_password: app_password, verify_tls: verify_tls });
+        var res = await api.post('/api/v1/settings/pihole/test', { url: url, app_password: app_password, verify_tls: verify_tls, dns_ip: dns_ip_test, dns_port: dns_port_test });
         if (res.ok && res.data && res.data.connected) {
-          showToast((t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (res.data.version || '?') + ')');
+          showToast(buildPiholeTestToast(res.data, dns_port_test));
         } else {
           showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
         }
@@ -1560,6 +1583,20 @@
         btnReset(testFormBtn);
       }
     });
+  }
+
+  function buildPiholeTestToast(data, dns_port) {
+    var msg = (t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (data.version || '?') + ')';
+    if (data.dns) {
+      if (!data.dns.reachable) {
+        msg += ' · DNS ' + (t['pihole.cfg.dns_not_reachable'] || 'not reachable on port') + ' ' + (dns_port || 53);
+      } else {
+        msg += ' · DNS ✓';
+        if (data.dns.blocking === true) msg += ' · Blocking ✓';
+        else if (data.dns.blocking === false) msg += ' · Blocking ✗';
+      }
+    }
+    return msg;
   }
 
   var tlsFormToggle = document.getElementById('ph-inst-tls');
@@ -1597,6 +1634,7 @@
           label: inst.label || '',
           url: inst.url,
           dns_ip: inst.dns_ip || '',
+          dns_port: parseInt(inst.dns_port, 10) || 53,
           verify_tls: inst.verify_tls !== false,
           password_set: !!inst.password_set,
         };

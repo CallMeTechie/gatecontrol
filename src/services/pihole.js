@@ -3,11 +3,12 @@
 const piholeConfig = require('./piholeConfig');
 const { createClient } = require('./piholeClient');
 const { createSync } = require('./piholeSync');
-const { makeChain } = require('./piholeDnsChain');
+const { makeChain, buildDnsToken } = require('./piholeDnsChain');
 const eventBus = require('./eventBus');
 const settings = require('./settings');
 const peers = require('./peers');
 const dns = require('./dns');
+const nodeDns = require('node:dns');
 
 const DESIRED_KEY = 'pihole_blocking_desired';
 
@@ -69,11 +70,51 @@ function testConnection(instance) {
   return createClient(instance).testConnection();
 }
 
+/**
+ * Probe `<dns_ip>:<dns_port>` with a short-timeout DNS query.
+ * Returns `{ reachable: bool, blocking: bool|null }`.
+ * Never throws — errors degrade to `{ reachable: false, blocking: null }`.
+ * @param {string} dns_ip
+ * @param {number|string} [dns_port]
+ * @returns {Promise<{reachable:boolean, blocking:boolean|null}>}
+ */
+async function testDns(dns_ip, dns_port) {
+  if (!dns_ip) return { reachable: false, blocking: null };
+  try {
+    const resolver = new nodeDns.promises.Resolver({ timeout: 3000, tries: 1 });
+    resolver.setServers([dns_ip + ':' + (parseInt(dns_port, 10) || 53)]);
+
+    let reachable = false;
+    try {
+      const addrs = await resolver.resolve4('google.com');
+      reachable = Array.isArray(addrs) && addrs.length > 0;
+    } catch {
+      return { reachable: false, blocking: null };
+    }
+
+    let blocking = null;
+    try {
+      const blocked = await resolver.resolve4('doubleclick.net');
+      blocking = blocked.length === 0 || blocked.includes('0.0.0.0');
+    } catch (err) {
+      if (err && (err.code === 'ENODATA' || err.code === 'ENOTFOUND' || err.code === 'ESERVFAIL')) {
+        blocking = true;
+      } else {
+        blocking = null;
+      }
+    }
+    return { reachable, blocking };
+  } catch {
+    return { reachable: false, blocking: null };
+  }
+}
+
 function applyDnsChain() {
   const cfg = piholeConfig.load();
   try {
     if (cfg.enabled && cfg.manage_dns_chain && cfg.instances.length) {
-      dnsChain.apply(cfg.instances.map(i => i.dns_ip).filter(Boolean));
+      const tokens = cfg.instances.map(buildDnsToken).filter(Boolean);
+      dnsChain.apply(tokens);
     } else {
       dnsChain.revert();
     }
@@ -92,4 +133,4 @@ function stop() {
   sync.stop();
 }
 
-module.exports = { getCache, getStatus, setBlocking, getDesired, setDesired, testConnection, applyDnsChain, start, stop, _sync: sync };
+module.exports = { getCache, getStatus, setBlocking, getDesired, setDesired, testConnection, testDns, buildDnsToken, applyDnsChain, start, stop, _sync: sync };

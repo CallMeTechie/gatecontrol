@@ -262,7 +262,12 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
       if(!row) process.exit(0);
       const c=JSON.parse(row.value);
       if(c.enabled && c.manage_dns_chain && (c.instances||[]).length){
-        console.log((c.instances.map(i=>i.dns_ip).filter(Boolean)).join(","));
+        const tokens=c.instances.map(i=>{
+          if(!i.dns_ip) return null;
+          const p=parseInt(i.dns_port,10);
+          return (p&&p!==53)?i.dns_ip+"#"+p:i.dns_ip;
+        }).filter(Boolean);
+        console.log(tokens.join(","));
       }
     } catch(e){}
   ' 2>/dev/null)

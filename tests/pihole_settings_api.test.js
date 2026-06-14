@@ -31,6 +31,17 @@ test('PUT with password_set and no new secret preserves the stored password', as
   assert.equal(cfg.instances[0].label, 'DNS1 renamed');
 });
 
+test('dns_port round-trips through PUT then GET', async () => {
+  const put = await agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send({
+    enabled: true, sync_interval_sec: 30, manage_dns_chain: true,
+    instances: [{ id: 'p2', label: 'DNS2', url: 'http://10.8.0.5:8080', dns_ip: '10.8.0.5', dns_port: 5335, app_password: 'secret', verify_tls: true }],
+  });
+  assert.equal(put.status, 200);
+  const get = await agent.get('/api/v1/settings/pihole');
+  assert.equal(get.status, 200);
+  assert.equal(get.body.data.instances[0].dns_port, 5335);
+});
+
 test('PUT rejects non-array instances', async () => {
   const res = await agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send({ enabled:true, instances:'nope' });
   assert.equal(res.status, 400);

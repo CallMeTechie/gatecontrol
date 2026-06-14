@@ -19,3 +19,9 @@ test('setBlocking persists desired-state', () => {
   assert.equal(d.enabled, false);
   assert.ok(d.timer_ends_at > 0);
 });
+
+test('testDns on an unreachable port returns {reachable:false} without throwing', async () => {
+  const result = await pihole.testDns('127.0.0.1', 19953);
+  assert.equal(result.reachable, false);
+  assert.ok('blocking' in result, 'blocking key must be present');
+});

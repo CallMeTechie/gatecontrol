@@ -104,4 +104,17 @@ function makeChain({ confPath, defaults, reload }) {
   };
 }
 
-module.exports = { makeChain, BEGIN, END };
+/**
+ * Build a dnsmasq server= token for a pihole instance.
+ * Returns `ip#port` when dns_port is set and not 53, else just `ip`.
+ * Returns null when dns_ip is absent.
+ * @param {{ dns_ip?: string, dns_port?: number|string }} inst
+ * @returns {string|null}
+ */
+function buildDnsToken(inst) {
+  if (!inst || !inst.dns_ip) return null;
+  const port = parseInt(inst.dns_port, 10);
+  return (port && port !== 53) ? `${inst.dns_ip}#${port}` : inst.dns_ip;
+}
+
+module.exports = { makeChain, buildDnsToken, BEGIN, END };

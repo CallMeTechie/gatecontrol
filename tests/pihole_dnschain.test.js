@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { makeChain } = require('../src/services/piholeDnsChain');
+const { makeChain, buildDnsToken } = require('../src/services/piholeDnsChain');
 
 let confPath, reloads;
 beforeEach(() => {
@@ -41,6 +41,36 @@ test('revert restores default upstreams and removes managed block', () => {
   const c = fs.readFileSync(confPath, 'utf8');
   assert.doesNotMatch(c, /# >>> gatecontrol-pihole >>>/);
   assert.doesNotMatch(c, /add-subnet/);
+});
+
+// ─── dns_port token building ───────────────────────────────────────────────
+test('buildDnsToken: non-standard port produces ip#port token', () => {
+  assert.equal(buildDnsToken({ dns_ip: '10.8.0.2', dns_port: 5335 }), '10.8.0.2#5335');
+});
+
+test('buildDnsToken: port 53 omits the port annotation', () => {
+  assert.equal(buildDnsToken({ dns_ip: '10.8.0.5', dns_port: 53 }), '10.8.0.5');
+});
+
+test('buildDnsToken: missing dns_port omits the port annotation', () => {
+  assert.equal(buildDnsToken({ dns_ip: '10.8.0.5' }), '10.8.0.5');
+});
+
+test('buildDnsToken: missing dns_ip returns null', () => {
+  assert.equal(buildDnsToken({ dns_port: 5335 }), null);
+});
+
+test('apply with port-annotated token produces server=ip#port line', () => {
+  chain().apply(['10.8.0.2#5335']);
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.match(c, /server=10\.8\.0\.2#5335/);
+});
+
+test('apply with plain ip token produces server=ip without hash', () => {
+  chain().apply(['10.8.0.5']);
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.match(c, /server=10\.8\.0\.5/);
+  assert.doesNotMatch(c, /server=10\.8\.0\.5#/);
 });
 
 test('revert is a no-op (no reload, no rewrite) when nothing is GC-managed', () => {
