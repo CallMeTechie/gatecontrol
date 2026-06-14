@@ -9,6 +9,7 @@ const {
   mapClientsToPeers,
   detectAttribution,
 } = require('./piholeAggregate');
+const { buildDnsToken } = require('./piholeDnsChain');
 const logger = require('../utils/logger');
 
 const REVERT_AFTER = 2;
@@ -39,6 +40,20 @@ function createSync(deps) {
   let intervalId = null;
   let downCycles = 0;
   let chainReverted = false;
+
+  // Client cache: Map<instanceId, { sig: string, client: piholeClient }>
+  // Avoids re-creating (and re-logging-in) clients on every sync cycle,
+  // which would hit Pi-hole v6 FTL's login rate-limit / 16-session cap.
+  const clientCache = new Map();
+
+  function getOrCreateClient(inst) {
+    const sig = `${inst.url}|${inst.app_password}|${inst.verify_tls}`;
+    const cached = clientCache.get(inst.id);
+    if (cached && cached.sig === sig) return cached.client;
+    const client = clientFactory(inst);
+    clientCache.set(inst.id, { sig, client });
+    return client;
+  }
 
   let cache = {
     summary: null,
@@ -109,7 +124,12 @@ function createSync(deps) {
       return cache;
     }
 
-    const clients = config.instances.map(clientFactory);
+    // Prune cache entries for instances no longer in config
+    const activeIds = new Set(config.instances.map(i => i.id));
+    for (const id of clientCache.keys()) {
+      if (!activeIds.has(id)) clientCache.delete(id);
+    }
+    const clients = config.instances.map(getOrCreateClient);
     const results = await Promise.allSettled(clients.map(pull));
 
     // Build per-instance metadata and collect fulfilled data
@@ -182,9 +202,9 @@ function createSync(deps) {
       } else {
         downCycles = 0;
         if (chainReverted) {
-          const dnsIps = config.instances.map(i => i.dns_ip).filter(Boolean);
+          const tokens = config.instances.map(buildDnsToken).filter(Boolean);
           try {
-            dnsChain.apply(dnsIps);
+            dnsChain.apply(tokens);
           } catch (err) {
             logger.warn({ err: err.message }, 'pihole dnsChain.apply() failed');
           }

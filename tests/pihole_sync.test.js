@@ -68,23 +68,48 @@ test('reconciliation: null desired-state enforces nothing', async () => {
   assert.equal(setCalls.length, 0);
 });
 
-test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; recovery re-applies', async () => {
-  let up = false;
+test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; recovery re-applies with port', async () => {
+  let down = true;
   const chainCalls = [];
-  const live = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}} });
-  const dead = { id:'p1', getSummary: async()=>{throw new Error('down')}, getHistory:async()=>{throw 0}, getTopDomains:async()=>{throw 0}, getTopClients:async()=>{throw 0}, getQueryTypes:async()=>{throw 0}, getBlocking:async()=>{throw 0} };
+  // One client object whose methods throw while `down` is true.
+  // Toggling `down` (not swapping the returned client) is compatible with client caching.
+  const client = {
+    id: 'p1',
+    getSummary:    async () => { if (down) throw new Error('down'); return {queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}; },
+    getHistory:    async () => { if (down) throw new Error('down'); return []; },
+    getTopDomains: async () => { if (down) throw new Error('down'); return []; },
+    getTopClients: async () => { if (down) throw new Error('down'); return []; },
+    getQueryTypes: async () => { if (down) throw new Error('down'); return {}; },
+    getBlocking:   async () => { if (down) throw new Error('down'); return { blocking: true }; },
+  };
   const sync = createSync({
-    loadConfig: () => ({ enabled:true, manage_dns_chain:true, sync_interval_sec:30, instances:[{id:'p1', dns_ip:'10.8.0.5'}] }),
-    clientFactory: () => (up ? live : dead),
+    loadConfig: () => ({ enabled:true, manage_dns_chain:true, sync_interval_sec:30, instances:[{id:'p1', dns_ip:'10.8.0.2', dns_port:5335}] }),
+    clientFactory: () => client,
     peersProvider: () => [], eventBus:{publish(){}},
-    dnsChain: { apply:(ips)=>chainCalls.push(['apply',ips.join(',')]), revert:()=>chainCalls.push(['revert']) },
+    dnsChain: { apply:(tokens)=>chainCalls.push(['apply',tokens.join(',')]), revert:()=>chainCalls.push(['revert']) },
+    loadDesired: () => null,
+  });
+  await sync.syncOnce(); // cycle 1: down
+  await sync.syncOnce(); // cycle 2: down → triggers revert
+  down = false;
+  await sync.syncOnce(); // cycle 3: up → re-applies chain
+  assert.deepEqual(chainCalls, [['revert'], ['apply','10.8.0.2#5335']]);
+});
+
+test('client factory is called once per instance and reused across syncOnce cycles', async () => {
+  let callCount = 0;
+  const client = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}} });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, manage_dns_chain:false, instances:[{id:'p1'}] }),
+    clientFactory: (inst) => { callCount++; return client; },
+    peersProvider: () => [],
+    eventBus: { publish(){} },
+    dnsChain: { apply(){}, revert(){} },
     loadDesired: () => null,
   });
   await sync.syncOnce();
   await sync.syncOnce();
-  up = true;
-  await sync.syncOnce();
-  assert.deepEqual(chainCalls, [['revert'], ['apply','10.8.0.5']]);
+  assert.equal(callCount, 1, 'clientFactory must be called once, not once per sync cycle');
 });
 
 test('syncOnce awaits an async peersProvider', async () => {
