@@ -1,0 +1,1 @@
+{"clients":[{"name":"localhost","ip":"127.0.0.1","count":42},{"name":"","ip":"172.19.0.1","count":11},{"name":"","ip":"10.8.0.5","count":11}],"total_queries":64,"blocked_queries":3,"took":6.6995620727539062e-05}
