@@ -83,9 +83,16 @@ test('sync reuses session across cycles — no extra auth on cycle 2', async () 
   const sync = makeSync(url);
   await sync.syncOnce();
   const afterFirst = counters.auth;
-  assert.ok(afterFirst > 0, 'cycle 1 must authenticate at least once');
+  assert.equal(afterFirst, 1, 'cycle 1 must authenticate exactly once');
   await sync.syncOnce();
   assert.equal(counters.auth - afterFirst, 0, 'cycle 2 must add zero auth calls (session reused)');
+});
+
+test('cold start issues a single auth despite 6 parallel pulls (single-flight)', async () => {
+  const counters = {};
+  const url = await serveV6('populated', counters);
+  await makeSync(url).syncOnce();
+  assert.equal(counters.auth, 1, 'parallel pull() must trigger exactly one login on cold start');
 });
 
 // Resilience: a broken upstream shape must degrade that instance gracefully, not crash the cycle.

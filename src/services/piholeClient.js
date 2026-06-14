@@ -24,6 +24,7 @@ function createClient(instance) {
   const verifyTls = instance.verify_tls !== false;
 
   let sid = null;
+  let authInFlight = null;
 
   function makeDispatcher() {
     // Only inject a custom dispatcher when TLS verification is disabled AND the
@@ -51,20 +52,28 @@ function createClient(instance) {
   }
 
   async function authenticate() {
-    const res = await doFetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: app_password }),
-    });
-    if (!res.ok) {
-      throw new Error(`pihole_auth_failed:${res.status}`);
+    if (authInFlight) return authInFlight;
+    authInFlight = (async () => {
+      const res = await doFetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: app_password }),
+      });
+      if (!res.ok) {
+        throw new Error(`pihole_auth_failed:${res.status}`);
+      }
+      const data = await res.json();
+      if (!data?.session?.sid) {
+        throw new Error('pihole_auth_no_sid');
+      }
+      sid = data.session.sid;
+      return sid;
+    })();
+    try {
+      return await authInFlight;
+    } finally {
+      authInFlight = null;
     }
-    const data = await res.json();
-    if (!data?.session?.sid) {
-      throw new Error('pihole_auth_no_sid');
-    }
-    sid = data.session.sid;
-    return sid;
   }
 
   async function request(path, { method = 'GET', body } = {}) {
