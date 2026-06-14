@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.2] — 2026-06-14
+
+### Fixes
+- v6 stats-hardening (Phase A) — envelope-unwrap adapter + seat-safety + verbatim fixtures (#124)
+
+---
+
 ## [1.79.1] — 2026-06-14
 
 ### Fixes
