@@ -107,3 +107,42 @@ test('getBlocking normalizes string "enabled"/"disabled" → boolean', async () 
   assert.equal(r.blocking, fx.blocking === 'enabled');
   assert.equal('timer' in r, true);
 });
+
+test('testConnection logs out (DELETE /api/auth) to free the seat', async () => {
+  let deleted = false;
+  server = http.createServer((req, res) => {
+    if (req.url === '/api/auth' && req.method === 'POST') { res.end(JSON.stringify({ session:{ sid:'S', valid:true, validity:300 } })); return; }
+    if (req.url === '/api/auth' && req.method === 'DELETE') { deleted = true; res.statusCode = 204; res.end(); return; }
+    if (req.url.startsWith('/api/info/version')) { res.end(JSON.stringify(FX('populated','version'))); return; }
+    res.statusCode = 404; res.end('{}');
+  });
+  const url = await new Promise(r => server.listen(0, () => r(`http://127.0.0.1:${server.address().port}`)));
+  const c = createClient({ id:'p', url, app_password:'x' });
+  const res = await c.testConnection();
+  assert.equal(res.connected, true);
+  assert.equal(deleted, true, 'testConnection must DELETE /api/auth');
+});
+
+test('getSummary throws unsupported_version on shape mismatch (graceful upstream)', async () => {
+  server = http.createServer((req, res) => {
+    if (req.url === '/api/auth') { res.end(JSON.stringify({ session:{ sid:'S', valid:true, validity:300 } })); return; }
+    if (req.url.startsWith('/api/padd')) { res.end(JSON.stringify({ unexpected: true })); return; }
+    res.statusCode = 404; res.end('{}');
+  });
+  const url = await new Promise(r => server.listen(0, () => r(`http://127.0.0.1:${server.address().port}`)));
+  const c = createClient({ id:'p', url, app_password:'x' });
+  await assert.rejects(() => c.getSummary(), /unsupported_version/);
+});
+
+test('testConnection still DELETEs /api/auth when getVersion fails', async () => {
+  let deleted = false;
+  server = http.createServer((req, res) => {
+    if (req.url === '/api/auth' && req.method === 'POST') { res.end(JSON.stringify({ session:{ sid:'S', valid:true, validity:300 } })); return; }
+    if (req.url === '/api/auth' && req.method === 'DELETE') { deleted = true; res.statusCode = 204; res.end(); return; }
+    res.statusCode = 500; res.end('{}');
+  });
+  const url = await new Promise(r => server.listen(0, () => r(`http://127.0.0.1:${server.address().port}`)));
+  const c = createClient({ id:'p', url, app_password:'x' });
+  await assert.rejects(() => c.testConnection());
+  assert.equal(deleted, true, 'logout must fire even when getVersion fails');
+});

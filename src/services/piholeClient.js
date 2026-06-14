@@ -161,13 +161,25 @@ function createClient(instance) {
     return request('/api/info/version');
   }
 
+  async function logout() {
+    if (!sid) return;
+    try {
+      await doFetch('/api/auth', { method: 'DELETE', headers: { 'X-FTL-SID': sid } });
+    } catch { /* best effort */ }
+    sid = null;
+  }
+
   async function testConnection() {
     await authenticate();
-    const v = await getVersion();
-    return {
-      connected: true,
-      version: v?.version?.core?.local?.version || null,
-    };
+    try {
+      const v = await getVersion();
+      return {
+        connected: true,
+        version: v?.version?.core?.local?.version || null,
+      };
+    } finally {
+      await logout();
+    }
   }
 
   return {
