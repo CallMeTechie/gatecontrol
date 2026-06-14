@@ -132,16 +132,19 @@ function createClient(instance) {
     }));
   }
 
-  function getTopDomains(blocked = false) {
-    return request(`/api/stats/top_domains${blocked ? '?blocked=true' : ''}`);
+  async function getTopDomains(blocked = false) {
+    const r = await request(`/api/stats/top_domains${blocked ? '?blocked=true' : ''}`);
+    return (r.domains || []).map(d => ({ domain: d.domain, count: d.count }));
   }
 
-  function getTopClients(blocked = false) {
-    return request(`/api/stats/top_clients${blocked ? '?blocked=true' : ''}`);
+  async function getTopClients(blocked = false) {
+    const r = await request(`/api/stats/top_clients${blocked ? '?blocked=true' : ''}`);
+    return (r.clients || []).map(c => ({ ip: c.ip, count: c.count }));
   }
 
-  function getQueryTypes() {
-    return request('/api/stats/query_types');
+  async function getQueryTypes() {
+    const r = await request('/api/stats/query_types');
+    return r.types || {};
   }
 
   function getBlocking() {

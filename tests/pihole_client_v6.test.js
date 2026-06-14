@@ -72,3 +72,28 @@ test('getHistory unwraps .history → [{t,allowed,blocked}] with underflow guard
   assert.equal(r[0].allowed, Math.max(0, fx[0].total - fx[0].blocked));
   assert.ok(r.every(p => p.allowed >= 0));
 });
+
+test('getTopDomains/getTopClients unwrap envelope arrays; getQueryTypes returns types object', async () => {
+  const url = await serveFixtures('populated', [
+    ['/api/stats/top_domains', 'top_domains'],
+    ['/api/stats/top_clients', 'top_clients'],
+    ['/api/stats/query_types', 'query_types'],
+  ]);
+  const c = createClient({ id: 'p', url, app_password: 'x' });
+  const td = await c.getTopDomains(true);
+  assert.ok(Array.isArray(td) && (td.length === 0 || ('domain' in td[0] && 'count' in td[0])));
+  const tc = await c.getTopClients();
+  assert.ok(Array.isArray(tc) && (tc.length === 0 || ('ip' in tc[0] && 'count' in tc[0])));
+  const qt = await c.getQueryTypes();
+  assert.equal(typeof qt, 'object');
+  assert.equal(Array.isArray(qt), false);
+  const fxqt = FX('populated', 'query_types').types;
+  assert.equal(qt.A, fxqt.A);
+});
+
+test('top lists on EMPTY fixture → empty arrays, no throw', async () => {
+  const url = await serveFixtures('empty', [['/api/stats/top_domains','top_domains'],['/api/stats/top_clients','top_clients']]);
+  const c = createClient({ id: 'p', url, app_password: 'x' });
+  assert.deepEqual(await c.getTopDomains(true), []);
+  assert.deepEqual(await c.getTopClients(), []);
+});
