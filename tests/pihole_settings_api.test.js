@@ -58,6 +58,7 @@ test('POST /settings/pihole/test/:id uses the STORED password', async () => {
   // mock pihole
   let gotPassword = null;
   const server = http.createServer((req, res) => {
+    if (req.url === '/api/auth' && req.method === 'DELETE') { res.statusCode = 204; res.end(); return; }
     if (req.url === '/api/auth') { let b=''; req.on('data',c=>b+=c); req.on('end',()=>{ gotPassword = JSON.parse(b||'{}').password; res.end(JSON.stringify({ session:{ sid:'S', valid:true, validity:300 } })); }); return; }
     if (req.url.startsWith('/api/info/version')) { res.end(JSON.stringify({ version:{ core:{ local:{ version:'v6.4.2' } } } })); return; }
     res.statusCode=404; res.end('{}');

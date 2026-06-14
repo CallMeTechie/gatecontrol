@@ -24,6 +24,7 @@ function createClient(instance) {
   const verifyTls = instance.verify_tls !== false;
 
   let sid = null;
+  let authInFlight = null;
 
   function makeDispatcher() {
     // Only inject a custom dispatcher when TLS verification is disabled AND the
@@ -51,20 +52,28 @@ function createClient(instance) {
   }
 
   async function authenticate() {
-    const res = await doFetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: app_password }),
-    });
-    if (!res.ok) {
-      throw new Error(`pihole_auth_failed:${res.status}`);
+    if (authInFlight) return authInFlight;
+    authInFlight = (async () => {
+      const res = await doFetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: app_password }),
+      });
+      if (!res.ok) {
+        throw new Error(`pihole_auth_failed:${res.status}`);
+      }
+      const data = await res.json();
+      if (!data?.session?.sid) {
+        throw new Error('pihole_auth_no_sid');
+      }
+      sid = data.session.sid;
+      return sid;
+    })();
+    try {
+      return await authInFlight;
+    } finally {
+      authInFlight = null;
     }
-    const data = await res.json();
-    if (!data?.session?.sid) {
-      throw new Error('pihole_auth_no_sid');
-    }
-    sid = data.session.sid;
-    return sid;
   }
 
   async function request(path, { method = 'GET', body } = {}) {
@@ -112,29 +121,44 @@ function createClient(instance) {
   // --- Public API ---
 
   async function getSummary() {
-    const data = await request('/api/stats/summary');
-    assertShape(data, ['queries.total', 'queries.blocked']);
-    return data;
+    const p = await request('/api/padd');
+    // Only the ESSENTIAL required paths are hard-asserted (queries.*). gravity_size/active_clients
+    // can be absent on a fresh/empty Pi-hole → default instead of throwing unsupported_version.
+    assertShape(p, ['queries.total', 'queries.blocked']);
+    return {
+      queries: { total: p.queries.total, blocked: p.queries.blocked },
+      gravity: { domains_being_blocked: p.gravity_size ?? 0 },
+      clients: { active: p.active_clients ?? 0 },
+    };
   }
 
-  function getHistory() {
-    return request('/api/history');
+  async function getHistory() {
+    const r = await request('/api/history');
+    return (r.history || []).map(h => ({
+      t: h.timestamp,
+      allowed: Math.max(0, (h.total || 0) - (h.blocked || 0)),
+      blocked: h.blocked || 0,
+    }));
   }
 
-  function getTopDomains(blocked = false) {
-    return request(`/api/stats/top_domains${blocked ? '?blocked=true' : ''}`);
+  async function getTopDomains(blocked = false) {
+    const r = await request(`/api/stats/top_domains${blocked ? '?blocked=true' : ''}`);
+    return (r.domains || []).map(d => ({ domain: d.domain, count: d.count }));
   }
 
-  function getTopClients(blocked = false) {
-    return request(`/api/stats/top_clients${blocked ? '?blocked=true' : ''}`);
+  async function getTopClients(blocked = false) {
+    const r = await request(`/api/stats/top_clients${blocked ? '?blocked=true' : ''}`);
+    return (r.clients || []).map(c => ({ ip: c.ip, count: c.count }));
   }
 
-  function getQueryTypes() {
-    return request('/api/stats/query_types');
+  async function getQueryTypes() {
+    const r = await request('/api/stats/query_types');
+    return r.types || {};
   }
 
-  function getBlocking() {
-    return request('/api/dns/blocking');
+  async function getBlocking() {
+    const r = await request('/api/dns/blocking');
+    return { blocking: r.blocking === 'enabled', timer: (r.timer ?? null) };
   }
 
   function setBlocking(enabled, timer) {
@@ -146,13 +170,25 @@ function createClient(instance) {
     return request('/api/info/version');
   }
 
+  async function logout() {
+    if (!sid) return;
+    try {
+      await doFetch('/api/auth', { method: 'DELETE', headers: { 'X-FTL-SID': sid } });
+    } catch { /* best effort */ }
+    sid = null;
+  }
+
   async function testConnection() {
     await authenticate();
-    const v = await getVersion();
-    return {
-      connected: true,
-      version: v?.version?.core?.local?.version || null,
-    };
+    try {
+      const v = await getVersion();
+      return {
+        connected: true,
+        version: v?.version?.core?.local?.version || null,
+      };
+    } finally {
+      await logout();
+    }
   }
 
   return {

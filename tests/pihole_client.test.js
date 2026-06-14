@@ -16,9 +16,9 @@ test('authenticates once and reuses SID across calls', async () => {
   await start(async (req, res) => {
     calls.push(req.url);
     if (req.url === '/api/auth') { sidIssued++; res.end(JSON.stringify({ session:{ sid:'SID1', csrf:'c', validity:300, valid:true } })); return; }
-    if (req.url.startsWith('/api/stats/summary')) {
+    if (req.url.startsWith('/api/padd')) {
       assert.equal(req.headers['x-ftl-sid'], 'SID1');
-      res.end(JSON.stringify({ queries:{ total:10, blocked:2 }, gravity:{ domains_being_blocked:5 }, clients:{ active:1 } })); return;
+      res.end(JSON.stringify({ queries:{ total:10, blocked:2 }, gravity_size:5, active_clients:1 })); return;
     }
     res.statusCode = 404; res.end('{}');
   });
@@ -32,10 +32,10 @@ test('re-authenticates once on 401 then succeeds', async () => {
   let summaryHits = 0;
   await start(async (req, res) => {
     if (req.url === '/api/auth') { sidIssued++; res.end(JSON.stringify({ session:{ sid:`SID${sidIssued}`, validity:300, valid:true } })); return; }
-    if (req.url.startsWith('/api/stats/summary')) {
+    if (req.url.startsWith('/api/padd')) {
       summaryHits++;
       if (summaryHits === 1) { res.statusCode = 401; res.end('{}'); return; }
-      res.end(JSON.stringify({ queries:{ total:1, blocked:0 }, gravity:{ domains_being_blocked:0 }, clients:{ active:0 } })); return;
+      res.end(JSON.stringify({ queries:{ total:1, blocked:0 }, gravity_size:0, active_clients:0 })); return;
     }
     res.statusCode = 404; res.end('{}');
   });
@@ -48,7 +48,7 @@ test('re-authenticates once on 401 then succeeds', async () => {
 test('flags unsupported_version when summary schema is wrong', async () => {
   await start(async (req, res) => {
     if (req.url === '/api/auth') { res.end(JSON.stringify({ session:{ sid:'S', validity:300, valid:true } })); return; }
-    if (req.url.startsWith('/api/stats/summary')) { res.end(JSON.stringify({ unexpected:true })); return; }
+    if (req.url.startsWith('/api/padd')) { res.end(JSON.stringify({ unexpected:true })); return; }
     res.statusCode = 404; res.end('{}');
   });
   const c = createClient({ id:'p1', url: baseUrl(), app_password:'pw' });
