@@ -5,6 +5,7 @@ const { requireFeature } = require('../../middleware/license');
 const pihole = require('../../services/pihole');
 const activity = require('../../services/activity');
 const logger = require('../../utils/logger');
+const { blockingSource } = require('./piholeAudit');
 
 const router = Router();
 
@@ -62,8 +63,8 @@ router.post('/blocking', (req, res) => {
   const timerSec = Number.isInteger(timer) && timer >= 1 ? timer : undefined;
   pihole.setBlocking(enabled, timerSec).catch(err => logger.warn({ err: err.message }, 'pihole resync after setBlocking failed'));
   activity.log('pihole_blocking_changed', `Pi-hole blocking set to ${enabled}`, {
-    source: req.user?.id || 'api',
-    details: { enabled, timer: timerSec },
+    source: blockingSource(req),
+    details: { enabled, timer: timerSec, peerId: req.tokenPeerId || null, tokenId: req.tokenId || null },
   });
   res.json({ ok: true });
 });

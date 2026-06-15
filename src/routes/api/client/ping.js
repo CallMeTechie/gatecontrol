@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const { hasFeature } = require('../../../services/license');
+const tokens = require('../../../services/tokens');
 
 const router = Router();
 
@@ -23,6 +24,9 @@ router.get('/permissions', (req, res) => {
       traffic: hasScope('client:traffic'),
       dns: hasScope('client:dns'),
       rdp: hasScope('client:rdp') && hasFeature('remote_desktop'),
+      // pihole flags derive from checkScope itself (single source of truth with enforcement).
+      pihole: tokens.checkScope(scopes, '/api/v1/pihole/summary', 'GET') && hasFeature('pihole_integration'),
+      piholeControl: tokens.checkScope(scopes, '/api/v1/pihole/blocking', 'POST') && hasFeature('pihole_integration'),
     },
     scopes,
   });

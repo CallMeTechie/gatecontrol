@@ -8,10 +8,12 @@
   var adminScopes = [
     'full-access', 'read-only', 'peers', 'routes', 'settings',
     'webhooks', 'logs', 'system', 'backup',
-    'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'
+    'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
+    'pihole', 'pihole:control'
   ];
   var userScopes = [
-    'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'
+    'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
+    'pihole'
   ];
 
   function getAllowedScopes(role) {
