@@ -55,11 +55,23 @@ start_dnsmasq
 # no longer running — because it crashed, or services/dns.js terminated it to
 # apply a new config — restart it so the current /app/config/dnsmasq.conf
 # (e.g. updated Pi-hole upstreams) takes effect.
+FAILS=0
 while true; do
   sleep 1 &
   wait $!
-  if ! kill -0 "$DNSMASQ_PID" 2>/dev/null; then
-    echo "» dnsmasq is not running — restarting to apply current config..."
-    start_dnsmasq
+  if kill -0 "$DNSMASQ_PID" 2>/dev/null; then
+    FAILS=0
+    continue
+  fi
+  FAILS=$((FAILS + 1))
+  echo "» dnsmasq is not running (attempt #${FAILS}) — restarting to apply current config..."
+  start_dnsmasq
+  # Back off on repeated immediate failures (e.g. a persistent bind conflict or
+  # broken conf) so we don't tight-loop. Keep retrying rather than giving up —
+  # a real restart, or the conflicting listener clearing, lets it recover.
+  if [ "$FAILS" -ge 5 ]; then
+    echo "» dnsmasq has failed ${FAILS} times — backing off 10s before next check..."
+    sleep 10 &
+    wait $!
   fi
 done

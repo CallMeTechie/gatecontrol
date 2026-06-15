@@ -34,6 +34,23 @@ test('apply is idempotent (no second reload for identical state)', () => {
   assert.equal(reloads, 1, 'identical apply should not reload again');
 });
 
+test('apply on a fresh instance skips reload when conf already routes to the same upstreams (boot case)', () => {
+  // Simulate entrypoint.sh having baked the chain into the conf before boot:
+  // add-subnet + the exact pihole upstreams already present.
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.5\n');
+  // A fresh chain (lastApplied='default', as on every process start) must NOT
+  // restart dnsmasq when the effective upstreams already match.
+  chain().apply(['10.8.0.5']);
+  assert.equal(reloads, 0, 'should not reload/restart when upstreams already applied');
+});
+
+test('apply still reloads when conf upstreams differ from desired', () => {
+  // add-subnet present but wrong upstream → must apply + reload.
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.9\n');
+  chain().apply(['10.8.0.5']);
+  assert.equal(reloads, 1);
+});
+
 test('revert restores default upstreams and removes managed block', () => {
   const ch = chain();
   ch.apply(['10.8.0.5']);

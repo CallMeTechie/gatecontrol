@@ -54,6 +54,22 @@ function makeChain({ confPath, defaults, reload }) {
       if (lastApplied === key) return;
 
       let content = fs.readFileSync(confPath, 'utf8');
+
+      // If the conf already routes to exactly these upstreams with ECS, skip the
+      // rewrite + reload entirely. entrypoint.sh bakes the same chain into the
+      // conf at boot, so this avoids a redundant dnsmasq restart (and the brief
+      // DNS blip that comes with it) on every container start. Compared
+      // semantically (server= set + add-subnet presence), independent of the
+      // exact byte layout entrypoint.sh vs. this writer produce.
+      const currentServers = (content.match(/^server=.*/gm) || [])
+        .map(l => l.slice('server='.length).trim()).sort();
+      const hasEcs = /^add-subnet=/m.test(content);
+      if (hasEcs && JSON.stringify(currentServers) === JSON.stringify([...dnsIps].sort())) {
+        lastApplied = key;
+        logger.info(`[piholeDnsChain] upstreams already applied, no restart: ${dnsIps.join(', ')}`);
+        return;
+      }
+
       content = stripManaged(content);
       content = stripServerLines(content);
 
