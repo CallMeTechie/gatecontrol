@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.80.0] — 2026-06-15
+
+### Features
+- Phase 2 server-companion — capability flags, token scopes, blocking audit identity (#125)
+
+---
+
 ## [1.79.2] — 2026-06-14
 
 ### Fixes
