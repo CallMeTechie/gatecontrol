@@ -21,6 +21,14 @@ const apiLimiter = rateLimit({
     : config.auth.rateLimitApi,
   standardHeaders: true,
   legacyHeaders: true,
+  // Don't count failed (4xx/5xx) responses toward the limit. This breaks the
+  // feedback loop where, once the window is exhausted, the dashboard's continued
+  // polling keeps getting 429s that themselves pin the counter — so the window
+  // never recovers until the process restarts. With this, only successful
+  // requests count and an exhausted window self-recovers within windowMs.
+  // Intentionally NOT applied to the login / route-auth limiters, where failed
+  // attempts MUST count (brute-force protection).
+  skipFailedRequests: true,
   keyGenerator: (req) => req.tokenAuth ? `token:${req.tokenId}` : req.ip,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.api') });
