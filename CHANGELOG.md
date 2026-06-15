@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.80.2] — 2026-06-15
+
+### Fixes
+- skip failed requests on API limiter so a 429 storm can't pin the window (#129)
+
+---
+
 ## [1.80.1] — 2026-06-15
 
 ### Fixes
