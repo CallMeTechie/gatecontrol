@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { blockingSource } = require('../src/routes/api/piholeAudit');
 
 test('blocking audit source prefers session user', () => {
-  assert.equal(blockingSource({ user: { id: 7 } }), 7);
+  assert.equal(blockingSource({ session: { userId: 7 } }), 7);
 });
 test('blocking audit source uses peer id for peer-scoped token', () => {
   assert.equal(blockingSource({ tokenPeerId: 74, tokenId: 68 }), 'peer:74');
