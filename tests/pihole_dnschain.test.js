@@ -6,13 +6,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { makeChain, buildDnsToken } = require('../src/services/piholeDnsChain');
 
-let confPath, reloads;
+let tmpDir, confPath, reloads;
 beforeEach(() => {
-  confPath = path.join(os.tmpdir(), `dnsmasq-test-${process.pid}-${Math.random().toString(36).slice(2)}.conf`);
+  // mkdtempSync creates a uniquely-named, owner-only temp dir (avoids the
+  // predictable-temp-file class flagged by CodeQL js/insecure-temporary-file).
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dnsmasq-test-'));
+  confPath = path.join(tmpDir, 'dnsmasq.conf');
   fs.writeFileSync(confPath, 'bind-dynamic\nserver=1.1.1.1\nserver=8.8.8.8\n');
   reloads = 0;
 });
-afterEach(() => { try { fs.unlinkSync(confPath); } catch {} });
+afterEach(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
 
 function chain() { return makeChain({ confPath, defaults: ['1.1.1.1','8.8.8.8'], reload: () => { reloads++; } }); }
 
