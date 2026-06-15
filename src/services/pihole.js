@@ -29,7 +29,9 @@ function setDesired(v) {
 const dnsChain = makeChain({
   confPath: process.env.GC_DNSMASQ_CONF || '/app/config/dnsmasq.conf',
   defaults: (process.env.GC_DNSMASQ_UPSTREAMS || '1.1.1.1,8.8.8.8').split(','),
-  reload: () => { if (typeof dns.reloadDnsmasq === 'function') dns.reloadDnsmasq(); },
+  // Chain apply/revert changes upstream `server=` lines, which dnsmasq only
+  // picks up on a real restart (SIGHUP is insufficient) — use restartDnsmasq.
+  reload: () => { if (typeof dns.restartDnsmasq === 'function') dns.restartDnsmasq(); },
 });
 
 async function peersProvider() {
