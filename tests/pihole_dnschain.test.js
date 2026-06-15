@@ -6,13 +6,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { makeChain, buildDnsToken } = require('../src/services/piholeDnsChain');
 
-let confPath, reloads;
+let tmpDir, confPath, reloads;
 beforeEach(() => {
-  confPath = path.join(os.tmpdir(), `dnsmasq-test-${process.pid}-${Math.random().toString(36).slice(2)}.conf`);
+  // mkdtempSync creates a uniquely-named, owner-only temp dir (avoids the
+  // predictable-temp-file class flagged by CodeQL js/insecure-temporary-file).
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dnsmasq-test-'));
+  confPath = path.join(tmpDir, 'dnsmasq.conf');
   fs.writeFileSync(confPath, 'bind-dynamic\nserver=1.1.1.1\nserver=8.8.8.8\n');
   reloads = 0;
 });
-afterEach(() => { try { fs.unlinkSync(confPath); } catch {} });
+afterEach(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
 
 function chain() { return makeChain({ confPath, defaults: ['1.1.1.1','8.8.8.8'], reload: () => { reloads++; } }); }
 
@@ -32,6 +35,23 @@ test('apply is idempotent (no second reload for identical state)', () => {
   ch.apply(['10.8.0.5']);
   ch.apply(['10.8.0.5']);
   assert.equal(reloads, 1, 'identical apply should not reload again');
+});
+
+test('apply on a fresh instance skips reload when conf already routes to the same upstreams (boot case)', () => {
+  // Simulate entrypoint.sh having baked the chain into the conf before boot:
+  // add-subnet + the exact pihole upstreams already present.
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.5\n');
+  // A fresh chain (lastApplied='default', as on every process start) must NOT
+  // restart dnsmasq when the effective upstreams already match.
+  chain().apply(['10.8.0.5']);
+  assert.equal(reloads, 0, 'should not reload/restart when upstreams already applied');
+});
+
+test('apply still reloads when conf upstreams differ from desired', () => {
+  // add-subnet present but wrong upstream → must apply + reload.
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.9\n');
+  chain().apply(['10.8.0.5']);
+  assert.equal(reloads, 1);
 });
 
 test('revert restores default upstreams and removes managed block', () => {

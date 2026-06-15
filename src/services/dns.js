@@ -302,6 +302,22 @@ function reloadDnsmasq() {
   catch (err) { logger.warn({ err: err.message }, 'dnsmasq HUP failed'); }
 }
 
+/**
+ * Restart dnsmasq so it re-reads its configuration FILE (upstream `server=`
+ * and `add-subnet` lines written by the Pi-hole DNS chain). SIGHUP
+ * (reloadDnsmasq) only reloads hosts/cache — dnsmasq does NOT re-read
+ * `server=` lines on SIGHUP, so chain apply/revert needs a real restart.
+ *
+ * dnsmasq is supervised by scripts/wg-wrapper.sh, which respawns it after it
+ * exits (reading the current config); terminating it therefore performs a
+ * clean restart. Tolerates dnsmasq being absent (tests/cold-start) — pkill
+ * exits non-zero, which we log rather than throw.
+ */
+function restartDnsmasq() {
+  try { require('node:child_process').execFileSync('pkill', ['-x', 'dnsmasq']); }
+  catch (err) { logger.warn({ err: err.message }, 'dnsmasq restart (pkill) failed'); }
+}
+
 // ────────────────────────────────────────────────────────────
 // Status
 // ────────────────────────────────────────────────────────────
@@ -352,6 +368,7 @@ module.exports = {
   scheduleRebuild,
   flushPendingRebuild,
   reloadDnsmasq,
+  restartDnsmasq,
   getStatus,
   RESERVED_HOSTNAMES,
 };

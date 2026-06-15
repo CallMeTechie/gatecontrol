@@ -18,3 +18,9 @@ test('dns.reloadDnsmasq is exported and does not throw when dnsmasq absent', () 
   assert.equal(typeof dns.reloadDnsmasq, 'function');
   assert.doesNotThrow(() => dns.reloadDnsmasq());
 });
+
+test('dns.restartDnsmasq is exported and does not throw when dnsmasq absent', () => {
+  const dns = require('../src/services/dns');
+  assert.equal(typeof dns.restartDnsmasq, 'function');
+  assert.doesNotThrow(() => dns.restartDnsmasq());
+});
