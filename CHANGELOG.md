@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.80.1] — 2026-06-15
+
+### Fixes
+- apply DNS-chain changes via real dnsmasq restart (SIGHUP can't reload upstreams) (#128)
+
+---
+
 ## [1.80.0] — 2026-06-15
 
 ### Features
