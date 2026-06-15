@@ -51,3 +51,19 @@ test('token without pihole scope is denied on pihole reads (enforcement already 
   const res = await supertest(app).get('/api/v1/pihole/summary').set('X-API-Key', without);
   assert.equal(res.status, 403);
 });
+
+test('pihole flags are false when pihole_integration feature is off', async () => {
+  license._overrideForTest({ pihole_integration: false });
+  try {
+    const app = getAgent().app;
+    const withRead = await makeToken(['client', 'pihole']);
+    const r = await supertest(app)
+      .get('/api/v1/client/permissions')
+      .set('X-API-Key', withRead)
+      .expect(200);
+    assert.equal(r.body.permissions.pihole, false);
+    assert.equal(r.body.permissions.piholeControl, false);
+  } finally {
+    license._overrideForTest({ pihole_integration: true });
+  }
+});
