@@ -713,6 +713,7 @@
       const createIpFilter = document.getElementById('create-route-ip-filter')?.classList.contains('on') || false;
       const createAcl = document.getElementById('create-route-acl')?.classList.contains('on') || false;
       const createCompress = document.getElementById('create-route-compress')?.classList.contains('on') || false;
+      const createExternal = document.getElementById('create-route-external')?.classList.contains('on') || false;
       const createRateLimit = document.getElementById('create-route-rate-limit')?.classList.contains('on') || false;
       const createRetry = document.getElementById('create-route-retry')?.classList.contains('on') || false;
       const createCb = document.getElementById('create-route-circuit-breaker')?.classList.contains('on') || false;
@@ -731,6 +732,7 @@
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         compress_enabled: createCompress,
+        external_enabled: createExternal,
         monitoring_enabled: createMonitoring,
         ip_filter_enabled: createIpFilter,
         ip_filter_mode: document.getElementById('create-ip-filter-mode')?.value || 'whitelist',
@@ -838,6 +840,8 @@
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
         var ccmp = document.getElementById('create-route-compress');
         if (ccmp) ccmp.classList.remove('on');
+        var cext = document.getElementById('create-route-external');
+        if (cext) cext.classList.remove('on');
         var cmt = document.getElementById('create-route-monitoring');
         if (cmt) cmt.classList.remove('on');
         var cipf = document.getElementById('create-route-ip-filter');
