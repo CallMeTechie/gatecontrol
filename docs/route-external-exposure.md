@@ -39,7 +39,7 @@ Route-Mutationen (create / update / remove / toggle / batch + service-bundle cre
   `acl_enabled`-Flag.
 - Nutzt `remote_ip` (Verbindungs-IP), **niemals** `client_ip` (X-Forwarded-For ist
   spoofbar — siehe Phase-0-Ergebnis unten).
-- Gilt nur für **HTTP-Routen** (L4 ist strukturell anders — Folgephase).
+- Gilt für **HTTP- und L4-Routen** (fail-closed, `INTERNAL_ONLY_RANGES`; L4-Detail siehe [L4-Außen-Sperre](#l4-außen-sperre--implementiert) unten).
 
 **Latenter Bug mitgefixt:** Der Caddy-Grouping-Schritt verwarf für einfache
 (nicht-Forward-Auth) Single-Domain-Routen den inneren `remote_ip`-Matcher — das hätte
@@ -61,7 +61,7 @@ Schutz (→ Rollout-Review).
 
 - **Create-Wizard**: Toggle „Von extern erreichbar" (Default = aus).
 - **Edit-Wizard**: derselbe Toggle, jederzeit umschaltbar.
-- **Routen-Liste**: Badge „Nur intern" für HTTP-Routen mit `external_enabled=0`.
+- **Routen-Liste**: Badge „Nur intern" für HTTP- und L4-Routen mit `external_enabled=0`.
 
 ## Phase-0 Verifikationsergebnisse (2026-06-16, Live-Instanz)
 
@@ -135,45 +135,60 @@ ORDER BY domain;
 2. Liste durchgehen: jede Route, die **nicht** aus dem Internet erreichbar sein muss, im
    Edit-Wizard auf „nur intern" stellen.
 
+3. L4-Routen (SSH-/RDP-Ports) separat prüfen:
+
+```sql
+-- Aktuell extern erreichbare L4-Routen (Review-Kandidaten):
+SELECT id, domain, l4_protocol, l4_listen_port, external_enabled FROM routes
+WHERE route_type = 'l4' AND external_enabled = 1 ORDER BY l4_listen_port;
+```
+
+> **Warnung — Self-Lockout:** Verwaltungs- und Notfall-L4-Routen — SSH
+> `ssh.domaincaster.com:2022` (NAS-Zugang), RDP (3389/13389/2024) — über die der Host
+> selbst administriert wird, sollten **nur dann** auf „nur intern" gestellt werden, wenn
+> VPN-Zugang dauerhaft sichergestellt ist; vorzugsweise einen externen Notfallpfad offen
+> lassen. Wer eine solche Route intern-only schaltet, während er extern darauf angewiesen
+> ist, sperrt sich aus (fail-closed, kein Fallback).
+
 > Auf der Live-Instanz: da kein `sqlite3`-CLI verfügbar ist, via
 > `docker exec gatecontrol node -e '…better-sqlite3 auf /data/gatecontrol.db…'` ausführen.
 
-## Bekannte Grenzen / Folgephase (L4)
+## L4-Außen-Sperre — implementiert
 
-### Was für L4 bereits funktioniert
+_Nachgezogen mit Branch `feature/route-external-exposure-l4`, 2026-06-16._
 
-- **Datenspeicherung:** Die Spalte `routes.external_enabled` sowie der zugehörige Service,
-  die API und die UI sind vollständig generisch implementiert — der Wert wird für L4-Routen
-  (SSH/RDP-Portforwards) genauso gespeichert und gelesen wie für HTTP-Routen.
-- **Interne DNS-Auflösung:** `src/services/dns.js` emittiert A-Records für **alle** Routen
-  mit Domain, unabhängig vom Routentyp. Eine L4-Route mit Domain wird damit innerhalb des
-  VPN auf den Gateway aufgelöst — deckungsgleich mit HTTP-Routen.
+Der `remote_ip`-Matcher ist nun auch im `apps.layer4`-Zweig der Caddy-Konfiguration
+aktiv (`l4Routes`-Zweig in `src/services/caddyConfig.js`). Er deckt TCP, UDP und alle
+TLS-Modi (none / passthrough / terminate) ab — fail-closed, pro Route, einschließlich
+SNI-Multiplexing: gemischte interne und externe Routen auf demselben TLS-Port werden
+unabhängig voneinander gesperrt.
 
-### Was NOCH NICHT umgesetzt ist: die Außen-Sperre für L4
+Die verbleibende Annahme gilt weiterhin: kein Reverse-Proxy/CDN vor dem Hub, der die
+Quell-IP umschreibt. Käme ein solcher Proxy, würde `remote_ip` zur Proxy-IP — das Gate
+bräche analog zum HTTP-Gate.
 
-Der HTTP-Außen-Schalter setzt einen `remote_ip`-Matcher im `http`-App-Pfad von Caddy
-(Funktion `httpRoutes`-Schleife in `src/services/caddyConfig.js`, Zweig `apps.http`).
-L4-Routen laufen über einen separaten Caddy-Pfad (`l4Routes`-Zweig in `caddyConfig.js`,
-Ziel `apps.layer4`). Um dort eine Außen-Sperre zu realisieren, müsste ein
-**Layer4-Quell-IP-Matcher** (`remote_ip`- bzw. `subnet`-Matcher im `apps.layer4`-Zweig)
-ergänzt werden.
+### Verifikation (Phase 0) — 2026-06-16, Live-Gateway
 
-Dieser Matcher wurde im Rahmen dieses Plans bewusst **nicht** umgesetzt, um nicht beide
-Caddy-Subsysteme (`http` und `layer4`) in einem Schritt zu verändern und damit das
-Risiko und den Reviewaufwand der Implementierung zu erhöhen.
+Empirische Prüfung gegen die laufende Instanz mit chirurgischen Probe-Servern; SSH/RDP
+im Produktivbetrieb blieben unangetastet.
 
-### Konsequenz heute
+- **Modul-Präsenz:** Der caddy-l4-Build enthält `layer4.matchers.remote_ip` (und
+  `remote_ip_list`). ✓
+- **TCP (tls=none):** Eine Quelle im VPN-Bereich (10.8.0.2 → Hub) wird durchgestellt und
+  gespiegelt; eine externe Quelle (127.0.0.1, kein VPN) verbindet sich auf TCP-Ebene,
+  empfängt aber keine Daten — am selben Listener, nur die Quell-IP unterscheidet sich. ✓
+- **UDP:** Ein Datagramm aus dem VPN-Bereich wird gespiegelt; ein externes Datagramm wird
+  verworfen (kein Echo) — reproduzierbar. ✓
+- **TCP+TLS (Zertifikat-/Upstream-freier Sperrnachweis):** Eine externe Quelle gegen ein
+  internes SNI (gesperrt) erhält die Verbindung geschlossen **vor dem TLS-ServerHello**
+  (`openssl s_client` liest 0 Byte) — der `remote_ip`-Matcher greift vor TLS. Kontrollen:
+  dieselbe externe Quelle gegen ein ungesperrtes SNI wird bedient; eine VPN-Quelle gegen
+  das gesperrte SNI wird bedient — isoliert die Quell-IP-Sperre (nicht SNI-Mismatch) als
+  Ursache. ✓
 
-Eine L4-Route mit `external_enabled=0` ist weiterhin extern erreichbar, sofern ihr
-Listen-Port im Firewall/Portforwarding offen ist. Der Schalter hat für L4-Routen
-**aktuell keine sperrende Wirkung** — er wird lediglich gespeichert, und die interne
-DNS-Auflösung funktioniert korrekt. Als Außen-Sperre wirkt der Wert für L4 noch nicht.
+### Was weiterhin wie bisher funktioniert
 
-### Empfehlung
-
-Als eigenständige Folgephase einplanen (separater Implementierungsplan):
-
-- Layer4-`remote_ip`/`subnet`-Matcher analog zum HTTP-Gate im `apps.layer4`-Zweig
-  ergänzen (fail-closed, `INTERNAL_ONLY_RANGES`).
-- Zugehörigen Integrationstest fixieren, der prüft, dass externe Verbindungen auf eine
-  L4-Route mit `external_enabled=0` abgewiesen werden.
+- **Datenspeicherung und API:** `routes.external_enabled` sowie Service, API und UI sind
+  generisch — kein weiteres Datenbankschema erforderlich.
+- **Interne DNS-Auflösung:** `src/services/dns.js` emittiert A-Records für alle Routen mit
+  Domain, unabhängig vom Routentyp.
