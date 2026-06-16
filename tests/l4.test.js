@@ -221,8 +221,11 @@ test('L4 gate: mixed-SNI port — internal route gated, external route not', () 
     { id: 2, domain: 'ext.example.com', target_ip: '10.8.0.8', target_port: 443, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough', external_enabled: 1 },
   ], RANGES);
   const routes = Object.values(servers)[0].routes;
-  const intR = routes.find(x => x.match[0].tls.sni.includes('int.example.com'));
-  const extR = routes.find(x => x.match[0].tls.sni.includes('ext.example.com'));
+  // Find by EXACT SNI equality (single-element sni array). Exact comparison
+  // avoids js/incomplete-url-substring-sanitization that a .includes() of a
+  // host literal would trip (mirrors findRouteByHost in route_external_exposure.test.js).
+  const intR = routes.find(x => x.match[0].tls.sni[0] === 'int.example.com');
+  const extR = routes.find(x => x.match[0].tls.sni[0] === 'ext.example.com');
   assert.ok(intR.match[0].remote_ip, 'internal SNI route is gated');
   assert.ok(!extR.match[0].remote_ip, 'external SNI route is NOT gated');
 });
