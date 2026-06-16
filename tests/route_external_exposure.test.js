@@ -300,3 +300,79 @@ describe('routes service: DNS rebuild on mutations', () => {
     assert.equal(rebuildCalls, 1, 'batch delete of 2 routes must trigger exactly 1 rebuild');
   });
 });
+
+describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
+  // Own isolated DB so the prior describes' DB swaps / cache deletions can't
+  // bleed in. Mirrors the caddyConfig_contract harness.
+  before(() => {
+    const tmp4 = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ext-gate-'));
+    process.env.GC_DB_PATH = path.join(tmp4, 'test.db');
+    process.env.GC_DATA_DIR = tmp4;
+    process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
+    process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+    [
+      '../config/default',
+      '../src/db/connection',
+      '../src/db/migrations',
+      '../src/services/caddyConfig',
+      '../src/services/caddyAcl',
+    ].forEach((p) => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
+    require('../src/db/migrations').runMigrations();
+  });
+
+  it('restricts internal-only http route to VPN subnet only (no client_ip)', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    const cfg = buildCaddyConfig([
+      { id: 1, domain: 'int.example.com', route_type: 'http', https_enabled: 1,
+        target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+        external_enabled: 0, enabled: 1 },
+    ]);
+    const json = JSON.stringify(cfg);
+    assert.ok(json.includes('10.8.0.0/24'), 'VPN subnet present');
+    assert.ok(json.includes('"remote_ip"'), 'uses remote_ip matcher');
+    const intSlice = json.split('int.example.com')[1] || '';
+    assert.ok(!intSlice.includes('"client_ip"'), 'does NOT use client_ip for the gate');
+  });
+
+  it('does NOT restrict an external route', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    const cfg = buildCaddyConfig([
+      { id: 2, domain: 'ext.example.com', route_type: 'http', https_enabled: 1,
+        target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+        external_enabled: 1, enabled: 1 },
+    ]);
+    const route = JSON.stringify(cfg).split('ext.example.com')[1] || '';
+    assert.ok(!route.includes('10.8.0.0/24'), 'external route is not subnet-restricted');
+  });
+
+  it('internal-only route with acl_enabled but ZERO peers still fails closed (subnet-restricted)', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    const cfg = buildCaddyConfig([
+      { id: 3, domain: 'acl0.example.com', route_type: 'http', https_enabled: 1,
+        target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+        external_enabled: 0, acl_enabled: 1, enabled: 1 },
+    ]);
+    const slice = JSON.stringify(cfg).split('acl0.example.com')[1] || '';
+    assert.ok(slice.includes('10.8.0.0/24'), 'falls closed to VPN subnet, not open');
+  });
+
+  it('internal-only route with acl_enabled AND a selected peer keeps the stricter /32 matcher', () => {
+    const db = require('../src/db/connection').getDb();
+    const { setAclPeers, buildCaddyConfig } = require('../src/services/caddyConfig');
+    // Seed a real route + peer + ACL selection (route_peer_acl has FKs to both
+    // routes and peers) so getAclPeers(route.id) returns a non-empty set.
+    db.prepare('INSERT INTO routes (id, domain, target_ip, target_port, route_type, acl_enabled, external_enabled) VALUES (?,?,?,?,?,?,?)')
+      .run(4004, 'aclp.example.com', '10.8.0.7', 80, 'http', 1, 0);
+    db.prepare('INSERT INTO peers (id, name, public_key, allowed_ips, enabled) VALUES (?,?,?,?,?)')
+      .run(950, 'acl-peer', 'pkAcl', '10.8.0.42/32', 1);
+    setAclPeers(4004, [950]);
+    const cfg = buildCaddyConfig([
+      { id: 4004, domain: 'aclp.example.com', route_type: 'http', https_enabled: 1,
+        target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+        external_enabled: 0, acl_enabled: 1, enabled: 1 },
+    ]);
+    const slice = JSON.stringify(cfg).split('aclp.example.com')[1] || '';
+    assert.ok(slice.includes('10.8.0.42/32'), 'keeps the per-peer /32 matcher');
+    assert.ok(!slice.includes('10.8.0.0/24'), 'is NOT widened to the whole VPN subnet');
+  });
+});
