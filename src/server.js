@@ -106,6 +106,15 @@ async function start() {
     try { require('./services/pihole').start(); }
     catch (err) { logger.warn({ err: err.message }, 'pihole start failed'); }
 
+    // Internal DNS — rebuild the addn-hosts file on boot so route domains
+    // resolve to the gateway immediately. Without this, the file only gets
+    // its route A-records on the next peer/route mutation, leaving internal
+    // resolution stale after every restart (innen-immer temporarily dead).
+    // Best-effort: rebuildNow() checks config.dns.enabled itself and a DNS
+    // failure must never block server boot.
+    try { require('./services/dns').rebuildNow(); }
+    catch (err) { logger.warn({ err: err.message }, 'initial DNS hosts-file rebuild failed'); }
+
     // Caddy reconciler — periodic detection-only check that the live
     // Caddy config matches the DB state via @id marker comparison.
     // Auto-repair is off by default; enable with GC_CADDY_AUTO_RECONCILE=1
