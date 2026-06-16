@@ -530,9 +530,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // real connection IP (NOT X-Forwarded-For) → cannot be spoofed via headers;
     // never use client_ip here. (Phase-0 empirically verified: ACME still
     // issues, VPN reaches, external is blocked, XFF spoof fails.)
-    // NOTE: this gate is HTTP-only by design. L4 internal-only enforcement is a
-    // documented follow-up (Task 11), so an external_enabled=0 L4 route is NOT
-    // yet source-IP-blocked here.
+    // NOTE: the parallel L4 gate lives in services/l4.js buildL4Route().
     if (!route.external_enabled && !routeConfig.match) {
       routeConfig.match = [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }];
     }
@@ -751,7 +749,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     if (activeL4Routes.length > 0) {
       caddyConfig.apps.layer4 = {
-        servers: buildL4Servers(activeL4Routes),
+        servers: buildL4Servers(activeL4Routes, INTERNAL_ONLY_RANGES),
       };
     }
   }

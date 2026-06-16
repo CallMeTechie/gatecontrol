@@ -407,6 +407,41 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
       'is NOT widened to the whole VPN subnet');
   });
 
+  it('restricts internal-only l4 route to VPN subnet only (layer4.servers remote_ip gate)', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    const cfg = buildCaddyConfig([
+      { id: 8001, domain: 'l4int.example.com', route_type: 'l4',
+        target_ip: '10.8.0.7', target_port: 2022,
+        l4_protocol: 'tcp', l4_listen_port: '2022', l4_tls_mode: 'none',
+        external_enabled: 0, enabled: 1 },
+    ]);
+    assert.ok(cfg.apps.layer4, 'layer4 app present in config');
+    const srv = cfg.apps.layer4.servers['l4-tcp-2022'];
+    assert.ok(srv, 'l4-tcp-2022 server present');
+    assert.ok(Array.isArray(srv.routes) && srv.routes.length > 0, 'server has routes');
+    const match = srv.routes[0].match;
+    assert.ok(Array.isArray(match) && match.length > 0, 'L4 route has a match array (remote_ip gate present)');
+    assert.ok(match[0].remote_ip, 'match carries remote_ip');
+    assert.ok(match[0].remote_ip.ranges.includes('10.8.0.0/24'),
+      'L4 gate restricts internal-only route to the VPN subnet');
+  });
+
+  it('does NOT restrict an external l4 route (no remote_ip in layer4.servers)', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    const cfg = buildCaddyConfig([
+      { id: 8002, domain: 'l4ext.example.com', route_type: 'l4',
+        target_ip: '10.8.0.7', target_port: 2023,
+        l4_protocol: 'tcp', l4_listen_port: '2023', l4_tls_mode: 'none',
+        external_enabled: 1, enabled: 1 },
+    ]);
+    assert.ok(cfg.apps.layer4, 'layer4 app present in config');
+    const srv = cfg.apps.layer4.servers['l4-tcp-2023'];
+    assert.ok(srv, 'l4-tcp-2023 server present');
+    const route = srv.routes[0];
+    const hasRemoteIp = Array.isArray(route.match) && route.match.some((m) => m.remote_ip);
+    assert.ok(!hasRemoteIp, 'external L4 route must NOT have a remote_ip gate');
+  });
+
   it('forward-auth (compound) internal-only route keeps the remote_ip gate on the inner content route', () => {
     const { buildCaddyConfig } = require('../src/services/caddyConfig');
     // ip_filter_enabled forces needsForwardAuth=true → the route takes the

@@ -1,5 +1,6 @@
-const { describe, it, before } = require('node:test');
+const { describe, it, before, test } = require('node:test');
 const assert = require('node:assert/strict');
+const { buildL4Route, buildL4Servers } = require('../src/services/l4');
 
 let validate;
 
@@ -161,4 +162,67 @@ describe('L4 Config Generation', () => {
       assert.equal(l4.validatePortConflicts(routes).length, 0);
     });
   });
+});
+
+const RANGES = ['10.8.0.0/24'];
+
+test('L4 gate: internal-only tls=none route gets a remote_ip matcher', () => {
+  const r = buildL4Route(
+    { domain: 's.example.com', target_ip: '10.8.0.7', target_port: 22, l4_protocol: 'tcp', l4_listen_port: '2022', l4_tls_mode: 'none', external_enabled: 0 },
+    'none', RANGES);
+  assert.ok(Array.isArray(r.match) && r.match[0] && r.match[0].remote_ip, 'remote_ip matcher present');
+  assert.deepEqual(r.match[0].remote_ip.ranges, RANGES);
+  assert.ok(!('client_ip' in r.match[0]), 'never client_ip');
+});
+
+test('L4 gate: external route gets NO remote_ip matcher (tls=none → no match at all)', () => {
+  const r = buildL4Route(
+    { domain: 's.example.com', target_ip: '10.8.0.7', target_port: 22, l4_protocol: 'tcp', l4_listen_port: '2022', l4_tls_mode: 'none', external_enabled: 1 },
+    'none', RANGES);
+  assert.ok(!r.match, 'external tls=none route has no match (accepts all)');
+});
+
+test('L4 gate: internal-only TLS route ANDs remote_ip into the SAME match set as tls.sni', () => {
+  for (const mode of ['passthrough', 'terminate']) {
+    const r = buildL4Route(
+      { domain: 'tls.example.com', target_ip: '10.8.0.7', target_port: 443, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: mode, external_enabled: 0 },
+      mode, RANGES);
+    assert.equal(r.match.length, 1, mode + ': exactly ONE match set (AND, not OR)');
+    assert.ok(r.match[0].tls && Array.isArray(r.match[0].tls.sni), mode + ': keeps tls.sni');
+    assert.deepEqual(r.match[0].remote_ip.ranges, RANGES, mode + ': remote_ip in same set');
+  }
+});
+
+test('L4 gate: external TLS route keeps only tls.sni (no remote_ip)', () => {
+  const r = buildL4Route(
+    { domain: 'tls.example.com', target_ip: '10.8.0.7', target_port: 443, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough', external_enabled: 1 },
+    'passthrough', RANGES);
+  assert.ok(r.match[0].tls && !r.match[0].remote_ip, 'tls.sni only, no remote_ip');
+});
+
+test('L4 gate: no ranges passed → no gate (config-free pure-call safety)', () => {
+  const r = buildL4Route(
+    { domain: 's.example.com', target_ip: '10.8.0.7', target_port: 22, l4_protocol: 'tcp', l4_listen_port: '2022', l4_tls_mode: 'none', external_enabled: 0 },
+    'none');
+  assert.ok(!r.match, 'without ranges the gate is inert');
+});
+
+test('L4 gate: assembled buildL4Servers output carries remote_ip on the internal route', () => {
+  const servers = buildL4Servers([
+    { id: 1, domain: 's.example.com', target_ip: '10.8.0.7', target_port: 22, l4_protocol: 'tcp', l4_listen_port: '2022', l4_tls_mode: 'none', external_enabled: 0 },
+  ], RANGES);
+  const srv = Object.values(servers)[0];
+  assert.ok(srv.routes[0].match[0].remote_ip, 'gate survives assembly into apps.layer4.servers');
+});
+
+test('L4 gate: mixed-SNI port — internal route gated, external route not', () => {
+  const servers = buildL4Servers([
+    { id: 1, domain: 'int.example.com', target_ip: '10.8.0.7', target_port: 443, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough', external_enabled: 0 },
+    { id: 2, domain: 'ext.example.com', target_ip: '10.8.0.8', target_port: 443, l4_protocol: 'tcp', l4_listen_port: '8443', l4_tls_mode: 'passthrough', external_enabled: 1 },
+  ], RANGES);
+  const routes = Object.values(servers)[0].routes;
+  const intR = routes.find(x => x.match[0].tls.sni.includes('int.example.com'));
+  const extR = routes.find(x => x.match[0].tls.sni.includes('ext.example.com'));
+  assert.ok(intR.match[0].remote_ip, 'internal SNI route is gated');
+  assert.ok(!extR.match[0].remote_ip, 'external SNI route is NOT gated');
 });

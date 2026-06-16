@@ -8,7 +8,7 @@ function getDb() {
   return require('../db/connection').getDb();
 }
 
-function buildL4Servers(routes) {
+function buildL4Servers(routes, internalOnlyRanges) {
   if (!routes || routes.length === 0) return {};
 
   const groups = {};
@@ -30,7 +30,7 @@ function buildL4Servers(routes) {
     const listenPrefix = l4_protocol === 'udp' ? 'udp' : 'tcp';
     const server = {
       listen: [listenPrefix + '/:' + l4_listen_port],
-      routes: groupRoutes.map(function(r) { return buildL4Route(r, l4_tls_mode); }),
+      routes: groupRoutes.map(function(r) { return buildL4Route(r, l4_tls_mode, internalOnlyRanges); }),
     };
 
     servers[serverName] = server;
@@ -44,7 +44,7 @@ function buildL4Servers(routes) {
 // `random`, `round_robin`, `least_conn`, `first`, `ip_hash`. We map the
 // HTTP-side names through directly — the pool's lb_policy strings
 // (`round_robin` / `least_conn` / `ip_hash`) are all valid here.
-function buildL4Route(route, tlsMode) {
+function buildL4Route(route, tlsMode, internalOnlyRanges) {
   const target = route.target_ip + ':' + route.target_port;
   const upstreams = (Array.isArray(route._poolUpstreams) && route._poolUpstreams.length > 0)
     ? route._poolUpstreams.map(addr => ({ dial: [addr] }))
@@ -80,6 +80,17 @@ function buildL4Route(route, tlsMode) {
       { handler: 'tls' },
       proxyHandler,
     ];
+  }
+
+  // External-exposure gate (L4): an internal-only route (external_enabled=0)
+  // is served ONLY to VPN source IPs. Fold remote_ip into the route's match
+  // set (AND with any tls.sni). remote_ip = real connection IP, never
+  // client_ip — not header-spoofable. caddy-l4 drops a non-matching
+  // connection (no handler runs). Mirrors the HTTP gate. Ranges are passed in
+  // (l4.js stays config-free for pure-validation tests).
+  if (!route.external_enabled && Array.isArray(internalOnlyRanges) && internalOnlyRanges.length > 0) {
+    if (!caddyRoute.match) caddyRoute.match = [{}];
+    caddyRoute.match[0].remote_ip = { ranges: internalOnlyRanges };
   }
 
   return caddyRoute;
