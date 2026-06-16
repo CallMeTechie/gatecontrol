@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.82.0] — 2026-06-16
+
+### Features
+- block external access for internal-only L4 routes (#133)
+
+---
+
 ## [1.81.2] — 2026-06-16
 
 ### Fixes
