@@ -460,6 +460,38 @@ async function notifyLanScan(peerId, { request_id, subnets, category_mode, categ
 }
 
 /**
+ * Ask a gateway to TCP-probe a target host:port inside its physical LAN.
+ * Returns the parsed gateway response (with `probed_target` + `probe_result`)
+ * or null on any failure. Used by rdpMonitor for true end-to-end health of
+ * gateway-mode RDP routes (the local L4 listener cannot tell a dead host
+ * from a live one).
+ */
+async function probeGatewayTarget(peerId, host, port) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return null;
+  const pushToken = decrypt(row.push_token_encrypted);
+  const ip = _peerIp(row.allowed_ips);
+  const payload = JSON.stringify({ host, port });
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: ip, port: row.api_port, path: '/api/probe', method: 'POST', timeout: 5000,
+      headers: { 'X-Gateway-Token': pushToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, (res) => {
+      let body = ''; res.on('data', c => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on('error', (err) => { logger.warn({ err: err.message, peerId }, 'Gateway probe failed'); resolve(null); });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(payload);
+  });
+}
+
+/**
  * Get the LAN discovery settings for a gateway peer.
  * Returns the parsed settings object or null if not found.
  */
@@ -878,6 +910,7 @@ module.exports = {
   notifyConfigChanged,
   notifyWol,
   notifyLanScan,
+  probeGatewayTarget,
   getDiscoverySettings,
   setDiscoverySettings,
   getHealthStatus,
