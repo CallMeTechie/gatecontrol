@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.2] — 2026-06-16
+
+### Fixes
+- rebuild internal hosts-file on server boot so route domains resolve after restart (#132)
+
+---
+
 ## [1.81.1] — 2026-06-16
 
 ### Fixes
