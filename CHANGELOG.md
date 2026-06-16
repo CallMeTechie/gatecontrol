@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.0] — 2026-06-16
+
+### Features
+- per-route external-exposure switch (internal-always via DNS, external gate via Caddy) (#131)
+
+---
+
 ## [1.80.2] — 2026-06-15
 
 ### Fixes
