@@ -332,6 +332,23 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
     assert.ok(json.includes('"remote_ip"'), 'uses remote_ip matcher');
     const intSlice = json.split('int.example.com')[1] || '';
     assert.ok(!intSlice.includes('"client_ip"'), 'does NOT use client_ip for the gate');
+
+    // STRUCTURAL: prove the gate is Caddy AND (ONE match object carrying BOTH
+    // host and remote_ip), NOT OR (two sibling match objects). The OR form
+    // (match:[{host},{remote_ip}]) would let a correct host arriving from ANY
+    // source IP match and BYPASS the gate — AND-vs-OR IS the security boundary,
+    // and a string .includes() check cannot distinguish the two.
+    const route = cfg.apps.http.servers.srv0.routes.find(
+      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
+        && r.match[0].host.includes('int.example.com')
+    );
+    assert.ok(route, 'route for int.example.com present in srv0');
+    assert.equal(route.match.length, 1, 'exactly ONE match object (AND, not OR sibling objects)');
+    const keys = Object.keys(route.match[0]);
+    assert.ok(keys.includes('host'), 'match object carries host');
+    assert.ok(keys.includes('remote_ip'), 'SAME match object carries remote_ip (AND)');
+    assert.ok(route.match[0].remote_ip.ranges.includes('10.8.0.0/24'),
+      'gate restricts to the VPN subnet');
   });
 
   it('does NOT restrict an external route', () => {
@@ -374,5 +391,49 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
     const slice = JSON.stringify(cfg).split('aclp.example.com')[1] || '';
     assert.ok(slice.includes('10.8.0.42/32'), 'keeps the per-peer /32 matcher');
     assert.ok(!slice.includes('10.8.0.0/24'), 'is NOT widened to the whole VPN subnet');
+
+    // STRUCTURAL: same AND-not-OR proof for the ACL /32 — host and remote_ip
+    // must live in ONE match object, else a correct host from any source IP
+    // would bypass the ACL.
+    const route = cfg.apps.http.servers.srv0.routes.find(
+      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
+        && r.match[0].host.includes('aclp.example.com')
+    );
+    assert.ok(route, 'route for aclp.example.com present in srv0');
+    assert.equal(route.match.length, 1, 'exactly ONE match object (AND, not OR sibling objects)');
+    const keys = Object.keys(route.match[0]);
+    assert.ok(keys.includes('host'), 'match object carries host');
+    assert.ok(keys.includes('remote_ip'), 'SAME match object carries remote_ip (AND)');
+    assert.ok(route.match[0].remote_ip.ranges.includes('10.8.0.42/32'),
+      'gate carries the per-peer /32');
+  });
+
+  it('forward-auth (compound) internal-only route keeps the remote_ip gate on the inner content route', () => {
+    const { buildCaddyConfig } = require('../src/services/caddyConfig');
+    // ip_filter_enabled forces needsForwardAuth=true → the route takes the
+    // compound 2-element subroute branch (route-auth sibling + content route),
+    // so the gate sits on the inner routeConfig, not the top-level host match.
+    // This proves the gate survives the forward-auth path too.
+    const cfg = buildCaddyConfig([
+      { id: 7007, domain: 'fa.example.com', route_type: 'http', https_enabled: 1,
+        target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+        external_enabled: 0, ip_filter_enabled: 1, enabled: 1 },
+    ]);
+    const outer = cfg.apps.http.servers.srv0.routes.find(
+      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
+        && r.match[0].host.includes('fa.example.com')
+    );
+    assert.ok(outer, 'outer host route for fa.example.com present in srv0');
+    // It must be a compound subroute (forward-auth), NOT the folded single-match form.
+    const subroute = outer.handle.find((h) => h.handler === 'subroute');
+    assert.ok(subroute, 'compound route wraps content in a subroute (forward-auth path)');
+    // Drill into the inner routes and prove the content route retains the gate.
+    const gated = subroute.routes.find(
+      (r) => Array.isArray(r.match) && r.match.some((m) => m.remote_ip)
+    );
+    assert.ok(gated, 'inner content route retains a remote_ip gate');
+    const gateMatch = gated.match.find((m) => m.remote_ip);
+    assert.ok(gateMatch.remote_ip.ranges.includes('10.8.0.0/24'),
+      'forward-auth content route gated to the VPN subnet');
   });
 });

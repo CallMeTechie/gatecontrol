@@ -535,6 +535,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // real connection IP (NOT X-Forwarded-For) → cannot be spoofed via headers;
     // never use client_ip here. (Phase-0 empirically verified: ACME still
     // issues, VPN reaches, external is blocked, XFF spoof fails.)
+    // NOTE: this gate is HTTP-only by design. L4 internal-only enforcement is a
+    // documented follow-up (Task 11), so an external_enabled=0 L4 route is NOT
+    // yet source-IP-blocked here.
     if (!route.external_enabled && !routeConfig.match) {
       routeConfig.match = [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }];
     }
@@ -641,14 +644,23 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // Group routes into a single server
   const serverRoutes = [...serverRoutes_pending];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
-    if (srvConfig.routes.length === 1) {
-      const inner = srvConfig.routes[0];
-      // AND the host matcher with any matcher already on the inner route
-      // (remote_ip from a Peer-ACL or the external-exposure gate). Matchers
-      // within ONE match object are AND-ed by Caddy, so folding them into a
-      // single object yields "host X AND source IP in ranges". Without this
-      // fold the host-only matcher below would silently drop the ACL/gate
-      // restriction for plain (non-forward-auth) single-domain routes.
+    const inner = srvConfig.routes.length === 1 ? srvConfig.routes[0] : null;
+    // Single-domain fast path: AND the host matcher with any matcher already on
+    // the inner route (remote_ip from a Peer-ACL or the external-exposure gate).
+    // Matchers within ONE match object are AND-ed by Caddy, so folding them into
+    // a single object yields "host X AND source IP in ranges". Without this fold
+    // the host-only matcher would silently drop the ACL/gate restriction for
+    // plain (non-forward-auth) single-domain routes.
+    //
+    // GUARD: only fold when inner.match has at most ONE object. Today inner.match
+    // is always a single remote_ip object, but if any future code path ever puts
+    // MULTIPLE OR'd objects on inner.match (Caddy treats sibling match objects as
+    // OR), a blind Object.assign fold would collapse OR→AND (last-wins) and
+    // silently DROP a matcher — a fail-OPEN security regression for the gate. In
+    // that case we fall through to the subroute form below, which ANDs the outer
+    // host via the subroute wrapper while preserving the inner multi-object OR
+    // match untouched.
+    if (inner && (!Array.isArray(inner.match) || inner.match.length <= 1)) {
       const matchObj = { host: [domain] };
       if (Array.isArray(inner.match)) {
         for (const m of inner.match) Object.assign(matchObj, m);
@@ -662,7 +674,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       if (inner['@id']) entry['@id'] = inner['@id'];
       serverRoutes.push(entry);
     } else {
-      // For compound routes, preserve inner @id markers inside subroute
+      // Compound route (forward-auth sibling + content), OR a single route whose
+      // inner.match carries multiple OR'd objects (see guard above): wrap in a
+      // subroute. The outer host matcher is ANDed by the subroute wrapper; inner
+      // routes keep their own (possibly multi-object OR) matchers AND inner @id
+      // markers intact.
       serverRoutes.push({
         match: [{ host: [domain] }],
         handle: [{
