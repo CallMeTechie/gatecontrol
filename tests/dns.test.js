@@ -157,11 +157,20 @@ describe('dns service', () => {
   // ─── renderHostsContent ────────────────────────────
 
   describe('renderHostsContent', () => {
+    // Parse the rendered hosts file into [ip, fqdn] pairs (exact-field
+    // assertions avoid js/incomplete-url-substring-sanitization that a string
+    // .includes() of a host literal would trip).
+    function emittedHosts(content) {
+      return content.split('\n')
+        .filter((line) => line && !line.startsWith('#'))
+        .map((line) => { const [ip, fqdn] = line.split('\t'); return { ip, fqdn }; });
+    }
+
     it('renders empty on no hostnames', () => {
       insertPeer({ name: 'p1', ip: '10.8.0.5' });
       const content = dns.renderHostsContent();
       assert.match(content, /^# /);
-      assert.ok(!content.includes('10.8.0.5'));
+      assert.ok(!emittedHosts(content).some((h) => h.ip === '10.8.0.5'), content);
     });
 
     it('renders FQDN and short name per peer', () => {
@@ -176,8 +185,9 @@ describe('dns service', () => {
       db.prepare('INSERT INTO peers (name, public_key, allowed_ips, hostname, hostname_source) VALUES (?, ?, ?, ?, ?)')
         .run('bad', 'pk-bad', 'not-an-ip', 'ok2', 'admin');
       const content = dns.renderHostsContent();
-      assert.match(content, /alice|ok1/);
-      assert.ok(!content.includes('not-an-ip'));
+      assert.ok(emittedHosts(content).some((h) => h.fqdn === 'ok1.gc.internal'), content);
+      // The peer with a malformed allowed_ips ('not-an-ip', hostname 'ok2') is skipped.
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'ok2.gc.internal'), content);
     });
 
     it('silently skips peers whose hostname fails strict validation', () => {
@@ -187,8 +197,8 @@ describe('dns service', () => {
       db.prepare('INSERT INTO peers (name, public_key, allowed_ips, hostname, hostname_source) VALUES (?, ?, ?, ?, ?)')
         .run('poison', 'pk-poison', '10.8.0.9/32', 'foo\n10.8.0.1 evil', 'admin');
       const content = dns.renderHostsContent();
-      assert.ok(!content.includes('evil'));
-      assert.ok(!content.includes('foo\n10.8.0.1'));
+      // The poisoned peer (allowed_ips 10.8.0.9/32) must produce no emitted line.
+      assert.ok(!emittedHosts(content).some((h) => h.ip === '10.8.0.9'), content);
     });
 
     // ─── route domains → VPN gateway (internal-always) ───
@@ -198,25 +208,25 @@ describe('dns service', () => {
     it('emits an internal A-record (route domain → gateway IP) for an enabled route', () => {
       insertRoute({ domain: 'jellyfin.example.com' });
       const content = dns.renderHostsContent();
-      assert.ok(content.includes(`${gwIp}\tjellyfin.example.com`), content);
+      assert.ok(emittedHosts(content).some((h) => h.ip === gwIp && h.fqdn === 'jellyfin.example.com'), content);
     });
 
     it('emits an internal A-record for an L4 route too', () => {
       insertRoute({ domain: 'rdp.example.com', route_type: 'l4' });
       const content = dns.renderHostsContent();
-      assert.ok(content.includes(`${gwIp}\trdp.example.com`), content);
+      assert.ok(emittedHosts(content).some((h) => h.ip === gwIp && h.fqdn === 'rdp.example.com'), content);
     });
 
     it('does not emit a disabled route', () => {
       insertRoute({ domain: 'disabled.example.com', enabled: 0 });
       const content = dns.renderHostsContent();
-      assert.ok(!content.includes('disabled.example.com'), content);
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'disabled.example.com'), content);
     });
 
     it('emits a route FQDN with a reserved label (peer reserved-name policy does NOT apply)', () => {
       insertRoute({ domain: 'admin.foo.example.com' });
       const content = dns.renderHostsContent();
-      assert.ok(content.includes(`${gwIp}\tadmin.foo.example.com`), content);
+      assert.ok(emittedHosts(content).some((h) => h.ip === gwIp && h.fqdn === 'admin.foo.example.com'), content);
     });
 
     it('skips a malicious route domain containing whitespace or #', () => {
@@ -224,15 +234,16 @@ describe('dns service', () => {
       insertRoute({ domain: 'evilroute.example.com one.two 10.8.0.1 hijack' });
       insertRoute({ domain: 'sharp.example.com#injected' });
       const content = dns.renderHostsContent();
-      assert.ok(!content.includes('hijack'), content);
-      assert.ok(!content.includes('injected'), content);
+      // Neither malicious domain may surface as an emitted row.
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'evilroute.example.com one.two 10.8.0.1 hijack'), content);
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'sharp.example.com#injected'), content);
     });
 
     it('normalises a mixed-case route domain to lowercase', () => {
       insertRoute({ domain: 'RDP.Example.COM' });
       const content = dns.renderHostsContent();
-      assert.ok(content.includes(`${gwIp}\trdp.example.com`), content);
-      assert.ok(!content.includes('RDP.Example.COM'), content);
+      assert.ok(emittedHosts(content).some((h) => h.ip === gwIp && h.fqdn === 'rdp.example.com'), content);
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'RDP.Example.COM'), content);
     });
 
     it('skips a single-label route domain (no dot → labels.length < 2)', () => {
@@ -240,13 +251,13 @@ describe('dns service', () => {
       const content = dns.renderHostsContent();
       // The SQL filter only excludes domain=''; single-label still reaches the
       // renderer, which must refuse it via the assertSafeRouteDomain guard.
-      assert.ok(!content.includes('intranet'), content);
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'intranet'), content);
     });
 
     it('skips a route domain with a trailing dot (empty last label)', () => {
       insertRoute({ domain: 'foo.example.com.' });
       const content = dns.renderHostsContent();
-      assert.ok(!content.includes('foo.example.com'), content);
+      assert.ok(!emittedHosts(content).some((h) => h.fqdn === 'foo.example.com.' || h.fqdn === 'foo.example.com'), content);
     });
   });
 

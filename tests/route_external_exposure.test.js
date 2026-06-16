@@ -302,6 +302,16 @@ describe('routes service: DNS rebuild on mutations', () => {
 });
 
 describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
+  // Find a route by EXACT host equality (single-element host array). Exact
+  // field comparison avoids js/incomplete-url-substring-sanitization that a
+  // .includes()/.split() of a host literal would trip.
+  function findRouteByHost(cfg, host) {
+    return cfg.apps.http.servers.srv0.routes.find(
+      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
+        && r.match[0].host[0] === host && r.match[0].host.length === 1
+    );
+  }
+
   // Own isolated DB so the prior describes' DB swaps / cache deletions can't
   // bleed in. Mirrors the caddyConfig_contract harness.
   before(() => {
@@ -327,26 +337,18 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
         external_enabled: 0, enabled: 1 },
     ]);
-    const json = JSON.stringify(cfg);
-    assert.ok(json.includes('10.8.0.0/24'), 'VPN subnet present');
-    assert.ok(json.includes('"remote_ip"'), 'uses remote_ip matcher');
-    const intSlice = json.split('int.example.com')[1] || '';
-    assert.ok(!intSlice.includes('"client_ip"'), 'does NOT use client_ip for the gate');
-
     // STRUCTURAL: prove the gate is Caddy AND (ONE match object carrying BOTH
     // host and remote_ip), NOT OR (two sibling match objects). The OR form
     // (match:[{host},{remote_ip}]) would let a correct host arriving from ANY
     // source IP match and BYPASS the gate — AND-vs-OR IS the security boundary,
     // and a string .includes() check cannot distinguish the two.
-    const route = cfg.apps.http.servers.srv0.routes.find(
-      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
-        && r.match[0].host.includes('int.example.com')
-    );
+    const route = findRouteByHost(cfg, 'int.example.com');
     assert.ok(route, 'route for int.example.com present in srv0');
     assert.equal(route.match.length, 1, 'exactly ONE match object (AND, not OR sibling objects)');
     const keys = Object.keys(route.match[0]);
     assert.ok(keys.includes('host'), 'match object carries host');
-    assert.ok(keys.includes('remote_ip'), 'SAME match object carries remote_ip (AND)');
+    assert.ok(keys.includes('remote_ip'), 'uses remote_ip matcher in the SAME match object (AND)');
+    assert.ok(!keys.includes('client_ip'), 'does NOT use client_ip for the gate');
     assert.ok(route.match[0].remote_ip.ranges.includes('10.8.0.0/24'),
       'gate restricts to the VPN subnet');
   });
@@ -358,8 +360,9 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
         external_enabled: 1, enabled: 1 },
     ]);
-    const route = JSON.stringify(cfg).split('ext.example.com')[1] || '';
-    assert.ok(!route.includes('10.8.0.0/24'), 'external route is not subnet-restricted');
+    const route = findRouteByHost(cfg, 'ext.example.com');
+    assert.ok(route, 'route for ext.example.com present in srv0');
+    assert.ok(!Object.keys(route.match[0]).includes('remote_ip'), 'external route is not subnet-restricted');
   });
 
   it('internal-only route with acl_enabled but ZERO peers still fails closed (subnet-restricted)', () => {
@@ -369,8 +372,9 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
         external_enabled: 0, acl_enabled: 1, enabled: 1 },
     ]);
-    const slice = JSON.stringify(cfg).split('acl0.example.com')[1] || '';
-    assert.ok(slice.includes('10.8.0.0/24'), 'falls closed to VPN subnet, not open');
+    const route = findRouteByHost(cfg, 'acl0.example.com');
+    assert.ok(route, 'route for acl0.example.com present in srv0');
+    assert.ok(route.match[0].remote_ip.ranges.includes('10.8.0.0/24'), 'falls closed to VPN subnet, not open');
   });
 
   it('internal-only route with acl_enabled AND a selected peer keeps the stricter /32 matcher', () => {
@@ -388,24 +392,19 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
         external_enabled: 0, acl_enabled: 1, enabled: 1 },
     ]);
-    const slice = JSON.stringify(cfg).split('aclp.example.com')[1] || '';
-    assert.ok(slice.includes('10.8.0.42/32'), 'keeps the per-peer /32 matcher');
-    assert.ok(!slice.includes('10.8.0.0/24'), 'is NOT widened to the whole VPN subnet');
-
     // STRUCTURAL: same AND-not-OR proof for the ACL /32 — host and remote_ip
     // must live in ONE match object, else a correct host from any source IP
     // would bypass the ACL.
-    const route = cfg.apps.http.servers.srv0.routes.find(
-      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
-        && r.match[0].host.includes('aclp.example.com')
-    );
+    const route = findRouteByHost(cfg, 'aclp.example.com');
     assert.ok(route, 'route for aclp.example.com present in srv0');
     assert.equal(route.match.length, 1, 'exactly ONE match object (AND, not OR sibling objects)');
     const keys = Object.keys(route.match[0]);
     assert.ok(keys.includes('host'), 'match object carries host');
     assert.ok(keys.includes('remote_ip'), 'SAME match object carries remote_ip (AND)');
     assert.ok(route.match[0].remote_ip.ranges.includes('10.8.0.42/32'),
-      'gate carries the per-peer /32');
+      'keeps the per-peer /32 matcher');
+    assert.ok(!route.match[0].remote_ip.ranges.includes('10.8.0.0/24'),
+      'is NOT widened to the whole VPN subnet');
   });
 
   it('forward-auth (compound) internal-only route keeps the remote_ip gate on the inner content route', () => {
@@ -419,10 +418,7 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
         external_enabled: 0, ip_filter_enabled: 1, enabled: 1 },
     ]);
-    const outer = cfg.apps.http.servers.srv0.routes.find(
-      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
-        && r.match[0].host.includes('fa.example.com')
-    );
+    const outer = findRouteByHost(cfg, 'fa.example.com');
     assert.ok(outer, 'outer host route for fa.example.com present in srv0');
     // It must be a compound subroute (forward-auth), NOT the folded single-match form.
     const subroute = outer.handle.find((h) => h.handler === 'subroute');
