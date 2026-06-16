@@ -940,6 +940,15 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'bundle_id'),
   },
+  {
+    version: 51,
+    name: 'route_external_exposure',
+    sql: `
+      ALTER TABLE routes ADD COLUMN external_enabled INTEGER NOT NULL DEFAULT 0;
+      UPDATE routes SET external_enabled = 1;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'external_enabled'),
+  },
 ];
 
 module.exports = { migrations };
