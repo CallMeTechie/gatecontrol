@@ -44,7 +44,27 @@ function isGatewayLive(route, db) {
 
 // Single probe path shared by checkRouteById + checkAll.
 async function _probe(route, db) {
-  if (!isGatewayLive(route, db)) return { online: false, responseTime: null };
+  // Gateway-mode routes: a local checkTcp to 127.0.0.1:listen_port hits the
+  // server's own L4 listener, which accepts unconditionally → false "online"
+  // whenever the gateway is alive but the real host is down. First gate on the
+  // gateway heartbeat (dead gateway → offline fast), then ask the gateway to
+  // probe the REAL host inside its LAN.
+  if ((route.access_mode || 'internal') === 'gateway' && route.gateway_peer_id) {
+    if (!isGatewayLive(route, db)) return { online: false, responseTime: null };
+    // No real host to probe → a gateway route without host is misconfigured.
+    // Report offline rather than falling back to the loopback false-positive.
+    if (!route.host || !route.port) return { online: false, responseTime: null };
+    const gateways = require('./gateways'); // lazy require avoids a require cycle
+    const resp = await gateways.probeGatewayTarget(route.gateway_peer_id, route.host, route.port);
+    // Only trust the result if this gateway actually honored the target
+    // (new companion sets probed_target). Old companion / call failure →
+    // fall back to the legacy loopback probe rather than guess.
+    if (resp && resp.probed_target) {
+      return { online: !!resp.probe_result, responseTime: resp.probe_latency_ms ?? null };
+    }
+    const tgt = resolveCheckTarget(route);
+    return checkTcp(tgt.host, tgt.port);
+  }
   const tgt = resolveCheckTarget(route);
   return checkTcp(tgt.host, tgt.port);
 }
@@ -81,21 +101,37 @@ async function checkRouteById(id) {
   return { id: route.id, online: result.online, responseTime: result.responseTime, lastCheck: now };
 }
 
+let _checkAllInFlight = false;
+
 async function checkAll() {
-  const db = getDb();
-  const routes = db.prepare('SELECT id, name, host, port, access_mode, gateway_peer_id, gateway_listen_port FROM rdp_routes WHERE enabled = 1 AND health_check_enabled = 1').all();
-  const results = [];
-  for (const route of routes) {
-    try {
-      const result = await _probe(route, db);
-      const now = new Date().toISOString();
-      statusCache.set(route.id, { online: result.online, lastCheck: now, responseTime: result.responseTime });
-      results.push({ id: route.id, name: route.name, online: result.online, responseTime: result.responseTime });
-    } catch (err) {
-      logger.warn({ routeId: route.id, error: err.message }, 'RDP health check failed');
-    }
+  // Re-entry guard: gateway probes can take up to the per-probe timeout;
+  // skip a tick rather than stack overlapping cycles (duplicate load +
+  // statusCache races).
+  if (_checkAllInFlight) {
+    logger.debug('RDP health check still running — skipping this tick');
+    return [];
   }
-  return results;
+  _checkAllInFlight = true;
+  try {
+    const db = getDb();
+    const routes = db.prepare('SELECT id, name, host, port, access_mode, gateway_peer_id, gateway_listen_port, health_check_enabled FROM rdp_routes WHERE enabled = 1 AND health_check_enabled = 1').all();
+    // Parallel: one slow/unreachable gateway must not stall the others.
+    const settled = await Promise.allSettled(routes.map(route => _probe(route, db)));
+    const results = [];
+    routes.forEach((route, i) => {
+      const s = settled[i];
+      if (s.status === 'fulfilled') {
+        const now = new Date().toISOString();
+        statusCache.set(route.id, { online: s.value.online, lastCheck: now, responseTime: s.value.responseTime });
+        results.push({ id: route.id, name: route.name, online: s.value.online, responseTime: s.value.responseTime });
+      } else {
+        logger.warn({ routeId: route.id, error: s.reason && s.reason.message }, 'RDP health check failed');
+      }
+    });
+    return results;
+  } finally {
+    _checkAllInFlight = false;
+  }
 }
 
 function getStatus(id) {
