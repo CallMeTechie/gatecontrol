@@ -61,15 +61,10 @@ const { isLoopbackHost } = require('../utils/validate');
 const gatewayHealth = require('./gatewayHealth');
 
 // Source IP ranges allowed to reach an internal-only route (external_enabled=0).
-// Default: the VPN subnet — Phase-0 verified VPN clients arrive with a 10.8.0.x
-// source and external clients carry their own public IP, so the subnet alone is
-// the correct boundary. GC_HUB_PUBLIC_IP is an optional contingency (NOT needed
-// in the current topology, verified empirically): if a full-tunnel client ever
-// reached Caddy via the hub's public IP (MASQUERADE) instead of 10.8.0.x, add
-// that hub public IP here as a /32. Safe: only hub-NATed (= VPN) traffic carries
-// that source; genuine external clients carry their own IP.
-const INTERNAL_ONLY_RANGES = [config.wireguard.subnet]
-  .concat(process.env.GC_HUB_PUBLIC_IP ? [`${process.env.GC_HUB_PUBLIC_IP}/32`] : []);
+// Centralised in config.wireguard.internalOnlyRanges (config/default.js) so
+// the HTTP gate here and the L4 gate in services/l4.js share a single source
+// of truth. Default: VPN subnet only; GC_HUB_PUBLIC_IP appends a /32.
+const INTERNAL_ONLY_RANGES = config.wireguard.internalOnlyRanges;
 
 function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
@@ -535,9 +530,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // real connection IP (NOT X-Forwarded-For) → cannot be spoofed via headers;
     // never use client_ip here. (Phase-0 empirically verified: ACME still
     // issues, VPN reaches, external is blocked, XFF spoof fails.)
-    // NOTE: this gate is HTTP-only by design. L4 internal-only enforcement is a
-    // documented follow-up (Task 11), so an external_enabled=0 L4 route is NOT
-    // yet source-IP-blocked here.
+    // NOTE: the parallel L4 gate lives in services/l4.js buildL4Route().
     if (!route.external_enabled && !routeConfig.match) {
       routeConfig.match = [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }];
     }
@@ -756,7 +749,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     if (activeL4Routes.length > 0) {
       caddyConfig.apps.layer4 = {
-        servers: buildL4Servers(activeL4Routes),
+        servers: buildL4Servers(activeL4Routes, INTERNAL_ONLY_RANGES),
       };
     }
   }

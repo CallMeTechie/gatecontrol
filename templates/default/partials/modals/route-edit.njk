@@ -120,6 +120,13 @@
             <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-passthrough="{{ t('routes.tls_passthrough_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('routes.external_label') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.external_hint') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-external"></div>
+        </div>
         <div id="edit-http-fields">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
             <div>
@@ -134,13 +141,6 @@
               <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backend_https_desc') }}</div>
             </div>
             <div class="toggle" id="edit-route-backend-https"></div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.external_label') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.external_hint') }}</div>
-            </div>
-            <div class="toggle" id="edit-route-external"></div>
           </div>
           {% if license.features.compression %}
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
