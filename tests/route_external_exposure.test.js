@@ -70,3 +70,82 @@ describe('migration: route_external_exposure', () => {
     db.close();
   });
 });
+
+describe('routes service: external_enabled persistence', () => {
+  let routes, db;
+
+  before(async () => {
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ext-svc-'));
+    process.env.GC_DB_PATH = path.join(tmp2, 'test.db');
+    process.env.GC_DATA_DIR = tmp2;
+    process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
+    process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+    [
+      '../config/default',
+      '../src/db/connection',
+      '../src/db/migrations',
+      '../src/services/gateways',
+      '../src/services/routes',
+      '../src/services/caddyConfig',
+      '../src/services/license',
+    ].forEach((p) => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
+    require('../src/db/migrations').runMigrations();
+
+    const license = require('../src/services/license');
+    license._overrideForTest && license._overrideForTest({
+      http_routes: -1,
+      l4_routes: -1,
+    });
+
+    // Stub Caddy sync — no real HTTP calls in tests
+    const caddy = require('../src/services/caddyConfig');
+    caddy.syncToCaddy = async () => {};
+
+    routes = require('../src/services/routes');
+    db = require('../src/db/connection').getDb();
+  });
+
+  it('create without external_enabled stores 0 (default)', async () => {
+    const created = await routes.create({
+      domain: 'ext-default.example.com',
+      target_ip: '10.8.0.10',
+      target_port: 80,
+    });
+    const row = db.prepare('SELECT external_enabled FROM routes WHERE id = ?').get(created.id);
+    assert.equal(row.external_enabled, 0, 'omitting external_enabled must default to 0');
+  });
+
+  it('create with external_enabled: true stores 1', async () => {
+    const created = await routes.create({
+      domain: 'ext-enabled.example.com',
+      target_ip: '10.8.0.11',
+      target_port: 80,
+      external_enabled: true,
+    });
+    const row = db.prepare('SELECT external_enabled FROM routes WHERE id = ?').get(created.id);
+    assert.equal(row.external_enabled, 1, 'external_enabled: true must persist as 1');
+  });
+
+  it('update toggles external_enabled; omitting the field preserves value via COALESCE', async () => {
+    const created = await routes.create({
+      domain: 'ext-update.example.com',
+      target_ip: '10.8.0.12',
+      target_port: 80,
+    });
+
+    // enable
+    await routes.update(created.id, { external_enabled: true });
+    const row1 = db.prepare('SELECT external_enabled FROM routes WHERE id = ?').get(created.id);
+    assert.equal(row1.external_enabled, 1, 'after update with true → 1');
+
+    // disable
+    await routes.update(created.id, { external_enabled: false });
+    const row2 = db.prepare('SELECT external_enabled FROM routes WHERE id = ?').get(created.id);
+    assert.equal(row2.external_enabled, 0, 'after update with false → 0');
+
+    // omit field — COALESCE preserves current value (0)
+    await routes.update(created.id, { description: 'no-external-field' });
+    const row3 = db.prepare('SELECT external_enabled FROM routes WHERE id = ?').get(created.id);
+    assert.equal(row3.external_enabled, 0, 'update without field must leave value unchanged (COALESCE)');
+  });
+});

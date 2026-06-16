@@ -256,9 +256,10 @@ async function create(data, opts = {}) {
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
                         mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids,
+                        external_enabled,
                         target_kind, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -306,6 +307,7 @@ async function create(data, opts = {}) {
     data.debug_enabled ? 1 : 0,
     data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
     data.user_ids ? JSON.stringify(data.user_ids) : null,
+    data.external_enabled ? 1 : 0,
     targetKind,
     targetPeerId,
     targetPoolId,
@@ -548,6 +550,7 @@ async function update(id, data) {
       bot_blocker_mode = COALESCE(?, bot_blocker_mode),
       bot_blocker_config = COALESCE(?, bot_blocker_config),
       user_ids = COALESCE(?, user_ids),
+      external_enabled = COALESCE(?, external_enabled),
       target_kind = COALESCE(?, target_kind),
       target_peer_id = COALESCE(?, target_peer_id),
       target_pool_id = COALESCE(?, target_pool_id),
@@ -611,6 +614,7 @@ async function update(id, data) {
     data.bot_blocker_mode !== undefined ? data.bot_blocker_mode : null,
     data.bot_blocker_config !== undefined ? (typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config)) : null,
     data.user_ids !== undefined ? (data.user_ids ? JSON.stringify(data.user_ids) : null) : null,
+    data.external_enabled !== undefined ? (data.external_enabled ? 1 : 0) : null,
     data.target_kind !== undefined ? (data.target_kind || null) : null,
     data.target_peer_id !== undefined ? (data.target_peer_id || null) : null,
     data.target_pool_id !== undefined ? (data.target_pool_id != null ? parseInt(data.target_pool_id, 10) : null) : null,
