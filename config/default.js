@@ -155,6 +155,13 @@ const config = {
   },
 };
 
+// Source ranges allowed to reach an internal-only route (HTTP gate in
+// services/caddyConfig.js, L4 gate in services/l4.js). Derived from the
+// resolved VPN subnet so it can never drift from `subnet`. The
+// GC_HUB_PUBLIC_IP contingency (full-tunnel via hub public IP) adds a /32.
+config.wireguard.internalOnlyRanges = [config.wireguard.subnet]
+  .concat(process.env.GC_HUB_PUBLIC_IP ? [`${process.env.GC_HUB_PUBLIC_IP}/32`] : []);
+
 // In test environment, auto-generate secret; in production, fail loudly
 if (!config.app.secret) {
   if (process.env.NODE_ENV === 'test') {
