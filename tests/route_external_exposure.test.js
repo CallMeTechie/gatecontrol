@@ -149,3 +149,150 @@ describe('routes service: external_enabled persistence', () => {
     assert.equal(row3.external_enabled, 0, 'update without field must leave value unchanged (COALESCE)');
   });
 });
+
+describe('routes service: DNS rebuild on mutations', () => {
+  let routes, db, dnsMod;
+  let rebuildCalls = 0;
+
+  before(async () => {
+    const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ext-dns-'));
+    process.env.GC_DB_PATH = path.join(tmp3, 'test.db');
+    process.env.GC_DATA_DIR = tmp3;
+    process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
+    process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+    [
+      '../config/default',
+      '../src/db/connection',
+      '../src/db/migrations',
+      '../src/services/gateways',
+      '../src/services/routes',
+      '../src/services/caddyConfig',
+      '../src/services/license',
+      '../src/services/dns',
+    ].forEach((p) => { try { delete require.cache[require.resolve(p)]; } catch (_) {} });
+
+    require('../src/db/migrations').runMigrations();
+
+    const license = require('../src/services/license');
+    license._overrideForTest && license._overrideForTest({
+      http_routes: -1,
+      l4_routes: -1,
+    });
+
+    const caddy = require('../src/services/caddyConfig');
+    caddy.syncToCaddy = async () => {};
+
+    routes = require('../src/services/routes');
+    db = require('../src/db/connection').getDb();
+
+    // Patch dns.rebuildNow so tests don't touch the real hosts file.
+    // routes.js holds a reference to the same module object, so mutating
+    // rebuildNow here intercepts every call from routes.js.
+    dnsMod = require('../src/services/dns');
+    dnsMod.rebuildNow = () => { rebuildCalls++; };
+  });
+
+  it('create() without skipSync triggers a DNS rebuild', async () => {
+    rebuildCalls = 0;
+    await routes.create({
+      domain: 'dns-create.example.com',
+      target_ip: '10.8.0.20',
+      target_port: 80,
+    });
+    assert.equal(rebuildCalls, 1, 'create should trigger exactly one rebuild');
+  });
+
+  it('create() with skipSync does NOT trigger a DNS rebuild', async () => {
+    rebuildCalls = 0;
+    await routes.create({
+      domain: 'dns-create-skip.example.com',
+      target_ip: '10.8.0.21',
+      target_port: 80,
+    }, { skipSync: true });
+    assert.equal(rebuildCalls, 0, 'create with skipSync must not rebuild DNS');
+  });
+
+  it('update() triggers a DNS rebuild', async () => {
+    const r = await routes.create({
+      domain: 'dns-update.example.com',
+      target_ip: '10.8.0.22',
+      target_port: 80,
+    });
+    rebuildCalls = 0;
+    await routes.update(r.id, { description: 'updated' });
+    assert.equal(rebuildCalls, 1, 'update should trigger exactly one rebuild');
+  });
+
+  it('toggle() triggers a DNS rebuild', async () => {
+    const r = await routes.create({
+      domain: 'dns-toggle.example.com',
+      target_ip: '10.8.0.23',
+      target_port: 80,
+    });
+    rebuildCalls = 0;
+    await routes.toggle(r.id);
+    assert.equal(rebuildCalls, 1, 'toggle should trigger exactly one rebuild');
+  });
+
+  it('remove() triggers a DNS rebuild', async () => {
+    const r = await routes.create({
+      domain: 'dns-remove.example.com',
+      target_ip: '10.8.0.24',
+      target_port: 80,
+    });
+    rebuildCalls = 0;
+    await routes.remove(r.id);
+    assert.equal(rebuildCalls, 1, 'remove should trigger exactly one rebuild');
+  });
+
+  it('batch(enable) triggers exactly ONE rebuild for a multi-route batch', async () => {
+    const r1 = await routes.create({
+      domain: 'dns-batch-en-a.example.com',
+      target_ip: '10.8.0.25',
+      target_port: 80,
+    });
+    const r2 = await routes.create({
+      domain: 'dns-batch-en-b.example.com',
+      target_ip: '10.8.0.26',
+      target_port: 80,
+    });
+    // disable them first so batch enable has something to do
+    await routes.toggle(r1.id);
+    await routes.toggle(r2.id);
+    rebuildCalls = 0;
+    await routes.batch('enable', [r1.id, r2.id]);
+    assert.equal(rebuildCalls, 1, 'batch enable of 2 routes must trigger exactly 1 rebuild');
+  });
+
+  it('batch(disable) triggers exactly ONE rebuild for a multi-route batch', async () => {
+    const r1 = await routes.create({
+      domain: 'dns-batch-dis-a.example.com',
+      target_ip: '10.8.0.27',
+      target_port: 80,
+    });
+    const r2 = await routes.create({
+      domain: 'dns-batch-dis-b.example.com',
+      target_ip: '10.8.0.28',
+      target_port: 80,
+    });
+    rebuildCalls = 0;
+    await routes.batch('disable', [r1.id, r2.id]);
+    assert.equal(rebuildCalls, 1, 'batch disable of 2 routes must trigger exactly 1 rebuild');
+  });
+
+  it('batch(delete) triggers exactly ONE rebuild for a multi-route batch', async () => {
+    const r1 = await routes.create({
+      domain: 'dns-batch-del-a.example.com',
+      target_ip: '10.8.0.29',
+      target_port: 80,
+    });
+    const r2 = await routes.create({
+      domain: 'dns-batch-del-b.example.com',
+      target_ip: '10.8.0.30',
+      target_port: 80,
+    });
+    rebuildCalls = 0;
+    await routes.batch('delete', [r1.id, r2.id]);
+    assert.equal(rebuildCalls, 1, 'batch delete of 2 routes must trigger exactly 1 rebuild');
+  });
+});

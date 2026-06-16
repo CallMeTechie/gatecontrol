@@ -10,6 +10,7 @@ const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig } =
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
+const dns = require('./dns');
 
 // ─── Target Exclusivity Validation ──────────────────────
 
@@ -332,6 +333,12 @@ async function create(data, opts = {}) {
       db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
       db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
     }, 'route create');
+  }
+
+  if (!opts.skipSync) {
+    // Refresh internal DNS so the new route resolves to the gateway for VPN
+    // clients. Best-effort: a DNS failure must not fail route creation.
+    try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err.message }, 'DNS rebuild after route create failed'); }
   }
 
   activity.log('route_created', `Route "${domain}" created → ${targetIp}:${data.target_port}`, {
@@ -708,6 +715,8 @@ async function update(id, data) {
     } catch { /* module load guard */ }
   }
 
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err.message }, 'DNS rebuild after route update failed'); }
+
   return finalRoute;
 }
 
@@ -750,6 +759,7 @@ async function remove(id) {
   });
 
   logger.info({ routeId: id, domain: route.domain }, 'Route deleted');
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err.message }, 'DNS rebuild after route delete failed'); }
 }
 
 /**
@@ -784,6 +794,8 @@ async function toggle(id) {
     `Route "${route.domain}" ${newState ? 'enabled' : 'disabled'}`,
     { source: 'admin', severity: 'info', details: { routeId: id } }
   );
+
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err.message }, 'DNS rebuild after route toggle failed'); }
 
   return getById(id);
 }
@@ -875,6 +887,10 @@ async function batch(action, ids) {
   );
 
   logger.info({ action, routeIds: ids, count: ids.length }, `Batch ${actionPast} routes`);
+
+  // One rebuild for the whole batch — never per-route (avoids N hosts-file
+  // writes + N dnsmasq SIGHUPs). Best-effort.
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err.message }, 'DNS rebuild after batch route mutation failed'); }
 
   return ids.length;
 }
