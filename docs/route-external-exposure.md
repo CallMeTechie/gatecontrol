@@ -140,5 +140,40 @@ ORDER BY domain;
 
 ## Bekannte Grenzen / Folgephase (L4)
 
-L4-Routen sind vom Außen-Schalter noch ausgenommen — Einschränkung und Bedarf werden in
-einer separaten Folgephase bewertet.
+### Was für L4 bereits funktioniert
+
+- **Datenspeicherung:** Die Spalte `routes.external_enabled` sowie der zugehörige Service,
+  die API und die UI sind vollständig generisch implementiert — der Wert wird für L4-Routen
+  (SSH/RDP-Portforwards) genauso gespeichert und gelesen wie für HTTP-Routen.
+- **Interne DNS-Auflösung:** `src/services/dns.js` emittiert A-Records für **alle** Routen
+  mit Domain, unabhängig vom Routentyp. Eine L4-Route mit Domain wird damit innerhalb des
+  VPN auf den Gateway aufgelöst — deckungsgleich mit HTTP-Routen.
+
+### Was NOCH NICHT umgesetzt ist: die Außen-Sperre für L4
+
+Der HTTP-Außen-Schalter setzt einen `remote_ip`-Matcher im `http`-App-Pfad von Caddy
+(Funktion `httpRoutes`-Schleife in `src/services/caddyConfig.js`, Zweig `apps.http`).
+L4-Routen laufen über einen separaten Caddy-Pfad (`l4Routes`-Zweig in `caddyConfig.js`,
+Ziel `apps.layer4`). Um dort eine Außen-Sperre zu realisieren, müsste ein
+**Layer4-Quell-IP-Matcher** (`remote_ip`- bzw. `subnet`-Matcher im `apps.layer4`-Zweig)
+ergänzt werden.
+
+Dieser Matcher wurde im Rahmen dieses Plans bewusst **nicht** umgesetzt, um nicht beide
+Caddy-Subsysteme (`http` und `layer4`) in einem Schritt zu verändern und damit das
+Risiko und den Reviewaufwand der Implementierung zu erhöhen.
+
+### Konsequenz heute
+
+Eine L4-Route mit `external_enabled=0` ist weiterhin extern erreichbar, sofern ihr
+Listen-Port im Firewall/Portforwarding offen ist. Der Schalter hat für L4-Routen
+**aktuell keine sperrende Wirkung** — er wird lediglich gespeichert, und die interne
+DNS-Auflösung funktioniert korrekt. Als Außen-Sperre wirkt der Wert für L4 noch nicht.
+
+### Empfehlung
+
+Als eigenständige Folgephase einplanen (separater Implementierungsplan):
+
+- Layer4-`remote_ip`/`subnet`-Matcher analog zum HTTP-Gate im `apps.layer4`-Zweig
+  ergänzen (fail-closed, `INTERNAL_ONLY_RANGES`).
+- Zugehörigen Integrationstest fixieren, der prüft, dass externe Verbindungen auf eine
+  L4-Route mit `external_enabled=0` abgewiesen werden.
