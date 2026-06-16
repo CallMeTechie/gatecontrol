@@ -256,6 +256,9 @@
       const compressTag = r.compress_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 14l8-8 8 8"/><path d="M4 20l8-8 8 8"/></svg> ' + escapeHtml(GC.t['routes.compress_badge'] || 'Compress') + '</span>'
         : '';
+      const internalTag = !r.external_enabled && r.route_type !== 'l4'
+        ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(GC.t['routes.internal_badge'] || 'Internal only') + '</span>'
+        : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
         : '';
@@ -319,7 +322,7 @@
       // visible; the first two feature badges follow, the rest collapse
       // behind a "+N" toggle (expandedBadges survives SSE re-renders).
       const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
-      const extraTags = [debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
+      const extraTags = [internalTag, debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
         backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
         routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
       let visibleExtras, moreBtn = '';
@@ -713,6 +716,7 @@
       const createIpFilter = document.getElementById('create-route-ip-filter')?.classList.contains('on') || false;
       const createAcl = document.getElementById('create-route-acl')?.classList.contains('on') || false;
       const createCompress = document.getElementById('create-route-compress')?.classList.contains('on') || false;
+      const createExternal = document.getElementById('create-route-external')?.classList.contains('on') || false;
       const createRateLimit = document.getElementById('create-route-rate-limit')?.classList.contains('on') || false;
       const createRetry = document.getElementById('create-route-retry')?.classList.contains('on') || false;
       const createCb = document.getElementById('create-route-circuit-breaker')?.classList.contains('on') || false;
@@ -731,6 +735,7 @@
       const payload = {
         domain, description, peer_id, target_port, https_enabled, backend_https, basic_auth_enabled,
         compress_enabled: createCompress,
+        external_enabled: createExternal,
         monitoring_enabled: createMonitoring,
         ip_filter_enabled: createIpFilter,
         ip_filter_mode: document.getElementById('create-ip-filter-mode')?.value || 'whitelist',
@@ -838,6 +843,8 @@
         if (backendHttpsToggle) backendHttpsToggle.classList.remove('on');
         var ccmp = document.getElementById('create-route-compress');
         if (ccmp) ccmp.classList.remove('on');
+        var cext = document.getElementById('create-route-external');
+        if (cext) cext.classList.remove('on');
         var cmt = document.getElementById('create-route-monitoring');
         if (cmt) cmt.classList.remove('on');
         var cipf = document.getElementById('create-route-ip-filter');
@@ -1483,6 +1490,13 @@
       compressToggle.setAttribute('aria-checked', route.compress_enabled ? 'true' : 'false');
     }
 
+    const externalToggle = document.getElementById('edit-route-external');
+    if (externalToggle) {
+      if (route.external_enabled) externalToggle.classList.add('on');
+      else externalToggle.classList.remove('on');
+      externalToggle.setAttribute('aria-checked', route.external_enabled ? 'true' : 'false');
+    }
+
     // Reset auth type to none first
     setToggleGroup('edit-auth-type-group', 'edit-auth-type', 'none');
 
@@ -1937,6 +1951,7 @@
         const ipFilterEnabled = document.getElementById('edit-route-ip-filter')?.classList.contains('on') || false;
         const aclEnabled = document.getElementById('edit-route-acl')?.classList.contains('on') || false;
         const compressEnabled = document.getElementById('edit-route-compress')?.classList.contains('on') || false;
+        const externalEnabled = document.getElementById('edit-route-external')?.classList.contains('on') || false;
         const rateLimitEnabled = document.getElementById('edit-route-rate-limit')?.classList.contains('on') || false;
         const retryEnabled = document.getElementById('edit-route-retry')?.classList.contains('on') || false;
         const backendsEnabled = document.getElementById('edit-route-backends')?.classList.contains('on') || false;
@@ -1957,6 +1972,7 @@
         const payload = {
           domain, description, target_port, peer_id, target_ip, https_enabled, backend_https, basic_auth_enabled,
           compress_enabled: compressEnabled,
+          external_enabled: externalEnabled,
           monitoring_enabled: monitoringEnabled,
           ip_filter_enabled: ipFilterEnabled,
           ip_filter_mode: document.getElementById('edit-ip-filter-mode')?.value || 'whitelist',

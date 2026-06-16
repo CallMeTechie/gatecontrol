@@ -88,6 +88,46 @@ function strictHostnameAssert(hostname) {
   }
 }
 
+/**
+ * Validate a route domain (a full FQDN) for safe injection into the
+ * dnsmasq addn-hosts file. Unlike strictHostnameAssert (single peer
+ * label + reserved-name policy), this allows dotted multi-label names
+ * and does NOT apply the peer-specific reserved-name list — route
+ * domains like admin.mailpilot.example.com are legitimate. It still
+ * enforces per-label structure (reusing HOSTNAME_RE) and rejects any
+ * byte that could break out of a hosts-file line (whitespace, '#',
+ * control chars, non-ASCII) as defence-in-depth against injection.
+ *
+ * @param {string} domain Pre-lowercased FQDN
+ * @throws {Error} when the domain is unsafe
+ */
+function assertSafeRouteDomain(domain) {
+  if (typeof domain !== 'string' || domain.length === 0) {
+    throw new Error('route domain empty');
+  }
+  if (domain.length > 253) {
+    throw new Error('route domain too long');
+  }
+  const labels = domain.split('.');
+  if (labels.length < 2) {
+    throw new Error('route domain must be a dotted FQDN');
+  }
+  for (const label of labels) {
+    if (!HOSTNAME_RE.test(label)) {
+      throw new Error(`route domain label invalid: ${JSON.stringify(label)}`);
+    }
+  }
+  // Defence-in-depth byte check (mirrors strictHostnameAssert): no
+  // control chars, no '#', no whitespace, no non-ASCII — a malformed
+  // value must never inject an extra hosts-file directive.
+  for (let i = 0; i < domain.length; i++) {
+    const code = domain.charCodeAt(i);
+    if (code < 0x21 || code === 0x23 /* # */ || code > 0x7e) {
+      throw new Error(`route domain disallowed byte 0x${code.toString(16)}`);
+    }
+  }
+}
+
 // ────────────────────────────────────────────────────────────
 // Dedup
 // ────────────────────────────────────────────────────────────
@@ -193,6 +233,29 @@ function renderHostsContent() {
     // Format: <ip> <fqdn> <short>
     // dnsmasq serves both names. FQDN first makes reverse-PTR pick it up.
     lines.push(`${ip}\t${hostname}.${domain}\t${hostname}`);
+  }
+
+  // Route domains resolve to the VPN gateway so VPN clients always reach
+  // routes internally (split-tunnel-safe), never via the public IP. This
+  // applies to ALL enabled routes with a domain (incl. L4), independent of
+  // external_enabled. Exact A-records only — no wildcard — so peer names
+  // like server.marcbackes.net (a peer, not a route) stay untouched.
+  const gwIp = config.wireguard.gatewayIp;
+  const routeRows = db.prepare(`
+    SELECT DISTINCT domain FROM routes
+    WHERE enabled = 1 AND domain IS NOT NULL AND domain != ''
+    ORDER BY domain
+  `).all();
+  for (const r of routeRows) {
+    let host;
+    try {
+      host = r.domain.toLowerCase();
+      assertSafeRouteDomain(host);
+    } catch (err) {
+      logger.warn({ domain: r.domain, err: err.message }, 'DNS skip: route domain failed strict validation');
+      continue;
+    }
+    lines.push(`${gwIp}\t${host}`);
   }
 
   return lines.join('\n') + '\n';

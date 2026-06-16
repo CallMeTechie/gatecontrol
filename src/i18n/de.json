@@ -319,6 +319,9 @@
   "routes.compress": "Komprimierung",
   "routes.compress_desc": "Gzip/Zstd/Brotli-Antwortkomprimierung über Caddy aktivieren",
   "routes.compress_badge": "Komprimierung",
+  "routes.external_label": "Von extern erreichbar",
+  "routes.external_hint": "Aus: Route ist nur im VPN erreichbar. An: zusätzlich aus dem Internet.",
+  "routes.internal_badge": "Nur intern",
 
   "config.eyebrow": "WireGuard Interface",
   "config.title": "Konfiguration",

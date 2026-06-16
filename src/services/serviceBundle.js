@@ -6,6 +6,7 @@ const activity = require('./activity');
 const logger = require('../utils/logger');
 const { withCaddySync } = require('./routesSync');
 const { syncToCaddy } = require('./caddyConfig');
+const dns = require('./dns');
 const { findListenPortConflict, suggestFreeListenPort } = require('./l4');
 const {
   validateDomain,
@@ -239,6 +240,10 @@ async function createBundle(input) {
   }
 
   await withCaddySync(syncToCaddy, removeCreated, 'service bundle create');
+
+  // Member routes were created with skipSync; refresh internal DNS once for
+  // the whole bundle now that the Caddy sync succeeded. Best-effort.
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after bundle create failed'); }
 
   activity.log('service_bundle_created', `Service "${name}" created (${createdIds.length} routes)`, {
     source: 'admin',

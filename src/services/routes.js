@@ -10,6 +10,7 @@ const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig } =
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
+const dns = require('./dns');
 
 // ─── Target Exclusivity Validation ──────────────────────
 
@@ -256,9 +257,10 @@ async function create(data, opts = {}) {
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
                         circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
                         mirror_enabled, mirror_targets, debug_enabled, bot_blocker_enabled, bot_blocker_mode, bot_blocker_config, user_ids,
+                        external_enabled,
                         target_kind, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -306,6 +308,7 @@ async function create(data, opts = {}) {
     data.debug_enabled ? 1 : 0,
     data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
     data.user_ids ? JSON.stringify(data.user_ids) : null,
+    data.external_enabled ? 1 : 0,
     targetKind,
     targetPeerId,
     targetPoolId,
@@ -330,6 +333,12 @@ async function create(data, opts = {}) {
       db.prepare('DELETE FROM route_peer_acl WHERE route_id = ?').run(routeId);
       db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
     }, 'route create');
+  }
+
+  if (!opts.skipSync) {
+    // Refresh internal DNS so the new route resolves to the gateway for VPN
+    // clients. Best-effort: a DNS failure must not fail route creation.
+    try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route create failed'); }
   }
 
   activity.log('route_created', `Route "${domain}" created → ${targetIp}:${data.target_port}`, {
@@ -548,6 +557,7 @@ async function update(id, data) {
       bot_blocker_mode = COALESCE(?, bot_blocker_mode),
       bot_blocker_config = COALESCE(?, bot_blocker_config),
       user_ids = COALESCE(?, user_ids),
+      external_enabled = COALESCE(?, external_enabled),
       target_kind = COALESCE(?, target_kind),
       target_peer_id = COALESCE(?, target_peer_id),
       target_pool_id = COALESCE(?, target_pool_id),
@@ -611,6 +621,7 @@ async function update(id, data) {
     data.bot_blocker_mode !== undefined ? data.bot_blocker_mode : null,
     data.bot_blocker_config !== undefined ? (typeof data.bot_blocker_config === 'string' ? data.bot_blocker_config : JSON.stringify(data.bot_blocker_config)) : null,
     data.user_ids !== undefined ? (data.user_ids ? JSON.stringify(data.user_ids) : null) : null,
+    data.external_enabled !== undefined ? (data.external_enabled ? 1 : 0) : null,
     data.target_kind !== undefined ? (data.target_kind || null) : null,
     data.target_peer_id !== undefined ? (data.target_peer_id || null) : null,
     data.target_pool_id !== undefined ? (data.target_pool_id != null ? parseInt(data.target_pool_id, 10) : null) : null,
@@ -704,6 +715,8 @@ async function update(id, data) {
     } catch { /* module load guard */ }
   }
 
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route update failed'); }
+
   return finalRoute;
 }
 
@@ -746,6 +759,7 @@ async function remove(id) {
   });
 
   logger.info({ routeId: id, domain: route.domain }, 'Route deleted');
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route delete failed'); }
 }
 
 /**
@@ -780,6 +794,8 @@ async function toggle(id) {
     `Route "${route.domain}" ${newState ? 'enabled' : 'disabled'}`,
     { source: 'admin', severity: 'info', details: { routeId: id } }
   );
+
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route toggle failed'); }
 
   return getById(id);
 }
@@ -871,6 +887,10 @@ async function batch(action, ids) {
   );
 
   logger.info({ action, routeIds: ids, count: ids.length }, `Batch ${actionPast} routes`);
+
+  // One rebuild for the whole batch — never per-route (avoids N hosts-file
+  // writes + N dnsmasq SIGHUPs). Best-effort.
+  try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after batch route mutation failed'); }
 
   return ids.length;
 }
