@@ -227,6 +227,27 @@ describe('dns service', () => {
       assert.ok(!content.includes('hijack'), content);
       assert.ok(!content.includes('injected'), content);
     });
+
+    it('normalises a mixed-case route domain to lowercase', () => {
+      insertRoute({ domain: 'RDP.Example.COM' });
+      const content = dns.renderHostsContent();
+      assert.ok(content.includes(`${gwIp}\trdp.example.com`), content);
+      assert.ok(!content.includes('RDP.Example.COM'), content);
+    });
+
+    it('skips a single-label route domain (no dot → labels.length < 2)', () => {
+      insertRoute({ domain: 'intranet' });
+      const content = dns.renderHostsContent();
+      // The SQL filter only excludes domain=''; single-label still reaches the
+      // renderer, which must refuse it via the assertSafeRouteDomain guard.
+      assert.ok(!content.includes('intranet'), content);
+    });
+
+    it('skips a route domain with a trailing dot (empty last label)', () => {
+      insertRoute({ domain: 'foo.example.com.' });
+      const content = dns.renderHostsContent();
+      assert.ok(!content.includes('foo.example.com'), content);
+    });
   });
 
   // ─── rebuildNow ────────────────────────────────────
