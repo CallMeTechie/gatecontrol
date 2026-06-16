@@ -449,6 +449,7 @@ router.post('/',
       target_lan_port: req.body.target_lan_port,
       wol_enabled: req.body.wol_enabled,
       wol_mac: req.body.wol_mac,
+      external_enabled: req.body.external_enabled,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -596,6 +597,7 @@ router.put('/:id',
       target_lan_port: req.body.target_lan_port,
       wol_enabled: req.body.wol_enabled,
       wol_mac: req.body.wol_mac,
+      external_enabled: req.body.external_enabled,
     });
     // Mutual exclusivity: enabling Basic Auth removes any existing route_auth row
     // (symmetric to createOrUpdateAuth, which clears basic_auth_enabled when route-auth is set).
