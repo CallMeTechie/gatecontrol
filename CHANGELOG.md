@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.1] — 2026-06-16
+
+### Fixes
+- true host health for gateway-mode RDP routes (#130)
+
+---
+
 ## [1.81.0] — 2026-06-16
 
 ### Features
