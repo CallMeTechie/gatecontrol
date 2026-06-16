@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, before } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const path = require('node:path');
@@ -153,6 +153,7 @@ describe('routes service: external_enabled persistence', () => {
 describe('routes service: DNS rebuild on mutations', () => {
   let routes, db, dnsMod;
   let rebuildCalls = 0;
+  let originalRebuild;
 
   before(async () => {
     const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ext-dns-'));
@@ -189,8 +190,11 @@ describe('routes service: DNS rebuild on mutations', () => {
     // routes.js holds a reference to the same module object, so mutating
     // rebuildNow here intercepts every call from routes.js.
     dnsMod = require('../src/services/dns');
+    originalRebuild = dnsMod.rebuildNow;
     dnsMod.rebuildNow = () => { rebuildCalls++; };
   });
+
+  after(() => { dnsMod.rebuildNow = originalRebuild; });
 
   it('create() without skipSync triggers a DNS rebuild', async () => {
     rebuildCalls = 0;

@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, before } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -379,5 +379,33 @@ describe('service bundles', () => {
       target_ip: '10.8.0.70', target_port: 443,
     });
     assert.equal(r.l4_listen_port, '8444');
+  });
+
+  // ── DNS rebuild ────────────────────────────────────────
+
+  describe('createBundle DNS rebuild', () => {
+    let dnsMod;
+    let rebuildCount = 0;
+    let originalRebuild;
+
+    before(() => {
+      dnsMod = require('../src/services/dns');
+      originalRebuild = dnsMod.rebuildNow;
+      dnsMod.rebuildNow = () => { rebuildCount++; };
+    });
+
+    after(() => { dnsMod.rebuildNow = originalRebuild; });
+
+    it('createBundle() triggers exactly one DNS rebuild after a successful sync', async () => {
+      rebuildCount = 0;
+      await bundles.createBundle({
+        name: 'dns-rebuild-bundle',
+        domain: 'dns-rebuild.example.com',
+        target: { target_kind: 'peer', target_ip: '10.8.0.99' },
+        http: { target_port: 80 },
+        l4: [{ l4_protocol: 'tcp', l4_listen_port: 9901, target_port: 22 }],
+      });
+      assert.equal(rebuildCount, 1, 'createBundle should trigger exactly one DNS rebuild');
+    });
   });
 });
