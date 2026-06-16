@@ -8,6 +8,11 @@ function getDb() {
   return require('../db/connection').getDb();
 }
 
+// SECURITY: `internalOnlyRanges` MUST be the non-empty allow-list of VPN
+// source ranges (production: config.wireguard.internalOnlyRanges, always >= the
+// VPN subnet). Passing an empty array disables the external-exposure gate for
+// internal-only routes (they become world-reachable) — the gate in
+// buildL4Route only applies when ranges are present. Never call with [].
 function buildL4Servers(routes, internalOnlyRanges) {
   if (!routes || routes.length === 0) return {};
 
