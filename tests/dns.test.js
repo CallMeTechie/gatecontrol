@@ -15,6 +15,7 @@ process.env.GC_ENCRYPTION_KEY = 'a'.repeat(64);
 process.env.GC_DNS_HOSTS_FILE = hostsFile;
 process.env.GC_DNS_DOMAIN = 'gc.internal';
 process.env.GC_DNS_REBUILD_DEBOUNCE_MS = '50';
+process.env.GC_WG_GATEWAY_IP = '10.8.0.1';
 
 describe('dns service', () => {
   let dns, getDb, closeDb;
@@ -36,6 +37,7 @@ describe('dns service', () => {
   beforeEach(() => {
     const db = getDb();
     db.prepare('DELETE FROM peers').run();
+    db.prepare('DELETE FROM routes').run();
   });
 
   function insertPeer({ name, ip, hostname = null, hostname_source = null }) {
@@ -44,6 +46,17 @@ describe('dns service', () => {
       INSERT INTO peers (name, public_key, allowed_ips, hostname, hostname_source)
       VALUES (?, ?, ?, ?, ?)
     `).run(name, `pk-${name}`, `${ip}/32`, hostname, hostname_source);
+    return result.lastInsertRowid;
+  }
+
+  // Direct DB insert — deliberately bypasses the route API validator so we
+  // can exercise the renderer's own FQDN-safety check (incl. malicious rows).
+  function insertRoute({ domain, enabled = 1, route_type = 'http', target_ip = '10.0.0.1', target_port = 8080 }) {
+    const db = getDb();
+    const result = db.prepare(`
+      INSERT INTO routes (domain, target_ip, target_port, enabled, route_type)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(domain, target_ip, target_port, enabled, route_type);
     return result.lastInsertRowid;
   }
 
@@ -176,6 +189,43 @@ describe('dns service', () => {
       const content = dns.renderHostsContent();
       assert.ok(!content.includes('evil'));
       assert.ok(!content.includes('foo\n10.8.0.1'));
+    });
+
+    // ─── route domains → VPN gateway (internal-always) ───
+
+    const gwIp = process.env.GC_WG_GATEWAY_IP; // '10.8.0.1'
+
+    it('emits an internal A-record (route domain → gateway IP) for an enabled route', () => {
+      insertRoute({ domain: 'jellyfin.example.com' });
+      const content = dns.renderHostsContent();
+      assert.ok(content.includes(`${gwIp}\tjellyfin.example.com`), content);
+    });
+
+    it('emits an internal A-record for an L4 route too', () => {
+      insertRoute({ domain: 'rdp.example.com', route_type: 'l4' });
+      const content = dns.renderHostsContent();
+      assert.ok(content.includes(`${gwIp}\trdp.example.com`), content);
+    });
+
+    it('does not emit a disabled route', () => {
+      insertRoute({ domain: 'disabled.example.com', enabled: 0 });
+      const content = dns.renderHostsContent();
+      assert.ok(!content.includes('disabled.example.com'), content);
+    });
+
+    it('emits a route FQDN with a reserved label (peer reserved-name policy does NOT apply)', () => {
+      insertRoute({ domain: 'admin.foo.example.com' });
+      const content = dns.renderHostsContent();
+      assert.ok(content.includes(`${gwIp}\tadmin.foo.example.com`), content);
+    });
+
+    it('skips a malicious route domain containing whitespace or #', () => {
+      // Raw SQL bypasses the API validator — the renderer must refuse these.
+      insertRoute({ domain: 'evilroute.example.com one.two 10.8.0.1 hijack' });
+      insertRoute({ domain: 'sharp.example.com#injected' });
+      const content = dns.renderHostsContent();
+      assert.ok(!content.includes('hijack'), content);
+      assert.ok(!content.includes('injected'), content);
     });
   });
 
