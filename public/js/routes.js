@@ -256,7 +256,7 @@
       const compressTag = r.compress_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-blue" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 14l8-8 8 8"/><path d="M4 20l8-8 8 8"/></svg> ' + escapeHtml(GC.t['routes.compress_badge'] || 'Compress') + '</span>'
         : '';
-      const internalTag = !r.external_enabled && r.route_type !== 'l4'
+      const internalTag = !r.external_enabled
         ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(GC.t['routes.internal_badge'] || 'Internal only') + '</span>'
         : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
