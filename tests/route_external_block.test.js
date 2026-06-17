@@ -37,3 +37,25 @@ test('migration 52 adds external_block_* columns with inherit default', () => {
   assert.strictEqual(row.external_block_redirect_url, null);
   db.close();
 });
+
+test('routes.create/update persist external_block_* at the correct columns', async () => {
+  const routes = require('../src/services/routes');
+  // create() mit gesetzten Block-Feldern
+  // Use port 8080 (not in blockedPorts) so 127.0.0.1 passes the loopback guard.
+  const created = await routes.create({
+    domain: 'svc.example.com', target_ip: '127.0.0.1', target_port: 8080, route_type: 'http',
+    external_block_action: 'custom', external_block_body: '<h1>nope</h1>',
+  });
+  const id = created.id ?? created;
+  const r = routes.getById(id);
+  // Bindings korrekt → action/body landen in den richtigen Spalten (nicht verschoben)
+  assert.strictEqual(r.external_block_action, 'custom');
+  assert.strictEqual(r.external_block_body, '<h1>nope</h1>');
+  assert.strictEqual(r.target_ip, '127.0.0.1', 'binding shift would corrupt target_ip');
+
+  // update() ändert die Aktion
+  await routes.update(id, { external_block_action: 'redirect', external_block_redirect_url: 'https://example.org/x' });
+  const u = routes.getById(id);
+  assert.strictEqual(u.external_block_action, 'redirect');
+  assert.strictEqual(u.external_block_redirect_url, 'https://example.org/x');
+});
