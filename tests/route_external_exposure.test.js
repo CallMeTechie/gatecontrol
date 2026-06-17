@@ -442,12 +442,20 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
     assert.ok(!hasRemoteIp, 'external L4 route must NOT have a remote_ip gate');
   });
 
-  it('forward-auth (compound) internal-only route keeps the remote_ip gate on the inner content route', () => {
+  it('forward-auth (compound) internal-only route gates the OUTER subroute match (gate hoisted; auth proxy behind it)', () => {
     const { buildCaddyConfig } = require('../src/services/caddyConfig');
     // ip_filter_enabled forces needsForwardAuth=true → the route takes the
-    // compound 2-element subroute branch (route-auth sibling + content route),
-    // so the gate sits on the inner routeConfig, not the top-level host match.
-    // This proves the gate survives the forward-auth path too.
+    // compound 2-element subroute branch (route-auth sibling + content route).
+    //
+    // UPDATED by the external-block-response feature (migration 52, Concern 3):
+    // the remote_ip gate is now HOISTED onto the OUTER subroute host match and
+    // REMOVED from the inner content route, so the path-only buildRouteAuthProxy()
+    // sibling (`/route-auth/*`, IP-independent) is ALSO behind the gate. Before
+    // this hoist the gate sat only on the inner content route, leaving the auth
+    // page reachable by external scanners — the latent leak this closes. The
+    // security invariant ("internal-only forward-auth route is gated to the VPN
+    // subnet") is preserved, just enforced one level out. (The host also gains a
+    // host-only fallback (B) sibling; we assert on the gated subroute here.)
     const cfg = buildCaddyConfig([
       { id: 7007, domain: 'fa.example.com', route_type: 'http', https_enabled: 1,
         target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
@@ -458,13 +466,17 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
     // It must be a compound subroute (forward-auth), NOT the folded single-match form.
     const subroute = outer.handle.find((h) => h.handler === 'subroute');
     assert.ok(subroute, 'compound route wraps content in a subroute (forward-auth path)');
-    // Drill into the inner routes and prove the content route retains the gate.
-    const gated = subroute.routes.find(
+    // The gate now lives on the OUTER host match, covering the whole subroute
+    // (auth proxy + content) — so an external IP never reaches the auth page.
+    const outerGate = Array.isArray(outer.match) && outer.match.find((m) => m.remote_ip);
+    assert.ok(outerGate, 'outer subroute match carries the remote_ip gate (hoisted)');
+    assert.ok(outerGate.remote_ip.ranges.includes('10.8.0.0/24'),
+      'forward-auth route gated to the VPN subnet on the outer match');
+    // And the inner content route no longer carries its own remote_ip gate
+    // (the gate exists in exactly one place now).
+    const innerGated = subroute.routes.find(
       (r) => Array.isArray(r.match) && r.match.some((m) => m.remote_ip)
     );
-    assert.ok(gated, 'inner content route retains a remote_ip gate');
-    const gateMatch = gated.match.find((m) => m.remote_ip);
-    assert.ok(gateMatch.remote_ip.ranges.includes('10.8.0.0/24'),
-      'forward-auth content route gated to the VPN subnet');
+    assert.ok(!innerGated, 'inner content route no longer carries a redundant remote_ip gate');
   });
 });
