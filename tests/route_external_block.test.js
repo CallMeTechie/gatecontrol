@@ -175,6 +175,50 @@ test('internal-only AUTH route: gate on OUTER subroute match, NOT inner; (B) app
 
 const reconciler = require('../src/services/caddyReconciler');
 
+// ── inherit → global resolution ──────────────────────────────────────────────
+// These tests exercise the core effective-action contract: a route whose
+// external_block_action === 'inherit' must resolve to the GLOBAL setting, not
+// silently fall back to a hardcoded default.
+
+test('inherit + global=redirect → (B) 302 with global Location', () => {
+  const settings = require('../src/services/settings');
+  settings.set('route_external_block_action', 'redirect');
+  settings.set('route_external_block_redirect_url', 'https://global.example.org/x');
+  try {
+    const cfg = buildCaddyConfig([
+      { id: 10, domain: 'inh-redir.example.com', route_type: 'http', https_enabled: 0,
+        target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 8080,
+        external_enabled: 0, external_block_action: 'inherit', enabled: 1 },
+    ]);
+    const hostRoutes = findHostRoutes(cfg, 'inh-redir.example.com');
+    assert.strictEqual(hostRoutes.length, 2, 'gated route (A) + fallback (B)');
+    const b = JSON.stringify(hostRoutes[1]);
+    assert.ok(b.includes('"status_code":302'), '(B) must be 302 (inherited redirect)');
+    assert.ok(b.includes('global.example.org/x'), '(B) carries global redirect URL');
+  } finally {
+    // Restore to a neutral state so other tests are not affected
+    settings.set('route_external_block_action', 'not_found');
+    settings.set('route_external_block_redirect_url', '');
+  }
+});
+
+test('inherit + global=not_found → (B) 404 fallback', () => {
+  const settings = require('../src/services/settings');
+  // Explicitly set the global so the test is deterministic regardless of ordering
+  settings.set('route_external_block_action', 'not_found');
+  settings.set('route_external_block_redirect_url', '');
+  const cfg = buildCaddyConfig([
+    { id: 11, domain: 'inh-nf.example.com', route_type: 'http', https_enabled: 0,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 8080,
+      external_enabled: 0, external_block_action: 'inherit', enabled: 1 },
+  ]);
+  const hostRoutes = findHostRoutes(cfg, 'inh-nf.example.com');
+  assert.strictEqual(hostRoutes.length, 2, 'gated route (A) + fallback (B)');
+  const b = JSON.stringify(hostRoutes[1]);
+  assert.ok(b.includes('"status_code":404'), '(B) must be 404 (inherited not_found)');
+  assert.ok(!b.includes('302'), '(B) must NOT be a redirect');
+});
+
 test('fallback (B) does not introduce extra @id → no reconciler drift', () => {
   const cfg = buildCaddyConfig([
     { id: 7, domain: 'rec.example.com', route_type: 'http', https_enabled: 1,
