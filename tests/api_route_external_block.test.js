@@ -69,3 +69,33 @@ test('PUT route-block-default invalid redirect_url → 400', async () => {
     .send({ action: 'redirect', redirect_url: 'not-a-url' });
   assert.equal(res.status, 400, JSON.stringify(res.body));
 });
+
+test('PUT route-block-default: requestCaddySync fires on change, not on identical repeat', async () => {
+  // Approach (a): spy on the caddySync module object (late-bound in network.js).
+  // network.js now holds `const caddySync = require(...)` and calls
+  // `caddySync.requestCaddySync()` at call-time, so replacing the property here
+  // affects the live wired behavior.
+  const caddySyncMod = require('../src/services/caddySync');
+  let syncCount = 0;
+  const originalSync = caddySyncMod.requestCaddySync;
+  caddySyncMod.requestCaddySync = async () => { syncCount++; };
+  try {
+    // First PUT: value differs from DB default ('') → changed=true → sync fires
+    const r1 = await agent.put('/api/v1/settings/route-block-default').set('X-CSRF-Token', csrf)
+      .send({ action: 'redirect', redirect_url: 'https://block.example.com/' });
+    assert.equal(r1.status, 200, JSON.stringify(r1.body));
+    // Spy body is synchronous (no await inside), so syncCount is already incremented
+    // before res.json() returns — but a setImmediate tick keeps this robust.
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(syncCount, 1, 'sync must fire once when value changes');
+
+    // Second PUT: identical values → changed=false → sync must NOT fire again
+    const r2 = await agent.put('/api/v1/settings/route-block-default').set('X-CSRF-Token', csrf)
+      .send({ action: 'redirect', redirect_url: 'https://block.example.com/' });
+    assert.equal(r2.status, 200, JSON.stringify(r2.body));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(syncCount, 1, 'sync must NOT fire on a no-op (identical) PUT');
+  } finally {
+    caddySyncMod.requestCaddySync = originalSync;
+  }
+});

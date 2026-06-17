@@ -7,7 +7,7 @@ const { Router } = require('express');
 const settings = require('../../../services/settings');
 const activity = require('../../../services/activity');
 const logger = require('../../../utils/logger');
-const { requestCaddySync } = require('../../../services/caddySync');
+const caddySync = require('../../../services/caddySync');
 const { requireFeature } = require('../../../middleware/license');
 const { hasFeature } = require('../../../services/license');
 const config = require('../../../../config/default');
@@ -174,11 +174,11 @@ router.put('/route-block-default', (req, res) => {
     apply('route_external_block_redirect_url', redirect_url);
 
     if (changed) {
-      requestCaddySync().catch(err => logger.warn({ err: err.message }, 'Caddy sync after route-block-default change failed'));
+      caddySync.requestCaddySync().catch(err => logger.warn({ err: err.message }, 'Caddy sync after route-block-default change failed'));
+      activity.log('route_block_default_updated', 'Route external-block default updated', {
+        source: 'admin', ipAddress: req.ip, severity: 'info',
+      });
     }
-    activity.log('route_block_default_updated', 'Route external-block default updated', {
-      source: 'admin', ipAddress: req.ip, severity: 'info',
-    });
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update route-block default');
