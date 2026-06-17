@@ -405,7 +405,7 @@
             <option value="empty">{{ t('routes.block_empty') }}</option>
           </select>
           <textarea id="create-route-block-body" style="display:none;margin-top:8px;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
-          <input id="create-route-block-redirect" type="url" style="display:none;margin-top:8px;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-base);color:var(--text-1)" placeholder="https://…">
+          <input id="create-route-block-redirect" type="url" style="display:none;margin-top:8px;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-base);color:var(--text-1)" placeholder="{{ t('routes.block_redirect_ph') or 'https://…' }}">
         </div>
         </div> {# /step 1 #}
 

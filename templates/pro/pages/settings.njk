@@ -138,7 +138,7 @@
             </select>
           </div>
           <textarea id="settings-route-block-body" style="display:none;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
-          <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="https://...">
+          <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="{{ t('routes.block_redirect_ph') or 'https://...' }}">
           <div id="settings-route-block-message" style="display:none"></div>
           <div style="display:flex;justify-content:flex-end;padding-top:4px">
             <button class="btn btn-primary" id="btn-route-block-save">{{ t('data.save') }}</button>

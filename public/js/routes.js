@@ -260,7 +260,7 @@
         ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(GC.t['routes.internal_badge'] || 'Internal only') + '</span>'
         : '';
       const blockActionTag = !r.external_enabled && r.external_block_action && r.external_block_action !== 'inherit'
-        ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(r.external_block_action) + '</span>'
+        ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(GC.t['routes.block_' + r.external_block_action] || r.external_block_action) + '</span>'
         : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
