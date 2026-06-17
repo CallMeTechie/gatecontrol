@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.83.0] — 2026-06-17
+
+### Features
+- configurable external-access response for internal-only routes (#134)
+
+---
+
 ## [1.82.0] — 2026-06-16
 
 ### Features
