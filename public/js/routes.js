@@ -259,6 +259,9 @@
       const internalTag = !r.external_enabled
         ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(GC.t['routes.internal_badge'] || 'Internal only') + '</span>'
         : '';
+      const blockActionTag = !r.external_enabled && r.external_block_action && r.external_block_action !== 'inherit'
+        ? '<span class="tag tag-amber" style="margin-left:4px">' + escapeHtml(r.external_block_action) + '</span>'
+        : '';
       const authTag = r.basic_auth_enabled && r.route_type !== 'l4'
         ? '<span class="tag tag-amber" style="margin-left:4px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Basic Auth</span>'
         : '';
@@ -322,7 +325,7 @@
       // visible; the first two feature badges follow, the rest collapse
       // behind a "+N" toggle (expandedBadges survives SSE re-renders).
       const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
-      const extraTags = [internalTag, debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
+      const extraTags = [internalTag, blockActionTag, debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
         backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
         routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
       let visibleExtras, moreBtn = '';
@@ -759,6 +762,10 @@
         mirror_targets: createMirrorTargets.length > 0 ? createMirrorTargets : null,
         target_kind: targetKind,
       };
+      const createBlockAction = document.getElementById('create-route-block-action')?.value || 'inherit';
+      payload.external_block_action = createBlockAction;
+      if (createBlockAction === 'custom') payload.external_block_body = document.getElementById('create-route-block-body')?.value || '';
+      if (createBlockAction === 'redirect') payload.external_block_redirect_url = document.getElementById('create-route-block-redirect')?.value || '';
       if (isGateway) {
         const gwPeerVal = document.getElementById('create-route-gateway-peer')?.value || '';
         const lanHostVal = document.getElementById('create-route-lan-host')?.value || '';
@@ -1116,6 +1123,7 @@
     }
     routeModalOverlay.style.display = 'flex';
     showWizardStep(1);
+    syncBlockVisibility('create');
     setTimeout(() => {
       const f = document.getElementById('create-route-domain');
       if (f) f.focus();
@@ -1495,6 +1503,16 @@
       if (route.external_enabled) externalToggle.classList.add('on');
       else externalToggle.classList.remove('on');
       externalToggle.setAttribute('aria-checked', route.external_enabled ? 'true' : 'false');
+    }
+
+    const editBlockAction = document.getElementById('edit-route-block-action');
+    if (editBlockAction) {
+      editBlockAction.value = route.external_block_action || 'inherit';
+      const editBlockBody = document.getElementById('edit-route-block-body');
+      if (editBlockBody) editBlockBody.value = route.external_block_body || '';
+      const editBlockRedirect = document.getElementById('edit-route-block-redirect');
+      if (editBlockRedirect) editBlockRedirect.value = route.external_block_redirect_url || '';
+      syncBlockVisibility('edit');
     }
 
     // Reset auth type to none first
@@ -2003,6 +2021,10 @@
           mirror_enabled: document.getElementById('edit-route-mirror')?.classList.contains('on') ? 1 : 0,
           mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
         };
+        const editBlockAction = document.getElementById('edit-route-block-action')?.value || 'inherit';
+        payload.external_block_action = editBlockAction;
+        if (editBlockAction === 'custom') payload.external_block_body = document.getElementById('edit-route-block-body')?.value || '';
+        if (editBlockAction === 'redirect') payload.external_block_redirect_url = document.getElementById('edit-route-block-redirect')?.value || '';
         // User visibility
         var selectedUserIds = [];
         document.querySelectorAll('.route-user-cb:checked').forEach(function (cb) {
@@ -2566,6 +2588,44 @@
   }
 
   setupIpFilter('edit', editIpFilterRules);
+
+  // ─── External-block visibility ────────────────────────
+  function syncBlockVisibility(prefix) {
+    var ext = document.getElementById(prefix + '-route-external');
+    var wrap = document.getElementById(prefix + '-route-block-wrap');
+    var action = document.getElementById(prefix + '-route-block-action');
+    var body = document.getElementById(prefix + '-route-block-body');
+    var redir = document.getElementById(prefix + '-route-block-redirect');
+    if (!wrap || !action) return;
+    var internalOnly = !(ext && ext.classList.contains('on'));
+    wrap.style.display = internalOnly ? '' : 'none';
+    if (body) body.style.display = action.value === 'custom' ? '' : 'none';
+    if (redir) redir.style.display = action.value === 'redirect' ? '' : 'none';
+  }
+
+  // Create: wire external toggle + block-action select
+  var createExtToggle = document.getElementById('create-route-external');
+  if (createExtToggle) {
+    createExtToggle.addEventListener('click', function() {
+      setTimeout(function() { syncBlockVisibility('create'); }, 0);
+    });
+  }
+  var createBlockActionSel = document.getElementById('create-route-block-action');
+  if (createBlockActionSel) {
+    createBlockActionSel.addEventListener('change', function() { syncBlockVisibility('create'); });
+  }
+
+  // Edit: wire external toggle + block-action select
+  var editExtToggle = document.getElementById('edit-route-external');
+  if (editExtToggle) {
+    editExtToggle.addEventListener('click', function() {
+      setTimeout(function() { syncBlockVisibility('edit'); }, 0);
+    });
+  }
+  var editBlockActionSel = document.getElementById('edit-route-block-action');
+  if (editBlockActionSel) {
+    editBlockActionSel.addEventListener('change', function() { syncBlockVisibility('edit'); });
+  }
 
   // ─── Edit modal tab switching ─────────────────────────
   var currentEditRouteId = null;
