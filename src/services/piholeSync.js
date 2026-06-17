@@ -85,18 +85,24 @@ function createSync(deps) {
 
   /**
    * Reconcile blocking state across instances against the desired state.
+   * Returns the enforced effective blocking { state, timer } so syncOnce can
+   * reflect it in the cache immediately (avoids the read-back race where the
+   * cache shows the pre-reconcile state for one full sync interval).
+   * Returns null when there is no active desired override, or the timer has
+   * already expired (then the freshly-read state is authoritative).
    */
   async function reconcileBlocking(clients, perInstanceBlocking) {
     const desired = loadDesired();
-    if (!desired) return;
+    if (!desired) return null;
 
     // timer_ends_at is in seconds (Unix epoch seconds)
     const remaining = desired.timer_ends_at
       ? Math.round(desired.timer_ends_at - (now() / 1000))
       : 0;
 
-    // If a timer was set but it has already expired, enforce nothing
-    if (desired.timer_ends_at && remaining <= 0) return;
+    // If a timer was set but it has already expired, enforce nothing AND keep
+    // the read-back (pi-hole re-enabled itself via its own timer).
+    if (desired.timer_ends_at && remaining <= 0) return null;
 
     for (let i = 0; i < clients.length; i++) {
       const current = perInstanceBlocking[i];
@@ -114,6 +120,13 @@ function createSync(deps) {
         }
       }
     }
+
+    // Effective enforced state — GateControl is authoritative via auto-revert,
+    // so the cache reflects the desired we just pushed (correct even with no drift).
+    return {
+      state: desired.enabled ? 'enabled' : 'disabled',
+      timer: (!desired.enabled && remaining > 0) ? remaining : null,
+    };
   }
 
   async function syncOnce() {
@@ -182,7 +195,8 @@ function createSync(deps) {
         lastSyncAt,
       };
 
-      await reconcileBlocking(clients, perInstanceBlocking);
+      const enforced = await reconcileBlocking(clients, perInstanceBlocking);
+      if (enforced) cache = { ...cache, blocking: enforced };
     } else {
       cache = { ...cache, instances, lastSyncAt: now() };
     }

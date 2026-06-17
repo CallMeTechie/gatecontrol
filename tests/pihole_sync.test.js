@@ -138,3 +138,80 @@ test('start() is idempotent — calling twice does not start a second interval',
   sync.start();
   assert.doesNotThrow(() => sync.stop());
 });
+
+test('readback-race fix: setBlocking(false,timer) is reflected in cache after ONE syncOnce', async () => {
+  const now = 2_000_000;
+  // Pi-hole meldet aktuell "enabled" (blocking:true) — der pre-reconcile Read-Back wäre 'enabled'.
+  const c = fakeClient('p1', {
+    summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}},
+    blocking:{ blocking:true },
+  });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, instances:[{id:'p1'}] }),
+    clientFactory: () => c,
+    peersProvider: () => [],
+    eventBus: { publish(){} },
+    dnsChain: { apply(){}, revert(){} },
+    now: () => now,
+    loadDesired: () => ({ enabled:false, timer_ends_at: now/1000 + 300 }),
+  });
+  const cache = await sync.syncOnce();
+  assert.equal(cache.blocking.state, 'disabled', 'cache reflects enforced desired immediately');
+  assert.equal(cache.blocking.timer, 300);
+});
+
+test('readback-race fix: resume reflects enabled immediately, timer null', async () => {
+  const now = 2_000_000;
+  const c = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}, blocking:{ blocking:false } });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, instances:[{id:'p1'}] }),
+    clientFactory: () => c, peersProvider: () => [], eventBus:{publish(){}}, dnsChain:{apply(){},revert(){}},
+    now: () => now,
+    loadDesired: () => ({ enabled:true, timer_ends_at: null }),
+  });
+  const cache = await sync.syncOnce();
+  assert.equal(cache.blocking.state, 'enabled');
+  assert.equal(cache.blocking.timer, null);
+});
+
+test('readback-race fix: permanent disable → disabled, timer null', async () => {
+  const now = 2_000_000;
+  const c = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}, blocking:{ blocking:true } });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, instances:[{id:'p1'}] }),
+    clientFactory: () => c, peersProvider: () => [], eventBus:{publish(){}}, dnsChain:{apply(){},revert(){}},
+    now: () => now,
+    loadDesired: () => ({ enabled:false, timer_ends_at: null }),
+  });
+  const cache = await sync.syncOnce();
+  assert.equal(cache.blocking.state, 'disabled');
+  assert.equal(cache.blocking.timer, null);
+});
+
+test('readback-race fix: expired timer falls back to read-back (pi-hole self re-enabled)', async () => {
+  const now = 2_000_000;
+  // Pi-hole hat sich per eigenem Timer re-enabled → meldet blocking:true.
+  const c = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}, blocking:{ blocking:true } });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, instances:[{id:'p1'}] }),
+    clientFactory: () => c, peersProvider: () => [], eventBus:{publish(){}}, dnsChain:{apply(){},revert(){}},
+    now: () => now,
+    loadDesired: () => ({ enabled:false, timer_ends_at: now/1000 - 10 }), // abgelaufen
+  });
+  const cache = await sync.syncOnce();
+  assert.equal(cache.blocking.state, 'enabled', 'read-back wins on expired timer');
+});
+
+test('readback-race fix: no desired → cache uses read-back merge (status quo)', async () => {
+  const now = 2_000_000;
+  const c = fakeClient('p1', { summary:{queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}, blocking:{ blocking:true } });
+  const sync = createSync({
+    loadConfig: () => ({ enabled:true, sync_interval_sec:30, instances:[{id:'p1'}] }),
+    clientFactory: () => c, peersProvider: () => [], eventBus:{publish(){}}, dnsChain:{apply(){},revert(){}},
+    now: () => now,
+    loadDesired: () => null,
+  });
+  const cache = await sync.syncOnce();
+  // Read-Back von blocking:true → kein 'disabled'-Override.
+  assert.notEqual(cache.blocking.state, 'disabled');
+});
