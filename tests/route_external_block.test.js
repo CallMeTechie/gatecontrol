@@ -82,3 +82,110 @@ test('buildExternalBlockHandler: custom → 404 html body', () => {
 test('buildExternalBlockHandler: empty → null (status quo)', () => {
   assert.strictEqual(caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 0, external_block_action: 'empty' }), null);
 });
+
+const { buildCaddyConfig } = require('../src/services/caddyConfig');
+
+function findHostRoutes(cfg, host) {
+  const routes = cfg.apps.http.servers.srv0.routes;
+  return routes.filter(r => JSON.stringify(r.match || []).includes(host));
+}
+
+test('internal-only + not_found → gated route (A) + host-only 404 fallback (B), B after A, B has no @id', () => {
+  const cfg = buildCaddyConfig([
+    { id: 1, domain: 'int.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 0, external_block_action: 'not_found', enabled: 1 },
+  ]);
+  const hostRoutes = findHostRoutes(cfg, 'int.example.com');
+  assert.strictEqual(hostRoutes.length, 2, 'two outer routes for the host');
+  const a = hostRoutes[0], b = hostRoutes[1];
+  assert.ok(JSON.stringify(a.match).includes('10.8.0.0/24'), '(A) is remote_ip gated');
+  assert.ok(JSON.stringify(a).includes('gc_route_1'), '(A) carries the canonical @id');
+  // (B): host-only static_response 404, NO @id
+  const bStr = JSON.stringify(b);
+  assert.ok(bStr.includes('static_response'), '(B) is static_response');
+  assert.ok(bStr.includes('404'), '(B) returns 404');
+  assert.ok(!bStr.includes('remote_ip'), '(B) is host-only (no remote_ip)');
+  assert.ok(!bStr.includes('@id'), '(B) has NO @id');
+});
+
+test('internal-only + empty → single route, no fallback (status quo)', () => {
+  const cfg = buildCaddyConfig([
+    { id: 2, domain: 'emp.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 0, external_block_action: 'empty', enabled: 1 },
+  ]);
+  assert.strictEqual(findHostRoutes(cfg, 'emp.example.com').length, 1);
+});
+
+test('internal-only + redirect → (B) 302 + Location', () => {
+  const cfg = buildCaddyConfig([
+    { id: 3, domain: 'red.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 0, external_block_action: 'redirect',
+      external_block_redirect_url: 'https://example.org/here', enabled: 1 },
+  ]);
+  const b = findHostRoutes(cfg, 'red.example.com')[1];
+  assert.ok(JSON.stringify(b).includes('"status_code":302'));
+  assert.ok(JSON.stringify(b).includes('example.org/here'));
+});
+
+test('external route → unchanged, no fallback', () => {
+  const cfg = buildCaddyConfig([
+    { id: 4, domain: 'ext.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 1, external_block_action: 'not_found', enabled: 1 },
+  ]);
+  assert.strictEqual(findHostRoutes(cfg, 'ext.example.com').length, 1);
+});
+
+// SECURITY-CRITICAL: forward-auth internal-only route. ip_filter_enabled:1 forces
+// needsForwardAuth=true without seeding a route_auth row, so the route takes the
+// subroute branch and the gate must be HOISTED to the outer match — else an
+// external scanner hits /route-auth/* (path-only, IP-independent) and sees the
+// auth page instead of (B).
+test('internal-only AUTH route: gate on OUTER subroute match, NOT inner; (B) appended', () => {
+  const cfg = buildCaddyConfig([
+    { id: 5, domain: 'auth.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 0, external_block_action: 'not_found',
+      ip_filter_enabled: 1, ip_filter_mode: 'allow', enabled: 1 },
+  ]);
+  const hostRoutes = findHostRoutes(cfg, 'auth.example.com');
+  assert.strictEqual(hostRoutes.length, 2, 'gated subroute (A) + fallback (B)');
+  const a = hostRoutes[0];
+  // (A): OUTER match carries host AND remote_ip; handler is a subroute
+  assert.ok(a.match[0].host && a.match[0].remote_ip, 'outer match has host + remote_ip (hoisted)');
+  assert.ok(JSON.stringify(a.match[0].remote_ip).includes('10.8.0.0/24'), 'VPN ranges on outer');
+  assert.strictEqual(a.handle[0].handler, 'subroute', '(A) wraps the auth subroute');
+  // inner routeConfig (the content route inside the subroute) must NOT carry remote_ip
+  const innerRoutes = a.handle[0].routes;
+  const contentRoute = innerRoutes.find(r => r['@id'] === 'gc_route_5');
+  assert.ok(contentRoute, 'inner content route present with canonical @id');
+  assert.ok(!contentRoute.match || !JSON.stringify(contentRoute.match).includes('remote_ip'),
+    'inner content route has NO remote_ip (gate lives only on the outer match)');
+  // (B): host-only 404, no @id
+  const b = hostRoutes[1];
+  assert.ok(JSON.stringify(b).includes('404') && !JSON.stringify(b).includes('@id'));
+});
+
+const reconciler = require('../src/services/caddyReconciler');
+
+test('fallback (B) does not introduce extra @id → no reconciler drift', () => {
+  const cfg = buildCaddyConfig([
+    { id: 7, domain: 'rec.example.com', route_type: 'http', https_enabled: 1,
+      target_kind: 'gateway', target_lan_host: '127.0.0.1', target_lan_port: 80,
+      external_enabled: 0, external_block_action: 'not_found', enabled: 1 },
+  ]);
+  // (1) static: exactly one gc_route_<id>, none for (B)
+  const actual = reconciler.extractCaddyRouteIds(cfg);
+  const routeIds = [...actual].filter(x => x.startsWith('gc_route_'));
+  assert.deepStrictEqual(routeIds, ['gc_route_7']);
+
+  // (2) dynamic: the REAL divergence check the reconciler runs each cycle.
+  // expected = DB route @ids, actual = live-config @ids → must NOT diverge.
+  const expected = new Set(['gc_route_7']);
+  const div = reconciler.detectDivergence(expected, actual);
+  assert.strictEqual(div.diverged, false, 'no permanent re-sync from the fallback');
+  assert.deepStrictEqual([...(div.extraInCaddy || [])], [], 'no extra @id from (B)');
+});

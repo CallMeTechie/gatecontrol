@@ -603,6 +603,29 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       };
     }
 
+    // External-block metadata for the domain-grouping loop below.
+    // _gateRanges = the remote_ip ranges already on the inner content route
+    // (subnet from the external-exposure gate, or peer IPs from an ACL). Used
+    // to hoist the gate onto the OUTER subroute match for forward-auth routes,
+    // so the auth proxy is also behind the gate (else an external scanner hits
+    // /route-auth/* before the gate). For non-auth routes the fold fast-path
+    // already ANDs remote_ip onto the outer host match, so no hoist needed.
+    const srv = caddyRoutes[route.domain];
+    if (srv) {
+      srv._externalBlock = buildExternalBlockHandler(route);
+      srv._internalOnly = !route.external_enabled;
+      srv._gateRanges = (routeConfig.match && routeConfig.match[0] && routeConfig.match[0].remote_ip && routeConfig.match[0].remote_ip.ranges) || INTERNAL_ONLY_RANGES;
+      // Spec §3 (Gate-Hoisting): for an internal-only FORWARD-AUTH route the gate
+      // must live ONLY on the outer subroute match, not on the inner routeConfig.
+      // We captured the ranges into _gateRanges above; now drop the inner match so
+      // the gate exists in exactly one place. (Non-auth routes keep their inner
+      // match — the fold fast-path ANDs it onto the outer host. ACL ranges, if any,
+      // were captured into _gateRanges and are re-applied on the outer match.)
+      if (needsForwardAuth && srv._internalOnly && srv._externalBlock) {
+        delete routeConfig.match;
+      }
+    }
+
   }
 
   // Build full Caddy config
@@ -699,17 +722,32 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       if (inner['@id']) entry['@id'] = inner['@id'];
       serverRoutes.push(entry);
     } else {
-      // Compound route (forward-auth sibling + content), OR a single route whose
-      // inner.match carries multiple OR'd objects (see guard above): wrap in a
-      // subroute. The outer host matcher is ANDed by the subroute wrapper; inner
-      // routes keep their own (possibly multi-object OR) matchers AND inner @id
-      // markers intact.
+      // Compound route (forward-auth sibling + content) or multi-OR inner match.
+      // For internal-only routes, hoist the remote_ip gate onto the OUTER host
+      // match so the auth proxy is also gated (Concern 3). Non-auth routes never
+      // reach here (single route → fold fast-path).
+      const outerMatch = (srvConfig._internalOnly && srvConfig._externalBlock)
+        ? [{ host: [domain], remote_ip: { ranges: srvConfig._gateRanges } }]
+        : [{ host: [domain] }];
       serverRoutes.push({
-        match: [{ host: [domain] }],
+        match: outerMatch,
         handle: [{
           handler: 'subroute',
           routes: srvConfig.routes,
         }],
+        terminal: true,
+      });
+    }
+
+    // Fallback (B): served to external source IPs that fell past the gated
+    // route (A). Host-only match, NO @id (keeps the caddyReconciler's
+    // one-gc_route_<id>-per-route invariant intact — an extra @id here would
+    // cause permanent drift re-sync). Appended AFTER (A) so VPN clients match
+    // (A) first and external clients fall to (B).
+    if (srvConfig._externalBlock) {
+      serverRoutes.push({
+        match: [{ host: [domain] }],
+        handle: srvConfig._externalBlock,
         terminal: true,
       });
     }
