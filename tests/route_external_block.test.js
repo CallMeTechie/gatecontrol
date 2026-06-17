@@ -59,3 +59,26 @@ test('routes.create/update persist external_block_* at the correct columns', asy
   assert.strictEqual(u.external_block_action, 'redirect');
   assert.strictEqual(u.external_block_redirect_url, 'https://example.org/x');
 });
+
+const caddyConfig = require('../src/services/caddyConfig');
+
+test('buildExternalBlockHandler: external route → null', () => {
+  assert.strictEqual(caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 1 }), null);
+});
+test('buildExternalBlockHandler: not_found → 404', () => {
+  const h = caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 0, external_block_action: 'not_found' });
+  assert.deepStrictEqual(h, [{ handler: 'static_response', status_code: 404 }]);
+});
+test('buildExternalBlockHandler: redirect → 302 + Location', () => {
+  const h = caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 0, external_block_action: 'redirect', external_block_redirect_url: 'https://example.org/x' });
+  assert.strictEqual(h[0].status_code, 302);
+  assert.deepStrictEqual(h[0].headers.Location, ['https://example.org/x']);
+});
+test('buildExternalBlockHandler: custom → 404 html body', () => {
+  const h = caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 0, external_block_action: 'custom', external_block_body: '<h1>x</h1>' });
+  assert.strictEqual(h[0].status_code, 404);
+  assert.strictEqual(h[0].body, '<h1>x</h1>');
+});
+test('buildExternalBlockHandler: empty → null (status quo)', () => {
+  assert.strictEqual(caddyConfig.__test.buildExternalBlockHandler({ external_enabled: 0, external_block_action: 'empty' }), null);
+});

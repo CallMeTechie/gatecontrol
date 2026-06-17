@@ -155,6 +155,38 @@ function humanScheduleForRoute(routeId) {
   }
 }
 
+// Resolve the external-block fallback handler for an internal-only route.
+// Returns null when no fallback applies (route is external, action 'empty',
+// or a misconfigured redirect/custom). The returned handler is served to
+// EXTERNAL source IPs only (the caller attaches it as a host-only sibling
+// route AFTER the remote_ip-gated content route). Mirrors the static_response
+// shape already used for access-window/outage pages (caddyConfig.js:129-138).
+function buildExternalBlockHandler(route) {
+  if (route.external_enabled) return null;
+  const settings = require('./settings');
+  let action = route.external_block_action || 'inherit';
+  if (action === 'inherit') action = settings.get('route_external_block_action', 'not_found');
+  if (action === 'empty') return null;
+
+  if (action === 'redirect') {
+    let url = route.external_block_redirect_url;
+    if (!url || !String(url).trim()) url = settings.get('route_external_block_redirect_url', '');
+    url = url ? String(url).trim() : '';
+    if (!url) return null; // misconfigured → behave like today (no fallback)
+    return [{ handler: 'static_response', status_code: 302, headers: { Location: [url] } }];
+  }
+
+  if (action === 'custom') {
+    let body = route.external_block_body;
+    if (!body) body = settings.get('route_external_block_body', '');
+    if (!body) return [{ handler: 'static_response', status_code: 404 }]; // empty custom → bare 404
+    return [{ handler: 'static_response', status_code: 404, headers: { 'Content-Type': ['text/html; charset=utf-8'] }, body: String(body) }];
+  }
+
+  // not_found (default) — honest empty-body 404
+  return [{ handler: 'static_response', status_code: 404 }];
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
  * Build Caddy configuration JSON. Overloaded:
@@ -855,3 +887,5 @@ module.exports = {
   resolveRouteUpstreams,
   buildPoolOutageBlock,
 };
+
+module.exports.__test = Object.assign({}, module.exports.__test, { buildExternalBlockHandler });
