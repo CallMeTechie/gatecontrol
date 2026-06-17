@@ -46,3 +46,26 @@ test('PUT custom WITHOUT resending body keeps persisted body → 200 (no false 4
     .send({ external_block_action: 'custom' }); // body NOT resent
   assert.equal(put.status, 200, JSON.stringify(put.body));
 });
+
+// ── Task 6: GET/PUT /api/settings/route-block-default ──────────────────────
+
+test('GET/PUT /api/v1/settings/route-block-default roundtrip', async () => {
+  const put = await agent.put('/api/v1/settings/route-block-default').set('X-CSRF-Token', csrf)
+    .send({ action: 'redirect', redirect_url: 'https://elsewhere.example.org/x' });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  const get = await agent.get('/api/v1/settings/route-block-default');
+  assert.equal(get.body.data.action, 'redirect');
+  assert.equal(get.body.data.redirect_url, 'https://elsewhere.example.org/x');
+});
+
+test('PUT route-block-default custom without body → 400', async () => {
+  const res = await agent.put('/api/v1/settings/route-block-default').set('X-CSRF-Token', csrf)
+    .send({ action: 'custom' });
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+});
+
+test('PUT route-block-default invalid redirect_url → 400', async () => {
+  const res = await agent.put('/api/v1/settings/route-block-default').set('X-CSRF-Token', csrf)
+    .send({ action: 'redirect', redirect_url: 'not-a-url' });
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+});
