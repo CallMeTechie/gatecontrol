@@ -242,6 +242,30 @@
           </div>
         </div>
       </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          <span class="card-title">{{ t('settings.route_block_title') }}</span>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="settings-route-block-action">{{ t('routes.block_action_label') }}</label>
+            <select id="settings-route-block-action" style="width:100%">
+              <option value="not_found">{{ t('routes.block_not_found') }}</option>
+              <option value="custom">{{ t('routes.block_custom') }}</option>
+              <option value="redirect">{{ t('routes.block_redirect') }}</option>
+              <option value="empty">{{ t('routes.block_empty') }}</option>
+            </select>
+          </div>
+          <textarea id="settings-route-block-body" style="display:none;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
+          <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="https://...">
+          <div id="settings-route-block-message" style="display:none"></div>
+          <div style="display:flex;justify-content:flex-end;padding-top:4px">
+            <button class="btn btn-primary" id="btn-route-block-save">{{ t('data.save') }}</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
