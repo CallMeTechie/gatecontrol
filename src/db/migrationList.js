@@ -950,6 +950,16 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'routes', 'external_enabled'),
   },
+  {
+    version: 52,
+    name: 'route_external_block_response',
+    sql: `
+      ALTER TABLE routes ADD COLUMN external_block_action TEXT NOT NULL DEFAULT 'inherit';
+      ALTER TABLE routes ADD COLUMN external_block_body TEXT;
+      ALTER TABLE routes ADD COLUMN external_block_redirect_url TEXT;
+    `,
+    detect: (db) => hasColumn(db, 'routes', 'external_block_action'),
+  },
 ];
 
 module.exports = { migrations };

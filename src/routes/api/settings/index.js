@@ -27,6 +27,7 @@ const TOKEN_FORBIDDEN = [
   /^\/metrics$/,
   /^\/password$/,
   /^\/profile$/,
+  /^\/route-block-default$/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();

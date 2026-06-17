@@ -123,6 +123,39 @@ function resolveError(req, err, fallbackKey) {
   return { status: 500, error: req.t(fallbackKey) };
 }
 
+const EXTERNAL_BLOCK_ACTIONS = ['inherit', 'not_found', 'custom', 'redirect', 'empty'];
+const EXTERNAL_BLOCK_BODY_MAX = 16384; // 16 KB — see plan Global Constraints
+
+// Returns an error string, or null when valid.
+//   body     — req.body
+//   domain   — the route's own host (for the redirect-loop check)
+//   existing — the persisted route on UPDATE (null on CREATE). Lets a partial
+//              update keep its stored body/url without re-sending it.
+function validateExternalBlock(body, domain, existing) {
+  const action = body.external_block_action;
+  if (action === undefined) return null; // not being set
+  if (!EXTERNAL_BLOCK_ACTIONS.includes(action)) return 'invalid external_block_action';
+
+  if (action === 'custom') {
+    // effective body = sent value, else the already-persisted one (update)
+    const html = body.external_block_body !== undefined ? body.external_block_body : (existing && existing.external_block_body);
+    if (!html || !String(html).trim()) return 'external_block_body required for custom';
+    if (Buffer.byteLength(String(html), 'utf8') > EXTERNAL_BLOCK_BODY_MAX) return 'external_block_body too large (max 16 KB)';
+  }
+
+  if (action === 'redirect') {
+    const url = body.external_block_redirect_url !== undefined ? body.external_block_redirect_url : (existing && existing.external_block_redirect_url);
+    if (!url || !String(url).trim()) return 'external_block_redirect_url required for redirect';
+    let parsed;
+    try { parsed = new URL(String(url).trim()); } catch { return 'external_block_redirect_url must be a valid URL'; }
+    if (!/^https?:$/.test(parsed.protocol)) return 'external_block_redirect_url must be http(s)';
+    // URL.hostname is always lowercase; normalise the route host the same way.
+    const host = String(domain || '').trim().toLowerCase();
+    if (host && parsed.hostname === host) return 'redirect target must not be the route host (loop)';
+  }
+  return null;
+}
+
 // Permanently move (re-pin) gateway routes to another gateway. Used when a
 // gateway's host is decommissioned and its services move to a new host. Unlike
 // failover this is permanent: original_peer_id is cleared (no failback) and the
@@ -427,6 +460,9 @@ router.post('/',
       }
     }
 
+    const ebErr = validateExternalBlock(req.body, req.body.domain, null);
+    if (ebErr) return res.status(400).json({ ok: false, error: ebErr });
+
     const route = await routes.create({
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -450,6 +486,9 @@ router.post('/',
       wol_enabled: req.body.wol_enabled,
       wol_mac: req.body.wol_mac,
       external_enabled: req.body.external_enabled,
+      external_block_action: req.body.external_block_action,
+      external_block_body: req.body.external_block_body,
+      external_block_redirect_url: req.body.external_block_redirect_url,
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
@@ -575,6 +614,11 @@ router.put('/:id',
       }
     }
 
+    const existingRoute = routes.getById(req.params.id);
+    if (!existingRoute) return res.status(404).json({ ok: false, error: 'not found' });
+    const ebErrU = validateExternalBlock(req.body, req.body.domain || existingRoute.domain, existingRoute);
+    if (ebErrU) return res.status(400).json({ ok: false, error: ebErrU });
+
     const route = await routes.update(req.params.id, {
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
@@ -598,6 +642,9 @@ router.put('/:id',
       wol_enabled: req.body.wol_enabled,
       wol_mac: req.body.wol_mac,
       external_enabled: req.body.external_enabled,
+      external_block_action: req.body.external_block_action,
+      external_block_body: req.body.external_block_body,
+      external_block_redirect_url: req.body.external_block_redirect_url,
     });
     // Mutual exclusivity: enabling Basic Auth removes any existing route_auth row
     // (symmetric to createOrUpdateAuth, which clears basic_auth_enabled when route-auth is set).

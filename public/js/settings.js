@@ -1665,3 +1665,52 @@
 
   loadPihole();
 })();
+
+// ─── Route Block Default ──────────────────────────────
+(function () {
+  var actionSel = document.getElementById('settings-route-block-action');
+  var bodyEl = document.getElementById('settings-route-block-body');
+  var redirectEl = document.getElementById('settings-route-block-redirect');
+  var saveBtn = document.getElementById('btn-route-block-save');
+  if (!actionSel) return;
+
+  function syncSettingsBlockVisibility() {
+    if (bodyEl) bodyEl.style.display = actionSel.value === 'custom' ? '' : 'none';
+    if (redirectEl) redirectEl.style.display = actionSel.value === 'redirect' ? '' : 'none';
+  }
+
+  actionSel.addEventListener('change', syncSettingsBlockVisibility);
+
+  api.get('/api/v1/settings/route-block-default').then(function (r) {
+    if (r.ok && r.data) {
+      actionSel.value = r.data.action || 'not_found';
+      if (bodyEl) bodyEl.value = r.data.body || '';
+      if (redirectEl) redirectEl.value = r.data.redirect_url || '';
+      syncSettingsBlockVisibility();
+    }
+  }).catch(function (err) {
+    console.error('Failed to load route block default:', err);
+  });
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async function () {
+      btnLoading(saveBtn);
+      try {
+        var data = await api.put('/api/v1/settings/route-block-default', {
+          action: actionSel.value,
+          body: bodyEl ? bodyEl.value : '',
+          redirect_url: redirectEl ? redirectEl.value : '',
+        });
+        if (data.ok) {
+          showMessage('settings-route-block-message', GC.t['security.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('settings-route-block-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('settings-route-block-message', err.message, 'error');
+      } finally {
+        btnReset(saveBtn);
+      }
+    });
+  }
+})();

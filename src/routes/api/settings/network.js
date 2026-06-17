@@ -7,6 +7,7 @@ const { Router } = require('express');
 const settings = require('../../../services/settings');
 const activity = require('../../../services/activity');
 const logger = require('../../../utils/logger');
+const caddySync = require('../../../services/caddySync');
 const { requireFeature } = require('../../../middleware/license');
 const { hasFeature } = require('../../../services/license');
 const config = require('../../../../config/default');
@@ -119,6 +120,68 @@ router.put('/split-tunnel', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update split-tunnel preset');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+const EB_ACTIONS = ['not_found', 'custom', 'redirect', 'empty'];
+const EB_BODY_MAX = 16384;
+
+/**
+ * GET /api/settings/route-block-default — Read global external-block defaults
+ */
+router.get('/route-block-default', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      action: settings.get('route_external_block_action', 'not_found'),
+      body: settings.get('route_external_block_body', ''),
+      redirect_url: settings.get('route_external_block_redirect_url', ''),
+    },
+  });
+});
+
+/**
+ * PUT /api/settings/route-block-default — Update global external-block defaults
+ */
+router.put('/route-block-default', (req, res) => {
+  try {
+    const { action, body, redirect_url } = req.body;
+    if (action !== undefined && !EB_ACTIONS.includes(action)) {
+      return res.status(400).json({ ok: false, error: 'invalid action' });
+    }
+    if (action === 'custom') {
+      if (!body || !String(body).trim()) return res.status(400).json({ ok: false, error: 'body required for custom' });
+      if (Buffer.byteLength(String(body), 'utf8') > EB_BODY_MAX) return res.status(400).json({ ok: false, error: 'body too large (max 16 KB)' });
+    }
+    if (action === 'redirect') {
+      try {
+        const u = new URL(String(redirect_url || '').trim());
+        if (!/^https?:$/.test(u.protocol)) throw new Error('proto');
+      } catch { return res.status(400).json({ ok: false, error: 'redirect_url must be a valid http(s) URL' }); }
+    }
+
+    // Only trigger a Caddy rebuild when one of the three keys actually changes
+    // (settings holds ALL settings — an SMTP save must NOT rebuild Caddy).
+    let changed = false;
+    const apply = (key, val) => {
+      if (val === undefined) return;
+      const next = String(val);
+      if (settings.get(key, '') !== next) { settings.set(key, next); changed = true; }
+    };
+    apply('route_external_block_action', action);
+    apply('route_external_block_body', body);
+    apply('route_external_block_redirect_url', redirect_url);
+
+    if (changed) {
+      caddySync.requestCaddySync().catch(err => logger.warn({ err: err.message }, 'Caddy sync after route-block-default change failed'));
+      activity.log('route_block_default_updated', 'Route external-block default updated', {
+        source: 'admin', ipAddress: req.ip, severity: 'info',
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to update route-block default');
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });
