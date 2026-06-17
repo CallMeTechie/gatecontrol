@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.83.1] — 2026-06-17
+
+### Fixes
+- reflect enforced blocking state in cache immediately (kill read-back race) (#135)
+
+---
+
 ## [1.83.0] — 2026-06-17
 
 ### Features
