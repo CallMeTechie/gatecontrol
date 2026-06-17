@@ -9,6 +9,10 @@ const path = require('node:path');
 // buildCaddyConfig() calls getDb() + accessRules.anyRulesExist() unconditionally
 // (caddyConfig.js:171/196), so it needs a MIGRATED global connection — a local
 // :memory: handle is NOT enough. Mirror tests/caddyConfig_contract.test.js:36-46.
+// NODE_ENV=test makes _syncToCaddyInner() (caddyConfig.js) skip the live Caddy
+// admin-API push, so routes.create()/update() in the service tests below don't
+// race a `fetch failed` against a non-running Caddy on :2019 (flaky otherwise).
+process.env.NODE_ENV = 'test';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-eblock-'));
 process.env.GC_DB_PATH = path.join(tmpDir, 'test.db');
 process.env.GC_DATA_DIR = tmpDir;
