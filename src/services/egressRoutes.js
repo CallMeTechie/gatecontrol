@@ -13,17 +13,8 @@ function lanSubnetsOf(db, peerId){
   try { return (JSON.parse(row.last_health).telemetry.lan_subnets||[]).map(s=>s.cidr); } catch { return []; }
 }
 function lanIpOf(db, peerId){
-  // Review-M1: try the dedicated gateway_meta.lan_ip column first (Migration 48) — older gateways
-  // write body.lan_ip into this column, not necessarily into last_health.telemetry.
-  // Fall back to last_health.telemetry.lan_ip for test/older schemas that lack the column.
-  try {
-    const row = db.prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id=?').get(peerId);
-    if (row?.lan_ip) return row.lan_ip;
-  } catch {
-    // column doesn't exist in this schema (e.g. in-memory test DB)
-  }
-  const row = db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id=?').get(peerId);
-  try { return JSON.parse(row?.last_health)?.telemetry?.lan_ip || null; } catch { return null; }
+  const row = db.prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id=?').get(peerId);
+  return row?.lan_ip || null;
 }
 
 function validate(data, db = getDb()) {
@@ -93,7 +84,7 @@ function update(id, data, db=getDb()) {
   db.prepare(`UPDATE egress_routes SET name=@name, vip_ip=@vip_ip, vip_prefix=@vip_prefix, lan_listen_port=@lan_listen_port,
      target_route_id=@target_route_id, allowed_source_ips=@allowed_source_ips, enabled=@enabled, near_peer_id=@near_peer_id,
      near_pool_id=@near_pool_id, updated_at=datetime('now') WHERE id=@id`).run({
-    ...merged, id, allowed_source_ips: JSON.stringify(merged.allowed_source_ips ? (Array.isArray(merged.allowed_source_ips)?merged.allowed_source_ips:JSON.parse(merged.allowed_source_ips)) : []),
+    ...merged, id, allowed_source_ips: JSON.stringify(merged.allowed_source_ips || []),
   });
   return get(id, db);
 }

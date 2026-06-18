@@ -14,14 +14,14 @@ function seed() {
   db.exec(`
     CREATE TABLE routes (id INTEGER PRIMARY KEY, route_type TEXT, target_kind TEXT, external_enabled INTEGER, l4_listen_port INTEGER, target_peer_id INTEGER, target_pool_id INTEGER);
     CREATE TABLE gateway_pool_members (pool_id INTEGER, peer_id INTEGER);
-    CREATE TABLE gateway_meta (peer_id INTEGER, last_health TEXT);
+    CREATE TABLE gateway_meta (peer_id INTEGER, last_health TEXT, lan_ip TEXT);
     CREATE TABLE egress_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, device_id INTEGER, near_peer_id INTEGER, near_pool_id INTEGER, vip_ip TEXT, vip_prefix INTEGER, lan_listen_port INTEGER, target_route_id INTEGER, allowed_source_ips TEXT, enabled INTEGER, created_at TEXT, updated_at TEXT);
   `);
   db.prepare("INSERT INTO routes VALUES (41,'l4','gateway',0,41445,79,NULL)").run(); // valid target
   db.prepare("INSERT INTO routes VALUES (42,'l4','gateway',1,9999,79,NULL)").run();  // external -> invalid
   db.prepare("INSERT INTO gateway_pool_members VALUES (1,79),(1,84)").run();
-  db.prepare("INSERT INTO gateway_meta VALUES (79,'{\"telemetry\":{\"lan_ip\":\"192.168.2.228\",\"lan_subnets\":[{\"cidr\":\"192.168.2.0/24\"}]}}')").run();
-  db.prepare("INSERT INTO gateway_meta VALUES (84,'{\"telemetry\":{\"lan_ip\":\"192.168.2.151\"}}')").run();
+  db.prepare("INSERT INTO gateway_meta VALUES (79,'{\"telemetry\":{\"lan_ip\":\"192.168.2.228\",\"lan_subnets\":[{\"cidr\":\"192.168.2.0/24\"}]}}','192.168.2.228')").run();
+  db.prepare("INSERT INTO gateway_meta VALUES (84,'{\"telemetry\":{\"lan_ip\":\"192.168.2.151\"}}','192.168.2.151')").run();
   return db;
 }
 
