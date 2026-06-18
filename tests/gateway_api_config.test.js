@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const { CONFIG_HASH_VERSION } = require('@callmetechie/gatecontrol-config-hash');
 
 process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -58,7 +59,7 @@ describe('gateway API: /config + /config/check', () => {
     const r = await req('/api/v1/gateway/config', { Authorization: `Bearer ${apiToken}` });
     assert.equal(r.status, 200);
     const body = JSON.parse(r.body);
-    assert.equal(body.config_hash_version, 1);
+    assert.equal(body.config_hash_version, CONFIG_HASH_VERSION);
     assert.ok(body.peer_id);
     assert.ok(Array.isArray(body.routes));
     assert.match(body.config_hash, /^sha256:[0-9a-f]{64}$/);
