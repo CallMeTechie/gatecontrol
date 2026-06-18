@@ -70,7 +70,7 @@ außer dem Scan-Ziel `\\<VIP>\<share>`.
 
 ## Datenmodell
 
-Tabelle `egress_routes` (Migration #50):
+Tabelle `egress_routes` (Migration #54):
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
@@ -168,7 +168,7 @@ SMB-Encryption, die Ende-zu-Ende durchgehen. Das bedeutet:
 keepalived überwacht die Tunnel-Gesundheit des aktiven Gateways. Fällt
 der primäre Near-Gateway aus, floatet die VIP innerhalb weniger
 Sekunden auf das Backup-Mitglied des Pools. Der Drucker sendet
-weiterhin an dieselbe VIP — er bemerkt den Wechsel nicht.
+weiterhin an dieselbe VIP — die VIP-Adresse bleibt konstant, es ist keine Neukonfiguration nötig.
 
 **Eine im Augenblick des Failovers laufende Übertragung bricht ab**
 und muss vom Drucker oder Benutzer neu gestartet werden. Der nächste
@@ -201,7 +201,7 @@ Drucker-Firmware wiederholt den Scan-Auftrag in der Regel automatisch.
 
 ### Server
 
-- `src/db/migrationList.js` — Migration #50 (`egress_routes`-Tabelle)
+- `src/db/migrationList.js` — Migration #54 (`egress_routes`-Tabelle)
 - `src/services/egressRoutes.js` — CRUD, Validierung (L4+gateway+
   `external_enabled=0`; VIP im LAN-Subnetz; gültige CIDRs; High-Port)
 - `src/services/gateways.js` — `getGatewayConfig()` befüllt
