@@ -173,6 +173,7 @@ function getGatewayConfig(peerId) {
         ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
       };
     }).filter(Boolean),
+    egress_routes: require('./egressRoutes').resolveForPeer(peerId, db),
   };
 }
 

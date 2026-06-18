@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasColumn } = require('./migrationHelpers');
+const { hasColumn, tableExists } = require('./migrationHelpers');
 
 /**
  * Versioned migration definitions.
@@ -977,6 +977,30 @@ const migrations = [
       ALTER TABLE rdp_routes ADD COLUMN browser_clipboard INTEGER DEFAULT 0;
     `,
     detect: (db) => hasColumn(db, 'rdp_routes', 'protocol'),
+  },
+  {
+    version: 54,
+    name: 'create_egress_routes',
+    sql: `
+      CREATE TABLE egress_routes (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        name               TEXT NOT NULL,
+        device_id          INTEGER,
+        near_peer_id       INTEGER,
+        near_pool_id       INTEGER,
+        vip_ip             TEXT NOT NULL,
+        vip_prefix         INTEGER NOT NULL DEFAULT 24,
+        lan_listen_port    INTEGER NOT NULL,
+        target_route_id    INTEGER NOT NULL,
+        allowed_source_ips TEXT NOT NULL DEFAULT '[]',
+        enabled            INTEGER NOT NULL DEFAULT 1,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_egress_near_peer ON egress_routes(near_peer_id);
+      CREATE INDEX idx_egress_near_pool ON egress_routes(near_pool_id);
+    `,
+    detect: (db) => tableExists(db, 'egress_routes'),
   },
 ];
 

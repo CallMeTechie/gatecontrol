@@ -709,6 +709,176 @@
     return frame.card;
   }
 
+  // ── Scan-Egress card (capability-gated on telemetry.scan_egress) ──────────
+  // Mirrors the LAN-Discovery card: rendered only when the near gateway reports
+  // the `scan_egress` capability flag. Lists egress routes whose near gateway is
+  // this peer, with an inline add form (raw fetch + CSRF, same convention as the
+  // discovery card). Target-route dropdown is filtered to internal-only L4
+  // gateway routes (route_type='l4' AND target_kind='gateway' AND !external_enabled)
+  // — the only valid target_route_id values per the server-side validation.
+  function egressFieldLabel(key, fallback, hintKey, hint) {
+    var wrap = el('div', null);
+    wrap.style.cssText = 'margin:10px 0 0';
+    var lbl = el('label', null, T(key, fallback));
+    lbl.style.cssText = 'display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:4px';
+    wrap.appendChild(lbl);
+    if (hintKey) { var h = discMuted(T(hintKey, hint)); h.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:3px'; wrap._hint = h; }
+    return wrap;
+  }
+  function egressInput(ph) {
+    var i = el('input'); i.type = 'text'; if (ph) i.placeholder = ph;
+    i.style.cssText = 'width:100%;box-sizing:border-box;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-size:13px';
+    return i;
+  }
+  function egressCard(g) {
+    var tel = (g.health && g.health.telemetry) || {};
+    var addBtn = el('button', 'btn', '+ ' + T('egress.add', 'Add scan target'));
+    addBtn.type = 'button';
+    addBtn.style.cssText = 'font-size:12px;padding:5px 10px';
+    var frame = _discCard(T('egress.section_title', 'Scan targets (egress)'), addBtn);
+    var body = frame.body;
+
+    if (tel.scan_egress !== true) {
+      addBtn.disabled = true; addBtn.style.opacity = '0.4'; addBtn.style.cursor = 'not-allowed';
+      body.appendChild(discMuted(T('egress.unavailable', 'This gateway does not support scan egress (update it first).')));
+      return frame.card;
+    }
+
+    body.appendChild(discMuted(T('egress.subtitle', '')));
+    var listEl = el('div', null); listEl.style.cssText = 'margin-top:8px';
+    var formEl = el('div', null); formEl.hidden = true;
+    body.appendChild(listEl);
+    body.appendChild(formEl);
+
+    function renderList(rows) {
+      listEl.replaceChildren();
+      var mine = (rows || []).filter(function (r) { return String(r.near_peer_id) === String(g.peer_id); });
+      if (!mine.length) {
+        var empty = el('div', null, T('egress.empty', 'No scan targets yet.'));
+        empty.style.cssText = 'padding:14px 0;text-align:center;color:var(--text-3);font-size:13px';
+        listEl.appendChild(empty);
+        return;
+      }
+      mine.forEach(function (r, i) {
+        var row = el('div', null);
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0' + (i ? ';border-top:1px solid var(--border)' : '');
+        var info = el('div', null);
+        var title = el('div', null, r.name || ('#' + r.id));
+        title.style.cssText = 'font-weight:600;font-size:14px;color:var(--text-primary)';
+        info.appendChild(title);
+        var srcs = [];
+        try { srcs = JSON.parse(r.allowed_source_ips || '[]'); } catch (e) { srcs = []; }
+        var meta = el('div', null);
+        meta.style.cssText = 'font-size:12px;color:var(--text-2);font-family:var(--font-mono);margin-top:3px';
+        meta.textContent = r.vip_ip + '/' + r.vip_prefix + ':' + r.lan_listen_port + '  ·  ' + (srcs.join(', ') || '*');
+        info.appendChild(meta);
+        row.appendChild(info);
+        var del = el('button', 'btn', T('egress.delete', 'Delete'));
+        del.type = 'button'; del.style.cssText = 'font-size:12px;padding:4px 10px;color:var(--red,#dc2626)';
+        del.addEventListener('click', function () {
+          if (!confirm(T('egress.delete_confirm', 'Delete this scan target?'))) return;
+          fetch('/api/v1/egress-routes/' + r.id, { method: 'DELETE', credentials: 'same-origin', headers: discCsrfHeaders() })
+            .then(function () { load(); }).catch(function () {});
+        });
+        row.appendChild(del);
+        listEl.appendChild(row);
+      });
+    }
+
+    function load() {
+      fetch('/api/v1/egress-routes', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { renderList(d && d.data); })
+        .catch(function () { renderList([]); });
+    }
+
+    function buildForm() {
+      formEl.replaceChildren();
+      formEl.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border)';
+
+      var nameW = egressFieldLabel('egress.name', 'Name'); var nameI = egressInput(); nameW.appendChild(nameI); formEl.appendChild(nameW);
+
+      var vipRow = el('div', null); vipRow.style.cssText = 'display:flex;gap:10px';
+      var vipW = egressFieldLabel('egress.vip_ip', 'Gateway address (VIP)', 'egress.vip_hint', 'Free static IP outside the DHCP range');
+      vipW.style.flex = '2'; var vipI = egressInput('192.168.1.240'); vipW.insertBefore(vipI, vipW._hint || null); formEl.appendChild(vipW);
+      var prefW = egressFieldLabel('egress.vip_prefix', 'Prefix'); prefW.style.flex = '1';
+      var prefI = egressInput('24'); prefI.value = '24'; prefW.appendChild(prefI);
+      vipRow.appendChild(vipW); vipRow.appendChild(prefW); formEl.appendChild(vipRow);
+
+      var portW = egressFieldLabel('egress.listen_port', 'Listen port', 'egress.listen_port_hint', 'High port (1024-65535) the gateway listens on');
+      var portI = egressInput('14450'); portW.insertBefore(portI, portW._hint || null); formEl.appendChild(portW);
+
+      var trW = egressFieldLabel('egress.target_route', 'Target NAS route (internal-only L4)');
+      var trSel = el('select');
+      trSel.style.cssText = 'width:100%;box-sizing:border-box;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-size:13px';
+      trW.appendChild(trSel); formEl.appendChild(trW);
+
+      var srcW = egressFieldLabel('egress.source_lock', 'Allowed source (printer)', 'egress.source_lock_hint', 'One or more CIDRs, e.g. 192.168.1.50/32');
+      var srcI = egressInput('192.168.1.50/32'); srcW.insertBefore(srcI, srcW._hint || null); formEl.appendChild(srcW);
+
+      var warn = el('div', null, T('egress.auth_warning', 'The target NAS must enforce authentication (no guest shares).'));
+      warn.style.cssText = 'margin-top:12px;background:var(--bg-body);padding:10px 12px;border-radius:6px;border-left:3px solid var(--amber,#d97706);font-size:12px;line-height:1.45;color:var(--text-2)';
+      formEl.appendChild(warn);
+
+      var footer = el('div', null);
+      footer.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:16px';
+      var msg = el('div', null); msg.style.cssText = 'font-size:12px;color:var(--text-2);margin-right:auto';
+      var cancel = el('button', 'btn', T('egress.cancel', 'Cancel')); cancel.type = 'button';
+      cancel.addEventListener('click', function () { formEl.hidden = true; });
+      var save = el('button', 'btn btn-primary', T('egress.save', 'Save')); save.type = 'button';
+      save.addEventListener('click', function () {
+        var srcs = srcI.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        var payload = {
+          name: nameI.value.trim(),
+          near_peer_id: g.peer_id,
+          vip_ip: vipI.value.trim(),
+          vip_prefix: Number(prefI.value) || 24,
+          lan_listen_port: Number(portI.value),
+          target_route_id: Number(trSel.value),
+          allowed_source_ips: srcs,
+        };
+        save.disabled = true;
+        fetch('/api/v1/egress-routes', { method: 'POST', credentials: 'same-origin', headers: discCsrfHeaders(), body: JSON.stringify(payload) })
+          .then(function (r) {
+            save.disabled = false;
+            if (r.ok || r.status === 201) { formEl.hidden = true; load(); return; }
+            return r.json().then(function (d) { msg.textContent = (d && d.error) || T('egress.save_failed', 'Save failed'); })
+              .catch(function () { msg.textContent = T('egress.save_failed', 'Save failed'); });
+          }).catch(function () { save.disabled = false; msg.textContent = T('egress.save_failed', 'Save failed'); });
+      });
+      footer.appendChild(msg); footer.appendChild(cancel); footer.appendChild(save);
+      formEl.appendChild(footer);
+
+      // Populate the target dropdown with internal-only L4 gateway routes only.
+      fetch('/api/routes', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var routes = Array.isArray(d) ? d : (d && (d.routes || d.data)) || [];
+          var l4 = routes.filter(function (rt) { return rt.route_type === 'l4' && rt.target_kind === 'gateway' && !rt.external_enabled; });
+          trSel.replaceChildren();
+          if (!l4.length) {
+            var o = el('option', null, T('egress.target_route_empty', 'No internal-only L4 gateway route available.'));
+            o.value = ''; o.disabled = true; o.selected = true; trSel.appendChild(o);
+            save.disabled = true;
+            return;
+          }
+          l4.forEach(function (rt) {
+            var lbl = (rt.domain || (':' + (rt.l4_listen_port || ''))) + (rt.l4_listen_port ? ' (:' + rt.l4_listen_port + ')' : '');
+            var o = el('option', null, lbl); o.value = rt.id; trSel.appendChild(o);
+          });
+        }).catch(function () {});
+    }
+
+    addBtn.addEventListener('click', function () {
+      if (!formEl.hidden) { formEl.hidden = true; return; }
+      buildForm();
+      formEl.hidden = false;
+    });
+
+    load();
+    return frame.card;
+  }
+
   function renderDetail(g) {
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Zurück zur Flotte')); back.dataset.act = 'back';
@@ -719,6 +889,11 @@
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
     grid2.appendChild(discoveredDevicesCard(g));
+    // Scan-Egress section, gated on the gateway's advertised capability flag —
+    // mirrors the `lan_discovery` gate on the discovery-settings gear. The card
+    // is omitted entirely for gateways that don't report `scan_egress`.
+    var telE = (g.health && g.health.telemetry) || {};
+    if (telE.scan_egress === true) grid2.appendChild(egressCard(g));
     root.appendChild(grid2);
     detailView.replaceChildren(root);
   }
