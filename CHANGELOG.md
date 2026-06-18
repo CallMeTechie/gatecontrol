@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.85.0] — 2026-06-18
+
+### Features
+- Scan-Egress Phase 2 — server data model, API, config-push, UI (#138)
+
+---
+
 ## [1.84.1] — 2026-06-18
 
 ### Fixes
