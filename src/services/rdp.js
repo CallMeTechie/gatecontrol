@@ -24,7 +24,13 @@ const VALID_ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
 const VALID_RESOLUTION_MODES = ['fullscreen', 'fixed', 'dynamic'];
 const VALID_AUDIO_MODES = ['local', 'remote', 'off'];
 const VALID_NETWORK_PROFILES = ['lan', 'broadband', 'modem', 'auto'];
+const VALID_PROTOCOLS = ['rdp', 'vnc', 'ssh', 'telnet'];
+const PROTOCOL_DEFAULT_PORTS = { rdp: 3389, vnc: 5900, ssh: 22, telnet: 23 };
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+function defaultPortForProtocol(protocol) {
+  return PROTOCOL_DEFAULT_PORTS[protocol] || 3389;
+}
 
 function validateRdpRoute(data, isUpdate = false) {
   const errors = {};
@@ -40,6 +46,17 @@ function validateRdpRoute(data, isUpdate = false) {
   if (!isUpdate || data.host !== undefined) {
     if (!data.host || typeof data.host !== 'string' || data.host.trim().length === 0) {
       errors.host = 'Host is required';
+    }
+  }
+
+  if (data.protocol !== undefined && !VALID_PROTOCOLS.includes(data.protocol)) {
+    errors.protocol = 'Protocol must be rdp, vnc, ssh, or telnet';
+  }
+
+  // SSH needs an explicit username; RDP/VNC/telnet do not enforce it here.
+  if (data.protocol === 'ssh') {
+    if (!data.username || String(data.username).trim().length === 0) {
+      errors.username = 'Username is required for SSH';
     }
   }
 
@@ -763,4 +780,6 @@ module.exports = {
   validateRdpRoute,
   isInMaintenanceWindow,
   resolveConnectEndpoint,
+  VALID_PROTOCOLS,
+  defaultPortForProtocol,
 };
