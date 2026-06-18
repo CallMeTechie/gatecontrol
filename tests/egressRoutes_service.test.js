@@ -35,6 +35,14 @@ test('validate rejects a vip outside the near gateway lan_subnets', () => {
   assert.throws(() => svc.validate({ target_route_id: 41, near_peer_id: 79, vip_ip: '10.0.0.5', lan_listen_port: 14450, allowed_source_ips: ['192.168.2.45/32'] }, db));
 });
 
+test('resolveForPeer excludes egress routes whose target route is external (fail-closed)', () => {
+  const db = seed();
+  // route 42 has external_enabled=1 — the JOIN should filter it out even though the egress_route is enabled
+  db.prepare("INSERT INTO egress_routes (name,near_peer_id,vip_ip,vip_prefix,lan_listen_port,target_route_id,allowed_source_ips,enabled) VALUES ('external-printer',79,'192.168.2.251',24,14451,42,'[]',1)").run();
+  const out = svc.resolveForPeer(79, db, { hubIp: '10.8.0.1' });
+  assert.equal(out.length, 0, 'resolveForPeer must return empty when only egress route targets an external route');
+});
+
 test('resolveForPeer builds hub-target + near_peers', () => {
   const db = seed();
   db.prepare("INSERT INTO egress_routes (name,near_peer_id,vip_ip,vip_prefix,lan_listen_port,target_route_id,allowed_source_ips,enabled) VALUES ('printer',79,'192.168.2.250',24,14450,41,'[\"192.168.2.45/32\"]',1)").run();

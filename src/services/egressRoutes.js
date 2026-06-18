@@ -34,7 +34,9 @@ function resolveForPeer(peerId, db = getDb(), opts = {}) {
   const hubIp = opts.hubIp || config.wireguard.gatewayIp;
   const rows = db.prepare(`
     SELECT e.*, r.l4_listen_port AS target_port
-    FROM egress_routes e JOIN routes r ON r.id = e.target_route_id
+    FROM egress_routes e
+    JOIN routes r ON r.id = e.target_route_id
+      AND r.route_type = 'l4' AND r.target_kind = 'gateway' AND r.external_enabled = 0
     WHERE e.enabled = 1
       AND ( e.near_peer_id = ?
             OR e.near_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?) )

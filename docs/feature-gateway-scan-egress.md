@@ -207,9 +207,9 @@ Drucker-Firmware wiederholt den Scan-Auftrag in der Regel automatisch.
 - `src/services/gateways.js` — `getGatewayConfig()` befüllt
   `egress_routes[]` mit aufgelösten `tunnel_target_host/port` +
   `near_peers`
-- `src/routes/api/gateways.js` — CRUD-Endpoints für Egress-Routen
+- `src/routes/api/egressRoutes.js` — CRUD-Endpoints für Egress-Routen
   (`requireFeature` + Capability-Gate)
-- `src/lib/configHash.js` — CONFIG_HASH_VERSION=2, Schema enthält
+- `@callmetechie/gatecontrol-config-hash` (npm package) — CONFIG_HASH_VERSION=2, Schema enthält
   `egress_routes`-Felder
 
 ### Gateway (v1.16.1, bereits ausgeliefert)
@@ -222,8 +222,10 @@ Drucker-Firmware wiederholt den Scan-Auftrag in der Regel automatisch.
 
 ### Tests (Server)
 
-- `tests/egressRoutes.test.js` — Validierungs- und CRUD-Tests
-- `tests/gateways_getConfig.test.js` — Egress-Resolve-Payload
-- `tests/configHash.test.js` — CONFIG_HASH_VERSION=2 + Egress-Schema
+- `tests/api_egress_routes.test.js` — CRUD-API-Tests
+- `tests/egressRoutes_service.test.js` — Validierungs- und Service-Tests
+- `tests/gateway_config_egress.test.js` — Egress-Resolve-Payload
+- `tests/migration_egress_routes.test.js` — Migration #54 + Schema
+- `tests/license_scan_egress.test.js` — Feature-Flag / Lizenz-Gate
 
 _Design + Pläne: `docs/superpowers/` (local-only, gitignored)._
