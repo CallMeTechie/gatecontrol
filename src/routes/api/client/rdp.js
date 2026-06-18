@@ -102,6 +102,10 @@ router.get('/rdp/:id/connect', (req, res) => {
     const route = rdpService.getById(id, true);
     if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
 
+    if ((route.protocol || 'rdp') !== 'rdp') {
+      return res.status(400).json({ ok: false, error: req.t('rdp.native_only') });
+    }
+
     // Disabled routes must not hand out credentials, even if the id is guessed.
     if (!route.enabled) {
       return res.status(403).json({ ok: false, error: 'RDP route is disabled' });

@@ -3,6 +3,9 @@
 const crypto = require('node:crypto');
 process.env.GC_SECRET = process.env.GC_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// setup must be required before any db-using module so config/default.js is
+// loaded with the temp DB path, not the production path.
+const { setup, teardown } = require('./helpers/setup');
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,5 +27,20 @@ describe('rdpMonitor protocol-aware target', () => {
   it('keeps RDP behaviour for internal rdp routes', () => {
     const tgt = monitor.resolveCheckTarget({ protocol: 'rdp', host: '10.0.0.6', port: 3389, access_mode: 'internal' });
     assert.deepEqual(tgt, { host: '10.0.0.6', port: 3389 });
+  });
+});
+
+const { describe: d3, it: it3, before, after } = require('node:test');
+const rdpSvc = require('../src/services/rdp');
+
+let agent, csrf;
+before(async () => { const c = await setup(); agent = c.agent; csrf = c.csrfToken; });
+after(() => teardown());
+
+d3('native connect is RDP-only', () => {
+  it3('returns 400 for an ssh route', async () => {
+    const r = await rdpSvc.create({ name: 'ssh-box', host: '10.0.0.7', protocol: 'ssh', username: 'root' });
+    const res = await agent.get(`/api/v1/client/rdp/${r.id}/connect`).expect(400);
+    assert.equal(res.body.ok, false);
   });
 });
