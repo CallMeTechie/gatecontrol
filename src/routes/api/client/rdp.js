@@ -21,10 +21,15 @@ router.get('/rdp', (req, res) => {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
     }
 
-    const scopes = req.tokenScopes || [];
-    const hasRdpScope = scopes.includes('full-access') || scopes.includes('client:rdp');
-    if (!hasRdpScope) {
-      return res.status(403).json({ ok: false, error: 'Token does not have client:rdp permission' });
+    // Token-authenticated requests must carry client:rdp or full-access scope.
+    // Session-authenticated admins bypass this check (they are already fully
+    // authenticated via cookie session).
+    if (req.tokenAuth) {
+      const scopes = req.tokenScopes || [];
+      const hasRdpScope = scopes.includes('full-access') || scopes.includes('client:rdp');
+      if (!hasRdpScope) {
+        return res.status(403).json({ ok: false, error: 'Token does not have client:rdp permission' });
+      }
     }
 
     const tokenId = req.tokenId;
@@ -44,11 +49,12 @@ router.get('/rdp', (req, res) => {
       }
     }
     const visibleRoutes = selfIp ? routes.filter(r => r.host !== selfIp) : routes;
+    const rdpOnly = visibleRoutes.filter((r) => (r.protocol || 'rdp') === 'rdp');
 
     // Attach online status and resolved connect endpoint
     const statuses = rdpMonitor.getAllStatus();
     const connOpts = { baseUrl: config.app.baseUrl, publicHost: config.rdp.publicHost };
-    const enriched = visibleRoutes.map(r => ({
+    const enriched = rdpOnly.map(r => ({
       ...r,
       ...rdpService.resolveConnectEndpoint(r, connOpts),
       status: statuses[r.id] || { online: false, lastCheck: null },

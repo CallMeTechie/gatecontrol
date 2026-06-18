@@ -67,3 +67,12 @@ d3('existing RDP row is behaviourally unchanged', () => {
     });
   });
 });
+
+d3('native client list excludes non-RDP protocols', () => {
+  it3('vnc route is not listed for native clients', async () => {
+    const r = await rdpSvc.create({ name: 'vnc-hidden', host: '10.0.0.12', protocol: 'vnc' });
+    const res = await agent.get('/api/v1/client/rdp').expect(200);
+    const ids = (res.body.routes || res.body.rdp || []).map((x) => x.id);
+    assert.ok(!ids.includes(r.id), 'vnc route must not appear in native client list');
+  });
+});
