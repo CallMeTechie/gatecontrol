@@ -961,6 +961,24 @@ const migrations = [
     detect: (db) => hasColumn(db, 'routes', 'external_block_action'),
   },
   {
+    version: 53,
+    name: 'rdp_routes_protocol_generalization',
+    sql: `
+      ALTER TABLE rdp_routes ADD COLUMN protocol TEXT DEFAULT 'rdp';
+      ALTER TABLE rdp_routes ADD COLUMN browser_enabled INTEGER DEFAULT 0;
+      ALTER TABLE rdp_routes ADD COLUMN browser_enable_sftp INTEGER DEFAULT 0;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_host TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_port INTEGER;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_username TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_disable_download INTEGER DEFAULT 1;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_disable_upload INTEGER DEFAULT 1;
+      ALTER TABLE rdp_routes ADD COLUMN browser_enable_audio INTEGER DEFAULT 0;
+      ALTER TABLE rdp_routes ADD COLUMN audio_servername TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN browser_clipboard INTEGER DEFAULT 0;
+    `,
+    detect: (db) => hasColumn(db, 'rdp_routes', 'protocol'),
+  },
+  {
     version: 54,
     name: 'create_egress_routes',
     sql: `

@@ -1273,6 +1273,7 @@
   "rdp.modal_subtitle": "Configure Remote Desktop Connection",
   "rdp.e2ee_note": "Credentials are transmitted end-to-end encrypted and stored with AES-256-GCM",
   "rdp.section_access_control": "Access Control & Tags",
+  "rdp.native_only": "Native client connection is only available for RDP connections.",
 
   "error.rdp.list": "Failed to load RDP routes",
   "error.rdp.get": "Failed to load RDP route",

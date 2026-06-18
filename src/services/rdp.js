@@ -24,7 +24,13 @@ const VALID_ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
 const VALID_RESOLUTION_MODES = ['fullscreen', 'fixed', 'dynamic'];
 const VALID_AUDIO_MODES = ['local', 'remote', 'off'];
 const VALID_NETWORK_PROFILES = ['lan', 'broadband', 'modem', 'auto'];
+const VALID_PROTOCOLS = ['rdp', 'vnc', 'ssh', 'telnet'];
+const PROTOCOL_DEFAULT_PORTS = { rdp: 3389, vnc: 5900, ssh: 22, telnet: 23 };
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+function defaultPortForProtocol(protocol) {
+  return PROTOCOL_DEFAULT_PORTS[protocol] || 3389;
+}
 
 function validateRdpRoute(data, isUpdate = false) {
   const errors = {};
@@ -40,6 +46,17 @@ function validateRdpRoute(data, isUpdate = false) {
   if (!isUpdate || data.host !== undefined) {
     if (!data.host || typeof data.host !== 'string' || data.host.trim().length === 0) {
       errors.host = 'Host is required';
+    }
+  }
+
+  if (data.protocol !== undefined && !VALID_PROTOCOLS.includes(data.protocol)) {
+    errors.protocol = 'Protocol must be rdp, vnc, ssh, or telnet';
+  }
+
+  // SSH needs an explicit username; RDP/VNC/telnet do not enforce it here.
+  if (data.protocol === 'ssh') {
+    if (!data.username || String(data.username).trim().length === 0) {
+      errors.username = 'Username is required for SSH';
     }
   }
 
@@ -116,6 +133,10 @@ function validateRdpRoute(data, isUpdate = false) {
     if (mac !== '' && !MAC_RE.test(mac)) {
       errors.wol_mac_address = 'Invalid MAC address format (expected AA:BB:CC:DD:EE:FF)';
     }
+  }
+
+  if (data.wol_enabled && (data.protocol === 'ssh' || data.protocol === 'telnet')) {
+    errors.wol_enabled = 'Wake-on-LAN is not available for SSH/telnet connections';
   }
 
   if (data.session_timeout !== undefined && data.session_timeout !== null) {
@@ -265,7 +286,11 @@ async function create(data) {
       credential_rotation_enabled, credential_rotation_days,
       token_ids, user_ids, notes, tags,
       health_check_enabled,
-      gateway_peer_id, gateway_listen_port, gateway_pool_id
+      gateway_peer_id, gateway_listen_port, gateway_pool_id,
+      protocol,
+      browser_enabled, browser_enable_sftp, sftp_host, sftp_port, sftp_username,
+      sftp_disable_download, sftp_disable_upload,
+      browser_enable_audio, audio_servername, browser_clipboard
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -281,13 +306,17 @@ async function create(data) {
       ?, ?,
       ?, ?, ?, ?,
       ?,
+      ?, ?, ?,
+      ?,
+      ?, ?, ?, ?, ?,
+      ?, ?,
       ?, ?, ?
     )
   `).run(
     data.name.trim(),
     data.description || null,
     data.host.trim(),
-    parseInt(data.port, 10) || 3389,
+    parseInt(data.port, 10) || defaultPortForProtocol(data.protocol || 'rdp'),
     data.external_hostname || null,
     data.external_port != null ? parseInt(data.external_port, 10) : null,
     data.access_mode || 'internal',
@@ -339,7 +368,18 @@ async function create(data) {
     data.access_mode === 'gateway' && data.gateway_listen_port != null
       ? parseInt(data.gateway_listen_port, 10) : null,
     data.access_mode === 'gateway' && data.gateway_pool_id != null
-      ? parseInt(data.gateway_pool_id, 10) : null
+      ? parseInt(data.gateway_pool_id, 10) : null,
+    (data.protocol && VALID_PROTOCOLS.includes(data.protocol)) ? data.protocol : 'rdp',
+    data.browser_enabled ? 1 : 0,
+    data.browser_enable_sftp ? 1 : 0,
+    data.sftp_host || null,
+    data.sftp_port != null ? parseInt(data.sftp_port, 10) : null,
+    data.sftp_username || null,
+    data.sftp_disable_download === undefined ? 1 : (data.sftp_disable_download ? 1 : 0),
+    data.sftp_disable_upload === undefined ? 1 : (data.sftp_disable_upload ? 1 : 0),
+    data.browser_enable_audio ? 1 : 0,
+    data.audio_servername || null,
+    data.browser_clipboard ? 1 : 0,
   );
 
   const routeId = result.lastInsertRowid;
@@ -488,6 +528,10 @@ async function update(id, data) {
     'credential_rotation_enabled', 'credential_rotation_days', 'credential_rotation_last',
     'notes',
     'health_check_enabled',
+    'protocol', 'sftp_host', 'sftp_username', 'audio_servername',
+    'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
+    'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
+    'sftp_port',
   ];
 
   const booleanFields = [
@@ -497,12 +541,15 @@ async function update(id, data) {
     'admin_session', 'wol_enabled', 'maintenance_enabled',
     'sharing_enabled', 'sharing_require_consent',
     'screenshot_enabled', 'credential_rotation_enabled', 'health_check_enabled',
+    'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
+    'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
   ];
 
   const intFields = [
     'port', 'external_port', 'gateway_port', 'gateway_peer_id', 'gateway_listen_port',
     'resolution_width', 'resolution_height',
     'color_depth', 'bandwidth_limit', 'session_timeout', 'credential_rotation_days',
+    'sftp_port',
   ];
 
   for (const field of directFields) {
@@ -763,4 +810,6 @@ module.exports = {
   validateRdpRoute,
   isInMaintenanceWindow,
   resolveConnectEndpoint,
+  VALID_PROTOCOLS,
+  defaultPortForProtocol,
 };

@@ -12,7 +12,7 @@ const statusCache = new Map();
 // not via the LAN host (which the server cannot reach). Probe loopback.
 function resolveCheckTarget(route) {
   if ((route.access_mode || 'internal') === 'gateway') {
-    return { host: '127.0.0.1', port: route.gateway_listen_port || route.port || 3389 };
+    return { host: '127.0.0.1', port: route.gateway_listen_port || route.port };
   }
   return { host: route.host, port: route.port };
 }

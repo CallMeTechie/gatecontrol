@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.84.1] — 2026-06-18
+
+### Fixes
+- move Gateway-Failover into Monitoring panel (#137)
+
+---
+
+## [1.84.0] — 2026-06-18
+
+### Features
+- Browser Remote Desktop Phase 1 — protocol-aware rdp_routes refactor (#136)
+
+---
+
 ## [1.83.1] — 2026-06-17
 
 ### Fixes
