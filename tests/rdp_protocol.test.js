@@ -34,6 +34,12 @@ describe('protocol validation', () => {
     assert.equal(rdp.defaultPortForProtocol('telnet'), 23);
     assert.equal(rdp.defaultPortForProtocol('rdp'), 3389);
   });
+  it('rejects WoL for ssh/telnet protocols', () => {
+    const ssh = rdp.validateRdpRoute({ name: 'x', host: 'h', protocol: 'ssh', username: 'u', wol_enabled: true }) || {};
+    assert.ok(ssh.wol_enabled);
+    const rdpOk = rdp.validateRdpRoute({ name: 'x', host: 'h', protocol: 'rdp', wol_enabled: true, wol_mac_address: 'AA:BB:CC:DD:EE:FF' }) || {};
+    assert.equal(rdpOk.wol_enabled, undefined);
+  });
 });
 
 let db;

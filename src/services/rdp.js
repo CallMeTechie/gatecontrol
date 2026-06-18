@@ -135,6 +135,10 @@ function validateRdpRoute(data, isUpdate = false) {
     }
   }
 
+  if (data.wol_enabled && (data.protocol === 'ssh' || data.protocol === 'telnet')) {
+    errors.wol_enabled = 'Wake-on-LAN is not available for SSH/telnet connections';
+  }
+
   if (data.session_timeout !== undefined && data.session_timeout !== null) {
     const timeout = parseInt(data.session_timeout, 10);
     if (isNaN(timeout) || timeout < 0) {
