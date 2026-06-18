@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.84.1] — 2026-06-18
+
+### Fixes
+- move Gateway-Failover into Monitoring panel (#137)
+
+---
+
 ## [1.84.0] — 2026-06-18
 
 ### Features
