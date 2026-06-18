@@ -282,7 +282,11 @@ async function create(data) {
       credential_rotation_enabled, credential_rotation_days,
       token_ids, user_ids, notes, tags,
       health_check_enabled,
-      gateway_peer_id, gateway_listen_port, gateway_pool_id
+      gateway_peer_id, gateway_listen_port, gateway_pool_id,
+      protocol,
+      browser_enabled, browser_enable_sftp, sftp_host, sftp_port, sftp_username,
+      sftp_disable_download, sftp_disable_upload,
+      browser_enable_audio, audio_servername, browser_clipboard
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -298,13 +302,17 @@ async function create(data) {
       ?, ?,
       ?, ?, ?, ?,
       ?,
+      ?, ?, ?,
+      ?,
+      ?, ?, ?, ?, ?,
+      ?, ?,
       ?, ?, ?
     )
   `).run(
     data.name.trim(),
     data.description || null,
     data.host.trim(),
-    parseInt(data.port, 10) || 3389,
+    parseInt(data.port, 10) || defaultPortForProtocol(data.protocol || 'rdp'),
     data.external_hostname || null,
     data.external_port != null ? parseInt(data.external_port, 10) : null,
     data.access_mode || 'internal',
@@ -356,7 +364,18 @@ async function create(data) {
     data.access_mode === 'gateway' && data.gateway_listen_port != null
       ? parseInt(data.gateway_listen_port, 10) : null,
     data.access_mode === 'gateway' && data.gateway_pool_id != null
-      ? parseInt(data.gateway_pool_id, 10) : null
+      ? parseInt(data.gateway_pool_id, 10) : null,
+    (data.protocol && VALID_PROTOCOLS.includes(data.protocol)) ? data.protocol : 'rdp',
+    data.browser_enabled ? 1 : 0,
+    data.browser_enable_sftp ? 1 : 0,
+    data.sftp_host || null,
+    data.sftp_port != null ? parseInt(data.sftp_port, 10) : null,
+    data.sftp_username || null,
+    data.sftp_disable_download === undefined ? 1 : (data.sftp_disable_download ? 1 : 0),
+    data.sftp_disable_upload === undefined ? 1 : (data.sftp_disable_upload ? 1 : 0),
+    data.browser_enable_audio ? 1 : 0,
+    data.audio_servername || null,
+    data.browser_clipboard ? 1 : 0,
   );
 
   const routeId = result.lastInsertRowid;
@@ -505,6 +524,10 @@ async function update(id, data) {
     'credential_rotation_enabled', 'credential_rotation_days', 'credential_rotation_last',
     'notes',
     'health_check_enabled',
+    'protocol', 'sftp_host', 'sftp_username', 'audio_servername',
+    'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
+    'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
+    'sftp_port',
   ];
 
   const booleanFields = [
@@ -514,12 +537,15 @@ async function update(id, data) {
     'admin_session', 'wol_enabled', 'maintenance_enabled',
     'sharing_enabled', 'sharing_require_consent',
     'screenshot_enabled', 'credential_rotation_enabled', 'health_check_enabled',
+    'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
+    'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
   ];
 
   const intFields = [
     'port', 'external_port', 'gateway_port', 'gateway_peer_id', 'gateway_listen_port',
     'resolution_width', 'resolution_height',
     'color_depth', 'bandwidth_limit', 'session_timeout', 'credential_rotation_days',
+    'sftp_port',
   ];
 
   for (const field of directFields) {
