@@ -17,6 +17,10 @@ describe('rdpMonitor protocol-aware target', () => {
     const tgt = monitor.resolveCheckTarget({ protocol: 'vnc', host: '10.0.0.5', port: 5900, access_mode: 'gateway', gateway_listen_port: null });
     assert.equal(tgt.port, 5900);
   });
+  it('gateway route with no port does not fall back to a hardcoded 3389', () => {
+    const tgt = monitor.resolveCheckTarget({ protocol: 'vnc', host: '10.0.0.5', port: null, access_mode: 'gateway', gateway_listen_port: null });
+    assert.notEqual(tgt.port, 3389);
+  });
   it('keeps RDP behaviour for internal rdp routes', () => {
     const tgt = monitor.resolveCheckTarget({ protocol: 'rdp', host: '10.0.0.6', port: 3389, access_mode: 'internal' });
     assert.deepEqual(tgt, { host: '10.0.0.6', port: 3389 });
