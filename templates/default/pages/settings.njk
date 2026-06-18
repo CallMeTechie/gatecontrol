@@ -773,6 +773,23 @@
       </div>
     </div>
   </div>
+
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      <span class="card-title">{{ t('gateway_failover_settings.title') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="gw-down-threshold">{{ t('gateway_failover_settings.down_threshold_s') }}</label>
+        <div style="display:flex;align-items:center;gap:12px">
+          <input type="range" id="gw-down-threshold" min="30" max="600" step="10" value="{{ settings.gateway_down_threshold_s or 90 }}" style="flex:1">
+          <output id="gw-down-threshold-value" style="font-variant-numeric:tabular-nums;min-width:48px;text-align:right">{{ settings.gateway_down_threshold_s or 90 }} s</output>
+        </div>
+      </div>
+      <p style="margin:0;font-size:11px;color:var(--text-2)">{{ t('gateway_failover_settings.down_threshold_help') }}</p>
+    </div>
+  </div>
   </div>
 </div>
 
@@ -1069,14 +1086,6 @@
   </div>
 </div>
 {% endif %}
-
-<section class="settings-section">
-  <h3>{{ t('gateway_failover_settings.title') }}</h3>
-  <label for="gw-down-threshold">{{ t('gateway_failover_settings.down_threshold_s') }}</label>
-  <input type="range" id="gw-down-threshold" min="30" max="600" step="10" value="{{ settings.gateway_down_threshold_s or 90 }}">
-  <output id="gw-down-threshold-value">{{ settings.gateway_down_threshold_s or 90 }} s</output>
-  <p class="help-text">{{ t('gateway_failover_settings.down_threshold_help') }}</p>
-</section>
 
 {% endblock %}
 
