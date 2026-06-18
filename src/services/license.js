@@ -61,6 +61,7 @@ const COMMUNITY_FALLBACK = {
   gateway_fleet: true,
   gateway_lan_discovery: false,
   gateway_lan_discovery_multi_subnet: false,
+  gateway_scan_egress: false,        // Pro: LAN→Tunnel-Egress (Scan-to-Folder) + VIP-Failover
 };
 
 let cachedPlan = 'community';
