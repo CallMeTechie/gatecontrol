@@ -44,3 +44,26 @@ d3('native connect is RDP-only', () => {
     assert.equal(res.body.ok, false);
   });
 });
+
+const { getDb } = require('../src/db/connection');
+
+d3('existing RDP row is behaviourally unchanged', () => {
+  it3('native connect still works for an rdp route', async () => {
+    const r = await rdpSvc.create({ name: 'rdp-box', host: '10.0.0.8', protocol: 'rdp', port: 3389 });
+    await agent.get(`/api/v1/client/rdp/${r.id}/connect`).expect(200);
+  });
+  it3('monitor target unchanged for rdp route', () => {
+    const tgt = require('../src/services/rdpMonitor').resolveCheckTarget(
+      { protocol: 'rdp', host: '10.0.0.8', port: 3389, access_mode: 'internal' });
+    assert.deepEqual(tgt, { host: '10.0.0.8', port: 3389 });
+  });
+  it3('restoring a row without the new columns does not violate constraints', () => {
+    // Simulates restoring a pre-migration-53 backup row: new columns bound NULL.
+    const db = getDb();
+    assert.doesNotThrow(() => {
+      db.prepare(
+        "INSERT INTO rdp_routes (name, host, port, protocol, browser_enabled, sftp_disable_download) VALUES ('old-backup', '10.0.0.11', 3389, NULL, NULL, NULL)"
+      ).run();
+    });
+  });
+});
