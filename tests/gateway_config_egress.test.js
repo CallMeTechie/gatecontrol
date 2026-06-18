@@ -74,7 +74,8 @@ describe('getGatewayConfig: egress_routes', () => {
     const er = cfg.egress_routes[0];
     assert.ok(typeof er.tunnel_target_host === 'string' && er.tunnel_target_host.length > 0,
       'tunnel_target_host must be a non-empty string');
-    assert.equal(Number(er.tunnel_target_port), 41445);
+    assert.equal(er.tunnel_target_port, 41445);
+    assert.equal(typeof er.tunnel_target_port, 'number');
   });
 
   it('resolves egress route with vip_ip', () => {

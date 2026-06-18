@@ -55,7 +55,9 @@ function resolveForPeer(peerId, db = getDb(), opts = {}) {
       vip_prefix: e.vip_prefix,
       lan_listen_port: e.lan_listen_port,
       tunnel_target_host: hubIp,
-      tunnel_target_port: e.target_port,
+      // l4_listen_port is a SQLite TEXT column; config-hash Port schema requires a number.
+      // Mirror the coercion used for l4_routes in gateways.js (~line 168).
+      tunnel_target_port: Number.isFinite(Number(e.target_port)) ? Number(e.target_port) : e.target_port,
       allowed_source_ips: JSON.parse(e.allowed_source_ips || '[]'),
       near_peers: nearPeers,
     };

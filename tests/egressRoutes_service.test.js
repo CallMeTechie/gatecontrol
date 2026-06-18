@@ -41,7 +41,8 @@ test('resolveForPeer builds hub-target + near_peers', () => {
   const out = svc.resolveForPeer(79, db, { hubIp: '10.8.0.1' });
   assert.equal(out.length, 1);
   assert.equal(out[0].tunnel_target_host, '10.8.0.1');
-  assert.equal(out[0].tunnel_target_port, 41445);   // from route 41
+  assert.equal(out[0].tunnel_target_port, 41445);   // from route 41 — must be a number, not a string
+  assert.equal(typeof out[0].tunnel_target_port, 'number');
   assert.deepEqual(out[0].near_peers, ['192.168.2.151']); // sibling 84
   assert.equal(out[0].vip_ip, '192.168.2.250');
 });
