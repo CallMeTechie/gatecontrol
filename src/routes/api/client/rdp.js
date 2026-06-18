@@ -44,11 +44,12 @@ router.get('/rdp', (req, res) => {
       }
     }
     const visibleRoutes = selfIp ? routes.filter(r => r.host !== selfIp) : routes;
+    const rdpOnly = visibleRoutes.filter((r) => (r.protocol || 'rdp') === 'rdp');
 
     // Attach online status and resolved connect endpoint
     const statuses = rdpMonitor.getAllStatus();
     const connOpts = { baseUrl: config.app.baseUrl, publicHost: config.rdp.publicHost };
-    const enriched = visibleRoutes.map(r => ({
+    const enriched = rdpOnly.map(r => ({
       ...r,
       ...rdpService.resolveConnectEndpoint(r, connOpts),
       status: statuses[r.id] || { online: false, lastCheck: null },
@@ -101,6 +102,10 @@ router.get('/rdp/:id/connect', (req, res) => {
     const id = parseInt(req.params.id, 10);
     const route = rdpService.getById(id, true);
     if (!route) return res.status(404).json({ ok: false, error: 'RDP route not found' });
+
+    if ((route.protocol || 'rdp') !== 'rdp') {
+      return res.status(400).json({ ok: false, error: req.t('rdp.native_only') });
+    }
 
     // Disabled routes must not hand out credentials, even if the id is guessed.
     if (!route.enabled) {
