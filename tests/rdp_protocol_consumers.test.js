@@ -33,8 +33,8 @@ describe('rdpMonitor protocol-aware target', () => {
 const { describe: d3, it: it3, before, after } = require('node:test');
 const rdpSvc = require('../src/services/rdp');
 
-let agent, csrf;
-before(async () => { const c = await setup(); agent = c.agent; csrf = c.csrfToken; });
+let agent, csrf, app;
+before(async () => { const c = await setup(); agent = c.agent; csrf = c.csrfToken; app = c.app; });
 after(() => teardown());
 
 d3('native connect is RDP-only', () => {
@@ -69,10 +69,16 @@ d3('existing RDP row is behaviourally unchanged', () => {
 });
 
 d3('native client list excludes non-RDP protocols', () => {
-  it3('vnc route is not listed for native clients', async () => {
-    const r = await rdpSvc.create({ name: 'vnc-hidden', host: '10.0.0.12', protocol: 'vnc' });
-    const res = await agent.get('/api/v1/client/rdp').expect(200);
-    const ids = (res.body.routes || res.body.rdp || []).map((x) => x.id);
-    assert.ok(!ids.includes(r.id), 'vnc route must not appear in native client list');
+  it3('vnc route is hidden but rdp route is visible for native (token) clients', async () => {
+    const supertest = require('supertest');
+    const tokens = require('../src/services/tokens');
+    const apiToken = tokens.create({ name: 'native-client', scopes: ['client:rdp'] }, '127.0.0.1').rawToken;
+    const vnc = await rdpSvc.create({ name: 'vnc-hidden', host: '10.0.0.12', protocol: 'vnc' });
+    const rdpRoute = await rdpSvc.create({ name: 'rdp-visible', host: '10.0.0.13', protocol: 'rdp' });
+    // Use a fresh request (not the session agent) so token auth takes effect
+    const res = await supertest(app).get('/api/v1/client/rdp').set('X-Api-Token', apiToken).expect(200);
+    const ids = (res.body.routes || []).map((x) => x.id);
+    assert.ok(ids.includes(rdpRoute.id), 'rdp route must be visible');
+    assert.ok(!ids.includes(vnc.id), 'vnc route must not appear in native client list');
   });
 });

@@ -21,15 +21,10 @@ router.get('/rdp', (req, res) => {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
     }
 
-    // Token-authenticated requests must carry client:rdp or full-access scope.
-    // Session-authenticated admins bypass this check (they are already fully
-    // authenticated via cookie session).
-    if (req.tokenAuth) {
-      const scopes = req.tokenScopes || [];
-      const hasRdpScope = scopes.includes('full-access') || scopes.includes('client:rdp');
-      if (!hasRdpScope) {
-        return res.status(403).json({ ok: false, error: 'Token does not have client:rdp permission' });
-      }
+    const scopes = req.tokenScopes || [];
+    const hasRdpScope = scopes.includes('full-access') || scopes.includes('client:rdp');
+    if (!hasRdpScope) {
+      return res.status(403).json({ ok: false, error: 'Token does not have client:rdp permission' });
     }
 
     const tokenId = req.tokenId;
