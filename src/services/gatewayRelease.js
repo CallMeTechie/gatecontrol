@@ -1,5 +1,7 @@
 'use strict';
 const https = require('node:https');
+const path = require('node:path');
+const fs = require('node:fs');
 const logger = require('../utils/logger');
 
 const REPO = process.env.GC_GATEWAY_REPO || 'CallMeTechie/gatecontrol-gateway';
@@ -7,7 +9,20 @@ const TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
 const CACHE_TTL = 60 * 60 * 1000;
 const MAX_BODY = 200 * 1024;
 
-let cache = { version: null, fetchedAt: 0 };
+const PERSIST_FILE = process.env.GC_GATEWAY_LATEST_CACHE
+  || path.join(path.dirname(process.env.GC_DB_PATH || path.join(__dirname, '..', '..', 'data', 'gatecontrol.db')), 'gateway-latest-version.json');
+
+function _loadPersisted() {
+  try { const v = JSON.parse(fs.readFileSync(PERSIST_FILE, 'utf8')).version; if (v && typeof v === 'string') return v; } catch (_e) { /* none */ }
+  return null;
+}
+
+function _persist(v) {
+  try { fs.writeFileSync(PERSIST_FILE, JSON.stringify({ version: v, savedAt: Date.now() })); }
+  catch (err) { logger.warn({ err: err.message }, 'gateway release persist failed'); }
+}
+
+let cache = { version: _loadPersisted(), fetchedAt: 0 };
 let inFlight = false;
 
 function _normalizeTag(tag) { return tag ? String(tag).trim().replace(/^v/i, '') : null; }
@@ -23,7 +38,10 @@ function _fetchLatest() {
     res.on('data', (c) => { body += c; if (body.length > MAX_BODY) req.destroy(); });
     res.on('end', () => {
       inFlight = false;
-      try { const v = _normalizeTag(JSON.parse(body).tag_name); if (v) cache = { version: v, fetchedAt: Date.now() }; }
+      try {
+        const v = _normalizeTag(JSON.parse(body).tag_name);
+        if (v) { cache = { version: v, fetchedAt: Date.now() }; _persist(v); }
+      }
       catch (err) { logger.warn({ err: err.message }, 'gateway release parse failed'); }
     });
   });
@@ -38,4 +56,14 @@ function getLatestVersion() {
   return cache.version;
 }
 
-module.exports = { getLatestVersion, _normalizeTag, _fetchLatest, _setCache: (v) => { cache = { version: v, fetchedAt: Date.now() }; } };
+function init() { _fetchLatest(); }
+
+module.exports = {
+  getLatestVersion,
+  _normalizeTag,
+  _fetchLatest,
+  _setCache: (v) => { cache = { version: v, fetchedAt: Date.now() }; _persist(v); },
+  init,
+  _loadPersisted,
+  _persist,
+};

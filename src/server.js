@@ -59,6 +59,11 @@ async function start() {
       url: config.app.baseUrl,
     }, 'Server listening');
 
+    // Warm the gateway-release version cache so the gateways UI shows the
+    // latest-available version immediately (avoids the cold-start "version
+    // check unavailable" banner).
+    try { require('./services/gatewayRelease').init(); } catch (_e) { /* best-effort */ }
+
     // Sync WireGuard config from DB on startup (ensures peers survive manual config edits)
     setTimeout(async () => {
       try {
