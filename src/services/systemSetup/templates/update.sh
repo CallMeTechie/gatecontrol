@@ -85,6 +85,18 @@ recreate() {
   )
 }
 
+ensure_guacd() {
+  # Idempotent guacd sidecar rollout. Pinned tag → pull is a near no-op when the
+  # image is already present. `up -d guacd` (NO --force-recreate) starts guacd
+  # only if it isn't already running, so it never kills active browser sessions
+  # on a routine tick. Runs after a successful gatecontrol recreate, which also
+  # covers the recovery path (the recovery `down` stops guacd; this brings it back).
+  ( cd "$COMPOSE_DIR" || exit 1
+    docker pull guacamole/guacd:1.6.0 >>"$LOG" 2>&1 || true
+    docker compose up -d guacd >>"$LOG" 2>&1 || true
+  )
+}
+
 needs_update() { # echoes "yes" if running image != :latest
   local latest running
   latest="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
@@ -104,7 +116,7 @@ if [ "$MODE" = "manual" ]; then
     err) log "could not resolve :latest digest"; write_state failed manual; exit 1 ;;
   esac
   log "manual trigger — recreating"
-  if recreate; then write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
+  if recreate; then ensure_guacd; write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
   exit 0
 fi
 
@@ -116,4 +128,4 @@ case "$(needs_update)" in
   err) log "could not resolve :latest digest"; write_state failed auto; exit 1 ;;
 esac
 log "auto: update needed — recreating"
-if recreate; then write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
+if recreate; then ensure_guacd; write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
