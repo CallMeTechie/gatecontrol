@@ -3285,6 +3285,13 @@ table tbody tr:last-child td { border-bottom: none; }
 .gw-fleet .gw .top h3 { margin: 0 0 2px; font-size: 15px; }
 .gw-fleet .gw .host { color: var(--text-3); font-size: 12px; font-family: var(--font-mono); }
 .gw-fleet .gw .body { padding: 14px 16px; display: grid; gap: 12px; }
+/* Scan / loading indicators (LAN discovery + egress dropdown). Mirrored from
+   app.css — the Pro theme loads only pro.css. Must be a linked rule, not a
+   runtime-injected <style> (CSP styleSrcElem requires a nonce). */
+@keyframes gw-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes gw-progress-slide { 0% { left: -35%; } 100% { left: 100%; } }
+.gw-progress { height: 5px; width: 100%; grid-column: 1 / -1; background: var(--border); border-radius: 3px; overflow: hidden; margin: 10px 0 4px; position: relative; }
+.gw-progress::before { content: ""; position: absolute; left: 0; top: 0; height: 100%; width: 35%; border-radius: 3px; background: var(--accent, #2563eb); animation: gw-progress-slide 1.1s ease-in-out infinite; }
 .gw-fleet .gw .kv { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
 .gw-fleet .gw .kv .k { color: var(--text-3); }
 .gw-fleet .gw .kv .v { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }

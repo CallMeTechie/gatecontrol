@@ -351,23 +351,11 @@
       { tag: 'line', attrs: { x1: '12', y1: '22.08', x2: '12', y2: '12' } },
     ]);
   }
-  // Inject the spin keyframe once (used by the scan-icon during a running scan).
-  // `<style>.textContent =` is the safe equivalent of an innerHTML CSS injection.
-  (function injectSpinKeyframes() {
-    if (document.getElementById('gw-css-inject')) return;
-    var s = document.createElement('style');
-    s.id = 'gw-css-inject';
-    s.textContent = '@keyframes gw-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}'
-      // Indeterminate progress bar — used while a LAN scan is running and while
-      // the egress target-route dropdown is loading. Injected here (not in
-      // app.css/pro.css) to stay theme-agnostic, like gw-spin above.
-      // grid-column:1/-1 + width:100% keep the bar full-width even inside the
-      // Pro theme, where .gw .body is a grid container.
-      + '.gw-progress{height:5px;width:100%;grid-column:1/-1;background:var(--border);border-radius:3px;overflow:hidden;margin:10px 0 4px;position:relative}'
-      + '.gw-progress::before{content:"";position:absolute;left:0;top:0;height:100%;width:35%;border-radius:3px;background:var(--accent,#2563eb);animation:gw-progress-slide 1.1s ease-in-out infinite}'
-      + '@keyframes gw-progress-slide{0%{left:-35%}100%{left:100%}}';
-    document.head.appendChild(s);
-  })();
+  // The scan-icon spinner (@keyframes gw-spin) and the indeterminate progress
+  // bar (.gw-progress) live in the linked stylesheets (app.css + pro.css).
+  // A runtime-injected <style> is blocked by our CSP (styleSrcElem requires a
+  // nonce; only style="" attributes get 'unsafe-inline'), so keyframe/class
+  // rules MUST be served from a stylesheet, not injected here.
 
   // Well-known port → friendly service label (used only when service_hint is absent).
   var DISC_WELL_KNOWN = {
