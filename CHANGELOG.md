@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.86.1] — 2026-06-19
+
+### Änderungen
+- Browser Remote Desktop Phase 2a (Backend-Tunnel) (#139)
+
+---
+
 ## [1.86.0] — 2026-06-19
 
 ### Features
