@@ -106,4 +106,17 @@ The DNS chain forwards client queries to upstream resolvers in **plaintext UDP/5
 
 ---
 
-_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-06-19._
+### 12. WireGuard traffic obfuscation — DPI / censorship resistance (opt-in)
+WireGuard has a recognisable on-the-wire fingerprint (the 4-byte message-type header + characteristic handshake sizes), so DPI can detect and block/throttle it. Users behind restrictive corporate firewalls, censoring ISPs, or in heavily-filtered countries simply can't connect today — the tunnel just fails. This item adds an **opt-in** obfuscation layer that disguises the WG traffic so it survives DPI. **Strictly opt-in / off by default:** for the typical homelab or normal-ISP user it is pure overhead and must never be on the default path. The transferable substance (not the code) is the technique from `ClusterM/wg-obfuscator`: **(a)** randomise the WG type header (kills the primary DPI signature), **(b)** XOR-scramble with a shared plaintext key, **(c)** dummy-pad handshake/data packets to vary sizes, **(d)** optional protocol masking (emulate STUN, which DPI rarely blocks).
+
+**First decision before any build — Path A vs Path B:**
+- **Path A — external obfuscator sidecar** (the wg-obfuscator model): a UDP proxy runs on **both** ends; WG `Endpoint` points at `127.0.0.1:<port>`, the real endpoint moves into the proxy config. Works with any WG, but is **cross-cutting**: server + gateways + **every** client (Windows-Pro, Android) need the proxy/process. The XOR+padding core is ~150 lines and trivially re-implementable natively per client; STUN masking (~280 lines) is optional/phase-2.
+- **Path B — AmneziaWG** (a `wireguard-go` fork with obfuscation built into the protocol). GC already ships userspace WG (`/root/docker-wireguard-go`), so server/gateway side could be a **binary swap** with obfuscation in-protocol — potentially far less glue than Path A. Clients would need the Amnezia variant. **Investigate B before committing to A.**
+
+- **Licence flag:** wg-obfuscator is **GPL-3.0**. Given GC's Pro/commercial licensing, it may only be used as a **separate process / sidecar** (GPL aggregation), never linked or embedded into Pro-licensed code; a clean-room native re-implementation of the (trivial) idea avoids the issue, but copying the `.h` does not. AmneziaWG is similarly GPL — same separate-process rule applies.
+- **Notes / open questions:** shared-key distribution + rotation (the obfuscation key is plaintext, symmetric, per-deployment); per-route vs. whole-tunnel; UX for enabling it only where needed; throughput/CPU on the NAS; interaction with #10 (obfuscation changes the effective endpoint to loopback).
+- **Repos:** server + gateway + windows-client-pro + android-client (Path A) **or** server + gateway + clients' WG layer (Path B). **Builds on:** userspace WG (`docker-wireguard-go`), connect/endpoint model. **Tier:** Pro (`traffic_obfuscation`), off by default. _Origin: `ClusterM/wg-obfuscator` (technique only, not code — GPL-3)._
+
+---
+
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-06-20._
