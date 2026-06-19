@@ -43,6 +43,7 @@ const COMMUNITY_FALLBACK = {
   custom_dns: false,
   machine_binding: false,
   remote_desktop: false,
+  browser_sessions: false,
   split_tunnel_preset: false,
   internal_dns: false,
   pihole_integration: false,

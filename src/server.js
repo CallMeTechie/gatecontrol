@@ -64,6 +64,16 @@ async function start() {
     // check unavailable" banner).
     try { require('./services/gatewayRelease').init(); } catch (_e) { /* best-effort */ }
 
+    // Attach the guacamole-lite WS tunnel for browser RDP/VNC/SSH. Needs the
+    // real http.Server (only created here, not in app.js). Best-effort: a
+    // tunnel attach failure must never block server boot.
+    try {
+      const { attachGuacTunnel } = require('./tunnel/guacTunnel');
+      attachGuacTunnel(server);
+    } catch (err) {
+      logger.warn({ err: err.message }, 'guac tunnel attach skipped');
+    }
+
     // Sync WireGuard config from DB on startup (ensures peers survive manual config edits)
     setTimeout(async () => {
       try {

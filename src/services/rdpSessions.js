@@ -5,14 +5,16 @@ const activity = require('./activity');
 const logger = require('../utils/logger');
 const config = require('../../config/default');
 
-function startSession(rdpRouteId, { tokenId, tokenName, peerId, clientIp }) {
+function startSession(rdpRouteId, { tokenId, tokenName, peerId, clientIp, via, protocol }) {
   const db = getDb();
   const route = db.prepare('SELECT id, name FROM rdp_routes WHERE id = ?').get(rdpRouteId);
   if (!route) throw new Error('RDP route not found');
+  // `via`/`protocol` are additive (browser-tunnel path). Native callers omit
+  // them and get the column defaults ('native'/'rdp') — behaviour-identical.
   const result = db.prepare(`
-    INSERT INTO rdp_sessions (rdp_route_id, token_id, token_name, peer_id, status, client_ip)
-    VALUES (?, ?, ?, ?, 'active', ?)
-  `).run(rdpRouteId, tokenId || null, tokenName || null, peerId || null, clientIp || null);
+    INSERT INTO rdp_sessions (rdp_route_id, token_id, token_name, peer_id, status, client_ip, via, protocol)
+    VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+  `).run(rdpRouteId, tokenId || null, tokenName || null, peerId || null, clientIp || null, via || 'native', protocol || 'rdp');
   const sessionId = result.lastInsertRowid;
   activity.log('rdp_session_start', `RDP session started: "${route.name}"`, {
     source: 'api', severity: 'info',
