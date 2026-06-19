@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.85.1] — 2026-06-19
+
+### Änderungen
+- bump nodemailer from 8.0.4 to 9.0.1 (#126)
+
+---
+
 ## [1.85.0] — 2026-06-18
 
 ### Features
