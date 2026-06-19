@@ -1002,6 +1002,15 @@ const migrations = [
     `,
     detect: (db) => tableExists(db, 'egress_routes'),
   },
+  {
+    version: 55,
+    name: 'rdp_sessions_browser_columns',
+    sql: `
+      ALTER TABLE rdp_sessions ADD COLUMN protocol TEXT DEFAULT 'rdp';
+      ALTER TABLE rdp_sessions ADD COLUMN via TEXT DEFAULT 'native';
+    `,
+    detect: (db) => hasColumn(db, 'rdp_sessions', 'via'),
+  },
 ];
 
 module.exports = { migrations };
