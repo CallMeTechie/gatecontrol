@@ -42,4 +42,41 @@ describe('guac token', () => {
     assert.equal(k.length, 32);
     assert.notEqual(k.toString('hex'), process.env.GC_ENCRYPTION_KEY);
   });
+
+  // --- HMAC hardening tests ---
+
+  it('minted token envelope contains a mac string field', () => {
+    const { token: t } = token.mint({ type: 'rdp', settings: { hostname: '10.0.0.5', port: '3389' } });
+    const obj = JSON.parse(Buffer.from(t, 'base64').toString('utf8'));
+    assert.equal(typeof obj.mac, 'string', 'outer envelope must contain a mac string');
+    assert.ok(obj.mac.length > 0, 'mac must be non-empty');
+  });
+
+  it('rejects a token with a tampered mac field', () => {
+    const { token: t } = token.mint({ type: 'rdp', settings: { hostname: '10.0.0.5', port: '3389' } });
+    const obj = JSON.parse(Buffer.from(t, 'base64').toString('utf8'));
+    const macBuf = Buffer.from(obj.mac, 'base64');
+    macBuf[0] ^= 0xff;                            // flip a byte in the mac
+    obj.mac = macBuf.toString('base64');
+    const tampered = Buffer.from(JSON.stringify(obj)).toString('base64');
+    assert.equal(token.verifyAndConsume(tampered), null, 'tampered mac must be rejected');
+  });
+
+  it('rejects a token with a tampered iv field (HMAC covers iv)', () => {
+    const { token: t } = token.mint({ type: 'rdp', settings: { hostname: '10.0.0.5', port: '3389' } });
+    const obj = JSON.parse(Buffer.from(t, 'base64').toString('utf8'));
+    const ivBuf = Buffer.from(obj.iv, 'base64');
+    ivBuf[0] ^= 0xff;                             // flip a byte in the iv
+    obj.iv = ivBuf.toString('base64');
+    const tampered = Buffer.from(JSON.stringify(obj)).toString('base64');
+    assert.equal(token.verifyAndConsume(tampered), null, 'tampered iv must be rejected by HMAC');
+  });
+
+  it('rejects a token with the mac field removed', () => {
+    const { token: t } = token.mint({ type: 'rdp', settings: { hostname: '10.0.0.5', port: '3389' } });
+    const obj = JSON.parse(Buffer.from(t, 'base64').toString('utf8'));
+    delete obj.mac;
+    const noMac = Buffer.from(JSON.stringify(obj)).toString('base64');
+    assert.equal(token.verifyAndConsume(noMac), null, 'token without mac must be rejected');
+  });
 });
