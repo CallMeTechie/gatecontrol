@@ -342,6 +342,65 @@ describe('service bundles', () => {
     );
   });
 
+  // ── adding routes to an existing bundle ────────────────
+
+  it('adds an unbundled route to an existing bundle', async () => {
+    const seed = await routesService.create({ domain: 'add-seed.example.com', target_ip: '10.8.0.70', target_port: 80 });
+    const bundle = bundles.groupExisting({ name: 'AddTarget', route_ids: [seed.id] });
+    const extra = await routesService.create({
+      route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '5300', l4_tls_mode: 'none',
+      target_ip: '10.8.0.70', target_port: 9100,
+    });
+    const updated = bundles.addRoutesToBundle({ bundle_id: bundle.id, route_ids: [extra.id] });
+    assert.equal(updated.routes.length, 2, 'route joined the bundle');
+    const row = db.prepare('SELECT bundle_id FROM routes WHERE id = ?').get(extra.id);
+    assert.equal(row.bundle_id, bundle.id);
+  });
+
+  it('rejects adding to a non-existent bundle', async () => {
+    const r = await routesService.create({ domain: 'add-nobundle.example.com', target_ip: '10.8.0.71', target_port: 80 });
+    assert.throws(
+      () => bundles.addRoutesToBundle({ bundle_id: 999999, route_ids: [r.id] }),
+      /Bundle not found/
+    );
+  });
+
+  it('rejects adding an already-bundled route', async () => {
+    const existing = bundles.listBundles().find((b) => b.route_count > 0);
+    const memberId = bundles.getBundle(existing.id).routes[0].id;
+    const other = await routesService.create({ domain: 'add-other.example.com', target_ip: '10.8.0.72', target_port: 80 });
+    const target = bundles.groupExisting({ name: 'AddDupTarget', route_ids: [other.id] });
+    assert.throws(
+      () => bundles.addRoutesToBundle({ bundle_id: target.id, route_ids: [memberId] }),
+      /already part of a service/
+    );
+  });
+
+  it('rejects adding a second HTTP route to a bundle that already has one', async () => {
+    const httpA = await routesService.create({ domain: 'add-http-a.example.com', target_ip: '10.8.0.73', target_port: 80 });
+    const bundle = bundles.groupExisting({ name: 'AddHttpTarget', route_ids: [httpA.id] });
+    const httpB = await routesService.create({ domain: 'add-http-b.example.com', target_ip: '10.8.0.73', target_port: 81 });
+    assert.throws(
+      () => bundles.addRoutesToBundle({ bundle_id: bundle.id, route_ids: [httpB.id] }),
+      /at most one HTTP route/
+    );
+  });
+
+  it('rejects adding an RDP-linked L4 route', async () => {
+    const seed = await routesService.create({ domain: 'add-rdp-seed.example.com', target_ip: '10.8.0.74', target_port: 80 });
+    const bundle = bundles.groupExisting({ name: 'AddRdpTarget', route_ids: [seed.id] });
+    const rdp = require('../src/services/rdp');
+    const rdpRoute = await rdp.create({
+      name: 'rdp-add-guard', host: '192.168.1.81', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId,
+      gateway_listen_port: 5301, credential_mode: 'none',
+    });
+    assert.throws(
+      () => bundles.addRoutesToBundle({ bundle_id: bundle.id, route_ids: [rdpRoute.gateway_l4_route_id] }),
+      /RDP-linked/
+    );
+  });
+
   // ── shared-domain rules (duplicate-check loosening) ────
 
   it('allows an L4-SNI route to share the domain of an HTTP route', async () => {

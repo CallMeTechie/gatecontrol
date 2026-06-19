@@ -416,6 +416,53 @@ function groupExisting({ name, route_ids }) {
   return getBundle(bundleId);
 }
 
+// Attach one or more existing, currently-unbundled routes to an EXISTING
+// bundle. Same membership rules as groupExisting, but the HTTP-route cap is
+// evaluated COMBINED against the bundle's current members (a bundle may hold
+// at most one HTTP route in total). Does not touch the bundle's domain or the
+// routes' enabled state, and needs no Caddy sync — only bundle_id changes.
+function addRoutesToBundle({ bundle_id, route_ids }) {
+  const db = getDb();
+  const bundleId = parseInt(bundle_id, 10);
+  if (!Number.isInteger(bundleId)) throw badRequest('Invalid bundle id');
+  const bundle = getBundle(bundleId);
+  if (!bundle) throw badRequest('Bundle not found');
+
+  if (!Array.isArray(route_ids) || route_ids.length === 0) {
+    throw badRequest('route_ids required');
+  }
+  const ids = route_ids.map((n) => parseInt(n, 10));
+  if (ids.some((n) => !Number.isInteger(n))) throw badRequest('Invalid route id');
+
+  const placeholders = ids.map(() => '?').join(',');
+  const members = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
+  if (members.length !== ids.length) throw badRequest('One or more routes not found');
+
+  const bundled = members.find((r) => r.bundle_id != null);
+  if (bundled) throw badRequest(`Route ${bundled.id} is already part of a service`);
+
+  const existingHttp = (bundle.routes || []).filter((r) => r.route_type !== 'l4').length;
+  const newHttp = members.filter((r) => r.route_type !== 'l4').length;
+  if (existingHttp + newHttp > 1) throw badRequest('A service can contain at most one HTTP route');
+
+  const rdpLinked = db.prepare(
+    `SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IN (${placeholders})`
+  ).all(...ids);
+  if (rdpLinked.length > 0) {
+    throw badRequest('RDP-linked L4 routes cannot be grouped into a service');
+  }
+
+  db.prepare(`UPDATE routes SET bundle_id = ? WHERE id IN (${placeholders})`).run(bundleId, ...ids);
+
+  activity.log('service_bundle_routes_added', `${ids.length} route(s) added to service "${bundle.name}"`, {
+    source: 'admin',
+    severity: 'info',
+    details: { bundleId, routeIds: ids },
+  });
+
+  return getBundle(bundleId);
+}
+
 module.exports = {
   createBundle,
   getBundle,
@@ -424,4 +471,5 @@ module.exports = {
   toggleBundle,
   removeBundle,
   groupExisting,
+  addRoutesToBundle,
 };

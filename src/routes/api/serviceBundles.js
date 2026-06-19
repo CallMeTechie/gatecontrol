@@ -136,6 +136,19 @@ router.post('/group', (req, res) => {
   }
 });
 
+/** POST /api/v1/service-bundles/:id/routes — attach existing routes to a bundle */
+router.post('/:id/routes', (req, res) => {
+  try {
+    const bundle = bundles.addRoutesToBundle({
+      bundle_id: parseInt(req.params.id, 10),
+      route_ids: (req.body && req.body.route_ids) || [],
+    });
+    res.status(201).json({ ok: true, bundle });
+  } catch (err) {
+    handleError(req, res, err, 'error.bundles.add_routes');
+  }
+});
+
 /** PUT /api/v1/service-bundles/:id — rename / re-describe */
 router.put('/:id', (req, res) => {
   try {
