@@ -24,10 +24,12 @@ function _persist(v) {
 
 let cache = { version: _loadPersisted(), fetchedAt: 0 };
 let inFlight = false;
+let fetchCalls = 0;
 
 function _normalizeTag(tag) { return tag ? String(tag).trim().replace(/^v/i, '') : null; }
 
 function _fetchLatest() {
+  fetchCalls += 1;
   if (inFlight || process.env.NODE_ENV === 'test') return; // never fire a real request in tests
   inFlight = true;
   const headers = { 'User-Agent': 'GateControl', Accept: 'application/vnd.github+json' };
@@ -56,7 +58,22 @@ function getLatestVersion() {
   return cache.version;
 }
 
-function init() { _fetchLatest(); }
+// Warm-start: fetch immediately, then retry a few times on a delay if the
+// fetch hasn't succeeded yet (cache.fetchedAt still 0). Survives a transient
+// boot-time network blip (e.g. "socket hang up") so the persisted cache is
+// populated without waiting for the first dashboard request. Timers are
+// unref'd so they never keep the process (or test runner) alive.
+const INIT_RETRY_DELAY = Number(process.env.GC_GATEWAY_LATEST_RETRY_MS) || 30000;
+const INIT_MAX_RETRIES = 3;
+
+function init(retriesLeft = INIT_MAX_RETRIES) {
+  _fetchLatest();
+  if (retriesLeft <= 0) return;
+  const t = setTimeout(() => {
+    if (cache.fetchedAt === 0) init(retriesLeft - 1); // only retry while still unwarmed
+  }, INIT_RETRY_DELAY);
+  if (t && typeof t.unref === 'function') t.unref();
+}
 
 module.exports = {
   getLatestVersion,
@@ -66,4 +83,5 @@ module.exports = {
   init,
   _loadPersisted,
   _persist,
+  _fetchCallCount: () => fetchCalls,
 };
