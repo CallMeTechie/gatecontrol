@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.86.0] — 2026-06-19
+
+### Features
+- persist + warm-start latest-version cache (no cold-start 'version check unavailable') (#140)
+
+---
+
 ## [1.85.1] — 2026-06-19
 
 ### Änderungen
