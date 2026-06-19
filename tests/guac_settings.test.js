@@ -17,6 +17,7 @@ describe('buildConnectionSettings', () => {
     assert.equal(c.settings.hostname, '10.0.0.5');
     assert.equal(String(c.settings.port), '3389');
     assert.equal(c.settings.username, 'u');
+    assert.equal(c.settings.password, 'p');
   });
   it('disables clipboard copy/paste when browser_clipboard=0 (default)', () => {
     const c = buildConnectionSettings(base, {});
@@ -25,12 +26,15 @@ describe('buildConnectionSettings', () => {
   });
   it('enables clipboard when browser_clipboard=1', () => {
     const c = buildConnectionSettings({ ...base, browser_clipboard: 1 }, {});
-    assert.ok(!c.settings['disable-copy'] || c.settings['disable-copy'] === 'false');
+    assert.equal(c.settings['disable-copy'], 'false');
+    assert.equal(c.settings['disable-paste'], 'false');
   });
   it('vnc uses port and type vnc', () => {
     const c = buildConnectionSettings({ ...base, protocol: 'vnc', port: 5900 }, {});
     assert.equal(c.type, 'vnc');
     assert.equal(String(c.settings.port), '5900');
+    assert.equal(c.settings.security, undefined);
+    assert.equal(c.settings['ignore-cert'], undefined);
   });
   it('throws for non rdp/vnc in phase 2a', () => {
     assert.throws(() => buildConnectionSettings({ ...base, protocol: 'ssh' }, {}));
