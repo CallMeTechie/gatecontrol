@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.2] — 2026-06-19
+
+### Fixes
+- Scan-/Fortschritts-CSS aus Stylesheets liefern (CSP blockierte injiziertes <style>) (#144)
+
+---
+
 ## [1.87.1] — 2026-06-19
 
 ### Fixes
