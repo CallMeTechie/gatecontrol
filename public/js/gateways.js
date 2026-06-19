@@ -361,8 +361,10 @@
       // Indeterminate progress bar — used while a LAN scan is running and while
       // the egress target-route dropdown is loading. Injected here (not in
       // app.css/pro.css) to stay theme-agnostic, like gw-spin above.
-      + '.gw-progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin:8px 0 2px;position:relative}'
-      + '.gw-progress::before{content:"";position:absolute;left:0;top:0;height:100%;width:35%;border-radius:2px;background:var(--primary,var(--accent,#2563eb));animation:gw-progress-slide 1.1s ease-in-out infinite}'
+      // grid-column:1/-1 + width:100% keep the bar full-width even inside the
+      // Pro theme, where .gw .body is a grid container.
+      + '.gw-progress{height:5px;width:100%;grid-column:1/-1;background:var(--border);border-radius:3px;overflow:hidden;margin:10px 0 4px;position:relative}'
+      + '.gw-progress::before{content:"";position:absolute;left:0;top:0;height:100%;width:35%;border-radius:3px;background:var(--accent,#2563eb);animation:gw-progress-slide 1.1s ease-in-out infinite}'
       + '@keyframes gw-progress-slide{0%{left:-35%}100%{left:100%}}';
     document.head.appendChild(s);
   })();
@@ -866,24 +868,31 @@
       formEl.appendChild(footer);
 
       // Populate the target dropdown with internal-only L4 gateway routes only.
+      // Keep the loading bar up for a minimum span so it stays perceptible even
+      // when /api/routes answers almost instantly (local server).
+      var loadStart = Date.now();
       fetch('/api/routes', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          trProgress.style.display = 'none';
-          var routes = Array.isArray(d) ? d : (d && (d.routes || d.data)) || [];
-          var l4 = routes.filter(function (rt) { return rt.route_type === 'l4' && rt.target_kind === 'gateway' && !rt.external_enabled; });
-          trSel.replaceChildren();
-          if (!l4.length) {
-            var o = el('option', null, T('egress.target_route_empty', 'No internal-only L4 gateway route available.'));
-            o.value = ''; o.disabled = true; o.selected = true; trSel.appendChild(o);
-            save.disabled = true;
-            return;
-          }
-          l4.forEach(function (rt) {
-            var lbl = (rt.domain || (':' + (rt.l4_listen_port || ''))) + (rt.l4_listen_port ? ' (:' + rt.l4_listen_port + ')' : '');
-            var o = el('option', null, lbl); o.value = rt.id; trSel.appendChild(o);
-          });
-          save.disabled = false;
+          var apply = function () {
+            trProgress.style.display = 'none';
+            var routes = Array.isArray(d) ? d : (d && (d.routes || d.data)) || [];
+            var l4 = routes.filter(function (rt) { return rt.route_type === 'l4' && rt.target_kind === 'gateway' && !rt.external_enabled; });
+            trSel.replaceChildren();
+            if (!l4.length) {
+              var o = el('option', null, T('egress.target_route_empty', 'No internal-only L4 gateway route available.'));
+              o.value = ''; o.disabled = true; o.selected = true; trSel.appendChild(o);
+              save.disabled = true;
+              return;
+            }
+            l4.forEach(function (rt) {
+              var lbl = (rt.domain || (':' + (rt.l4_listen_port || ''))) + (rt.l4_listen_port ? ' (:' + rt.l4_listen_port + ')' : '');
+              var o = el('option', null, lbl); o.value = rt.id; trSel.appendChild(o);
+            });
+            save.disabled = false;
+          };
+          var elapsed = Date.now() - loadStart;
+          if (elapsed < 500) setTimeout(apply, 500 - elapsed); else apply();
         }).catch(function () { trProgress.style.display = 'none'; });
     }
 
