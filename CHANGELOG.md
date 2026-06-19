@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.0] — 2026-06-19
+
+### Features
+- add routes to an existing service + scan/loading indicators (#142)
+
+---
+
 ## [1.86.2] — 2026-06-19
 
 ### Fixes
