@@ -12,6 +12,9 @@ const rdpMonitor = require('../../../services/rdpMonitor');
 const rdpSessions = require('../../../services/rdpSessions');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
 const config = require('../../../../config/default');
+const guacToken = require('../../../services/guacToken');
+const { buildConnectionSettings, PHASE2A_PROTOCOLS } = require('../../../services/guacSettings');
+const { admitSession } = require('../../../services/guacSessions');
 
 const router = Router();
 
@@ -266,6 +269,55 @@ router.get('/rdp/:id/connect', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get RDP connection info');
     res.status(500).json({ ok: false, error: 'Failed to get connection info' });
+  }
+});
+
+/**
+ * POST /api/v1/client/rdp/:id/browser-session
+ * Mint a short-lived guacamole-lite token for an RDP/VNC route.
+ * Guard order (spec §5): license → found → decrypt → browser_enabled → ACL → maintenance → protocol → concurrency.
+ */
+router.post('/rdp/:id/browser-session', (req, res) => {
+  try {
+    if (!hasFeature('browser_sessions')) {
+      return res.status(403).json({ ok: false, error: req.t('rdp.browser.license_required') });
+    }
+    const id = parseInt(req.params.id, 10);
+    const route = rdpService.getById(id, true);
+    if (!route) return res.status(404).json({ ok: false, error: req.t('rdp.browser.not_found') });
+    if (route.decrypt_failed) {
+      return res.status(409).json({ ok: false, error: req.t('rdp.browser.mint_failed') });
+    }
+    if (!route.browser_enabled) {
+      return res.status(403).json({ ok: false, error: req.t('rdp.browser.not_enabled') });
+    }
+    // ACL gate — mirror verbatim from GET '/rdp/:id/connect' handler.
+    if (!rdpService.canAccessRoute(route, req.tokenId, req.tokenUserId)) {
+      return res.status(403).json({ ok: false, error: req.t('rdp.browser.not_authorized') });
+    }
+    // Maintenance window gate — mirror verbatim from GET '/rdp/:id/connect' handler.
+    if (route.maintenance_enabled && rdpService.isInMaintenanceWindow(id)) {
+      return res.status(503).json({ ok: false, error: req.t('rdp.browser.maintenance_active') });
+    }
+    const protocol = route.protocol || 'rdp';
+    if (!PHASE2A_PROTOCOLS.includes(protocol)) {
+      return res.status(400).json({ ok: false, error: req.t('rdp.browser.protocol_unsupported') });
+    }
+    // Soft concurrency pre-check at mint time (WS connect is authoritative).
+    const admit = admitSession({ routeId: id, tokenId: req.tokenId, peerId: req.tokenPeerId, isStale: () => false });
+    if (!admit.ok) {
+      return res.status(429).json({ ok: false, error: req.t('rdp.browser.limit_reached') });
+    }
+    const conn = buildConnectionSettings(route, { username: route.username, password: route.password });
+    // Spike requirement: embed routeId/tokenId/peerId so Task 9's evaluateConnection
+    // can perform authoritative admitSession at WS-upgrade time (Task 8 ↔ Task 9).
+    // These extra fields ride inside the encrypted connection object; guacamole-lite
+    // drops them via mergeConnectionOptions so guacd never sees them.
+    const { token, ttlMs } = guacToken.mint({ ...conn, rdpRouteId: id, tokenId: req.tokenId, peerId: req.tokenPeerId });
+    return res.json({ ok: true, token, wsPath: '/api/v1/client/rdp/guac-tunnel', ttl: Math.floor(ttlMs / 1000) });
+  } catch (err) {
+    logger.error({ err }, 'browser-session mint failed');
+    return res.status(500).json({ ok: false, error: req.t('rdp.browser.mint_failed') });
   }
 });
 
