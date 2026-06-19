@@ -19,7 +19,7 @@
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.1",
     "guacamole-lite": "1.2.0",
-    "helmet": "^8.0.0",
+    "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.1",
