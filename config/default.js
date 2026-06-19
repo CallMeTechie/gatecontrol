@@ -155,6 +155,16 @@ const config = {
   },
 };
 
+config.guac = {
+  tokenTtlMs:      envInt('GC_GUAC_TOKEN_TTL_MS', 60000),
+  heartbeatMs:     envInt('GC_GUAC_HEARTBEAT_MS', 15000),
+  heartbeatMisses: envInt('GC_GUAC_HEARTBEAT_MISSES', 2),
+  idleTimeoutMs:   envInt('GC_GUAC_IDLE_MS', 300000),
+  maxGlobal:       envInt('GC_GUAC_MAX_GLOBAL', 10),
+  maxPerUser:      envInt('GC_GUAC_MAX_PER_USER', 2),
+  maxPerRoute:     envInt('GC_GUAC_MAX_PER_ROUTE', 2),
+};
+
 // Source ranges allowed to reach an internal-only route (HTTP gate in
 // services/caddyConfig.js, L4 gate in services/l4.js). Derived from the
 // resolved VPN subnet so it can never drift from `subnet`. The
