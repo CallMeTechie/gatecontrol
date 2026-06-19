@@ -18,6 +18,9 @@ describe('isStale', () => {
     const nowUtc = new Date().toISOString().replace('T', ' ').slice(0, 19);
     assert.equal(isStale({ last_heartbeat: nowUtc }), false);
   });
+  it('treats a session with no heartbeat (null) as not stale', () => {
+    assert.equal(isStale({ last_heartbeat: null }), false);
+  });
 });
 
 describe('guac tunnel connection evaluation', () => {

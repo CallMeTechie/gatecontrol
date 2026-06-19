@@ -117,6 +117,7 @@ function attachGuacTunnel(httpServer) {
       if (ws._missedPongs >= config.guac.heartbeatMisses) {
         try { cc.close(); } catch { /* already closing */ }
         try { ws.terminate(); } catch { /* already gone */ }
+        clearInterval(hb);
         return;
       }
       ws._missedPongs++;
