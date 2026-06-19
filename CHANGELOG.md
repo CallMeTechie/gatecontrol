@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.1] — 2026-06-19
+
+### Fixes
+- make scan/loading progress bar reliably visible (Pro theme + fast local server) (#143)
+
+---
+
 ## [1.87.0] — 2026-06-19
 
 ### Features
