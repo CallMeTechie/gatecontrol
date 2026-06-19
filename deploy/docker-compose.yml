@@ -17,5 +17,20 @@ services:
       - .env
     restart: unless-stopped
 
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: guacd
+    network_mode: host
+    # The official image ENTRYPOINT is /opt/guacamole/entrypoint.sh and PREPENDS
+    # the guacd binary itself — so the command must be ONLY the flags. Passing
+    # ["guacd","-b","127.0.0.1","-f"] makes guacd bind 0.0.0.0 (verified live);
+    # the flags-only form binds 127.0.0.1 (C1 loopback-only invariant).
+    command: ["-b", "127.0.0.1", "-f"]
+    restart: unless-stopped
+    # Non-Swarm Compose ignores deploy.resources; use service-level limits so a
+    # session burst can't starve the co-located GC process.
+    cpus: "1.0"
+    mem_limit: 512m
+
 volumes:
   gatecontrol-data:

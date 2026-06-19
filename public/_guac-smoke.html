@@ -1,0 +1,190 @@
+<!--
+  THROWAWAY — Phase-2a Smoke-Test, wird in Phase 3 durch das echte /rdp-UI ersetzt.
+
+  Purpose: Manually verify the guacd sidecar + guacamole-lite tunnel end-to-end.
+  This file is intentionally unstyled and minimal. It is NOT a production UI.
+
+  HOW TO GET THE CSRF TOKEN:
+  This page is a static file (not a Nunjucks template), so window.GC.csrfToken
+  is not available automatically. Paste it from another GC tab:
+    1. Open the GC dashboard in another tab and press F12.
+    2. In the console, run: copy(window.GC.csrfToken)
+    3. Paste the value into the "CSRF Token" field below.
+  Alternatively, check the Network tab: any authenticated POST shows the
+  X-CSRF-Token request header.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>⚠ Phase-2a Smoke Page (THROWAWAY)</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 1rem; }
+    h1   { color: #f90; font-size: 1rem; }
+    label { display: block; margin: 0.4rem 0 0.1rem; color: #aaa; font-size: 0.85rem; }
+    input, select { background: #222; color: #eee; border: 1px solid #555; padding: 0.3rem 0.5rem; width: 340px; font-family: monospace; }
+    button { margin-top: 0.6rem; padding: 0.4rem 1rem; background: #1a6; color: #fff; border: none; cursor: pointer; font-family: monospace; }
+    button:disabled { background: #444; cursor: default; }
+    #status { margin-top: 0.6rem; font-size: 0.85rem; min-height: 1.2em; }
+    #status.ok  { color: #4f4; }
+    #status.err { color: #f44; }
+    #display    { margin-top: 1rem; border: 1px solid #333; display: inline-block; }
+    .warn { color: #f90; border: 1px solid #f90; padding: 0.3rem 0.6rem; margin-bottom: 0.8rem; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>⚠ Phase-2a Guacamole Smoke Page — THROWAWAY (Phase 3 ships the real UI)</h1>
+  <div class="warn">This page is not authenticated itself. Open it while logged in to GC.</div>
+
+  <label for="csrfInput">CSRF Token (paste from browser console: <code>copy(window.GC.csrfToken)</code>)</label>
+  <input id="csrfInput" type="text" placeholder="64-char hex token" autocomplete="off">
+
+  <label for="routeIdInput">Route ID (integer, must have browser_sessions enabled)</label>
+  <input id="routeIdInput" type="number" placeholder="e.g. 5" min="1">
+
+  <br>
+  <button id="connectBtn">Connect</button>
+  <button id="disconnectBtn" disabled>Disconnect</button>
+
+  <div id="status">Ready.</div>
+  <div id="display"></div>
+
+  <script type="module">
+    // ESM bundle: export default Guacamole  (guacamole-common-js@1.5.0)
+    import Guacamole from './vendor/guacamole-common-js/guacamole-common.min.js';
+
+    // ─── State ──────────────────────────────────────────────────────────────
+    let client   = null;
+    let mouse    = null;
+    let keyboard = null;
+
+    const csrfInput      = document.getElementById('csrfInput');
+    const routeIdInput   = document.getElementById('routeIdInput');
+    const connectBtn     = document.getElementById('connectBtn');
+    const disconnectBtn  = document.getElementById('disconnectBtn');
+    const statusDiv      = document.getElementById('status');
+    const displayDiv     = document.getElementById('display');
+
+    function setStatus(msg, cls) {
+      statusDiv.textContent = msg;
+      statusDiv.className   = cls || '';
+    }
+
+    // ─── Disconnect helper ───────────────────────────────────────────────────
+    function disconnect() {
+      if (keyboard) { keyboard.onkeydown = null; keyboard.onkeyup = null; keyboard = null; }
+      if (mouse)    { mouse.onmousedown  = mouse.onmouseup = mouse.onmousemove = null; mouse = null; }
+      if (client)   { try { client.disconnect(); } catch (_) {} client = null; }
+      displayDiv.innerHTML = '';
+      connectBtn.disabled    = false;
+      disconnectBtn.disabled = true;
+      setStatus('Disconnected.');
+    }
+
+    // ─── Connect ─────────────────────────────────────────────────────────────
+    connectBtn.addEventListener('click', async () => {
+      const csrfToken = csrfInput.value.trim();
+      const routeId   = routeIdInput.value.trim();
+
+      if (!csrfToken) { setStatus('ERROR: paste your CSRF token first.', 'err'); return; }
+      if (!routeId)   { setStatus('ERROR: enter a route ID.', 'err'); return; }
+
+      connectBtn.disabled = true;
+      setStatus('Minting browser-session token…');
+
+      // ── Step 1: mint a guac token via the Task-8 endpoint ──────────────────
+      // POST /api/v1/client/rdp/:id/browser-session
+      // Returns { ok, token, wsPath }
+      // token  = AES-256-CBC guacamole-lite token (base64 JSON envelope)
+      // wsPath = '/api/v1/client/rdp/guac-tunnel'
+      let mintData;
+      try {
+        const mintRes = await fetch(`/api/v1/client/rdp/${encodeURIComponent(routeId)}/browser-session`, {
+          method:      'POST',
+          credentials: 'include',   // send session cookie
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept':        'application/json',
+            // CSRF token — server reads from X-CSRF-Token header (csrf-sync)
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({}),
+        });
+        mintData = await mintRes.json();
+        if (!mintRes.ok || !mintData.ok) {
+          setStatus(`Mint failed (${mintRes.status}): ${mintData?.error || mintData?.message || 'unknown'}`, 'err');
+          connectBtn.disabled = false;
+          return;
+        }
+      } catch (err) {
+        setStatus(`Mint fetch error: ${err.message}`, 'err');
+        connectBtn.disabled = false;
+        return;
+      }
+
+      const { token, wsPath } = mintData;
+      setStatus(`Token minted. Opening WS tunnel at ${wsPath}…`);
+
+      // ── Step 2: open the Guacamole tunnel ─────────────────────────────────
+      // wsPath = '/api/v1/client/rdp/guac-tunnel'
+      // WebSocketTunnel resolves relative to the current origin (wss:// in production).
+      // client.connect(data) appends ?data to the WS URL, so guacamole-lite reads
+      // query.token on the upgrade event.
+      const tunnel = new Guacamole.WebSocketTunnel(wsPath);
+      client = new Guacamole.Client(tunnel);
+
+      // Attach the display element
+      const displayEl = client.getDisplay().getElement();
+      displayDiv.innerHTML = '';
+      displayDiv.appendChild(displayEl);
+
+      // ── Client state / error handlers ─────────────────────────────────────
+      // Guacamole.Client.State: IDLE=0 CONNECTING=1 WAITING=2 CONNECTED=3 DISCONNECTING=4 DISCONNECTED=5
+      const STATE_NAMES = ['IDLE','CONNECTING','WAITING','CONNECTED','DISCONNECTING','DISCONNECTED'];
+      client.onstatechange = (state) => {
+        const name = STATE_NAMES[state] || state;
+        setStatus(`Tunnel state: ${name}`, state === 3 ? 'ok' : '');
+        if (state === 3) {
+          // Connected — wire mouse and keyboard
+          disconnectBtn.disabled = false;
+
+          // Mouse: translate DOM mouse events on the display element into
+          // Guacamole mouse state and forward to the server.
+          mouse = new Guacamole.Mouse(displayEl);
+          mouse.onmousedown  =
+          mouse.onmouseup    =
+          mouse.onmousemove  = (mouseState) => {
+            client.sendMouseState(mouseState);
+          };
+
+          // Keyboard: capture key events on the document so hotkeys work
+          // even if the display element isn't focused.
+          keyboard = new Guacamole.Keyboard(document);
+          keyboard.onkeydown = (keysym) => { client.sendKeyEvent(1, keysym); };
+          keyboard.onkeyup   = (keysym) => { client.sendKeyEvent(0, keysym); };
+        }
+        if (state === 5) { // DISCONNECTED
+          disconnectBtn.disabled = true;
+          connectBtn.disabled    = false;
+        }
+      };
+
+      client.onerror = (err) => {
+        // err is a Guacamole.Status object { code, message }
+        setStatus(`Client error (${err.code}): ${err.message}`, 'err');
+        disconnect();
+      };
+
+      // ── Step 3: connect — appends ?token=<encoded> to wsPath ──────────────
+      // Guacamole.Client.connect(data) sends `data` as the raw query string.
+      // guacamole-lite reads req.url query.token on the WS upgrade.
+      client.connect('token=' + encodeURIComponent(token));
+    });
+
+    // ─── Disconnect button ───────────────────────────────────────────────────
+    disconnectBtn.addEventListener('click', () => {
+      disconnect();
+    });
+  </script>
+</body>
+</html>
