@@ -68,6 +68,15 @@ A statuspage-style overview per proxied service generated from `monitor.js` upti
 Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook alerting.
 - **Repos:** server (notification adapters + settings UI). **Tier:** Community.
 
+### 10. Direct-path shortcut for gateway traffic (relay stays the fallback)
+Today **all** service traffic to a gateway-mode route hairpins through the central WG hub (`client → server → gateway tunnel-IP → L4 listener → LAN target`), even when the client and the serving gateway sit on the **same physical LAN**. This item adds a **candidate hierarchy** to `connect_address` resolution so the server hands back the cheapest viable path and only falls back to the hub when nothing better is reachable. Inspired by wireplug's STUN-based NAT classification — but reframed: GC is **hub-and-spoke**, so the central server is always reachable and we do **not** have wireplug's mesh NAT-traversal problem for basic connectivity. The win here is **hairpin avoidance / latency + hub-bandwidth savings**, not NAT traversal.
+
+Path tiers, evaluated in `resolveConnectEndpoint()` (`src/services/rdp.js:760`):
+- **Tier 0 — same-LAN direct (recommended first/only scope):** if the requesting client and the serving gateway share a subnet, return `gateway_meta.lan_ip` as `connect_address` instead of the hub host. Builds **entirely** on existing infrastructure — LAN discovery (`discovery_*`, migration #45) + `gateway_meta.lan_ip` (#46) + the L4 listener already binding on the gateway. No STUN, no endpoint tracking. Closes the open Phases 2/3a/3b of the LAN-discovery spec rather than opening a new build site.
+- **Tier 1 — reflexive direct via mini-STUN (deferred):** a small server-side UDP responder (≈40 lines `dgram`, modelled on wireplug `server/stun.rs`) reachable on **two** addresses lets clients/gateways classify their NAT `Easy`/`Fixed`/`Hard` and learn their reflexive endpoint. Gateways report `nat_class` + `reflexive_endpoint` in the existing heartbeat (`routes/api/gateway.js:120`); two new `gateway_meta` columns store them. **Deferred** — only worth it if hub bandwidth is measured as a real bottleneck, and it requires roaming-endpoint tracking that the server deliberately does not do today (`peers.endpoint` is not live-maintained). When either side is `Hard`-NAT, a direct path is impossible and we fall to Tier 2 anyway.
+- **Tier 2 — hub relay (status quo, always the fallback):** current behaviour (`publicHost` + `gateway_listen_port`). Never removed, so the change is strictly additive and cannot regress connectivity.
+- **Repos:** server (+ gateway heartbeat + Pro/Android clients for Tier 1 only). **Builds on:** #8 LAN discovery, #9 RDP-over-gateway `connect_address`, loopback-failover (`gateway_meta.lan_ip`). **Tier:** Pro. **Recommended scope:** Tier 0 only; treat Tier 1 as a separate opt-in item gated on a measured bandwidth need.
+
 ---
 
 ## 📥 Carried over from backlog
@@ -89,4 +98,4 @@ Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook al
 
 ---
 
-_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-05-31._
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-06-19._
