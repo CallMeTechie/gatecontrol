@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.86.2] — 2026-06-19
+
+### Fixes
+- retry warm-start latest-version fetch on transient boot failure (#141)
+
+---
+
 ## [1.86.1] — 2026-06-19
 
 ### Änderungen
