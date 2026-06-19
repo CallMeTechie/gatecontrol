@@ -357,7 +357,13 @@
     if (document.getElementById('gw-css-inject')) return;
     var s = document.createElement('style');
     s.id = 'gw-css-inject';
-    s.textContent = '@keyframes gw-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+    s.textContent = '@keyframes gw-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}'
+      // Indeterminate progress bar — used while a LAN scan is running and while
+      // the egress target-route dropdown is loading. Injected here (not in
+      // app.css/pro.css) to stay theme-agnostic, like gw-spin above.
+      + '.gw-progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin:8px 0 2px;position:relative}'
+      + '.gw-progress::before{content:"";position:absolute;left:0;top:0;height:100%;width:35%;border-radius:2px;background:var(--primary,var(--accent,#2563eb));animation:gw-progress-slide 1.1s ease-in-out infinite}'
+      + '@keyframes gw-progress-slide{0%{left:-35%}100%{left:100%}}';
     document.head.appendChild(s);
   })();
 
@@ -607,11 +613,13 @@
     scanBtn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;transition:background 120ms ease, color 120ms ease';
     scanBtn.addEventListener('mouseenter', function () { if (this.disabled) return; this.style.background = 'var(--bg-hover, var(--bg-body))'; this.style.color = 'var(--text-primary)'; });
     scanBtn.addEventListener('mouseleave', function () { if (this.disabled) return; this.style.background = 'none'; this.style.color = 'var(--text-2)'; });
+    var scanProgress = el('div', 'gw-progress'); scanProgress.style.display = 'none';
     function setScanRunning(running) {
       scanBtn.disabled = !!running;
       scanBtn.style.opacity = running ? '0.65' : '1';
       scanBtn.style.cursor = running ? 'wait' : 'pointer';
       scanIconNode.style.animation = running ? 'gw-spin 0.9s linear infinite' : '';
+      scanProgress.style.display = running ? 'block' : 'none';
     }
 
     var frame = _discCard(T('gateways.discovery.devices_title', 'Discovered devices'), scanBtn);
@@ -704,6 +712,7 @@
     document.addEventListener('gc:gateway_discovery', _discoveryListener);
 
     body.appendChild(status);
+    body.appendChild(scanProgress);
     body.appendChild(list);
     loadCached();
     return frame.card;
@@ -811,7 +820,13 @@
       var trW = egressFieldLabel('egress.target_route', 'Target NAS route (internal-only L4)');
       var trSel = el('select');
       trSel.style.cssText = 'width:100%;box-sizing:border-box;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-size:13px';
-      trW.appendChild(trSel); formEl.appendChild(trW);
+      // Loading placeholder + progress bar until /api/routes resolves, so the
+      // click produces immediate visible feedback while the dropdown fills.
+      var trLoadingOpt = el('option', null, T('egress.loading_routes', 'Loading routes…'));
+      trLoadingOpt.value = ''; trLoadingOpt.disabled = true; trLoadingOpt.selected = true;
+      trSel.appendChild(trLoadingOpt);
+      var trProgress = el('div', 'gw-progress');
+      trW.appendChild(trSel); trW.appendChild(trProgress); formEl.appendChild(trW);
 
       var srcW = egressFieldLabel('egress.source_lock', 'Allowed source (printer)', 'egress.source_lock_hint', 'One or more CIDRs, e.g. 192.168.1.50/32');
       var srcI = egressInput('192.168.1.50/32'); srcW.insertBefore(srcI, srcW._hint || null); formEl.appendChild(srcW);
@@ -826,6 +841,7 @@
       var cancel = el('button', 'btn', T('egress.cancel', 'Cancel')); cancel.type = 'button';
       cancel.addEventListener('click', function () { formEl.hidden = true; });
       var save = el('button', 'btn btn-primary', T('egress.save', 'Save')); save.type = 'button';
+      save.disabled = true; // re-enabled once the target-route list has loaded
       save.addEventListener('click', function () {
         var srcs = srcI.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
         var payload = {
@@ -853,6 +869,7 @@
       fetch('/api/routes', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          trProgress.style.display = 'none';
           var routes = Array.isArray(d) ? d : (d && (d.routes || d.data)) || [];
           var l4 = routes.filter(function (rt) { return rt.route_type === 'l4' && rt.target_kind === 'gateway' && !rt.external_enabled; });
           trSel.replaceChildren();
@@ -866,7 +883,8 @@
             var lbl = (rt.domain || (':' + (rt.l4_listen_port || ''))) + (rt.l4_listen_port ? ' (:' + rt.l4_listen_port + ')' : '');
             var o = el('option', null, lbl); o.value = rt.id; trSel.appendChild(o);
           });
-        }).catch(function () {});
+          save.disabled = false;
+        }).catch(function () { trProgress.style.display = 'none'; });
     }
 
     addBtn.addEventListener('click', function () {

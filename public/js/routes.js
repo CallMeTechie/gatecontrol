@@ -404,7 +404,9 @@
     let actions = '';
     if (g.isBundle) {
       actions =
-        '<button type="button" class="icon-btn" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
+        '<button type="button" class="icon-btn" data-gaction="bundle-add-route" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(GC.t['service_bundle.add_route'] || 'Add route') + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>'
+        + '<button type="button" class="icon-btn" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
         + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
         + '<button type="button" class="icon-btn" data-gaction="bundle-ungroup" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(GC.t['service_bundle.ungroup'] || 'Ungroup') + '">'
         + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>'
@@ -614,6 +616,9 @@
         if (!confirm(msg)) return;
         await api.del('/api/v1/service-bundles/' + bundleId);
         loadRoutes();
+      } else if (gaction === 'bundle-add-route') {
+        const bundleId = parseInt(btn.dataset.bundleId, 10);
+        openAddRouteToBundlePicker(bundleId, btn.dataset.name || '');
       } else if (gaction === 'group-domain') {
         const ids = (btn.dataset.routeIds || '').split(',').map(Number).filter(Boolean);
         if (!ids.length) return;
@@ -627,6 +632,111 @@
     } catch (err) {
       alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
     }
+  }
+
+  // Friendly one-line descriptor for a route in the add-to-bundle picker.
+  function routePickLabel(r) {
+    const typ = (r.route_type === 'l4') ? 'L4' : 'HTTP';
+    const name = r.domain || (r.l4_listen_port ? (':' + r.l4_listen_port) : ('#' + r.id));
+    const tgt = (r.target_ip || r.target_host || '') + (r.target_port ? (':' + r.target_port) : '');
+    return { typ, name, tgt };
+  }
+
+  // Lightweight dynamic picker overlay — lists currently-unbundled routes and
+  // POSTs the selected ones to /service-bundles/:id/routes. Reuses the global
+  // .modal-overlay class; no template markup needed. Server validates the
+  // membership rules (one HTTP max, no RDP-linked L4) and the error surfaces
+  // inline.
+  function openAddRouteToBundlePicker(bundleId, bundleName) {
+    const T = (k, fb) => (GC.t[k] || fb);
+    const candidates = (allRoutes || []).filter((r) => r.bundle_id == null);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--bg-panel);border-radius:var(--radius);width:560px;max-width:94vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);padding:22px 24px';
+    overlay.appendChild(card);
+
+    const h = document.createElement('div');
+    h.style.cssText = 'font-family:var(--font-display);font-size:18px;margin-bottom:4px';
+    h.textContent = T('service_bundle.add_route_title', 'Add route to “{{name}}”').replace('{{name}}', bundleName);
+    card.appendChild(h);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:12px;color:var(--text-2);margin-bottom:14px';
+    hint.textContent = T('service_bundle.add_route_hint', 'Pick one or more ungrouped routes to add to this service.');
+    card.appendChild(hint);
+
+    const listWrap = document.createElement('div');
+    listWrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:8px';
+    card.appendChild(listWrap);
+
+    const checks = [];
+    if (!candidates.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:16px 0;text-align:center;color:var(--text-3);font-size:13px';
+      empty.textContent = T('service_bundle.add_route_empty', 'No ungrouped routes available to add.');
+      listWrap.appendChild(empty);
+    } else {
+      candidates.forEach((r) => {
+        const lab = routePickLabel(r);
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;cursor:pointer';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = String(r.id);
+        checks.push(cb);
+        const txt = document.createElement('div');
+        txt.style.cssText = 'display:flex;flex-direction:column;min-width:0';
+        const t1 = document.createElement('span');
+        t1.style.cssText = 'font-weight:600;font-size:13px;color:var(--text-primary)';
+        t1.textContent = lab.typ + ' · ' + lab.name;
+        const t2 = document.createElement('span');
+        t2.style.cssText = 'font-size:11px;color:var(--text-3);font-family:var(--font-mono)';
+        t2.textContent = lab.tgt;
+        txt.appendChild(t1); if (lab.tgt) txt.appendChild(t2);
+        row.appendChild(cb); row.appendChild(txt);
+        listWrap.appendChild(row);
+      });
+    }
+
+    const msg = document.createElement('div');
+    msg.style.cssText = 'font-size:12px;color:var(--red,#dc2626);min-height:16px;margin:6px 0';
+    card.appendChild(msg);
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:10px';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn';
+    cancel.textContent = T('service_bundle.add_route_cancel', 'Cancel');
+    const add = document.createElement('button');
+    add.type = 'button'; add.className = 'btn btn-primary';
+    add.textContent = T('service_bundle.add_route_confirm', 'Add');
+    add.disabled = !candidates.length;
+    footer.appendChild(cancel); footer.appendChild(add);
+    card.appendChild(footer);
+
+    function close() { overlay.remove(); }
+    cancel.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    add.addEventListener('click', async () => {
+      const ids = checks.filter((c) => c.checked).map((c) => parseInt(c.value, 10));
+      if (!ids.length) { msg.textContent = T('service_bundle.add_route_hint', 'Pick one or more ungrouped routes to add to this service.'); return; }
+      add.disabled = true;
+      try {
+        const data = await api.post('/api/v1/service-bundles/' + bundleId + '/routes', { route_ids: ids });
+        if (!data.ok) { msg.textContent = data.error || T('common.error', 'Error'); add.disabled = false; return; }
+        close();
+        loadRoutes();
+      } catch (err) {
+        msg.textContent = err.message || T('common.error', 'Error');
+        add.disabled = false;
+      }
+    });
+
+    document.body.appendChild(overlay);
   }
 
   // ─── Create form: target-kind (peer vs gateway vs pool) toggle ───

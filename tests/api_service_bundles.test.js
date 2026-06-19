@@ -177,3 +177,45 @@ test('license: combined l4 count is checked against the limit', async () => {
   assert.equal(res.status, 403);
   assert.equal(res.body.feature, 'l4_routes');
 });
+
+test('POST /:id/routes attaches an unbundled route to an existing bundle', async () => {
+  // Bundle A: the target service (http + l4 = 2 routes).
+  const a = await POST('/api/v1/service-bundles', validBundle());
+  assert.equal(a.status, 201);
+  const bundleId = a.body.bundle.id;
+
+  // Bundle B: an l4-only service whose route we ungroup, leaving it unbundled.
+  const b = await POST('/api/v1/service-bundles', {
+    name: 'Spender', domain: 'donor.example.com',
+    target: { target_kind: 'peer', peer_id: peerId },
+    l4: [{ l4_protocol: 'tcp', l4_listen_port: 7100, target_port: 9100 }],
+  });
+  assert.equal(b.status, 201);
+  const donorRouteId = b.body.bundle.routes[0].id;
+  const ung = await DEL(`/api/v1/service-bundles/${b.body.bundle.id}?delete_routes=false`);
+  assert.equal(ung.status, 200);
+
+  // Attach the now-unbundled route to bundle A.
+  const add = await POST(`/api/v1/service-bundles/${bundleId}/routes`, { route_ids: [donorRouteId] });
+  assert.equal(add.status, 201);
+  assert.equal(add.body.ok, true);
+  assert.equal(add.body.bundle.routes.length, 3, 'donor route joined bundle A');
+
+  const single = await agent.get('/api/v1/service-bundles/' + bundleId);
+  assert.equal(single.body.bundle.routes.some((r) => r.id === donorRouteId), true);
+});
+
+test('POST /:id/routes rejects a second HTTP route (400)', async () => {
+  const a = await POST('/api/v1/service-bundles', validBundle()); // already has 1 HTTP
+  const b = await POST('/api/v1/service-bundles', {
+    name: 'Web2', domain: 'web2-donor.example.com',
+    target: { target_kind: 'peer', peer_id: peerId },
+    http: { target_port: 80 },
+  });
+  const donorHttpId = b.body.bundle.routes[0].id;
+  await DEL(`/api/v1/service-bundles/${b.body.bundle.id}?delete_routes=false`);
+
+  const add = await POST(`/api/v1/service-bundles/${a.body.bundle.id}/routes`, { route_ids: [donorHttpId] });
+  assert.equal(add.status, 400);
+  assert.match(add.body.error, /at most one HTTP route/);
+});
