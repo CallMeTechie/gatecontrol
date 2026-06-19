@@ -67,4 +67,40 @@ describe('gatewayRelease', () => {
     assert.equal(freshSvc._loadPersisted(), null);
     assert.equal(freshSvc.getLatestVersion(), null);
   });
+
+  // --- warm-start retry tests (RED first) ---
+
+  it('init retries the fetch when the warm-start fetch did not succeed', async () => {
+    const origDelay = process.env.GC_GATEWAY_LATEST_RETRY_MS;
+    process.env.GC_GATEWAY_LATEST_RETRY_MS = '15';
+    try {
+      const s = fresh();
+      s.init();
+      // First fetch fires synchronously; under NODE_ENV=test it never succeeds
+      // (cache.fetchedAt stays 0) so a retry must be scheduled.
+      assert.equal(s._fetchCallCount(), 1);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.ok(s._fetchCallCount() >= 2, `expected at least one retry, got ${s._fetchCallCount()}`);
+    } finally {
+      if (origDelay === undefined) delete process.env.GC_GATEWAY_LATEST_RETRY_MS;
+      else process.env.GC_GATEWAY_LATEST_RETRY_MS = origDelay;
+    }
+  });
+
+  it('init does NOT retry once the cache has a fresh successful fetch', async () => {
+    const origDelay = process.env.GC_GATEWAY_LATEST_RETRY_MS;
+    process.env.GC_GATEWAY_LATEST_RETRY_MS = '15';
+    try {
+      const s = fresh();
+      s.init();
+      // Simulate the warm-start fetch having succeeded.
+      s._setCache('1.16.9');
+      const after = s._fetchCallCount();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(s._fetchCallCount(), after, 'no further fetch once cache is warm');
+    } finally {
+      if (origDelay === undefined) delete process.env.GC_GATEWAY_LATEST_RETRY_MS;
+      else process.env.GC_GATEWAY_LATEST_RETRY_MS = origDelay;
+    }
+  });
 });
