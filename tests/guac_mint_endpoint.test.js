@@ -66,7 +66,7 @@ describe('POST /client/rdp/:id/browser-session', () => {
     // isInMaintenanceWindow() re-reads maintenance_schedule from the DB.
     const r = await rdpSvc.create({ name: 'b6', host: '10.0.0.10', protocol: 'rdp', port: 3389 });
     await rdpSvc.update(r.id, { browser_enabled: true, maintenance_enabled: true });
-    db.prepare('UPDATE rdp_routes SET maintenance_schedule = ? WHERE id = ?').run('So-Sa 00:00-23:59', r.id);
+    db.prepare('UPDATE rdp_routes SET maintenance_schedule = ? WHERE id = ?').run('So-Sa 00:00-23:59\nSo-Sa 23:00-01:00', r.id);
     const res = await agent.post(`/api/v1/client/rdp/${r.id}/browser-session`).set('X-CSRF-Token', csrf).expect(503);
     assert.equal(res.body.ok, false);
   });
