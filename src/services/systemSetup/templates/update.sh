@@ -116,7 +116,7 @@ if [ "$MODE" = "manual" ]; then
     err) log "could not resolve :latest digest"; write_state failed manual; exit 1 ;;
   esac
   log "manual trigger — recreating"
-  if recreate; then ensure_guacd; write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
+  if recreate; then ensure_guacd || true; write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
   exit 0
 fi
 
@@ -128,4 +128,4 @@ case "$(needs_update)" in
   err) log "could not resolve :latest digest"; write_state failed auto; exit 1 ;;
 esac
 log "auto: update needed — recreating"
-if recreate; then ensure_guacd; write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
+if recreate; then ensure_guacd || true; write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
