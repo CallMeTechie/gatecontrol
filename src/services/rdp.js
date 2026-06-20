@@ -175,6 +175,50 @@ function validateRdpRoute(data, isUpdate = false) {
   return Object.keys(errors).length > 0 ? errors : null;
 }
 
+// --- Phase-2b merge-aware validation ---------------------------
+// Runs on the MERGED route row (not just the patch) so cross-field
+// rules that depend on protocol + browser_enabled + stored creds are
+// caught before persistence. All rules are scoped to browser-capable
+// routes; native-only routes (browser_enabled falsy) return null immediately.
+
+const _isAscii = (s) => typeof s !== 'string' || /^[\x00-\x7F]*$/.test(s);
+const _isGatewayish = (m) => m === 'gateway' || m === 'external';
+
+function validatePhase2bRoute(route, creds = {}) {
+  const e = {};
+  // ALL phase-2b rules are scoped to browser-capable routes (v2.1 #2). Native-only
+  // routes (browser_enabled falsy) are entirely unaffected — no regression: a native
+  // ssh route with username-only (interactive/agent auth) stays saveable, sftp/audio
+  // toggles are inert without a browser session, and ASCII is browser-only.
+  if (!route.browser_enabled) return null;
+  const proto = route.protocol || 'rdp';
+  if (proto === 'ssh') {
+    if (!creds.username) e.username = 'Username is required for SSH';
+    if (!creds.password && !creds.ssh_private_key) e.auth = 'SSH requires a password or a private key';
+    if (creds.ssh_passphrase && !creds.ssh_private_key) e.ssh_passphrase = 'Passphrase requires a private key';
+    // (host-key pinning deferred — no host-key validation; GUACAMOLE-1930)
+  }
+  if (route.browser_enable_sftp && (proto === 'rdp' || proto === 'vnc')) {
+    if (_isGatewayish(route.access_mode)) {
+      e.browser_enable_sftp = 'SFTP is not supported for gateway/external routes in this version';
+    } else {
+      if (!route.sftp_username) e.sftp_username = 'SFTP username is required';
+      if (!creds.sftp_password && !creds.sftp_private_key) e.sftp_password = 'SFTP requires a password or a private key';
+    }
+  }
+  if (route.browser_enable_audio && proto === 'vnc' && _isGatewayish(route.access_mode)) {
+    e.browser_enable_audio = 'VNC audio is not supported for gateway/external routes in this version';
+  }
+  // ASCII (DA-3 R2-a): only when browser_enabled — any non-ASCII cred byte is rejected
+  // because Guacamole's protocol only supports ASCII in credential fields.
+  for (const f of ['username', 'password', 'ssh_private_key', 'ssh_passphrase', 'sftp_password', 'sftp_private_key', 'sftp_passphrase']) {
+    if (!_isAscii(creds[f])) {
+      e[f] = 'Credentials must be ASCII-only (Guacamole protocol limitation)';
+    }
+  }
+  return Object.keys(e).length ? e : null;
+}
+
 // --- Strip encrypted fields from response ----------------------
 
 function stripSensitive(row) {
@@ -250,6 +294,15 @@ async function create(data) {
   if (errors) {
     const err = new Error(Object.values(errors)[0]);
     err.fields = errors;
+    throw err;
+  }
+
+  // Phase-2b: merge-aware cross-field validation (browser/ssh/sftp/ascii).
+  // On create, plaintext creds are in data itself.
+  const p2bErrors = validatePhase2bRoute(data, data);
+  if (p2bErrors) {
+    const err = new Error(Object.values(p2bErrors)[0]);
+    err.fields = p2bErrors;
     throw err;
   }
 
@@ -523,6 +576,30 @@ async function update(id, data) {
   // via the route's own linked L4 id so re-saving on the same port is fine.
   if (merged.access_mode === 'gateway') {
     _assertListenPortFree(_effectiveListenPort(merged), existing.gateway_l4_route_id || null);
+  }
+
+  // Phase-2b: merge-aware cross-field validation (browser/ssh/sftp/ascii).
+  // Build mergedCreds: start from patch fields, then fill absent cred fields from
+  // decrypted existing values when the merged row is browser-enabled (closes the
+  // browser_enabled 0→1 flip hole — review-chain #3/H1).
+  {
+    const credFields = ['username', 'password', 'ssh_private_key', 'ssh_passphrase', 'sftp_password', 'sftp_private_key', 'sftp_passphrase'];
+    const mergedCreds = {};
+    for (const f of credFields) {
+      if (f in data) mergedCreds[f] = data[f];
+    }
+    if (merged.browser_enabled) {
+      const decrypted = decryptCredentials(existing);
+      for (const f of credFields) {
+        if (!(f in mergedCreds)) mergedCreds[f] = decrypted[f];
+      }
+    }
+    const p2bErrors = validatePhase2bRoute(merged, mergedCreds);
+    if (p2bErrors) {
+      const err = new Error(Object.values(p2bErrors)[0]);
+      err.fields = p2bErrors;
+      throw err;
+    }
   }
 
   const sets = [];
@@ -850,6 +927,7 @@ module.exports = {
   canAccessRoute,
   decryptCredentials,
   validateRdpRoute,
+  validatePhase2bRoute,
   isInMaintenanceWindow,
   resolveConnectEndpoint,
   stripSensitive,
