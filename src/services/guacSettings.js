@@ -51,7 +51,15 @@ function buildSsh(route, creds) {
   }
   return { type: 'ssh', settings };
 }   // Task 5
-function buildTelnet(route, creds) { throw new Error('telnet builder not implemented yet'); } // Task 6
+function buildTelnet(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = { hostname: t.host, port: String(t.port || 23),
+    'font-name': 'monospace', 'font-size': '12', 'color-scheme': 'gray-black' };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  return { type: 'telnet', settings };
+} // Task 6
 
 function buildConnectionSettings(route, creds = {}) {
   const protocol = route.protocol || 'rdp';
