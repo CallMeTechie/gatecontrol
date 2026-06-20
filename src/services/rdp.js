@@ -179,7 +179,12 @@ function validateRdpRoute(data, isUpdate = false) {
 
 function stripSensitive(row) {
   if (!row) return row;
-  const { username_encrypted, password_encrypted, ...safe } = row;
+  const {
+    username_encrypted, password_encrypted,
+    ssh_private_key_encrypted, ssh_passphrase_encrypted,
+    sftp_password_encrypted, sftp_private_key_encrypted, sftp_passphrase_encrypted,
+    ...safe
+  } = row;
   safe.has_credentials = !!(username_encrypted || password_encrypted);
   // SQLite stores booleans as 0/1 — convert to real booleans for JSON clients
   for (const key of ['multi_monitor', 'redirect_clipboard', 'redirect_printers',
@@ -847,6 +852,7 @@ module.exports = {
   validateRdpRoute,
   isInMaintenanceWindow,
   resolveConnectEndpoint,
+  stripSensitive,
   VALID_PROTOCOLS,
   defaultPortForProtocol,
 };
