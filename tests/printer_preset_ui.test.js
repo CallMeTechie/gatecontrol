@@ -46,7 +46,7 @@ const de = require('../src/i18n/de.json');
 const ADOPT_KEYS = ['printer_preset.adopt_unsupported', 'printer_preset.adopt_not_enabled', 'printer_preset.adopt_scanning', 'printer_preset.adopt_none', 'printer_preset.adopt_failed'];
 describe('printer-preset discovery adopt (capability-aware)', () => {
   it('wizard references the capability-aware adopt message keys', () => {
-    for (const k of ADOPT_KEYS) assert.match(js, new RegExp(k.replace(/\./g, '\\.')), 'routes.js missing ' + k);
+    for (const k of ADOPT_KEYS) assert.ok(js.includes(k), 'routes.js missing ' + k);
   });
   it('wizard no longer mislabels an empty result with routes.suggested.unavailable in the adopt handler', () => {
     // The misleading reuse of routes.suggested.unavailable for the adopt empty-state is gone.
