@@ -1011,6 +1011,13 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'rdp_sessions', 'via'),
   },
+  {
+    version: 57,
+    name: 'egress_lan_port_unique',
+    sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_egress_near_port_unique
+    ON egress_routes(near_peer_id, lan_listen_port) WHERE enabled = 1 AND near_peer_id IS NOT NULL;`,
+    detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_egress_near_port_unique'").get(),
+  },
 ];
 
 module.exports = { migrations };
