@@ -28,7 +28,29 @@ function buildVnc(route, creds) {
   return { type: 'vnc', settings };
 }
 
-function buildSsh(route, creds) { throw new Error('ssh builder not implemented yet'); }   // Task 5
+function buildSsh(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = {
+    hostname: t.host, port: String(t.port || 22),
+    'font-name': 'monospace', 'font-size': '12', 'color-scheme': 'gray-black',
+  };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  if (creds.ssh_private_key) {
+    settings['private-key'] = creds.ssh_private_key;
+    if (creds.ssh_passphrase) settings.passphrase = creds.ssh_passphrase;
+  }
+  // NOTE: host-key pinning is DEFERRED (guacd upstream bug GUACAMOLE-1930 — verification
+  // rejects even correct keys; see _phase2b-spike-findings.md). ssh ships accept-any.
+  // Native SFTP for ssh: uses the ssh connection itself.
+  if (route.browser_enable_sftp) {
+    settings['enable-sftp'] = 'true';
+    if (route.sftp_disable_download) settings['sftp-disable-download'] = 'true';
+    if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
+  }
+  return { type: 'ssh', settings };
+}   // Task 5
 function buildTelnet(route, creds) { throw new Error('telnet builder not implemented yet'); } // Task 6
 
 function buildConnectionSettings(route, creds = {}) {
