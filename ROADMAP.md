@@ -60,9 +60,27 @@ _Nothing actively in progress — pick the next item from the planned candidates
 
 ## 📋 Planned — new candidates (2026-05-24)
 
-### 6. Status page (internal / public)
-A statuspage-style overview per proxied service generated from `monitor.js` uptime data, optionally shareable publicly.
-- **Repos:** server. **Builds on:** uptime monitoring. **Tier:** Community + Pro (public page).
+### 6. Personalised VPN landing page (captive-portal style)
+_Reconceived 2026-06-20 — replaces the original "uptime status page" scope (see note at end)._ Every device connected to the VPN is shown a **personalised start page** that surfaces **only the information released to that specific user/device**. It is the "home screen" of the private network: device status, the device's own Pi-hole stats, traffic, and tiles linking to the services that device may reach (smart-home hub, family hub, etc.).
+
+**Per-device identity (the enabler GC already has):** a request arriving over the tunnel is mapped from its **VPN source IP → `peer_id`** (the server already owns this mapping via `allowed_ips`, and the Pi-hole stats path already does exactly this with `req.tokenPeerId` / `scope=self`, see `project_pihole_dns_topology` + the stats-hardening work). So the page can render strictly per-peer with no extra login.
+
+**Widgets (each shown only if released to the peer/its group):**
+- **Device status** — online, last handshake, rx/tx (from `wg` stats already collected on the peer).
+- **Own Pi-hole stats** — queries/blocked/top-domains for *this* device via the existing `scope=self` per-peer envelope (reuse, not new). Optionally the existing Android "pause blocking" control.
+- **Traffic** — this device's transfer over time.
+- **Service tiles** — links to the proxied routes this peer is authorised for (smart-home hub, family hub, NAS, …), driven by per-peer/group release.
+
+**Authorisation model:** what each peer sees is a *release set* — bind widgets/tiles to peers, **groups (#16)**, **roles (#19)** or **labels (#20)**, reusing #4's fail-closed evaluation. No peer ever sees another device's data or an unreleased service.
+
+**Key decision before build — how the page auto-appears** (determines feasibility; pick before implementing):
+- **Option A — true captive-portal interception:** intercept the OS connectivity-probe URLs (`captive.apple.com`, `connectivitycheck.gstatic.com`, `msftconnecttest.com`) at the GC DNS/Caddy layer and redirect to the portal, triggering the native pop-up. **Caveat:** auto-pop-up over a *VPN* interface (vs Wi-Fi) is OS-dependent and unreliable; needs validation per platform.
+- **Option B — native-client launch:** the GC Android / Windows-Pro clients open the landing page on connect. Reliable + controllable, but only for native-client users, not bare-WireGuard peers.
+- **Option C — friendly DNS landing + homepage hint:** serve the portal at a friendly internal name (e.g. `home.<vpn-domain>`) via Caddy + dnsmasq, optionally set as the client's browser homepage/new-tab. Most portable, least "automatic".
+- Likely outcome: **B for native clients + C as the universal fallback**, A only if platform tests prove it reliable.
+
+- **Builds on:** Pi-hole `scope=self` stats (existing), peer↔`allowed_ips` identity, Caddy + dnsmasq, route/auth model, #16 groups / #19 RBAC / #20 labels for release scoping. **Repos:** server (portal page + per-peer data API + release model + i18n) + android-client / windows-client-pro (Option B launch). **Tier:** Community (basic personalised page) + Pro (release scoping / widgets). **Likely phased:** Phase 1 server-served page + device/Pi-hole/traffic widgets; Phase 2 release-scoping + service tiles; Phase 3 auto-appear mechanism.
+- **Note — dropped scope:** the original idea (public statuspage-style *uptime* overview from `monitor.js`) is a different feature; its still-useful part can become **one optional widget** here, or move to the backlog as a standalone "public uptime page". Flagging so it is not silently lost.
 
 ### 7. Native alert channels for homelab
 Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook alerting.
