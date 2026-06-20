@@ -4683,3 +4683,410 @@
     });
   });
 })();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Printer-Preset Setup Wizard (Task 9)
+// A self-contained 4-step wizard that assembles a printer preset and POSTs it to
+// /api/v1/printer-presets. Styling uses .style.cssText only (no runtime <style>
+// injection — CSP styleSrcElem blocks nonce-less tags). Field hints are always
+// APPENDED to their wrapper, never used as an insertBefore reference (the egress
+// NotFoundError bug). All user-facing text comes from window.GC.t.
+// ─────────────────────────────────────────────────────────────────────────────
+(function () {
+  var GC = window.GC || {};
+  var feats = GC.features || {};
+  function T(k, d) { return (GC.t && GC.t[k]) || d; }
+  // License limits use -1 for "unlimited"; 0 means "none". A bare `> 0` check
+  // (as the spec literally phrased it) would wrongly lock out unlimited Pro tiers.
+  function limitAllows(v) { return v === -1 || (typeof v === 'number' && v > 0); }
+  var canPrint = !!feats.gateway_tcp_routing && limitAllows(feats.l4_routes);
+  var canEws = limitAllows(feats.http_routes);
+  var canScan = feats.gateway_scan_egress === true;
+
+  var openBtn = document.getElementById('open-printer-preset');
+  var overlay = document.getElementById('printer-preset-overlay');
+  if (!openBtn || !overlay) return; // page without the wizard markup
+
+  // R1-G2: entry threshold is printing (TCP routing + at least one L4 route slot).
+  openBtn.style.display = canPrint ? '' : 'none';
+  if (!canPrint) return;
+
+  var body = document.getElementById('printer-preset-body');
+  var errorBox = document.getElementById('printer-preset-error');
+  var footer = document.getElementById('printer-preset-footer');
+  var backBtn = document.getElementById('printer-preset-back');
+  var nextBtn = document.getElementById('printer-preset-next');
+  var closeBtn = document.getElementById('printer-preset-close');
+  var pills = Array.prototype.slice.call(document.querySelectorAll('#printer-preset-steps [data-pstep]'));
+
+  var LABEL_CSS = 'font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600';
+  var INPUT_CSS = 'width:100%;padding:8px 12px';
+  var HINT_CSS = 'display:block;font-size:11px;color:var(--text-3);margin-top:6px';
+  var LOCK_HINT_CSS = 'display:block;font-size:11px;color:var(--amber, var(--text-3));margin-top:6px';
+  var ROW_CSS = 'margin-bottom:14px';
+
+  var state = null;
+  function resetState() {
+    state = {
+      step: 1,
+      gateways: [],
+      routes: [],
+      near_peer_id: null,
+      printer_ip: '',
+      name: '',
+      ports: { 9100: true, 631: false },
+      ewsOn: false,
+      ewsDomain: '',
+      scanOn: false,
+      vip: '',
+      vipPrefix: 24,
+      scanTargetMode: 'new',
+      nasIp: '',
+      nasPeerId: null,
+      routeId: null,
+    };
+  }
+
+  function elx(tag, css, props) {
+    var n = document.createElement(tag);
+    if (css) n.style.cssText = css;
+    if (props) Object.keys(props).forEach(function (k) {
+      if (k === 'text') n.textContent = props[k];
+      else if (k === 'html') n.innerHTML = props[k];
+      else n.setAttribute(k, props[k]);
+    });
+    return n;
+  }
+
+  // Build a labelled field. The optional hint is ALWAYS appended last — never used
+  // as an insertBefore reference (guarded by the static test).
+  function field(labelText, inputNode, hintNode) {
+    var wrap = elx('div', ROW_CSS);
+    var lab = elx('label', LABEL_CSS, { text: labelText });
+    wrap.appendChild(lab);
+    wrap.appendChild(inputNode);
+    if (hintNode) wrap.appendChild(hintNode);
+    return wrap;
+  }
+
+  function checkboxRow(labelText, checked, disabled, onChange) {
+    var wrap = elx('label', 'display:flex;align-items:center;gap:8px;cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';margin-bottom:8px' + (disabled ? ';opacity:0.55' : ''));
+    var cb = elx('input', 'accent-color:var(--accent)');
+    cb.type = 'checkbox';
+    cb.checked = !!checked;
+    cb.disabled = !!disabled;
+    cb.addEventListener('change', function () { onChange(cb.checked); });
+    var span = elx('span', 'font-size:13px', { text: labelText });
+    wrap.appendChild(cb);
+    wrap.appendChild(span);
+    return { row: wrap, cb: cb };
+  }
+
+  function showError(msg) {
+    if (!errorBox) return;
+    errorBox.textContent = msg || '';
+    errorBox.style.display = msg ? '' : 'none';
+  }
+
+  function setPills(step) {
+    pills.forEach(function (p) {
+      p.classList.toggle('on', String(p.getAttribute('data-pstep')) === String(step));
+    });
+  }
+
+  // ── Step 1: printer + gateway ──────────────────────────────────────────────
+  function renderStep1() {
+    body.replaceChildren();
+    var gwSel = elx('select', INPUT_CSS);
+    state.gateways.forEach(function (g) {
+      var o = document.createElement('option');
+      o.value = String(g.peer_id);
+      o.textContent = (g.name || g.hostname || ('#' + g.peer_id));
+      if (String(g.peer_id) === String(state.near_peer_id)) o.selected = true;
+      gwSel.appendChild(o);
+    });
+    if (!state.near_peer_id && state.gateways.length) state.near_peer_id = state.gateways[0].peer_id;
+    gwSel.addEventListener('change', function () { state.near_peer_id = parseInt(gwSel.value, 10); });
+    body.appendChild(field(T('printer_preset.gateway', 'Gateway'), gwSel));
+
+    var ipIn = elx('input', INPUT_CSS);
+    ipIn.type = 'text'; ipIn.value = state.printer_ip; ipIn.placeholder = '192.168.1.50';
+    ipIn.addEventListener('input', function () { state.printer_ip = ipIn.value.trim(); });
+    body.appendChild(field(T('printer_preset.printer_ip', 'Printer IP'), ipIn));
+
+    var nameIn = elx('input', INPUT_CSS);
+    nameIn.type = 'text'; nameIn.value = state.name; nameIn.maxLength = 120;
+    nameIn.addEventListener('input', function () { state.name = nameIn.value; });
+    body.appendChild(field(T('printer_preset.name', 'Name'), nameIn));
+
+    // Optional "Use from discovery": pull cached discovered devices for the gateway.
+    var adoptBtn = elx('button', 'padding:7px 12px;border:1px dashed var(--border-hi, var(--border));border-radius:var(--radius-xs);background:transparent;color:var(--text-2);font-size:12px;cursor:pointer');
+    adoptBtn.type = 'button';
+    adoptBtn.textContent = T('printer_preset.adopt', 'Use from discovery');
+    var adoptList = elx('div', 'margin-top:8px');
+    adoptBtn.addEventListener('click', function () {
+      var pid = state.near_peer_id;
+      if (!pid) return;
+      adoptList.replaceChildren();
+      adoptList.appendChild(elx('div', 'font-size:11px;color:var(--text-3)', { text: T('common.loading', 'Loading...') }));
+      window.api.get('/api/v1/gateways/' + pid + '/discovered').then(function (d) {
+        adoptList.replaceChildren();
+        var devices = (d && d.devices) || [];
+        if (!devices.length) { adoptList.appendChild(elx('div', 'font-size:11px;color:var(--text-3)', { text: T('routes.suggested.unavailable', '—') })); return; }
+        devices.forEach(function (dev) {
+          var b = elx('button', 'display:block;width:100%;text-align:left;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-xs);background:transparent;color:var(--text-1);font-size:12px;cursor:pointer;margin-bottom:4px');
+          b.type = 'button';
+          b.textContent = (dev.hostname ? dev.hostname + ' · ' : '') + dev.ip; // textContent = safe
+          b.addEventListener('click', function () {
+            state.printer_ip = dev.ip; ipIn.value = dev.ip;
+            if (!state.name && dev.hostname) { state.name = dev.hostname; nameIn.value = dev.hostname; }
+            adoptList.replaceChildren();
+          });
+          adoptList.appendChild(b);
+        });
+      }).catch(function () { adoptList.replaceChildren(); });
+    });
+    var adoptWrap = elx('div', ROW_CSS);
+    adoptWrap.appendChild(adoptBtn);
+    adoptWrap.appendChild(adoptList);
+    body.appendChild(adoptWrap);
+  }
+
+  // ── Step 2: printing (ports + EWS) ─────────────────────────────────────────
+  function renderStep2() {
+    body.replaceChildren();
+    var p9100 = checkboxRow(T('printer_preset.port_9100', 'Raw/JetDirect (9100)'), state.ports[9100], false, function (v) { state.ports[9100] = v; });
+    var p631 = checkboxRow(T('printer_preset.port_631', 'IPP (631)'), state.ports[631], false, function (v) { state.ports[631] = v; });
+    var portsWrap = elx('div', ROW_CSS);
+    portsWrap.appendChild(p9100.row);
+    portsWrap.appendChild(p631.row);
+    body.appendChild(portsWrap);
+
+    // EWS — license-gated (R1-G2). Disabled + hint when HTTP routes are not allowed.
+    var ewsBox = checkboxRow(T('printer_preset.ews', 'Make web interface (EWS) reachable'), state.ewsOn && canEws, !canEws, function (v) {
+      state.ewsOn = v; domainWrap.style.display = v ? '' : 'none';
+    });
+    var ewsWrap = elx('div', ROW_CSS);
+    ewsWrap.appendChild(ewsBox.row);
+    if (!canEws) {
+      state.ewsOn = false;
+      ewsWrap.appendChild(elx('small', LOCK_HINT_CSS, { text: T('printer_preset.ews_locked', 'Web interface exposure requires a Pro license.') }));
+    }
+    body.appendChild(ewsWrap);
+
+    var domIn = elx('input', INPUT_CSS);
+    domIn.type = 'text'; domIn.value = state.ewsDomain; domIn.placeholder = 'printer.example.com'; domIn.maxLength = 253;
+    domIn.addEventListener('input', function () { state.ewsDomain = domIn.value.trim().toLowerCase(); });
+    var domainWrap = field(T('printer_preset.ews_domain', 'EWS domain'), domIn);
+    domainWrap.style.display = (canEws && state.ewsOn) ? '' : 'none';
+    body.appendChild(domainWrap);
+  }
+
+  // ── Step 3: scanning (scan egress) ─────────────────────────────────────────
+  function renderStep3() {
+    body.replaceChildren();
+    var scanBox = checkboxRow(T('printer_preset.scan', 'Set up scan-to-folder'), state.scanOn && canScan, !canScan, function (v) {
+      state.scanOn = v; detailWrap.style.display = v ? '' : 'none';
+    });
+    var scanWrap = elx('div', ROW_CSS);
+    scanWrap.appendChild(scanBox.row);
+    if (!canScan) {
+      state.scanOn = false;
+      scanWrap.appendChild(elx('small', LOCK_HINT_CSS, { text: T('printer_preset.scan_locked', 'Scan-to-folder requires a Pro license.') }));
+    }
+    body.appendChild(scanWrap);
+
+    var detailWrap = elx('div');
+    detailWrap.style.display = (canScan && state.scanOn) ? '' : 'none';
+
+    var vipIn = elx('input', INPUT_CSS);
+    vipIn.type = 'text'; vipIn.value = state.vip; vipIn.placeholder = '192.168.1.250';
+    vipIn.addEventListener('input', function () { state.vip = vipIn.value.trim(); });
+    detailWrap.appendChild(field(T('printer_preset.vip', 'Gateway address (VIP)'), vipIn));
+
+    // Target mode radios: existing NAS route vs. new NAS route.
+    var modeWrap = elx('div', ROW_CSS);
+    function modeRadio(value, labelText) {
+      var l = elx('label', 'display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px');
+      var r = elx('input');
+      r.type = 'radio'; r.name = 'pp-scan-target'; r.value = value;
+      r.checked = state.scanTargetMode === value;
+      r.addEventListener('change', function () { if (r.checked) { state.scanTargetMode = value; refreshTarget(); } });
+      l.appendChild(r);
+      l.appendChild(elx('span', 'font-size:13px', { text: labelText }));
+      return l;
+    }
+    modeWrap.appendChild(modeRadio('existing', T('printer_preset.target_existing', 'Existing NAS route')));
+    modeWrap.appendChild(modeRadio('new', T('printer_preset.target_new', 'New NAS route')));
+    detailWrap.appendChild(modeWrap);
+
+    // Existing-route picker (internal-only L4 gateway routes).
+    var existSel = elx('select', INPUT_CSS);
+    state.routes.filter(function (r) {
+      return r.route_type === 'l4' && r.target_kind === 'gateway' && (r.external_enabled === 0 || r.external_enabled === false || r.external_enabled == null);
+    }).forEach(function (r) {
+      var o = document.createElement('option');
+      o.value = String(r.id);
+      o.textContent = (r.domain || r.name || ('route #' + r.id)) + (r.l4_listen_port ? ' :' + r.l4_listen_port : '');
+      if (String(r.id) === String(state.routeId)) o.selected = true;
+      existSel.appendChild(o);
+    });
+    existSel.addEventListener('change', function () { state.routeId = parseInt(existSel.value, 10); });
+    var existWrap = field(T('printer_preset.target_existing', 'Existing NAS route'), existSel);
+
+    // New-route fields: NAS IP + NAS gateway.
+    var nasIpIn = elx('input', INPUT_CSS);
+    nasIpIn.type = 'text'; nasIpIn.value = state.nasIp; nasIpIn.placeholder = '192.168.1.10';
+    nasIpIn.addEventListener('input', function () { state.nasIp = nasIpIn.value.trim(); });
+    var nasIpWrap = field(T('printer_preset.nas_ip', 'NAS IP'), nasIpIn);
+
+    var nasGwSel = elx('select', INPUT_CSS);
+    state.gateways.forEach(function (g) {
+      var o = document.createElement('option');
+      o.value = String(g.peer_id);
+      o.textContent = (g.name || g.hostname || ('#' + g.peer_id));
+      if (String(g.peer_id) === String(state.nasPeerId)) o.selected = true;
+      nasGwSel.appendChild(o);
+    });
+    if (!state.nasPeerId && state.gateways.length) state.nasPeerId = state.gateways[0].peer_id;
+    nasGwSel.addEventListener('change', function () { state.nasPeerId = parseInt(nasGwSel.value, 10); });
+    var nasGwWrap = field(T('printer_preset.nas_gateway', 'NAS gateway'), nasGwSel);
+
+    detailWrap.appendChild(existWrap);
+    detailWrap.appendChild(nasIpWrap);
+    detailWrap.appendChild(nasGwWrap);
+
+    function refreshTarget() {
+      var isNew = state.scanTargetMode === 'new';
+      existWrap.style.display = isNew ? 'none' : '';
+      nasIpWrap.style.display = isNew ? '' : 'none';
+      nasGwWrap.style.display = isNew ? '' : 'none';
+    }
+    refreshTarget();
+    body.appendChild(detailWrap);
+  }
+
+  // ── Step 4: review ─────────────────────────────────────────────────────────
+  function renderStep4() {
+    body.replaceChildren();
+    var box = elx('div', 'border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;font-size:13px');
+    function row(k, v) {
+      var r = elx('div', 'display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border)');
+      r.appendChild(elx('span', 'color:var(--text-2)', { text: k }));
+      r.appendChild(elx('span', 'font-family:var(--font-mono);text-align:right', { text: v }));
+      return r;
+    }
+    var gw = state.gateways.filter(function (g) { return String(g.peer_id) === String(state.near_peer_id); })[0];
+    box.appendChild(row(T('printer_preset.gateway', 'Gateway'), gw ? (gw.name || gw.hostname || ('#' + gw.peer_id)) : String(state.near_peer_id)));
+    box.appendChild(row(T('printer_preset.printer_ip', 'Printer IP'), state.printer_ip));
+    box.appendChild(row(T('printer_preset.name', 'Name'), state.name));
+    var ports = [];
+    if (state.ports[9100]) ports.push('9100');
+    if (state.ports[631]) ports.push('631');
+    box.appendChild(row(T('printer_preset.step_print', 'Printing'), ports.join(', ')));
+    if (state.ewsOn) box.appendChild(row(T('printer_preset.ews', 'EWS'), state.ewsDomain));
+    if (state.scanOn) box.appendChild(row(T('printer_preset.step_scan', 'Scanning'), state.vip + ' · ' + state.scanTargetMode));
+    body.appendChild(box);
+  }
+
+  function renderStep(step) {
+    state.step = step;
+    showError('');
+    setPills(step);
+    backBtn.style.visibility = step > 1 ? '' : 'hidden';
+    nextBtn.textContent = step === 4 ? T('printer_preset.create', 'Create') : T('service_bundle.next', 'Next');
+    if (step === 1) renderStep1();
+    else if (step === 2) renderStep2();
+    else if (step === 3) renderStep3();
+    else renderStep4();
+  }
+
+  function validateStep(step) {
+    if (step === 1) {
+      if (!state.near_peer_id) return T('printer_preset.gateway', 'Gateway');
+      if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(state.printer_ip)) return T('printer_preset.printer_ip', 'Printer IP');
+      if (!state.name.trim()) return T('printer_preset.name', 'Name');
+    } else if (step === 2) {
+      if (!state.ports[9100] && !state.ports[631]) return T('printer_preset.step_print', 'Printing');
+      if (state.ewsOn && !state.ewsDomain) return T('printer_preset.ews_domain', 'EWS domain');
+    } else if (step === 3) {
+      if (state.scanOn) {
+        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(state.vip)) return T('printer_preset.vip', 'VIP');
+        if (state.scanTargetMode === 'new' && !/^(\d{1,3}\.){3}\d{1,3}$/.test(state.nasIp)) return T('printer_preset.nas_ip', 'NAS IP');
+        if (state.scanTargetMode === 'existing' && !state.routeId) return T('printer_preset.target_existing', 'Existing NAS route');
+      }
+    }
+    return null;
+  }
+
+  function submit() {
+    var formBody = window.buildPresetBody(state);
+    nextBtn.disabled = true;
+    showError('');
+    window.api.post('/api/v1/printer-presets', formBody).then(function (res) {
+      nextBtn.disabled = false;
+      if (!res || res.ok === false) { showError((res && res.error) || T('printer_preset.save_failed', 'Could not set up printer')); return; }
+      renderSuccess(res.preset || {});
+    }).catch(function (err) {
+      nextBtn.disabled = false;
+      showError((err && err.message) || T('printer_preset.save_failed', 'Could not set up printer'));
+    });
+  }
+
+  // R1-G3: confirm with the ACTUAL assigned public print ports (may differ from 9100/631).
+  function renderSuccess(preset) {
+    setPills(4);
+    body.replaceChildren();
+    var ok = elx('div', 'text-align:center;padding:8px 0 4px');
+    ok.appendChild(elx('div', 'font-family:var(--font-display);font-size:18px;margin-bottom:6px', { text: T('printer_preset.title', 'Printer ready') }));
+    var listenPorts = preset.listen_ports || []; // [[targetPort, listenPort], ...]
+    var portsTxt = listenPorts.map(function (pair) { return pair[1] + ' → ' + pair[0]; }).join(', ');
+    var pl = elx('div', 'border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;text-align:left;margin-top:8px');
+    pl.appendChild(elx('div', 'color:var(--text-2);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px', { text: T('printer_preset.step_print', 'Printing') }));
+    pl.appendChild(elx('div', 'font-family:var(--font-mono)', { text: portsTxt || '—' }));
+    ok.appendChild(pl);
+    if (preset.warning) {
+      ok.appendChild(elx('div', 'margin-top:10px;font-size:12px;color:var(--amber, var(--text-3))', { text: preset.warning }));
+    }
+    body.appendChild(ok);
+    // Footer: turn next into a "Close" that closes + reloads routes.
+    backBtn.style.visibility = 'hidden';
+    nextBtn.textContent = T('common.close', 'Close');
+    nextBtn.onclick = function () { closeWizard(); if (typeof loadRoutes === 'function') loadRoutes(); };
+  }
+
+  function openWizard() {
+    resetState();
+    showError('');
+    overlay.style.display = 'flex';
+    body.replaceChildren();
+    body.appendChild(elx('div', 'font-size:13px;color:var(--text-3);padding:20px 0;text-align:center', { text: T('common.loading', 'Loading...') }));
+    Promise.all([
+      window.api.get('/api/v1/gateways').then(function (d) { return (d && d.gateways) || []; }).catch(function () { return []; }),
+      window.api.get('/api/routes').then(function (d) { return (d && (d.routes || d)) || []; }).catch(function () { return []; }),
+    ]).then(function (r) {
+      state.gateways = (r[0] || []).filter(function (g) { return g.enabled !== false; });
+      state.routes = r[1] || [];
+      nextBtn.onclick = onNext; // restore (success may have overridden it)
+      renderStep(1);
+    });
+  }
+
+  function closeWizard() { overlay.style.display = 'none'; nextBtn.disabled = false; nextBtn.onclick = onNext; }
+
+  function onNext() {
+    var bad = validateStep(state.step);
+    if (bad) { showError(bad); return; }
+    if (state.step === 4) { submit(); return; }
+    renderStep(state.step + 1);
+  }
+  function onBack() { if (state.step > 1) renderStep(state.step - 1); }
+
+  openBtn.addEventListener('click', openWizard);
+  closeBtn.addEventListener('click', closeWizard);
+  backBtn.addEventListener('click', onBack);
+  // nextBtn uses .onclick (not addEventListener) so renderSuccess can repurpose it
+  // as a "Close" without leaving the step-advance handler still bound.
+  nextBtn.onclick = onNext;
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeWizard(); });
+})();

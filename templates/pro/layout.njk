@@ -45,7 +45,13 @@
     csrfToken: '{{ csrfToken }}',
     language: '{{ language }}',
     baseUrl: '{{ baseUrl }}',
-    features: { gateway_lan_discovery_multi_subnet: {{ ('true' if license.features.gateway_lan_discovery_multi_subnet else 'false') | safe }} },
+    features: {
+      gateway_lan_discovery_multi_subnet: {{ ('true' if license.features.gateway_lan_discovery_multi_subnet else 'false') | safe }},
+      gateway_tcp_routing: {{ ('true' if license.features.gateway_tcp_routing else 'false') | safe }},
+      gateway_scan_egress: {{ ('true' if license.features.gateway_scan_egress else 'false') | safe }},
+      l4_routes: {{ license.features.l4_routes | default(0) }},
+      http_routes: {{ license.features.http_routes | default(0) }}
+    },
     t: {
       'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
       'peers.online': {{ t('peers.online') | dump | safe }},
@@ -340,7 +346,31 @@
       'autoupdate.setup_note': {{ t('autoupdate.setup_note') | dump | safe }},
       'autoupdate.ago_seconds': {{ t('autoupdate.ago_seconds') | dump | safe }},
       'autoupdate.ago_minutes': {{ t('autoupdate.ago_minutes') | dump | safe }},
-      'routes.suggested.unavailable': {{ t('routes.suggested.unavailable') | dump | safe }}
+      'routes.suggested.unavailable': {{ t('routes.suggested.unavailable') | dump | safe }},
+      'common.close': {{ t('common.close') | dump | safe }},
+      'printer_preset.title': {{ t('printer_preset.title') | dump | safe }},
+      'printer_preset.gateway': {{ t('printer_preset.gateway') | dump | safe }},
+      'printer_preset.printer_ip': {{ t('printer_preset.printer_ip') | dump | safe }},
+      'printer_preset.name': {{ t('printer_preset.name') | dump | safe }},
+      'printer_preset.adopt': {{ t('printer_preset.adopt') | dump | safe }},
+      'printer_preset.port_9100': {{ t('printer_preset.port_9100') | dump | safe }},
+      'printer_preset.port_631': {{ t('printer_preset.port_631') | dump | safe }},
+      'printer_preset.ews': {{ t('printer_preset.ews') | dump | safe }},
+      'printer_preset.ews_domain': {{ t('printer_preset.ews_domain') | dump | safe }},
+      'printer_preset.scan': {{ t('printer_preset.scan') | dump | safe }},
+      'printer_preset.vip': {{ t('printer_preset.vip') | dump | safe }},
+      'printer_preset.target_existing': {{ t('printer_preset.target_existing') | dump | safe }},
+      'printer_preset.target_new': {{ t('printer_preset.target_new') | dump | safe }},
+      'printer_preset.nas_ip': {{ t('printer_preset.nas_ip') | dump | safe }},
+      'printer_preset.nas_gateway': {{ t('printer_preset.nas_gateway') | dump | safe }},
+      'printer_preset.create': {{ t('printer_preset.create') | dump | safe }},
+      'printer_preset.scan_locked': {{ t('printer_preset.scan_locked') | dump | safe }},
+      'printer_preset.ews_locked': {{ t('printer_preset.ews_locked') | dump | safe }},
+      'printer_preset.save_failed': {{ t('printer_preset.save_failed') | dump | safe }},
+      'printer_preset.step_print': {{ t('printer_preset.step_print') | dump | safe }},
+      'printer_preset.step_scan': {{ t('printer_preset.step_scan') | dump | safe }},
+      'printer_preset.step_review': {{ t('printer_preset.step_review') | dump | safe }},
+      'printer_preset.step_device': {{ t('printer_preset.step_device') | dump | safe }}
     }
   };
 </script>
