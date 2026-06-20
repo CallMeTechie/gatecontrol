@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.88.0] — 2026-06-20
+
+### Features
+- Drucker-Preset — Wizard + Orchestrator-Endpoint (POST /api/v1/printer-presets) (#146)
+
+---
+
 ## [1.87.4] — 2026-06-20
 
 ### Änderungen
