@@ -4,9 +4,36 @@
 (function () {
   var currentView = 'grid';
   var currentFilter = 'all';
+  var currentProtoFilter = 'all';
   var searchQuery = '';
   var allRoutes = [];
   var editingId = null;
+
+  // Protocol → display label / badge class (badge text is protocol-name, same in EN/DE)
+  var PROTO_LABELS = { rdp: 'RDP', vnc: 'VNC', ssh: 'SSH', telnet: 'Telnet' };
+  var PROTO_BADGE_CLASS = { rdp: 'b-rdp', vnc: 'b-vnc', ssh: 'b-ssh', telnet: 'b-telnet' };
+
+  function protoOf(r) {
+    var p = (r && r.protocol) || 'rdp';
+    return PROTO_LABELS[p] ? p : 'rdp';
+  }
+
+  // Builds a protocol badge (+ optional "◉ Browser" indicator) for a route.
+  function buildProtoBadge(r) {
+    var p = protoOf(r);
+    var frag = document.createDocumentFragment();
+    var badge = document.createElement('span');
+    badge.className = 'proto-chip ' + PROTO_BADGE_CLASS[p];
+    badge.textContent = PROTO_LABELS[p];
+    frag.appendChild(badge);
+    if (r && r.browser_enabled) {
+      var ind = document.createElement('span');
+      ind.className = 'browser-ind';
+      ind.textContent = '◉ ' + (GC.t['rdp.badge.browser'] || 'Browser');
+      frag.appendChild(ind);
+    }
+    return frag;
+  }
 
   function formatRelativeTime(isoDate) {
     if (!isoDate) return '-';
@@ -72,6 +99,7 @@
     return allRoutes.filter(function (r) {
       if (currentFilter === 'online' && (!r.status || !r.status.online)) return false;
       if (currentFilter === 'offline' && r.status && r.status.online) return false;
+      if (currentProtoFilter !== 'all' && protoOf(r) !== currentProtoFilter) return false;
       if (searchQuery) {
         var q = searchQuery.toLowerCase();
         var match = (r.name || '').toLowerCase().includes(q) ||
@@ -123,7 +151,11 @@
       var nameBlock = document.createElement('div');
       var nameEl = document.createElement('div');
       nameEl.className = 'vm-name';
-      nameEl.textContent = r.name;
+      nameEl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      var nameText = document.createElement('span');
+      nameText.textContent = r.name;
+      nameEl.appendChild(nameText);
+      nameEl.appendChild(buildProtoBadge(r));
       nameBlock.appendChild(nameEl);
 
       var hostEl = document.createElement('div');
@@ -351,10 +383,16 @@
       var isMaintenance = r.maintenance_enabled;
       var tr = document.createElement('tr');
 
-      // Name
+      // Name + protocol badge / browser indicator
       var tdName = document.createElement('td');
       tdName.style.cssText = 'font-weight:600;color:var(--text-1)';
-      tdName.textContent = r.name;
+      var nameWrap = document.createElement('div');
+      nameWrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      var nameSpan = document.createElement('span');
+      nameSpan.textContent = r.name;
+      nameWrap.appendChild(nameSpan);
+      nameWrap.appendChild(buildProtoBadge(r));
+      tdName.appendChild(nameWrap);
       tr.appendChild(tdName);
 
       // Host
@@ -506,6 +544,19 @@
       if (!btn) return;
       currentFilter = btn.dataset.filter;
       statusFilter.querySelectorAll('.btn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      renderRoutes();
+    });
+  }
+
+  // Protocol filter (All / RDP / VNC / SSH / Telnet)
+  var protocolFilter = document.getElementById('rdp-protocol-filter');
+  if (protocolFilter) {
+    protocolFilter.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-protocol-filter]');
+      if (!btn) return;
+      currentProtoFilter = btn.dataset.protocolFilter;
+      protocolFilter.querySelectorAll('.btn').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
       renderRoutes();
     });
@@ -807,6 +858,10 @@
       resMode.dispatchEvent(new Event('change'));
       accessMode.dispatchEvent(new Event('change'));
 
+      // Hydrate protocol (segment + adaptive steps/fields) WITHOUT clobbering the
+      // loaded port — fromUser:false skips the default-port logic.
+      selectProtocol(r.protocol || 'rdp', false);
+
       openModal('rdp-modal-overlay');
     } catch (err) {
       alert(err.message || 'Failed to load route');
@@ -821,10 +876,11 @@
   // Save handler
   document.getElementById('rdp-modal-save').addEventListener('click', async function () {
     var data = {
+      protocol: currentProtocol,
       name: document.getElementById('rdp-name').value,
       description: document.getElementById('rdp-description').value,
       host: document.getElementById('rdp-host').value,
-      port: parseInt(document.getElementById('rdp-port').value, 10) || 3389,
+      port: parseInt(document.getElementById('rdp-port').value, 10) || GCRdpForm.defaultPortFor(currentProtocol),
       access_mode: document.getElementById('rdp-access-mode').value,
       external_hostname: document.getElementById('rdp-external-hostname').value || null,
       external_port: document.getElementById('rdp-external-port').value ? parseInt(document.getElementById('rdp-external-port').value, 10) : null,
@@ -863,7 +919,9 @@
       admin_session: document.getElementById('rdp-admin-session').checked,
       remote_app: document.getElementById('rdp-remote-app').value || null,
       start_program: document.getElementById('rdp-start-program').value || null,
-      wol_enabled: document.getElementById('rdp-wol-enabled').checked,
+      // WoL is not supported for ssh/telnet (server rejects it) — force off.
+      wol_enabled: (currentProtocol === 'ssh' || currentProtocol === 'telnet')
+        ? false : document.getElementById('rdp-wol-enabled').checked,
       wol_mac_address: (document.getElementById('rdp-wol-mac').value || '').trim() || null,
       maintenance_enabled: document.getElementById('rdp-maintenance-enabled').checked,
       health_check_enabled: document.getElementById('rdp-health-check').checked,
@@ -879,6 +937,10 @@
       selectedUserIds.push(parseInt(cb.value, 10));
     });
     data.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
+
+    // Null out fields meaningless in the chosen protocol (domain for non-rdp,
+    // ssh-key for non-ssh, etc.). Shared username/password are never touched.
+    data = GCRdpForm.serializeForm(data);
 
     try {
       var result = editingId
@@ -917,40 +979,106 @@
   loadRoutes();
   loadRotationCount();
 
-  // ─── Wizard navigation ─────────────────────────────────
-  // The create/edit modal is laid out as a 6-step wizard. Each section
-  // carries data-wizard-step="N". All steps > currentStep are hidden.
-  // This reuses the existing form state + save handler 1:1 — the
-  // wizard is purely a presentation layer on top of the same <form>.
+  // ─── Wizard navigation (protocol-adaptive, KEY-DRIVEN) ──────────────
+  // The create/edit modal is laid out as a wizard. Each panel carries a
+  // data-step-key (connection/auth/experience/security/wol/access) AND the
+  // legacy data-wizard-step number (kept for CSS only). Navigation is driven
+  // by currentSteps = GCRdpForm.stepsForProtocol(p): an array of the keys
+  // that apply to the chosen protocol, IN ORDER. ssh/telnet omit 'experience',
+  // so the wizard compacts (display position 3 becomes 'security').
+  var currentProtocol = 'rdp';
   var currentSteps = GCRdpForm.stepsForProtocol('rdp');
   var currentWizardStep = 1;
+
+  // Logic-field name → DOM container id (only fields that exist in this phase;
+  // ssh-key/audio/sftp fields arrive in later tasks and are skipped gracefully).
+  var FIELD_DOM = { domain: 'rdp-domain-field', wol: 'rdp-wol-section' };
+
+  // Apply protocol-specific field visibility via GCRdpForm.visibleFieldsFor.
+  // Panels (elements with data-wizard-step) are only TAGGED via data-proto-hidden
+  // so showWizardStep stays the single authority over panel display; non-panel
+  // containers are toggled directly.
+  function applyProtocolFields() {
+    var state = {
+      accessMode: (document.getElementById('rdp-access-mode') || {}).value,
+      credentialMode: (document.getElementById('rdp-credential-mode') || {}).value,
+    };
+    var vis = GCRdpForm.visibleFieldsFor(currentProtocol, state);
+    Object.keys(FIELD_DOM).forEach(function (field) {
+      var el = document.getElementById(FIELD_DOM[field]);
+      if (!el) return;
+      var show = !!vis[field];
+      var isPanel = el.hasAttribute('data-wizard-step');
+      if (show) {
+        el.removeAttribute('data-proto-hidden');
+        if (!isPanel) el.style.display = '';
+      } else {
+        el.setAttribute('data-proto-hidden', '1');
+        el.style.display = 'none';
+      }
+    });
+  }
+
+  // Switch protocol: recompute steps, sync segment UI, adapt fields, set the
+  // default port (only if the field still holds the previous default), clamp
+  // the current step to the new length and re-render.
+  function selectProtocol(p, fromUser) {
+    if (!PROTO_LABELS[p]) p = 'rdp';
+    var prevDefault = GCRdpForm.defaultPortFor(currentProtocol);
+    currentProtocol = p;
+    var seg = document.getElementById('rdp-protocol-seg');
+    if (seg) seg.querySelectorAll('[data-protocol]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.protocol === p);
+    });
+    if (fromUser) {
+      var portEl = document.getElementById('rdp-port');
+      if (portEl) {
+        var cur = (portEl.value || '').trim();
+        if (cur === '' || parseInt(cur, 10) === prevDefault) {
+          portEl.value = GCRdpForm.defaultPortFor(p);
+        }
+      }
+    }
+    currentSteps = GCRdpForm.stepsForProtocol(p, { browserEnabled: false });
+    applyProtocolFields();
+    showWizardStep(Math.min(currentWizardStep, currentSteps.length));
+  }
 
   function showWizardStep(n) {
     currentWizardStep = Math.max(1, Math.min(currentSteps.length, n));
     var modal = document.getElementById('rdp-modal');
     if (!modal) return;
+    var activeKey = currentSteps[currentWizardStep - 1];
 
-    // Show matching step content, hide everything else
+    // Show panel(s) whose key === activeKey (unless protocol-hidden), hide rest.
     modal.querySelectorAll('[data-wizard-step]').forEach(function (el) {
-      var s = parseInt(el.getAttribute('data-wizard-step'), 10);
-      el.style.display = (s === currentWizardStep) ? '' : 'none';
+      var key = el.getAttribute('data-step-key');
+      var protoHidden = el.getAttribute('data-proto-hidden') === '1';
+      el.style.display = (key === activeKey && !protoHidden) ? '' : 'none';
     });
 
-    // Mark dots + connecting lines as active / done
-    var dots = modal.querySelectorAll('.rdp-step-dot');
-    var lines = modal.querySelectorAll('.rdp-step-line');
-    dots.forEach(function (d) {
-      var s = parseInt(d.getAttribute('data-pill'), 10);
+    // Dots: only those whose key is in currentSteps are shown; active/done by
+    // position within currentSteps (NOT by the static pill number).
+    modal.querySelectorAll('.rdp-step-dot').forEach(function (d) {
+      var pos = currentSteps.indexOf(d.getAttribute('data-step-key')); // -1 = omitted
       d.classList.remove('active', 'done');
-      if (s === currentWizardStep) d.classList.add('active');
-      else if (s < currentWizardStep) d.classList.add('done');
-    });
-    lines.forEach(function (line, idx) {
-      // Line between dot idx+1 and dot idx+2; done if currentStep > idx+1
-      line.classList.toggle('done', currentWizardStep > idx + 1);
+      if (pos === -1) { d.style.display = 'none'; return; }
+      d.style.display = '';
+      if (pos + 1 === currentWizardStep) d.classList.add('active');
+      else if (pos + 1 < currentWizardStep) d.classList.add('done');
     });
 
-    // Sub-title: "Schritt X von 6"
+    // Lines: each carries the key of the dot it precedes. Hide the line of an
+    // omitted step so the bar compacts; mark done once we're at/past that dot.
+    modal.querySelectorAll('.rdp-step-line').forEach(function (line) {
+      var pos = currentSteps.indexOf(line.getAttribute('data-step-key'));
+      line.classList.remove('done');
+      if (pos === -1) { line.style.display = 'none'; return; }
+      line.style.display = '';
+      if (currentWizardStep >= pos + 1) line.classList.add('done');
+    });
+
+    // Sub-title: "Step X of N" — N = currentSteps.length (compacted total).
     var sub = document.getElementById('rdp-modal-subtitle');
     if (sub) {
       var tpl = GC.t['rdp.wizard.step_of'] || 'Step {{current}} of {{total}}';
@@ -962,7 +1090,7 @@
     // Step title next to the counter — pulled from the active dot's data-label
     var stepTitle = document.getElementById('rdp-modal-steptitle');
     if (stepTitle) {
-      var activeDot = modal.querySelector('.rdp-step-dot[data-pill="' + currentWizardStep + '"]');
+      var activeDot = modal.querySelector('.rdp-step-dot[data-step-key="' + activeKey + '"]');
       stepTitle.textContent = activeDot ? (activeDot.getAttribute('data-label') || '') : '';
     }
 
@@ -975,6 +1103,17 @@
     if (save) save.style.display = currentWizardStep === currentSteps.length ? '' : 'none';
 
     if (currentWizardStep === currentSteps.length) renderWizardReview();
+  }
+
+  // Protocol segment-control click
+  var protoSeg = document.getElementById('rdp-protocol-seg');
+  if (protoSeg) {
+    protoSeg.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-protocol]');
+      if (!btn) return;
+      e.preventDefault();
+      selectProtocol(btn.dataset.protocol, true);
+    });
   }
 
   function validateWizardStep(n) {
@@ -1101,8 +1240,9 @@
       stepsBar.addEventListener('click', function (ev) {
         var dot = ev.target.closest('.rdp-step-dot.done');
         if (!dot) return;
-        var target = parseInt(dot.getAttribute('data-pill'), 10);
-        if (!isNaN(target)) showWizardStep(target);
+        // Jump by position within currentSteps, not the static pill number.
+        var pos = currentSteps.indexOf(dot.getAttribute('data-step-key'));
+        if (pos !== -1) showWizardStep(pos + 1);
       });
     }
   })();
@@ -1114,6 +1254,8 @@
     originalOpenCreateModal();
     var amEl = document.getElementById('rdp-access-mode');
     if (amEl) amEl.dispatchEvent(new Event('change'));
+    // Fresh route → reset to RDP defaults (segment + steps + fields + port 3389).
+    selectProtocol('rdp', false);
     populateHomeGatewayPeers();
     showWizardStep(1);
   };

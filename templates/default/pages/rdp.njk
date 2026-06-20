@@ -64,6 +64,14 @@
     <button class="btn btn-ghost btn-sm" data-filter="online">{{ t('rdp.filter_online') }}</button>
     <button class="btn btn-ghost btn-sm" data-filter="offline">{{ t('rdp.filter_offline') }}</button>
   </div>
+  <span style="font-size:11px;color:var(--text-3);margin-left:4px">{{ t('rdp.filter.protocol') }}:</span>
+  <div class="btn-group" id="rdp-protocol-filter">
+    <button class="btn btn-ghost btn-sm active" data-protocol-filter="all">{{ t('rdp.filter_all') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="rdp">{{ t('rdp.protocol.rdp') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="vnc">{{ t('rdp.protocol.vnc') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="ssh">{{ t('rdp.protocol.ssh') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="telnet">{{ t('rdp.protocol.telnet') }}</button>
+  </div>
   <div style="margin-left:auto">
     <button class="btn btn-primary" id="btn-add-rdp" {% if rdpLocked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -97,28 +105,32 @@
         </button>
       </div>
       {# Step indicator: numbered circles connected by a line #}
+      {# Dots + lines carry both data-pill (for CSS) and data-step-key (for
+         protocol-adaptive, key-driven navigation in rdp.js). Each line carries
+         the key of the dot it precedes so an omitted step hides its dot AND its
+         leading line, compacting the bar. #}
       <div id="rdp-wizard-steps" style="display:flex;align-items:center;margin-top:14px;gap:0">
-        <div class="rdp-step-dot" data-pill="1"
+        <div class="rdp-step-dot" data-pill="1" data-step-key="connection"
              data-label="{{ t('rdp.wizard.step_connection') }}"
              title="1 · {{ t('rdp.wizard.step_connection') }}">1</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="2"
+        <div class="rdp-step-line" data-step-key="auth"></div>
+        <div class="rdp-step-dot" data-pill="2" data-step-key="auth"
              data-label="{{ t('rdp.wizard.step_auth') }}"
              title="2 · {{ t('rdp.wizard.step_auth') }}">2</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="3"
+        <div class="rdp-step-line" data-step-key="experience"></div>
+        <div class="rdp-step-dot" data-pill="3" data-step-key="experience"
              data-label="{{ t('rdp.wizard.step_experience') }}"
              title="3 · {{ t('rdp.wizard.step_experience') }}">3</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="4"
+        <div class="rdp-step-line" data-step-key="security"></div>
+        <div class="rdp-step-dot" data-pill="4" data-step-key="security"
              data-label="{{ t('rdp.wizard.step_security') }}"
              title="4 · {{ t('rdp.wizard.step_security') }}">4</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="5"
+        <div class="rdp-step-line" data-step-key="wol"></div>
+        <div class="rdp-step-dot" data-pill="5" data-step-key="wol"
              data-label="WoL &amp; Tags"
              title="5 · WoL &amp; Tags">5</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="6"
+        <div class="rdp-step-line" data-step-key="access"></div>
+        <div class="rdp-step-dot" data-pill="6" data-step-key="access"
              data-label="{{ t('rdp.wizard.step_access') }}"
              title="6 · {{ t('rdp.wizard.step_access') }}">6</div>
       </div>
@@ -130,9 +142,19 @@
       <div style="padding:20px 24px;display:flex;flex-direction:column;gap:20px">
 
         {# Wizard-Step 1: Connection #}
-        <div data-wizard-step="1">
+        <div data-wizard-step="1" data-step-key="connection">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_connection') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            {# Protocol selector — drives the whole adaptive wizard (steps + fields + default port) #}
+            <div style="grid-column:1/-1">
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.protocol') }}</label>
+              <div id="rdp-protocol-seg" class="rdp-proto-seg" role="radiogroup" aria-label="{{ t('rdp.protocol') }}">
+                <button type="button" class="rdp-proto-opt active" data-protocol="rdp">{{ t('rdp.protocol.rdp') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="vnc">{{ t('rdp.protocol.vnc') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="ssh">{{ t('rdp.protocol.ssh') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="telnet">{{ t('rdp.protocol.telnet') }}</button>
+              </div>
+            </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.name') }} *</label>
               <input type="text" id="rdp-name" required maxlength="100" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
@@ -223,7 +245,7 @@
         </div>
 
         {# Wizard-Step 2: Auth #}
-        <div data-wizard-step="2">
+        <div data-wizard-step="2" data-step-key="auth">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_auth') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -234,7 +256,7 @@
                 <option value="full">{{ t('rdp.credential_full') }}</option>
               </select>
             </div>
-            <div>
+            <div id="rdp-domain-field">
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.domain') }}</label>
               <input type="text" id="rdp-domain" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
             </div>
@@ -258,7 +280,7 @@
         </div>
 
         {# Wizard-Step 3: Display #}
-        <div data-wizard-step="3">
+        <div data-wizard-step="3" data-step-key="experience">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_display') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div>
@@ -298,7 +320,7 @@
         </div>
 
         {# Wizard-Step 3: Resources (same step as Display) #}
-        <div data-wizard-step="3">
+        <div data-wizard-step="3" data-step-key="experience">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_resources') }}</div>
           <div style="display:flex;flex-wrap:wrap;gap:12px">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-clipboard" checked style="accent-color:var(--accent)"> {{ t('rdp.clipboard') }}</label>
@@ -318,7 +340,7 @@
         </div>
 
         {# Wizard-Step 4: Performance #}
-        <div data-wizard-step="4">
+        <div data-wizard-step="4" data-step-key="security">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_performance') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -344,7 +366,7 @@
         </div>
 
         {# Wizard-Step 4: Session (same step as Performance) #}
-        <div data-wizard-step="4">
+        <div data-wizard-step="4" data-step-key="security">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_session') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -366,7 +388,7 @@
         </div>
 
         {# Wizard-Step 5: Wake-on-LAN #}
-        <div data-wizard-step="5">
+        <div data-wizard-step="5" data-step-key="wol" id="rdp-wol-section">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_wol') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div style="display:flex;align-items:flex-end;padding-bottom:4px">
@@ -380,7 +402,7 @@
         </div>
 
         {# Wizard-Step 5: Access Control & Tags (same step as WoL) #}
-        <div data-wizard-step="5">
+        <div data-wizard-step="5" data-step-key="wol">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.section_access_control') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -405,14 +427,14 @@
         </div>
 
         {# Wizard-Step 6: Visibility / User Access #}
-        <div data-wizard-step="6">
+        <div data-wizard-step="6" data-step-key="access">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('routes.visible_to_users') }}</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">{{ t('routes.visible_to_users_hint') }}</div>
           <div id="rdp-user-ids" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
 
         {# Wizard-Step 6: Review & Save #}
-        <div data-wizard-step="6">
+        <div data-wizard-step="6" data-step-key="access">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.wizard.review_title') }}</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">{{ t('rdp.wizard.review_hint') }}</div>
           <div id="rdp-wizard-review" style="font-size:12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;max-height:260px;overflow-y:auto;font-family:var(--font-mono)"></div>
@@ -433,6 +455,15 @@
 
     <style nonce="{{ cspNonce }}">
       #rdp-wizard-steps { user-select:none; }
+      /* Protocol segment control (connection step) */
+      .rdp-proto-seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-xs); overflow:hidden; }
+      .rdp-proto-opt {
+        padding:7px 16px; font-size:12px; font-family:var(--font-ui);
+        background:var(--bg-input); color:var(--text-2);
+        border:none; border-right:1px solid var(--border); cursor:pointer;
+      }
+      .rdp-proto-opt:last-child { border-right:none; }
+      .rdp-proto-opt.active { background:var(--accent); color:#fff; font-weight:600; }
       .rdp-step-dot {
         flex-shrink:0;
         width:28px; height:28px;
