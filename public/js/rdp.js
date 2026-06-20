@@ -32,6 +32,13 @@
   var PROTO_LABELS = { rdp: 'RDP', vnc: 'VNC', ssh: 'SSH', telnet: 'Telnet' };
   var PROTO_BADGE_CLASS = { rdp: 'b-rdp', vnc: 'b-vnc', ssh: 'b-ssh', telnet: 'b-telnet' };
 
+  // DA-2 / CARRY-FORWARD: when access_mode is gateway/external, SFTP and Audio
+  // must be blocked COMPLETELY. Hoisted here so applyBrowserFields() can use them
+  // at init time (updateAccessModeFields() is called before these would otherwise
+  // be reached at their original location ~line 1335).
+  var SFTP_BLOCK_IDS  = ['rdp-browser-sftp-row', 'rdp-sftp-locks', 'rdp-sftp-secondary'];
+  var AUDIO_BLOCK_IDS = ['rdp-browser-audio-rdp-row', 'rdp-browser-audio-vnc-row', 'rdp-audio-servername-row'];
+
   function protoOf(r) {
     var p = (r && r.protocol) || 'rdp';
     return PROTO_LABELS[p] ? p : 'rdp';
@@ -1325,15 +1332,6 @@
     c.classList.toggle('rdp-browser-blocked', locked);
     c.querySelectorAll('input, select, textarea').forEach(function (el) { el.disabled = locked; });
   }
-
-  // DA-2 / CARRY-FORWARD: when access_mode is gateway/external, SFTP and Audio
-  // must be blocked COMPLETELY. visibleFieldsFor only gates 3 of the 6 sftp
-  // fields (username/host/password); these container ids cover ALL SIX sftp
-  // fields (username, host, port, password, private_key, passphrase live inside
-  // #rdp-sftp-secondary) PLUS the sftp enable toggle, the transfer-lock toggles,
-  // and every audio control (rdp_disable_audio, browser_enable_audio, audio_servername).
-  var SFTP_BLOCK_IDS  = ['rdp-browser-sftp-row', 'rdp-sftp-locks', 'rdp-sftp-secondary'];
-  var AUDIO_BLOCK_IDS = ['rdp-browser-audio-rdp-row', 'rdp-browser-audio-vnc-row', 'rdp-audio-servername-row'];
 
   // Adapt the browser step to protocol + access_mode + toggle state.
   function applyBrowserFields() {
