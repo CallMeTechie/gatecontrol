@@ -2,6 +2,9 @@
 'use strict';
 const { getDb } = require('../db/connection');
 const { assertListenPortFree, suggestFreeListenPort, findListenPortConflict } = require('./l4');
+const routes = require('./routes');
+const serviceBundle = require('./serviceBundle');
+const egressRoutes = require('./egressRoutes');
 
 // Print listen-port: prefer target port (9100->9100); if taken, next free.
 function allocatePrintListenPort(targetPort, { protocol = 'tcp', excludeRouteIds = [] } = {}) {
@@ -92,4 +95,44 @@ function buildEgressInput(input, targetRouteId, highPort) {
   };
 }
 
-module.exports = { allocatePrintListenPort, allocateEgressHighPort, validateStageA, buildBundleInput, buildEgressInput };
+function mapDomainError(err) { if (err && /domain already exists/i.test(err.message)) { const e = new Error(err.message); e.statusCode = 409; e.code = 'DOMAIN_CONFLICT'; return e; } return err; }
+
+async function createPreset(input, db = getDb()) {
+  validateStageA(input, db);
+
+  // Pre-flight: print listen-ports (no await before createBundle later) + EWS domain.
+  const listenPorts = new Map();
+  const claimed = [];
+  for (const tp of input.print_ports) { const lp = allocatePrintListenPort(tp, { excludeRouteIds: [] }); if (claimed.includes(lp)) throw badRequest(`listen port ${lp} collides within preset`); claimed.push(lp); listenPorts.set(tp, lp); }
+  if (input.ews && input.ews.enabled) {
+    try { routes.assertDomainAvailable(db, { domain: input.ews.domain.trim().toLowerCase(), routeType: 'http' }); }
+    catch (err) { throw mapDomainError(err); }
+  }
+  // Pre-validate bundle shape (no DB writes) so we fail before creating the NAS route.
+  serviceBundle.normalizeInput(buildBundleInput(input, listenPorts));
+
+  let nasRouteId = null; let egressId = null;
+  const rollback = () => {
+    if (egressId) { try { egressRoutes.remove(egressId, db); } catch (_e) {} }
+    if (nasRouteId) { try { db.prepare('DELETE FROM routes WHERE id = ?').run(nasRouteId); } catch (_e) {} }
+  };
+  try {
+    // 1. optional NAS route — DB-only (skipSync), so a later failure rolls back sync-free.
+    let targetRouteId;
+    if (input.scan && input.scan.enabled) {
+      if (input.scan.target.mode === 'new') {
+        const nas = await routes.create({ route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: String(allocatePrintListenPort(445, {})), l4_tls_mode: 'none', external_enabled: 0, target_kind: 'gateway', target_peer_id: input.scan.target.nas_peer_id, target_lan_host: input.scan.target.nas_ip, target_lan_port: 445, target_port: 445 }, { skipSync: true });
+        nasRouteId = nas.id; targetRouteId = nas.id;
+      } else { targetRouteId = input.scan.target.route_id; }
+      // 2. Egress — Stage B validate runs inside create(); allocate high-port immediately before (sync span).
+      const highPort = allocateEgressHighPort(input.near_peer_id, db);
+      const egress = egressRoutes.create(buildEgressInput(input, targetRouteId, highPort), db);
+      egressId = egress.id;
+    }
+    // 3. Bundle — the single Caddy sync (full rebuild picks up the NAS route).
+    const bundle = await serviceBundle.createBundle(buildBundleInput(input, listenPorts));
+    return { bundle_id: bundle.id, route_ids: bundle.routes.map((r) => r.id), listen_ports: Array.from(listenPorts.entries()), egress_id: egressId, nas_route_id: nasRouteId, warning: null };
+  } catch (err) { rollback(); throw err; }
+}
+
+module.exports = { allocatePrintListenPort, allocateEgressHighPort, validateStageA, buildBundleInput, buildEgressInput, createPreset };
