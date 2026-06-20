@@ -8,13 +8,27 @@ function applyClipboard(settings, route) {
   settings['disable-paste'] = route.browser_clipboard ? 'false' : 'true';
 }
 
+function applyAudio(settings, route) {
+  if (route.protocol === 'rdp') {
+    if (route.rdp_disable_audio === 1) settings['disable-audio'] = 'true';   // NULL/0 → nothing (2a default)
+    return;
+  }
+  if (route.protocol === 'vnc') {
+    const internal = !route.access_mode || route.access_mode === 'internal' || route.access_mode === 'both';
+    if (route.browser_enable_audio && internal && route.audio_servername) {  // DA-2: non-gateway only
+      settings['enable-audio'] = 'true';
+      settings['audio-servername'] = route.audio_servername;
+    }
+  }
+}
+
 function buildRdp(route, creds) {
   const t = resolveGuacTarget(route);
   const settings = { hostname: t.host, port: String(t.port), security: 'any', 'ignore-cert': 'true' };
   applyClipboard(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
-  // Task 7 inserts applyAudio(settings, route); Task 8 inserts applySftp(settings, route, creds);
+  applyAudio(settings, route); // Task 8 inserts applySftp(settings, route, creds);
   return { type: 'rdp', settings };
 }
 
@@ -24,7 +38,7 @@ function buildVnc(route, creds) {
   applyClipboard(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
-  // Task 7 inserts applyAudio; Task 8 inserts applySftp.
+  applyAudio(settings, route); // Task 8 inserts applySftp.
   return { type: 'vnc', settings };
 }
 
