@@ -53,8 +53,10 @@ function validateRdpRoute(data, isUpdate = false) {
     errors.protocol = 'Protocol must be rdp, vnc, ssh, or telnet';
   }
 
-  // SSH needs an explicit username; RDP/VNC/telnet do not enforce it here.
-  if (data.protocol === 'ssh') {
+  // ssh needs a username, but on UPDATE only judge it when the patch carries the
+  // field (stored value stands otherwise). Merge-aware browser validation lives
+  // separately in validatePhase2bRoute (untouched).
+  if (data.protocol === 'ssh' && (!isUpdate || data.username !== undefined)) {
     if (!data.username || String(data.username).trim().length === 0) {
       errors.username = 'Username is required for SSH';
     }
@@ -448,6 +450,7 @@ async function create(data) {
     data.access_mode === 'gateway' && data.gateway_pool_id != null
       ? parseInt(data.gateway_pool_id, 10) : null,
     (data.protocol && VALID_PROTOCOLS.includes(data.protocol)) ? data.protocol : 'rdp',
+    // browser_sessions license intentionally NOT checked here — enforced at the mint endpoint
     data.browser_enabled ? 1 : 0,
     data.browser_enable_sftp ? 1 : 0,
     data.sftp_host || null,
@@ -551,7 +554,11 @@ async function update(id, data) {
   const existing = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!existing) throw new Error('RDP route not found');
 
-  const errors = validateRdpRoute(data, true);
+  // Forward the merged protocol to the validator so a PATCH that carries
+  // wol_enabled without protocol can still be checked against the stored
+  // protocol (e.g. ssh). We do NOT mutate data so the directFields loop
+  // below never writes a protocol the caller didn't explicitly send.
+  const errors = validateRdpRoute({ ...data, protocol: data.protocol ?? existing.protocol }, true);
   if (errors) {
     const err = new Error(Object.values(errors)[0]);
     err.fields = errors;
@@ -650,6 +657,7 @@ async function update(id, data) {
     'admin_session', 'wol_enabled', 'maintenance_enabled',
     'sharing_enabled', 'sharing_require_consent',
     'screenshot_enabled', 'credential_rotation_enabled', 'health_check_enabled',
+    // browser_sessions license intentionally NOT checked here — enforced at the mint endpoint
     'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
     'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
   ];
