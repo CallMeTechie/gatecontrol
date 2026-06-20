@@ -26,6 +26,21 @@ function encryptCredentials(data) {
   } else if (data.password === '' || data.password === null) {
     result.password_encrypted = null;
   }
+  // Tri-state for optional ssh/sftp credential fields:
+  //   undefined  → leave the column untouched (omit from patch)
+  //   '' or null → clear the column (store null)
+  //   value      → encrypt
+  const optionalFields = {
+    ssh_private_key:  'ssh_private_key_encrypted',
+    ssh_passphrase:   'ssh_passphrase_encrypted',
+    sftp_password:    'sftp_password_encrypted',
+    sftp_private_key: 'sftp_private_key_encrypted',
+    sftp_passphrase:  'sftp_passphrase_encrypted',
+  };
+  for (const [src, col] of Object.entries(optionalFields)) {
+    if (data[src] === undefined) continue;
+    result[col] = data[src] ? encrypt(data[src]) : null;
+  }
   return result;
 }
 
@@ -35,18 +50,48 @@ function encryptCredentials(data) {
  * decrypt_failed flags either failure for the caller.
  */
 function decryptCredentials(row) {
-  const result = { username: null, password: null, decrypt_failed: false };
+  const result = {
+    username: null,
+    password: null,
+    ssh_private_key: null,
+    ssh_passphrase: null,
+    sftp_password: null,
+    sftp_private_key: null,
+    sftp_passphrase: null,
+    decrypt_failed: false,
+    decrypt_failed_fields: new Set(),
+  };
   try {
     if (row.username_encrypted) result.username = decrypt(row.username_encrypted);
   } catch (err) {
     logger.warn({ error: err.message }, 'Failed to decrypt RDP username');
     result.decrypt_failed = true;
+    result.decrypt_failed_fields.add('username');
   }
   try {
     if (row.password_encrypted) result.password = decrypt(row.password_encrypted);
   } catch (err) {
     logger.warn({ error: err.message }, 'Failed to decrypt RDP password');
     result.decrypt_failed = true;
+    result.decrypt_failed_fields.add('password');
+  }
+  // Optional ssh/sftp fields — failures tracked in decrypt_failed_fields only,
+  // NOT in the legacy decrypt_failed boolean (which remains username/password-only).
+  const optionalFields = [
+    ['ssh_private_key_encrypted',  'ssh_private_key'],
+    ['ssh_passphrase_encrypted',   'ssh_passphrase'],
+    ['sftp_password_encrypted',    'sftp_password'],
+    ['sftp_private_key_encrypted', 'sftp_private_key'],
+    ['sftp_passphrase_encrypted',  'sftp_passphrase'],
+  ];
+  for (const [encCol, outKey] of optionalFields) {
+    if (!row[encCol]) continue;
+    try {
+      result[outKey] = decrypt(row[encCol]);
+    } catch (err) {
+      logger.warn({ error: err.message, field: outKey }, 'Failed to decrypt rdp credential');
+      result.decrypt_failed_fields.add(outKey);
+    }
   }
   return result;
 }
