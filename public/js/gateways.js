@@ -721,7 +721,10 @@
     var lbl = el('label', null, T(key, fallback));
     lbl.style.cssText = 'display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:4px';
     wrap.appendChild(lbl);
-    if (hintKey) { var h = discMuted(T(hintKey, hint)); h.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:3px'; wrap._hint = h; }
+    // Append the hint so buildForm() can use it as an insertBefore reference
+    // (input goes between label and hint). Without appendChild, insertBefore
+    // throws NotFoundError and the whole form fails to open.
+    if (hintKey) { var h = discMuted(T(hintKey, hint)); h.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:3px'; wrap.appendChild(h); wrap._hint = h; }
     return wrap;
   }
   function egressInput(ph) {
