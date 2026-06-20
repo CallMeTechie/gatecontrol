@@ -221,7 +221,7 @@ function validatePhase2bRoute(route, creds = {}) {
 
 // --- Strip encrypted fields from response ----------------------
 
-function stripSensitive(row) {
+function stripSensitive(row, { credFlags = false } = {}) {
   if (!row) return row;
   const {
     username_encrypted, password_encrypted,
@@ -230,6 +230,15 @@ function stripSensitive(row) {
     ...safe
   } = row;
   safe.has_credentials = !!(username_encrypted || password_encrypted);
+  if (credFlags) {
+    safe.has_username = !!username_encrypted;
+    safe.has_password = !!password_encrypted;
+    safe.has_ssh_private_key = !!ssh_private_key_encrypted;
+    safe.has_ssh_passphrase = !!ssh_passphrase_encrypted;
+    safe.has_sftp_password = !!sftp_password_encrypted;
+    safe.has_sftp_private_key = !!sftp_private_key_encrypted;
+    safe.has_sftp_passphrase = !!sftp_passphrase_encrypted;
+  }
   // SQLite stores booleans as 0/1 — convert to real booleans for JSON clients
   for (const key of ['multi_monitor', 'redirect_clipboard', 'redirect_printers',
     'redirect_drives', 'admin_session', 'wol_enabled', 'maintenance_enabled', 'enabled']) {
@@ -242,17 +251,17 @@ function stripSensitive(row) {
 
 // --- CRUD ------------------------------------------------------
 
-function getAll({ limit = 250, offset = 0 } = {}) {
+function getAll({ limit = 250, offset = 0, credFlags = false } = {}) {
   const db = getDb();
   const rows = db.prepare(`
     SELECT * FROM rdp_routes
     ORDER BY name ASC
     LIMIT ? OFFSET ?
   `).all(limit, offset);
-  return rows.map(stripSensitive);
+  return rows.map(r => stripSensitive(r, { credFlags }));
 }
 
-function getById(id, includeCredentials = false) {
+function getById(id, includeCredentials = false, { credFlags = false } = {}) {
   const db = getDb();
   const row = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!row) return null;
@@ -273,7 +282,7 @@ function getById(id, includeCredentials = false) {
     safe.decrypt_failed_fields = creds.decrypt_failed_fields;
     return safe;
   }
-  return stripSensitive(row);
+  return stripSensitive(row, { credFlags });
 }
 
 // The effective public listen port a gateway-mode RDP route will bind on the
@@ -914,7 +923,7 @@ function resolveConnectEndpoint(route, { baseUrl, publicHost } = {}) {
 function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
-  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(stripSensitive);
+  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(r => stripSensitive(r));
 }
 
 module.exports = {

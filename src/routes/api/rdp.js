@@ -42,7 +42,7 @@ router.get('/', (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const list = rdp.getAll({ limit, offset });
+    const list = rdp.getAll({ limit, offset, credFlags: true });
 
     // Attach status from cache
     const statuses = rdpMonitor.getAllStatus();
@@ -224,7 +224,7 @@ router.post('/',
  */
 router.get('/:id', (req, res) => {
   try {
-    const route = rdp.getById(parseInt(req.params.id, 10));
+    const route = rdp.getById(parseInt(req.params.id, 10), false, { credFlags: true });
     if (!route) return res.status(404).json({ ok: false, error: req.t('error.rdp.not_found') });
     res.json({ ok: true, route });
   } catch (err) {
