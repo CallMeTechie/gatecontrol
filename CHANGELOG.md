@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.4] — 2026-06-20
+
+### Änderungen
+- Browser Remote Desktop Phase 2b (SSH/telnet + SFTP + Audio) (#147)
+
+---
+
 ## [1.87.3] — 2026-06-20
 
 ### Fixes
