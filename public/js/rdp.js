@@ -1,4 +1,4 @@
-/* global GC, api */
+/* global GC, api, GCRdpForm, GCRdpCred */
 'use strict';
 
 (function () {
@@ -8,6 +8,25 @@
   var searchQuery = '';
   var allRoutes = [];
   var editingId = null;
+
+  // ── Task 6 — adaptive auth step + credential tri-state ──────────────
+  // editCredFlags holds the has_* flags returned by the admin detail endpoint
+  // (GET /api/v1/rdp/:id with credFlags:true). They are ONLY populated in edit
+  // mode and drive (a) the "gesetzt"/"set" hints and (b) THE OMISSION RULE.
+  var editCredFlags = {};
+  var editBrowserEnabled = false;   // loaded route.browser_enabled → ASCII pre-warning
+  var sshAuthMode = 'password';     // ssh auth-mode segment: 'password' | 'key'
+  // Fields the admin explicitly asked to wipe via the "remove credential" action.
+  // Membership here means we send '' (deliberate clear) instead of omitting.
+  var credsToClear = {};
+  // Logic field-name → DOM id suffix → has_* flag. Single source of truth for the
+  // credential tri-state across hints, the omission rule and the clear action.
+  var CRED_FIELDS = {
+    username:        { dom: 'rdp-username',        hint: 'rdp-cred-set-username',        flag: 'has_username' },
+    password:        { dom: 'rdp-password',        hint: 'rdp-cred-set-password',        flag: 'has_password' },
+    ssh_private_key: { dom: 'rdp-ssh-private-key', hint: 'rdp-cred-set-ssh-private-key', flag: 'has_ssh_private_key' },
+    ssh_passphrase:  { dom: 'rdp-ssh-passphrase',  hint: 'rdp-cred-set-ssh-passphrase',  flag: 'has_ssh_passphrase' },
+  };
 
   // Protocol → display label / badge class (badge text is protocol-name, same in EN/DE)
   var PROTO_LABELS = { rdp: 'RDP', vnc: 'VNC', ssh: 'SSH', telnet: 'Telnet' };
@@ -578,14 +597,124 @@
   document.getElementById('rdp-modal-cancel').addEventListener('click', closeRdpModal);
   modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) closeRdpModal(); });
 
-  // Credential mode toggle
+  // Credential mode toggle + adaptive auth-step visibility (Task 6).
   var credMode = document.getElementById('rdp-credential-mode');
   if (credMode) {
-    credMode.addEventListener('change', function () {
-      var fields = document.getElementById('rdp-cred-fields');
-      var pwGroup = document.getElementById('rdp-password-group');
-      fields.style.display = this.value === 'none' ? 'none' : '';
-      pwGroup.style.display = this.value === 'full' ? '' : 'none';
+    credMode.addEventListener('change', updateAuthFields);
+  }
+
+  // Adaptive auth step: decides which credential controls are visible for the
+  // current protocol + credential_mode + ssh auth-mode, and refreshes the
+  // "set"/"gesetzt" hints and the ASCII pre-warning.
+  function updateAuthFields() {
+    var mode = credMode ? credMode.value : 'none';
+    var isSsh = currentProtocol === 'ssh';
+    var credsOn = mode !== 'none';
+
+    var fields = document.getElementById('rdp-cred-fields');
+    if (fields) fields.style.display = credsOn ? '' : 'none';
+
+    var seg = document.getElementById('rdp-ssh-auth-mode');
+    if (seg) seg.style.display = (isSsh && credsOn) ? '' : 'none';
+
+    // Password visible: rdp/vnc → only 'full'; ssh → only in password auth-mode;
+    // telnet → whenever creds are on (optional user/pass).
+    var pwGroup = document.getElementById('rdp-password-group');
+    if (pwGroup) {
+      var showPw = credsOn && (isSsh ? (sshAuthMode === 'password')
+        : (currentProtocol === 'telnet' ? true : mode === 'full'));
+      pwGroup.style.display = showPw ? '' : 'none';
+    }
+
+    var keyGroup = document.getElementById('rdp-ssh-key-group');
+    if (keyGroup) keyGroup.style.display = (isSsh && credsOn && sshAuthMode === 'key') ? '' : 'none';
+
+    updateCredSetHints();
+    updateAsciiHint();
+  }
+
+  // Render the protocol-scoped "set"/"gesetzt" hint on each credential field.
+  // A hint shows only in edit mode, only when the stored value exists (has_*),
+  // and only while its field is actually visible (so ssh hints never leak onto
+  // rdp). When the admin has armed "remove credential" the hint flips to the
+  // will-be-removed state with an undo ("keep") action.
+  // Logical (DOM-independent) visibility of a credential field for the current
+  // protocol / credential_mode / ssh auth-mode — mirrors updateAuthFields so it
+  // works even before the modal is shown (offsetParent would be null then).
+  function credFieldVisible(field) {
+    var mode = credMode ? credMode.value : 'none';
+    if (mode === 'none') return false;
+    var isSsh = currentProtocol === 'ssh';
+    if (field === 'username') return true;
+    if (field === 'password') {
+      return isSsh ? (sshAuthMode === 'password')
+        : (currentProtocol === 'telnet' ? true : mode === 'full');
+    }
+    if (field === 'ssh_private_key' || field === 'ssh_passphrase') {
+      return isSsh && sshAuthMode === 'key';
+    }
+    return false;
+  }
+
+  function updateCredSetHints() {
+    Object.keys(CRED_FIELDS).forEach(function (field) {
+      var cfg = CRED_FIELDS[field];
+      var hint = document.getElementById(cfg.hint);
+      if (!hint) return;
+      var stored = !!(editingId && editCredFlags[cfg.flag]);
+      if (!stored || !credFieldVisible(field)) { hint.style.display = 'none'; return; }
+      hint.style.display = '';
+      var label = hint.querySelector('.rdp-cred-set-label');
+      var btn = hint.querySelector('.rdp-cred-remove');
+      if (credsToClear[field]) {
+        hint.classList.add('is-clearing');
+        if (label) label.textContent = (GC.t && GC.t['rdp.cred.will_remove']) || 'will be removed on save';
+        if (btn) btn.textContent = (GC.t && GC.t['rdp.cred.keep']) || 'Keep';
+      } else {
+        hint.classList.remove('is-clearing');
+        if (label) label.textContent = (GC.t && GC.t['rdp.cred.set']) || 'set';
+        if (btn) btn.textContent = (GC.t && GC.t['rdp.cred.remove']) || 'Remove';
+      }
+    });
+  }
+
+  // ASCII pre-warning: shown when the loaded route is browser-enabled (the
+  // authoritative ASCII check stays server-side in validatePhase2bRoute).
+  function updateAsciiHint() {
+    var el = document.getElementById('rdp-ascii-hint');
+    if (!el) return;
+    var credsOn = credMode && credMode.value !== 'none';
+    el.style.display = (editBrowserEnabled && credsOn) ? '' : 'none';
+  }
+
+  // SSH auth-mode segment (Password | Private key)
+  var sshAuthSeg = document.getElementById('rdp-ssh-auth-seg');
+  if (sshAuthSeg) {
+    sshAuthSeg.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-auth-mode]');
+      if (!btn) return;
+      e.preventDefault();
+      sshAuthMode = btn.dataset.authMode === 'key' ? 'key' : 'password';
+      sshAuthSeg.querySelectorAll('[data-auth-mode]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.authMode === sshAuthMode);
+      });
+      updateAuthFields();
+    });
+  }
+
+  // "Remove credential" / "Keep" toggle — the ONLY way to send '' (deliberate
+  // clear). Without it an empty+has_* field is omitted (kept), never wiped.
+  var credFieldsContainer = document.getElementById('rdp-cred-fields');
+  if (credFieldsContainer) {
+    credFieldsContainer.addEventListener('click', function (e) {
+      var btn = e.target.closest('.rdp-cred-remove');
+      if (!btn) return;
+      e.preventDefault();
+      var field = btn.dataset.cred;
+      if (!field) return;
+      if (credsToClear[field]) delete credsToClear[field];
+      else credsToClear[field] = true;
+      updateCredSetHints();
     });
   }
 
@@ -778,6 +907,17 @@
     modalTitle.textContent = GC.t['rdp.add'] || 'Add RDP Route';
     document.getElementById('rdp-form').reset();
     document.getElementById('rdp-edit-id').value = '';
+    // Fresh form → no stored credentials, no pending clears, password auth-mode.
+    editCredFlags = {};
+    editBrowserEnabled = false;
+    credsToClear = {};
+    sshAuthMode = 'password';
+    var sshSeg = document.getElementById('rdp-ssh-auth-seg');
+    if (sshSeg) sshSeg.querySelectorAll('[data-auth-mode]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.authMode === 'password');
+    });
+    var storedBanner = document.getElementById('rdp-cred-stored-banner');
+    if (storedBanner) storedBanner.style.display = 'none';
     renderUserCheckboxes('rdp-user-ids', []);
     openModal('rdp-modal-overlay');
   }
@@ -805,18 +945,32 @@
       var homegwListenInput = document.getElementById('rdp-homegw-listen-port');
       if (homegwListenInput) homegwListenInput.value = r.gateway_listen_port != null ? String(r.gateway_listen_port) : '';
       document.getElementById('rdp-credential-mode').value = r.credential_mode || 'none';
-      // Load decrypted credentials from server (separate endpoint for security)
+      // Task 6 tri-state: stored secrets are NEVER returned to the client.
+      // Credential fields render EMPTY; the has_* flags from the admin detail
+      // endpoint drive the "gesetzt"/"set" hints AND the omission rule on save.
+      // Leaving a field empty keeps the stored value; only typing replaces it.
+      editCredFlags = {
+        has_username: !!r.has_username,
+        has_password: !!r.has_password,
+        has_ssh_private_key: !!r.has_ssh_private_key,
+        has_ssh_passphrase: !!r.has_ssh_passphrase,
+      };
+      editBrowserEnabled = !!r.browser_enabled;
+      credsToClear = {};
+      // ssh auth-mode: default to key when a key is stored but no password.
+      sshAuthMode = (r.protocol === 'ssh' && r.has_ssh_private_key && !r.has_password) ? 'key' : 'password';
+      var sshSeg = document.getElementById('rdp-ssh-auth-seg');
+      if (sshSeg) sshSeg.querySelectorAll('[data-auth-mode]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.authMode === sshAuthMode);
+      });
+      var storedBanner = document.getElementById('rdp-cred-stored-banner');
+      if (storedBanner) storedBanner.style.display = 'none';
       document.getElementById('rdp-username').value = '';
       document.getElementById('rdp-password').value = '';
-      if (r.credential_mode && r.credential_mode !== 'none') {
-        try {
-          var credRes = await api.get('/api/v1/rdp/' + id + '/credentials');
-          if (credRes.ok && credRes.credentials) {
-            document.getElementById('rdp-username').value = credRes.credentials.username || '';
-            document.getElementById('rdp-password').value = credRes.credentials.password || '';
-          }
-        } catch (e) { /* credentials may not be accessible */ }
-      }
+      var sshKeyEl = document.getElementById('rdp-ssh-private-key');
+      if (sshKeyEl) sshKeyEl.value = '';
+      var sshPassEl = document.getElementById('rdp-ssh-passphrase');
+      if (sshPassEl) sshPassEl.value = '';
       document.getElementById('rdp-domain').value = r.domain || '';
       document.getElementById('rdp-resolution-mode').value = r.resolution_mode || 'fullscreen';
       document.getElementById('rdp-resolution-width').value = r.resolution_width || '';
@@ -896,8 +1050,13 @@
         ? parseInt(document.getElementById('rdp-homegw-listen-port').value, 10) : null,
       credential_mode: document.getElementById('rdp-credential-mode').value,
       domain: document.getElementById('rdp-domain').value || null,
-      username: document.getElementById('rdp-username').value || null,
-      password: document.getElementById('rdp-password').value || null,
+      // Credential fields carry their RAW value (empty string when blank) so the
+      // omission rule below can tell "left empty" from "typed". Do NOT coerce to
+      // null here — that would lose the distinction the omission rule depends on.
+      username: document.getElementById('rdp-username').value,
+      password: document.getElementById('rdp-password').value,
+      ssh_private_key: (document.getElementById('rdp-ssh-private-key') || {}).value || '',
+      ssh_passphrase: (document.getElementById('rdp-ssh-passphrase') || {}).value || '',
       resolution_mode: document.getElementById('rdp-resolution-mode').value,
       resolution_width: document.getElementById('rdp-resolution-width').value ? parseInt(document.getElementById('rdp-resolution-width').value, 10) : null,
       resolution_height: document.getElementById('rdp-resolution-height').value ? parseInt(document.getElementById('rdp-resolution-height').value, 10) : null,
@@ -938,6 +1097,10 @@
     });
     data.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
 
+    // ── THE UNMODIFIED-CREDENTIAL OMISSION RULE (Chain H4 — CRITICAL) ──────
+    // Must run BEFORE serializeForm. See applyUnmodifiedCredentialOmission.
+    applyUnmodifiedCredentialOmission(data);
+
     // Null out fields meaningless in the chosen protocol (domain for non-rdp,
     // ssh-key for non-ssh, etc.). Shared username/password are never touched.
     data = GCRdpForm.serializeForm(data);
@@ -950,11 +1113,25 @@
       // ok:false instead of throwing — surface them instead of silently
       // closing the modal as if the save had succeeded.
       if (result && result.ok === false) {
-        var msg = result.error || 'Failed to save RDP route';
-        if (result.fields) {
-          var firstField = Object.keys(result.fields)[0];
-          if (firstField) msg = result.fields[firstField];
+        var fields = result.fields || {};
+        // DA-6 Stored-Secret banner: a server error on a credential the admin
+        // left EMPTY (so it was omitted and kept) is otherwise an unresolvable
+        // field message — surface a route-level banner telling them to re-enter.
+        var storedInvalid = Object.keys(fields).some(function (f) {
+          var cfg = CRED_FIELDS[f];
+          if (!cfg) return false;
+          return editingId && editCredFlags[cfg.flag] && !(f in data) && !credsToClear[f];
+        });
+        var banner = document.getElementById('rdp-cred-stored-banner');
+        if (banner) banner.style.display = storedInvalid ? '' : 'none';
+        if (storedInvalid) {
+          var authPos = currentSteps.indexOf('auth');
+          if (authPos !== -1) showWizardStep(authPos + 1);
+          return;
         }
+        var msg = result.error || 'Failed to save RDP route';
+        var firstField = Object.keys(fields)[0];
+        if (firstField) msg = fields[firstField];
         alert(msg);
         return;
       }
@@ -964,6 +1141,22 @@
       alert(err.message || 'Failed to save RDP route');
     }
   });
+
+  // THE UNMODIFIED-CREDENTIAL OMISSION RULE (Chain H4 — CRITICAL, named invariant).
+  // Delegates to the standalone, unit-tested GCRdpCred module (loaded before this
+  // script) so the production code path and tests/rdp_cred_omission.test.js drive
+  // the EXACT same logic. A credential field shown EMPTY whose stored value exists
+  // (has_* true) is OMITTED entirely from the patch so update() keeps the column;
+  // a present-but-empty value would WIPE the stored secret via encryptCredentials.
+  // Foreign-to-protocol cred fields are intentionally NOT protected here; the
+  // subsequent serializeForm nulls them (DA-8 switch-clear). Create mode is exempt.
+  function applyUnmodifiedCredentialOmission(data) {
+    GCRdpCred.applyUnmodifiedCredentialOmission(data, {
+      editingId: editingId,
+      editCredFlags: editCredFlags,
+      credsToClear: credsToClear,
+    });
+  }
 
   // -- Rotation stats -------------------------------------------
   async function loadRotationCount() {
@@ -1041,6 +1234,7 @@
     }
     currentSteps = GCRdpForm.stepsForProtocol(p, { browserEnabled: false });
     applyProtocolFields();
+    updateAuthFields();
     showWizardStep(Math.min(currentWizardStep, currentSteps.length));
   }
 
@@ -1102,6 +1296,10 @@
     if (next) next.style.display = currentWizardStep < currentSteps.length ? '' : 'none';
     if (save) save.style.display = currentWizardStep === currentSteps.length ? '' : 'none';
 
+    // Refresh the credential hints once the auth panel is actually visible
+    // (they can't be computed reliably while the modal is still hidden).
+    if (activeKey === 'auth') updateCredSetHints();
+
     if (currentWizardStep === currentSteps.length) renderWizardReview();
   }
 
@@ -1112,12 +1310,47 @@
       var btn = e.target.closest('[data-protocol]');
       if (!btn) return;
       e.preventDefault();
-      selectProtocol(btn.dataset.protocol, true);
+      var target = btn.dataset.protocol;
+      // Step 6: warn before a switch that would clear a field with content
+      // (typed or stored). username/password are protocol-shared → never cleared.
+      if (target !== currentProtocol && wouldClearSetFieldsOnSwitch(target)) {
+        if (!window.confirm(GC.t['rdp.proto_switch_confirm']
+          || 'Switching protocol clears settings that do not apply to the new protocol. Continue?')) return;
+      }
+      selectProtocol(target, true);
+    });
+  }
+
+  // A credential is "satisfied" if the admin typed a value OR a value is already
+  // stored (has_*) and not armed for removal — mirrors the omission rule so the
+  // inline pre-validation never blocks an unchanged-but-set credential.
+  function credSatisfied(field) {
+    var cfg = CRED_FIELDS[field];
+    var el = cfg && document.getElementById(cfg.dom);
+    if (el && (el.value || '').trim()) return true;
+    return !!(editingId && cfg && editCredFlags[cfg.flag] && !credsToClear[field]);
+  }
+
+  // Foreign-field → DOM id / has_* flag (only fields that exist this phase).
+  // sftp_* arrive in Task 7 and are skipped gracefully.
+  var SWITCH_DOM = { domain: 'rdp-domain', ssh_private_key: 'rdp-ssh-private-key', ssh_passphrase: 'rdp-ssh-passphrase' };
+  var SWITCH_FLAG = { ssh_private_key: 'has_ssh_private_key', ssh_passphrase: 'has_ssh_passphrase' };
+
+  // True if switching to `target` would clear a field that currently holds
+  // content — either a typed DOM value or a stored secret (edit + has_*).
+  function wouldClearSetFieldsOnSwitch(target) {
+    return GCRdpForm.foreignFieldsOnSwitch(target).some(function (f) {
+      var domId = SWITCH_DOM[f];
+      var el = domId ? document.getElementById(domId) : null;
+      if (el && (el.value || '').trim()) return true;
+      var flag = SWITCH_FLAG[f];
+      return !!(flag && editingId && editCredFlags[flag]);
     });
   }
 
   function validateWizardStep(n) {
-    if (n === 1) {
+    var key = currentSteps[n - 1];
+    if (key === 'connection') {
       var name = (document.getElementById('rdp-name') || {}).value || '';
       var host = (document.getElementById('rdp-host') || {}).value || '';
       if (!name.trim()) { alert(GC.t['rdp.name_required'] || 'Name is required'); return false; }
@@ -1126,6 +1359,23 @@
       if (accessModeEl && accessModeEl.value === 'gateway') {
         var peer = (document.getElementById('rdp-homegw-peer') || {}).value || '';
         if (!peer) { alert(GC.t['rdp.gateway_peer_required'] || 'Please pick a Home Gateway peer'); return false; }
+      }
+    }
+    // Auth step — inline pre-validation (UX only; backend stays authoritative).
+    // credential_mode 'none' suppresses all required-field UX (Chain M3).
+    if (key === 'auth' && currentProtocol === 'ssh') {
+      var mode = (document.getElementById('rdp-credential-mode') || {}).value;
+      if (mode !== 'none') {
+        if (!credSatisfied('username')) {
+          alert(GC.t['rdp.auth.username_required'] || 'Username is required'); return false;
+        }
+        if (!credSatisfied('password') && !credSatisfied('ssh_private_key')) {
+          alert(GC.t['rdp.auth.password_or_key'] || 'Enter a password or a private key'); return false;
+        }
+        var passVal = (document.getElementById('rdp-ssh-passphrase') || {}).value || '';
+        if (passVal.trim() && !credSatisfied('ssh_private_key')) {
+          alert(GC.t['rdp.auth.passphrase_needs_key'] || 'A passphrase requires a private key'); return false;
+        }
       }
     }
     return true;

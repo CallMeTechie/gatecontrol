@@ -247,6 +247,8 @@
         {# Wizard-Step 2: Auth #}
         <div data-wizard-step="2" data-step-key="auth">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_auth') }}</div>
+          {# DA-6 Stored-Secret banner: shown when a save error hits a credential field the admin left empty (has_* true). #}
+          <div id="rdp-cred-stored-banner" class="rdp-cred-banner" role="alert" style="display:none;margin-bottom:10px">{{ t('rdp.cred.stored_invalid') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.credentials') }}</label>
@@ -262,16 +264,41 @@
             </div>
           </div>
           <div id="rdp-cred-fields" style="display:none;margin-top:10px">
+            {# SSH auth-mode segment (Password | Private key) — only shown for ssh. #}
+            <div id="rdp-ssh-auth-mode" style="display:none;margin-bottom:10px">
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.mode') }}</label>
+              <div id="rdp-ssh-auth-seg" class="rdp-auth-seg" role="radiogroup" aria-label="{{ t('rdp.auth.mode') }}">
+                <button type="button" class="rdp-auth-opt active" data-auth-mode="password">{{ t('rdp.auth.mode_password') }}</button>
+                <button type="button" class="rdp-auth-opt" data-auth-mode="key">{{ t('rdp.auth.mode_key') }}</button>
+              </div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div>
                 <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.username') }}</label>
                 <input type="text" id="rdp-username" autocomplete="off" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-username" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="username">{{ t('rdp.cred.remove') }}</button></div>
               </div>
               <div id="rdp-password-group">
                 <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.password') }}</label>
                 <input type="password" id="rdp-password" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-password" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="password">{{ t('rdp.cred.remove') }}</button></div>
               </div>
             </div>
+            {# SSH key group (PEM + passphrase) — only shown for ssh in key mode. #}
+            <div id="rdp-ssh-key-group" style="display:none;margin-top:10px">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.private_key') }}</label>
+                <textarea id="rdp-ssh-private-key" rows="3" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" placeholder="{{ t('rdp.auth.private_key_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-mono, monospace);box-sizing:border-box;resize:vertical"></textarea>
+                <div id="rdp-cred-set-ssh-private-key" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="ssh_private_key">{{ t('rdp.cred.remove') }}</button></div>
+              </div>
+              <div style="margin-top:10px">
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.passphrase') }}</label>
+                <input type="password" id="rdp-ssh-passphrase" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-ssh-passphrase" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="ssh_passphrase">{{ t('rdp.cred.remove') }}</button></div>
+              </div>
+            </div>
+            {# ASCII pre-warning (UX only) — shown when the route is browser-enabled. #}
+            <div id="rdp-ascii-hint" class="rdp-ascii-hint" style="display:none;margin-top:8px">{{ t('rdp.browser.ascii_hint') }}</div>
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -464,6 +491,34 @@
       }
       .rdp-proto-opt:last-child { border-right:none; }
       .rdp-proto-opt.active { background:var(--accent); color:#fff; font-weight:600; }
+      /* SSH auth-mode segment (auth step) — mirrors the protocol segment */
+      .rdp-auth-seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-xs); overflow:hidden; }
+      .rdp-auth-opt {
+        padding:6px 14px; font-size:12px; font-family:var(--font-ui);
+        background:var(--bg-input); color:var(--text-2);
+        border:none; border-right:1px solid var(--border); cursor:pointer;
+      }
+      .rdp-auth-opt:last-child { border-right:none; }
+      .rdp-auth-opt.active { background:var(--accent); color:#fff; font-weight:600; }
+      /* "set"/"gesetzt" credential hint + inline remove action (tri-state) */
+      .rdp-cred-set { margin-top:4px; font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:8px; }
+      .rdp-cred-set-label::before { content:"●"; color:var(--accent); margin-right:4px; font-size:9px; }
+      .rdp-cred-set.is-clearing .rdp-cred-set-label { color:var(--danger, #e05555); }
+      .rdp-cred-set.is-clearing .rdp-cred-set-label::before { color:var(--danger, #e05555); }
+      .rdp-cred-remove {
+        background:none; border:none; padding:0; cursor:pointer;
+        font-size:11px; font-family:var(--font-ui); color:var(--accent); text-decoration:underline;
+      }
+      /* DA-6 Stored-Secret banner */
+      .rdp-cred-banner {
+        padding:8px 12px; font-size:11.5px; line-height:1.4;
+        border:1px solid var(--danger, #e05555);
+        border-radius:var(--radius-xs);
+        background:color-mix(in srgb, var(--danger, #e05555) 12%, transparent);
+        color:var(--danger, #e05555);
+      }
+      /* ASCII pre-warning (browser-enabled routes) */
+      .rdp-ascii-hint { font-size:11px; color:var(--text-3); line-height:1.4; }
       .rdp-step-dot {
         flex-shrink:0;
         width:28px; height:28px;
@@ -533,5 +588,6 @@
 
 {% block scripts %}
 <script src="/js/rdp-form-logic.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-cred-omission.js?v={{ appVersion }}"></script>
 <script src="/js/rdp.js?v={{ appVersion }}"></script>
 {% endblock %}
