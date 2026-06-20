@@ -927,6 +927,7 @@ function getForUser(userId) {
 }
 
 module.exports = {
+  assertDomainAvailable,
   getAll,
   getById,
   create,

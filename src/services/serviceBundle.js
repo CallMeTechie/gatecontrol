@@ -464,6 +464,7 @@ function addRoutesToBundle({ bundle_id, route_ids }) {
 }
 
 module.exports = {
+  normalizeInput,
   createBundle,
   getBundle,
   listBundles,
