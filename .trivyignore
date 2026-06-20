@@ -12,11 +12,10 @@ CVE-2026-33671
 # our deployment. Will be removed once upstream Caddy pulls otel >= 1.43.0.
 CVE-2026-39883
 
-# undici 6.26.0 bundled inside npm's own node_modules in the node:20-alpine base
-# image (usr/local/lib/node_modules/npm/node_modules/undici) — not an application
-# dependency (undici is absent from our package-lock.json). CVE-2026-12151 is a
-# WebSocket DoS (unbounded memory growth); npm is build-time only and the running
-# server never invokes npm's bundled undici WebSocket client, so it is not
-# reachable from user input. Will be resolved when the node base image ships npm
-# with undici >= 6.27.0.
+# undici in npm's OWN bundled node_modules (usr/local/lib/node_modules/npm/
+# node_modules/undici) — pulled in by `npm install -g npm@latest` in the image,
+# used only by npm itself for registry fetches, NOT reachable from gatecontrol
+# runtime (app deps live under app/node_modules and are unaffected). No fix
+# available without npm shipping a patched bundled undici. Will be removed once
+# npm@latest bundles undici with the fix.
 CVE-2026-12151

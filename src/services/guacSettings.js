@@ -1,30 +1,111 @@
 'use strict';
 const { resolveGuacTarget } = require('./guacTarget');
 
-const PHASE2A_PROTOCOLS = ['rdp', 'vnc'];
+const SUPPORTED_PROTOCOLS = ['rdp', 'vnc', 'ssh', 'telnet'];
 
-// Build a guacamole-lite connection object for rdp/vnc. Security defaults from
-// the Phase-1 columns gate clipboard/SFTP (untrusted-device threat model).
-function buildConnectionSettings(route, creds = {}) {
-  const protocol = route.protocol || 'rdp';
-  if (!PHASE2A_PROTOCOLS.includes(protocol)) {
-    throw new Error(`protocol_not_supported_in_phase2a: ${protocol}`);
-  }
-  const target = resolveGuacTarget(route);
-  const settings = {
-    hostname: target.host,
-    port: String(target.port),
-    'disable-copy': route.browser_clipboard ? 'false' : 'true',
-    'disable-paste': route.browser_clipboard ? 'false' : 'true',
-  };
-  if (creds.username) settings.username = creds.username;
-  if (creds.password) settings.password = creds.password;
-  if (protocol === 'rdp') {
-    settings.security = 'any';
-    settings['ignore-cert'] = 'true';
-  }
-  // SFTP/Audio wiring is Phase 2b; clipboard handled above.
-  return { type: protocol, settings };
+function applyClipboard(settings, route) {
+  settings['disable-copy'] = route.browser_clipboard ? 'false' : 'true';
+  settings['disable-paste'] = route.browser_clipboard ? 'false' : 'true';
 }
 
-module.exports = { buildConnectionSettings, PHASE2A_PROTOCOLS };
+function applyAudio(settings, route) {
+  if (route.protocol === 'rdp') {
+    if (route.rdp_disable_audio === 1) settings['disable-audio'] = 'true';   // NULL/0 → nothing (2a default)
+    return;
+  }
+  if (route.protocol === 'vnc') {
+    const internal = !route.access_mode || route.access_mode === 'internal' || route.access_mode === 'both';
+    if (route.browser_enable_audio && internal && route.audio_servername) {  // DA-2: non-gateway only
+      settings['enable-audio'] = 'true';
+      settings['audio-servername'] = route.audio_servername;
+    }
+  }
+}
+
+function applySftp(settings, route, creds) {
+  if (!route.browser_enable_sftp) return;
+  const internal = !route.access_mode || route.access_mode === 'internal' || route.access_mode === 'both';
+  if (!internal) return;   // DA-2: gateway/external secondary target unreachable from guacd
+  settings['enable-sftp'] = 'true';
+  settings['sftp-hostname'] = route.sftp_host || route.host;
+  settings['sftp-port'] = String(route.sftp_port || 22);
+  if (route.sftp_username) settings['sftp-username'] = route.sftp_username;
+  if (creds.sftp_password) settings['sftp-password'] = creds.sftp_password;
+  if (creds.sftp_private_key) { settings['sftp-private-key'] = creds.sftp_private_key; if (creds.sftp_passphrase) settings['sftp-passphrase'] = creds.sftp_passphrase; }
+  if (route.sftp_disable_download) settings['sftp-disable-download'] = 'true';
+  if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
+}
+
+function buildRdp(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = { hostname: t.host, port: String(t.port), security: 'any', 'ignore-cert': 'true' };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  applyAudio(settings, route);
+  applySftp(settings, route, creds);
+  return { type: 'rdp', settings };
+}
+
+function buildVnc(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = { hostname: t.host, port: String(t.port) };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  applyAudio(settings, route);
+  applySftp(settings, route, creds);
+  return { type: 'vnc', settings };
+}
+
+function buildSsh(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = {
+    hostname: t.host, port: String(t.port || 22),
+    'font-name': 'monospace', 'font-size': '12', 'color-scheme': 'gray-black',
+  };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  if (creds.ssh_private_key) {
+    settings['private-key'] = creds.ssh_private_key;
+    if (creds.ssh_passphrase) settings.passphrase = creds.ssh_passphrase;
+  }
+  // NOTE: host-key pinning is DEFERRED (guacd upstream bug GUACAMOLE-1930 — verification
+  // rejects even correct keys; see _phase2b-spike-findings.md). ssh ships accept-any.
+  // Native SFTP for ssh: uses the ssh connection itself.
+  if (route.browser_enable_sftp) {
+    settings['enable-sftp'] = 'true';
+    if (route.sftp_disable_download) settings['sftp-disable-download'] = 'true';
+    if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
+  }
+  return { type: 'ssh', settings };
+}   // Task 5
+function buildTelnet(route, creds) {
+  const t = resolveGuacTarget(route);
+  const settings = { hostname: t.host, port: String(t.port || 23),
+    'font-name': 'monospace', 'font-size': '12', 'color-scheme': 'gray-black' };
+  applyClipboard(settings, route);
+  if (creds.username) settings.username = creds.username;
+  if (creds.password) settings.password = creds.password;
+  return { type: 'telnet', settings };
+} // Task 6
+
+function buildConnectionSettings(route, creds = {}) {
+  const protocol = route.protocol || 'rdp';
+  switch (protocol) {
+    case 'rdp': return buildRdp(route, creds);
+    case 'vnc': return buildVnc(route, creds);
+    case 'ssh': return buildSsh(route, creds);
+    case 'telnet': return buildTelnet(route, creds);
+    default: throw new Error(`protocol_not_supported: ${protocol}`);
+  }
+}
+
+// Keep PHASE2A_PROTOCOLS exported as an ALIAS so the existing route import
+// (`src/routes/api/client/rdp.js` imports { PHASE2A_PROTOCOLS }) keeps working
+// until Task 10 swaps it — otherwise mint throws `undefined.includes` (500) on
+// every request between the Task-4 and Task-10 commits (review-chain C3).
+const PHASE2A_PROTOCOLS = SUPPORTED_PROTOCOLS;
+
+module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard };

@@ -1012,6 +1012,19 @@ const migrations = [
     detect: (db) => hasColumn(db, 'rdp_sessions', 'via'),
   },
   {
+    version: 56,
+    name: 'rdp_routes_phase2b_columns',
+    sql: `
+      ALTER TABLE rdp_routes ADD COLUMN ssh_private_key_encrypted TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN ssh_passphrase_encrypted TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_password_encrypted TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_private_key_encrypted TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN sftp_passphrase_encrypted TEXT;
+      ALTER TABLE rdp_routes ADD COLUMN rdp_disable_audio INTEGER DEFAULT NULL;
+    `,
+    detect: (db) => hasColumn(db, 'rdp_routes', 'sftp_passphrase_encrypted'),
+  },
+  {
     version: 57,
     name: 'egress_lan_port_unique',
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_egress_near_port_unique
