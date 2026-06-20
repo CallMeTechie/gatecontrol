@@ -3,13 +3,9 @@
 const { Router } = require('express');
 const bundles = require('../../services/serviceBundle');
 const logger = require('../../utils/logger');
-const { getDb } = require('../../db/connection');
-const { hasFeature, getFeatureLimit } = require('../../services/license');
+const { evaluateRouteLicense } = require('../../services/routeLicense');
 
 const router = Router();
-
-const httpRouteCount = () => getDb().prepare("SELECT COUNT(*) c FROM routes WHERE route_type = 'http' OR route_type IS NULL").get().c;
-const l4RouteCount = () => getDb().prepare("SELECT COUNT(*) c FROM routes WHERE route_type = 'l4'").get().c;
 
 function deny(res, req, key, extra = {}) {
   return res.status(403).json({
@@ -26,35 +22,14 @@ function deny(res, req, key, extra = {}) {
 function checkCreateLicense(req, res) {
   const body = req.body || {};
   const l4List = Array.isArray(body.l4) ? body.l4 : [];
-
-  if (body.http) {
-    const limit = getFeatureLimit('http_routes');
-    if (limit === 0) { deny(res, req, 'error.license.feature_not_available', { feature: 'http_routes' }); return false; }
-    if (limit !== -1 && httpRouteCount() + 1 > limit) {
-      deny(res, req, 'error.license.limit_reached', { feature: 'http_routes', current: httpRouteCount(), limit });
-      return false;
-    }
-  }
-
-  if (l4List.length > 0) {
-    const limit = getFeatureLimit('l4_routes');
-    if (limit === 0) { deny(res, req, 'error.license.feature_not_available', { feature: 'l4_routes' }); return false; }
-    if (limit !== -1 && l4RouteCount() + l4List.length > limit) {
-      deny(res, req, 'error.license.limit_reached', { feature: 'l4_routes', current: l4RouteCount(), limit });
-      return false;
-    }
-    const target = body.target || {};
-    if (target.target_kind === 'gateway' && !hasFeature('gateway_tcp_routing')) {
-      deny(res, req, 'error.license.feature_not_available', { feature: 'gateway_tcp_routing' });
-      return false;
-    }
-  }
-
-  if (body.target && body.target.wol_enabled && !hasFeature('gateway_wol')) {
-    deny(res, req, 'error.license.feature_not_available', { feature: 'gateway_wol' });
-    return false;
-  }
-
+  const verdict = evaluateRouteLicense({
+    httpCount: body.http ? 1 : 0,
+    l4Count: l4List.length,
+    targetKind: (body.target || {}).target_kind,
+    wol: !!(body.target && body.target.wol_enabled),
+    scanEgress: false,
+  });
+  if (!verdict.ok) { deny(res, req, verdict.key, verdict.extra); return false; }
   return true;
 }
 
