@@ -922,11 +922,11 @@
   // carries data-wizard-step="N". All steps > currentStep are hidden.
   // This reuses the existing form state + save handler 1:1 — the
   // wizard is purely a presentation layer on top of the same <form>.
-  var WIZARD_TOTAL_STEPS = 6;
+  var currentSteps = GCRdpForm.stepsForProtocol('rdp');
   var currentWizardStep = 1;
 
   function showWizardStep(n) {
-    currentWizardStep = Math.max(1, Math.min(WIZARD_TOTAL_STEPS, n));
+    currentWizardStep = Math.max(1, Math.min(currentSteps.length, n));
     var modal = document.getElementById('rdp-modal');
     if (!modal) return;
 
@@ -956,7 +956,7 @@
       var tpl = GC.t['rdp.wizard.step_of'] || 'Step {{current}} of {{total}}';
       sub.textContent = tpl
         .replace('{{current}}', String(currentWizardStep))
-        .replace('{{total}}', String(WIZARD_TOTAL_STEPS));
+        .replace('{{total}}', String(currentSteps.length));
     }
 
     // Step title next to the counter — pulled from the active dot's data-label
@@ -971,10 +971,10 @@
     var next = document.getElementById('rdp-wizard-next');
     var save = document.getElementById('rdp-modal-save');
     if (prev) prev.style.display = currentWizardStep > 1 ? '' : 'none';
-    if (next) next.style.display = currentWizardStep < WIZARD_TOTAL_STEPS ? '' : 'none';
-    if (save) save.style.display = currentWizardStep === WIZARD_TOTAL_STEPS ? '' : 'none';
+    if (next) next.style.display = currentWizardStep < currentSteps.length ? '' : 'none';
+    if (save) save.style.display = currentWizardStep === currentSteps.length ? '' : 'none';
 
-    if (currentWizardStep === WIZARD_TOTAL_STEPS) renderWizardReview();
+    if (currentWizardStep === currentSteps.length) renderWizardReview();
   }
 
   function validateWizardStep(n) {
