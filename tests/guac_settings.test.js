@@ -36,7 +36,7 @@ describe('buildConnectionSettings', () => {
     assert.equal(c.settings.security, undefined);
     assert.equal(c.settings['ignore-cert'], undefined);
   });
-  it('throws for non rdp/vnc in phase 2a', () => {
-    assert.throws(() => buildConnectionSettings({ ...base, protocol: 'ssh' }, {}));
+  it('throws for an unknown protocol', () => {
+    assert.throws(() => buildConnectionSettings({ ...base, protocol: 'foo' }, {}));
   });
 });
