@@ -21,12 +21,12 @@ router.post('/', async (req, res) => {
     // Gateway push: near peer (egress) + NAS peer (skipSync'd NAS route). A failed
     // push is NOT fatal (route is live, self-heal reconcile picks it up) → warning (R1-G5).
     const warnings = [];
-    const push = async (pid) => { try { await gateways.notifyConfigChanged(pid); } catch (_e) { warnings.push(`gateway ${pid} push failed (self-heal will reconcile)`); } };
+    const push = async (pid) => { try { await gateways.notifyConfigChanged(pid); } catch (_e) { warnings.push(req.t('printer_preset.warning_push_failed', { id: pid })); } };
     if (result.egress_id) await push(b.near_peer_id);
     if (result.nas_route_id && b.scan && b.scan.target && b.scan.target.nas_peer_id) await push(b.scan.target.nas_peer_id);
     res.status(201).json({ ok: true, preset: { ...result, warning: warnings.length ? warnings.join('; ') : null } });
   } catch (err) {
-    if (err.statusCode === 409) return res.status(409).json({ ok: false, error: err.message, code: err.code });
+    if (err.statusCode === 409) return res.status(409).json({ ok: false, error: req.t('error.preset.domain_conflict'), code: err.code });
     if (err.statusCode === 400) return res.status(400).json({ ok: false, error: err.message });
     if ((err.message || '').includes('Caddy')) return res.status(502).json({ ok: false, error: req.t('error.routes.caddy_unreachable') });
     logger.error({ error: err.message }, 'printer preset failed');
