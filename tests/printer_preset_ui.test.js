@@ -37,3 +37,24 @@ describe('buildPresetBody', () => {
     assert.equal(body.scan.target.mode, 'new'); assert.equal(body.scan.vip_ip, '192.168.2.250');
   });
 });
+
+// Discovery-adopt fix: the wizard must be capability/enabled-aware and actively
+// trigger a scan (not just read the in-memory cache and mislabel an empty result
+// as "gateway does not support discovery").
+const en = require('../src/i18n/en.json');
+const de = require('../src/i18n/de.json');
+const ADOPT_KEYS = ['printer_preset.adopt_unsupported', 'printer_preset.adopt_not_enabled', 'printer_preset.adopt_scanning', 'printer_preset.adopt_none', 'printer_preset.adopt_failed'];
+describe('printer-preset discovery adopt (capability-aware)', () => {
+  it('wizard references the capability-aware adopt message keys', () => {
+    for (const k of ADOPT_KEYS) assert.ok(js.includes(k), 'routes.js missing ' + k);
+  });
+  it('wizard no longer mislabels an empty result with routes.suggested.unavailable in the adopt handler', () => {
+    // The misleading reuse of routes.suggested.unavailable for the adopt empty-state is gone.
+    // (The route-create discovery flow legitimately uses gateways.discovery.* keys instead.)
+    assert.ok(!/printer_preset\.adopt'[\s\S]{0,1200}routes\.suggested\.unavailable/.test(js),
+      'adopt handler must not fall back to routes.suggested.unavailable');
+  });
+  it('new adopt keys exist in both locales (en + de parity)', () => {
+    for (const k of ADOPT_KEYS) { assert.ok(k in en, 'en missing ' + k); assert.ok(k in de, 'de missing ' + k); }
+  });
+});
