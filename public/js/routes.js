@@ -5052,7 +5052,7 @@
     // Footer: turn next into a "Close" that closes + reloads routes.
     backBtn.style.visibility = 'hidden';
     nextBtn.textContent = T('common.close', 'Close');
-    nextBtn.onclick = function () { closeWizard(); if (typeof loadRoutes === 'function') loadRoutes(); };
+    nextBtn.onclick = function () { closeWizard(); document.dispatchEvent(new Event('gc:monitor')); };
   }
 
   function openWizard() {
