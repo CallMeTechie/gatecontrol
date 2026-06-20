@@ -22,13 +22,28 @@ function applyAudio(settings, route) {
   }
 }
 
+function applySftp(settings, route, creds) {
+  if (!route.browser_enable_sftp) return;
+  const internal = !route.access_mode || route.access_mode === 'internal' || route.access_mode === 'both';
+  if (!internal) return;   // DA-2: gateway/external secondary target unreachable from guacd
+  settings['enable-sftp'] = 'true';
+  settings['sftp-hostname'] = route.sftp_host || route.host;
+  settings['sftp-port'] = String(route.sftp_port || 22);
+  if (route.sftp_username) settings['sftp-username'] = route.sftp_username;
+  if (creds.sftp_password) settings['sftp-password'] = creds.sftp_password;
+  if (creds.sftp_private_key) { settings['sftp-private-key'] = creds.sftp_private_key; if (creds.sftp_passphrase) settings['sftp-passphrase'] = creds.sftp_passphrase; }
+  if (route.sftp_disable_download) settings['sftp-disable-download'] = 'true';
+  if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
+}
+
 function buildRdp(route, creds) {
   const t = resolveGuacTarget(route);
   const settings = { hostname: t.host, port: String(t.port), security: 'any', 'ignore-cert': 'true' };
   applyClipboard(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
-  applyAudio(settings, route); // Task 8 inserts applySftp(settings, route, creds);
+  applyAudio(settings, route);
+  applySftp(settings, route, creds);
   return { type: 'rdp', settings };
 }
 
@@ -38,7 +53,8 @@ function buildVnc(route, creds) {
   applyClipboard(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
-  applyAudio(settings, route); // Task 8 inserts applySftp.
+  applyAudio(settings, route);
+  applySftp(settings, route, creds);
   return { type: 'vnc', settings };
 }
 
