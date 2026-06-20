@@ -23,6 +23,18 @@ function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
 }
 
+// Decrypt a gateway push token without ever throwing. A corrupt/partial-enrollment
+// row (undecryptable push_token_encrypted) must not crash the server when an admin
+// triggers a push action — callers treat null as "gateway unreachable".
+function _decryptPushToken(encrypted, peerId) {
+  try {
+    return decrypt(encrypted);
+  } catch (err) {
+    logger.warn({ err: err.message, peerId }, 'Gateway push token decrypt failed — treating gateway as unreachable');
+    return null;
+  }
+}
+
 const _smCache = new Map(); // peerId → StateMachine
 
 function _getSm(peerId) {
@@ -359,7 +371,8 @@ async function notifyConfigChanged(peerId) {
   `).get(peerId);
   if (!row) return;
 
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return;
   const ip = _peerIp(row.allowed_ips);
 
   await new Promise((resolve) => {
@@ -399,7 +412,8 @@ async function notifyWol(peerId, { mac, lan_host, timeout_ms = 60000 }) {
   `).get(peerId);
   if (!row) return null;
 
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return null;
   const ip = _peerIp(row.allowed_ips);
   const payload = JSON.stringify({ mac, lan_host, timeout_ms });
 
@@ -443,7 +457,8 @@ async function notifyLanScan(peerId, { request_id, subnets, category_mode, categ
     WHERE gm.peer_id = ?
   `).get(peerId);
   if (!row) return null;
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return null;
   const ip = _peerIp(row.allowed_ips);
   const payload = JSON.stringify({ request_id, subnets, category_mode, categories, active_scan, timeout_ms });
   return new Promise((resolve) => {
@@ -475,7 +490,8 @@ async function probeGatewayTarget(peerId, host, port) {
     WHERE gm.peer_id = ?
   `).get(peerId);
   if (!row) return null;
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return null;
   const ip = _peerIp(row.allowed_ips);
   const payload = JSON.stringify({ host, port });
   return new Promise((resolve) => {
@@ -835,7 +851,8 @@ async function notifySelfUpdate(peerId, { request_id, target_version } = {}) {
   const row = db.prepare(`SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
     FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id WHERE gm.peer_id = ?`).get(peerId);
   if (!row) return { ok: false };
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return { ok: false };
   const ip = _peerIp(row.allowed_ips);
   const payload = JSON.stringify({ request_id, target_version });
   return new Promise((resolve) => {
@@ -867,7 +884,8 @@ async function refreshHealth(peerId) {
   `).get(peerId);
   if (!row || row.peer_type !== 'gateway') return null;
 
-  const pushToken = decrypt(row.push_token_encrypted);
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return null;
   const ip = _peerIp(row.allowed_ips);
   const fresh = await new Promise((resolve) => {
     let body = '';
