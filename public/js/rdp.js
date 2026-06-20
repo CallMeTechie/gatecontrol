@@ -760,11 +760,25 @@
         ? (GC.t['rdp.host_hint.gateway'] || hostHint.textContent)
         : (GC.t['rdp.host_hint.default'] || hostHint.textContent);
     }
+
+    // DA-2: access-mode changes re-evaluate the browser-step SFTP/Audio lock.
+    applyBrowserFields();
   }
 
   if (accessMode) {
     accessMode.addEventListener('change', updateAccessModeFields);
     updateAccessModeFields();
+  }
+
+  // Browser-access entry toggle: recompute the step model so the dedicated
+  // "Browser access" step appears/disappears, then re-render the wizard.
+  var browserEnabledEl = document.getElementById('rdp-browser-enabled');
+  if (browserEnabledEl) {
+    browserEnabledEl.addEventListener('change', function () {
+      currentSteps = GCRdpForm.stepsForProtocol(currentProtocol, { browserEnabled: browserEnabledEl.checked });
+      applyBrowserFields();
+      showWizardStep(Math.min(currentWizardStep, currentSteps.length));
+    });
   }
 
   // -- Peer autocomplete for Host field ---------------------------
@@ -954,6 +968,9 @@
         has_password: !!r.has_password,
         has_ssh_private_key: !!r.has_ssh_private_key,
         has_ssh_passphrase: !!r.has_ssh_passphrase,
+        has_sftp_password: !!r.has_sftp_password,
+        has_sftp_private_key: !!r.has_sftp_private_key,
+        has_sftp_passphrase: !!r.has_sftp_passphrase,
       };
       editBrowserEnabled = !!r.browser_enabled;
       credsToClear = {};
@@ -1001,6 +1018,25 @@
       document.getElementById('rdp-rotation-days').value = r.credential_rotation_days || 90;
       document.getElementById('rdp-notes').value = r.notes || '';
       try { var t = JSON.parse(r.tags || '[]'); document.getElementById('rdp-tags').value = Array.isArray(t) ? t.join(', ') : ''; } catch { document.getElementById('rdp-tags').value = ''; }
+
+      // Browser-access fields (Task 7). Secrets are never returned — sftp secret
+      // inputs render empty; has_sftp_* flags drive the "set" hints + omission.
+      document.getElementById('rdp-browser-enabled').checked = !!r.browser_enabled;
+      document.getElementById('rdp-browser-clipboard').checked = !!r.browser_clipboard;
+      document.getElementById('rdp-browser-sftp').checked = !!r.browser_enable_sftp;
+      // Secure default: locks default ON (1); only an explicit 0 unlocks transfer.
+      document.getElementById('rdp-sftp-disable-download').checked = r.sftp_disable_download !== 0;
+      document.getElementById('rdp-sftp-disable-upload').checked = r.sftp_disable_upload !== 0;
+      document.getElementById('rdp-sftp-host').value = r.sftp_host || '';
+      document.getElementById('rdp-sftp-port').value = r.sftp_port != null ? r.sftp_port : '';
+      document.getElementById('rdp-sftp-username').value = r.sftp_username || '';
+      document.getElementById('rdp-sftp-password').value = '';
+      document.getElementById('rdp-sftp-private-key').value = '';
+      document.getElementById('rdp-sftp-passphrase').value = '';
+      // rdp audio shown INVERTED: "Audio active" = NOT rdp_disable_audio.
+      document.getElementById('rdp-browser-audio-rdp').checked = !r.rdp_disable_audio;
+      document.getElementById('rdp-browser-audio-vnc').checked = !!r.browser_enable_audio;
+      document.getElementById('rdp-audio-servername').value = r.audio_servername || '';
 
       // User visibility
       var userIds = [];
@@ -1090,6 +1126,48 @@
       tags: document.getElementById('rdp-tags').value ? document.getElementById('rdp-tags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean) : null,
     };
 
+    // ── Browser-access fields (Task 7) ─────────────────────────────────
+    // Curated + advanced. DA-2: when access_mode is gateway/external, SFTP and
+    // Audio are forced OFF/null here too (defence-in-depth beyond the UI lock),
+    // so a gateway route can never persist SFTP or audio even if the DOM lock
+    // were bypassed.
+    (function applyBrowserPayload() {
+      var browserOn = (document.getElementById('rdp-browser-enabled') || {}).checked || false;
+      var am = data.access_mode;
+      var internal = !(am === 'gateway' || am === 'external');
+      var isRdp = currentProtocol === 'rdp', isVnc = currentProtocol === 'vnc';
+      var rdpvnc = isRdp || isVnc;
+      var sftpProto = rdpvnc || currentProtocol === 'ssh';      // telnet → no SFTP
+      var secondaryOn = browserOn && internal && rdpvnc;        // secondary host/creds
+
+      data.browser_enabled = browserOn;
+      data.browser_clipboard = browserOn ? document.getElementById('rdp-browser-clipboard').checked : false;
+      // SFTP only when browser on, protocol supports it, AND internal (DA-2).
+      data.browser_enable_sftp = (browserOn && internal && sftpProto)
+        ? document.getElementById('rdp-browser-sftp').checked : false;
+      // Transfer locks — secure default ON; persisted as 0/1.
+      data.sftp_disable_download = document.getElementById('rdp-sftp-disable-download').checked ? 1 : 0;
+      data.sftp_disable_upload = document.getElementById('rdp-sftp-disable-upload').checked ? 1 : 0;
+      // Secondary SFTP target/creds — rdp/vnc + internal only; else null.
+      // (serializeForm additionally nulls all sftp_* when switching to ssh/telnet.)
+      data.sftp_host = secondaryOn ? (document.getElementById('rdp-sftp-host').value || null) : null;
+      data.sftp_port = (secondaryOn && document.getElementById('rdp-sftp-port').value)
+        ? parseInt(document.getElementById('rdp-sftp-port').value, 10) : null;
+      data.sftp_username = secondaryOn ? (document.getElementById('rdp-sftp-username').value || null) : null;
+      // Secret fields carry their RAW value; the omission rule below decides keep/clear.
+      data.sftp_password = secondaryOn ? document.getElementById('rdp-sftp-password').value : '';
+      data.sftp_private_key = secondaryOn ? document.getElementById('rdp-sftp-private-key').value : '';
+      data.sftp_passphrase = secondaryOn ? document.getElementById('rdp-sftp-passphrase').value : '';
+      // Audio. rdp: "Audio active" checkbox → rdp_disable_audio is its INVERSE.
+      data.rdp_disable_audio = (isRdp && browserOn && internal)
+        ? (document.getElementById('rdp-browser-audio-rdp').checked ? 0 : 1) : null;
+      data.browser_enable_audio = (isVnc && browserOn && internal)
+        ? document.getElementById('rdp-browser-audio-vnc').checked : false;
+      data.audio_servername = (isVnc && browserOn && internal
+        && document.getElementById('rdp-browser-audio-vnc').checked)
+        ? (document.getElementById('rdp-audio-servername').value || null) : null;
+    })();
+
     // User visibility
     var selectedUserIds = [];
     document.querySelectorAll('.rdp-user-cb:checked').forEach(function (cb) {
@@ -1100,6 +1178,21 @@
     // ── THE UNMODIFIED-CREDENTIAL OMISSION RULE (Chain H4 — CRITICAL) ──────
     // Must run BEFORE serializeForm. See applyUnmodifiedCredentialOmission.
     applyUnmodifiedCredentialOmission(data);
+
+    // Same omission rule for the secondary SFTP secrets (Task 7). The shared
+    // GCRdpCred module intentionally only covers the four ssh/login secrets, so
+    // the three sftp secrets are handled here: an empty field whose stored value
+    // exists (has_sftp_* true) is OMITTED so update() keeps the encrypted column;
+    // a present-but-empty value would WIPE it. serializeForm still nulls them on
+    // a switch to ssh/telnet (DA-8). Create mode (no editingId) never omits.
+    [['sftp_password', 'has_sftp_password'],
+     ['sftp_private_key', 'has_sftp_private_key'],
+     ['sftp_passphrase', 'has_sftp_passphrase']].forEach(function (pair) {
+      var v = data[pair[0]];
+      if ((v === '' || v === null || v === undefined) && editingId && editCredFlags[pair[1]]) {
+        delete data[pair[0]];
+      }
+    });
 
     // Null out fields meaningless in the chosen protocol (domain for non-rdp,
     // ssh-key for non-ssh, etc.). Shared username/password are never touched.
@@ -1212,6 +1305,79 @@
     });
   }
 
+  // ── Browser-access step (Task 7) ───────────────────────────────────
+  // True when the browser-access entry toggle is on. Drives whether the
+  // 'browser' step is part of currentSteps (stepsForProtocol inserts it).
+  function browserEnabled() {
+    var el = document.getElementById('rdp-browser-enabled');
+    return !!(el && el.checked);
+  }
+  function _isGatewayish(m) { return m === 'gateway' || m === 'external'; }
+  function _setDisplay(id, show) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  }
+  // Lock a control group: dim it AND disable every contained input (so the
+  // value can't be edited and won't be picked up by tab/keyboard either).
+  function _setGroupLocked(id, locked) {
+    var c = document.getElementById(id);
+    if (!c) return;
+    c.classList.toggle('rdp-browser-blocked', locked);
+    c.querySelectorAll('input, select, textarea').forEach(function (el) { el.disabled = locked; });
+  }
+
+  // DA-2 / CARRY-FORWARD: when access_mode is gateway/external, SFTP and Audio
+  // must be blocked COMPLETELY. visibleFieldsFor only gates 3 of the 6 sftp
+  // fields (username/host/password); these container ids cover ALL SIX sftp
+  // fields (username, host, port, password, private_key, passphrase live inside
+  // #rdp-sftp-secondary) PLUS the sftp enable toggle, the transfer-lock toggles,
+  // and every audio control (rdp_disable_audio, browser_enable_audio, audio_servername).
+  var SFTP_BLOCK_IDS  = ['rdp-browser-sftp-row', 'rdp-sftp-locks', 'rdp-sftp-secondary'];
+  var AUDIO_BLOCK_IDS = ['rdp-browser-audio-rdp-row', 'rdp-browser-audio-vnc-row', 'rdp-audio-servername-row'];
+
+  // Adapt the browser step to protocol + access_mode + toggle state.
+  function applyBrowserFields() {
+    var on = browserEnabled();
+    var amEl = document.getElementById('rdp-access-mode');
+    var internal = !_isGatewayish(amEl && amEl.value);
+    var p = currentProtocol;
+    var isRdp = p === 'rdp', isVnc = p === 'vnc', rdpvnc = isRdp || isVnc;
+
+    var reveal = document.getElementById('rdp-browser-reveal');
+    if (reveal) reveal.style.display = on ? '' : 'none';
+
+    // Per-protocol presence (independent of the gateway lock)
+    _setDisplay('rdp-browser-sftp-row', on && p !== 'telnet');     // ssh native / rdp-vnc secondary
+    _setDisplay('rdp-sftp-secondary', on && rdpvnc);               // secondary host/port/creds: rdp/vnc only
+    _setDisplay('rdp-sftp-locks', on && p !== 'telnet');
+    _setDisplay('rdp-browser-audio-rdp-row', on && isRdp);         // rdp_disable_audio (inverted)
+    _setDisplay('rdp-browser-audio-vnc-row', on && isVnc);         // browser_enable_audio
+    _setDisplay('rdp-audio-servername-row', on && isVnc);
+
+    // SFTP mode hint text (native over SSH vs secondary connection)
+    var modeHint = document.getElementById('rdp-browser-sftp-mode-hint');
+    if (modeHint) {
+      modeHint.textContent = p === 'ssh'
+        ? '— ' + (GC.t['rdp.browser.sftp_native'] || 'native over SSH')
+        : '— ' + (GC.t['rdp.browser.sftp_secondary'] || 'secondary connection');
+    }
+
+    // DA-2 gateway/external lock — block ALL sftp + audio controls.
+    var blocked = on && !internal;
+    SFTP_BLOCK_IDS.forEach(function (id) { _setGroupLocked(id, blocked); });
+    AUDIO_BLOCK_IDS.forEach(function (id) { _setGroupLocked(id, blocked); });
+    _setDisplay('rdp-browser-gateway-hint', blocked && (p !== 'telnet' || isRdp || isVnc));
+
+    // Stored-secret hints for the secondary SFTP credentials (edit mode only).
+    var secondaryOn = on && rdpvnc && internal;
+    [['rdp-cred-set-sftp-password', 'has_sftp_password'],
+     ['rdp-cred-set-sftp-private-key', 'has_sftp_private_key'],
+     ['rdp-cred-set-sftp-passphrase', 'has_sftp_passphrase']].forEach(function (pair) {
+      var h = document.getElementById(pair[0]);
+      if (h) h.style.display = (secondaryOn && editingId && editCredFlags[pair[1]]) ? '' : 'none';
+    });
+  }
+
   // Switch protocol: recompute steps, sync segment UI, adapt fields, set the
   // default port (only if the field still holds the previous default), clamp
   // the current step to the new length and re-render.
@@ -1232,8 +1398,9 @@
         }
       }
     }
-    currentSteps = GCRdpForm.stepsForProtocol(p, { browserEnabled: false });
+    currentSteps = GCRdpForm.stepsForProtocol(p, { browserEnabled: browserEnabled() });
     applyProtocolFields();
+    applyBrowserFields();
     updateAuthFields();
     showWizardStep(Math.min(currentWizardStep, currentSteps.length));
   }
@@ -1258,6 +1425,9 @@
       d.classList.remove('active', 'done');
       if (pos === -1) { d.style.display = 'none'; return; }
       d.style.display = '';
+      // Number the dot by its compacted position (mockup behaviour) so an
+      // inserted/omitted step never leaves a gap or duplicate in the bar.
+      d.textContent = String(pos + 1);
       if (pos + 1 === currentWizardStep) d.classList.add('active');
       else if (pos + 1 < currentWizardStep) d.classList.add('done');
     });
