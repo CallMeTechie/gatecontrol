@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.88.2] — 2026-06-20
+
+### Fixes
+- push-token decrypt failures are non-fatal (no crash on corrupt token) (#149)
+
+---
+
 ## [1.88.1] — 2026-06-20
 
 ### Fixes
