@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.3] — 2026-06-20
+
+### Fixes
+- egress + Add-target form now actually opens (insertBefore NotFoundError) (#145)
+
+---
+
 ## [1.87.2] — 2026-06-19
 
 ### Fixes
