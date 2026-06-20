@@ -261,10 +261,16 @@ function getById(id, includeCredentials = false) {
     const safe = stripSensitive(row);
     safe.username = creds.username;
     safe.password = creds.password;
+    safe.ssh_private_key = creds.ssh_private_key;
+    safe.ssh_passphrase = creds.ssh_passphrase;
+    safe.sftp_password = creds.sftp_password;
+    safe.sftp_private_key = creds.sftp_private_key;
+    safe.sftp_passphrase = creds.sftp_passphrase;
     // Propagate the decrypt-failure signal so callers can emit a clear
     // error instead of shipping empty credentials (e.g. after a
     // GC_ENCRYPTION_KEY rotation left ciphertext unreadable).
     safe.decrypt_failed = creds.decrypt_failed === true;
+    safe.decrypt_failed_fields = creds.decrypt_failed_fields;
     return safe;
   }
   return stripSensitive(row);

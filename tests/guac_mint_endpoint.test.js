@@ -34,11 +34,11 @@ describe('POST /client/rdp/:id/browser-session', () => {
     const res = await agent.post(`/api/v1/client/rdp/${r.id}/browser-session`).set('X-CSRF-Token', csrf).expect(403);
     assert.equal(res.body.ok, false);
   });
-  it('rejects ssh (unsupported protocol in phase 2a)', async () => {
-    const r = await rdpSvc.create({ name: 'b3', host: '10.0.0.7', protocol: 'ssh', username: 'u' });
+  it('mints 200 for ssh route (phase 2b: ssh now supported)', async () => {
+    const r = await rdpSvc.create({ name: 'b3', host: '10.0.0.7', protocol: 'ssh', port: 22, username: 'u', password: 'p' });
     await rdpSvc.update(r.id, { browser_enabled: true });
-    const res = await agent.post(`/api/v1/client/rdp/${r.id}/browser-session`).set('X-CSRF-Token', csrf).expect(400);
-    assert.equal(res.body.ok, false);
+    const res = await agent.post(`/api/v1/client/rdp/${r.id}/browser-session`).set('X-CSRF-Token', csrf).expect(200);
+    assert.equal(res.body.ok, true);
   });
   it('rejects without the browser_sessions license', async () => {
     license._overrideForTest({ ...license.COMMUNITY_FALLBACK, browser_sessions: false, remote_desktop: true });
