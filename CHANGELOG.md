@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.88.1] — 2026-06-20
+
+### Fixes
+- discovery adopt capability-aware + triggers scan (no more misleading 'no discovery support') (#148)
+
+---
+
 ## [1.88.0] — 2026-06-20
 
 ### Features
