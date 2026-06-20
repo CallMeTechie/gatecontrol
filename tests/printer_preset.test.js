@@ -105,13 +105,19 @@ describe('printerPreset orchestration', () => {
     const nas = db.prepare("SELECT external_enabled,target_kind,route_type FROM routes WHERE id=?").get(res.nas_route_id);
     assert.deepEqual([nas.route_type, nas.target_kind, nas.external_enabled], ['l4', 'gateway', 0]);
   });
-  it('rolls back the NAS route when a later step throws (caddy untouched)', async () => {
-    const before = db.prepare("SELECT COUNT(*) c FROM routes").get().c;
-    await assert.rejects(() => preset.createPreset({
-      near_peer_id: gwPeerId, printer_ip: '192.168.2.46', name: 'P2', print_ports: [9100], ews: null,
-      scan: { enabled: true, vip_ip: '10.0.0.1' /* outside subnet → egress validate fails in stage B */, vip_prefix: 24, target: { mode: 'new', nas_ip: '192.168.9.10', nas_peer_id: gwPeerId } },
-    }));
-    const after = db.prepare("SELECT COUNT(*) c FROM routes").get().c;
-    assert.equal(after, before, 'NAS route was rolled back via DB-DELETE');
+  it('rolls back the NAS route + egress when the bundle step throws (caddy untouched)', async () => {
+    const sb = require('../src/services/serviceBundle');
+    const orig = sb.createBundle;
+    sb.createBundle = async () => { throw new Error('boom: bundle sync failed'); };
+    try {
+      const r0 = db.prepare("SELECT COUNT(*) c FROM routes").get().c;
+      const e0 = db.prepare("SELECT COUNT(*) c FROM egress_routes").get().c;
+      await assert.rejects(() => preset.createPreset({
+        near_peer_id: gwPeerId, printer_ip: '192.168.2.48', name: 'RB', print_ports: [9100], ews: null,
+        scan: { enabled: true, vip_ip: '192.168.2.252', vip_prefix: 24, target: { mode: 'new', nas_ip: '192.168.2.11', nas_peer_id: gwPeerId } },
+      }), /boom/);
+      assert.equal(db.prepare("SELECT COUNT(*) c FROM routes").get().c, r0, 'NAS route rolled back via DB-DELETE');
+      assert.equal(db.prepare("SELECT COUNT(*) c FROM egress_routes").get().c, e0, 'egress rolled back');
+    } finally { sb.createBundle = orig; }
   });
 });
