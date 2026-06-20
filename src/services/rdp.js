@@ -290,7 +290,10 @@ async function create(data) {
       protocol,
       browser_enabled, browser_enable_sftp, sftp_host, sftp_port, sftp_username,
       sftp_disable_download, sftp_disable_upload,
-      browser_enable_audio, audio_servername, browser_clipboard
+      browser_enable_audio, audio_servername, browser_clipboard,
+      ssh_private_key_encrypted, ssh_passphrase_encrypted,
+      sftp_password_encrypted, sftp_private_key_encrypted, sftp_passphrase_encrypted,
+      rdp_disable_audio
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -310,7 +313,9 @@ async function create(data) {
       ?,
       ?, ?, ?, ?, ?,
       ?, ?,
-      ?, ?, ?
+      ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?
     )
   `).run(
     data.name.trim(),
@@ -380,6 +385,12 @@ async function create(data) {
     data.browser_enable_audio ? 1 : 0,
     data.audio_servername || null,
     data.browser_clipboard ? 1 : 0,
+    encrypted.ssh_private_key_encrypted || null,
+    encrypted.ssh_passphrase_encrypted || null,
+    encrypted.sftp_password_encrypted || null,
+    encrypted.sftp_private_key_encrypted || null,
+    encrypted.sftp_passphrase_encrypted || null,
+    data.rdp_disable_audio == null ? null : (data.rdp_disable_audio ? 1 : 0),
   );
 
   const routeId = result.lastInsertRowid;
@@ -532,6 +543,7 @@ async function update(id, data) {
     'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
     'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
     'sftp_port',
+    'rdp_disable_audio',
   ];
 
   const booleanFields = [
@@ -550,6 +562,7 @@ async function update(id, data) {
     'resolution_width', 'resolution_height',
     'color_depth', 'bandwidth_limit', 'session_timeout', 'credential_rotation_days',
     'sftp_port',
+    'rdp_disable_audio',
   ];
 
   for (const field of directFields) {
@@ -576,6 +589,30 @@ async function update(id, data) {
     const enc = encryptCredentials({ password: data.password });
     sets.push('password_encrypted = ?');
     values.push(enc.password_encrypted || null);
+  }
+
+  {
+    const enc = encryptCredentials(data);
+    if (enc.ssh_private_key_encrypted !== undefined) {
+      sets.push('ssh_private_key_encrypted = ?');
+      values.push(enc.ssh_private_key_encrypted);
+    }
+    if (enc.ssh_passphrase_encrypted !== undefined) {
+      sets.push('ssh_passphrase_encrypted = ?');
+      values.push(enc.ssh_passphrase_encrypted);
+    }
+    if (enc.sftp_password_encrypted !== undefined) {
+      sets.push('sftp_password_encrypted = ?');
+      values.push(enc.sftp_password_encrypted);
+    }
+    if (enc.sftp_private_key_encrypted !== undefined) {
+      sets.push('sftp_private_key_encrypted = ?');
+      values.push(enc.sftp_private_key_encrypted);
+    }
+    if (enc.sftp_passphrase_encrypted !== undefined) {
+      sets.push('sftp_passphrase_encrypted = ?');
+      values.push(enc.sftp_passphrase_encrypted);
+    }
   }
 
   if (data.maintenance_schedule !== undefined) {
