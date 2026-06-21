@@ -1640,6 +1640,7 @@
   "gateways.kpi_update": "Update",
   "gateways.back_to_fleet": "Zurück zur Flotte",
   "gateways.recheck": "Neu prüfen",
+  "gateways.update_check": "Update prüfen",
   "gateways.update_to": "Update auf",
   "gateways.sec_versions": "Versionen & System",
   "gateways.sec_resources": "Ressourcen",

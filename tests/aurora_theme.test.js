@@ -92,6 +92,8 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
     assert.match(res.text, /id="gw-setup-modal-overlay"/, '#gw-setup-modal-overlay present');
     assert.match(res.text, /id="gw-discovery-modal-body"/, '#gw-discovery-modal-body present');
     assert.match(res.text, /id="gw-setup-modal-body"/, '#gw-setup-modal-body present');
+    assert.match(res.text, /id="gw-discovery-modal-title"/, '#gw-discovery-modal-title present');
+    assert.match(res.text, /id="gw-setup-modal-title"/, '#gw-setup-modal-title present');
     // Aurora shell: the page must use the .app layout (isAurora() signal)
     assert.match(res.text, /class="app"/, 'aurora .app shell used (isAurora() signal)');
   });
