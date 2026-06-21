@@ -99,7 +99,7 @@
       if (reconnectWindowStart !== null) {
         var windowMs = lg.retryWindowMs(guacCfg());
         if (Date.now() - reconnectWindowStart > windowMs) {
-          transition('fatal', { reason: 'limit-reached' });
+          transition('fatal', { reason: 'limit-reached', status: 429 });
           return;
         }
       }
@@ -216,7 +216,7 @@
         var cls    = logic().classifyMintFailure({ status: status, phase: phase });
 
         if (cls === 'fatal') {
-          transition('fatal', { reason: 'mint-failure', status: status });
+          transition('fatal', { reason: 'mint-failure', status: status, message: (err && err.message) || null });
           return;
         }
 
@@ -224,7 +224,7 @@
         if (reconnectWindowStart === null) reconnectWindowStart = Date.now();
         var windowMs = logic().retryWindowMs(guacCfg());
         if (Date.now() - reconnectWindowStart > windowMs) {
-          transition('fatal', { reason: 'limit-reached' });
+          transition('fatal', { reason: 'limit-reached', status: 429 });
           return;
         }
 

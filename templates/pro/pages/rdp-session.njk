@@ -190,9 +190,13 @@
       reconnectOvl.style.display = s === 'reconnecting' ? 'flex' : 'none';
       if (s === 'error') {
         errorOvl.style.display = 'flex';
-        var cause = (detail && detail.cause) || '';
-        errorCauseEl.textContent = i18n[cause] || i18n.error;
-        errorTextEl.textContent  = i18n.limit_reached + ' · ' + i18n.expired + ' · ' + i18n.not_authorized;
+        var dStatus = detail && detail.status;
+        var dReason = detail && detail.reason;
+        var causeKey = (dStatus === 429 || dReason === 'limit-reached') ? 'limit_reached'
+                     : dStatus === 403 ? 'not_authorized'
+                     : '';
+        errorCauseEl.textContent = (causeKey && i18n[causeKey]) || i18n.error;
+        errorTextEl.textContent  = (detail && detail.message) || (causeKey && i18n[causeKey]) || i18n.error;
       } else {
         errorOvl.style.display = 'none';
       }

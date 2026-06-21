@@ -47,5 +47,6 @@ npm 1.5.0 ESM bundle body.
 
 This is a vendored static asset used by the Phase-2a throwaway smoke page
 (`public/_guac-smoke.html`) **and** the Phase-3b production RDP session player
-(`public/rdp-session.html`). It is NOT a server npm dependency and must NOT be
-added to `package.json`.
+(`templates/{default,pro}/pages/rdp-session.njk`, served at `GET /rdp/:id/session`,
+which loads this bundle via `<script src="/vendor/guacamole-common-js/guacamole-common.min.js">`).
+It is NOT a server npm dependency and must NOT be added to `package.json`.
