@@ -1640,6 +1640,7 @@
   "gateways.kpi_update": "Update",
   "gateways.back_to_fleet": "Back to fleet",
   "gateways.recheck": "Re-check",
+  "gateways.update_check": "Check update",
   "gateways.update_to": "Update to",
   "gateways.sec_versions": "Versions & System",
   "gateways.sec_resources": "Resources",

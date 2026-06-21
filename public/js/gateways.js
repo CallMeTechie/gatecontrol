@@ -32,8 +32,90 @@
     return r;
   }
 
+  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
+  // ── Aurora-only sibling renderers ─────────────────────────────────────────
+  // These functions are ONLY called when isAurora() is true.
+  // The original card()/renderDetail() else-paths remain byte-identical.
+  // (No shared helper is modified; this is the no-shared-helper-edit rule.)
+  function gwAvatarGradient(g) {
+    if (status(g) !== 'online') return 'linear-gradient(145deg,#9aa6b2,#6b7682)';
+    var id = String(g.peer_id || ''), sum = 0;
+    for (var ci = 0; ci < id.length; ci++) sum += id.charCodeAt(ci);
+    var p = ['linear-gradient(145deg,#7ae0d2,#28b3a2)', 'linear-gradient(145deg,#9db8ff,#5b76d6)', 'linear-gradient(145deg,#c4b5fd,#7c3aed)', 'linear-gradient(145deg,#fda4af,#e11d48)'];
+    return p[sum % p.length];
+  }
+  function gwCardIcon() {
+    var s = document.createElementNS(SVG_NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none');
+    [['3', '4'], ['3', '14']].forEach(function (xy) {
+      var r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('x', xy[0]); r.setAttribute('y', xy[1]); r.setAttribute('width', '18'); r.setAttribute('height', '6');
+      r.setAttribute('rx', '2'); r.setAttribute('stroke', 'currentColor'); r.setAttribute('stroke-width', '2');
+      s.appendChild(r);
+    });
+    return s;
+  }
+  function auroraResRow(parent, label, valueText, pctVal, isHot) {
+    var row = el('div', 'urow'); row.appendChild(el('span', null, label)); row.appendChild(el('b', null, valueText));
+    parent.appendChild(row);
+    var rb = el('div', 'resbar'); var fill = el('i');
+    fill.style.width = Math.max(0, Math.min(100, pctVal)) + '%';
+    if (isHot) fill.className = 'hot'; rb.appendChild(fill); parent.appendChild(rb);
+  }
+  function auroraCard(g) {
+    var t = (g.health && g.health.telemetry) || {};
+    var st = status(g);
+    var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id;
+    if (st === 'offline') wrap.style.opacity = '0.7';
+    // Header: avatar + name/version + status tag
+    var uh = el('div', 'uh');
+    var uav = el('span', 'uav'); uav.style.background = gwAvatarGradient(g); uav.appendChild(gwCardIcon());
+    uh.appendChild(uav);
+    var nameWrap = el('div');
+    nameWrap.appendChild(el('div', 'un', g.name));
+    nameWrap.appendChild(el('div', 'ud', (t.gateway_version || '—') + (g.hostname ? ' · ' + g.hostname : '')));
+    uh.appendChild(nameWrap);
+    var tagCls = 'tag ' + (st === 'online' ? 'tag-green' : st === 'degraded' ? 'tag-amber' : 'tag-grey') + ' tag-dot';
+    var stTag = el('span', tagCls, T('gateways.' + st, st)); stTag.style.marginLeft = 'auto';
+    uh.appendChild(stTag);
+    wrap.appendChild(uh);
+    // Body: resource bars (online/degraded) or empty-state (offline)
+    if (st === 'offline') {
+      var emptyTxt = T('gateways.sub_heartbeat', 'last heartbeat') + ' ' + ago(g.last_seen_at);
+      if (g.update_available && latest) emptyTxt += ' · Drift: ' + (t.gateway_version || '—') + ' → ' + latest;
+      wrap.appendChild(el('div', 'empty-state', emptyTxt));
+    } else {
+      var cores = t.cpu_cores || 1; var load1 = (t.cpu_load_avg && t.cpu_load_avg[0]) || 0; var cpuPct = pct(load1, cores);
+      auroraResRow(wrap, 'CPU', cpuPct + '%', cpuPct, cpuPct > 90);
+      if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); auroraResRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
+      if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); auroraResRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
+    }
+    // Update-check / recheck button (.recheck class → grid click handler → probe())
+    var btn = el('button', 'btn btn-ghost btn-sm btn-block recheck', T('gateways.update_check', 'Check update'));
+    btn.style.marginTop = '14px'; btn.dataset.id = g.peer_id;
+    wrap.appendChild(btn);
+    return wrap;
+  }
+  function auroraRenderDetail(g) {
+    var root = el('div', 'gw-detail');
+    var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Back to fleet')); back.dataset.act = 'back';
+    root.appendChild(back);
+    root.appendChild(detailHead(g));
+    var grid2 = el('div', 'unit-grid');
+    grid2.appendChild(versionsCard(g));
+    grid2.appendChild(resourcesCard(g));
+    grid2.appendChild(routesCard(g));
+    grid2.appendChild(discoveredDevicesCard(g));
+    var telE = (g.health && g.health.telemetry) || {};
+    if (telE.scan_egress === true) grid2.appendChild(egressCard(g));
+    root.appendChild(grid2);
+    detailView.replaceChildren(root);
+  }
+
   // ── Fleet cards ──────────────────────────────────────────────────────────
   function card(g) {
+    if (isAurora()) return auroraCard(g);
     var t = (g.health && g.health.telemetry) || {};
     var routes = (g.health && g.health.route_reachability) || [];
     var up = routes.filter(function (r) { return r.reachable; }).length;
@@ -898,6 +980,7 @@
   }
 
   function renderDetail(g) {
+    if (isAurora()) return auroraRenderDetail(g);
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Zurück zur Flotte')); back.dataset.act = 'back';
     root.appendChild(back);

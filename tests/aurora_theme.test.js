@@ -75,3 +75,43 @@ describe('aurora theme — A-global color leak regression (Task 3)', () => {
     assert.match(css, /--blue-bd:\s*(?!var\(--blue-bd\))/, '--blue-bd is no longer self-referential in aurora.css');
   });
 });
+
+// ── Task 4: Gateways ID-contract (theme-branched-JS pilot) ───────────────────
+describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
+  it('renders all static container IDs on /gateways under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/gateways').expect(200);
+    // Static template IDs (gateways.njk)
+    assert.match(res.text, /id="fleet-view"/, '#fleet-view present');
+    assert.match(res.text, /id="fleet-kpis"/, '#fleet-kpis present');
+    assert.match(res.text, /id="version-warning"/, '#version-warning present');
+    assert.match(res.text, /id="fleet-grid"/, '#fleet-grid present');
+    assert.match(res.text, /id="gw-detail-view"/, '#gw-detail-view present');
+    // Modal overlay IDs
+    assert.match(res.text, /id="gw-discovery-modal-overlay"/, '#gw-discovery-modal-overlay present');
+    assert.match(res.text, /id="gw-setup-modal-overlay"/, '#gw-setup-modal-overlay present');
+    assert.match(res.text, /id="gw-discovery-modal-body"/, '#gw-discovery-modal-body present');
+    assert.match(res.text, /id="gw-setup-modal-body"/, '#gw-setup-modal-body present');
+    // Aurora shell: the page must use the .app layout (isAurora() signal)
+    assert.match(res.text, /class="app"/, 'aurora .app shell used (isAurora() signal)');
+  });
+
+  it('aurora.css carries the gateway Strang-A fixes', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    // .gw-relnotes styled (not bare <a>)
+    assert.match(css, /\.gw-relnotes/, '.gw-relnotes rule present in aurora.css');
+    // .unit-grid and .resbar present (fleet card signature components)
+    assert.match(css, /\.unit-grid/, '.unit-grid present in aurora.css');
+    assert.match(css, /\.resbar/, '.resbar present in aurora.css');
+  });
+
+  it('gateways.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in gateways.js');
+    assert.match(js, /function auroraCard\(/, 'auroraCard() present in gateways.js');
+    assert.match(js, /function auroraRenderDetail\(/, 'auroraRenderDetail() present in gateways.js');
+    // One-line guard at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraCard/, 'card() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderDetail/, 'renderDetail() has isAurora guard');
+  });
+});
