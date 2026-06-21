@@ -17,10 +17,13 @@ describe('rdp-player-logic', () => {
     assert.equal(L.classifyMintFailure({ status: 403, phase: 'reconnect' }), 'fatal');
     assert.equal(L.classifyMintFailure({ status: 409, phase: 'initial' }), 'fatal');
     assert.equal(L.classifyMintFailure({ status: undefined, phase: 'reconnect' }), 'retry');
+    assert.equal(L.classifyMintFailure({ status: 403, phase: 'initial' }), 'fatal');
+    assert.equal(L.classifyMintFailure({ status: 409, phase: 'reconnect' }), 'fatal');
   });
   it('retryWindow outlasts the reclaim budget (DA2-#2)', () => {
     const cfg = { heartbeatMs: 15000, heartbeatMisses: 2 }; // 30s
     assert.ok(L.retryWindowMs(cfg) >= cfg.heartbeatMs * cfg.heartbeatMisses);
+    assert.ok(L.retryWindowMs({}) >= 15000 * 2);
   });
   it('state machine: connecting→connected, connected→reconnecting on drop', () => {
     assert.equal(L.nextState('connecting', 'open'), 'connected');
@@ -28,6 +31,7 @@ describe('rdp-player-logic', () => {
     assert.equal(L.nextState('reconnecting', 'open'), 'connected');
     assert.equal(L.nextState('connected', 'user_disconnect'), 'disconnected');
     assert.equal(L.nextState('reconnecting', 'fatal'), 'error');
+    assert.equal(L.nextState('connected', 'bogus_event'), 'connected');
   });
   it('scaleFor: native stays native, default is fit (Chain1-G5)', () => {
     assert.equal(L.scaleFor('native', { protocol: 'rdp' }), 'native');
