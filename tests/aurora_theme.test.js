@@ -203,3 +203,79 @@ describe('aurora theme — dashboard layout (Task P2-1)', () => {
     assert.match(res.text, /id="traffic-chart"/, '#traffic-chart present even without pihole');
   });
 });
+
+// ── Task P2-2: Pi-hole ID-contract (Aurora mockup fidelity) ──────────────────
+describe('aurora theme — pihole layout (Task P2-2)', () => {
+  it('renders /pihole under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/pihole').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora grid structure and signature classes on /pihole', async () => {
+    selectAurora();
+    const res = await agent.get('/pihole').expect(200);
+    assert.match(res.text, /class="grid"/, '.grid container present');
+    assert.match(res.text, /class="card span5"/, '.card.span5 present');
+    assert.match(res.text, /class="card span7"/, '.card.span7 present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+    assert.match(res.text, /class="donut"/, '.donut SVG present');
+    assert.match(res.text, /class="pi-wrap"/, '.pi-wrap present');
+    assert.match(res.text, /class="toplist"/, '.toplist present');
+  });
+
+  it('renders all phase0 contract IDs on /pihole under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/pihole').expect(200);
+    // Stat IDs
+    assert.match(res.text, /id="ph-stat-queries"/, '#ph-stat-queries present');
+    assert.match(res.text, /id="ph-stat-blocked"/, '#ph-stat-blocked present');
+    assert.match(res.text, /id="ph-stat-blocked-pct"/, '#ph-stat-blocked-pct present');
+    assert.match(res.text, /id="ph-stat-gravity"/, '#ph-stat-gravity present');
+    assert.match(res.text, /id="ph-stat-clients"/, '#ph-stat-clients present');
+    // Donut
+    assert.match(res.text, /id="pi-donut"/, '#pi-donut present');
+    // Chart
+    assert.match(res.text, /id="ph-chart-svg"/, '#ph-chart-svg present');
+    // Toplists
+    assert.match(res.text, /id="ph-top-domains-tbody"/, '#ph-top-domains-tbody present');
+    assert.match(res.text, /id="ph-top-clients-tbody"/, '#ph-top-clients-tbody present');
+    assert.match(res.text, /id="ph-client-col-peer"/, '#ph-client-col-peer present');
+    // Query types
+    assert.match(res.text, /id="ph-query-types-list"/, '#ph-query-types-list present');
+    // Attribution / status
+    assert.match(res.text, /id="ph-attribution-warn"/, '#ph-attribution-warn present');
+    assert.match(res.text, /id="ph-blocking-badge"/, '#ph-blocking-badge present');
+    assert.match(res.text, /id="ph-status-badge"/, '#ph-status-badge present');
+    // Health
+    assert.match(res.text, /id="ph-health-status"/, '#ph-health-status present');
+    assert.match(res.text, /id="ph-health-sync"/, '#ph-health-sync present');
+    assert.match(res.text, /id="ph-health-instances"/, '#ph-health-instances present');
+    // Controls
+    assert.match(res.text, /id="btn-pihole-reload"/, '#btn-pihole-reload present');
+    assert.match(res.text, /id="btn-ph-pause-30s"/, '#btn-ph-pause-30s present');
+    assert.match(res.text, /id="btn-ph-pause-5m"/, '#btn-ph-pause-5m present');
+    assert.match(res.text, /id="btn-ph-pause-30m"/, '#btn-ph-pause-30m present');
+    assert.match(res.text, /id="btn-ph-enable"/, '#btn-ph-enable present');
+  });
+
+  it('toplist uses <ul> tag for ph-top-domains-tbody and ph-top-clients-tbody in aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/pihole').expect(200);
+    assert.match(res.text, /<ul id="ph-top-domains-tbody"/, 'ph-top-domains-tbody is a <ul> in Aurora');
+    assert.match(res.text, /<ul id="ph-top-clients-tbody"/, 'ph-top-clients-tbody is a <ul> in Aurora');
+  });
+
+  it('pihole.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'pihole.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in pihole.js');
+    assert.match(js, /function auroraRenderSummary\(/, 'auroraRenderSummary() present');
+    assert.match(js, /function auroraRenderTopDomains\(/, 'auroraRenderTopDomains() present');
+    assert.match(js, /function auroraRenderTopClients\(/, 'auroraRenderTopClients() present');
+    // Guards at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderSummary/, 'renderSummary() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTopDomains/, 'renderTopDomains() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTopClients/, 'renderTopClients() has isAurora guard');
+  });
+});

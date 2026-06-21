@@ -1842,6 +1842,8 @@
   "pihole.peer": "Peer",
   "pihole.client_ip": "Client-IP",
   "pihole.attribution_collapsed": "Client-Zuordnung ist zusammengefasst — Peer-Aufschlüsselung nicht verfügbar. Pi-hole Datenschutzeinstellungen prüfen.",
+  "pihole.stat_allowed": "Durchgelassen (24h)",
+  "pihole.cap_blocked": "geblockt",
   "settings.tab_pihole": "Pi-hole",
   "pihole.cfg.title": "Verbindung & Synchronisation",
   "pihole.cfg.enabled": "Pi-hole-Integration aktivieren",

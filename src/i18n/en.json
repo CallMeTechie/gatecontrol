@@ -1842,6 +1842,8 @@
   "pihole.peer": "Peer",
   "pihole.client_ip": "Client IP",
   "pihole.attribution_collapsed": "Client attribution is collapsed — per-peer breakdown unavailable. Check Pi-hole privacy settings.",
+  "pihole.stat_allowed": "Allowed (24h)",
+  "pihole.cap_blocked": "blocked",
   "settings.tab_pihole": "Pi-hole",
   "pihole.cfg.title": "Connection & Sync",
   "pihole.cfg.enabled": "Enable Pi-hole integration",

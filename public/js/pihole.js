@@ -1,6 +1,9 @@
 (function () {
   'use strict';
 
+  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   function fmtDate(iso) {
     if (!iso) return '—';
     try {
@@ -54,8 +57,99 @@
 
   function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
 
+  // ── Aurora: Summary (donut + pi-stats) ───────────────────────
+  function auroraRenderSummary(data) {
+    const q = data.queries || {};
+    setText('ph-stat-queries', fmtNum(q.total));
+    setText('ph-stat-blocked', fmtNum(q.blocked));
+
+    // Donut center: show percentage rounded to integer
+    const pct = q.percent != null ? Number(q.percent) : 0;
+    const pctText = pct.toFixed(1) + ' %';
+    setText('ph-stat-blocked-pct', pctText);
+
+    // Animate SVG donut arc: r=52, circumference = 2*π*52 ≈ 326.73
+    var CIRC = 326.73;
+    var offset = CIRC - (pct / 100) * CIRC;
+    var donutEl = document.getElementById('pi-donut');
+    if (donutEl) donutEl.setAttribute('stroke-dashoffset', offset.toFixed(1));
+
+    // Allowed count (total - blocked)
+    var allowedEl = document.getElementById('ph-stat-allowed');
+    if (allowedEl) {
+      var total = Number(q.total) || 0;
+      var blocked = Number(q.blocked) || 0;
+      allowedEl.textContent = fmtNum(Math.max(0, total - blocked));
+    }
+
+    setText('ph-stat-gravity', fmtNum(data.gravity));
+    const cl = data.clients;
+    const clActive = cl && typeof cl === 'object' ? cl.active : cl;
+    setText('ph-stat-clients', fmtNum(clActive));
+
+    const blocking = data.blocking || {};
+    const badgeEl = document.getElementById('ph-blocking-badge');
+    if (badgeEl) {
+      const state = blocking.state;
+      let cls = 'tag-grey', txt = '—';
+      if (state === 'enabled')  { cls = 'tag-green';  txt = T('pihole.blocking_on',      'On'); }
+      else if (state === 'disabled') { cls = 'tag-red';   txt = T('pihole.blocking_off', 'Off'); }
+      else if (state === 'partial')  { cls = 'tag-amber'; txt = T('pihole.blocking_partial', 'Partial'); }
+      replaceChildren(badgeEl, badge(cls, txt));
+    }
+
+    const warn = document.getElementById('ph-attribution-warn');
+    if (warn) warn.style.display = data.attribution === 'collapsed' ? '' : 'none';
+  }
+
+  // ── Aurora: Top Blocked Domains (toplist <li> renderer) ──────
+  function auroraRenderTopDomains(domains) {
+    const ul = document.getElementById('ph-top-domains-tbody');
+    if (!ul) return;
+    replaceChildren(ul, []);
+    if (!domains || !domains.length) {
+      ul.appendChild(el('li', null, el('span', { class: 'd' }, T('common.no_data', '—'))));
+      return;
+    }
+    const maxCount = Math.max(1, ...domains.map(function (d) { return d.count || 0; }));
+    var MAX_BAR = 100;
+    for (const d of domains) {
+      const count = d.count || 0;
+      const barW = Math.round(count / maxCount * MAX_BAR);
+      ul.appendChild(el('li', null, [
+        el('span', { class: 'd' }, d.domain || d.name || '—'),
+        el('span', { class: 'bar', style: 'width:' + barW + 'px' }),
+        el('span', { class: 'cnt' }, fmtNum(count)),
+      ]));
+    }
+  }
+
+  // ── Aurora: Top Clients (toplist <li> renderer) ───────────────
+  function auroraRenderTopClients(clients) {
+    const ul = document.getElementById('ph-top-clients-tbody');
+    if (!ul) return;
+    replaceChildren(ul, []);
+    if (!clients || !clients.length) {
+      ul.appendChild(el('li', null, el('span', { class: 'd' }, T('common.no_data', '—'))));
+      return;
+    }
+    const maxCount = Math.max(1, ...clients.map(function (c) { return c.count || 0; }));
+    var MAX_BAR = 100;
+    for (const c of clients) {
+      const nameCell = _attribution === 'per_peer' && c.peerName ? c.peerName : (c.ip || '—');
+      const count = c.count || 0;
+      const barW = Math.round(count / maxCount * MAX_BAR);
+      ul.appendChild(el('li', null, [
+        el('span', { class: 'd' }, nameCell),
+        el('span', { class: 'bar', style: 'width:' + barW + 'px' }),
+        el('span', { class: 'cnt' }, fmtNum(count)),
+      ]));
+    }
+  }
+
   // ── Summary ──────────────────────────────────────────────────
   function renderSummary(data) {
+    if (isAurora()) return auroraRenderSummary(data);
     const q = data.queries || {};
     setText('ph-stat-queries', fmtNum(q.total));
     setText('ph-stat-blocked', fmtNum(q.blocked));
@@ -115,6 +209,7 @@
 
   // ── Top Blocked Domains ──────────────────────────────────────
   function renderTopDomains(domains) {
+    if (isAurora()) return auroraRenderTopDomains(domains);
     const tbody = document.getElementById('ph-top-domains-tbody');
     if (!tbody) return;
     replaceChildren(tbody, []);
@@ -136,6 +231,7 @@
   var _attribution = 'per_peer';
 
   function renderTopClients(clients) {
+    if (isAurora()) return auroraRenderTopClients(clients);
     const tbody = document.getElementById('ph-top-clients-tbody');
     if (!tbody) return;
     replaceChildren(tbody, []);

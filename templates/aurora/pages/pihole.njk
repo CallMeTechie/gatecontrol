@@ -20,35 +20,68 @@
   <span style="font-size:13px;color:var(--amber)">{{ t('pihole.attribution_collapsed') }}</span>
 </div>
 
-{# ── Stats ────────────────────────────────────────────── #}
-<div class="stats-grid" style="margin-bottom:16px">
-  <div class="stat-card">
-    <div class="stat-value" id="ph-stat-queries">—</div>
-    <div class="stat-label">{{ t('pihole.stat_queries') }}</div>
+{# ── Row 1: Donut (span5) + Top Blocked Domains (span7) ── #}
+<div class="grid" style="margin-bottom:18px">
+
+  {# ── Donut card ─────────────────────────────────────────── #}
+  <div class="card span5">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M5 5l14 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      {{ t('pihole.title') }}
+      <span id="ph-blocking-badge" class="tag tag-grey" style="margin-left:auto">—</span>
+    </div>
+    <div class="pi-wrap">
+      <div class="donut-host">
+        <svg class="donut" viewBox="0 0 120 120">
+          <circle class="track" cx="60" cy="60" r="52" fill="none" stroke-width="15"/>
+          <circle class="val" id="pi-donut" cx="60" cy="60" r="52" fill="none" stroke-width="15" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7" transform="rotate(-90 60 60)"/>
+        </svg>
+        <div class="donut-center">
+          <div>
+            <div class="big" id="ph-stat-blocked-pct">—</div>
+            <div class="cap">{{ t('pihole.cap_blocked') }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="pi-stats">
+        <div class="s"><span class="n" id="ph-stat-queries">—</span><span class="t">{{ t('pihole.stat_queries') }}</span></div>
+        <div class="s"><span class="n blk" id="ph-stat-blocked">—</span><span class="t">{{ t('pihole.stat_blocked') }}</span></div>
+        <div class="s"><span class="n" style="color:var(--teal)" id="ph-stat-allowed">—</span><span class="t">{{ t('pihole.stat_allowed') }}</span></div>
+      </div>
+    </div>
+    {# ── Gravity + Clients as KPIs ─────────────────────────── #}
+    <div style="margin-top:16px;display:flex;gap:12px">
+      <div class="kpi" style="flex:1">
+        <div class="lab">{{ t('pihole.stat_gravity') }}</div>
+        <div class="val" id="ph-stat-gravity">—</div>
+      </div>
+      <div class="kpi" style="flex:1">
+        <div class="lab">{{ t('pihole.stat_clients') }}</div>
+        <div class="val" id="ph-stat-clients">—</div>
+      </div>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-value" id="ph-stat-blocked">—</div>
-    <div class="stat-label">{{ t('pihole.stat_blocked') }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-value" id="ph-stat-blocked-pct">—</div>
-    <div class="stat-label">{{ t('pihole.stat_blocked_pct') }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-value" id="ph-stat-gravity">—</div>
-    <div class="stat-label">{{ t('pihole.stat_gravity') }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-value" id="ph-stat-clients">—</div>
-    <div class="stat-label">{{ t('pihole.stat_clients') }}</div>
+
+  {# ── Top Blocked Domains toplist ────────────────────────── #}
+  <div class="card span7">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      {{ t('pihole.top_blocked') }}
+    </div>
+    <div class="toplist" style="border-top:0;padding-top:6px">
+      <ul id="ph-top-domains-tbody">
+        <li><span class="d">{{ t('common.loading') }}</span></li>
+      </ul>
+    </div>
   </div>
 </div>
 
-{# ── Content Grid: Chart + Top Blocked ────────────────── #}
-<div class="content-grid" style="margin-bottom:16px">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.history_title') }}</span>
+{# ── Row 2: History chart (span7) + Top Clients (span5) ── #}
+<div class="grid" style="margin-bottom:18px">
+  <div class="card span7">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      {{ t('pihole.history_title') }}
     </div>
     <div class="card-body">
       <div class="chart-area" id="ph-chart-area">
@@ -56,58 +89,35 @@
       </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.top_blocked') }}</span>
+  <div class="card span5">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 20c0-2.4-1-4-2.5-4.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      {{ t('pihole.top_clients') }}
     </div>
-    <div class="table-wrap">
-      <table class="peer-table" style="font-size:12px">
-        <thead>
-          <tr>
-            <th>{{ t('pihole.domain') }}</th>
-            <th>{{ t('pihole.requests') }}</th>
-          </tr>
-        </thead>
-        <tbody id="ph-top-domains-tbody">
-          <tr><td colspan="2" style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</td></tr>
-        </tbody>
-      </table>
+    <div class="toplist" style="border-top:0;padding-top:6px">
+      <div class="h" id="ph-client-col-peer">{{ t('pihole.peer') }}</div>
+      <ul id="ph-top-clients-tbody">
+        <li><span class="d">{{ t('common.loading') }}</span></li>
+      </ul>
     </div>
   </div>
 </div>
 
-{# ── Grid-3: Top Clients / Query Types / Steuerung ────── #}
-<div class="grid-3" style="margin-bottom:16px">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.top_clients') }}</span>
-    </div>
-    <div class="table-wrap">
-      <table class="peer-table" style="font-size:12px">
-        <thead>
-          <tr>
-            <th id="ph-client-col-peer">{{ t('pihole.peer') }}</th>
-            <th>{{ t('pihole.requests') }}</th>
-          </tr>
-        </thead>
-        <tbody id="ph-top-clients-tbody">
-          <tr><td colspan="2" style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.query_types') }}</span>
+{# ── Row 3: Query Types (span6) + Blocking Control (span6) #}
+<div class="grid" style="margin-bottom:18px">
+  <div class="card span6">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="2"/></svg></span>
+      {{ t('pihole.query_types') }}
     </div>
     <div class="card-body" id="ph-query-types-list">
       <div style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.control') }}</span>
-      <span id="ph-blocking-badge" class="tag tag-grey" style="margin-left:auto">—</span>
+  <div class="card span6">
+    <div class="card-title">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="6" y="5" width="4" height="14" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="5" width="4" height="14" rx="1" stroke="currentColor" stroke-width="2"/></svg></span>
+      {{ t('pihole.control') }}
     </div>
     <div class="card-body">
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -122,8 +132,8 @@
 
 {# ── Health / Connection card ─────────────────────────── #}
 <div class="card">
-  <div class="card-head">
-    <span class="card-title">{{ t('pihole.connection') }}</span>
+  <div class="card-title">
+    {{ t('pihole.connection') }}
     <span id="ph-status-badge" class="tag tag-grey" style="margin-left:auto">—</span>
   </div>
   <div class="card-body">
