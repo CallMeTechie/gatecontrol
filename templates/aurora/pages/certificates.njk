@@ -5,12 +5,12 @@
   <div>
     <div class="page-eyebrow">{{ t('nav.routing') }}</div>
     <div class="page-title">{{ t('certs.title') }}</div>
-    <div class="page-sub">ACME + {{ t('certificates.action_upload') }}</div>
+    <div class="page-sub">ACME · Let's Encrypt</div>
   </div>
   <div class="page-actions">
     <button class="btn btn-primary" id="btn-certificates-refresh">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>{{ t('certificates.action_upload') }}</span>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      <span>{{ t('common.refresh') }}</span>
     </button>
   </div>
 </div>
@@ -23,15 +23,14 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>{{ t('routes.domain') }}</th>
+        <th>{{ t('certificates.col_domain') }}</th>
         <th>{{ t('certificates.col_issuer') }}</th>
         <th>{{ t('certificates.col_valid_until') }}</th>
         <th>{{ t('peers.status') }}</th>
-        <th></th>
       </tr>
     </thead>
     <tbody id="certificates-list">
-      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px 0">{{ t('common.loading') }}</td></tr>
+      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px 0">{{ t('common.loading') }}</td></tr>
     </tbody>
   </table>
 </div>

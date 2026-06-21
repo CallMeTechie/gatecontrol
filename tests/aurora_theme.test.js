@@ -705,7 +705,7 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     selectAurora();
     // Check njk file uses correct i18n keys (Nunjucks renders them to text, not raw keys in HTML)
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'certificates.njk'), 'utf8');
-    assert.match(njk, /routes\.domain/, 'njk references routes.domain key for domain column');
+    assert.match(njk, /certificates\.col_domain/, 'njk references certificates.col_domain key for domain column');
     assert.match(njk, /certificates\.col_issuer/, 'njk references certificates.col_issuer key');
     assert.match(njk, /certificates\.col_valid_until/, 'njk references certificates.col_valid_until key');
     assert.match(njk, /peers\.status/, 'njk references peers.status key for status column');
