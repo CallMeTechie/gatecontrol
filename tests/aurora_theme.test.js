@@ -551,3 +551,126 @@ describe('aurora theme — routes wizards + modals (Task P2-4b)', () => {
     assert.doesNotMatch(njk, /\.wiz-row-2\s*\{/, '.wiz-row-2 inline style block absent (moved to aurora.css)');
   });
 });
+
+// ── Task P2-5: Users page (Aurora mockup fidelity) ────────────────────────────
+describe('aurora theme — users layout (Task P2-5)', () => {
+  it('renders /users under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/users').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora data-table and card-title on /users', async () => {
+    selectAurora();
+    const res = await agent.get('/users').expect(200);
+    assert.match(res.text, /class="data-table"/, '.data-table present (Aurora table class)');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+    // Aurora template must NOT use the old peer-table class for the users table
+    assert.doesNotMatch(res.text, /class="peer-table" id="users-table"/, 'old peer-table class absent in Aurora users');
+  });
+
+  it('renders all phase0 static contract IDs on /users under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/users').expect(200);
+    // Table / page elements
+    assert.match(res.text, /id="users-tbody"/, '#users-tbody present');
+    assert.match(res.text, /id="users-table"/, '#users-table present');
+    assert.match(res.text, /id="unassigned-banner"/, '#unassigned-banner present');
+    assert.match(res.text, /id="unassigned-list"/, '#unassigned-list present');
+    assert.match(res.text, /id="unassigned-count"/, '#unassigned-count present');
+    assert.match(res.text, /id="btn-add-user"/, '#btn-add-user present');
+    assert.match(res.text, /id="btn-create-token-standalone"/, '#btn-create-token-standalone present');
+    // User modal elements
+    assert.match(res.text, /id="user-modal-overlay"/, '#user-modal-overlay present');
+    assert.match(res.text, /id="user-form"/, '#user-form present');
+    assert.match(res.text, /id="user-modal-title"/, '#user-modal-title present');
+    assert.match(res.text, /id="user-edit-id"/, '#user-edit-id present');
+    assert.match(res.text, /id="user-password-group"/, '#user-password-group present');
+    assert.match(res.text, /id="user-tokens-section"/, '#user-tokens-section present');
+    assert.match(res.text, /id="user-role"/, '#user-role present');
+    assert.match(res.text, /id="user-form-error"/, '#user-form-error present');
+    assert.match(res.text, /id="user-username"/, '#user-username present');
+    assert.match(res.text, /id="user-display-name"/, '#user-display-name present');
+    assert.match(res.text, /id="user-email"/, '#user-email present');
+    assert.match(res.text, /id="user-password"/, '#user-password present');
+    assert.match(res.text, /id="user-modal-save"/, '#user-modal-save present');
+    assert.match(res.text, /id="user-tokens-list"/, '#user-tokens-list present');
+    assert.match(res.text, /id="btn-add-token"/, '#btn-add-token present');
+    assert.match(res.text, /id="user-modal-close"/, '#user-modal-close present');
+    assert.match(res.text, /id="user-modal-cancel"/, '#user-modal-cancel present');
+    // Token wizard modal elements
+    assert.match(res.text, /id="token-modal-overlay"/, '#token-modal-overlay present');
+    assert.match(res.text, /id="token-form-error"/, '#token-form-error present');
+    assert.match(res.text, /id="tw-step-1"/, '#tw-step-1 present');
+    assert.match(res.text, /id="tw-step-2"/, '#tw-step-2 present');
+    assert.match(res.text, /id="tw-step-3"/, '#tw-step-3 present');
+    assert.match(res.text, /id="tw-step-4"/, '#tw-step-4 present');
+    assert.match(res.text, /id="token-wizard-step"/, '#token-wizard-step present');
+    assert.match(res.text, /id="tw-back"/, '#tw-back present');
+    assert.match(res.text, /id="tw-next"/, '#tw-next present');
+    assert.match(res.text, /id="tw-cancel"/, '#tw-cancel present');
+    assert.match(res.text, /id="tw-name"/, '#tw-name present');
+    assert.match(res.text, /id="tw-copy-confirm"/, '#tw-copy-confirm present');
+    assert.match(res.text, /id="tw-token-value"/, '#tw-token-value present');
+    assert.match(res.text, /id="tw-st-override"/, '#tw-st-override present');
+    assert.match(res.text, /id="tw-st-section"/, '#tw-st-section present');
+    assert.match(res.text, /id="tw-st-private"/, '#tw-st-private present');
+    assert.match(res.text, /id="tw-st-linklocal"/, '#tw-st-linklocal present');
+    assert.match(res.text, /id="tw-st-locked"/, '#tw-st-locked present');
+    assert.match(res.text, /id="tw-user"/, '#tw-user present');
+    assert.match(res.text, /id="tw-peer"/, '#tw-peer present');
+    assert.match(res.text, /id="tw-custom-scopes"/, '#tw-custom-scopes present');
+    assert.match(res.text, /id="tw-presets"/, '#tw-presets present');
+    assert.match(res.text, /id="tw-st-mode"/, '#tw-st-mode present');
+    assert.match(res.text, /id="tw-copy-btn"/, '#tw-copy-btn present');
+    assert.match(res.text, /id="token-modal-close"/, '#token-modal-close present');
+  });
+
+  it('Aurora users table uses 5-column thead (MFA + Last Login cols present, old 7-col keys absent)', async () => {
+    selectAurora();
+    const res = await agent.get('/users').expect(200);
+    // Aurora 5-column loading placeholder
+    assert.match(res.text, /colspan="5"/, 'loading row uses colspan="5" (5-column table)');
+    // Aurora template file references the new column keys
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'users.njk'), 'utf8');
+    assert.match(njk, /users\.col_mfa/, 'Aurora users.njk references users.col_mfa key');
+    assert.match(njk, /users\.col_last_login/, 'Aurora users.njk references users.col_last_login key');
+    // Aurora must NOT expose the 7-col keys users.col_tokens / users.col_peers / users.col_status
+    assert.doesNotMatch(njk, /users\.col_tokens/, 'users.col_tokens absent in Aurora thead (7-col key removed)');
+    assert.doesNotMatch(njk, /users\.col_peers/, 'users.col_peers absent in Aurora thead (7-col key removed)');
+  });
+
+  it('Aurora modal-head has <span class="mi"> icon wrapper in user modal', async () => {
+    selectAurora();
+    const res = await agent.get('/users').expect(200);
+    assert.match(res.text, /class="mi"/, '<span class="mi"> icon wrapper present in modal-head');
+  });
+
+  it('inline <style> block has been removed from aurora/pages/users.njk (styles moved to aurora.css)', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'users.njk'), 'utf8');
+    assert.doesNotMatch(njk, /\.tw-step\s*\{/, '.tw-step inline style block absent (moved to aurora.css)');
+    assert.doesNotMatch(njk, /\.tw-preset-label\s*\{/, '.tw-preset-label inline style block absent (moved to aurora.css)');
+    assert.doesNotMatch(njk, /<style>/, 'no <style> block in aurora users.njk (moved to aurora.css)');
+  });
+
+  it('users.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'users.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in users.js');
+    assert.match(js, /function auroraRenderUsersDesktop\(/, 'auroraRenderUsersDesktop() present');
+    assert.match(js, /function auroraRenderUsersCards\(/, 'auroraRenderUsersCards() present');
+    assert.match(js, /function auroraUserActionBtns\(/, 'auroraUserActionBtns() present');
+    assert.match(js, /function auroraMfaTag\(/, 'auroraMfaTag() present');
+    // Guards at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderUsersDesktop/, 'renderUsersDesktop() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderUsersCards/, 'renderUsersCards() has isAurora guard');
+  });
+
+  it('aurora.css carries the users-page additions', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.banner-amber\b/, '.banner-amber rule present in aurora.css');
+    assert.match(css, /\.aurora-user-card\b/, '.aurora-user-card rule present in aurora.css');
+    assert.match(css, /\.tw-step\b/, '.tw-step animation rule present in aurora.css');
+    assert.match(css, /\.tw-preset-label\b/, '.tw-preset-label rule present in aurora.css');
+  });
+});

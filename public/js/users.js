@@ -51,6 +51,9 @@
     }
   }
 
+  // ─── Aurora theme detector ────────────────────────────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   // ─── Render users (responsive: table on desktop, cards on mobile) ──
   var isMobile = function () { return window.innerWidth < 768; };
   var usersCard = document.getElementById('users-table').parentElement;
@@ -61,7 +64,130 @@
     if (isMobile()) { renderUsersCards(users); } else { renderUsersDesktop(users); }
   }
 
+  // ─── Aurora: action buttons (icon-action class, SVG icons) ───
+  function auroraUserActionBtns(u) {
+    var editSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z"/></svg>';
+    var toggleSvg = u.enabled
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>';
+    var deleteSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+    var editTitle = GC.t['rdp.edit'] || 'Bearbeiten';
+    var toggleTitle = u.enabled ? (GC.t['users.disable'] || 'Deaktivieren') : (GC.t['users.enable'] || 'Aktivieren');
+    var deleteTitle = GC.t['rdp.delete'] || 'Löschen';
+    return '<div class="row-actions">' +
+      '<button class="icon-action" title="' + escapeHtml(editTitle) + '" data-action="edit-user" data-uid="' + u.id + '">' + editSvg + '</button>' +
+      '<button class="icon-action" title="' + escapeHtml(toggleTitle) + '" data-action="toggle-user" data-uid="' + u.id + '" data-enabled="' + (u.enabled ? '1' : '0') + '">' + toggleSvg + '</button>' +
+      '<button class="icon-action danger" title="' + escapeHtml(deleteTitle) + '" data-action="delete-user" data-uid="' + u.id + '">' + deleteSvg + '</button>' +
+    '</div>';
+  }
+
+  // ─── Aurora: MFA status tag ────────────────────────────────
+  function auroraMfaTag(u) {
+    // MFA field is not yet returned by the API; fall back gracefully
+    if (u.totp_enabled) {
+      return '<span class="tag tag-green tag-dot">' + escapeHtml(GC.t['users.mfa_totp'] || 'TOTP') + '</span>';
+    }
+    return '<span class="tag tag-grey tag-dot">' + escapeHtml(GC.t['users.mfa_off'] || 'Off') + '</span>';
+  }
+
+  // ─── Aurora: desktop table render ─────────────────────────
+  function auroraRenderUsersDesktop(users) {
+    document.getElementById('users-table').style.display = '';
+    var mc = document.getElementById('users-mobile-cards');
+    if (mc) mc.remove();
+    tbody.textContent = '';
+
+    if (!users.length) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 5;
+      td.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
+      td.textContent = 'No users found';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    tbody.innerHTML = users.map(function (u) {
+      var roleTag = u.role === 'admin'
+        ? '<span class="tag tag-blue">' + escapeHtml(GC.t['users.role_admin'] || 'Admin') + '</span>'
+        : '<span class="tag tag-grey">' + escapeHtml(GC.t['users.role_user'] || 'User') + '</span>';
+      var displaySub = u.display_name ? '<div style="font-size:11px;color:var(--text-3)">' + escapeHtml(u.display_name) + '</div>' : '';
+      var lastLogin = relativeTime(u.lastAccess);
+      return '<tr>' +
+        '<td class="cell-name">' + escapeHtml(u.username) + displaySub + '</td>' +
+        '<td>' + roleTag + '</td>' +
+        '<td>' + auroraMfaTag(u) + '</td>' +
+        '<td style="font-size:12px;color:var(--muted)">' + escapeHtml(lastLogin) + '</td>' +
+        '<td>' + auroraUserActionBtns(u) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    // Wire up delegated action buttons
+    tbody.addEventListener('click', _auroraHandleUserAction, { once: false });
+  }
+
+  // ─── Aurora: mobile cards render ──────────────────────────
+  function auroraRenderUsersCards(users) {
+    document.getElementById('users-table').style.display = 'none';
+    tbody.textContent = '';
+    var mc = document.getElementById('users-mobile-cards');
+    if (mc) mc.remove();
+
+    var container = document.createElement('div');
+    container.id = 'users-mobile-cards';
+    container.style.cssText = 'display:flex;flex-direction:column;gap:10px;padding:12px';
+
+    if (!users.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
+      empty.textContent = 'No users found';
+      container.appendChild(empty);
+      usersCard.appendChild(container);
+      return;
+    }
+
+    users.forEach(function (u) {
+      var card = document.createElement('div');
+      card.className = 'aurora-user-card';
+
+      var roleTag = u.role === 'admin'
+        ? '<span class="tag tag-blue">' + escapeHtml(GC.t['users.role_admin'] || 'Admin') + '</span>'
+        : '<span class="tag tag-grey">' + escapeHtml(GC.t['users.role_user'] || 'User') + '</span>';
+
+      var displaySub = u.display_name ? '<div class="card-meta" style="margin-top:2px">' + escapeHtml(u.display_name) + '</div>' : '';
+      var lastLogin = relativeTime(u.lastAccess);
+
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+          '<span class="cell-name">' + escapeHtml(u.username) + '</span>' +
+          roleTag +
+          auroraMfaTag(u) +
+        '</div>' +
+        (displaySub ? displaySub : '') +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' + escapeHtml(lastLogin) + '</div>' +
+        auroraUserActionBtns(u);
+
+      container.appendChild(card);
+    });
+
+    usersCard.appendChild(container);
+    container.addEventListener('click', _auroraHandleUserAction);
+  }
+
+  // ─── Aurora: delegated click handler for row-actions ──────
+  function _auroraHandleUserAction(e) {
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    var action = btn.dataset.action;
+    var uid = btn.dataset.uid;
+    if (action === 'edit-user') { openEditModal(uid); }
+    else if (action === 'toggle-user') { toggleUser(uid, btn.dataset.enabled === '1'); }
+    else if (action === 'delete-user') { deleteUser(uid); }
+  }
+
   function renderUsersDesktop(users) {
+    if (isAurora()) return auroraRenderUsersDesktop(users);
     document.getElementById('users-table').style.display = '';
     var mc = document.getElementById('users-mobile-cards');
     if (mc) mc.remove();
@@ -124,6 +250,7 @@
   }
 
   function renderUsersCards(users) {
+    if (isAurora()) return auroraRenderUsersCards(users);
     document.getElementById('users-table').style.display = 'none';
     tbody.textContent = ''; // clear "Laden..." placeholder
     var mc = document.getElementById('users-mobile-cards');
