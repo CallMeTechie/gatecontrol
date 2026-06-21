@@ -177,14 +177,14 @@
         activeClient  = client;
 
         /* append display element */
-        var display     = client.getDisplay();
-        var displayEl   = display.getElement();
+        var guacDisplay = client.getDisplay();
+        var displayEl   = guacDisplay.getElement();
         activeDisplayEl = displayEl;
         container.appendChild(displayEl);
 
         /* Fit the rendered remote display to the container whenever guacd reports
          * its size (first frame + any server-side resize). */
-        display.onresize = function () { setScale(currentScaleMode); }; // eslint-disable-line no-use-before-define
+        guacDisplay.onresize = function () { setScale(currentScaleMode); }; // eslint-disable-line no-use-before-define
 
         /* ---- Mouse (per-connection — new element each time) ---- */
         var mouse = new Guacamole.Mouse(displayEl);
@@ -302,6 +302,12 @@
         window.addEventListener('beforeunload', beforeunloadHandler);
       }
 
+      /* re-register dynamic resize listener idempotently so resize works after reconnect */
+      if (display.mode === 'dynamic' && typeof window !== 'undefined' && resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        window.addEventListener('resize', resizeHandler);
+      }
+
       transition('connect');
       performConnect();
     }
@@ -321,7 +327,6 @@
       /* remove dynamic resize handler */
       if (typeof window !== 'undefined' && resizeHandler) {
         window.removeEventListener('resize', resizeHandler);
-        resizeHandler = null;
       }
       if (resizeTimer !== null) {
         clearTimeout(resizeTimer);
