@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.90.0] — 2026-06-21
+
+### Features
+- Aurora — drittes wählbares Admin-Theme (Dark/Light) (#153)
+
+---
+
 ## [1.89.0] — 2026-06-21
 
 ### Features
