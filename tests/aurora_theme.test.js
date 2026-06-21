@@ -395,3 +395,87 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
     assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present');
   });
 });
+
+// ── Task P2-4a: Routes page structure + toolbar + table (Split A+B) ──────────
+describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
+  it('renders /routes under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora page-header, toolbar, toggle-group, and data-table shell on /routes', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    // Page header Aurora structure
+    assert.match(res.text, /class="page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+    // Toolbar
+    assert.match(res.text, /class="toolbar"/, '.toolbar present');
+    assert.match(res.text, /class="search-box"/, '.search-box present');
+    // Toggle-group type filter (Aurora replaces filter-chips)
+    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+    // Routes list card (full-width, no card-head)
+    assert.match(res.text, /class="card span12"/, '.card.span12 present');
+    // data-table is emitted by JS at runtime; the card wrapper (span12) is in template
+  });
+
+  it('renders all phase0 static contract IDs on /routes under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    // JS-contract IDs that must exist in the template (not JS-generated)
+    assert.match(res.text, /id="routes-subtitle"/, '#routes-subtitle present');
+    assert.match(res.text, /id="routes-count"/, '#routes-count present (hidden span)');
+    assert.match(res.text, /id="route-search"/, '#route-search present');
+    assert.match(res.text, /id="btn-add-route"/, '#btn-add-route present');
+    assert.match(res.text, /id="routes-list"/, '#routes-list present');
+    assert.match(res.text, /id="aurora-type-toggle"/, '#aurora-type-toggle present');
+    // Wizard modal IDs (Split C-F, untouched — still in DOM)
+    assert.match(res.text, /id="route-modal-overlay"/, '#route-modal-overlay present');
+    assert.match(res.text, /id="service-modal-overlay"/, '#service-modal-overlay present');
+    // Batch bar IDs (Split F, untouched)
+    assert.match(res.text, /id="batch-bar-routes"/, '#batch-bar-routes present');
+    assert.match(res.text, /id="batch-cancel-routes"/, '#batch-cancel-routes present');
+  });
+
+  it('toggle-group has All/HTTP/L4/RDP buttons with data-value attributes', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /data-value=""/, 'All toggle-btn (data-value="") present');
+    assert.match(res.text, /data-value="http"/, 'HTTP toggle-btn present');
+    assert.match(res.text, /data-value="l4"/, 'L4 toggle-btn present');
+    assert.match(res.text, /data-value="rdp"/, 'RDP toggle-btn present');
+  });
+
+  it('Aurora layout omits limit-badge section and old routes-toolbar class', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.doesNotMatch(res.text, /class="limit-badge"/, 'limit-badge absent in Aurora routes header');
+    assert.doesNotMatch(res.text, /class="routes-toolbar"/, 'old .routes-toolbar class absent in Aurora');
+    assert.doesNotMatch(res.text, /class="card-head"/, '.card-head absent in Aurora routes card');
+  });
+
+  it('routes.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'routes.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in routes.js');
+    assert.match(js, /function auroraRenderTableRow\(/, 'auroraRenderTableRow() present');
+    assert.match(js, /function auroraRenderTable\(/, 'auroraRenderTable() present');
+    assert.match(js, /function auroraInitTypeToggle\(/, 'auroraInitTypeToggle() present');
+    // Guards at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTableRow/, 'renderTableRow() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTable/, 'renderTable() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) viewState\.view = 'table'/, 'viewState.view forced to table in Aurora');
+    assert.match(js, /if \(isAurora\(\)\) auroraInitTypeToggle/, 'auroraInitTypeToggle() called in init');
+  });
+
+  it('aurora.css carries toggle, data-table, row-actions, icon-action rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.toggle\b/, '.toggle rule present in aurora.css');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
+    assert.match(css, /\.row-actions\b/, '.row-actions rule present in aurora.css');
+    assert.match(css, /\.icon-action\b/, '.icon-action rule present in aurora.css');
+    assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in aurora.css');
+  });
+});
