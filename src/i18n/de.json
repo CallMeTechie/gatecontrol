@@ -447,6 +447,7 @@
   "profile.theme_classic": "Classic",
   "profile.theme_pro": "Pro",
   "profile.theme_aurora": "Aurora",
+  "profile.security_display": "Sicherheit & Anzeige",
   "settings.default_theme": "Standard-Design",
   "settings.default_theme_hint": "Design für neue Benutzer und unauthentifizierte Seiten",
   "settings.app_info": "Anwendungsinformationen",

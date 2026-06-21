@@ -1267,3 +1267,72 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     assert.match(css, /\.settings-panel\b/, '.settings-panel rule in aurora.css');
   });
 });
+
+// ── Task P2-12: Profile page — Aurora mockup fidelity ────────────────────────
+describe('aurora theme — profile layout (Task P2-12)', () => {
+  it('renders /profile under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora grid structure and signature classes on /profile', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /class="grid"/, '.grid container present');
+    assert.match(res.text, /class="card span6"/, '.card.span6 present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+    assert.match(res.text, /class="form-input"/, '.form-input on inputs present');
+    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+    // Aurora profile must NOT use old .two-col or .card-head pattern
+    assert.doesNotMatch(res.text, /class="two-col"/, '.two-col absent in Aurora profile');
+    assert.doesNotMatch(res.text, /class="card-head"/, '.card-head absent in Aurora profile');
+  });
+
+  it('renders all phase0 JS-contract IDs on /profile under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /id="settings-username"/, '#settings-username present');
+    assert.match(res.text, /id="settings-display-name"/, '#settings-display-name present');
+    assert.match(res.text, /id="settings-email"/, '#settings-email present');
+    assert.match(res.text, /id="profile-message"/, '#profile-message present');
+    assert.match(res.text, /id="btn-save-profile"/, '#btn-save-profile present');
+    assert.match(res.text, /id="settings-current-pw"/, '#settings-current-pw present');
+    assert.match(res.text, /id="settings-new-pw"/, '#settings-new-pw present');
+    assert.match(res.text, /id="settings-confirm-pw"/, '#settings-confirm-pw present');
+    assert.match(res.text, /id="password-message"/, '#password-message present');
+    assert.match(res.text, /id="btn-change-password"/, '#btn-change-password present');
+    assert.match(res.text, /id="language-buttons"/, '#language-buttons present');
+    assert.match(res.text, /id="theme-buttons"/, '#theme-buttons present');
+  });
+
+  it('renders all 3 theme-picker buttons with correct data-theme attributes', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /data-theme="default"/, 'data-theme="default" button present');
+    assert.match(res.text, /data-theme="pro"/, 'data-theme="pro" button present');
+    assert.match(res.text, /data-theme="aurora"/, 'data-theme="aurora" button present');
+  });
+
+  it('aurora theme-picker button carries .on class when theme is aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    // The aurora button should be marked active (.on) when the user has aurora selected
+    assert.match(res.text, /toggle-btn on[^"]*"[^>]*data-theme="aurora"|data-theme="aurora"[^>]*class="[^"]*toggle-btn on/, 'aurora toggle-btn has .on class when aurora theme selected');
+  });
+
+  it('renders language buttons inside #language-buttons as toggle-group', async () => {
+    selectAurora();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /id="language-buttons"[\s\S]{0,30}class="toggle-group"|class="toggle-group"[^>]*id="language-buttons"/, '#language-buttons wraps a .toggle-group');
+    assert.match(res.text, /data-lang=/, 'language buttons have data-lang attribute');
+  });
+
+  it('i18n has profile.security_display in both en.json and de.json', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
+    assert.ok(en['profile.security_display'], 'profile.security_display present in en.json');
+    assert.ok(de['profile.security_display'], 'profile.security_display present in de.json');
+  });
+});
