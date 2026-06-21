@@ -3391,11 +3391,18 @@ table tbody tr:last-child td { border-bottom: none; }
 .au-actions { display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
 /* ── Browser RDP Session Player (pro theme) ──────────────────────────────── */
+body.rdp-session-body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
 .rdp-session-page {
   --player-bg:   #0d1117;
   --player-grid: #1a212c;
-  margin: calc(-1 * var(--space-8));       /* cancel .page-content padding */
-  height: calc(100vh - var(--topbar-h));
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;

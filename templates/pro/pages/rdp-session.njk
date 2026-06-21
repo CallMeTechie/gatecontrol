@@ -1,6 +1,21 @@
-{% extends theme + "/layout.njk" %}
-
-{% block content %}
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#F8FAFC">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ t('rdp.session.title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
+</head>
+<body class="rdp-session-body">
 <div class="rdp-session-page">
 
   {# ─── Remote display surface ──────────────────────────────────────────── #}
@@ -100,9 +115,7 @@
   </div>{# /rdp-session-toolbar #}
 
 </div>{# /rdp-session-page #}
-{% endblock %}
 
-{% block scripts %}
 {# Script load order: guacamole → player-logic → player → JSON islands → init #}
 <script src="/vendor/guacamole-common-js/guacamole-common.min.js?v={{ appVersion }}"></script>
 <script src="/js/rdp-player-logic.js?v={{ appVersion }}"></script>
@@ -244,4 +257,5 @@
   });
 })();
 </script>
-{% endblock %}
+</body>
+</html>
