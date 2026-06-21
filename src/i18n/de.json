@@ -439,6 +439,7 @@
   "profile.theme_hint": "Änderung wird beim nächsten Seitenaufruf wirksam",
   "profile.theme_classic": "Classic",
   "profile.theme_pro": "Pro",
+  "profile.theme_aurora": "Aurora",
   "settings.default_theme": "Standard-Design",
   "settings.default_theme_hint": "Design für neue Benutzer und unauthentifizierte Seiten",
   "settings.app_info": "Anwendungsinformationen",
@@ -1851,5 +1852,6 @@
   "pihole.cfg.saved": "Pi-hole-Einstellungen gespeichert",
   "pihole.cfg.url_required": "URL erforderlich",
   "pihole.cfg.confirm_delete": "Diese Instanz löschen?",
-  "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port"
+  "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port",
+  "aurora.mode_toggle": "Hell/Dunkel umschalten"
 }

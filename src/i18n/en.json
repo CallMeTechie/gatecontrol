@@ -439,6 +439,7 @@
   "profile.theme_hint": "Change takes effect on next page load",
   "profile.theme_classic": "Classic",
   "profile.theme_pro": "Pro",
+  "profile.theme_aurora": "Aurora",
   "settings.default_theme": "Default Theme",
   "settings.default_theme_hint": "Theme for new users and unauthenticated pages",
   "settings.app_info": "Application Info",
@@ -1851,5 +1852,6 @@
   "pihole.cfg.saved": "Pi-hole settings saved",
   "pihole.cfg.url_required": "URL required",
   "pihole.cfg.confirm_delete": "Delete this instance?",
-  "pihole.cfg.dns_not_reachable": "not reachable on port"
+  "pihole.cfg.dns_not_reachable": "not reachable on port",
+  "aurora.mode_toggle": "Toggle light/dark"
 }

@@ -1,0 +1,59 @@
+<style nonce="{{ cspNonce }}">
+  #modal-gateway-delete .modal { max-width: min(560px, 95vw); width: 100%; }
+  #modal-gateway-delete .gw-del-summary { font-family: var(--font-mono, monospace); font-size: 13px; padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; }
+  #modal-gateway-delete .gw-del-routes { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.6; max-height: 180px; overflow-y: auto; }
+  #modal-gateway-delete .gw-del-routes li { color: #374151; }
+  #modal-gateway-delete .gw-del-required-ip { font-family: var(--font-mono, monospace); font-size: 14px; padding: 1px 6px; background: #e5e7eb; border-radius: 3px; font-weight: 600; }
+  #modal-gateway-delete .gw-del-warning { padding: 10px 12px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 13px; line-height: 1.5; margin-bottom: 14px; }
+  #modal-gateway-delete .gw-del-status { display: block; min-height: 18px; }
+  @media (max-width: 640px) {
+    #modal-gateway-delete .modal { max-width: 100vw; max-height: 100vh; border-radius: 0; }
+  }
+</style>
+
+<div class="modal-overlay" id="modal-gateway-delete" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">{{ t('gateway_delete_title') }}</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="gw-del-warning">
+        <strong>⚠ {{ t('gateway_delete_warning_title') }}</strong>
+        <div style="margin-top:6px">{{ t('gateway_delete_warning_body') }}</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('gateway_delete_peer_label') }}</label>
+        <div class="gw-del-summary" id="gw-delete-peer-summary">&nbsp;</div>
+      </div>
+
+      <div class="form-group" id="gw-delete-routes-section">
+        <label class="form-label" id="gw-delete-routes-label">{{ t('gateway_delete_affected_routes') }}</label>
+        <ul class="gw-del-routes" id="gw-delete-routes-list"></ul>
+        <small class="form-hint" id="gw-delete-routes-hint" style="margin-top:6px;display:block"></small>
+      </div>
+
+      <div class="form-group" id="gw-delete-no-routes-section" style="display:none">
+        <small class="form-hint">{{ t('gateway_delete_no_routes') }}</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="gw-delete-confirm-input">
+          {{ t('gateway_delete_confirm_ip_label') }}
+          <span class="gw-del-required-ip" id="gw-delete-required-ip">—</span>
+        </label>
+        <input type="text" class="form-input" id="gw-delete-confirm-input"
+               placeholder="10.8.0.X" autocomplete="off" spellcheck="false"
+               style="font-family:var(--font-mono,monospace);letter-spacing:0.5px">
+        <small class="form-hint gw-del-status" id="gw-delete-confirm-status">&nbsp;</small>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button class="btn btn-danger" id="gw-delete-confirm-btn" disabled>
+        {{ t('gateway_delete_button') }}
+      </button>
+    </div>
+  </div>
+</div>

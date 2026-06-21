@@ -60,9 +60,27 @@ _Nothing actively in progress — pick the next item from the planned candidates
 
 ## 📋 Planned — new candidates (2026-05-24)
 
-### 6. Status page (internal / public)
-A statuspage-style overview per proxied service generated from `monitor.js` uptime data, optionally shareable publicly.
-- **Repos:** server. **Builds on:** uptime monitoring. **Tier:** Community + Pro (public page).
+### 6. Personalised VPN landing page (captive-portal style)
+_Reconceived 2026-06-20 — replaces the original "uptime status page" scope (see note at end)._ Every device connected to the VPN is shown a **personalised start page** that surfaces **only the information released to that specific user/device**. It is the "home screen" of the private network: device status, the device's own Pi-hole stats, traffic, and tiles linking to the services that device may reach (smart-home hub, family hub, etc.).
+
+**Per-device identity (the enabler GC already has):** a request arriving over the tunnel is mapped from its **VPN source IP → `peer_id`** (the server already owns this mapping via `allowed_ips`, and the Pi-hole stats path already does exactly this with `req.tokenPeerId` / `scope=self`, see `project_pihole_dns_topology` + the stats-hardening work). So the page can render strictly per-peer with no extra login.
+
+**Widgets (each shown only if released to the peer/its group):**
+- **Device status** — online, last handshake, rx/tx (from `wg` stats already collected on the peer).
+- **Own Pi-hole stats** — queries/blocked/top-domains for *this* device via the existing `scope=self` per-peer envelope (reuse, not new). Optionally the existing Android "pause blocking" control.
+- **Traffic** — this device's transfer over time.
+- **Service tiles** — links to the proxied routes this peer is authorised for (smart-home hub, family hub, NAS, …), driven by per-peer/group release.
+
+**Authorisation model:** what each peer sees is a *release set* — bind widgets/tiles to peers, **groups (#16)**, **roles (#19)** or **labels (#20)**, reusing #4's fail-closed evaluation. No peer ever sees another device's data or an unreleased service.
+
+**Key decision before build — how the page auto-appears** (determines feasibility; pick before implementing):
+- **Option A — true captive-portal interception:** intercept the OS connectivity-probe URLs (`captive.apple.com`, `connectivitycheck.gstatic.com`, `msftconnecttest.com`) at the GC DNS/Caddy layer and redirect to the portal, triggering the native pop-up. **Caveat:** auto-pop-up over a *VPN* interface (vs Wi-Fi) is OS-dependent and unreliable; needs validation per platform.
+- **Option B — native-client launch:** the GC Android / Windows-Pro clients open the landing page on connect. Reliable + controllable, but only for native-client users, not bare-WireGuard peers.
+- **Option C — friendly DNS landing + homepage hint:** serve the portal at a friendly internal name (e.g. `home.<vpn-domain>`) via Caddy + dnsmasq, optionally set as the client's browser homepage/new-tab. Most portable, least "automatic".
+- Likely outcome: **B for native clients + C as the universal fallback**, A only if platform tests prove it reliable.
+
+- **Builds on:** Pi-hole `scope=self` stats (existing), peer↔`allowed_ips` identity, Caddy + dnsmasq, route/auth model, #16 groups / #19 RBAC / #20 labels for release scoping. **Repos:** server (portal page + per-peer data API + release model + i18n) + android-client / windows-client-pro (Option B launch). **Tier:** Community (basic personalised page) + Pro (release scoping / widgets). **Likely phased:** Phase 1 server-served page + device/Pi-hole/traffic widgets; Phase 2 release-scoping + service tiles; Phase 3 auto-appear mechanism.
+- **Note — dropped scope:** the original idea (public statuspage-style *uptime* overview from `monitor.js`) is a different feature; its still-useful part can become **one optional widget** here, or move to the backlog as a standalone "public uptime page". Flagging so it is not silently lost.
 
 ### 7. Native alert channels for homelab
 Add ntfy / Gotify / Telegram / Discord alongside the existing email + webhook alerting.
@@ -85,6 +103,38 @@ The DNS chain forwards client queries to upstream resolvers in **plaintext UDP/5
 - **Notes / open questions:** packaging — sidecar container vs. in-server process (server already runs host-net Docker); failure mode must fail **safe** (no silent fallback to plaintext if the encrypted resolver is down); interaction with the existing dnsmasq health probe (`pihole.js:86`); per-route vs. global upstream. Validate it does **not** regress the Pi-hole ECS/EDNS0 chain (`project_pihole_dns_topology`).
 - **Repos:** server (DNS chain wiring + settings UI + i18n). **Builds on:** Pi-hole/dnsmasq DNS topology, #? split-DNS (backlog) if landed. **Tier:** Pro (privacy feature). _Origin: hardening idea adapted from the `secure-wireguard-implementation` guide (Unbound + DNSCrypt + DNSSEC); the SSH-port/port-knocking/honeypot/MTU parts of that guide were reviewed and rejected as host-ops, already-covered, or counterproductive._
 
+### 13. Enterprise SSO (OIDC) + session/login expiry
+GC authenticates web admins with its own login + token-based enrollment; there is no federation with an enterprise identity provider, and a connected VPN peer never has to re-authenticate. This item adds two paired enterprise capabilities. **(a) SSO:** validate an OIDC/JWT from a generic provider (Keycloak / Authentik / Azure Entra / Google / Okta), and map a **configurable groups claim** → GC roles/permissions. Hub-and-spoke fits this cleanly — auth is already central, so no mesh machinery is needed; the 80 % win is *one* generic OIDC integration, not per-vendor SDKs. **(b) Session/login expiry:** an account setting forces a peer to re-authenticate after N hours since its last interactive login; on expiry the peer is marked expired and **live-dropped from `wg0.conf`**, reusing the exact fail-closed mechanism from #4 (the `accessReconciler` already live-disconnects newly-denied peers via `wg syncconf`), then restored on re-auth.
+- **Builds on:** existing admin auth/session, #4 access reconciler (live peer disconnect), peer enable/disable. **Repos:** server (auth + settings UI + i18n); clients only if peer re-auth needs in-app UX. **Tier:** Pro (`sso` / `session_expiry`). _Origin: NetBird `management/server/idp` + `PeerLoginExpiration` — **AGPLv3**, concept only, clean-room (do not copy management/ code)._
+
+### 14. Device posture checks
+GC gates access by time (#4) and by IP/geo (`ip_filter`, country already supported), but not by **device posture**. This item lets an admin require a peer to satisfy posture conditions before access is granted: minimum client version, OS / kernel version, a required running process, (geo already covered). Checks are defined centrally and bound to a route or peer; they are evaluated at connect / config-build time against **client-reported metadata**, reusing #4's build-time fail-closed enforcement. **Cross-cutting caveat:** requires the Android + Windows-Pro clients to report the needed posture metadata (OS/version/process) in their telemetry, so it is heavier than a server-only feature.
+- **Builds on:** client telemetry, #4 fail-closed access enforcement, `ip_filter` (geo). **Repos:** server (check model + eval + UI) + android-client + windows-client-pro (posture reporting). **Tier:** Pro (`device_posture`). _Origin: NetBird `management/server/posture` — **AGPLv3**, concept only, clean-room._
+
+### 15. Structured audit log
+GC has activity/access logs and a backlog item for **Log streaming** (transport → Syslog/Loki/ELK). This item is the complementary *data-model* half: a structured, enumerated event store — `Event{ timestamp, initiator, target, scope/account, activity-code, meta-json }` — with a catalogued activity list and a queryable, paginated admin API + UI. It gives the Log-streaming transports something structured to ship and makes admin actions (peer/route/policy/setup-key/SSO changes) auditable beyond free-text logs.
+- **Builds on / sharpens:** backlog "Log streaming". **Repos:** server (event store + API + UI + i18n). **Tier:** Community (core audit) + Pro (retention / export). _Origin: NetBird `management/server/activity` — **AGPLv3**, concept only, clean-room._
+
+### 16. Group-based ACL segmentation
+Access management today is per-route / per-peer, which does not scale and has no grouping primitive. This item adds **peer/route groups** and group-scoped rules (source-group → destination-group/route, protocol/ports). **Enforcement stays central at the hub** (Caddy / WG / L4 config build), extending #4's build-time `isDenied` model with group membership — explicitly **not** NetBird's mesh model of compiling and distributing per-peer firewall rules (GC is hub-and-spoke, so there is one enforcement point, not N). The transferable substance is the group abstraction, not the distribution mechanism.
+- **Builds on:** #4 access enforcement, route/peer model, #13 groups (if SSO groups land first, reuse them). **Repos:** server (group model + rule compile-at-hub + UI + i18n). **Tier:** Pro (`acl_groups`). _Origin: NetBird `management/server` policy engine — **AGPLv3**, concept only, clean-room; enforcement model deliberately differs (central, not mesh)._
+
+### 17. Richer per-resource authentication (PIN + email-OTP/whitelist + reusable auth policies)
+GC protects a proxied route today with share-links (bearer token), route-auth, basic-auth and IP/geo filters. Pangolin offers a richer per-resource menu; the on-target additions for GC are: **(a) PIN code** — a short numeric gate, lighter than a share-link, for low-sensitivity resources; **(b) email-OTP + email whitelist (with wildcards)** — gate a route to specific addresses/domains that receive a one-time code, i.e. *identity-bound* access instead of a transferable bearer token (closes the share-link weakness that the URL *is* the credential); **(c) reusable auth policies** — define an auth configuration once and apply it to many routes with precedence (shared policy > default > inline), instead of re-configuring auth per route. Each method is stored per route and enforced in the existing Caddy auth subroute / request path.
+- **Builds on:** #3 share-links, route-auth, `ip_filter`, the Caddy auth subroute (`caddyAuthSubroute`). **Repos:** server (auth methods + email-OTP delivery + settings UI + i18n). **Tier:** Pro. _Origin: Pangolin `server/routers/resource` (resourcePincode / resourceOtp / resourceWhitelist / resourcePolicies) — **AGPLv3 / commercial**, concept only, clean-room._
+
+### 18. Per-target health checks + multi-backend load balancing
+GC failover is **gateway-level** (gateway pools + loopback-failover) and the RDP health monitor is a loopback probe; a single HTTP/L4 route still points at one upstream. Pangolin attaches an **active HTTP health check per target** (path, scheme, interval, timeout, expected status, healthy/unhealthy thresholds) and selects among multiple targets by **priority** with automatic failover, aggregating status into the resource. For GC this means a route can carry **multiple upstreams** with active per-backend probing and automatic LB/failover. **Low implementation cost: Caddy supports this natively** (`reverse_proxy` active `health_checks` + `lb_policy` + per-upstream weights), so it is mostly data-model + config-generation + UI, not new proxy machinery.
+- **Builds on:** Caddy reverse_proxy, gateway health/pool model, `monitor.js`, statusHistory pattern. **Repos:** server (multi-upstream route model + health-check config + UI + i18n). **Tier:** Pro. _Origin: Pangolin `server/routers/target` + `targetHealthCheck` — **AGPLv3 / commercial**, concept only; GC realises it via Caddy-native health checks._
+
+### 19. Multi-admin RBAC (roles + permissions)
+GC appears effectively single-admin. Pangolin models per-org **roles** + a ~180-entry **action permission catalogue** with `roleActions` / `userActions` and a `checkUserActionPermission` middleware. The high-value 80 % for GC is **multiple admin accounts with scoped roles** (e.g. read-only auditor, route-operator, gateway-operator, full admin) enforced by a permission-check middleware on the admin API — *without* yet taking on full multi-org/multi-tenancy (the larger lift, deferred). Pairs naturally with **#13 SSO** (map IdP group claims → GC roles).
+- **Builds on:** #13 SSO (claims→roles), existing admin auth/session, admin API surface. **Repos:** server (role/permission model + middleware + UI + i18n). **Tier:** Pro (`rbac`). **Deferred sub-scope:** full multi-org/tenancy (org boundary, per-org data isolation) as a separate larger item. _Origin: Pangolin `server/routers/{org,role}` + `server/auth/actions.ts` — **AGPLv3 / commercial**, concept only, clean-room._
+
+### 20. Labels / tagging for routes, gateways and peers
+GC has no tagging primitive; at scale (many routes/gateways/peers) there is no way to group/filter by purpose, team or environment. This item adds lightweight **labels** (name + colour, per scope) attachable to routes, gateways and peers, with filtering in the admin UI. Cheap, self-contained, and a foundation that **#19 RBAC** and **#16 ACL groups** can later scope against (e.g. a role limited to `env:prod` resources).
+- **Builds on:** nothing hard-required; complements #16 groups + #19 RBAC. **Repos:** server (label model + attach/detach + UI filters + i18n). **Tier:** Community (core) + Pro (label-scoped access). _Origin: Pangolin `labels` / `siteLabels` / `resourceLabels` — **AGPLv3 / commercial**, concept only, clean-room._
+
 ---
 
 ## 📥 Carried over from backlog
@@ -106,4 +156,17 @@ The DNS chain forwards client queries to upstream resolvers in **plaintext UDP/5
 
 ---
 
-_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-06-19._
+### 12. WireGuard traffic obfuscation — DPI / censorship resistance (opt-in)
+WireGuard has a recognisable on-the-wire fingerprint (the 4-byte message-type header + characteristic handshake sizes), so DPI can detect and block/throttle it. Users behind restrictive corporate firewalls, censoring ISPs, or in heavily-filtered countries simply can't connect today — the tunnel just fails. This item adds an **opt-in** obfuscation layer that disguises the WG traffic so it survives DPI. **Strictly opt-in / off by default:** for the typical homelab or normal-ISP user it is pure overhead and must never be on the default path. The transferable substance (not the code) is the technique from `ClusterM/wg-obfuscator`: **(a)** randomise the WG type header (kills the primary DPI signature), **(b)** XOR-scramble with a shared plaintext key, **(c)** dummy-pad handshake/data packets to vary sizes, **(d)** optional protocol masking (emulate STUN, which DPI rarely blocks).
+
+**First decision before any build — Path A vs Path B:**
+- **Path A — external obfuscator sidecar** (the wg-obfuscator model): a UDP proxy runs on **both** ends; WG `Endpoint` points at `127.0.0.1:<port>`, the real endpoint moves into the proxy config. Works with any WG, but is **cross-cutting**: server + gateways + **every** client (Windows-Pro, Android) need the proxy/process. The XOR+padding core is ~150 lines and trivially re-implementable natively per client; STUN masking (~280 lines) is optional/phase-2.
+- **Path B — AmneziaWG** (a `wireguard-go` fork with obfuscation built into the protocol). GC already ships userspace WG (`/root/docker-wireguard-go`), so server/gateway side could be a **binary swap** with obfuscation in-protocol — potentially far less glue than Path A. Clients would need the Amnezia variant. **Investigate B before committing to A.**
+
+- **Licence flag:** wg-obfuscator is **GPL-3.0**. Given GC's Pro/commercial licensing, it may only be used as a **separate process / sidecar** (GPL aggregation), never linked or embedded into Pro-licensed code; a clean-room native re-implementation of the (trivial) idea avoids the issue, but copying the `.h` does not. AmneziaWG is similarly GPL — same separate-process rule applies.
+- **Notes / open questions:** shared-key distribution + rotation (the obfuscation key is plaintext, symmetric, per-deployment); per-route vs. whole-tunnel; UX for enabling it only where needed; throughput/CPU on the NAS; interaction with #10 (obfuscation changes the effective endpoint to loopback).
+- **Repos:** server + gateway + windows-client-pro + android-client (Path A) **or** server + gateway + clients' WG layer (Path B). **Builds on:** userspace WG (`docker-wireguard-go`), connect/endpoint model. **Tier:** Pro (`traffic_obfuscation`), off by default. _Origin: `ClusterM/wg-obfuscator` (technique only, not code — GPL-3)._
+
+---
+
+_Status legend: ✅ shipped · 🔜 in progress · 📋 planned · 📥 backlog · 🧱 tech-debt. Last updated 2026-06-20._

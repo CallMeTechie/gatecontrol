@@ -1,0 +1,35 @@
+{% extends theme + "/layout.njk" %}
+{% block content %}
+<div class="gw-fleet">
+  <div id="fleet-view">
+    <div class="page-h"><div><h1>{{ t('gateways.title') }}</h1><p class="page-sub">{{ t('gateways.subtitle') }}</p></div></div>
+    <div id="fleet-kpis" class="kpis"></div>
+    <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
+    <div id="fleet-grid" class="grid"></div>
+  </div>
+  <div id="gw-detail-view" hidden></div>
+</div>
+
+{# LAN-Discovery settings modal — body is populated by gateways.js when the gear icon is clicked. #}
+<div class="modal-overlay" id="gw-discovery-modal-overlay" style="display:none">
+  <div class="modal" style="width:600px">
+    <div class="modal-head">
+      <span class="modal-title" id="gw-discovery-modal-title">{{ t('gateways.discovery.settings_title') }}</span>
+      <button class="modal-close" data-close-modal aria-label="{{ t('gateways.discovery.cancel') }}">&times;</button>
+    </div>
+    <div class="modal-body" id="gw-discovery-modal-body"></div>
+  </div>
+</div>
+
+{# Auto-update setup modal — body is populated by gateways.js when the package icon is clicked. #}
+<div class="modal-overlay" id="gw-setup-modal-overlay" style="display:none">
+  <div class="modal" style="width:680px">
+    <div class="modal-head">
+      <span class="modal-title" id="gw-setup-modal-title">{{ t('gateways.setup.modal_title') }}</span>
+      <button class="modal-close" data-close-modal aria-label="{{ t('gateways.discovery.cancel') }}">&times;</button>
+    </div>
+    <div class="modal-body" id="gw-setup-modal-body"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

@@ -6,7 +6,7 @@ const settings = require('../services/settings');
 
 function getDefaultTheme() {
   const dbTheme = settings.get('default_theme');
-  return (dbTheme === 'default' || dbTheme === 'pro') ? dbTheme : config.theme.defaultTheme;
+  return (dbTheme === 'default' || dbTheme === 'pro' || dbTheme === 'aurora') ? dbTheme : config.theme.defaultTheme;
 }
 
 function injectLocals(req, res, next) {
