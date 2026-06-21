@@ -1370,6 +1370,7 @@
   "rdp.browser.set_kept": "set — leave blank to keep",
   "rdp.browser.gateway_blocked": "SFTP and audio are not available for gateway/external access (the secondary target is unreachable for guacd).",
   "rdp.browser.license_locked": "Browser sessions are not included in your license.",
+  "rdp.browser.open": "Open in browser",
 
   "rdp.session.title": "Remote Desktop Session",
   "rdp.session.status.connecting": "Connecting…",

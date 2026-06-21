@@ -354,6 +354,18 @@
         actions.appendChild(disconnBtn);
       }
 
+      if (r.browser_enabled && GC.features && GC.features.browser_sessions) {
+        var browserBtn = document.createElement('button');
+        browserBtn.className = 'btn btn-sm btn-primary';
+        browserBtn.textContent = GC.t['rdp.browser.open'] || 'Im Browser öffnen';
+        (function (id) {
+          browserBtn.addEventListener('click', function () {
+            window.open('/rdp/' + id + '/session', '_blank', 'noopener');
+          });
+        }(r.id));
+        actions.appendChild(browserBtn);
+      }
+
       var editBtn = document.createElement('button');
       editBtn.className = 'btn btn-sm btn-ghost';
       editBtn.dataset.edit = r.id;
