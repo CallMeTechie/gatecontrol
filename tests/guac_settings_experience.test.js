@@ -40,3 +40,30 @@ describe('rdp display settings', () => {
     assert.equal(c.settings['enable-menu-animations'], 'true');
   });
 });
+
+describe('rdp network_profile → experience flags', () => {
+  it('lan/auto enable font-smoothing + full-window-drag + desktop-composition', () => {
+    for (const p of ['lan', 'auto']) {
+      const c = buildConnectionSettings(rdpRoute({ network_profile: p }), {});
+      assert.equal(c.settings['enable-font-smoothing'], 'true');
+      assert.equal(c.settings['enable-full-window-drag'], 'true');
+      assert.equal(c.settings['enable-desktop-composition'], 'true');
+    }
+  });
+  it('broadband keeps font-smoothing but drops drag + composition', () => {
+    const c = buildConnectionSettings(rdpRoute({ network_profile: 'broadband' }), {});
+    assert.equal(c.settings['enable-font-smoothing'], 'true');
+    assert.equal(c.settings['enable-full-window-drag'], 'false');
+    assert.equal(c.settings['enable-desktop-composition'], 'false');
+  });
+  it('modem disables all three experience extras', () => {
+    const c = buildConnectionSettings(rdpRoute({ network_profile: 'modem' }), {});
+    assert.equal(c.settings['enable-font-smoothing'], 'false');
+    assert.equal(c.settings['enable-full-window-drag'], 'false');
+    assert.equal(c.settings['enable-desktop-composition'], 'false');
+  });
+  it('does not force-disable bitmap caching on any profile', () => {
+    const c = buildConnectionSettings(rdpRoute({ network_profile: 'modem' }), {});
+    assert.equal(c.settings['disable-bitmap-caching'], undefined);
+  });
+});

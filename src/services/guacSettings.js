@@ -36,6 +36,16 @@ function applySftp(settings, route, creds) {
   if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
 }
 
+function applyExperience(settings, route) {
+  if (route.protocol !== 'rdp') return;
+  const profile = route.network_profile || 'auto';
+  const isLanOrAuto = profile === 'lan' || profile === 'auto';
+  const isBroadband = profile === 'broadband';
+  settings['enable-font-smoothing'] = (isLanOrAuto || isBroadband) ? 'true' : 'false';
+  settings['enable-full-window-drag'] = isLanOrAuto ? 'true' : 'false';
+  settings['enable-desktop-composition'] = isLanOrAuto ? 'true' : 'false';
+}
+
 function applyDisplay(settings, route) {
   settings['color-depth'] = String(route.color_depth || 32);
   if (route.protocol === 'rdp') {
@@ -50,6 +60,7 @@ function buildRdp(route, creds) {
   const settings = { hostname: t.host, port: String(t.port), security: 'any', 'ignore-cert': 'true' };
   applyClipboard(settings, route);
   applyDisplay(settings, route);
+  applyExperience(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
   applyAudio(settings, route);
@@ -118,4 +129,4 @@ function buildConnectionSettings(route, creds = {}) {
 // every request between the Task-4 and Task-10 commits (review-chain C3).
 const PHASE2A_PROTOCOLS = SUPPORTED_PROTOCOLS;
 
-module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay };
+module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience };
