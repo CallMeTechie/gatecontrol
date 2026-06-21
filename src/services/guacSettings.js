@@ -37,7 +37,7 @@ function applySftp(settings, route, creds) {
 }
 
 function applySecurity(settings, route) {
-  settings.security = route.nla_enabled ? 'any' : 'rdp';
+  settings.security = route.nla_enabled === 0 ? 'rdp' : 'any';
   if (route.domain && typeof route.domain === 'string' && route.domain.length > 0) {
     settings.domain = route.domain;
   }

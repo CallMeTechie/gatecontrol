@@ -358,18 +358,18 @@
     function setScale(mode) {
       if (!activeClient) return;
       currentScaleMode = (mode === 'native') ? 'native' : 'fit';
-      var scaleMode = logic().scaleFor(mode, { protocol: activeProtocol });
-      var display   = activeClient.getDisplay();
+      var scaleMode   = logic().scaleFor(mode, { protocol: activeProtocol });
+      var guacDisplay = activeClient.getDisplay();
       if (scaleMode === 'native') {
-        display.scale(1);
+        guacDisplay.scale(1);
       } else {
         /* 'fit' — shrink/expand to fill container while preserving aspect ratio */
         var cw = container.offsetWidth;
         var ch = container.offsetHeight;
-        var dw = display.getWidth();
-        var dh = display.getHeight();
+        var dw = guacDisplay.getWidth();
+        var dh = guacDisplay.getHeight();
         if (dw > 0 && dh > 0) {
-          display.scale(Math.min(cw / dw, ch / dh));
+          guacDisplay.scale(Math.min(cw / dw, ch / dh));
         }
       }
     }
