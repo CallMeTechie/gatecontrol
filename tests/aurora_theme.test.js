@@ -917,3 +917,110 @@ describe('aurora theme — logs page (Task 8)', () => {
     assert.match(css, /\.toggle-group\b/, '.toggle-group rule in aurora.css');
   });
 });
+
+// ── Task P2-9: Gateway-Pools page (Aurora mockup fidelity) ───────────────────
+describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
+  it('renders /gateway-pools under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora grid structure and signature classes on /gateway-pools', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    assert.match(res.text, /class="grid"/, '.grid container present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+    assert.match(res.text, /class="page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+  });
+
+  it('renders h1.page-title and p.page-sub (correct elements vs default div)', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    assert.match(res.text, /<h1 class="page-title"/, '<h1 class="page-title"> used (not div)');
+    assert.match(res.text, /<p class="page-sub"/, '<p class="page-sub"> used (not div)');
+  });
+
+  it('renders all phase0 JS-contract IDs on /gateway-pools under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    // Page action buttons
+    assert.match(res.text, /id="btn-create-pool"/, '#btn-create-pool present');
+    assert.match(res.text, /id="btn-migrate-routes"/, '#btn-migrate-routes present');
+    // Form modal
+    assert.match(res.text, /id="pool-form-modal"/, '#pool-form-modal present');
+    assert.match(res.text, /id="pool-form"/, '#pool-form present');
+    assert.match(res.text, /id="pool-form-title"/, '#pool-form-title present');
+    assert.match(res.text, /id="pool-members"/, '#pool-members present');
+    assert.match(res.text, /id="new-member-peer"/, '#new-member-peer present');
+    assert.match(res.text, /id="btn-add-member"/, '#btn-add-member present');
+    assert.match(res.text, /id="btn-cancel-pool"/, '#btn-cancel-pool present');
+    assert.match(res.text, /id="btn-cancel-pool-footer"/, '#btn-cancel-pool-footer present');
+    assert.match(res.text, /id="cooldown-preset"/, '#cooldown-preset present');
+    // Migrate modal
+    assert.match(res.text, /id="pool-migrate-modal"/, '#pool-migrate-modal present');
+    assert.match(res.text, /id="migrate-routes-list"/, '#migrate-routes-list present');
+    assert.match(res.text, /id="btn-migrate-submit"/, '#btn-migrate-submit present');
+    assert.match(res.text, /id="btn-migrate-cancel"/, '#btn-migrate-cancel present');
+    assert.match(res.text, /id="btn-migrate-cancel-footer"/, '#btn-migrate-cancel-footer present');
+  });
+
+  it('renders Aurora modal shell classes (not default .modal-box/.modal-header)', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    // Aurora modal classes
+    assert.match(res.text, /class="modal modal-wide"/, '.modal.modal-wide present (form modal)');
+    assert.match(res.text, /class="modal-head"/, '.modal-head present (Aurora header)');
+    assert.match(res.text, /class="modal-title"/, '.modal-title present on h2');
+    assert.match(res.text, /class="modal-foot"/, '.modal-foot present (Aurora footer)');
+    // Default modal-box class must NOT appear
+    assert.doesNotMatch(res.text, /class="modal-box/, '.modal-box absent (replaced by .modal)');
+    assert.doesNotMatch(res.text, /class="modal-header"/, '.modal-header absent (replaced by .modal-head)');
+    assert.doesNotMatch(res.text, /class="modal-footer"/, '.modal-footer absent (replaced by .modal-foot)');
+  });
+
+  it('renders preset-templates card with btn-ghost btn-block buttons', async () => {
+    selectAurora();
+    const res = await agent.get('/gateway-pools').expect(200);
+    assert.match(res.text, /btn btn-ghost btn-block/, '.btn.btn-ghost.btn-block present (preset buttons)');
+    assert.match(res.text, /btn-cooldown-preset/, '.btn-cooldown-preset class present');
+  });
+
+  it('gatewayPools.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gatewayPools.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in gatewayPools.js');
+    assert.match(js, /function auroraBuildMemberRow\(/, 'auroraBuildMemberRow() present');
+    assert.match(js, /function auroraInitCooldownPresets\(/, 'auroraInitCooldownPresets() present');
+    assert.match(js, /function auroraRenderMigrateForm\(/, 'auroraRenderMigrateForm() present');
+    // Guards at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraBuildMemberRow/, 'buildMemberRow() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraInitCooldownPresets/, 'initCooldownPresets() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderMigrateForm/, 'renderMigrateForm() has isAurora guard');
+    // Docker preset in aurora list
+    assert.match(js, /AURORA_COOLDOWN_PRESETS/, 'AURORA_COOLDOWN_PRESETS array present');
+    assert.match(js, /preset_docker/, 'gateway_pools.preset_docker key in aurora preset list');
+  });
+
+  it('aurora.css carries pool-member-row Aurora overrides', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.pool-member-row\b/, '.pool-member-row override in aurora.css');
+    assert.match(css, /\.pool-member-handle\b/, '.pool-member-handle rule in aurora.css');
+    assert.match(css, /\.pool-member-name\b/, '.pool-member-name rule in aurora.css');
+  });
+
+  it('i18n has common.pro, gateway_pools.active_member, gateway_pools.preset_docker', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
+    assert.equal(en['common.pro'], 'Pro', 'common.pro = "Pro"');
+    assert.ok(en['gateway_pools.active_member'], 'gateway_pools.active_member present');
+    assert.ok(en['gateway_pools.standby'], 'gateway_pools.standby present');
+    assert.ok(en['gateway_pools.preset_templates'], 'gateway_pools.preset_templates present');
+    assert.ok(en['gateway_pools.preset_docker'], 'gateway_pools.preset_docker present');
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
+    assert.equal(de['common.pro'], 'Pro', 'de common.pro = "Pro"');
+    assert.ok(de['gateway_pools.active_member'], 'de gateway_pools.active_member present');
+    assert.ok(de['gateway_pools.preset_docker'], 'de gateway_pools.preset_docker present');
+  });
+});

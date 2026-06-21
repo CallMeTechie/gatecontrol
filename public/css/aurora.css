@@ -665,3 +665,22 @@ input[type=date]:focus, select:focus {
 }
 .tw-preset-label:has(input:checked){border-color:var(--teal); background:var(--teal-soft)}
 .tw-preset-label input{accent-color:var(--teal)}
+
+/* ── Gateway-Pools page — Aurora mockup fidelity (Task P2-9) ────────────────── */
+
+/* Pool member drag list — override accent/indigo from pro.css with aurora teal token */
+.pool-member-row{
+  background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm);
+  transition:background 120ms ease, opacity 120ms ease;
+}
+.pool-member-row.drag-over-top{box-shadow:0 -2px 0 0 var(--teal)}
+.pool-member-row.drag-over-bottom{box-shadow:0 2px 0 0 var(--teal)}
+.pool-member-handle{color:var(--faint); font-size:15px; cursor:grab; padding:0 4px}
+.pool-member-position{color:var(--muted); font-family:var(--font-mono); font-size:11px; min-width:22px; text-align:center}
+.pool-member-name{flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* Preset-templates card button grid */
+.btn-cooldown-preset{font-size:13px; padding:7px 10px}
+
+/* Pool kv rows: mode badge inside .card-sub stays inline */
+.card-sub .pool-mode-badge{font-size:11px; padding:2px 7px; border-radius:999px; font-family:var(--font-mono)}
