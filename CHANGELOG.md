@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.88.4] — 2026-06-21
+
+### Änderungen
+- tidy phase3a deferred minors (step-dot numbering + live tooltip, dead-code, test hygiene) (#151)
+
+---
+
 ## [1.88.3] — 2026-06-21
 
 ### Änderungen
