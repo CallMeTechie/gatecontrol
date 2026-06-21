@@ -30,6 +30,7 @@
     var wsBase      = opts.wsBase;
     var mint        = opts.mint;
     var onStateCb   = opts.onState || function () {};
+    var display     = opts.display || {};
 
     /* ---- mutable player state ---- */
     var currentState       = 'idle';
@@ -43,11 +44,31 @@
     var reconnectAttempt   = 0;
     var reconnectWindowStart = null;
     var currentScaleMode   = 'fit';  // 'fit' | 'native' — re-applied on display resize
+    var resizeTimer        = null;   // debounce handle for dynamic resize
+    var resizeHandler      = null;   // window resize listener (dynamic mode only)
 
     /* ---- beforeunload ---- */
     var beforeunloadHandler = function () { disconnect(); }; // eslint-disable-line no-use-before-define
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', beforeunloadHandler);
+    }
+
+    /* ---- dynamic resize: re-send display size on window resize ---- */
+    if (display.mode === 'dynamic' && typeof window !== 'undefined') {
+      resizeHandler = function () {
+        if (resizeTimer !== null) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+          resizeTimer = null;
+          if (!activeClient) return;
+          var ratio = window.devicePixelRatio || 1;
+          var cw = container.clientWidth  || window.innerWidth  || 1024;
+          var ch = container.clientHeight || window.innerHeight || 768;
+          var w = Math.max(1, Math.min(7680, Math.round(cw * ratio)));
+          var h = Math.max(1, Math.min(7680, Math.round(ch * ratio)));
+          activeClient.sendSize(w, h);
+        }, 250);
+      };
+      window.addEventListener('resize', resizeHandler);
     }
 
     /* ================================================================ */
@@ -135,12 +156,19 @@
         /* Optimal display size → guacd 'size' instruction. width/height/dpi are
          * allow-listed by guacamole-lite; WITHOUT them guacd renders a 0-size
          * display → black screen even though the session logs on. Physical pixels
-         * for HiDPI crispness; display.onresize fits the result to the container. */
+         * for HiDPI crispness; display.onresize fits the result to the container.
+         * fixed mode: send the configured resolution instead of container size. */
         var ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         var cw0   = container.clientWidth  || (typeof window !== 'undefined' ? window.innerWidth  : 1024);
         var ch0   = container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 768);
-        var dispW = Math.max(1, Math.min(7680, Math.round(cw0 * ratio)));
-        var dispH = Math.max(1, Math.min(7680, Math.round(ch0 * ratio)));
+        var dispW, dispH;
+        if (display.mode === 'fixed' && display.fixedWidth > 0 && display.fixedHeight > 0) {
+          dispW = Math.max(1, Math.min(7680, Math.round(display.fixedWidth)));
+          dispH = Math.max(1, Math.min(7680, Math.round(display.fixedHeight)));
+        } else {
+          dispW = Math.max(1, Math.min(7680, Math.round(cw0 * ratio)));
+          dispH = Math.max(1, Math.min(7680, Math.round(ch0 * ratio)));
+        }
         var dispDpi = Math.max(1, Math.round(96 * ratio));
         var tunnelUrl = wsBase + wsPath + '?token=' + encodeURIComponent(token)
           + '&width=' + dispW + '&height=' + dispH + '&dpi=' + dispDpi;
@@ -149,14 +177,14 @@
         activeClient  = client;
 
         /* append display element */
-        var display     = client.getDisplay();
-        var displayEl   = display.getElement();
+        var guacDisplay = client.getDisplay();
+        var displayEl   = guacDisplay.getElement();
         activeDisplayEl = displayEl;
         container.appendChild(displayEl);
 
         /* Fit the rendered remote display to the container whenever guacd reports
          * its size (first frame + any server-side resize). */
-        display.onresize = function () { setScale(currentScaleMode); }; // eslint-disable-line no-use-before-define
+        guacDisplay.onresize = function () { setScale(currentScaleMode); }; // eslint-disable-line no-use-before-define
 
         /* ---- Mouse (per-connection — new element each time) ---- */
         var mouse = new Guacamole.Mouse(displayEl);
@@ -274,6 +302,12 @@
         window.addEventListener('beforeunload', beforeunloadHandler);
       }
 
+      /* re-register dynamic resize listener idempotently so resize works after reconnect */
+      if (display.mode === 'dynamic' && typeof window !== 'undefined' && resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        window.addEventListener('resize', resizeHandler);
+      }
+
       transition('connect');
       performConnect();
     }
@@ -288,6 +322,15 @@
       /* remove beforeunload handler (already disconnecting) */
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', beforeunloadHandler);
+      }
+
+      /* remove dynamic resize handler */
+      if (typeof window !== 'undefined' && resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+      }
+      if (resizeTimer !== null) {
+        clearTimeout(resizeTimer);
+        resizeTimer = null;
       }
 
       clearTimer();
@@ -315,18 +358,18 @@
     function setScale(mode) {
       if (!activeClient) return;
       currentScaleMode = (mode === 'native') ? 'native' : 'fit';
-      var scaleMode = logic().scaleFor(mode, { protocol: activeProtocol });
-      var display   = activeClient.getDisplay();
+      var scaleMode   = logic().scaleFor(mode, { protocol: activeProtocol });
+      var guacDisplay = activeClient.getDisplay();
       if (scaleMode === 'native') {
-        display.scale(1);
+        guacDisplay.scale(1);
       } else {
         /* 'fit' — shrink/expand to fill container while preserving aspect ratio */
         var cw = container.offsetWidth;
         var ch = container.offsetHeight;
-        var dw = display.getWidth();
-        var dh = display.getHeight();
+        var dw = guacDisplay.getWidth();
+        var dh = guacDisplay.getHeight();
         if (dw > 0 && dh > 0) {
-          display.scale(Math.min(cw / dw, ch / dh));
+          guacDisplay.scale(Math.min(cw / dw, ch / dh));
         }
       }
     }
