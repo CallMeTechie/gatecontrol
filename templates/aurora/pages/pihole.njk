@@ -1,0 +1,150 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('pihole.eyebrow') }}</div>
+    <div class="page-title">{{ t('pihole.title') }}</div>
+    <div class="page-sub">{{ t('pihole.subtitle') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+    <button class="btn btn-ghost" id="btn-pihole-reload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      {{ t('common.reload') }}
+    </button>
+  </div>
+</div>
+
+{# ── Attribution-collapsed warning ────────────────────── #}
+<div id="ph-attribution-warn" style="display:none;padding:12px 16px;margin-bottom:16px;background:var(--amber-lt);border:1px solid var(--amber-bd);border-radius:var(--radius-sm)">
+  <span style="font-size:13px;color:var(--amber)">{{ t('pihole.attribution_collapsed') }}</span>
+</div>
+
+{# ── Stats ────────────────────────────────────────────── #}
+<div class="stats-grid" style="margin-bottom:16px">
+  <div class="stat-card">
+    <div class="stat-value" id="ph-stat-queries">—</div>
+    <div class="stat-label">{{ t('pihole.stat_queries') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="ph-stat-blocked">—</div>
+    <div class="stat-label">{{ t('pihole.stat_blocked') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="ph-stat-blocked-pct">—</div>
+    <div class="stat-label">{{ t('pihole.stat_blocked_pct') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="ph-stat-gravity">—</div>
+    <div class="stat-label">{{ t('pihole.stat_gravity') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="ph-stat-clients">—</div>
+    <div class="stat-label">{{ t('pihole.stat_clients') }}</div>
+  </div>
+</div>
+
+{# ── Content Grid: Chart + Top Blocked ────────────────── #}
+<div class="content-grid" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('pihole.history_title') }}</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-area" id="ph-chart-area">
+        <svg class="chart-svg" id="ph-chart-svg" viewBox="0 0 560 120" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('pihole.top_blocked') }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="peer-table" style="font-size:12px">
+        <thead>
+          <tr>
+            <th>{{ t('pihole.domain') }}</th>
+            <th>{{ t('pihole.requests') }}</th>
+          </tr>
+        </thead>
+        <tbody id="ph-top-domains-tbody">
+          <tr><td colspan="2" style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Grid-3: Top Clients / Query Types / Steuerung ────── #}
+<div class="grid-3" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('pihole.top_clients') }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="peer-table" style="font-size:12px">
+        <thead>
+          <tr>
+            <th id="ph-client-col-peer">{{ t('pihole.peer') }}</th>
+            <th>{{ t('pihole.requests') }}</th>
+          </tr>
+        </thead>
+        <tbody id="ph-top-clients-tbody">
+          <tr><td colspan="2" style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('pihole.query_types') }}</span>
+    </div>
+    <div class="card-body" id="ph-query-types-list">
+      <div style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">{{ t('pihole.control') }}</span>
+      <span id="ph-blocking-badge" class="tag tag-grey" style="margin-left:auto">—</span>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-ghost" id="btn-ph-pause-30s">{{ t('pihole.pause_30s') }}</button>
+        <button class="btn btn-ghost" id="btn-ph-pause-5m">{{ t('pihole.pause_5m') }}</button>
+        <button class="btn btn-ghost" id="btn-ph-pause-30m">{{ t('pihole.pause_30m') }}</button>
+        <button class="btn btn-primary" id="btn-ph-enable">{{ t('pihole.enable_blocking') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Health / Connection card ─────────────────────────── #}
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">{{ t('pihole.connection') }}</span>
+    <span id="ph-status-badge" class="tag tag-grey" style="margin-left:auto">—</span>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      <div>
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">{{ t('pihole.status') }}</div>
+        <div style="font-size:14px;margin-top:4px" id="ph-health-status">—</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">{{ t('pihole.last_sync') }}</div>
+        <div style="font-size:13px;margin-top:4px;font-family:var(--font-mono)" id="ph-health-sync">—</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">{{ t('pihole.instances') }}</div>
+        <div style="font-size:14px;margin-top:4px" id="ph-health-instances">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/pihole.js?v={{ appVersion }}"></script>
+{% endblock %}

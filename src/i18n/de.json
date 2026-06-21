@@ -1769,5 +1769,6 @@
   "pihole.cfg.saved": "Pi-hole-Einstellungen gespeichert",
   "pihole.cfg.url_required": "URL erforderlich",
   "pihole.cfg.confirm_delete": "Diese Instanz löschen?",
-  "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port"
+  "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port",
+  "aurora.mode_toggle": "Hell/Dunkel umschalten"
 }

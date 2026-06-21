@@ -1,0 +1,9 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div style="text-align:center;padding:80px 20px">
+  <div style="font-family:var(--font-mono);font-size:64px;font-weight:700;color:var(--border-hi)">404</div>
+  <div style="font-size:16px;color:var(--text-2);margin-top:8px">{{ t('error.not_found') }}</div>
+  <a href="/dashboard" class="btn btn-ghost" style="margin-top:24px">{{ t('nav.dashboard') }}</a>
+</div>
+{% endblock %}

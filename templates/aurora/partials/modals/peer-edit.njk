@@ -1,0 +1,101 @@
+<div class="modal-overlay" id="modal-edit-peer" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">{{ t('common.edit') }}</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-peer-id">
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-name">{{ t('peers.add_name') }}</label>
+        <input type="text" id="edit-peer-name" autocomplete="off" maxlength="63">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-desc">{{ t('peers.add_description') }}</label>
+        <input type="text" id="edit-peer-desc" autocomplete="off" maxlength="255">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-group">{{ t('peer_groups.group') }}</label>
+        <select id="edit-peer-group" style="width:100%">
+          <option value="">{{ t('peer_groups.none') }}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
+        <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>
+      </div>
+      {% if license.features.custom_dns %}
+      <div class="form-group">
+        <label class="form-label">{{ t('peers.dns_override') }}</label>
+        <input type="text" id="edit-peer-dns" placeholder="{{ t('peers.dns_placeholder') }}" style="font-family:var(--font-mono)">
+        <small class="form-hint">{{ t('peers.dns_override_hint') }}</small>
+      </div>
+      {% endif %}
+      {% if license.features.internal_dns %}
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-hostname">
+          {{ t('peers.internal_hostname') }}
+          <span id="edit-peer-hostname-badge" class="badge badge-sm" style="display:none;margin-left:6px"></span>
+        </label>
+        <input type="text" id="edit-peer-hostname" autocomplete="off" maxlength="63"
+               placeholder="{{ t('peers.internal_hostname_placeholder') }}"
+               pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,62}"
+               style="font-family:var(--font-mono)">
+        <small class="form-hint">{{ t('peers.internal_hostname_hint') }}</small>
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label class="form-label" for="edit-peer-expires">{{ t('peers.expires') }}</label>
+        <select id="edit-peer-expires">
+          <option value="">{{ t('peers.expires_never') }}</option>
+          <option value="1d">{{ t('peers.expires_1d') }}</option>
+          <option value="7d">{{ t('peers.expires_7d') }}</option>
+          <option value="30d">{{ t('peers.expires_30d') }}</option>
+          <option value="90d">{{ t('peers.expires_90d') }}</option>
+          <option value="custom">{{ t('peers.expires_custom') }}</option>
+        </select>
+        <input type="date" id="edit-peer-expires-date" style="display:none;margin-top:6px">
+      </div>
+      <div class="form-group" id="edit-peer-gateway-info" style="display:none">
+        <label class="form-label">{{ t('peer_is_gateway') }}</label>
+        <div style="padding:10px;background:var(--bg-2,#f5f5f5);border:1px solid var(--border,#e5e7eb);border-radius:6px;font-size:13px;line-height:1.5">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-gateway" style="display:inline-block;padding:2px 8px;border-radius:10px;background:#4a90e2;color:#fff;font-size:11px">GATEWAY</span>
+            <span>{{ t('peer_gateway_api_port') }}: <code id="edit-peer-api-port-display">9876</code></span>
+            <span id="edit-gw-status-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;display:none"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+            <label for="edit-peer-proxy-port" style="margin:0;font-size:11px">{{ t('peer_gateway_proxy_port') }}</label>
+            <input type="number" id="edit-peer-proxy-port" min="1" max="65535" style="width:100px">
+            <button type="button" class="btn btn-sm" id="btn-edit-peer-save-proxy-port">{{ t('common.save') }}</button>
+          </div>
+          <small style="display:block;margin-top:4px;color:var(--text-3,#666);font-size:11px">{{ t('peer_gateway_proxy_port_hint') }}</small>
+
+          <div id="edit-gw-telemetry" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border,#e5e7eb);font-family:var(--font-mono);font-size:11px"></div>
+          <div id="edit-gw-telemetry-empty" style="display:none;margin-top:8px;font-size:11px;color:var(--text-3,#666);font-style:italic">{{ t('gateway_info.no_data') or 'Noch keine Heartbeat-Daten erhalten.' }}</div>
+
+          <div style="margin-top:10px;font-size:11px;color:var(--text-3,#666)">{{ t('gateway_download_warning') }}</div>
+          <button type="button" class="btn btn-warning btn-sm" id="btn-edit-peer-download-env" style="margin-top:8px">
+            {{ t('gateway_download_env') }}
+          </button>
+        </div>
+      </div>
+      {% if license.features.access_windows %}
+      <div class="form-section" id="access-windows-section" data-target-id="">
+        <label class="form-label">
+          {{ t('access.title') }}
+          <span id="access-state-badge" style="margin-left:8px;font-size:12px"></span>
+        </label>
+        <div id="access-rules-list"></div>
+        <div id="access-rules-form"></div>
+      </div>
+      {% endif %}
+      <div id="edit-peer-error" class="form-error" style="display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button class="btn btn-primary" id="btn-edit-peer-submit">{{ t('common.save') }}</button>
+    </div>
+  </div>
+</div>

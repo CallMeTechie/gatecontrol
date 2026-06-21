@@ -1769,5 +1769,6 @@
   "pihole.cfg.saved": "Pi-hole settings saved",
   "pihole.cfg.url_required": "URL required",
   "pihole.cfg.confirm_delete": "Delete this instance?",
-  "pihole.cfg.dns_not_reachable": "not reachable on port"
+  "pihole.cfg.dns_not_reachable": "not reachable on port",
+  "aurora.mode_toggle": "Toggle light/dark"
 }

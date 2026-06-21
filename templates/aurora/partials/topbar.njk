@@ -1,0 +1,28 @@
+<header class="topbar">
+  <button class="sidebar-toggle" id="sidebar-toggle" aria-label="{{ t('sidebar.toggle_open') }}" aria-controls="sidebar">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+  <div class="page-crumb">{{ title }}</div>
+  <div class="topbar-spacer"></div>
+  <div class="topbar-status" id="wg-status"><span class="pulse-dot"></span><span>{{ t('status.wg_active') }}</span></div>
+  <div class="topbar-lang" id="lang-switcher">
+    {% for lang in availableLanguages %}
+    <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}">{{ lang }}</button>
+    {% endfor %}
+  </div>
+  <button class="icon-btn" id="theme-btn" title="{{ t('aurora.mode_toggle') }}" aria-label="{{ t('aurora.mode_toggle') }}">
+    <svg class="ic-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <svg class="ic-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="topbar-profile" id="topbar-profile">
+    <button class="topbar-avatar" id="profile-btn" title="{{ user.username if user else 'Admin' }}">{{ (user.display_name[0] if user and user.display_name else 'A') | upper }}</button>
+    <div class="topbar-dropdown" id="topbar-dropdown">
+      <div class="topbar-dropdown-header"><b>{% if user and user.display_name %}{{ user.display_name }}{% elif user %}{{ user.username }}{% else %}Admin{% endif %}</b><span>{% if user %}{{ user.username }}{% else %}admin{% endif %}</span></div>
+      <a href="/profile" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.profile') }}</a>
+      <a href="/settings" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}</a>
+      <div class="topbar-dropdown-divider"></div>
+      <form action="/logout" method="POST" style="margin:0"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><button type="submit" class="topbar-dropdown-item topbar-dropdown-logout"><svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.logout') }}</button></form>
+    </div>
+  </div>
+</header>
+
