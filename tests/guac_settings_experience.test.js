@@ -117,3 +117,8 @@ describe('vnc + default-route characterization', () => {
     assert.equal(c.settings['enable-printing'], undefined);    // redirect_printers default 0
   });
 });
+
+it('resize-method display-update only for dynamic resolution', () => {
+  assert.equal(buildConnectionSettings(rdpRoute({ resolution_mode: 'dynamic' }), {}).settings['resize-method'], 'display-update');
+  assert.equal(buildConnectionSettings(rdpRoute({ resolution_mode: 'fullscreen' }), {}).settings['resize-method'], undefined);
+});

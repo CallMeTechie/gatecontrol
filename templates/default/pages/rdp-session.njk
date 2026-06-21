@@ -124,7 +124,7 @@
 <script src="/js/rdp-player.js?v={{ appVersion }}"></script>
 
 {# JSON island 1: init config — no user free-text, only numeric id + enum protocol + CSRF + guac object #}
-<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac } | dump | safe }}</script>
+<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height } | dump | safe }}</script>
 
 {# JSON island 2: i18n strings needed for JS state updates #}
 <script type="application/json" id="rdp-session-i18n" nonce="{{ cspNonce }}">{{ {
@@ -179,6 +179,7 @@
   var player = GCRdpPlayer.create({
     container: document.getElementById('rdp-session-display'),
     wsBase: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host,
+    display: { mode: cfg.resolutionMode, fixedWidth: cfg.resWidth, fixedHeight: cfg.resHeight },
     onState: function (s, detail) {
       setPillState(s);
       /* Clipboard unavailable — show persistent inline toolbar indicator (no blocking alert) */

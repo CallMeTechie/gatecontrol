@@ -68,6 +68,7 @@ function applyDisplay(settings, route) {
     settings['enable-wallpaper'] = route.disable_wallpaper ? 'false' : 'true';
     settings['enable-theming'] = route.disable_themes ? 'false' : 'true';
     settings['enable-menu-animations'] = route.disable_animations ? 'false' : 'true';
+    if (route.resolution_mode === 'dynamic') settings['resize-method'] = 'display-update';
   }
 }
 
