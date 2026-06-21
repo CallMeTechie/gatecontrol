@@ -39,6 +39,7 @@ describe('granular has_* flags (credFlags-gated)', () => {
     for (const r of list) for (const k of GRANULAR) assert.equal(k in r, false);
     const adminList = rdp.getAll({ credFlags: true });
     assert.equal('has_ssh_private_key' in adminList[0], true);
+    assert.equal(typeof adminList[0].has_ssh_private_key, 'boolean');
   });
   it('getAll preserves pagination (limit/offset) alongside credFlags', () => {
     const page = rdp.getAll({ limit: 1, offset: 0, credFlags: true });
@@ -46,7 +47,6 @@ describe('granular has_* flags (credFlags-gated)', () => {
   });
   it('getForToken (client path) NEVER contains granular flags', async () => {
     // Mirror the token+peer fixture from tests/rdp_protocol_consumers.test.js.
-    const supertest = require('supertest');
     const tokens = require('../src/services/tokens');
     // Create a route that all tokens can access (no token_ids restriction)
     await rdp.create({ name: 'flag-test-route', host: '10.9.9.1', protocol: 'rdp', port: 3389, username: 'u' });

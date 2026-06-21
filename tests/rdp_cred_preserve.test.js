@@ -22,6 +22,6 @@ describe('credential preservation on partial update', () => {
     const r = await rdp.create({ name: 's2', host: '10.0.0.6', protocol: 'ssh', port: 22, username: 'u', ssh_private_key: 'PEMBODY' });
     await rdp.update(r.id, { ssh_private_key: '' });
     const after = rdp.getById(r.id, false, { credFlags: true });
-    assert.equal(after.has_ssh_private_key, false);
+    assert.equal(after.has_ssh_private_key, false, 'key should be cleared on explicit empty-string PATCH');
   });
 });

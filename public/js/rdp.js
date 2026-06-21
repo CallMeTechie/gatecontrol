@@ -1364,7 +1364,7 @@
     var blocked = on && !internal;
     SFTP_BLOCK_IDS.forEach(function (id) { _setGroupLocked(id, blocked); });
     AUDIO_BLOCK_IDS.forEach(function (id) { _setGroupLocked(id, blocked); });
-    _setDisplay('rdp-browser-gateway-hint', blocked && (p !== 'telnet' || isRdp || isVnc));
+    _setDisplay('rdp-browser-gateway-hint', blocked && p !== 'telnet');
 
     // Stored-secret hints for the secondary SFTP credentials (edit mode only).
     var secondaryOn = on && rdpvnc && internal;
@@ -1426,6 +1426,9 @@
       // Number the dot by its compacted position (mockup behaviour) so an
       // inserted/omitted step never leaves a gap or duplicate in the bar.
       d.textContent = String(pos + 1);
+      // Keep the hover tooltip in sync with the compacted position (the static
+      // template title can't be right for both browser-on and browser-off).
+      d.title = (pos + 1) + ' · ' + (d.getAttribute('data-label') || '');
       if (pos + 1 === currentWizardStep) d.classList.add('active');
       else if (pos + 1 < currentWizardStep) d.classList.add('done');
     });
