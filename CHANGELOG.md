@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.88.3] — 2026-06-21
+
+### Änderungen
+- Browser Remote Desktop — Phase 3a (Admin-Config UI) (#150)
+
+---
+
 ## [1.88.2] — 2026-06-20
 
 ### Fixes
