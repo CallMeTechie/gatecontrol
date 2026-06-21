@@ -43,7 +43,7 @@ describe('buildPresetBody', () => {
 // as "gateway does not support discovery").
 const en = require('../src/i18n/en.json');
 const de = require('../src/i18n/de.json');
-const ADOPT_KEYS = ['printer_preset.adopt_unsupported', 'printer_preset.adopt_not_enabled', 'printer_preset.adopt_scanning', 'printer_preset.adopt_none', 'printer_preset.adopt_failed'];
+const ADOPT_KEYS = ['printer_preset.adopt_unsupported', 'printer_preset.adopt_not_enabled', 'printer_preset.adopt_scanning', 'printer_preset.adopt_none', 'printer_preset.adopt_failed', 'printer_preset.adopt_active_hint', 'printer_preset.adopt_enable', 'printer_preset.adopt_enable_failed'];
 describe('printer-preset discovery adopt (capability-aware)', () => {
   it('wizard references the capability-aware adopt message keys', () => {
     for (const k of ADOPT_KEYS) assert.ok(js.includes(k), 'routes.js missing ' + k);
@@ -56,5 +56,28 @@ describe('printer-preset discovery adopt (capability-aware)', () => {
   });
   it('new adopt keys exist in both locales (en + de parity)', () => {
     for (const k of ADOPT_KEYS) { assert.ok(k in en, 'en missing ' + k); assert.ok(k in de, 'de missing ' + k); }
+  });
+});
+
+describe('printer-preset discovery adopt — phase A (active scan + SSE + enable)', () => {
+  it('adopt triggers an active scan', () => {
+    assert.ok(js.includes('active_scan: true') || js.includes("active_scan:true"), 'adopt must request an active scan');
+  });
+  it('adopt wires a dedicated SSE listener (_discListener), not the route-create one', () => {
+    assert.ok(js.includes('_discListener'), 'adopt must use _discListener');
+    assert.ok(js.includes("document.addEventListener('gc:gateway_discovery', _discListener"), 'must register _discListener for gc:gateway_discovery');
+  });
+  it('adopt removes the SSE listener (leak-safe)', () => {
+    assert.ok(js.includes("removeEventListener('gc:gateway_discovery', _discListener"), 'must remove _discListener');
+  });
+  it('adopt cancels its timeout timer on cleanup (no cross-scan race)', () => {
+    assert.ok(js.includes('_discTimer'), 'must use a module-level _discTimer cleared in _clearDisc');
+  });
+  it('adopt renders the active-scan IDS hint', () => {
+    assert.ok(js.includes('printer_preset.adopt_active_hint'), 'must render adopt_active_hint');
+  });
+  it('adopt offers inline enable + references its i18n keys', () => {
+    assert.ok(js.includes('/discovery-settings'), 'must call discovery-settings to enable');
+    assert.ok(js.includes('printer_preset.adopt_enable'), 'must reference adopt_enable');
   });
 });
