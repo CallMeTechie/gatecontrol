@@ -47,3 +47,11 @@ describe('aurora theme — dark/light wiring', () => {
     assert.match(res.text, /prefers-color-scheme/, 'falls back to OS preference');
   });
 });
+
+describe('aurora theme — profile picker', () => {
+  it('offers Aurora as a selectable option', async () => {
+    getDb().prepare("UPDATE users SET theme = 'default' WHERE username = 'admin'").run();
+    const res = await agent.get('/profile').expect(200);
+    assert.match(res.text, /data-theme="aurora"/, 'profile picker has an Aurora button');
+  });
+});
