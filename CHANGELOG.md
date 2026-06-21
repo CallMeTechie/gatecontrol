@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.90.1] — 2026-06-21
+
+### Änderungen
+- Browser Remote Desktop Phase 3b — Player (in-browser session viewer + admin entry) (#154)
+
+---
+
 ## [1.90.0] — 2026-06-21
 
 ### Features
