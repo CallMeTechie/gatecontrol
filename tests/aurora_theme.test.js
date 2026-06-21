@@ -1142,3 +1142,128 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     assert.ok(de['rdp.session_history'], 'rdp.session_history present in de.json');
   });
 });
+
+// ── Task P2-11: Settings page — Aurora mockup fidelity ───────────────────────
+describe('aurora theme — settings layout (Task P2-11)', () => {
+  it('renders /settings under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /aurora/, 'aurora theme shell present');
+    assert.match(res.text, /settings-tabs/, 'settings-tabs present');
+  });
+
+  it('renders Aurora signature classes on /settings', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /class="[^"]*set-sec[^"]*"/, '.set-sec present');
+    assert.match(res.text, /class="[^"]*set-row[^"]*"/, '.set-row present');
+    assert.match(res.text, /class="[^"]*toggle[^"]*"/, '.toggle present');
+    assert.match(res.text, /class="[^"]*card-title[^"]*"/, '.card-title present');
+    assert.match(res.text, /class="[^"]*grid[^"]*"/, '.grid present');
+    assert.doesNotMatch(res.text, /class="card-head"/, 'no .card-head (removed in Aurora)');
+    assert.doesNotMatch(res.text, /class="two-col"/, 'no .two-col (replaced by .grid in Aurora)');
+  });
+
+  it('renders all tab navigation elements on /settings', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /data-settings-tab="general"/, 'general tab button present');
+    assert.match(res.text, /data-settings-tab="security"/, 'security tab button present');
+    assert.match(res.text, /data-settings-tab="backup"/, 'backup tab button present');
+    assert.match(res.text, /data-settings-tab="email"/, 'email tab button present');
+    assert.match(res.text, /data-settings-tab="monitoring"/, 'monitoring tab button present');
+    assert.match(res.text, /data-settings-tab="advanced"/, 'advanced tab button present');
+    assert.match(res.text, /data-settings-tab="license"/, 'license tab button present');
+    assert.match(res.text, /data-settings-tab="split-tunnel"/, 'split-tunnel tab button present');
+    assert.match(res.text, /data-settings-panel="general"/, 'general panel present');
+    assert.match(res.text, /data-settings-panel="security"/, 'security panel present');
+    assert.match(res.text, /class="[^"]*settings-tab-toggle[^"]*"/, '.settings-tab-toggle present');
+  });
+
+  it('renders key form field IDs on /settings (general tab)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action always present');
+    assert.match(res.text, /id="btn-data-save"/, 'btn-data-save present');
+    assert.match(res.text, /id="data-traffic-days"/, 'data-traffic-days present');
+    assert.match(res.text, /id="data-activity-days"/, 'data-activity-days present');
+    assert.match(res.text, /id="data-peer-timeout"/, 'data-peer-timeout present');
+    assert.match(res.text, /id="btn-route-block-save"/, 'btn-route-block-save present');
+    assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action present');
+    assert.match(res.text, /id="default-theme-buttons"/, 'default-theme-buttons present');
+    assert.match(res.text, /data-default-theme="default"/, 'data-default-theme=default present');
+    assert.match(res.text, /data-default-theme="pro"/, 'data-default-theme=pro present');
+    assert.match(res.text, /id="btn-clear-logs"/, 'btn-clear-logs present');
+    assert.match(res.text, /id="btn-svc-wg-restart"/, 'btn-svc-wg-restart present');
+    assert.match(res.text, /id="btn-svc-wg-stop"/, 'btn-svc-wg-stop present');
+    assert.match(res.text, /id="btn-svc-caddy-reload"/, 'btn-svc-caddy-reload present');
+    assert.match(res.text, /id="svc-caddy-status"/, 'svc-caddy-status present');
+  });
+
+  it('renders key form field IDs on /settings (security tab)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /id="security-lockout-enabled"/, 'security-lockout-enabled present');
+    assert.match(res.text, /id="security-lockout-attempts"/, 'security-lockout-attempts present');
+    assert.match(res.text, /id="security-lockout-duration"/, 'security-lockout-duration present');
+    assert.match(res.text, /id="btn-security-save"/, 'btn-security-save present');
+    assert.match(res.text, /id="security-password-enabled"/, 'security-password-enabled present');
+    assert.match(res.text, /id="btn-password-save"/, 'btn-password-save present');
+    assert.match(res.text, /id="mb-mode"/, 'mb-mode present');
+    assert.match(res.text, /id="mb-save"/, 'mb-save present');
+  });
+
+  it('renders key form field IDs on /settings (backup, advanced tabs)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /id="btn-backup-download"/, 'btn-backup-download present');
+    assert.match(res.text, /id="btn-backup-restore"/, 'btn-backup-restore present');
+    assert.match(res.text, /id="autobackup-enabled"/, 'autobackup-enabled present');
+    assert.match(res.text, /id="autobackup-schedule"/, 'autobackup-schedule present');
+    assert.match(res.text, /id="autobackup-retention"/, 'autobackup-retention present');
+    assert.match(res.text, /id="btn-autobackup-save"/, 'btn-autobackup-save present');
+    assert.match(res.text, /id="btn-monitoring-save"/, 'btn-monitoring-save present');
+    assert.match(res.text, /id="metrics-enabled"/, 'metrics-enabled present');
+    assert.match(res.text, /id="gw-down-threshold"/, 'gw-down-threshold present');
+    assert.match(res.text, /id="ip2location-key"/, 'ip2location-key present');
+    assert.match(res.text, /id="webhooks-list"/, 'webhooks-list present');
+    assert.match(res.text, /id="webhook-url"/, 'webhook-url present');
+    assert.match(res.text, /id="btn-add-webhook"/, 'btn-add-webhook present');
+    assert.match(res.text, /id="card-autoupdate"/, 'card-autoupdate present');
+    assert.match(res.text, /name="au-mode"/, 'au-mode radio inputs present');
+    assert.match(res.text, /id="au-mode-save"/, 'au-mode-save present');
+  });
+
+  it('renders wg-stop-modal as modal-overlay pattern on /settings', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /id="wg-stop-modal"/, 'wg-stop-modal present');
+    assert.match(res.text, /id="wg-stop-password"/, 'wg-stop-password present');
+    assert.match(res.text, /id="wg-stop-cancel"/, 'wg-stop-cancel present');
+    assert.match(res.text, /id="wg-stop-confirm"/, 'wg-stop-confirm present');
+    assert.match(res.text, /id="wg-stop-error"/, 'wg-stop-error present');
+    // Modal must use modal-overlay pattern (not old inline fixed position)
+    assert.match(res.text, /class="modal-overlay"/, 'modal-overlay class on wg-stop-modal');
+    assert.match(res.text, /class="modal modal-sm"/, 'modal modal-sm inside wg-stop-modal');
+  });
+
+  it('inline <style nonce> block removed from aurora/pages/settings.njk', () => {
+    const njk = fs.readFileSync(
+      path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
+      'utf8'
+    );
+    assert.doesNotMatch(njk, /\.settings-tabs\s*\{/, 'no .settings-tabs rule in njk (moved to aurora.css)');
+    assert.doesNotMatch(njk, /<style\s[^>]*nonce/, 'no <style nonce> block in aurora settings.njk');
+  });
+
+  it('aurora.css has settings-tabs rules (Task P2-11)', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      'utf8'
+    );
+    assert.match(css, /\.settings-tabs\b/, '.settings-tabs rule in aurora.css');
+    assert.match(css, /\.settings-tab-toggle\b/, '.settings-tab-toggle rule in aurora.css');
+    assert.match(css, /\.settings-tab-dropdown\b/, '.settings-tab-dropdown rule in aurora.css');
+    assert.match(css, /\.settings-panel\b/, '.settings-panel rule in aurora.css');
+  });
+});

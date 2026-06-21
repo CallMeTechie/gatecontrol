@@ -720,3 +720,54 @@ input[type=date]:focus, select:focus {
 
 /* Aurora RDP card grid (built by auroraRenderGrid()) */
 .rdp-aurora-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:12px}
+
+/* ── Settings page — Aurora mockup fidelity (Task P2-11) ─────────────────────── */
+
+/* Tab bar (moved from settings.njk <style nonce> block) */
+.settings-tabs{
+  display:flex; gap:0; border-bottom:2px solid var(--line);
+  margin-bottom:20px; overflow:visible; position:sticky; top:0;
+  background:var(--surface); z-index:10; flex-shrink:0;
+}
+.settings-tabs .tab{
+  padding:10px 18px; font-size:13px; font-weight:500; color:var(--muted);
+  cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px;
+  white-space:nowrap; border-radius:0; transition:color .15s, border-color .15s;
+}
+.settings-tabs .tab:hover{color:var(--text)}
+.settings-tabs .tab.active{color:var(--teal); border-bottom-color:var(--teal); background:none; box-shadow:none}
+
+/* Panel (moved from settings.njk <style nonce> block) */
+.settings-panel{display:flex; flex-direction:column; gap:14px}
+
+/* Mobile hamburger (moved from settings.njk <style nonce> block) */
+.settings-tab-toggle{
+  display:none; align-items:center; gap:10px; padding:10px 14px; width:100%;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm);
+  cursor:pointer; color:var(--text); font-size:13px; font-weight:500;
+}
+.settings-tab-toggle svg{flex-shrink:0; transition:transform .2s}
+.settings-tab-toggle.open svg{transform:rotate(180deg)}
+.settings-tab-dropdown{
+  display:none; position:absolute; top:100%; left:0; right:0;
+  background:var(--surface); border:1px solid var(--line); border-top:none;
+  border-radius:0 0 var(--r-sm) var(--r-sm); box-shadow:var(--shadow); z-index:20;
+  flex-direction:column;
+}
+.settings-tab-dropdown.open{display:flex}
+.settings-tab-dropdown .tab{
+  padding:12px 16px; font-size:13px; font-weight:500; color:var(--muted);
+  cursor:pointer; border-bottom:1px solid var(--line); border-radius:0;
+  transition:background .1s, color .1s; white-space:nowrap; margin-bottom:0;
+}
+.settings-tab-dropdown .tab:last-child{border-bottom:none}
+.settings-tab-dropdown .tab:hover{background:var(--surface-3); color:var(--text)}
+.settings-tab-dropdown .tab.active{
+  color:var(--teal); background:none; font-weight:600;
+  border-left:3px solid var(--teal); box-shadow:none;
+}
+@media (max-width:900px){
+  .settings-tabs{position:relative; border-bottom:none; margin-bottom:16px}
+  .settings-tabs > .tab{display:none}
+  .settings-tab-toggle{display:flex}
+}
