@@ -50,7 +50,8 @@
       gateway_tcp_routing: {{ ('true' if license.features.gateway_tcp_routing else 'false') | safe }},
       gateway_scan_egress: {{ ('true' if license.features.gateway_scan_egress else 'false') | safe }},
       l4_routes: {{ license.features.l4_routes | default(0) }},
-      http_routes: {{ license.features.http_routes | default(0) }}
+      http_routes: {{ license.features.http_routes | default(0) }},
+      browser_sessions: {{ ('true' if license.hasFeature('browser_sessions') else 'false') | safe }}
     },
     t: {
       'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},

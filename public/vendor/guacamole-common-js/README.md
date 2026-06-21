@@ -24,11 +24,29 @@ cp package/dist/esm/guacamole-common.min.js \
    <repo>/public/vendor/guacamole-common-js/guacamole-common.min.js
 ```
 
+## Provenance note — trailing ESM export stripped (Phase 3b)
+
+The upstream `dist/esm/guacamole-common.min.js` ends with the single ESM line:
+
+```js
+export default Guacamole;
+```
+
+This causes a `SyntaxError: Unexpected token 'export'` pageerror when the file
+is loaded via a plain `<script>` tag (not `type="module"`). The body of the
+file already establishes `window.Guacamole` via a top-level `var Guacamole`
+declaration, so the `export default` line is redundant for classic-script use.
+
+For Phase 3b the production RDP session page (`/rdp/:id/session`) loads this
+file as a classic `<script>` and accesses `window.Guacamole` directly. The
+trailing `export default Guacamole;` was therefore stripped so the bundle
+parses cleanly as a classic browser script. The file is otherwise the verbatim
+npm 1.5.0 ESM bundle body.
+
 ## Purpose
 
-This is a vendored static asset for the **Phase-2a throwaway smoke page**
-(`public/_guac-smoke.html`). It is NOT a server npm dependency and must NOT be
-added to `package.json`.
-
-Phase 3 will ship the production RDP/browser client with a proper build pipeline.
-At that point this directory can be removed.
+This is a vendored static asset used by the Phase-2a throwaway smoke page
+(`public/_guac-smoke.html`) **and** the Phase-3b production RDP session player
+(`templates/{default,pro}/pages/rdp-session.njk`, served at `GET /rdp/:id/session`,
+which loads this bundle via `<script src="/vendor/guacamole-common-js/guacamole-common.min.js">`).
+It is NOT a server npm dependency and must NOT be added to `package.json`.

@@ -8,6 +8,8 @@ const wol = require('../../services/wol');
 const { getServerPublicKey, publicKeyEncrypt } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
 const { requireFeature, requireFeatureField } = require('../../middleware/license');
+const guacSession = require('../../services/guacSession');
+const users = require('../../services/users');
 
 const router = Router();
 
@@ -500,6 +502,29 @@ router.put('/:id/maintenance', async (req, res) => {
     }
     res.status(500).json({ ok: false, error: req.t('error.rdp.maintenance') });
   }
+});
+
+/**
+ * POST /api/v1/rdp/:id/browser-session — Admin-authed mint (session + CSRF via api/index.js).
+ * Admin actor: ACL bypassed; peerId:null/tokenId:null; tokenName audit marker 'admin:<userId>'.
+ * WS-upgrade/admitSession/evaluateConnection path is NOT touched (DA-A) — peerId:null flows through unchanged.
+ */
+router.post('/:id/browser-session', (req, res) => {
+  // Chain3-C1: this endpoint bypasses per-route ACL and mints a credential-bearing
+  // token, so it MUST be admin-role-gated — requireAuth only checks session PRESENCE,
+  // not role. Today client users are passwordless (cannot web-login), so no role:'user'
+  // session exists; this gate is defence-in-depth + future-proofs the captive-portal's
+  // planned optional end-user login.
+  const actorUser = users.getById(req.session?.userId);
+  if (!actorUser || actorUser.role !== 'admin') {
+    return res.status(403).json({ ok: false, error: req.t('rdp.browser.not_authorized') });
+  }
+  const id = parseInt(req.params.id, 10);
+  const route = rdp.getById(id, true); // includeCredentials — same as the connect path
+  if (!route) return res.status(404).json({ ok: false, error: req.t('rdp.browser.not_found') });
+  const r = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: actorUser.id } });
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: req.t('rdp.browser.' + r.code) });
+  return res.json({ ok: true, token: r.token, wsPath: '/api/v1/client/rdp/guac-tunnel', ttl: Math.floor(r.ttlMs / 1000) });
 });
 
 /**

@@ -12,33 +12,7 @@ const rdpMonitor = require('../../../services/rdpMonitor');
 const rdpSessions = require('../../../services/rdpSessions');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
 const config = require('../../../../config/default');
-const guacToken = require('../../../services/guacToken');
-const { buildConnectionSettings, SUPPORTED_PROTOCOLS } = require('../../../services/guacSettings');
-const { admitSession } = require('../../../services/guacSessions');
-
-/**
- * Compute the set of credential fields that MUST decrypt successfully for a
- * given route. Branches on whether a field is CONFIGURED (decrypted value
- * present OR decrypt failed), not on the decrypted value itself — otherwise a
- * corrupt required key would be mis-classified to the password path and the
- * 409 would be skipped (v2.1 #1).
- */
-function requiredCredFields(route, failed) {
-  const p = route.protocol || 'rdp';
-  const has = (k) => !!route[k] || failed.has(k); // configured = decrypted-present OR decrypt-failed
-  const f = [];
-  if (p === 'rdp' || p === 'vnc') { if (route.credential_mode !== 'none') f.push('username', 'password'); }
-  else if (p === 'ssh') {
-    f.push('username');
-    if (has('ssh_private_key')) { f.push('ssh_private_key'); if (has('ssh_passphrase')) f.push('ssh_passphrase'); }
-    else f.push('password');
-  } // telnet → none required
-  if (route.browser_enable_sftp && (p === 'rdp' || p === 'vnc')) {
-    f.push(has('sftp_private_key') ? 'sftp_private_key' : 'sftp_password');
-    if (has('sftp_private_key') && has('sftp_passphrase')) f.push('sftp_passphrase');
-  }
-  return f;
-}
+const guacSession = require('../../../services/guacSession');
 
 const router = Router();
 
@@ -299,59 +273,22 @@ router.get('/rdp/:id/connect', (req, res) => {
 /**
  * POST /api/v1/client/rdp/:id/browser-session
  * Mint a short-lived guacamole-lite token for an RDP/VNC route.
- * Guard order (spec §5): license → found → decrypt → browser_enabled → ACL → maintenance → protocol → concurrency.
+ * Guard order: found (route lookup → 404 in this handler) → then mintForRoute:
+ *   license → cred → browser_enabled → ACL → maintenance → protocol → concurrency.
  */
 router.post('/rdp/:id/browser-session', (req, res) => {
   try {
-    if (!hasFeature('browser_sessions')) {
-      return res.status(403).json({ ok: false, error: req.t('rdp.browser.license_required') });
-    }
     const id = parseInt(req.params.id, 10);
     const route = rdpService.getById(id, true);
     if (!route) return res.status(404).json({ ok: false, error: req.t('rdp.browser.not_found') });
-    // Required-cred-set fatality (spec §5: decrypt position, v2.1 #1).
-    // Branch on CONFIGURED-ness, not on the decrypted value: a field is
-    // configured when it was stored (decrypted value present) OR when its
-    // decrypt failed (null + recorded in decrypt_failed_fields). Testing
-    // the decrypted value would mis-branch a corrupt required key to the
-    // password path and silently skip the 409.
-    const failed = route.decrypt_failed_fields || new Set();
-    const required = requiredCredFields(route, failed);
-    if (route.decrypt_failed || required.some((x) => failed.has(x))) {
-      return res.status(409).json({ ok: false, error: req.t('rdp.browser.mint_failed') });
+    // DA-C: tokenName:null keeps the client path byte-identical to pre-refactor
+    // (rdp.js:353 never embedded tokenName → rdp_sessions.token_name stays NULL).
+    const actor = { kind: 'client', tokenId: req.tokenId, userId: req.tokenUserId, peerId: req.tokenPeerId, tokenName: null };
+    const result = guacSession.mintForRoute(route, { actor });
+    if (!result.ok) {
+      return res.status(result.status).json({ ok: false, error: req.t('rdp.browser.' + result.code) });
     }
-    if (!route.browser_enabled) {
-      return res.status(403).json({ ok: false, error: req.t('rdp.browser.not_enabled') });
-    }
-    // ACL gate — mirror verbatim from GET '/rdp/:id/connect' handler.
-    if (!rdpService.canAccessRoute(route, req.tokenId, req.tokenUserId)) {
-      return res.status(403).json({ ok: false, error: req.t('rdp.browser.not_authorized') });
-    }
-    // Maintenance window gate — mirror verbatim from GET '/rdp/:id/connect' handler.
-    if (route.maintenance_enabled && rdpService.isInMaintenanceWindow(id)) {
-      return res.status(503).json({ ok: false, error: req.t('rdp.browser.maintenance_active') });
-    }
-    const protocol = route.protocol || 'rdp';
-    if (!SUPPORTED_PROTOCOLS.includes(protocol)) {
-      return res.status(400).json({ ok: false, error: req.t('rdp.browser.protocol_unsupported') });
-    }
-    // Soft concurrency pre-check at mint time (WS connect is authoritative).
-    const admit = admitSession({ routeId: id, tokenId: req.tokenId, peerId: req.tokenPeerId, isStale: () => false });
-    if (!admit.ok) {
-      return res.status(429).json({ ok: false, error: req.t('rdp.browser.limit_reached') });
-    }
-    const creds = {
-      username: route.username, password: route.password,
-      ssh_private_key: route.ssh_private_key, ssh_passphrase: route.ssh_passphrase,
-      sftp_password: route.sftp_password, sftp_private_key: route.sftp_private_key, sftp_passphrase: route.sftp_passphrase,
-    };
-    const conn = buildConnectionSettings(route, creds);
-    // Spike requirement: embed routeId/tokenId/peerId so Task 9's evaluateConnection
-    // can perform authoritative admitSession at WS-upgrade time (Task 8 ↔ Task 9).
-    // These extra fields ride inside the encrypted connection object; guacamole-lite
-    // drops them via mergeConnectionOptions so guacd never sees them.
-    const { token, ttlMs } = guacToken.mint({ ...conn, rdpRouteId: id, tokenId: req.tokenId, peerId: req.tokenPeerId });
-    return res.json({ ok: true, token, wsPath: '/api/v1/client/rdp/guac-tunnel', ttl: Math.floor(ttlMs / 1000) });
+    return res.json({ ok: true, token: result.token, wsPath: '/api/v1/client/rdp/guac-tunnel', ttl: Math.floor(result.ttlMs / 1000) });
   } catch (err) {
     logger.error({ err }, 'browser-session mint failed');
     return res.status(500).json({ ok: false, error: req.t('rdp.browser.mint_failed') });

@@ -247,6 +247,29 @@ pages.forEach(({ path, template, titleKey }) => {
   });
 });
 
+// ─── Browser RDP session player page (admin-only, feature-gated) ──────────
+// apiLimiter: this page performs an explicit privileged role lookup (unlike the
+// declarative page routes which only gate on session presence), so rate-limit it
+// as defence-in-depth against session/id enumeration.
+router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
+  const rdpService = require('../services/rdp');
+  const users = require('../services/users');
+  const { hasFeature } = require('../services/license');
+  // Chain3-C1: admin-role gate (requireAuth only checks session presence).
+  const actorUser = users.getById(req.session?.userId);
+  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/dashboard');
+  const id = parseInt(req.params.id, 10);
+  const route = rdpService.getById(id, false, { credFlags: true });
+  if (!route || !route.browser_enabled || !hasFeature('browser_sessions')) {
+    return res.redirect('/rdp');
+  }
+  res.render(`${res.locals.theme}/pages/rdp-session.njk`, {
+    title: res.locals.t('rdp.session.title'),
+    route,
+    guac: require('../../config/default').guac,
+  });
+});
+
 // ─── Public API routes (no auth required) ─────────
 // Update check returns only public release info (version, download URL)
 // and must work without a token so clients can discover updates before

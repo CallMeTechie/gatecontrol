@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#F8FAFC">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ t('rdp.session.title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
+</head>
+<body class="rdp-session-body">
+<div class="rdp-session-page">
+
+  {# ─── Remote display surface ──────────────────────────────────────────── #}
+  <div id="rdp-session-display" class="rdp-session-display">
+
+    {# Reconnecting overlay (shown while player auto-retries) #}
+    <div id="rdp-reconnect-overlay" class="rdp-reconnect-veil" style="display:none">
+      <div class="rdp-reconnect-card">
+        <div class="rdp-big-spin"></div>
+        <div class="rdp-rc-title">{{ t('rdp.session.reconnecting') }}</div>
+        <div class="rdp-rc-sub" id="rdp-reconnect-sub"></div>
+      </div>
+    </div>
+
+    {# Error / limit overlay (shown on terminal error state) #}
+    <div id="rdp-error-overlay" class="rdp-error-veil" style="display:none">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/>
+            </svg>
+          </div>
+          <h2>{{ t('rdp.session.status.error') }}</h2>
+          <span class="rdp-em-cause" id="rdp-error-cause"></span>
+          <p class="rdp-em-text" id="rdp-error-text"></p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" id="rdp-back-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            {{ t('rdp.wizard.back') }}
+          </button>
+          <button class="btn btn-primary" id="rdp-retry-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            {{ t('common.reload') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /rdp-session-display #}
+
+  {# ─── Slim toolbar ────────────────────────────────────────────────────── #}
+  <div class="rdp-session-toolbar" id="rdp-toolbar">
+
+    {# Status pill #}
+    <span class="rdp-pill rdp-pill--connecting" id="rdp-status-pill">
+      <span id="rdp-pill-indicator" class="rdp-dot"></span>
+      <span id="rdp-status-text">{{ t('rdp.session.status.connecting') }}</span>
+    </span>
+
+    <span class="rdp-spacer"></span>
+
+    {# Fullscreen #}
+    <button class="rdp-tbtn" id="rdp-btn-fullscreen" title="{{ t('rdp.session.fullscreen') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+      </svg>
+      {{ t('rdp.session.fullscreen') }}
+    </button>
+
+    {# Scale toggle (fit ↔ native) #}
+    <button class="rdp-tbtn" id="rdp-btn-scale" aria-pressed="true" title="{{ t('rdp.session.scale_fit') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+      </svg>
+      <span class="rdp-tbtn-label">{{ t('rdp.session.scale_fit') }}</span>
+    </button>
+
+    {# Ctrl+Alt+Del — RDP protocol only #}
+    {% if route.protocol == 'rdp' %}
+    <button class="rdp-tbtn" id="rdp-btn-cad" title="{{ t('rdp.session.ctrl_alt_del') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M7 12h10M6 16h12"/>
+      </svg>
+      {{ t('rdp.session.ctrl_alt_del') }}
+    </button>
+    {% endif %}
+
+    {# Paste from clipboard #}
+    <button class="rdp-tbtn" id="rdp-btn-paste" title="{{ t('rdp.session.paste') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      </svg>
+      {{ t('rdp.session.paste') }}
+    </button>
+    {# Inline clipboard-unavailable indicator — shown by JS when clipboard permission is denied #}
+    <span id="rdp-clipboard-warn" class="rdp-clip-warn" style="display:none"></span>
+
+    {# Disconnect #}
+    <button class="rdp-tbtn rdp-tbtn--danger" id="rdp-btn-disconnect" title="{{ t('rdp.session.disconnect') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/>
+      </svg>
+      {{ t('rdp.session.disconnect') }}
+    </button>
+
+  </div>{# /rdp-session-toolbar #}
+
+</div>{# /rdp-session-page #}
+
+{# Script load order: guacamole → player-logic → player → JSON islands → init #}
+<script src="/vendor/guacamole-common-js/guacamole-common.min.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-player-logic.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-player.js?v={{ appVersion }}"></script>
+
+{# JSON island 1: init config — no user free-text, only numeric id + enum protocol + CSRF + guac object #}
+<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac } | dump | safe }}</script>
+
+{# JSON island 2: i18n strings needed for JS state updates #}
+<script type="application/json" id="rdp-session-i18n" nonce="{{ cspNonce }}">{{ {
+  connecting:            t('rdp.session.status.connecting'),
+  connected:             t('rdp.session.status.connected'),
+  reconnecting:          t('rdp.session.status.reconnecting'),
+  disconnected:          t('rdp.session.status.disconnected'),
+  error:                 t('rdp.session.status.error'),
+  limit_reached:         t('rdp.session.limit_reached'),
+  expired:               t('rdp.session.expired'),
+  not_authorized:        t('rdp.session.not_authorized'),
+  scale_fit:             t('rdp.session.scale_fit'),
+  scale_native:          t('rdp.session.scale_native'),
+  clipboard_unavailable: t('rdp.session.clipboard_unavailable')
+} | dump | safe }}</script>
+
+{# Init script — reads from JSON islands only; no server values interpolated into JS strings #}
+<script nonce="{{ cspNonce }}">
+(function () {
+  'use strict';
+  var cfg  = JSON.parse(document.getElementById('rdp-session-cfg').textContent);
+  var i18n = JSON.parse(document.getElementById('rdp-session-i18n').textContent);
+
+  /* Expose guac config for player retry-window logic */
+  window.GC = window.GC || {};
+  window.GC.guac = cfg.guac;
+
+  var statusPill    = document.getElementById('rdp-status-pill');
+  var pillIndicator = document.getElementById('rdp-pill-indicator');
+  var statusText    = document.getElementById('rdp-status-text');
+  var reconnectOvl  = document.getElementById('rdp-reconnect-overlay');
+  var errorOvl      = document.getElementById('rdp-error-overlay');
+  var errorCauseEl  = document.getElementById('rdp-error-cause');
+  var errorTextEl   = document.getElementById('rdp-error-text');
+  var scaleBtn      = document.getElementById('rdp-btn-scale');
+  var scaleFit      = true;
+
+  var PILL_CLS = {
+    connecting:   'rdp-pill--connecting',
+    connected:    'rdp-pill--connected',
+    reconnecting: 'rdp-pill--reconnect',
+    disconnected: 'rdp-pill--disconnect',
+    error:        'rdp-pill--error'
+  };
+
+  function setPillState(s) {
+    statusPill.className    = 'rdp-pill ' + (PILL_CLS[s] || PILL_CLS.disconnected);
+    statusText.textContent  = i18n[s] || s;
+    pillIndicator.className = s === 'reconnecting' ? 'rdp-spin' : 'rdp-dot';
+  }
+
+  var player = GCRdpPlayer.create({
+    container: document.getElementById('rdp-session-display'),
+    wsBase: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host,
+    onState: function (s, detail) {
+      setPillState(s);
+      /* Clipboard unavailable — show persistent inline toolbar indicator (no blocking alert) */
+      if (detail && detail.clipboardUnavailable) {
+        var clipWarn = document.getElementById('rdp-clipboard-warn');
+        if (clipWarn) { clipWarn.textContent = i18n.clipboard_unavailable; clipWarn.style.display = ''; }
+        return;
+      }
+      reconnectOvl.style.display = s === 'reconnecting' ? 'flex' : 'none';
+      if (s === 'error') {
+        errorOvl.style.display = 'flex';
+        var dStatus = detail && detail.status;
+        var dReason = detail && detail.reason;
+        var causeKey = (dStatus === 429 || dReason === 'limit-reached') ? 'limit_reached'
+                     : dStatus === 403 ? 'not_authorized'
+                     : '';
+        errorCauseEl.textContent = (causeKey && i18n[causeKey]) || i18n.error;
+        errorTextEl.textContent  = (detail && detail.message) || (causeKey && i18n[causeKey]) || i18n.error;
+      } else {
+        errorOvl.style.display = 'none';
+      }
+    },
+    mint: function () {
+      return fetch('/api/v1/rdp/' + cfg.routeId + '/browser-session', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': cfg.csrf },
+        credentials: 'same-origin'
+      }).then(function (r) {
+        return r.json().then(function (b) {
+          if (!r.ok || !b.ok) {
+            var e = new Error(b.error || 'mint failed');
+            e.status = r.status;
+            throw e;
+          }
+          return { token: b.token, wsPath: b.wsPath, ttl: b.ttl, protocol: cfg.protocol };
+        });
+      });
+    }
+  });
+
+  player.connect();
+  window.addEventListener('beforeunload', function () { player.disconnect(); });
+
+  /* ── Toolbar wiring ────────────────────────────────────────── */
+
+  /* Fullscreen */
+  document.getElementById('rdp-btn-fullscreen').addEventListener('click', function () {
+    player.requestFullscreen();
+  });
+
+  /* Scale fit ↔ native toggle */
+  scaleBtn.addEventListener('click', function () {
+    scaleFit = !scaleFit;
+    player.setScale(scaleFit ? 'fit' : 'native');
+    scaleBtn.setAttribute('aria-pressed', scaleFit ? 'true' : 'false');
+    scaleBtn.querySelector('.rdp-tbtn-label').textContent = scaleFit ? i18n.scale_fit : i18n.scale_native;
+  });
+
+  /* Ctrl+Alt+Del (RDP only — element may be absent for ssh/vnc/telnet) */
+  var cadBtn = document.getElementById('rdp-btn-cad');
+  if (cadBtn) {
+    cadBtn.addEventListener('click', function () { player.sendCtrlAltDel(); });
+  }
+
+  /* Paste (player handles clipboard read + CSP/permissions internally) */
+  document.getElementById('rdp-btn-paste').addEventListener('click', function () {
+    player.paste();
+  });
+
+  /* Disconnect */
+  document.getElementById('rdp-btn-disconnect').addEventListener('click', function () {
+    player.disconnect();
+  });
+
+  /* Back to RDP list */
+  var backBtn = document.getElementById('rdp-back-btn');
+  if (backBtn) backBtn.addEventListener('click', function () { location.href = '/rdp'; });
+
+  /* Retry after error */
+  document.getElementById('rdp-retry-btn').addEventListener('click', function () {
+    errorOvl.style.display = 'none';
+    player.connect();
+  });
+})();
+</script>
+</body>
+</html>
