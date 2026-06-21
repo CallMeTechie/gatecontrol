@@ -98,3 +98,22 @@ describe('rdp redirects (browser-mappable only)', () => {
     assert.equal(c.settings['enable-printing'], undefined);
   });
 });
+
+describe('vnc + default-route characterization', () => {
+  function vncRoute(over = {}) {
+    return Object.assign({ access_mode:'internal', host:'10.0.0.6', protocol:'vnc', port:5900, browser_clipboard:0, color_depth:24 }, over);
+  }
+  it('vnc gets color-depth too', () => {
+    assert.equal(buildConnectionSettings(vncRoute({ color_depth: 16 }), {}).settings['color-depth'], '16');
+  });
+  it('a default rdp route emits the full expected experience set (characterization)', () => {
+    const c = buildConnectionSettings(rdpRoute(), { username:'u', password:'p' });
+    assert.equal(c.settings.security, 'any');           // nla default 1
+    assert.equal(c.settings['color-depth'], '32');
+    assert.equal(c.settings['enable-wallpaper'], 'true');
+    assert.equal(c.settings['enable-theming'], 'true');
+    assert.equal(c.settings['enable-menu-animations'], 'true');
+    assert.equal(c.settings['enable-font-smoothing'], 'true'); // auto profile
+    assert.equal(c.settings['enable-printing'], undefined);    // redirect_printers default 0
+  });
+});

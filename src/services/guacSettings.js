@@ -90,6 +90,7 @@ function buildVnc(route, creds) {
   const t = resolveGuacTarget(route);
   const settings = { hostname: t.host, port: String(t.port) };
   applyClipboard(settings, route);
+  applyDisplay(settings, route);   // emits color-depth only (wallpaper/theming are rdp-guarded inside applyDisplay)
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
   applyAudio(settings, route);
