@@ -12,6 +12,8 @@
   let batchMode = false;
   let batchSelected = new Set();
 
+  function isAurora() { return !!document.querySelector('.app'); }
+
   // ─── View state ──────────────────────────────────────────
   // Lives outside the DOM (plus localStorage) because SSE events
   // (gc:monitor / gc:reconnected) trigger full re-renders — any state kept
@@ -28,6 +30,8 @@
     statusFilter: null,
     targetFilter: null,
   };
+  // Aurora always uses the table view (no view-toggle in Aurora toolbar).
+  if (isAurora()) viewState.view = 'table';
   const collapsedGroups = lsGetSet('gc_routes_groups_collapsed_v1');
   const expandedBadges = new Set();
 
@@ -433,7 +437,104 @@
       + '</div></div>';
   }
 
+  // ─── Aurora table rendering ──────────────────────────────
+  // These functions are ADDITIVE: renderTableRow/renderTable guard into them
+  // when isAurora() is true. Default/pro paths are never modified.
+
+  function auroraRenderTableRow(r, opts) {
+    opts = opts || {};
+    const isGw = r.target_kind === 'gateway';
+    const targetTxt = isGw
+      ? ((r.target_lan_host || '?') + ':' + (r.target_lan_port || r.target_port || '?') + (r.target_peer_name ? ' · ' + r.target_peer_name : ''))
+      : (((r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip) || '') + ':' + r.target_port + (r.peer_name ? ' · ' + r.peer_name : ''));
+
+    // Type tag: HTTP → tag-blue, L4 → tag-amber
+    var typeTag;
+    if (r.route_type === 'l4') {
+      typeTag = '<span class="tag tag-amber">' + escapeHtml(r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + escapeHtml(String(r.l4_listen_port || '')) + '</span>';
+    } else {
+      typeTag = '<span class="tag tag-blue">' + escapeHtml(GC.t['routes.type_http'] || 'HTTP') + '</span>';
+    }
+
+    // Auth tag: route-auth → tag-green, basic → tag-green, none / L4 → tag-grey
+    var authTag;
+    if (r.route_type === 'l4') {
+      authTag = '<span class="tag tag-grey">—</span>';
+    } else if (r.route_auth_enabled && !r.basic_auth_enabled) {
+      authTag = '<span class="tag tag-green">' + escapeHtml(GC.t['route_auth.auth_route'] || 'Route Auth') + '</span>';
+    } else if (r.basic_auth_enabled) {
+      authTag = '<span class="tag tag-green">' + escapeHtml(GC.t['route_auth.auth_basic'] || 'Basic Auth') + '</span>';
+    } else {
+      authTag = '<span class="tag tag-grey">' + escapeHtml(GC.t['route_auth.auth_none'] || 'None') + '</span>';
+    }
+
+    // Status: CSS toggle widget (clickable via data-action delegation)
+    var status = view.routeStatus(r);
+    var toggleEl = '<div class="toggle' + (status !== 'disabled' ? ' on' : '') + '" data-action="toggle" data-id="' + r.id + '" style="cursor:pointer" title="Toggle"></div>';
+
+    // Domain display (sub-rows indent with └)
+    var domainTxt = opts.subRow
+      ? '<span style="color:var(--faint)">└ ' + (r.domain ? escapeHtml(r.domain) : '—') + '</span>'
+      : (r.domain ? escapeHtml(r.domain) : '—');
+
+    var delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
+
+    return '<tr data-route-id="' + r.id + '">'
+      + '<td class="cell-name">' + domainTxt + '</td>'
+      + '<td>' + typeTag + '</td>'
+      + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
+      + '<td>' + authTag + '</td>'
+      + '<td>' + toggleEl + '</td>'
+      + '<td><div class="row-actions">'
+      + '<button class="icon-action" title="Edit" data-action="edit" data-id="' + r.id + '">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z"/></svg>'
+      + '</button>'
+      + '<button class="icon-action danger" title="Delete" data-action="delete" data-id="' + r.id + '" data-domain="' + delDomain + '">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'
+      + '</button>'
+      + '</div></td></tr>';
+  }
+
+  function auroraRenderTable(groups) {
+    var t = GC.t;
+    var rows = '';
+    // Aurora: flat table — no group chrome, no batch column
+    for (var gi = 0; gi < groups.length; gi++) {
+      var g = groups[gi];
+      for (var ri = 0; ri < g.routes.length; ri++) {
+        rows += auroraRenderTableRow(g.routes[ri], { subRow: g.routes.length > 1 && ri > 0 });
+      }
+    }
+    if (!rows) {
+      return '<div style="font-size:13px;color:var(--faint);padding:20px 0;text-align:center">'
+        + escapeHtml(t['routes.no_routes'] || 'No routes configured') + '</div>';
+    }
+    return '<table class="data-table"><thead><tr>'
+      + '<th>' + escapeHtml(t['routes.table_domain'] || 'Domain') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_type'] || 'Type') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_target'] || 'Target') + '</th>'
+      + '<th>' + escapeHtml(t['route_auth.auth_type'] || 'Auth') + '</th>'
+      + '<th>' + escapeHtml(t['routes.table_status'] || 'Status') + '</th>'
+      + '<th></th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function auroraInitTypeToggle() {
+    var typeToggle = document.getElementById('aurora-type-toggle');
+    if (!typeToggle) return;
+    typeToggle.addEventListener('click', function (e) {
+      var btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      if (btn.dataset.nav) { window.location.href = btn.dataset.nav; return; }
+      typeToggle.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
+      btn.classList.add('on');
+      viewState.typeFilter = btn.dataset.value || null;
+      render();
+    });
+  }
+
   function renderTableRow(r, opts) {
+    if (isAurora()) return auroraRenderTableRow(r, opts);
     opts = opts || {};
     const isGw = r.target_kind === 'gateway';
     const targetTxt = isGw
@@ -473,6 +574,7 @@
   }
 
   function renderTable(groups) {
+    if (isAurora()) return auroraRenderTable(groups);
     const t = GC.t;
     const batchHead = batchMode ? '<th class="td-batch"></th>' : '';
     let rows = '';
@@ -1911,7 +2013,7 @@
         cbStatusIndicator.style.color = '#fff';
         cbStatusIndicator.textContent = GC.t['circuit_breaker.status_open'] || 'Open';
       } else {
-        cbStatusIndicator.style.background = 'var(--yellow, #facc15)';
+        cbStatusIndicator.style.background = (isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)');
         cbStatusIndicator.style.color = '#000';
         cbStatusIndicator.textContent = GC.t['circuit_breaker.status_half_open'] || 'Half-Open';
       }
@@ -2608,7 +2710,7 @@
     var count = getSelectedAclPeers(prefix).length;
     if (count === 0) {
       hint.textContent = GC.t['acl.no_peers_selected'] || 'No peers selected';
-      hint.style.color = 'var(--yellow, #facc15)';
+      hint.style.color = (isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)');
     } else {
       hint.textContent = (GC.t['acl.peers_selected'] || '{{count}} peer(s) allowed').replace('{{count}}', count);
       hint.style.color = 'var(--green, #4ade80)';
@@ -3203,7 +3305,7 @@
         hintEl.style.color = 'var(--green, #4ade80)';
       } else if (data.expected) {
         hintEl.textContent = warnTpl.replace('{{ip}}', data.expected);
-        hintEl.style.color = 'var(--yellow, #facc15)';
+        hintEl.style.color = (isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)');
       } else {
         hintEl.style.display = 'none';
       }
@@ -3358,7 +3460,7 @@
 
     entries.forEach(function(e) {
       if (e.timestamp && e.timestamp > lastTraceSince) lastTraceSince = e.timestamp;
-      var statusColor = e.status >= 500 ? 'var(--red, #f87171)' : e.status >= 400 ? 'var(--yellow, #facc15)' : 'var(--green, #4ade80)';
+      var statusColor = e.status >= 500 ? 'var(--red, #f87171)' : e.status >= 400 ? (isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)') : 'var(--green, #4ade80)';
 
       var div = document.createElement('div');
       div.className = 'trace-entry';
@@ -3816,7 +3918,7 @@
             dnsHint.style.color = 'var(--green, #4ade80)';
           } else if (data.expected) {
             dnsHint.textContent = warnTpl.replace('{{ip}}', data.expected);
-            dnsHint.style.color = 'var(--yellow, #facc15)';
+            dnsHint.style.color = (isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)');
           } else {
             dnsHint.style.display = 'none';
           }
@@ -3900,6 +4002,9 @@
       });
     }
   })();
+
+  // Aurora-only: wire the type toggle-group in the Aurora toolbar
+  if (isAurora()) auroraInitTypeToggle();
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();

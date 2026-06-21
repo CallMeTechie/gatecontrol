@@ -1,6 +1,9 @@
 (function () {
   'use strict';
 
+  // ─── Aurora theme detector ──────────────────────────────────────────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   function fmtDate(iso) {
     if (!iso) return '—';
     try {
@@ -89,6 +92,7 @@
   }
 
   function renderStatic(records) {
+    if (isAurora()) return; // Aurora merges static records into auroraRenderPeers()
     const tbody = document.getElementById('dns-static-tbody');
     replaceChildren(tbody, []);
     if (!records || !records.length) {
@@ -105,8 +109,43 @@
   }
 
   let allPeers = [];
+  let allStatic = [];
+
+  // ─── Aurora: unified records table (static + peer) ──────────────────────
+  // Renders both static records (from allStatic) and filtered peer records
+  // into the single 3-column data-table used in the Aurora theme.
+  function auroraRenderPeers(peers) {
+    const tbody = document.getElementById('dns-peer-tbody');
+    replaceChildren(tbody, []);
+    const rows = [];
+
+    for (const r of allStatic) {
+      rows.push(el('tr', null, [
+        el('td', { class: 'cell-name mono' }, r.fqdn || '—'),
+        el('td', null, el('span', { class: 'tag tag-blue' }, 'A')),
+        el('td', { class: 'mono' }, r.ip || '—'),
+      ]));
+    }
+
+    for (const p of peers) {
+      rows.push(el('tr', null, [
+        el('td', { class: 'cell-name mono' }, p.fqdn || p.hostname || '—'),
+        el('td', null, el('span', { class: 'tag tag-blue' }, 'A')),
+        el('td', { class: 'mono' }, p.ip || '—'),
+      ]));
+    }
+
+    if (!rows.length) {
+      tbody.appendChild(el('tr', null,
+        el('td', { colspan: '3', style: 'text-align:center;color:var(--text-3);padding:20px' },
+          GC.t['dns.no_peers'] || 'No records')));
+      return;
+    }
+    replaceChildren(tbody, rows);
+  }
 
   function renderPeers(peers) {
+    if (isAurora()) return auroraRenderPeers(peers);
     const tbody = document.getElementById('dns-peer-tbody');
     replaceChildren(tbody, []);
     if (!peers.length) {
@@ -143,14 +182,15 @@
       const data = await api.get('/api/system/dns/records');
       if (!data.ok) throw new Error(data.error || 'Load failed');
       renderStatus(data.status || {});
-      renderStatic(data.staticRecords || []);
+      allStatic = data.staticRecords || [];
+      renderStatic(allStatic);
       allPeers = data.peers || [];
       applyFilter();
     } catch (err) {
       const tbody = document.getElementById('dns-peer-tbody');
       if (tbody) {
         replaceChildren(tbody, el('tr', null,
-          el('td', { colspan: '6', style: 'text-align:center;color:var(--red);padding:20px' }, err.message)));
+          el('td', { colspan: isAurora() ? '3' : '6', style: 'text-align:center;color:var(--red);padding:20px' }, err.message)));
       }
     }
   }

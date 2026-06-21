@@ -69,7 +69,7 @@
   --amber-lt:   var(--amber-bg);  --amber-light: var(--amber-bg);
   --amber-bd:   var(--amber-bd);
   --blue-lt:    var(--blue-bg);   --blue-light: var(--blue-bg);
-  --blue-bd:    var(--blue-bd);   --blue-border: var(--blue-bd);
+  --blue-border: var(--blue-bd);
   --purple-lt:  var(--purple-bg);
   --font-ui:    var(--font-body);
   --font-sans:  var(--font-body);
@@ -106,7 +106,7 @@
   --amber:#f5c451; --amber-bg:rgba(245,196,81,.10); --amber-bd:rgba(245,196,81,.30);
   --green:#4ade80; --green-bg:rgba(74,222,128,.10); --green-bd:rgba(74,222,128,.25);
   --red:#ff6b6b;   --red-bg:rgba(255,107,107,.10);  --red-bd:rgba(255,107,107,.28);
-  --blue:#7aa2ff;  --blue-bg:rgba(122,162,255,.10);
+  --blue:#7aa2ff;  --blue-bg:rgba(122,162,255,.10); --blue-bd:rgba(122,162,255,.30);
   --purple:#b89cff; --purple-bg:rgba(184,156,255,.10); --purple-border:rgba(184,156,255,.28);
   --btn-text:#04201d;
   --glow1:rgba(52,220,198,.10); --glow2:rgba(255,157,108,.08); --grain:.035;
@@ -124,7 +124,7 @@
   --amber:#b5811f; --amber-bg:rgba(181,129,31,.10); --amber-bd:rgba(181,129,31,.30);
   --green:#15924f; --green-bg:rgba(21,146,79,.10); --green-bd:rgba(21,146,79,.28);
   --red:#d23b3b;   --red-bg:rgba(210,59,59,.08);   --red-bd:rgba(210,59,59,.28);
-  --blue:#3858c4;  --blue-bg:rgba(56,88,196,.08);
+  --blue:#3858c4;  --blue-bg:rgba(56,88,196,.08); --blue-bd:rgba(56,88,196,.28);
   --purple:#7a4fd0; --purple-bg:rgba(122,79,208,.08); --purple-border:rgba(122,79,208,.25);
   --btn-text:#ffffff;
   --glow1:rgba(14,155,138,.10); --glow2:rgba(217,96,47,.09); --grain:.02;
@@ -471,6 +471,10 @@ input[type=date]:focus, select:focus {
 .log-row .msg{flex:1} .log-row .msg b{font-weight:600}
 .log-row .src{font-family:var(--font-mono); font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--line); border-radius:999px}
 
+/* severity/status filter: .tab inside .toggle-group for JS compat — override tab underline */
+.toggle-group .tab{border-bottom:0;margin-bottom:0;padding:7px 12px;border-radius:7px;font-size:12.5px}
+.toggle-group .tab.active{background:var(--surface);color:var(--text);border-bottom-color:transparent;box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
+
 /* settings sections — NEW (aurora) */
 .set-sec{padding:18px 0; border-bottom:1px solid var(--line)}
 .set-sec:last-child{border-bottom:0}
@@ -528,4 +532,242 @@ input[type=date]:focus, select:focus {
 @media (prefers-reduced-motion: reduce){
   *,*::before{transition:none !important; animation:none !important}
   .page.active{opacity:1; transform:none}
+}
+
+/* ----------------------------------------------------------------------------
+   A-global fixes — Theme-wide color leak overrides (Task 3)
+   aurora.css loads after pro.css; every rule here wins by cascade position.
+   --------------------------------------------------------------------------- */
+
+/* btn-primary:hover — add teal glow (pro.css only has filter:brightness) */
+.btn-primary:hover{box-shadow:0 3px 12px -6px var(--teal-dim)}
+
+/* btn-danger — teal shadow leaks through pro.css; replace with red shadow */
+.btn-danger{box-shadow:0 1px 3px var(--red-bd)}
+.btn-danger:hover{background:var(--red);border-color:var(--red)}
+
+/* FAB — replace pro.css green/blue rgba literals with teal token */
+.fab{box-shadow:0 4px 16px var(--teal-dim)}
+.fab:hover{box-shadow:0 6px 20px var(--teal-dim)}
+.fab-option-icon{box-shadow:0 2px 8px var(--teal-dim)}
+
+/* Gateway-pool mode badges — replace hardcoded indigo/green with Aurora tokens */
+.pool-mode-failover{background:var(--blue-bg);color:var(--blue)}
+.pool-mode-load_balancing{background:var(--green-bg);color:var(--green)}
+
+/* gw-toast-pulse — replace blue rgba with teal glow */
+@keyframes gw-toast-pulse{
+  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,.15),0 0 0 0 var(--teal-soft)}
+  50%    {box-shadow:0 4px 12px rgba(0,0,0,.15),0 0 0 5px transparent}
+}
+
+/* ----------------------------------------------------------------------------
+   B · GATEWAY-specific fixes (Task 4 — theme-branched-JS pilot)
+   Aurora fleet cards use .gw.unit; detail sub-cards still use .gw wrapper.
+   --------------------------------------------------------------------------- */
+
+/* Strang-A: legacy .gw .kv vertical-stack bleeds into Aurora detail sub-cards.
+   Force horizontal (label left / value right) to match .kv .row pattern. */
+.gw-fleet .gw .kv{flex-direction:row;gap:0;margin-top:0}
+
+/* .gw-relnotes — bare <a> in detailHead() gets Aurora link styling */
+.gw-relnotes{font-size:12px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;opacity:.8}
+.gw-relnotes:hover{opacity:1;color:var(--text)}
+
+/* ----------------------------------------------------------------------------
+   C · PEERS page — Aurora mockup fidelity (Task P2-3)
+   --------------------------------------------------------------------------- */
+
+/* Empty-state for the gateway unit-grid */
+.aurora-gw-empty{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+
+/* tag-dot helper used in Aurora status tags on gateway/peer rows */
+.tag.tag-dot::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle}
+
+/* ----------------------------------------------------------------------------
+   D · ROUTES page — Wizard modal shells + step progress (Task P2-4b)
+   Service-bundle wizard + create-route wizard use Aurora .modal shell classes.
+   Styles previously in routes.njk <style nonce> block moved here.
+   --------------------------------------------------------------------------- */
+
+/* Wizard modal size/scroll modifiers */
+.modal.modal-xl{max-width:880px}
+.modal.modal-wizard{overflow-y:auto; max-height:88vh}
+/* Nested .modal-body must not create a second scroll container inside .modal-wizard */
+.modal.modal-wizard .modal-body{max-height:none; overflow-y:visible}
+
+/* Wizard head: two-row layout (title+close on top, step pills below) */
+.modal-head.wiz-head{flex-direction:column; align-items:stretch; padding-bottom:14px}
+.wiz-head-row{display:flex; align-items:flex-start; gap:12px}
+.wiz-head-row .modal-title{flex:1; font-size:20px}
+
+/* Wizard foot: prev/back on left, next/save on right */
+.modal-foot.wiz-foot{justify-content:space-between; align-items:center; background:var(--surface)}
+
+/* Route wizard step progress dots (moved from routes.njk inline <style nonce> block) */
+.route-step-dot{
+  width:28px; height:28px; border-radius:50%;
+  background:var(--surface-3); border:1.5px solid var(--line);
+  color:var(--faint); font-size:12px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+  cursor:default; flex-shrink:0; font-family:var(--font-mono);
+  transition:all 120ms ease;
+}
+.route-step-dot.active{
+  background:var(--teal); border-color:var(--teal); color:var(--btn-text);
+  box-shadow:0 0 0 3px var(--teal-soft);
+}
+.route-step-dot.done{
+  background:var(--teal-soft); border-color:var(--teal); color:var(--teal); cursor:pointer;
+}
+.route-step-dot.done:hover{filter:brightness(1.1)}
+.route-step-line{
+  flex:1; height:1.5px; background:var(--line); margin:0 2px; transition:background 120ms ease;
+}
+.route-step-line.done{background:var(--teal)}
+
+/* Wizard two-column form layout (moved from routes.njk inline <style nonce> block) */
+.wiz-row-2{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; margin-bottom:14px; align-items:start}
+.wiz-row-2 > *{margin-bottom:0 !important}
+.wiz-step-body{padding:20px 24px; min-height:480px}
+.wiz-step-body .toggle-group{align-self:flex-start}
+@media(max-width:640px){.wiz-row-2{grid-template-columns:1fr}}
+
+/* Service wizard step pills */
+.service-step-pill{
+  padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600;
+  background:var(--surface-3); border:1px solid var(--line); color:var(--faint); cursor:default;
+}
+.service-step-pill.on{background:var(--teal-soft); border-color:var(--teal-dim); color:var(--teal)}
+
+/* ── Users page (Task P2-5) ─────────────────────────────────────────────────── */
+
+/* Unassigned-tokens banner: replaces the inline-style block on #unassigned-banner */
+.banner-amber{
+  padding:12px 16px; margin-bottom:16px;
+  background:var(--amber-lt); border:1px solid var(--amber-bd);
+  border-radius:var(--radius-sm); font-size:13px; color:var(--text-1);
+}
+
+/* Aurora mobile user card */
+.aurora-user-card{
+  padding:14px; background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+}
+
+/* Token wizard step animation (moved from inline <style> in users.njk) */
+.tw-step{animation:twFadeIn .15s ease}
+@keyframes twFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.tw-preset-label{
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border:1px solid var(--line); border-radius:var(--radius-sm);
+  cursor:pointer; font-size:13px; transition:border-color .15s;
+}
+.tw-preset-label:has(input:checked){border-color:var(--teal); background:var(--teal-soft)}
+.tw-preset-label input{accent-color:var(--teal)}
+
+/* ── Gateway-Pools page — Aurora mockup fidelity (Task P2-9) ────────────────── */
+
+/* Pool member drag list — override accent/indigo from pro.css with aurora teal token */
+.pool-member-row{
+  background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm);
+  transition:background 120ms ease, opacity 120ms ease;
+}
+.pool-member-row.drag-over-top{box-shadow:0 -2px 0 0 var(--teal)}
+.pool-member-row.drag-over-bottom{box-shadow:0 2px 0 0 var(--teal)}
+.pool-member-handle{color:var(--faint); font-size:15px; cursor:grab; padding:0 4px}
+.pool-member-position{color:var(--muted); font-family:var(--font-mono); font-size:11px; min-width:22px; text-align:center}
+.pool-member-name{flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* Preset-templates card button grid */
+.btn-cooldown-preset{font-size:13px; padding:7px 10px}
+
+/* Pool kv rows: mode badge inside .card-sub stays inline */
+.card-sub .pool-mode-badge{font-size:11px; padding:2px 7px; border-radius:999px; font-family:var(--font-mono)}
+
+/* ── RDP page — Aurora mockup fidelity (Task P2-10) ─────────────────────────── */
+
+/* Wizard step indicator — extracted from inline <style nonce> in rdp.njk */
+#rdp-wizard-steps{user-select:none}
+.rdp-step-dot{
+  flex-shrink:0; width:28px; height:28px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:600;
+  background:var(--surface-3); color:var(--faint); border:2px solid var(--line);
+  transition:background .15s, color .15s, border-color .15s;
+}
+.rdp-step-line{flex:1; height:2px; background:var(--line); min-width:10px}
+.rdp-step-dot.done{
+  background:color-mix(in srgb, var(--teal) 15%, transparent);
+  color:var(--teal); border-color:var(--teal); cursor:pointer;
+}
+.rdp-step-dot.done:hover{background:color-mix(in srgb, var(--teal) 28%, transparent)}
+.rdp-step-dot.active{
+  background:var(--teal); color:#fff; border-color:var(--teal);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--teal) 18%, transparent);
+}
+.rdp-step-line.done{background:var(--teal)}
+#rdp-form > div > [data-wizard-step]{padding-top:4px}
+@media(max-width:600px){
+  .rdp-step-dot{width:24px; height:24px; font-size:11px; border-width:1.5px}
+}
+
+/* Modal shell: override legacy inline styles — use aurora modal sizing tokens */
+#rdp-modal.modal.modal-xl{width:880px; max-width:96vw; max-height:90vh; overflow-y:auto}
+.modal-head.wiz-head{padding:18px 24px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--surface); z-index:1}
+#rdp-modal .modal-body{padding:20px 24px}
+.modal-foot.wiz-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; bottom:0; background:var(--surface)}
+
+/* Aurora RDP card grid (built by auroraRenderGrid()) */
+.rdp-aurora-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:12px}
+
+/* ── Settings page — Aurora mockup fidelity (Task P2-11) ─────────────────────── */
+
+/* Tab bar (moved from settings.njk <style nonce> block) */
+.settings-tabs{
+  display:flex; gap:0; border-bottom:2px solid var(--line);
+  margin-bottom:20px; overflow:visible; position:sticky; top:0;
+  background:var(--surface); z-index:10; flex-shrink:0;
+}
+.settings-tabs .tab{
+  padding:10px 18px; font-size:13px; font-weight:500; color:var(--muted);
+  cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px;
+  white-space:nowrap; border-radius:0; transition:color .15s, border-color .15s;
+}
+.settings-tabs .tab:hover{color:var(--text)}
+.settings-tabs .tab.active{color:var(--teal); border-bottom-color:var(--teal); background:none; box-shadow:none}
+
+/* Panel (moved from settings.njk <style nonce> block) */
+.settings-panel{display:flex; flex-direction:column; gap:14px}
+
+/* Mobile hamburger (moved from settings.njk <style nonce> block) */
+.settings-tab-toggle{
+  display:none; align-items:center; gap:10px; padding:10px 14px; width:100%;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm);
+  cursor:pointer; color:var(--text); font-size:13px; font-weight:500;
+}
+.settings-tab-toggle svg{flex-shrink:0; transition:transform .2s}
+.settings-tab-toggle.open svg{transform:rotate(180deg)}
+.settings-tab-dropdown{
+  display:none; position:absolute; top:100%; left:0; right:0;
+  background:var(--surface); border:1px solid var(--line); border-top:none;
+  border-radius:0 0 var(--r-sm) var(--r-sm); box-shadow:var(--shadow); z-index:20;
+  flex-direction:column;
+}
+.settings-tab-dropdown.open{display:flex}
+.settings-tab-dropdown .tab{
+  padding:12px 16px; font-size:13px; font-weight:500; color:var(--muted);
+  cursor:pointer; border-bottom:1px solid var(--line); border-radius:0;
+  transition:background .1s, color .1s; white-space:nowrap; margin-bottom:0;
+}
+.settings-tab-dropdown .tab:last-child{border-bottom:none}
+.settings-tab-dropdown .tab:hover{background:var(--surface-3); color:var(--text)}
+.settings-tab-dropdown .tab.active{
+  color:var(--teal); background:none; font-weight:600;
+  border-left:3px solid var(--teal); box-shadow:none;
+}
+@media (max-width:900px){
+  .settings-tabs{position:relative; border-bottom:none; margin-bottom:16px}
+  .settings-tabs > .tab{display:none}
+  .settings-tab-toggle{display:flex}
 }

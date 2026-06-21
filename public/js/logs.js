@@ -1,6 +1,9 @@
 'use strict';
 
 (function () {
+  // ── Aurora detection ────────────────────────────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   function formatTime(ts) {
     if (!ts) return '';
     const d = new Date(ts + (ts.includes('Z') ? '' : 'Z'));
@@ -70,7 +73,95 @@
     renderLogs(filtered);
   }
 
+  // ─── Aurora: severity class map ─────────────────────
+  var AURORA_SEV_CLASS = { info: 'info', success: 'ok', warning: 'warn', error: 'err' };
+  var AURORA_STATUS_SEV = { 2: 'ok', 3: 'info', 4: 'warn', 5: 'err' };
+
+  function auroraFormatTs(ts) {
+    if (!ts) return '';
+    var d = new Date(ts + (ts.includes('Z') ? '' : 'Z'));
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function auroraRenderLogs(entries) {
+    // Aurora live search: filter by text if #log-search has a value
+    var searchEl = document.getElementById('log-search');
+    var q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+    var visible = q
+      ? entries.filter(function (e) {
+          return (e.message || '').toLowerCase().includes(q) ||
+            (e.source || '').toLowerCase().includes(q) ||
+            (e.event_type || '').toLowerCase().includes(q);
+        })
+      : entries;
+
+    if (!visible.length) {
+      logContainer.textContent = GC.t['logs.no_entries'] || 'No log entries';
+      return;
+    }
+
+    var html = visible.map(function (e) {
+      var sevClass = AURORA_SEV_CLASS[e.severity] || 'info';
+      var ts = escapeHtml(auroraFormatTs(e.created_at));
+      var src = e.source || e.event_type || '';
+      return '<div class="log-row" data-severity="' + escapeHtml(e.severity) + '">' +
+        '<span class="sev ' + sevClass + '"></span>' +
+        '<span class="ts">' + ts + '</span>' +
+        '<span class="msg">' + escapeHtml(e.message) + '</span>' +
+        (src ? '<span class="src">' + escapeHtml(src) + '</span>' : '') +
+        '</div>';
+    }).join('');
+
+    if (totalPages > 1 && currentFilter === 'all' && !q) {
+      html += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:16px 0;border-top:1px solid var(--line);margin-top:8px">';
+      html += '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ' + (currentPage <= 1 ? 'disabled' : '') + ' data-page="' + (currentPage - 1) + '">« Prev</button>';
+      html += '<span style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">' + currentPage + ' / ' + totalPages + '</span>';
+      html += '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ' + (currentPage >= totalPages ? 'disabled' : '') + ' data-page="' + (currentPage + 1) + '">Next »</button>';
+      html += '</div>';
+    }
+
+    logContainer.innerHTML = html;
+  }
+
+  function auroraRenderAccessLogs(entries) {
+    if (!entries.length) {
+      accessContainer.textContent = GC.t['logs.no_access_entries'] || 'No access log entries';
+      return;
+    }
+
+    var html = entries.map(function (e) {
+      var statusClass = Math.floor(e.status / 100);
+      var sevClass = AURORA_STATUS_SEV[statusClass] || 'info';
+      var time = escapeHtml(formatTime(e.timestamp));
+      var statusCode = parseInt(e.status, 10) || 0;
+      var duration = parseInt(e.duration, 10) || 0;
+      var method = escapeHtml(e.method || '');
+      var path = escapeHtml((e.host || '') + (e.uri || ''));
+      var ip = escapeHtml(e.remote_ip || '');
+      var msg = method + ' ' + statusCode + ' ' + path + ' · ' + ip + ' · ' + duration + 'ms';
+      var src = escapeHtml(e.host || '');
+      return '<div class="log-row">' +
+        '<span class="sev ' + sevClass + '"></span>' +
+        '<span class="ts">' + time + '</span>' +
+        '<span class="msg">' + msg + '</span>' +
+        (src ? '<span class="src">' + src + '</span>' : '') +
+        '</div>';
+    }).join('');
+
+    if (accessTotalPages > 1) {
+      html += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:16px 0;border-top:1px solid var(--line);margin-top:8px">';
+      html += '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ' + (accessPage <= 1 ? 'disabled' : '') + ' data-access-page="' + (accessPage - 1) + '">« Prev</button>';
+      html += '<span style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">' + accessPage + ' / ' + accessTotalPages + '</span>';
+      html += '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ' + (accessPage >= accessTotalPages ? 'disabled' : '') + ' data-access-page="' + (accessPage + 1) + '">Next »</button>';
+      html += '</div>';
+    }
+
+    accessContainer.innerHTML = html;
+  }
+
   function renderLogs(entries) {
+    if (isAurora()) return auroraRenderLogs(entries);
     if (!entries.length) {
       logContainer.textContent = GC.t['logs.no_entries'] || 'No log entries';
       return;
@@ -156,6 +247,7 @@
   }
 
   function renderAccessLogs(entries) {
+    if (isAurora()) return auroraRenderAccessLogs(entries);
     if (!entries.length) {
       accessContainer.textContent = GC.t['logs.no_access_entries'] || 'No access log entries';
       return;
@@ -258,6 +350,12 @@
       if (accessStatusFilter) params.set('status', accessStatusFilter);
       triggerDownload('/api/logs/access/export?' + params.toString());
     });
+  }
+
+  // ─── Aurora: live search wiring ───────────────────
+  var logSearchEl = document.getElementById('log-search');
+  if (logSearchEl) {
+    logSearchEl.addEventListener('input', function () { applyFilter(); });
   }
 
   // ─── Init ─────────────────────────────────────────
