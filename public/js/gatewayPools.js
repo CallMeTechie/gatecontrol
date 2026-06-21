@@ -1009,6 +1009,19 @@ function initEventListeners() {
   });
 
   document.getElementById('btn-add-member')?.addEventListener('click', handleAddMemberClick);
+
+  document.querySelectorAll('.btn-cooldown-preset').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var presetValue = btn.dataset.presetValue;
+      openCreateModal();
+      if (presetValue) {
+        var inp = document.querySelector('input[name="failback_cooldown_s"]');
+        if (inp) inp.value = presetValue;
+        var sel = document.getElementById('cooldown-preset');
+        if (sel) sel.value = presetValue;
+      }
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

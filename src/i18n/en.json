@@ -1648,7 +1648,6 @@
   "gateway_pools.license_locked_lb": "Load Balancing requires upgraded license",
   "gateway_pools.active_member": "Active Member",
   "gateway_pools.standby": "Standby",
-  "gateway_pools.status_active": "Active",
   "gateway_pools.preset_templates": "Preset Templates",
   "gateway_pools.preset_docker": "Docker (30 s)",
   "gateway_failover_settings.title": "Gateway Failover",
