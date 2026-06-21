@@ -42,6 +42,7 @@
     var reconnectTimer     = null;
     var reconnectAttempt   = 0;
     var reconnectWindowStart = null;
+    var currentScaleMode   = 'fit';  // 'fit' | 'native' — re-applied on display resize
 
     /* ---- beforeunload ---- */
     var beforeunloadHandler = function () { disconnect(); }; // eslint-disable-line no-use-before-define
@@ -131,15 +132,31 @@
         var protocol = result.protocol;
         activeProtocol = protocol;
 
-        var tunnelUrl = wsBase + wsPath + '?token=' + encodeURIComponent(token);
+        /* Optimal display size → guacd 'size' instruction. width/height/dpi are
+         * allow-listed by guacamole-lite; WITHOUT them guacd renders a 0-size
+         * display → black screen even though the session logs on. Physical pixels
+         * for HiDPI crispness; display.onresize fits the result to the container. */
+        var ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+        var cw0   = container.clientWidth  || (typeof window !== 'undefined' ? window.innerWidth  : 1024);
+        var ch0   = container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 768);
+        var dispW = Math.max(1, Math.min(7680, Math.round(cw0 * ratio)));
+        var dispH = Math.max(1, Math.min(7680, Math.round(ch0 * ratio)));
+        var dispDpi = Math.max(1, Math.round(96 * ratio));
+        var tunnelUrl = wsBase + wsPath + '?token=' + encodeURIComponent(token)
+          + '&width=' + dispW + '&height=' + dispH + '&dpi=' + dispDpi;
         var tunnel    = new Guacamole.WebSocketTunnel(tunnelUrl);
         var client    = new Guacamole.Client(tunnel);
         activeClient  = client;
 
         /* append display element */
-        var displayEl   = client.getDisplay().getElement();
+        var display     = client.getDisplay();
+        var displayEl   = display.getElement();
         activeDisplayEl = displayEl;
         container.appendChild(displayEl);
+
+        /* Fit the rendered remote display to the container whenever guacd reports
+         * its size (first frame + any server-side resize). */
+        display.onresize = function () { setScale(currentScaleMode); }; // eslint-disable-line no-use-before-define
 
         /* ---- Mouse (per-connection — new element each time) ---- */
         var mouse = new Guacamole.Mouse(displayEl);
@@ -297,6 +314,7 @@
      */
     function setScale(mode) {
       if (!activeClient) return;
+      currentScaleMode = (mode === 'native') ? 'native' : 'fit';
       var scaleMode = logic().scaleFor(mode, { protocol: activeProtocol });
       var display   = activeClient.getDisplay();
       if (scaleMode === 'native') {
