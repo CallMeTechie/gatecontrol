@@ -32,6 +32,7 @@ describe('guacSession.mintForRoute', () => {
     const res = guacSession.mintForRoute(route, { actor: { kind: 'client', tokenId: 1, userId: 1, peerId: 1 } });
     assert.equal(res.ok, false);
     assert.equal(res.status, 403);
+    assert.equal(res.code, 'not_authorized');
   });
   it('not browser_enabled → 403 (admin actor still subject to non-ACL guards)', async () => {
     const r = await rdp.create({ name: 'c', host: '10.0.0.4', protocol: 'rdp', port: 3389, username: 'u', password: 'p' });
@@ -39,6 +40,7 @@ describe('guacSession.mintForRoute', () => {
     const res = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: 7 } });
     assert.equal(res.ok, false);
     assert.equal(res.status, 403);
+    assert.equal(res.code, 'not_enabled');
   });
   it('licence off → 403 (both actors)', async () => {
     const r = await rdp.create({ name: 'd', host: '10.0.0.9', protocol: 'rdp', port: 3389, username: 'u', password: 'p', browser_enabled: 1 });
@@ -48,6 +50,7 @@ describe('guacSession.mintForRoute', () => {
     license._overrideForTest({ ...license.COMMUNITY_FALLBACK, browser_sessions: true, remote_desktop: true }); // restore
     assert.equal(res.ok, false);
     assert.equal(res.status, 403);
+    assert.equal(res.code, 'license_required');
   });
 
   // Guard: maintenance window active → 503
@@ -61,6 +64,7 @@ describe('guacSession.mintForRoute', () => {
     const res = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: 7 } });
     assert.equal(res.ok, false);
     assert.equal(res.status, 503);
+    assert.equal(res.code, 'maintenance_active');
   });
 
   // Guard: protocol not in SUPPORTED_PROTOCOLS → 400
@@ -72,6 +76,7 @@ describe('guacSession.mintForRoute', () => {
     const res = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: 7 } });
     assert.equal(res.ok, false);
     assert.equal(res.status, 400);
+    assert.equal(res.code, 'protocol_unsupported');
   });
 
   // Guard: concurrency cap (per-route) reached → 429
@@ -96,6 +101,7 @@ describe('guacSession.mintForRoute', () => {
     }
     assert.equal(res.ok, false);
     assert.equal(res.status, 429);
+    assert.equal(res.code, 'limit_reached');
   });
 
   // Guard: cred-fail (required ssh key recorded in decrypt_failed_fields) → 409
@@ -111,6 +117,7 @@ describe('guacSession.mintForRoute', () => {
     const res = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: 7 } });
     assert.equal(res.ok, false);
     assert.equal(res.status, 409);
+    assert.equal(res.code, 'mint_failed');
   });
 
   // DA-C byte-identity regression: client actor tokenName MUST be null in the minted token.

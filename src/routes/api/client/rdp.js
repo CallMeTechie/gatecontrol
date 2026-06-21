@@ -273,8 +273,8 @@ router.get('/rdp/:id/connect', (req, res) => {
 /**
  * POST /api/v1/client/rdp/:id/browser-session
  * Mint a short-lived guacamole-lite token for an RDP/VNC route.
- * Guard order (spec §5): license → found → decrypt → browser_enabled → ACL → maintenance → protocol → concurrency.
- * Guard chain delegated to guacSession.mintForRoute (pure move, Task 1).
+ * Guard order: found (route lookup → 404 in this handler) → then mintForRoute:
+ *   license → cred → browser_enabled → ACL → maintenance → protocol → concurrency.
  */
 router.post('/rdp/:id/browser-session', (req, res) => {
   try {
