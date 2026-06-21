@@ -516,6 +516,8 @@
   "dashboard.pihole_enabled": "Blocking",
   "dashboard.pihole_unavailable": "Pi-hole unavailable",
   "logs.no_access_entries": "No access log entries",
+  "logs.search_placeholder": "Filter logs…",
+  "logs.subtitle_live": "Activity, access and RDP history — live via SSE.",
   "settings.confirm_clear_logs": "Clear all activity logs? This action cannot be undone.",
   "settings.logs_cleared": "Logs cleared",
   "settings.key_is_set": "Key is set",

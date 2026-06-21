@@ -471,6 +471,10 @@ input[type=date]:focus, select:focus {
 .log-row .msg{flex:1} .log-row .msg b{font-weight:600}
 .log-row .src{font-family:var(--font-mono); font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--line); border-radius:999px}
 
+/* severity/status filter: .tab inside .toggle-group for JS compat — override tab underline */
+.toggle-group .tab{border-bottom:0;margin-bottom:0;padding:7px 12px;border-radius:7px;font-size:12.5px}
+.toggle-group .tab.active{background:var(--surface);color:var(--text);border-bottom-color:transparent;box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
+
 /* settings sections — NEW (aurora) */
 .set-sec{padding:18px 0; border-bottom:1px solid var(--line)}
 .set-sec:last-child{border-bottom:0}

@@ -516,6 +516,8 @@
   "dashboard.pihole_enabled": "Aktiv",
   "dashboard.pihole_unavailable": "Pi-hole nicht erreichbar",
   "logs.no_access_entries": "Keine Zugriffslog-Einträge",
+  "logs.search_placeholder": "Logs filtern…",
+  "logs.subtitle_live": "Aktivität, Zugriffe und RDP-Verlauf — live über SSE.",
   "settings.confirm_clear_logs": "Alle Aktivitätslogs löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "settings.logs_cleared": "Logs gelöscht",
   "settings.key_is_set": "Schlüssel ist gesetzt",

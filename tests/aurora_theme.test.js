@@ -841,3 +841,79 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
   });
 });
+
+// ── Task 8: Logs page — mockup fidelity ──────────────────────────────────────
+describe('aurora theme — logs page (Task 8)', () => {
+  it('/logs returns 200 under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/logs').expect(200);
+    assert.match(res.text, /class="app"/, 'Aurora .app shell used');
+  });
+
+  it('/logs Aurora has .toolbar and .toggle-group for severity filter', async () => {
+    selectAurora();
+    const res = await agent.get('/logs').expect(200);
+    assert.match(res.text, /class="toolbar"/, '.toolbar present');
+    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+  });
+
+  it('/logs Aurora uses .card.span12 grid layout for log container', async () => {
+    selectAurora();
+    const res = await agent.get('/logs').expect(200);
+    assert.match(res.text, /card span12/, '.card.span12 grid layout present');
+  });
+
+  it('/logs Aurora preserves all phase-0 JS-contract IDs', async () => {
+    selectAurora();
+    const res = await agent.get('/logs').expect(200);
+    assert.match(res.text, /id="log-type-tabs"/, '#log-type-tabs present');
+    assert.match(res.text, /id="activity-panel"/, '#activity-panel present');
+    assert.match(res.text, /id="access-panel"/, '#access-panel present');
+    assert.match(res.text, /id="history-panel"/, '#history-panel present');
+    assert.match(res.text, /id="full-activity-log"/, '#full-activity-log present');
+    assert.match(res.text, /id="logs-count"/, '#logs-count present');
+    assert.match(res.text, /id="log-severity-filter"/, '#log-severity-filter present');
+    assert.match(res.text, /id="access-log-container"/, '#access-log-container present');
+    assert.match(res.text, /id="access-count"/, '#access-count present');
+    assert.match(res.text, /id="access-status-filter"/, '#access-status-filter present');
+    assert.match(res.text, /id="activity-export-csv"/, '#activity-export-csv present');
+    assert.match(res.text, /id="activity-export-json"/, '#activity-export-json present');
+    assert.match(res.text, /id="access-export-csv"/, '#access-export-csv present');
+    assert.match(res.text, /id="access-export-json"/, '#access-export-json present');
+    assert.match(res.text, /id="rdp-history-list"/, '#rdp-history-list present');
+    assert.match(res.text, /id="rdp-history-period"/, '#rdp-history-period present');
+    assert.match(res.text, /id="rdp-history-status"/, '#rdp-history-status present');
+    assert.match(res.text, /id="rdp-history-export-csv"/, '#rdp-history-export-csv present');
+    assert.match(res.text, /id="rdp-history-export-json"/, '#rdp-history-export-json present');
+  });
+
+  it('/logs Aurora has data-type and data-severity dataset attrs for JS reads', async () => {
+    selectAurora();
+    const res = await agent.get('/logs').expect(200);
+    assert.match(res.text, /data-type="activity"/, 'data-type="activity" present');
+    assert.match(res.text, /data-type="access"/, 'data-type="access" present');
+    assert.match(res.text, /data-type="history"/, 'data-type="history" present');
+    assert.match(res.text, /data-severity="all"/, 'data-severity="all" present');
+    assert.match(res.text, /data-severity="error"/, 'data-severity="error" present');
+    assert.match(res.text, /data-status=""/, 'data-status="" present for access filter');
+  });
+
+  it('logs.js contains isAurora() and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'logs.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in logs.js');
+    assert.match(js, /function auroraRenderLogs\(/, 'auroraRenderLogs() present in logs.js');
+    assert.match(js, /function auroraRenderAccessLogs\(/, 'auroraRenderAccessLogs() present in logs.js');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderLogs/, 'renderLogs() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderAccessLogs/, 'renderAccessLogs() has isAurora guard');
+  });
+
+  it('aurora.css has .log-row, .sev, .ts, .msg, .src, .toggle-group rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.log-row\b/, '.log-row rule in aurora.css');
+    assert.match(css, /\.log-row .sev\b/, '.log-row .sev rule in aurora.css');
+    assert.match(css, /\.log-row .ts\b/, '.log-row .ts rule in aurora.css');
+    assert.match(css, /\.log-row .msg\b/, '.log-row .msg rule in aurora.css');
+    assert.match(css, /\.log-row .src\b/, '.log-row .src rule in aurora.css');
+    assert.match(css, /\.toggle-group\b/, '.toggle-group rule in aurora.css');
+  });
+});
