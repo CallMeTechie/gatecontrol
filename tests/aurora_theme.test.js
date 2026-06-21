@@ -55,3 +55,11 @@ describe('aurora theme — profile picker', () => {
     assert.match(res.text, /data-theme="aurora"/, 'profile picker has an Aurora button');
   });
 });
+
+describe('aurora theme — mobile sidebar scrim contract', () => {
+  it('renders #sidebar-overlay so app.js can bind the scrim and tap-to-close', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="sidebar-overlay"/, 'layout emits #sidebar-overlay that app.js getElementById depends on');
+  });
+});

@@ -29,7 +29,7 @@
   </div>
   {% include theme + "/partials/topbar.njk" %}
   {% include theme + "/partials/sidebar.njk" %}
-  <div class="sidebar-scrim" id="sidebar-scrim"></div>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
   <main class="main">
     {% if flash.success %}<div class="flash flash-success">{{ flash.success }}</div>{% endif %}
     {% if flash.error %}<div class="flash flash-error">{{ flash.error }}</div>{% endif %}

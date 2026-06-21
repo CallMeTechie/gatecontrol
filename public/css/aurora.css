@@ -513,14 +513,14 @@ input[type=date]:focus, select:focus {
 .mock-foot{margin-top:30px; display:flex; align-items:center; gap:14px; color:var(--faint); font-size:12px; flex-wrap:wrap}
 .mock-foot .mock-badge{font-family:var(--font-mono); font-size:11px; color:#1b1a18; background:var(--amber); padding:3px 8px; border-radius:6px; font-weight:700; letter-spacing:.04em}
 
-.sidebar-scrim{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:40; display:none}
+.sidebar-overlay{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:40; display:none}
 @media (max-width:980px){
   .app{grid-template-columns:1fr; grid-template-areas:"topbar" "main"}
   .app-brand{display:none}
   .sidebar-toggle{display:grid}
   .sidebar{position:fixed; left:0; top:0; bottom:0; width:260px; z-index:50; transform:translateX(-105%); transition:.25s; background:var(--surface)}
   .sidebar.open{transform:none}
-  .sidebar-scrim.open{display:block}
+  .sidebar-overlay.visible{display:block}
   .grid > [class*="span"]{grid-column:span 12 !important}
   .main{padding:20px 16px 50px}
   .topbar-lang{display:none}
