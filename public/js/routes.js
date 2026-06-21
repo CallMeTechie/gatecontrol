@@ -1911,7 +1911,7 @@
         cbStatusIndicator.style.color = '#fff';
         cbStatusIndicator.textContent = GC.t['circuit_breaker.status_open'] || 'Open';
       } else {
-        cbStatusIndicator.style.background = 'var(--yellow, #facc15)';
+        cbStatusIndicator.style.background = 'var(--amber)';
         cbStatusIndicator.style.color = '#000';
         cbStatusIndicator.textContent = GC.t['circuit_breaker.status_half_open'] || 'Half-Open';
       }
@@ -2608,7 +2608,7 @@
     var count = getSelectedAclPeers(prefix).length;
     if (count === 0) {
       hint.textContent = GC.t['acl.no_peers_selected'] || 'No peers selected';
-      hint.style.color = 'var(--yellow, #facc15)';
+      hint.style.color = 'var(--amber)';
     } else {
       hint.textContent = (GC.t['acl.peers_selected'] || '{{count}} peer(s) allowed').replace('{{count}}', count);
       hint.style.color = 'var(--green, #4ade80)';
@@ -3203,7 +3203,7 @@
         hintEl.style.color = 'var(--green, #4ade80)';
       } else if (data.expected) {
         hintEl.textContent = warnTpl.replace('{{ip}}', data.expected);
-        hintEl.style.color = 'var(--yellow, #facc15)';
+        hintEl.style.color = 'var(--amber)';
       } else {
         hintEl.style.display = 'none';
       }
@@ -3358,7 +3358,7 @@
 
     entries.forEach(function(e) {
       if (e.timestamp && e.timestamp > lastTraceSince) lastTraceSince = e.timestamp;
-      var statusColor = e.status >= 500 ? 'var(--red, #f87171)' : e.status >= 400 ? 'var(--yellow, #facc15)' : 'var(--green, #4ade80)';
+      var statusColor = e.status >= 500 ? 'var(--red, #f87171)' : e.status >= 400 ? 'var(--amber)' : 'var(--green, #4ade80)';
 
       var div = document.createElement('div');
       div.className = 'trace-entry';
@@ -3816,7 +3816,7 @@
             dnsHint.style.color = 'var(--green, #4ade80)';
           } else if (data.expected) {
             dnsHint.textContent = warnTpl.replace('{{ip}}', data.expected);
-            dnsHint.style.color = 'var(--yellow, #facc15)';
+            dnsHint.style.color = 'var(--amber)';
           } else {
             dnsHint.style.display = 'none';
           }

@@ -69,7 +69,7 @@
   --amber-lt:   var(--amber-bg);  --amber-light: var(--amber-bg);
   --amber-bd:   var(--amber-bd);
   --blue-lt:    var(--blue-bg);   --blue-light: var(--blue-bg);
-  --blue-bd:    var(--blue-bd);   --blue-border: var(--blue-bd);
+  --blue-border: var(--blue-bd);
   --purple-lt:  var(--purple-bg);
   --font-ui:    var(--font-body);
   --font-sans:  var(--font-body);
@@ -106,7 +106,7 @@
   --amber:#f5c451; --amber-bg:rgba(245,196,81,.10); --amber-bd:rgba(245,196,81,.30);
   --green:#4ade80; --green-bg:rgba(74,222,128,.10); --green-bd:rgba(74,222,128,.25);
   --red:#ff6b6b;   --red-bg:rgba(255,107,107,.10);  --red-bd:rgba(255,107,107,.28);
-  --blue:#7aa2ff;  --blue-bg:rgba(122,162,255,.10);
+  --blue:#7aa2ff;  --blue-bg:rgba(122,162,255,.10); --blue-bd:rgba(122,162,255,.30);
   --purple:#b89cff; --purple-bg:rgba(184,156,255,.10); --purple-border:rgba(184,156,255,.28);
   --btn-text:#04201d;
   --glow1:rgba(52,220,198,.10); --glow2:rgba(255,157,108,.08); --grain:.035;
@@ -124,7 +124,7 @@
   --amber:#b5811f; --amber-bg:rgba(181,129,31,.10); --amber-bd:rgba(181,129,31,.30);
   --green:#15924f; --green-bg:rgba(21,146,79,.10); --green-bd:rgba(21,146,79,.28);
   --red:#d23b3b;   --red-bg:rgba(210,59,59,.08);   --red-bd:rgba(210,59,59,.28);
-  --blue:#3858c4;  --blue-bg:rgba(56,88,196,.08);
+  --blue:#3858c4;  --blue-bg:rgba(56,88,196,.08); --blue-bd:rgba(56,88,196,.28);
   --purple:#7a4fd0; --purple-bg:rgba(122,79,208,.08); --purple-border:rgba(122,79,208,.25);
   --btn-text:#ffffff;
   --glow1:rgba(14,155,138,.10); --glow2:rgba(217,96,47,.09); --grain:.02;
@@ -528,4 +528,31 @@ input[type=date]:focus, select:focus {
 @media (prefers-reduced-motion: reduce){
   *,*::before{transition:none !important; animation:none !important}
   .page.active{opacity:1; transform:none}
+}
+
+/* ----------------------------------------------------------------------------
+   A-global fixes — Theme-wide color leak overrides (Task 3)
+   aurora.css loads after pro.css; every rule here wins by cascade position.
+   --------------------------------------------------------------------------- */
+
+/* btn-primary:hover — add teal glow (pro.css only has filter:brightness) */
+.btn-primary:hover{box-shadow:0 3px 12px -6px var(--teal-dim)}
+
+/* btn-danger — teal shadow leaks through pro.css; replace with red shadow */
+.btn-danger{box-shadow:0 1px 3px var(--red-bd)}
+.btn-danger:hover{background:var(--red);border-color:var(--red)}
+
+/* FAB — replace pro.css green/blue rgba literals with teal token */
+.fab{box-shadow:0 4px 16px var(--teal-dim)}
+.fab:hover{box-shadow:0 6px 20px var(--teal-dim)}
+.fab-option-icon{box-shadow:0 2px 8px var(--teal-dim)}
+
+/* Gateway-pool mode badges — replace hardcoded indigo/green with Aurora tokens */
+.pool-mode-failover{background:var(--blue-bg);color:var(--blue)}
+.pool-mode-load_balancing{background:var(--green-bg);color:var(--green)}
+
+/* gw-toast-pulse — replace blue rgba with teal glow */
+@keyframes gw-toast-pulse{
+  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,.15),0 0 0 0 var(--teal-soft)}
+  50%    {box-shadow:0 4px 12px rgba(0,0,0,.15),0 0 0 5px transparent}
 }
