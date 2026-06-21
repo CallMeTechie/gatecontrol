@@ -103,6 +103,8 @@
       </svg>
       {{ t('rdp.session.paste') }}
     </button>
+    {# Inline clipboard-unavailable indicator — shown by JS when clipboard permission is denied #}
+    <span id="rdp-clipboard-warn" class="rdp-clip-warn" style="display:none"></span>
 
     {# Disconnect #}
     <button class="rdp-tbtn rdp-tbtn--danger" id="rdp-btn-disconnect" title="{{ t('rdp.session.disconnect') }}">
@@ -179,9 +181,10 @@
     wsBase: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host,
     onState: function (s, detail) {
       setPillState(s);
-      /* Clipboard unavailable notification (state unchanged) */
+      /* Clipboard unavailable — show persistent inline toolbar indicator (no blocking alert) */
       if (detail && detail.clipboardUnavailable) {
-        alert(i18n.clipboard_unavailable);
+        var clipWarn = document.getElementById('rdp-clipboard-warn');
+        if (clipWarn) { clipWarn.textContent = i18n.clipboard_unavailable; clipWarn.style.display = ''; }
         return;
       }
       reconnectOvl.style.display = s === 'reconnecting' ? 'flex' : 'none';

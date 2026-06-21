@@ -213,10 +213,12 @@ test('kill-WS: abrupt terminate; server closes the slot — no slot leak', async
   await waitForCount(baseline + 1, 6000);
   assert.equal(listActiveSessions().length, baseline + 1, 'slot occupied after open');
 
-  // Kill the WS abruptly: no close frame — equivalent to a half-open RST on the
-  // same machine.  On localhost the server-side socket fires a 'close' event
-  // immediately, which propagates:  ws close → guacd cc.close() →
+  // TCP RST (abrupt kill on localhost) — server detects close immediately.
+  // ws.terminate() sends a RST; on localhost the server-side socket fires a
+  // 'close' event right away, which propagates: ws close → guacd cc.close() →
   // guac.on('close') → rdpSessions.endSession() → slot freed.
+  // (This is NOT a true half-open / network-partition path; that is Test 2's
+  //  isStale path, which covers the case where no RST or FIN is ever received.)
   ws.terminate();
 
   // Server detects the dropped connection and frees the slot.
@@ -272,7 +274,9 @@ test('isStale reclaim: admitSession frees the stale half-open slot (reconnect pa
   // isStale function from guacTunnel (the authoritative implementation).
   const admit = admitSession({ routeId, tokenId: null, peerId: null, isStale });
 
-  // admitSession reclaimed the stale slot and admitted the new connection.
+  // admitSession returns {ok:true}: the stale slot was reclaimed and the cap
+  // check passed (a new connection WOULD be admitted).  No new session row is
+  // created here — that happens later in the WS upgrade handler (startSession).
   assert.equal(admit.ok, true,
     'admitSession must succeed: stale slot reclaimed, new connection admitted');
 

@@ -1944,6 +1944,21 @@ body.rdp-session-body {
 .rdp-tbtn[aria-pressed="true"] { background: var(--accent-md); border-color: var(--accent); color: #6ee7b7; }
 .rdp-tbtn--danger { background: var(--red-lt); border-color: var(--red-bd); color: #f87171; }
 .rdp-tbtn--danger:hover { background: rgba(220,38,38,0.18); color: #fff; border-color: var(--red); }
+/* Inline clipboard-unavailable warning pill */
+.rdp-clip-warn {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--amber-bd, rgba(180,83,9,0.19));
+  background: var(--amber-lt, rgba(180,83,9,0.08));
+  color: var(--amber, #b45309);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* Reconnecting overlay */
 .rdp-reconnect-veil {
   position: absolute; inset: 0;
