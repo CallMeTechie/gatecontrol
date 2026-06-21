@@ -4718,6 +4718,12 @@
   var nextBtn = document.getElementById('printer-preset-next');
   var closeBtn = document.getElementById('printer-preset-close');
   var pills = Array.prototype.slice.call(document.querySelectorAll('#printer-preset-steps [data-pstep]'));
+  var _discListener = null;
+  var _discTimer = null;
+  function _clearDisc() {
+    if (_discListener) { document.removeEventListener('gc:gateway_discovery', _discListener); _discListener = null; }
+    if (_discTimer) { clearTimeout(_discTimer); _discTimer = null; }
+  }
 
   var LABEL_CSS = 'font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600';
   var INPUT_CSS = 'width:100%;padding:8px 12px';
@@ -4845,25 +4851,72 @@
         adoptList.appendChild(b);
       });
     }
+    function startScan(pid) {
+      adoptBtn.disabled = true;
+      adoptMsg('printer_preset.adopt_scanning', 'Scanning the LAN… (up to 45s)');
+      // IDS hint (spec §4) — appended (CSP: no insertBefore).
+      adoptList.appendChild(elx('small', 'display:block;margin-top:4px;font-size:11px;color:var(--text-3)', { text: T('printer_preset.adopt_active_hint', 'Triggers an active port scan — may set off a LAN intrusion-detection system.') }));
+      _clearDisc(); // clears any prior listener AND prior timer (no cross-scan race)
+      var settled = false;
+      function finish(fn) { if (settled) return; settled = true; _clearDisc(); adoptBtn.disabled = false; fn(); }
+      _discListener = function (e) {
+        var p = e.detail || {};
+        if (String(p.peer_id) !== String(pid)) return;   // gateway filter
+        if (state.step !== 1) return;                     // only step 1
+        if (p.devices && p.devices.length) { finish(function () { renderAdoptDevices(p.devices); }); }
+        else if (p.done) { finish(function () { adoptMsg('printer_preset.adopt_none', 'No devices found on the LAN.'); }); }
+      };
+      document.addEventListener('gc:gateway_discovery', _discListener);
+      // Fallback ~ server terminal grace (SCAN_TIMEOUT 45s + 15s + buffer).
+      _discTimer = setTimeout(function () {
+        finish(function () {
+          window.api.get('/api/v1/gateways/' + pid + '/discovered').then(function (d) {
+            var devs = (d && d.devices) || [];
+            if (devs.length) renderAdoptDevices(devs); else adoptMsg('printer_preset.adopt_none', 'No devices found on the LAN.');
+          }).catch(function () { adoptMsg('printer_preset.adopt_none', 'No devices found on the LAN.'); });
+        });
+      }, 61000);
+      window.api.post('/api/v1/gateways/' + pid + '/discover', { active_scan: true }).catch(function (err) {
+        var code = (err && err.data && err.data.error) || '';
+        if (code === 'scan_in_progress') return; // a scan is already running — keep our listener; results/done still arrive
+        finish(function () {
+          if (code === 'no_subnet') adoptMsg('printer_preset.adopt_none', 'No devices found on the LAN.');
+          else adoptMsg('printer_preset.adopt_failed', 'LAN discovery scan failed.');
+        });
+      });
+    }
+    function enableDiscovery(pid, tel) {
+      adoptList.replaceChildren();
+      adoptList.appendChild(elx('div', 'font-size:11px;color:var(--text-3);margin-bottom:6px', { text: T('printer_preset.adopt_not_enabled', "Enable LAN discovery in this gateway's settings first.") }));
+      var enableBtn = elx('button', 'padding:5px 10px;border:1px solid var(--accent);border-radius:var(--radius-xs);background:transparent;color:var(--accent);font-size:11px;cursor:pointer');
+      enableBtn.type = 'button';
+      enableBtn.textContent = T('printer_preset.adopt_enable', 'Enable discovery here');
+      enableBtn.addEventListener('click', function () {
+        enableBtn.disabled = true;
+        var subs = (tel.lan_subnets || []);
+        var primary = subs.filter(function (s) { return s.primary; })[0] || subs[0] || {};
+        window.api.put('/api/v1/gateways/' + pid + '/discovery-settings', {
+          enabled: true,
+          subnets: primary.cidr ? [primary.cidr] : [],
+          category_mode: 'include',
+          categories: (tel.lan_discovery_categories || []).map(function (c) { return c.key; }),
+        }).then(function (res) {
+          if (res && res.ok === false) { adoptMsg('printer_preset.adopt_enable_failed', "Could not enable discovery — open this gateway's settings."); return; }
+          var gw = state.gateways.filter(function (g) { return String(g.peer_id) === String(pid); })[0];
+          if (gw) { gw.discovery = gw.discovery || {}; gw.discovery.enabled = true; }
+          startScan(pid);
+        }).catch(function () { adoptMsg('printer_preset.adopt_enable_failed', "Could not enable discovery — open this gateway's settings."); });
+      });
+      adoptList.appendChild(enableBtn);
+    }
     adoptBtn.addEventListener('click', function () {
       var pid = state.near_peer_id;
       if (!pid) return;
       var gw = state.gateways.filter(function (g) { return String(g.peer_id) === String(pid); })[0];
       var tel = (gw && gw.health && gw.health.telemetry) || {};
       if (tel.lan_discovery !== true) { adoptMsg('printer_preset.adopt_unsupported', 'This gateway does not report LAN discovery support.'); return; }
-      if (!(gw && gw.discovery && gw.discovery.enabled)) { adoptMsg('printer_preset.adopt_not_enabled', "Enable LAN discovery in this gateway's settings first."); return; }
-      adoptMsg('printer_preset.adopt_scanning', 'Scanning the LAN…');
-      window.api.post('/api/v1/gateways/' + pid + '/discover', {}).then(function () {
-        var tries = 0;
-        (function poll() {
-          window.api.get('/api/v1/gateways/' + pid + '/discovered').then(function (d) {
-            var devices = (d && d.devices) || [];
-            if (devices.length) { renderAdoptDevices(devices); return; }
-            if ((d && d.done) || ++tries >= 6) { adoptMsg('printer_preset.adopt_none', 'No devices found on the LAN.'); return; }
-            setTimeout(poll, 1500);
-          }).catch(function () { adoptMsg('printer_preset.adopt_failed', 'LAN discovery scan failed.'); });
-        })();
-      }).catch(function () { adoptMsg('printer_preset.adopt_failed', 'LAN discovery scan failed.'); });
+      if (!(gw && gw.discovery && gw.discovery.enabled)) { enableDiscovery(pid, tel); return; }
+      startScan(pid);
     });
     var adoptWrap = elx('div', ROW_CSS);
     adoptWrap.appendChild(adoptBtn);
@@ -5091,7 +5144,7 @@
     });
   }
 
-  function closeWizard() { overlay.style.display = 'none'; nextBtn.disabled = false; nextBtn.onclick = onNext; }
+  function closeWizard() { _clearDisc(); overlay.style.display = 'none'; nextBtn.disabled = false; nextBtn.onclick = onNext; }
 
   function onNext() {
     var bad = validateStep(state.step);
