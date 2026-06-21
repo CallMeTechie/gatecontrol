@@ -4,8 +4,12 @@
   const REFRESH_INTERVAL = 15000; // 15 seconds
   let refreshTimer = null;
 
-  // ─── Stat Cards ─────────────────────────────────────
+  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
+  // ─── Stat Cards ─────────────────────────────────────────────────────────────
   async function refreshStats() {
+    if (isAurora()) return auroraRefreshStats();
     try {
       const data = await api.get('/api/dashboard/stats');
 
@@ -46,7 +50,7 @@
             }
           }
         } else {
-          monitorEl.textContent = '\u2014';
+          monitorEl.textContent = '—';
           if (monitorSubEl) {
             monitorSubEl.style.color = 'var(--text-3)';
             monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_empty']) || 'Monitoring nicht aktiv';
@@ -102,7 +106,7 @@
     return `${val}<span style="font-size:14px;font-weight:400"> ${units[i]}</span>`;
   }
 
-  // ─── System Resources ───────────────────────────────
+  // ─── System Resources ───────────────────────────────────────────────────────
   async function refreshResources() {
     try {
       const data = await api.get('/api/system/resources');
@@ -150,8 +154,9 @@
     }
   }
 
-  // ─── Activity Feed ──────────────────────────────────
+  // ─── Activity Feed ──────────────────────────────────────────────────────────
   async function refreshActivity() {
+    if (isAurora()) return auroraRefreshActivity();
     try {
       const data = await api.get('/api/logs/recent?limit=6');
       const feed = document.getElementById('activity-feed');
@@ -181,8 +186,9 @@
     }
   }
 
-  // ─── Traffic Chart ──────────────────────────────────
+  // ─── Traffic Chart ──────────────────────────────────────────────────────────
   async function refreshChart(period) {
+    if (isAurora()) return auroraRefreshChart(period);
     try {
       const data = await api.get(`/api/dashboard/traffic?period=${period || '1h'}`);
       renderChart(data.data);
@@ -236,7 +242,7 @@
     `;
   }
 
-  // ─── Helpers ────────────────────────────────────────
+  // ─── Helpers ────────────────────────────────────────────────────────────────
   function formatRelativeTime(isoStr) {
     if (!isoStr) return '—';
     const now = Date.now();
@@ -248,7 +254,7 @@
     return Math.floor(diff / 86400) + 'd ago';
   }
 
-  // ─── Auto-update status (header) ────────────────────
+  // ─── Auto-update status (header) ────────────────────────────────────────────
   function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
 
   function auAgo(s) { if (s == null) return '—'; return s < 60 ? T('autoupdate.ago_seconds','{x}s').replace('{x}', s) : T('autoupdate.ago_minutes','{x}m').replace('{x}', Math.round(s/60)); }
@@ -345,31 +351,31 @@
   // No custom close handler — the modal closes via the global
   // [data-close-modal] handler in app.js.
 
-  // ─── Tab switching for chart ────────────────────────
+  // ─── Tab switching for chart ────────────────────────────────────────────────
   document.querySelectorAll('.tabs .tab[data-period]').forEach(tab => {
     tab.addEventListener('click', () => {
       refreshChart(tab.dataset.period);
     });
   });
 
-  // ─── Reload button ─────────────────────────────────
+  // ─── Reload button ─────────────────────────────────────────────────────────
   const reloadBtn = document.getElementById('btn-reload');
   if (reloadBtn) {
     reloadBtn.addEventListener('click', () => refreshAll());
   }
 
-  // ─── Refresh all ───────────────────────────────────
+  // ─── Refresh all ───────────────────────────────────────────────────────────
   async function refreshAll() {
     await Promise.all([
       refreshStats(),
       refreshResources(),
       refreshActivity(),
-      refreshChart('1h'),
+      refreshChart(isAurora() ? '24h' : '1h'),
     ]);
     loadAutoUpdate();
   }
 
-  // ─── Init ──────────────────────────────────────────
+  // ─── Init ──────────────────────────────────────────────────────────────────
   refreshAll();
   loadAutoUpdate();
   refreshTimer = setInterval(refreshAll, REFRESH_INTERVAL);
@@ -382,4 +388,239 @@
   ['gc:gateway', 'gc:peer', 'gc:monitor', 'gc:reconnected'].forEach(function (ev) {
     document.addEventListener(ev, function () { refreshAll(); });
   });
+
+  // ── Aurora-only sibling functions ────────────────────────────────────────────
+  // These functions are ONLY called when isAurora() is true.
+  // The original refreshStats/refreshActivity/renderChart else-paths remain byte-identical.
+
+  async function auroraRefreshStats() {
+    try {
+      const data = await api.get('/api/dashboard/stats');
+
+      // Peers connected
+      var peersEl = document.getElementById('stat-peers');
+      if (peersEl) peersEl.textContent = data.peers.online;
+
+      // Active routes
+      var routesEl = document.getElementById('stat-routes');
+      if (routesEl) routesEl.textContent = data.routes.active;
+
+      // Traffic today
+      var trafficEl = document.getElementById('stat-traffic');
+      if (trafficEl) trafficEl.innerHTML = formatTrafficValue(data.traffic.today);
+
+      // Avg latency
+      var latencyEl = document.getElementById('stat-latency');
+      if (latencyEl) latencyEl.textContent = data.latency != null ? data.latency + ' ms' : '—';
+
+      // Monitoring summary
+      var monitorEl = document.getElementById('stat-monitoring');
+      var monitorSubEl = document.getElementById('stat-monitoring-sub');
+      if (monitorEl && data.monitoring) {
+        var up = parseInt(data.monitoring.up, 10) || 0;
+        var total = parseInt(data.monitoring.total, 10) || 0;
+        var down = parseInt(data.monitoring.down, 10) || 0;
+        if (total > 0) {
+          monitorEl.textContent = up + '/' + total;
+          if (monitorSubEl) {
+            if (down > 0) {
+              monitorSubEl.style.color = 'var(--coral)';
+              monitorSubEl.textContent = down + ' down';
+            } else {
+              monitorSubEl.style.color = 'var(--green)';
+              monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_all_ok']) || 'All reachable';
+            }
+          }
+        } else {
+          monitorEl.textContent = '—';
+          if (monitorSubEl) monitorSubEl.textContent = '';
+        }
+      }
+
+      // WireGuard status in topbar
+      var wgStatusEl = document.getElementById('wg-status');
+      if (wgStatusEl) {
+        if (data.wireguard.running) {
+          wgStatusEl.classList.remove('inactive');
+        } else {
+          wgStatusEl.classList.add('inactive');
+        }
+      }
+
+      // Sidebar badges
+      var peerBadge = document.getElementById('peer-count-badge');
+      if (peerBadge) peerBadge.textContent = data.peers.total;
+
+      var routeBadge = document.getElementById('route-count-badge');
+      if (routeBadge) routeBadge.textContent = data.routes.active;
+
+    } catch (err) {
+      console.error('Aurora: Failed to refresh stats:', err);
+    }
+
+    // Separate fetch for gateways KPI (not in /api/dashboard/stats)
+    try {
+      var gwData = await api.get('/api/v1/gateways');
+      var gwEl = document.getElementById('stat-gateways');
+      if (gwEl && gwData && Array.isArray(gwData)) {
+        var online = gwData.filter(function(g) { return g.status === 'online'; }).length;
+        gwEl.textContent = online + '/' + gwData.length;
+      }
+    } catch (err) {
+      // non-fatal — gateways KPI stays at '—'
+    }
+
+    // Pi-hole donut (3-state: no card if gated off; donut on ok; empty-state on error)
+    var donutCard = document.getElementById('pihole-donut-card');
+    if (donutCard) {
+      auroraRefreshDonut();
+    }
+  }
+
+  async function auroraRefreshDonut() {
+    var donut = document.getElementById('dash-donut');
+    var donutPct = document.getElementById('donut-pct');
+    var statsBody = document.getElementById('pihole-stats-body');
+    var donutSub = document.getElementById('pihole-donut-sub');
+    if (!donut) return;
+
+    try {
+      var ph = await api.get('/api/pihole/stats');
+      var pct = (ph && ph.summary && ph.summary.queries && ph.summary.queries.percent) || 0;
+      var pctRounded = Math.round(pct * 10) / 10;
+
+      // Animate the donut arc
+      // SVG circle r=15.9155 → circumference ≈ 100 (convenient unit)
+      var dashVal = pctRounded;
+      var valCircle = donut.querySelector('.val');
+      if (valCircle) {
+        valCircle.setAttribute('stroke-dasharray', dashVal + ' ' + (100 - dashVal));
+      }
+      if (donutPct) donutPct.textContent = pctRounded + '%';
+
+      // Pi-hole stats body
+      if (statsBody) {
+        var blocked = (ph.summary && ph.summary.queries && ph.summary.queries.blocked) || 0;
+        var totalQ = (ph.summary && ph.summary.queries && ph.summary.queries.total) || 0;
+        var gravity = (ph.summary && ph.summary.gravity) || 0;
+        statsBody.innerHTML =
+          '<div class="s"><span class="n blk">' + blocked.toLocaleString() + '</span><span class="t">' + T('dashboard.pihole_blocked', 'Blocked') + '</span></div>' +
+          '<div class="s"><span class="n">' + totalQ.toLocaleString() + '</span><span class="t">' + T('dashboard.pihole_total_queries', 'Total queries') + '</span></div>' +
+          '<div class="s"><span class="n">' + gravity.toLocaleString() + '</span><span class="t">' + T('dashboard.pihole_gravity', 'Gravity lists') + '</span></div>';
+      }
+      if (donutSub) donutSub.textContent = T('dashboard.pihole_enabled', 'Blocking');
+
+    } catch (err) {
+      // error state: show empty-state inside card (card stays visible)
+      var valCircle2 = donut.querySelector('.val');
+      if (valCircle2) valCircle2.setAttribute('stroke-dasharray', '0 100');
+      if (donutPct) donutPct.textContent = '—';
+      if (statsBody) {
+        statsBody.innerHTML = '<div class="empty-state">' + T('dashboard.pihole_unavailable', 'Pi-hole unavailable') + '</div>';
+      }
+      if (donutSub) donutSub.textContent = '';
+    }
+  }
+
+  async function auroraRefreshActivity() {
+    try {
+      var data = await api.get('/api/logs/recent?limit=8');
+      var feed = document.getElementById('activity-feed');
+      if (!feed) return;
+
+      if (!data.entries || data.entries.length === 0) {
+        feed.innerHTML = '<div class="empty-state">' + (T('dashboard.no_events', 'No events yet')) + '</div>';
+        return;
+      }
+
+      var sevMap = { success: 'ok', info: 'info', warning: 'warn', error: 'err' };
+
+      feed.innerHTML = data.entries.map(function(entry) {
+        var sev = sevMap[entry.severity] || 'info';
+        var time = formatRelativeTime(entry.created_at);
+        return '<div class="log-row">' +
+          '<span class="sev ' + sev + '"></span>' +
+          '<span class="ts">' + time + '</span>' +
+          '<span class="msg">' + escapeHtml(entry.message) + '</span>' +
+          (entry.ip_address ? '<span class="src">' + escapeHtml(entry.ip_address) + '</span>' : '') +
+          '</div>';
+      }).join('');
+    } catch (err) {
+      console.error('Aurora: Failed to refresh activity:', err);
+    }
+  }
+
+  async function auroraRefreshChart(period) {
+    try {
+      var data = await api.get('/api/dashboard/traffic?period=' + (period || '24h'));
+      auroraRenderChart(data.data);
+    } catch (err) {
+      console.error('Aurora: Failed to refresh chart:', err);
+    }
+  }
+
+  function auroraRenderChart(dataPoints) {
+    var container = document.getElementById('traffic-chart');
+    if (!container) return;
+
+    if (!dataPoints || dataPoints.length === 0) {
+      container.innerHTML = '<div class="empty-state">' + T('dashboard.chart_no_data', 'No traffic data') + '</div>';
+      document.getElementById('t-total') && (document.getElementById('t-total').textContent = '—');
+      document.getElementById('t-avg') && (document.getElementById('t-avg').textContent = '—');
+      document.getElementById('t-peak') && (document.getElementById('t-peak').textContent = '—');
+      return;
+    }
+
+    // Compute totals (upload + download per point)
+    var totalBytes = 0, peakBytes = 0;
+    var combined = dataPoints.map(function(d) {
+      var v = (d.upload || 0) + (d.download || 0);
+      totalBytes += v;
+      if (v > peakBytes) peakBytes = v;
+      return v;
+    });
+    var avgBytes = combined.length > 0 ? totalBytes / combined.length : 0;
+    var maxVal = Math.max(1, peakBytes);
+
+    // Build bar columns
+    var cols = dataPoints.map(function(d, i) {
+      var dnH = Math.max(2, Math.round(((d.download || 0) / maxVal) * 130));
+      var upH = Math.max(2, Math.round(((d.upload || 0) / maxVal) * 130));
+      var label = '';
+      // show every Nth label to avoid clutter
+      var n = dataPoints.length;
+      if (n <= 12 || i % Math.ceil(n / 8) === 0) {
+        label = d.label || '';
+      }
+      return '<div class="col">' +
+        '<div class="bar" style="height:' + dnH + 'px"></div>' +
+        '<div class="bar up" style="height:' + upH + 'px"></div>' +
+        '<div class="lab">' + escapeHtml(label) + '</div>' +
+        '</div>';
+    }).join('');
+
+    container.innerHTML = cols;
+
+    // Footer stats
+    var tTotal = document.getElementById('t-total');
+    var tAvg = document.getElementById('t-avg');
+    var tPeak = document.getElementById('t-peak');
+    if (tTotal) tTotal.textContent = formatBytes(totalBytes);
+    if (tAvg) tAvg.textContent = formatBytes(avgBytes) + '/pt';
+    if (tPeak) tPeak.textContent = formatBytes(peakBytes);
+  }
+
+  // ─── Aurora toggle-group wiring ─────────────────────────────────────────────
+  if (isAurora()) {
+    document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(b) {
+          b.classList.remove('on');
+        });
+        btn.classList.add('on');
+        auroraRefreshChart(btn.dataset.r);
+      });
+    });
+  }
+
 })();

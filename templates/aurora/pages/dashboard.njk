@@ -18,6 +18,7 @@
   </ul>
 </div>
 {% endif %}
+
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('dashboard.eyebrow') }}</div>
@@ -37,133 +38,233 @@
   </div>
 </div>
 
-<!-- Stats -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-card-stripe" style="background:var(--green)"></div>
-    <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+<!-- ── Row 1: KPI Cards ───────────────────────────────────────────────────── -->
+<div class="grid" style="margin-bottom:18px">
+
+  <!-- Peers -->
+  <div class="card kpi span3">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+      <span class="lab">{{ t('dashboard.peers_connected') }}</span>
     </div>
-    <div class="stat-value" style="color:var(--green)" id="stat-peers">0</div>
-    <div class="stat-label">{{ t('dashboard.peers_connected') }}</div>
+    <div class="val" id="stat-peers">0</div>
   </div>
 
-  <div class="stat-card">
-    <div class="stat-card-stripe" style="background:var(--accent)"></div>
-    <div class="stat-icon" style="background:var(--accent-lt);color:var(--accent)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+  <!-- Routes -->
+  <div class="card kpi span3">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <span class="lab">{{ t('dashboard.active_subdomains') }}</span>
     </div>
-    <div class="stat-value" style="color:var(--accent)" id="stat-routes">0</div>
-    <div class="stat-label">{{ t('dashboard.active_subdomains') }}</div>
+    <div class="val" id="stat-routes">0</div>
   </div>
 
-  <div class="stat-card">
-    <div class="stat-card-stripe" style="background:var(--blue)"></div>
-    <div class="stat-icon" style="background:var(--blue-lt);color:var(--blue)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  <!-- Traffic -->
+  <div class="card kpi span3">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <span class="lab">{{ t('dashboard.traffic_today') }}</span>
     </div>
-    <div class="stat-value" style="color:var(--blue)" id="stat-traffic">0 <span style="font-size:14px;font-weight:400">B</span></div>
-    <div class="stat-label">{{ t('dashboard.traffic_today') }}</div>
+    <div class="val" id="stat-traffic">0 <span style="font-size:14px;font-weight:400">B</span></div>
   </div>
 
-  <div class="stat-card">
-    <div class="stat-card-stripe" style="background:var(--amber)"></div>
-    <div class="stat-icon" style="background:var(--amber-lt);color:var(--amber)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+  <!-- Gateways (Aurora-only KPI; populated by auroraRefreshStats) -->
+  <div class="card kpi span3">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>
+      </div>
+      <span class="lab">{{ t('dashboard.stat_gateways') }}</span>
     </div>
-    <div class="stat-value" style="color:var(--amber)" id="stat-latency">—</div>
-    <div class="stat-label">{{ t('dashboard.avg_latency') }}</div>
+    <div class="val" id="stat-gateways">—</div>
   </div>
 
-  <a class="stat-card" href="/routes" style="text-decoration:none;color:inherit" title="{{ t('monitoring.dashboard_link_title') or 'Routen-Monitoring verwalten' }}">
-    <div class="stat-card-stripe" style="background:var(--green)"></div>
-    <div class="stat-icon" style="background:var(--green-lt);color:var(--green)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  <!-- Latency -->
+  <div class="card kpi span3">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <span class="lab">{{ t('dashboard.avg_latency') }}</span>
     </div>
-    <div class="stat-value" style="color:var(--green)" id="stat-monitoring">—</div>
-    <div class="stat-label">{{ t('monitoring.dashboard_label') or 'Uptime' }}</div>
-    <div id="stat-monitoring-sub" style="font-size:10px;color:var(--text-3);font-family:var(--font-mono);margin-top:2px"></div>
+    <div class="val" id="stat-latency">—</div>
+  </div>
+
+  <!-- Monitoring -->
+  <a class="card kpi span3" href="/routes" style="text-decoration:none;color:inherit" title="{{ t('monitoring.dashboard_link_title') or 'Routen-Monitoring verwalten' }}">
+    <div class="top">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <span class="lab">{{ t('monitoring.dashboard_label') or 'Uptime' }}</span>
+    </div>
+    <div class="val" id="stat-monitoring">—</div>
+    <div id="stat-monitoring-sub" style="font-size:11px;color:var(--faint);font-family:var(--font-mono);margin-top:4px"></div>
   </a>
+
 </div>
 
-<!-- Traffic + Activity -->
-<div class="two-col">
-  <div class="card">
-    <div class="card-head">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      <span class="card-title">{{ t('dashboard.network_traffic') }}</span>
-      <div class="tabs" style="margin-left:auto">
-        <div class="tab active" data-period="1h">1h</div>
-        <div class="tab" data-period="24h">24h</div>
-        <div class="tab" data-period="7d">7d</div>
+<!-- ── Row 2: Traffic Chart + Pi-hole Donut ───────────────────────────────── -->
+<div class="grid" style="margin-bottom:18px">
+
+  <!-- Traffic Chart (span8) -->
+  <div class="card span8">
+    <div class="card-title">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      {{ t('dashboard.network_traffic') }}
+      <div class="toggle-group" id="traffic-range" style="margin-left:auto">
+        <button class="toggle-btn" data-r="1h">1h</button>
+        <button class="toggle-btn on" data-r="24h">24h</button>
+        <button class="toggle-btn" data-r="7d">7d</button>
       </div>
     </div>
     <div class="card-body">
-      <div style="display:flex;gap:20px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div>
-          <div>
-            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">{{ t('dashboard.upload') | upper }}</div>
-            <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--accent)" id="stat-upload-rate">0 B/s</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue)"></div>
-          <div>
-            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">{{ t('dashboard.download') | upper }}</div>
-            <div style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--blue)" id="stat-download-rate">0 B/s</div>
-          </div>
-        </div>
+      <!-- Bar chart container (populated by auroraRenderChart) -->
+      <div class="chart" id="traffic-chart"></div>
+      <!-- Legend -->
+      <div class="chart-legend" style="margin-top:10px">
+        <span class="chart-legend"><i style="background:var(--teal)"></i>{{ t('dashboard.download') }}</span>
+        <span class="chart-legend" style="margin-left:12px"><i style="background:var(--coral)"></i>{{ t('dashboard.upload') }}</span>
       </div>
-      <div class="chart-wrap" id="traffic-chart">
-        <svg class="chart-svg" viewBox="0 0 560 120" preserveAspectRatio="none"></svg>
+      <!-- Footer stats -->
+      <div class="chart-foot">
+        <div class="t">{{ t('dashboard.chart_total') }}<br><b id="t-total">—</b></div>
+        <div class="t">{{ t('dashboard.chart_avg') }}<br><b id="t-avg">—</b></div>
+        <div class="t">{{ t('dashboard.chart_peak') }}<br><b id="t-peak">—</b></div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-head">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      <span class="card-title">{{ t('dashboard.recent_events') }}</span>
+  <!-- Pi-hole Donut (span4) — only rendered when license gate passes -->
+  {% if license.features.pihole_integration %}
+  <div class="card span4" id="pihole-donut-card">
+    <div class="card-title">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5 5l14 14" stroke-linecap="round"/></svg>
+      </div>
+      {{ t('dashboard.pihole_title') }}
+      <span class="card-sub" id="pihole-donut-sub"></span>
+    </div>
+    <div class="card-body">
+      <div class="pi-wrap">
+        <div class="donut-host">
+          <svg class="donut" id="dash-donut" viewBox="0 0 36 36">
+            <circle class="track" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"/>
+            <circle class="val" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"
+              stroke-dasharray="0 100" stroke-dashoffset="25" stroke-linecap="round"/>
+          </svg>
+          <div class="donut-center">
+            <div>
+              <div class="big" id="donut-pct">—</div>
+              <div class="cap">{{ t('dashboard.pihole_blocked_pct') }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="pi-stats" id="pihole-stats-body">
+          <div class="empty-state" style="padding:12px">{{ t('common.loading') }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- ── Row 3: Recent Events + Quick Actions ───────────────────────────────── -->
+<div class="grid" style="margin-bottom:18px">
+
+  <!-- Recent Events (span6) -->
+  <div class="card span6">
+    <div class="card-title">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      {{ t('dashboard.recent_events') }}
       <span class="card-sub">{{ t('dashboard.realtime') }}</span>
     </div>
     <div class="card-body" id="activity-feed">
-      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+      <div style="font-size:13px;color:var(--faint);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
     </div>
   </div>
-</div>
 
-<!-- System Resources -->
-<div class="three-col">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('dashboard.cpu_usage') }}</span>
-      <span class="card-sub" style="color:var(--green)" id="cpu-pct">—</span>
+  <!-- Quick Actions (span6) -->
+  <div class="card span6">
+    <div class="card-title">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      {{ t('dashboard.quick_actions') }}
     </div>
     <div class="card-body">
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px" id="cpu-info">—</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <a href="/peers?action=add" class="btn btn-ghost" style="justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          {{ t('dashboard.quick_add_peer') }}
+        </a>
+        <a href="/routes?action=add" class="btn btn-ghost" style="justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+          {{ t('dashboard.quick_add_route') }}
+        </a>
+        <a href="/gateways" class="btn btn-ghost" style="justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>
+          {{ t('dashboard.quick_gateways') }}
+        </a>
+        <a href="/logs" class="btn btn-ghost" style="justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          {{ t('dashboard.quick_logs') }}
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 4: System Resources ────────────────────────────────────────────── -->
+<div class="grid" style="margin-bottom:18px">
+
+  <!-- CPU -->
+  <div class="card span4">
+    <div class="card-title">
+      {{ t('dashboard.cpu_usage') }}
+      <span class="card-sub" id="cpu-pct">—</span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:6px" id="cpu-info">—</div>
       <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--green)" id="cpu-bar"></div></div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('dashboard.ram_usage') }}</span>
-      <span class="card-sub" style="color:var(--blue)" id="ram-pct">—</span>
+
+  <!-- RAM -->
+  <div class="card span4">
+    <div class="card-title">
+      {{ t('dashboard.ram_usage') }}
+      <span class="card-sub" id="ram-pct">—</span>
     </div>
     <div class="card-body">
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-bottom:6px" id="ram-info">—</div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:6px" id="ram-info">—</div>
       <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--blue)" id="ram-bar"></div></div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('dashboard.uptime') }}</span>
-      <span class="card-sub" style="font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text-3);margin-left:auto" id="uptime-boot"></span>
+
+  <!-- Uptime -->
+  <div class="card span4">
+    <div class="card-title">
+      {{ t('dashboard.uptime') }}
+      <span class="card-sub" style="font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--faint);margin-left:auto" id="uptime-boot"></span>
     </div>
     <div class="card-body">
-      <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--accent)" id="uptime-value">—</div>
+      <div style="font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--teal)" id="uptime-value">—</div>
     </div>
   </div>
+
 </div>
 
 <!-- Auto-update setup modal -->

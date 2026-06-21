@@ -117,3 +117,89 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
     assert.match(js, /if \(isAurora\(\)\) return auroraRenderDetail/, 'renderDetail() has isAurora guard');
   });
 });
+
+// ── Task P2-1: Dashboard ID-contract (Aurora mockup fidelity) ─────────────────
+describe('aurora theme — dashboard layout (Task P2-1)', () => {
+  it('renders /dashboard with Aurora grid structure and .kpi/.card-title elements', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    // Aurora shell
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    // Grid layout
+    assert.match(res.text, /class="grid"/, '.grid container present');
+    assert.match(res.text, /class="card kpi span3"/, '.kpi.span3 KPI cards present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+  });
+
+  it('renders all static contract IDs on /dashboard under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    // KPI IDs
+    assert.match(res.text, /id="stat-peers"/, '#stat-peers present');
+    assert.match(res.text, /id="stat-routes"/, '#stat-routes present');
+    assert.match(res.text, /id="stat-traffic"/, '#stat-traffic present');
+    assert.match(res.text, /id="stat-gateways"/, '#stat-gateways present');
+    assert.match(res.text, /id="stat-latency"/, '#stat-latency present');
+    assert.match(res.text, /id="stat-monitoring"/, '#stat-monitoring present');
+    assert.match(res.text, /id="stat-monitoring-sub"/, '#stat-monitoring-sub present');
+    // Chart
+    assert.match(res.text, /id="traffic-chart"/, '#traffic-chart present');
+    assert.match(res.text, /id="t-total"/, '#t-total present');
+    assert.match(res.text, /id="t-avg"/, '#t-avg present');
+    assert.match(res.text, /id="t-peak"/, '#t-peak present');
+    // Activity feed
+    assert.match(res.text, /id="activity-feed"/, '#activity-feed present');
+    // System resources
+    assert.match(res.text, /id="cpu-pct"/, '#cpu-pct present');
+    assert.match(res.text, /id="cpu-info"/, '#cpu-info present');
+    assert.match(res.text, /id="cpu-bar"/, '#cpu-bar present');
+    assert.match(res.text, /id="ram-pct"/, '#ram-pct present');
+    assert.match(res.text, /id="ram-info"/, '#ram-info present');
+    assert.match(res.text, /id="ram-bar"/, '#ram-bar present');
+    assert.match(res.text, /id="uptime-value"/, '#uptime-value present');
+    assert.match(res.text, /id="uptime-boot"/, '#uptime-boot present');
+    // Auto-update modal IDs
+    assert.match(res.text, /id="au-status"/, '#au-status present');
+    assert.match(res.text, /id="au-setup-modal-overlay"/, '#au-setup-modal-overlay present');
+    assert.match(res.text, /id="au-setup-title"/, '#au-setup-title present');
+    assert.match(res.text, /id="au-setup-body"/, '#au-setup-body present');
+  });
+
+  it('renders Aurora toggle-group instead of .tabs for traffic period selector', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+    assert.match(res.text, /data-r="24h"/, 'toggle-btn with data-r="24h" present');
+    // Should NOT have the old .tabs .tab[data-period] pattern in Aurora
+    assert.doesNotMatch(res.text, /class="tab active" data-period=/, 'old .tabs pattern absent in Aurora');
+  });
+
+  it('sidebar has route-count-badge on the routes nav item under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="route-count-badge"/, '#route-count-badge present in aurora sidebar');
+  });
+
+  it('dashboard.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in dashboard.js');
+    assert.match(js, /function auroraRefreshStats\(/, 'auroraRefreshStats() present');
+    assert.match(js, /function auroraRenderChart\(/, 'auroraRenderChart() present');
+    assert.match(js, /function auroraRefreshDonut\(/, 'auroraRefreshDonut() present');
+    assert.match(js, /function auroraRefreshActivity\(/, 'auroraRefreshActivity() present');
+    // Guards at entry points
+    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshStats/, 'refreshStats() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshActivity/, 'refreshActivity() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshChart/, 'refreshChart() has isAurora guard');
+  });
+
+  it('Pi-hole donut card is absent when pihole_integration is not licensed (feature gate works)', async () => {
+    selectAurora();
+    // Default test setup does NOT enable pihole_integration — card must be absent (no card = correct reflow)
+    const res = await agent.get('/dashboard').expect(200);
+    assert.doesNotMatch(res.text, /id="pihole-donut-card"/, '#pihole-donut-card absent when not licensed');
+    assert.doesNotMatch(res.text, /id="dash-donut"/, '#dash-donut absent when not licensed');
+    // But the rest of the grid must still be present
+    assert.match(res.text, /id="traffic-chart"/, '#traffic-chart present even without pihole');
+  });
+});
