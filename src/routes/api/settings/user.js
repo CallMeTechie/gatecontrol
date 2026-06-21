@@ -40,7 +40,7 @@ router.put('/profile', async (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('error.settings.language_unsupported') });
     }
 
-    const availableThemes = ['default', 'pro'];
+    const availableThemes = ['default', 'pro', 'aurora'];
     if (theme && !availableThemes.includes(theme)) {
       return res.status(400).json({ ok: false, error: 'Invalid theme' });
     }

@@ -42,7 +42,7 @@ router.get('/app', (req, res) => {
 router.put('/default-theme', (req, res) => {
   try {
     const { theme } = req.body;
-    const validThemes = ['default', 'pro'];
+    const validThemes = ['default', 'pro', 'aurora'];
     if (!theme || !validThemes.includes(theme)) {
       return res.status(400).json({ ok: false, error: 'Invalid theme. Must be: ' + validThemes.join(', ') });
     }

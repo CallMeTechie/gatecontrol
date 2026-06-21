@@ -93,7 +93,7 @@ function createApp() {
       const settings = require('./services/settings');
       const defaultsCfg = require('../config/default');
       const t = settings.get('default_theme');
-      res.locals.theme = (t === 'default' || t === 'pro') ? t : defaultsCfg.theme.defaultTheme;
+      res.locals.theme = (t === 'default' || t === 'pro' || t === 'aurora') ? t : defaultsCfg.theme.defaultTheme;
     } catch {
       res.locals.theme = 'default';
     }

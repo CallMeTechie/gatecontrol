@@ -55,6 +55,15 @@ describe('settings/user — profile, password, language', () => {
     assert.equal(res.body.ok, false);
   });
 
+  it('PUT /profile accepts theme aurora', async () => {
+    const res = await agent
+      .put('/api/v1/settings/profile')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'aurora' })
+      .expect(200);
+    assert.equal(res.body.ok, true);
+  });
+
   it('PUT /password requires both current_password and new_password', async () => {
     const res = await agent
       .put('/api/v1/settings/password')
@@ -130,6 +139,15 @@ describe('settings/appearance — app, default-theme', () => {
       .send({ theme: 'bogus' })
       .expect(400);
     assert.equal(res.body.ok, false);
+  });
+
+  it('PUT /default-theme accepts aurora', async () => {
+    const res = await agent
+      .put('/api/v1/settings/default-theme')
+      .set('X-CSRF-Token', csrf)
+      .send({ theme: 'aurora' })
+      .expect(200);
+    assert.equal(res.body.theme, 'aurora');
   });
 });
 
