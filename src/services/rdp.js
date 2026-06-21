@@ -53,8 +53,10 @@ function validateRdpRoute(data, isUpdate = false) {
     errors.protocol = 'Protocol must be rdp, vnc, ssh, or telnet';
   }
 
-  // SSH needs an explicit username; RDP/VNC/telnet do not enforce it here.
-  if (data.protocol === 'ssh') {
+  // ssh needs a username, but on UPDATE only judge it when the patch carries the
+  // field (stored value stands otherwise). Merge-aware browser validation lives
+  // separately in validatePhase2bRoute (untouched).
+  if (data.protocol === 'ssh' && (!isUpdate || data.username !== undefined)) {
     if (!data.username || String(data.username).trim().length === 0) {
       errors.username = 'Username is required for SSH';
     }
@@ -221,7 +223,7 @@ function validatePhase2bRoute(route, creds = {}) {
 
 // --- Strip encrypted fields from response ----------------------
 
-function stripSensitive(row) {
+function stripSensitive(row, { credFlags = false } = {}) {
   if (!row) return row;
   const {
     username_encrypted, password_encrypted,
@@ -230,6 +232,15 @@ function stripSensitive(row) {
     ...safe
   } = row;
   safe.has_credentials = !!(username_encrypted || password_encrypted);
+  if (credFlags) {
+    safe.has_username = !!username_encrypted;
+    safe.has_password = !!password_encrypted;
+    safe.has_ssh_private_key = !!ssh_private_key_encrypted;
+    safe.has_ssh_passphrase = !!ssh_passphrase_encrypted;
+    safe.has_sftp_password = !!sftp_password_encrypted;
+    safe.has_sftp_private_key = !!sftp_private_key_encrypted;
+    safe.has_sftp_passphrase = !!sftp_passphrase_encrypted;
+  }
   // SQLite stores booleans as 0/1 — convert to real booleans for JSON clients
   for (const key of ['multi_monitor', 'redirect_clipboard', 'redirect_printers',
     'redirect_drives', 'admin_session', 'wol_enabled', 'maintenance_enabled', 'enabled']) {
@@ -242,17 +253,17 @@ function stripSensitive(row) {
 
 // --- CRUD ------------------------------------------------------
 
-function getAll({ limit = 250, offset = 0 } = {}) {
+function getAll({ limit = 250, offset = 0, credFlags = false } = {}) {
   const db = getDb();
   const rows = db.prepare(`
     SELECT * FROM rdp_routes
     ORDER BY name ASC
     LIMIT ? OFFSET ?
   `).all(limit, offset);
-  return rows.map(stripSensitive);
+  return rows.map(r => stripSensitive(r, { credFlags }));
 }
 
-function getById(id, includeCredentials = false) {
+function getById(id, includeCredentials = false, { credFlags = false } = {}) {
   const db = getDb();
   const row = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!row) return null;
@@ -273,7 +284,7 @@ function getById(id, includeCredentials = false) {
     safe.decrypt_failed_fields = creds.decrypt_failed_fields;
     return safe;
   }
-  return stripSensitive(row);
+  return stripSensitive(row, { credFlags });
 }
 
 // The effective public listen port a gateway-mode RDP route will bind on the
@@ -439,6 +450,7 @@ async function create(data) {
     data.access_mode === 'gateway' && data.gateway_pool_id != null
       ? parseInt(data.gateway_pool_id, 10) : null,
     (data.protocol && VALID_PROTOCOLS.includes(data.protocol)) ? data.protocol : 'rdp',
+    // browser_sessions license intentionally NOT checked here — enforced at the mint endpoint
     data.browser_enabled ? 1 : 0,
     data.browser_enable_sftp ? 1 : 0,
     data.sftp_host || null,
@@ -542,7 +554,11 @@ async function update(id, data) {
   const existing = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!existing) throw new Error('RDP route not found');
 
-  const errors = validateRdpRoute(data, true);
+  // Forward the merged protocol to the validator so a PATCH that carries
+  // wol_enabled without protocol can still be checked against the stored
+  // protocol (e.g. ssh). We do NOT mutate data so the directFields loop
+  // below never writes a protocol the caller didn't explicitly send.
+  const errors = validateRdpRoute({ ...data, protocol: data.protocol ?? existing.protocol }, true);
   if (errors) {
     const err = new Error(Object.values(errors)[0]);
     err.fields = errors;
@@ -641,6 +657,7 @@ async function update(id, data) {
     'admin_session', 'wol_enabled', 'maintenance_enabled',
     'sharing_enabled', 'sharing_require_consent',
     'screenshot_enabled', 'credential_rotation_enabled', 'health_check_enabled',
+    // browser_sessions license intentionally NOT checked here — enforced at the mint endpoint
     'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download',
     'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard',
   ];
@@ -914,7 +931,7 @@ function resolveConnectEndpoint(route, { baseUrl, publicHost } = {}) {
 function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
-  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(stripSensitive);
+  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(r => stripSensitive(r));
 }
 
 module.exports = {

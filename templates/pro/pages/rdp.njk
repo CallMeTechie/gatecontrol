@@ -2,6 +2,7 @@
 
 {% block content %}
 {% set rdpLocked = not license.hasFeature('remote_desktop') %}
+{% set browserLocked = not license.hasFeature('browser_sessions') %}
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('rdp.eyebrow') }}</div>
@@ -64,6 +65,14 @@
     <button class="btn btn-ghost btn-sm" data-filter="online">{{ t('rdp.filter_online') }}</button>
     <button class="btn btn-ghost btn-sm" data-filter="offline">{{ t('rdp.filter_offline') }}</button>
   </div>
+  <span style="font-size:11px;color:var(--text-3);margin-left:4px">{{ t('rdp.filter.protocol') }}:</span>
+  <div class="btn-group" id="rdp-protocol-filter">
+    <button class="btn btn-ghost btn-sm active" data-protocol-filter="all">{{ t('rdp.filter_all') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="rdp">{{ t('rdp.protocol.rdp') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="vnc">{{ t('rdp.protocol.vnc') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="ssh">{{ t('rdp.protocol.ssh') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="telnet">{{ t('rdp.protocol.telnet') }}</button>
+  </div>
   <div style="margin-left:auto">
     <button class="btn btn-primary" id="btn-add-rdp" {% if rdpLocked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -97,28 +106,36 @@
         </button>
       </div>
       {# Step indicator: numbered circles connected by a line #}
+      {# Dots + lines carry both data-pill (for CSS) and data-step-key (for
+         protocol-adaptive, key-driven navigation in rdp.js). Each line carries
+         the key of the dot it precedes so an omitted step hides its dot AND its
+         leading line, compacting the bar. #}
       <div id="rdp-wizard-steps" style="display:flex;align-items:center;margin-top:14px;gap:0">
-        <div class="rdp-step-dot" data-pill="1"
+        <div class="rdp-step-dot" data-pill="1" data-step-key="connection"
              data-label="{{ t('rdp.wizard.step_connection') }}"
              title="1 · {{ t('rdp.wizard.step_connection') }}">1</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="2"
+        <div class="rdp-step-line" data-step-key="auth"></div>
+        <div class="rdp-step-dot" data-pill="2" data-step-key="auth"
              data-label="{{ t('rdp.wizard.step_auth') }}"
              title="2 · {{ t('rdp.wizard.step_auth') }}">2</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="3"
+        <div class="rdp-step-line" data-step-key="experience"></div>
+        <div class="rdp-step-dot" data-pill="3" data-step-key="experience"
              data-label="{{ t('rdp.wizard.step_experience') }}"
              title="3 · {{ t('rdp.wizard.step_experience') }}">3</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="4"
+        <div class="rdp-step-line" data-step-key="security"></div>
+        <div class="rdp-step-dot" data-pill="4" data-step-key="security"
              data-label="{{ t('rdp.wizard.step_security') }}"
              title="4 · {{ t('rdp.wizard.step_security') }}">4</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="5"
+        <div class="rdp-step-line" data-step-key="wol"></div>
+        <div class="rdp-step-dot" data-pill="5" data-step-key="wol"
              data-label="WoL &amp; Tags"
              title="5 · WoL &amp; Tags">5</div>
-        <div class="rdp-step-line"></div>
-        <div class="rdp-step-dot" data-pill="6"
+        <div class="rdp-step-line" data-step-key="browser"></div>
+        <div class="rdp-step-dot" data-pill="6" data-step-key="browser"
+             data-label="{{ t('rdp.wizard.step_browser') }}"
+             title="{{ t('rdp.wizard.step_browser') }}">6</div>
+        <div class="rdp-step-line" data-step-key="access"></div>
+        <div class="rdp-step-dot" data-pill="6" data-step-key="access"
              data-label="{{ t('rdp.wizard.step_access') }}"
              title="6 · {{ t('rdp.wizard.step_access') }}">6</div>
       </div>
@@ -130,9 +147,19 @@
       <div style="padding:20px 24px;display:flex;flex-direction:column;gap:20px">
 
         {# Wizard-Step 1: Connection #}
-        <div data-wizard-step="1">
+        <div data-wizard-step="1" data-step-key="connection">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_connection') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            {# Protocol selector — drives the whole adaptive wizard (steps + fields + default port) #}
+            <div style="grid-column:1/-1">
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.protocol') }}</label>
+              <div id="rdp-protocol-seg" class="rdp-proto-seg" role="radiogroup" aria-label="{{ t('rdp.protocol') }}">
+                <button type="button" class="rdp-proto-opt active" data-protocol="rdp">{{ t('rdp.protocol.rdp') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="vnc">{{ t('rdp.protocol.vnc') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="ssh">{{ t('rdp.protocol.ssh') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="telnet">{{ t('rdp.protocol.telnet') }}</button>
+              </div>
+            </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.name') }} *</label>
               <input type="text" id="rdp-name" required maxlength="100" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
@@ -219,12 +246,29 @@
                 </div>
               </div>
             </div>
+
+            {# Browser-access ENTRY POINT — toggling this adds the dedicated
+               "Browser access" wizard step (details). License-locked → disabled. #}
+            <div style="grid-column:1/-1;border-top:1px solid var(--border);margin-top:4px;padding-top:10px">
+              <div class="rdp-browser-entry{% if browserLocked %} rdp-browser-blocked{% endif %}">
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer">
+                  <input type="checkbox" id="rdp-browser-enabled" style="accent-color:var(--accent)"{% if browserLocked %} disabled{% endif %}>
+                  {{ t('rdp.browser.enable') }}
+                </label>
+                <div class="rdp-browser-hint" style="margin-top:6px">{{ t('rdp.browser.enable_hint') }}</div>
+              </div>
+              {% if browserLocked %}
+              <div class="rdp-browser-lock">🔒 {{ t('rdp.browser.license_locked') }} <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" style="font-weight:600;color:var(--accent)">Upgrade</a></div>
+              {% endif %}
+            </div>
           </div>
         </div>
 
         {# Wizard-Step 2: Auth #}
-        <div data-wizard-step="2">
+        <div data-wizard-step="2" data-step-key="auth">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_auth') }}</div>
+          {# DA-6 Stored-Secret banner: shown when a save error hits a credential field the admin left empty (has_* true). #}
+          <div id="rdp-cred-stored-banner" class="rdp-cred-banner" role="alert" style="display:none;margin-bottom:10px">{{ t('rdp.cred.stored_invalid') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.credentials') }}</label>
@@ -234,22 +278,47 @@
                 <option value="full">{{ t('rdp.credential_full') }}</option>
               </select>
             </div>
-            <div>
+            <div id="rdp-domain-field">
               <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.domain') }}</label>
               <input type="text" id="rdp-domain" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
             </div>
           </div>
           <div id="rdp-cred-fields" style="display:none;margin-top:10px">
+            {# SSH auth-mode segment (Password | Private key) — only shown for ssh. #}
+            <div id="rdp-ssh-auth-mode" style="display:none;margin-bottom:10px">
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.mode') }}</label>
+              <div id="rdp-ssh-auth-seg" class="rdp-auth-seg" role="radiogroup" aria-label="{{ t('rdp.auth.mode') }}">
+                <button type="button" class="rdp-auth-opt active" data-auth-mode="password">{{ t('rdp.auth.mode_password') }}</button>
+                <button type="button" class="rdp-auth-opt" data-auth-mode="key">{{ t('rdp.auth.mode_key') }}</button>
+              </div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div>
                 <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.username') }}</label>
                 <input type="text" id="rdp-username" autocomplete="off" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-username" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="username">{{ t('rdp.cred.remove') }}</button></div>
               </div>
               <div id="rdp-password-group">
                 <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.password') }}</label>
                 <input type="password" id="rdp-password" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-password" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="password">{{ t('rdp.cred.remove') }}</button></div>
               </div>
             </div>
+            {# SSH key group (PEM + passphrase) — only shown for ssh in key mode. #}
+            <div id="rdp-ssh-key-group" style="display:none;margin-top:10px">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.private_key') }}</label>
+                <textarea id="rdp-ssh-private-key" rows="3" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" placeholder="{{ t('rdp.auth.private_key_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-mono, monospace);box-sizing:border-box;resize:vertical"></textarea>
+                <div id="rdp-cred-set-ssh-private-key" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="ssh_private_key">{{ t('rdp.cred.remove') }}</button></div>
+              </div>
+              <div style="margin-top:10px">
+                <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.auth.passphrase') }}</label>
+                <input type="password" id="rdp-ssh-passphrase" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                <div id="rdp-cred-set-ssh-passphrase" class="rdp-cred-set" style="display:none"><span class="rdp-cred-set-label">{{ t('rdp.cred.set') }}</span><button type="button" class="rdp-cred-remove" data-cred="ssh_passphrase">{{ t('rdp.cred.remove') }}</button></div>
+              </div>
+            </div>
+            {# ASCII pre-warning (UX only) — shown when the route is browser-enabled. #}
+            <div id="rdp-ascii-hint" class="rdp-ascii-hint" style="display:none;margin-top:8px">{{ t('rdp.browser.ascii_hint') }}</div>
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -258,7 +327,7 @@
         </div>
 
         {# Wizard-Step 3: Display #}
-        <div data-wizard-step="3">
+        <div data-wizard-step="3" data-step-key="experience">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_display') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div>
@@ -298,7 +367,7 @@
         </div>
 
         {# Wizard-Step 3: Resources (same step as Display) #}
-        <div data-wizard-step="3">
+        <div data-wizard-step="3" data-step-key="experience">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_resources') }}</div>
           <div style="display:flex;flex-wrap:wrap;gap:12px">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-redirect-clipboard" checked style="accent-color:var(--accent)"> {{ t('rdp.clipboard') }}</label>
@@ -318,7 +387,7 @@
         </div>
 
         {# Wizard-Step 4: Performance #}
-        <div data-wizard-step="4">
+        <div data-wizard-step="4" data-step-key="security">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_performance') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -344,7 +413,7 @@
         </div>
 
         {# Wizard-Step 4: Session (same step as Performance) #}
-        <div data-wizard-step="4">
+        <div data-wizard-step="4" data-step-key="security">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_session') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -366,7 +435,7 @@
         </div>
 
         {# Wizard-Step 5: Wake-on-LAN #}
-        <div data-wizard-step="5">
+        <div data-wizard-step="5" data-step-key="wol" id="rdp-wol-section">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_wol') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div style="display:flex;align-items:flex-end;padding-bottom:4px">
@@ -380,7 +449,7 @@
         </div>
 
         {# Wizard-Step 5: Access Control & Tags (same step as WoL) #}
-        <div data-wizard-step="5">
+        <div data-wizard-step="5" data-step-key="wol">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.section_access_control') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -404,15 +473,83 @@
           </div>
         </div>
 
+        {# Wizard-Step: Browser access (present only when browser_enabled) #}
+        <div data-wizard-step="7" data-step-key="browser">
+          <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.wizard.step_browser') }}</div>
+          <div class="rdp-browser-hint" style="margin-bottom:10px">{{ t('rdp.browser.enable_hint') }}</div>
+          <div id="rdp-browser-reveal" class="rdp-browser-reveal">
+            {# DA-2: SFTP + Audio are blocked for gateway/external access #}
+            <div id="rdp-browser-gateway-hint" class="rdp-browser-gateway-hint" style="display:none">{{ t('rdp.browser.gateway_blocked') }}</div>
+            {# Clipboard (not gated by access mode) #}
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-clipboard" style="accent-color:var(--accent)"> {{ t('rdp.browser.clipboard') }} <span class="rdp-browser-hint">{{ t('rdp.browser.clipboard_hint') }}</span></label>
+            {# SFTP toggle (rdp/vnc secondary, ssh native; telnet none) #}
+            <div id="rdp-browser-sftp-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-sftp" style="accent-color:var(--accent)"> {{ t('rdp.browser.sftp') }} <span class="rdp-browser-hint" id="rdp-browser-sftp-mode-hint"></span></label>
+            </div>
+            {# Audio — rdp (rdp_disable_audio shown INVERTED as "Audio active") #}
+            <div id="rdp-browser-audio-rdp-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-audio-rdp" checked style="accent-color:var(--accent)"> {{ t('rdp.browser.audio_active') }}</label>
+            </div>
+            {# Audio — vnc (browser_enable_audio) #}
+            <div id="rdp-browser-audio-vnc-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-audio-vnc" style="accent-color:var(--accent)"> {{ t('rdp.browser.audio_vnc') }}</label>
+            </div>
+            {# Advanced disclosure — SFTP locks + secondary host/creds + vnc audio server #}
+            <details class="rdp-browser-advanced" id="rdp-browser-advanced">
+              <summary>{{ t('rdp.browser.advanced') }}</summary>
+              <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+                <div id="rdp-sftp-locks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-sftp-disable-download" checked style="accent-color:var(--accent)"> {{ t('rdp.browser.sftp_lock_download') }}</label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-sftp-disable-upload" checked style="accent-color:var(--accent)"> {{ t('rdp.browser.sftp_lock_upload') }}</label>
+                </div>
+                <div id="rdp-sftp-secondary" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div>
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_host') }}</label>
+                    <input type="text" id="rdp-sftp-host" autocomplete="off" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                  </div>
+                  <div>
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_port') }}</label>
+                    <input type="number" id="rdp-sftp-port" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                  </div>
+                  <div>
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_username') }}</label>
+                    <input type="text" id="rdp-sftp-username" autocomplete="off" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                  </div>
+                  <div>
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_password') }}</label>
+                    <input type="password" id="rdp-sftp-password" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                    <div id="rdp-cred-set-sftp-password" class="rdp-browser-hint" style="display:none">{{ t('rdp.browser.set_kept') }}</div>
+                  </div>
+                  <div style="grid-column:1/-1">
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_private_key') }}</label>
+                    <textarea id="rdp-sftp-private-key" rows="3" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-mono, monospace);box-sizing:border-box;resize:vertical"></textarea>
+                    <div id="rdp-cred-set-sftp-private-key" class="rdp-browser-hint" style="display:none">{{ t('rdp.browser.set_kept') }}</div>
+                  </div>
+                  <div>
+                    <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_passphrase') }}</label>
+                    <input type="password" id="rdp-sftp-passphrase" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                    <div id="rdp-cred-set-sftp-passphrase" class="rdp-browser-hint" style="display:none">{{ t('rdp.browser.set_kept') }}</div>
+                  </div>
+                </div>
+                <div id="rdp-audio-servername-row">
+                  <label style="font-size:11px;font-weight:600;color:var(--text-2);display:block;margin-bottom:3px">{{ t('rdp.browser.audio_servername') }}</label>
+                  <input type="text" id="rdp-audio-servername" autocomplete="off" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-input);font-family:var(--font-ui);box-sizing:border-box">
+                </div>
+                <div class="rdp-browser-hint">{{ t('rdp.browser.advanced_hint') }}</div>
+              </div>
+            </details>
+          </div>
+        </div>
+
         {# Wizard-Step 6: Visibility / User Access #}
-        <div data-wizard-step="6">
+        <div data-wizard-step="6" data-step-key="access">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('routes.visible_to_users') }}</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">{{ t('routes.visible_to_users_hint') }}</div>
           <div id="rdp-user-ids" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
 
         {# Wizard-Step 6: Review & Save #}
-        <div data-wizard-step="6">
+        <div data-wizard-step="6" data-step-key="access">
           <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.wizard.review_title') }}</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">{{ t('rdp.wizard.review_hint') }}</div>
           <div id="rdp-wizard-review" style="font-size:12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;max-height:260px;overflow-y:auto;font-family:var(--font-mono)"></div>
@@ -433,6 +570,74 @@
 
     <style nonce="{{ cspNonce }}">
       #rdp-wizard-steps { user-select:none; }
+      /* Protocol segment control (connection step) */
+      .rdp-proto-seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-xs); overflow:hidden; }
+      .rdp-proto-opt {
+        padding:7px 16px; font-size:12px; font-family:var(--font-ui);
+        background:var(--bg-input); color:var(--text-2);
+        border:none; border-right:1px solid var(--border); cursor:pointer;
+      }
+      .rdp-proto-opt:last-child { border-right:none; }
+      .rdp-proto-opt.active { background:var(--accent); color:#fff; font-weight:600; }
+      /* SSH auth-mode segment (auth step) — mirrors the protocol segment */
+      .rdp-auth-seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-xs); overflow:hidden; }
+      .rdp-auth-opt {
+        padding:6px 14px; font-size:12px; font-family:var(--font-ui);
+        background:var(--bg-input); color:var(--text-2);
+        border:none; border-right:1px solid var(--border); cursor:pointer;
+      }
+      .rdp-auth-opt:last-child { border-right:none; }
+      .rdp-auth-opt.active { background:var(--accent); color:#fff; font-weight:600; }
+      /* "set"/"gesetzt" credential hint + inline remove action (tri-state) */
+      .rdp-cred-set { margin-top:4px; font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:8px; }
+      .rdp-cred-set-label::before { content:"●"; color:var(--accent); margin-right:4px; font-size:9px; }
+      .rdp-cred-set.is-clearing .rdp-cred-set-label { color:var(--danger, #e05555); }
+      .rdp-cred-set.is-clearing .rdp-cred-set-label::before { color:var(--danger, #e05555); }
+      .rdp-cred-remove {
+        background:none; border:none; padding:0; cursor:pointer;
+        font-size:11px; font-family:var(--font-ui); color:var(--accent); text-decoration:underline;
+      }
+      /* DA-6 Stored-Secret banner */
+      .rdp-cred-banner {
+        padding:8px 12px; font-size:11.5px; line-height:1.4;
+        border:1px solid var(--danger, #e05555);
+        border-radius:var(--radius-xs);
+        background:color-mix(in srgb, var(--danger, #e05555) 12%, transparent);
+        color:var(--danger, #e05555);
+      }
+      /* ASCII pre-warning (browser-enabled routes) */
+      .rdp-ascii-hint { font-size:11px; color:var(--text-3); line-height:1.4; }
+      /* ── Browser-access step (Task 7) ───────────────────────────── */
+      .rdp-browser-entry {
+        border:1px solid var(--border); border-radius:var(--radius-xs);
+        padding:12px; background:color-mix(in srgb, var(--accent) 4%, transparent);
+      }
+      .rdp-browser-hint { font-size:11px; color:var(--text-3); line-height:1.4; }
+      .rdp-browser-reveal { display:flex; flex-direction:column; gap:12px; }
+      .rdp-browser-advanced {
+        border:1px solid var(--border); border-radius:var(--radius-xs); padding:10px 12px;
+      }
+      .rdp-browser-advanced > summary {
+        cursor:pointer; font-size:12px; font-weight:600; color:var(--text-2);
+        list-style:revert;
+      }
+      /* DA-2 gateway lock: dim + block the SFTP / Audio controls */
+      .rdp-browser-blocked { opacity:.5; pointer-events:none; }
+      .rdp-browser-gateway-hint {
+        font-size:11px; line-height:1.4; padding:8px 12px;
+        border:1px solid color-mix(in srgb, var(--warning, #b8860b) 40%, var(--border));
+        border-radius:var(--radius-xs);
+        background:color-mix(in srgb, var(--warning, #b8860b) 10%, transparent);
+        color:var(--text-2);
+      }
+      /* License lock notice (no browser_sessions) */
+      .rdp-browser-lock {
+        margin-top:8px; padding:8px 12px; font-size:11.5px; line-height:1.4;
+        border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+        border-radius:var(--radius-xs);
+        background:color-mix(in srgb, var(--accent) 10%, transparent);
+        color:var(--text-2);
+      }
       .rdp-step-dot {
         flex-shrink:0;
         width:28px; height:28px;
@@ -501,5 +706,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/rdp-form-logic.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-cred-omission.js?v={{ appVersion }}"></script>
 <script src="/js/rdp.js?v={{ appVersion }}"></script>
 {% endblock %}

@@ -1236,6 +1236,34 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 
+/* RDP/remote-desktop protocol badges + browser indicator (Phase 3a) */
+.proto-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.b-rdp    { background: #13314a; color: #7fc0ff; }
+.b-vnc    { background: #3a2a4d; color: #c9a3ff; }
+.b-ssh    { background: #13402c; color: #74e0a8; }
+.b-telnet { background: #3f2f16; color: #e6c477; }
+.browser-ind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

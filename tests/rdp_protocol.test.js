@@ -37,6 +37,8 @@ describe('protocol validation', () => {
   it('rejects WoL for ssh/telnet protocols', () => {
     const ssh = rdp.validateRdpRoute({ name: 'x', host: 'h', protocol: 'ssh', username: 'u', wol_enabled: true }) || {};
     assert.ok(ssh.wol_enabled);
+    const tel = rdp.validateRdpRoute({ name: 'x', host: 'h', protocol: 'telnet', wol_enabled: true }) || {};
+    assert.ok(tel.wol_enabled, 'WoL must be rejected for telnet');
     const rdpOk = rdp.validateRdpRoute({ name: 'x', host: 'h', protocol: 'rdp', wol_enabled: true, wol_mac_address: 'AA:BB:CC:DD:EE:FF' }) || {};
     assert.equal(rdpOk.wol_enabled, undefined);
   });
@@ -64,5 +66,20 @@ d2('protocol persistence', () => {
     assert.equal(row.browser_enabled, 1);
     assert.equal(row.browser_clipboard, 1);
     assert.equal(row.sftp_port, 2222);
+  });
+
+  it2('PATCH {wol_enabled:true} without protocol on stored ssh route → wol_enabled error', async () => {
+    const created = await rdpSvc.create({ name: 'ssh-wol-test', host: '10.0.0.99', protocol: 'ssh', username: 'admin' });
+    assert.equal(db.prepare('SELECT protocol FROM rdp_routes WHERE id = ?').get(created.id).protocol, 'ssh');
+    await assert.rejects(
+      () => rdpSvc.update(created.id, { wol_enabled: true }),
+      (err) => {
+        assert.ok(err.fields && err.fields.wol_enabled, 'expected wol_enabled field error');
+        return true;
+      }
+    );
+    // Verify protocol column was NOT changed (data was not mutated)
+    const row = db.prepare('SELECT protocol FROM rdp_routes WHERE id = ?').get(created.id);
+    assert.equal(row.protocol, 'ssh');
   });
 });
