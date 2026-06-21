@@ -58,6 +58,9 @@
   "dns.stat_resolved": "With hostname",
   "dns.stat_auto": "Agent-reported",
   "dns.stat_stale": "Stale",
+  "dns.record_type": "Type",
+  "dns.add_record": "Record",
+  "dns.feature_pro": "Pro",
 
   "auth.login": "Login",
   "auth.sign_in_subtitle": "Sign in to continue",

@@ -753,3 +753,91 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
   });
 });
+
+// ── Task P2-7: DNS page (Aurora mockup fidelity) ─────────────────────────────
+describe('aurora theme — dns layout (Task P2-7)', () => {
+  it('renders /dns under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/dns').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora grid structure, data-table, and card-title on /dns', async () => {
+    selectAurora();
+    const res = await agent.get('/dns').expect(200);
+    assert.match(res.text, /class="grid"/, '.grid container present');
+    assert.match(res.text, /class="data-table"/, '.data-table present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+  });
+
+  it('renders page-header with page-eyebrow, page-actions, and feature-lock badge on /dns', async () => {
+    selectAurora();
+    const res = await agent.get('/dns').expect(200);
+    assert.match(res.text, /class="page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+    assert.match(res.text, /class="feature-lock"/, '.feature-lock badge present');
+  });
+
+  it('renders data-table thead with Hostname, Type, IP columns on /dns', async () => {
+    selectAurora();
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'dns.njk'), 'utf8');
+    assert.match(njk, /dns\.hostname/, 'njk references dns.hostname key for Hostname column');
+    assert.match(njk, /dns\.record_type/, 'njk references dns.record_type key for Type column');
+    assert.match(njk, /dns\.ip/, 'njk references dns.ip key for IP column');
+    const res = await agent.get('/dns').expect(200);
+    assert.match(res.text, /<th[^>]*>.*Hostname.*<\/th>|<th>Hostname/, 'Hostname column header rendered');
+    assert.match(res.text, /<th[^>]*>.*Type.*<\/th>|<th>Type/, 'Type column header rendered');
+    assert.match(res.text, /<th[^>]*>.*IP.*<\/th>|<th>IP/, 'IP column header rendered');
+  });
+
+  it('renders all phase0 contract IDs on /dns under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/dns').expect(200);
+    // Stat IDs (hidden in Aurora, but present for JS null-check safety)
+    assert.match(res.text, /id="dns-stat-total"/, '#dns-stat-total present');
+    assert.match(res.text, /id="dns-stat-resolved"/, '#dns-stat-resolved present');
+    assert.match(res.text, /id="dns-stat-auto"/, '#dns-stat-auto present');
+    assert.match(res.text, /id="dns-stat-stale"/, '#dns-stat-stale present');
+    // Config section IDs (hidden in Aurora)
+    assert.match(res.text, /id="dns-status-badge"/, '#dns-status-badge present');
+    assert.match(res.text, /id="dns-domain"/, '#dns-domain present');
+    assert.match(res.text, /id="dns-hosts-path"/, '#dns-hosts-path present');
+    assert.match(res.text, /id="dns-mtime"/, '#dns-mtime present');
+    // Static tbody (hidden, JS guarded in Aurora)
+    assert.match(res.text, /id="dns-static-tbody"/, '#dns-static-tbody present');
+    // Peer table body (Aurora unified table)
+    assert.match(res.text, /id="dns-peer-tbody"/, '#dns-peer-tbody present');
+    // Search input
+    assert.match(res.text, /id="dns-peer-search"/, '#dns-peer-search present');
+    // Reload button
+    assert.match(res.text, /id="btn-dns-reload"/, '#btn-dns-reload present');
+  });
+
+  it('Aurora dns table uses 3-column thead (no 6-col default pattern)', async () => {
+    selectAurora();
+    const res = await agent.get('/dns').expect(200);
+    // Aurora loading placeholder uses colspan 3
+    assert.match(res.text, /colspan="3"/, 'loading row uses colspan="3" (3-column Aurora table)');
+    // Aurora must NOT expose the 6-col pattern from the default theme
+    assert.doesNotMatch(res.text, /colspan="6"/, '6-column default colspan absent in Aurora dns');
+  });
+
+  it('dns.js contains isAurora() detector and aurora sibling function', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dns.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in dns.js');
+    assert.match(js, /function auroraRenderPeers\(/, 'auroraRenderPeers() present in dns.js');
+    // Guard at entry point
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderPeers/, 'renderPeers() has isAurora guard');
+    assert.match(js, /if \(isAurora\(\)\) return;/, 'renderStatic() has isAurora early-return guard');
+  });
+
+  it('aurora.css already carries feature-lock, data-table, cell-name, mono rules (no new rules needed)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.feature-lock\b/, '.feature-lock rule present in aurora.css');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
+    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in aurora.css');
+    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
+  });
+});

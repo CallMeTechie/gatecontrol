@@ -58,6 +58,9 @@
   "dns.stat_resolved": "Mit Hostname",
   "dns.stat_auto": "Agent-gemeldet",
   "dns.stat_stale": "Veraltet",
+  "dns.record_type": "Typ",
+  "dns.add_record": "Eintrag",
+  "dns.feature_pro": "Pro",
 
   "auth.login": "Anmelden",
   "auth.sign_in_subtitle": "Melden Sie sich an, um fortzufahren",
