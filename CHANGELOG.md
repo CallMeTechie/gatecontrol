@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.89.0] — 2026-06-21
+
+### Features
+- Phase A — active scan + live SSE results + inline enable (#152)
+
+---
+
 ## [1.88.4] — 2026-06-21
 
 ### Änderungen
