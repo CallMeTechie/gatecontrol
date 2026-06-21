@@ -4852,12 +4852,13 @@
       });
     }
     function startScan(pid) {
+      adoptBtn.disabled = true;
       adoptMsg('printer_preset.adopt_scanning', 'Scanning the LAN… (up to 45s)');
       // IDS hint (spec §4) — appended (CSP: no insertBefore).
       adoptList.appendChild(elx('small', 'display:block;margin-top:4px;font-size:11px;color:var(--text-3)', { text: T('printer_preset.adopt_active_hint', 'Triggers an active port scan — may set off a LAN intrusion-detection system.') }));
       _clearDisc(); // clears any prior listener AND prior timer (no cross-scan race)
       var settled = false;
-      function finish(fn) { if (settled) return; settled = true; _clearDisc(); fn(); }
+      function finish(fn) { if (settled) return; settled = true; _clearDisc(); adoptBtn.disabled = false; fn(); }
       _discListener = function (e) {
         var p = e.detail || {};
         if (String(p.peer_id) !== String(pid)) return;   // gateway filter

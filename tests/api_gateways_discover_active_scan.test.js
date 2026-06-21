@@ -51,6 +51,7 @@ test('no override uses the stored setting (passive)', async () => {
   discoveryCache._reset();
   const { peerId, srv, captured } = await seedCapturingGateway(0);
   await agent.post(`/api/v1/gateways/${peerId}/discover`).set('X-CSRF-Token', csrf).send({}).expect(202);
+  assert.equal(captured.length, 1);
   assert.equal(captured[0].active_scan, false);
   srv.close();
 });
