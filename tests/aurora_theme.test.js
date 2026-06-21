@@ -38,3 +38,12 @@ describe('aurora theme — every page renders', () => {
     });
   }
 });
+
+describe('aurora theme — dark/light wiring', () => {
+  it('ships the pre-paint key + OS fallback', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /gc-theme-mode/, 'pre-paint reads gc-theme-mode');
+    assert.match(res.text, /prefers-color-scheme/, 'falls back to OS preference');
+  });
+});

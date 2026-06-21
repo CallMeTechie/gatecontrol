@@ -546,3 +546,21 @@ window.showToast = function(message, type) {
 };
 
 console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');
+
+// ─── Aurora theme: dark/light mode toggle ───────────────────
+// No-op on default/pro (the #theme-btn only exists in the Aurora topbar).
+(function () {
+  var btn = document.getElementById('theme-btn');
+  if (!btn) return;
+  var html = document.documentElement;
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  function stored() { try { return localStorage.getItem('gc-theme-mode'); } catch (e) { return null; } }
+  mq.addEventListener('change', function (e) {
+    if (!stored()) html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+  });
+  btn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    try { localStorage.setItem('gc-theme-mode', next); } catch (e) { /* ignore */ }
+  });
+})();
