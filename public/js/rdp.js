@@ -2,6 +2,9 @@
 'use strict';
 
 (function () {
+  // ── Aurora theme detector (identical pattern to peers.js / gateways.js) ──────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   var currentView = 'grid';
   var currentFilter = 'all';
   var currentProtoFilter = 'all';
@@ -155,6 +158,7 @@
   }
 
   function renderGrid(routes) {
+    if (isAurora()) return auroraRenderGrid(routes);
     grid.textContent = '';
     var container = document.createElement('div');
     container.className = 'vm-grid';
@@ -1708,4 +1712,178 @@
   setInterval(function () {
     loadRoutes();
   }, 60000);
+
+  // ── Aurora theme — card grid (theme-branched sibling of renderGrid()) ─────────
+  // Emits .grid > .card.span6 structure per mockup (2026-06-21).
+  // All action data-* attributes from the default renderGrid() are preserved.
+  // Added: Session-Verlauf (.btn-block) targeting #modal-peer-traffic.
+  function auroraRenderGrid(routes) {
+    grid.textContent = '';
+    if (routes.length === 0) {
+      grid.style.cssText = 'font-size:13px;color:var(--muted);padding:20px 0;text-align:center';
+      grid.textContent = GC.t['rdp.no_routes'] || 'No RDP routes configured';
+      return;
+    }
+    grid.style.cssText = '';
+    var container = document.createElement('div');
+    container.className = 'grid';
+
+    // Monitor SVG (matches mockup card-title icon)
+    var MONITOR_SVG = '<svg viewBox="0 0 24 24" fill="none" width="15" height="15"><rect x="2" y="4" width="20" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+    routes.forEach(function (r) {
+      var isOnline = r.status && r.status.online;
+      var isMaintenance = r.maintenance_enabled;
+
+      var card = document.createElement('div');
+      card.className = 'card span6';
+
+      // Card title: monitor icon + name
+      var cardTitle = document.createElement('div');
+      cardTitle.className = 'card-title';
+      var ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.innerHTML = MONITOR_SVG;
+      cardTitle.appendChild(ic);
+      var nameSpan = document.createElement('span');
+      nameSpan.textContent = r.name;
+      cardTitle.appendChild(nameSpan);
+      // Proto badge alongside name
+      var protoBadgeWrap = document.createElement('span');
+      protoBadgeWrap.className = 'card-sub';
+      protoBadgeWrap.style.cssText = 'margin-left:6px;display:inline-flex;align-items:center;gap:4px';
+      protoBadgeWrap.appendChild(buildProtoBadge(r));
+      cardTitle.appendChild(protoBadgeWrap);
+      card.appendChild(cardTitle);
+
+      // KV rows: Mode / Target / Health
+      var kv = document.createElement('div');
+      kv.className = 'kv';
+
+      // Mode row
+      var modeRow = document.createElement('div');
+      modeRow.className = 'row';
+      var modeK = document.createElement('span');
+      modeK.className = 'k';
+      modeK.textContent = GC.t['rdp.kv.mode'] || 'Mode';
+      var modeV = document.createElement('span');
+      modeV.className = 'v';
+      var accessMode = r.access_mode || 'internal';
+      modeV.textContent = GC.t['rdp.access_mode.' + accessMode] || accessMode;
+      modeRow.appendChild(modeK);
+      modeRow.appendChild(modeV);
+      kv.appendChild(modeRow);
+
+      // Target row (host:port)
+      var targetRow = document.createElement('div');
+      targetRow.className = 'row';
+      var targetK = document.createElement('span');
+      targetK.className = 'k';
+      targetK.textContent = GC.t['rdp.kv.target'] || 'Target';
+      var targetV = document.createElement('span');
+      targetV.className = 'v';
+      targetV.textContent = (r.host || '') + ':' + (r.port || 3389);
+      targetRow.appendChild(targetK);
+      targetRow.appendChild(targetV);
+      kv.appendChild(targetRow);
+
+      // Health row (tag with .tag-dot per mockup)
+      var healthRow = document.createElement('div');
+      healthRow.className = 'row';
+      var healthK = document.createElement('span');
+      healthK.className = 'k';
+      healthK.textContent = GC.t['rdp.kv.health'] || 'Health';
+      var healthV = document.createElement('span');
+      healthV.className = 'v';
+      var healthTag = document.createElement('span');
+      if (isOnline) {
+        healthTag.className = 'tag tag-green tag-dot';
+        healthTag.textContent = GC.t['rdp.health_reachable'] || 'Reachable';
+      } else if (isMaintenance) {
+        healthTag.className = 'tag tag-amber tag-dot';
+        healthTag.textContent = GC.t['rdp.health_checking'] || 'Checking…';
+      } else {
+        healthTag.className = 'tag tag-red tag-dot';
+        healthTag.textContent = GC.t['rdp.offline'] || 'Offline';
+      }
+      healthV.appendChild(healthTag);
+      healthRow.appendChild(healthK);
+      healthRow.appendChild(healthV);
+      kv.appendChild(healthRow);
+
+      card.appendChild(kv);
+
+      // Action buttons — ALL actions from default card preserved, as .icon-action set
+      var rowActions = document.createElement('div');
+      rowActions.className = 'row-actions';
+      rowActions.style.marginTop = '12px';
+
+      // WoL (conditional: offline + wol enabled)
+      if (!isOnline && r.wol_enabled && r.wol_mac_address) {
+        var wolBtn = document.createElement('button');
+        wolBtn.className = 'icon-action';
+        wolBtn.title = GC.t['rdp.wol_send'] || 'WoL senden';
+        wolBtn.dataset.wol = r.id;
+        wolBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>';
+        rowActions.appendChild(wolBtn);
+      }
+
+      // Disconnect all (conditional: active sessions > 0)
+      if (r.active_sessions > 0) {
+        var disconnBtn = document.createElement('button');
+        disconnBtn.className = 'icon-action';
+        disconnBtn.title = GC.t['rdp.disconnect_all'] || 'Alle trennen';
+        disconnBtn.dataset.disconnectAll = r.id;
+        disconnBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
+        rowActions.appendChild(disconnBtn);
+      }
+
+      // Edit (always)
+      var editBtn = document.createElement('button');
+      editBtn.className = 'icon-action';
+      editBtn.title = GC.t['rdp.edit'] || 'Bearbeiten';
+      editBtn.dataset.edit = r.id;
+      editBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z" stroke-linejoin="round"/></svg>';
+      rowActions.appendChild(editBtn);
+
+      // Connection test (always)
+      var checkBtn = document.createElement('button');
+      checkBtn.className = 'icon-action';
+      checkBtn.title = GC.t['rdp.connect_test'] || 'Verbindungstest';
+      checkBtn.dataset.check = r.id;
+      checkBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
+      rowActions.appendChild(checkBtn);
+
+      // Delete (always)
+      var delBtn = document.createElement('button');
+      delBtn.className = 'icon-action danger';
+      delBtn.title = GC.t['rdp.delete'] || 'Löschen';
+      delBtn.dataset.delete = r.id;
+      delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+      rowActions.appendChild(delBtn);
+
+      card.appendChild(rowActions);
+
+      // Session-Verlauf button (Aurora addition — opens modal-peer-traffic)
+      var histBtn = document.createElement('button');
+      histBtn.className = 'btn btn-ghost btn-sm btn-block';
+      histBtn.style.marginTop = '14px';
+      histBtn.dataset.sessionHistory = r.id;
+      histBtn.textContent = GC.t['rdp.session_history'] || 'Session History';
+      card.appendChild(histBtn);
+
+      container.appendChild(card);
+    });
+
+    grid.appendChild(container);
+  }
+
+  // Aurora session-history button handler: opens modal-peer-traffic
+  if (isAurora()) {
+    grid.addEventListener('click', function (e) {
+      var histBtn = e.target.closest('[data-session-history]');
+      if (!histBtn) return;
+      if (typeof openModal === 'function') openModal('modal-peer-traffic');
+    });
+  }
 })();

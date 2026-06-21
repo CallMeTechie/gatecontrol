@@ -1399,6 +1399,13 @@
   "rdp.browser.gateway_blocked": "SFTP and audio are not available for gateway/external access (the secondary target is unreachable for guacd).",
   "rdp.browser.license_locked": "Browser sessions are not included in your license.",
 
+  "rdp.kv.mode": "Mode",
+  "rdp.kv.target": "Target",
+  "rdp.kv.health": "Health",
+  "rdp.health_reachable": "Reachable",
+  "rdp.health_checking": "Checking…",
+  "rdp.session_history": "Session History",
+
   "error.rdp.list": "Failed to load RDP routes",
   "error.rdp.get": "Failed to load RDP route",
   "error.rdp.create": "Failed to create RDP route",

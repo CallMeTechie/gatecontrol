@@ -684,3 +684,39 @@ input[type=date]:focus, select:focus {
 
 /* Pool kv rows: mode badge inside .card-sub stays inline */
 .card-sub .pool-mode-badge{font-size:11px; padding:2px 7px; border-radius:999px; font-family:var(--font-mono)}
+
+/* ── RDP page — Aurora mockup fidelity (Task P2-10) ─────────────────────────── */
+
+/* Wizard step indicator — extracted from inline <style nonce> in rdp.njk */
+#rdp-wizard-steps{user-select:none}
+.rdp-step-dot{
+  flex-shrink:0; width:28px; height:28px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:600;
+  background:var(--surface-3); color:var(--faint); border:2px solid var(--line);
+  transition:background .15s, color .15s, border-color .15s;
+}
+.rdp-step-line{flex:1; height:2px; background:var(--line); min-width:10px}
+.rdp-step-dot.done{
+  background:color-mix(in srgb, var(--teal) 15%, transparent);
+  color:var(--teal); border-color:var(--teal); cursor:pointer;
+}
+.rdp-step-dot.done:hover{background:color-mix(in srgb, var(--teal) 28%, transparent)}
+.rdp-step-dot.active{
+  background:var(--teal); color:#fff; border-color:var(--teal);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--teal) 18%, transparent);
+}
+.rdp-step-line.done{background:var(--teal)}
+#rdp-form > div > [data-wizard-step]{padding-top:4px}
+@media(max-width:600px){
+  .rdp-step-dot{width:24px; height:24px; font-size:11px; border-width:1.5px}
+}
+
+/* Modal shell: override legacy inline styles — use aurora modal sizing tokens */
+#rdp-modal.modal.modal-xl{width:880px; max-width:96vw; max-height:90vh; overflow-y:auto}
+.modal-head.wiz-head{padding:18px 24px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--surface); z-index:1}
+.modal-body{padding:20px 24px}
+.modal-foot.wiz-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; bottom:0; background:var(--surface)}
+
+/* Aurora RDP card grid (built by auroraRenderGrid()) */
+.rdp-aurora-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:12px}

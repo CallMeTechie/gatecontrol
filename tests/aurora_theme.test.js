@@ -1024,3 +1024,121 @@ describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
     assert.ok(de['gateway_pools.preset_docker'], 'de gateway_pools.preset_docker present');
   });
 });
+
+// ── Task P2-10: RDP page — Aurora mockup fidelity ────────────────────────────
+describe('aurora theme — rdp layout (Task P2-10)', () => {
+  it('renders /rdp under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders page-header with page-actions and btn-add-rdp on /rdp', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    assert.match(res.text, /class="page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+    assert.match(res.text, /id="btn-add-rdp"/, '#btn-add-rdp inside page-actions');
+    assert.match(res.text, /class="page-actions"[\s\S]*id="btn-add-rdp"/, 'btn-add-rdp is inside page-actions');
+  });
+
+  it('renders all phase0 static container IDs on /rdp under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    // Grid container (JS writes into it)
+    assert.match(res.text, /id="rdp-grid"/, '#rdp-grid present');
+    // Search input (JS binds input event)
+    assert.match(res.text, /id="rdp-search"/, '#rdp-search present');
+    // Subtitle span (JS writes text)
+    assert.match(res.text, /id="rdp-subtitle"/, '#rdp-subtitle present');
+    // Stat IDs (JS writes numbers; hidden in Aurora but present for null-check safety)
+    assert.match(res.text, /id="rdp-stat-total"/, '#rdp-stat-total present');
+    assert.match(res.text, /id="rdp-stat-online"/, '#rdp-stat-online present');
+    assert.match(res.text, /id="rdp-stat-offline"/, '#rdp-stat-offline present');
+    assert.match(res.text, /id="rdp-stat-sessions"/, '#rdp-stat-sessions present');
+    assert.match(res.text, /id="rdp-stat-maintenance"/, '#rdp-stat-maintenance present');
+    assert.match(res.text, /id="rdp-stat-rotation"/, '#rdp-stat-rotation present');
+    // View/filter toggle IDs (JS binds click)
+    assert.match(res.text, /id="rdp-view-toggle"/, '#rdp-view-toggle present');
+    assert.match(res.text, /id="rdp-status-filter"/, '#rdp-status-filter present');
+  });
+
+  it('renders all wizard modal IDs on /rdp under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    // Core modal IDs
+    assert.match(res.text, /id="rdp-modal-overlay"/, '#rdp-modal-overlay present');
+    assert.match(res.text, /id="rdp-modal"/, '#rdp-modal present');
+    assert.match(res.text, /id="rdp-modal-title"/, '#rdp-modal-title present');
+    assert.match(res.text, /id="rdp-modal-subtitle"/, '#rdp-modal-subtitle present');
+    assert.match(res.text, /id="rdp-modal-steptitle"/, '#rdp-modal-steptitle present');
+    assert.match(res.text, /id="rdp-modal-close"/, '#rdp-modal-close present');
+    assert.match(res.text, /id="rdp-modal-cancel"/, '#rdp-modal-cancel present');
+    assert.match(res.text, /id="rdp-modal-save"/, '#rdp-modal-save present');
+    // Wizard navigation
+    assert.match(res.text, /id="rdp-wizard-steps"/, '#rdp-wizard-steps present');
+    assert.match(res.text, /id="rdp-wizard-prev"/, '#rdp-wizard-prev present');
+    assert.match(res.text, /id="rdp-wizard-next"/, '#rdp-wizard-next present');
+    assert.match(res.text, /id="rdp-wizard-review"/, '#rdp-wizard-review present');
+    // Form fields (a representative sample)
+    assert.match(res.text, /id="rdp-form"/, '#rdp-form present');
+    assert.match(res.text, /id="rdp-edit-id"/, '#rdp-edit-id present');
+    assert.match(res.text, /id="rdp-name"/, '#rdp-name present');
+    assert.match(res.text, /id="rdp-host"/, '#rdp-host present');
+    assert.match(res.text, /id="rdp-port"/, '#rdp-port present');
+    assert.match(res.text, /id="rdp-access-mode"/, '#rdp-access-mode present');
+    assert.match(res.text, /id="rdp-credential-mode"/, '#rdp-credential-mode present');
+    assert.match(res.text, /id="rdp-user-ids"/, '#rdp-user-ids present');
+    // Step dots must have data-step-key (needed by wizard JS logic)
+    assert.match(res.text, /data-step-key="connection"/, 'connection step-key present');
+    assert.match(res.text, /data-step-key="auth"/, 'auth step-key present');
+    assert.match(res.text, /data-step-key="experience"/, 'experience step-key present');
+    assert.match(res.text, /data-step-key="security"/, 'security step-key present');
+    assert.match(res.text, /data-step-key="wol"/, 'wol step-key present');
+    assert.match(res.text, /data-step-key="access"/, 'access step-key present');
+  });
+
+  it('rdp.js contains isAurora() and auroraRenderGrid() sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in rdp.js');
+    assert.match(js, /function auroraRenderGrid\(/, 'auroraRenderGrid() present in rdp.js');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRenderGrid/, 'renderGrid() has isAurora guard');
+  });
+
+  it('aurora.css has .rdp-step-dot and .rdp-step-line rules (extracted from inline style)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.rdp-step-dot\b/, '.rdp-step-dot rule present in aurora.css');
+    assert.match(css, /\.rdp-step-line\b/, '.rdp-step-line rule present in aurora.css');
+  });
+
+  it('inline <style nonce> block has been removed from aurora/pages/rdp.njk (styles moved to aurora.css)', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'rdp.njk'), 'utf8');
+    assert.doesNotMatch(njk, /\.rdp-step-dot\s*\{/, '.rdp-step-dot inline style block absent (moved to aurora.css)');
+    assert.doesNotMatch(njk, /<style\s+nonce/, 'no <style nonce> block in aurora rdp.njk (moved to aurora.css)');
+  });
+
+  it('peer-traffic modal is included in /rdp aurora page', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    assert.match(res.text, /id="modal-peer-traffic"/, '#modal-peer-traffic present on rdp page');
+  });
+
+  it('i18n has rdp.kv.mode, rdp.kv.target, rdp.kv.health, rdp.health_reachable, rdp.health_checking, rdp.session_history', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
+    assert.ok(en['rdp.kv.mode'], 'rdp.kv.mode present in en.json');
+    assert.ok(en['rdp.kv.target'], 'rdp.kv.target present in en.json');
+    assert.ok(en['rdp.kv.health'], 'rdp.kv.health present in en.json');
+    assert.ok(en['rdp.health_reachable'], 'rdp.health_reachable present in en.json');
+    assert.ok(en['rdp.health_checking'], 'rdp.health_checking present in en.json');
+    assert.ok(en['rdp.session_history'], 'rdp.session_history present in en.json');
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
+    assert.ok(de['rdp.kv.mode'], 'rdp.kv.mode present in de.json');
+    assert.ok(de['rdp.kv.target'], 'rdp.kv.target present in de.json');
+    assert.ok(de['rdp.kv.health'], 'rdp.kv.health present in de.json');
+    assert.ok(de['rdp.health_reachable'], 'rdp.health_reachable present in de.json');
+    assert.ok(de['rdp.health_checking'], 'rdp.health_checking present in de.json');
+    assert.ok(de['rdp.session_history'], 'rdp.session_history present in de.json');
+  });
+});
