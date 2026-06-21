@@ -21,6 +21,11 @@ describe('guacSettings dispatch + 2a regression', () => {
     assert.equal(c.settings['ignore-cert'], 'true');
     assert.equal(c.settings['disable-audio'], undefined);   // DA-1: nothing emitted at default
     assert.equal(c.settings['enable-sftp'], undefined);
+    // Task-1 display keys (color-depth default + wallpaper/theming/animations enabled by default)
+    assert.equal(c.settings['color-depth'], '32');
+    assert.equal(c.settings['enable-wallpaper'], 'true');
+    assert.equal(c.settings['enable-theming'], 'true');
+    assert.equal(c.settings['enable-menu-animations'], 'true');
   });
   it('throws for an unknown protocol', () => {
     assert.throws(() => buildConnectionSettings({ ...rdp, protocol:'foo' }, {}));
