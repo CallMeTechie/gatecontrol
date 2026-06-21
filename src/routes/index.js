@@ -248,7 +248,10 @@ pages.forEach(({ path, template, titleKey }) => {
 });
 
 // ─── Browser RDP session player page (admin-only, feature-gated) ──────────
-router.get('/rdp/:id/session', requireAuth, (req, res) => {
+// apiLimiter: this page performs an explicit privileged role lookup (unlike the
+// declarative page routes which only gate on session presence), so rate-limit it
+// as defence-in-depth against session/id enumeration.
+router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
   const rdpService = require('../services/rdp');
   const users = require('../services/users');
   const { hasFeature } = require('../services/license');
