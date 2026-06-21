@@ -53,6 +53,13 @@
     <button class="btn btn-ghost btn-sm" data-filter="online">{{ t('rdp.filter_online') }}</button>
     <button class="btn btn-ghost btn-sm" data-filter="offline">{{ t('rdp.filter_offline') }}</button>
   </div>
+  <div class="btn-group" id="rdp-protocol-filter">
+    <button class="btn btn-ghost btn-sm active" data-protocol-filter="all">{{ t('rdp.filter_all') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="rdp">{{ t('rdp.protocol.rdp') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="vnc">{{ t('rdp.protocol.vnc') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="ssh">{{ t('rdp.protocol.ssh') }}</button>
+    <button class="btn btn-ghost btn-sm" data-protocol-filter="telnet">{{ t('rdp.protocol.telnet') }}</button>
+  </div>
 </div>
 
 {# -- VM Grid / List ----------------------------------------- #}
@@ -116,6 +123,15 @@
         <div data-wizard-step="1" data-step-key="connection">
           <div style="font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.tab_connection') }}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="grid-column:1/-1">
+              <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.protocol') }}</label>
+              <div id="rdp-protocol-seg" class="rdp-proto-seg" role="radiogroup" aria-label="{{ t('rdp.protocol') }}">
+                <button type="button" class="rdp-proto-opt active" data-protocol="rdp">{{ t('rdp.protocol.rdp') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="vnc">{{ t('rdp.protocol.vnc') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="ssh">{{ t('rdp.protocol.ssh') }}</button>
+                <button type="button" class="rdp-proto-opt" data-protocol="telnet">{{ t('rdp.protocol.telnet') }}</button>
+              </div>
+            </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.name') }} *</label>
               <input type="text" id="rdp-name" required maxlength="100" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">

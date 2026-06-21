@@ -102,7 +102,7 @@
       var td = document.createElement('td');
       td.colSpan = 5;
       td.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
-      td.textContent = 'No users found';
+      td.textContent = GC.t['users.no_users'] || 'No users found';
       tr.appendChild(td);
       tbody.appendChild(tr);
       return;
@@ -141,7 +141,7 @@
     if (!users.length) {
       var empty = document.createElement('div');
       empty.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
-      empty.textContent = 'No users found';
+      empty.textContent = GC.t['users.no_users'] || 'No users found';
       container.appendChild(empty);
       usersCard.appendChild(container);
       return;

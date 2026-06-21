@@ -59,7 +59,6 @@
   "dns.stat_auto": "Agent-reported",
   "dns.stat_stale": "Stale",
   "dns.record_type": "Type",
-  "dns.add_record": "Record",
   "dns.feature_pro": "Pro",
 
   "auth.login": "Login",
@@ -1484,6 +1483,7 @@
   "users.col_last_login": "Last Login",
   "users.mfa_totp": "TOTP",
   "users.mfa_off": "Off",
+  "users.no_users": "No users found",
   "users.confirm_delete": "Delete this user? All their tokens will be revoked.",
   "users.confirm_disable": "Disable this user? All their tokens will stop working.",
   "users.assign": "Assign",

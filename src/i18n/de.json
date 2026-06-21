@@ -59,7 +59,6 @@
   "dns.stat_auto": "Agent-gemeldet",
   "dns.stat_stale": "Veraltet",
   "dns.record_type": "Typ",
-  "dns.add_record": "Eintrag",
   "dns.feature_pro": "Pro",
 
   "auth.login": "Anmelden",
@@ -1484,6 +1483,7 @@
   "users.col_last_login": "Letzter Login",
   "users.mfa_totp": "TOTP",
   "users.mfa_off": "Aus",
+  "users.no_users": "Keine Benutzer gefunden",
   "users.confirm_delete": "Benutzer löschen? Alle Tokens werden widerrufen.",
   "users.confirm_disable": "Benutzer deaktivieren? Alle Tokens werden ungültig.",
   "users.assign": "Zuordnen",
