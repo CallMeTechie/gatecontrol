@@ -86,6 +86,10 @@
   --bg-code: var(--surface-3); --bg-badge: var(--surface-3);
   --bg-card-hover: var(--surface-3);
   --cyan: var(--teal); --cyan-light: var(--teal-soft);
+  /* close remaining pro.css leaks */
+  --bg-input-focus: var(--surface);   /* pro.css uses #fff; aurora uses surface */
+  --purple-light:   var(--purple-bg); /* pro.css: #F5F3FF — used by .tag-purple/.badge-purple */
+  --amber-border:   var(--amber-bd);  /* pro.css: #FDE68A — used by .btn-amber */
 }
 
 /* ----------------------------------------------------------------------------
@@ -103,7 +107,7 @@
   --green:#4ade80; --green-bg:rgba(74,222,128,.10); --green-bd:rgba(74,222,128,.25);
   --red:#ff6b6b;   --red-bg:rgba(255,107,107,.10);  --red-bd:rgba(255,107,107,.28);
   --blue:#7aa2ff;  --blue-bg:rgba(122,162,255,.10);
-  --purple:#b89cff; --purple-bg:rgba(184,156,255,.10);
+  --purple:#b89cff; --purple-bg:rgba(184,156,255,.10); --purple-border:rgba(184,156,255,.28);
   --btn-text:#04201d;
   --glow1:rgba(52,220,198,.10); --glow2:rgba(255,157,108,.08); --grain:.035;
   --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -22px rgba(0,0,0,.9);
@@ -121,7 +125,7 @@
   --green:#15924f; --green-bg:rgba(21,146,79,.10); --green-bd:rgba(21,146,79,.28);
   --red:#d23b3b;   --red-bg:rgba(210,59,59,.08);   --red-bd:rgba(210,59,59,.28);
   --blue:#3858c4;  --blue-bg:rgba(56,88,196,.08);
-  --purple:#7a4fd0; --purple-bg:rgba(122,79,208,.08);
+  --purple:#7a4fd0; --purple-bg:rgba(122,79,208,.08); --purple-border:rgba(122,79,208,.25);
   --btn-text:#ffffff;
   --glow1:rgba(14,155,138,.10); --glow2:rgba(217,96,47,.09); --grain:.02;
   --shadow:0 1px 0 rgba(255,255,255,.7) inset, 0 16px 34px -24px rgba(80,60,30,.5);
@@ -308,6 +312,20 @@ a{color:inherit}
 .form-check:hover{border-color:var(--line-2)}
 .copy-field{display:flex; gap:8px; align-items:center}
 .copy-field .form-input{flex:1}
+
+/* native input focus — pro.css hardcodes rgba(37,99,235,.1) blue; override with aurora teal */
+input[type=text]:focus, input[type=search]:focus, input[type=password]:focus,
+input[type=email]:focus, input[type=number]:focus, input[type=time]:focus,
+input[type=date]:focus, select:focus {
+  border-color:var(--teal); box-shadow:0 0 0 3px var(--glow1)
+}
+
+/* .btn-warning — amber warning variant (used e.g. in peer-edit modal) */
+.btn-warning{background:var(--amber-bg); color:var(--amber); border-color:var(--amber-bd)}
+.btn-warning:hover{background:var(--amber); color:#fff; border-color:var(--amber)}
+
+/* .alert-warning — amber inline alert (used in rdp.njk feature-locked notice) */
+.alert-warning{background:var(--amber-bg); color:var(--amber); border-color:var(--amber-bd); border-left:3px solid var(--amber)}
 
 /* ----------------------------------------------------------------------------
    9 · MODALS (production: .modal-overlay/.modal/.modal-head/.modal-title/
