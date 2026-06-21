@@ -2229,6 +2229,9 @@
       '<button class="icon-action" title="Edit" data-action="edit" data-id="' + p.id + '">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z" stroke-linejoin="round"/></svg>' +
       '</button>' +
+      '<button class="icon-action" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
+      '</button>' +
       '<button class="icon-action danger" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>' +
       '</button>';
@@ -2236,7 +2239,8 @@
 
   function auroraRenderPeers(peers) {
     if (!peers.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
+      var colSpan = batchMode ? 7 : 6;
+      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
       return;
     }
     tbody.innerHTML = peers.map(function(p) {
@@ -2265,7 +2269,6 @@
     var statusTag = isOnline
       ? '<span class="tag tag-green tag-dot">' + escapeHtml(gwT('peers.gateway.status_online', 'Online')) + '</span>'
       : '<span class="tag tag-grey tag-dot">' + escapeHtml(gwT('peers.gateway.status_offline', 'Offline')) + '</span>';
-    var handshake = (typeof h.wg_handshake_age_s === 'number') ? formatRelTime(Date.now() - h.wg_handshake_age_s * 1000 + Date.now()) : null;
     // Use h.wg_handshake_age_s directly since formatRelTime expects a past timestamp
     var handshakeText = (typeof h.wg_handshake_age_s === 'number')
       ? (h.wg_handshake_age_s < 60 ? h.wg_handshake_age_s + 's' : Math.floor(h.wg_handshake_age_s / 60) + 'm') + ' ago'
@@ -2287,7 +2290,7 @@
         '<span style="margin-left:auto">' + statusTag + '</span>' +
       '</div>' +
       '<div class="urow"><span>' + escapeHtml(gwT('peers.gateway.wg_handshake', 'WG-Handshake')) + '</span><b>' + escapeHtml(handshakeText) + '</b></div>' +
-      '<div class="urow"><span>' + escapeHtml(gwT('peers.traffic', 'Traffic')) + '</span><b>' + trafficText + '</b></div>';
+      '<div class="urow"><span>' + escapeHtml(gwT('peers.traffic', 'Traffic')) + '</span><b>' + escapeHtml(trafficText) + '</b></div>';
 
     unit.addEventListener('click', function(e) {
       if (e.target.closest('button, a')) return;
