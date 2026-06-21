@@ -440,13 +440,13 @@ describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
     assert.match(res.text, /id="batch-cancel-routes"/, '#batch-cancel-routes present');
   });
 
-  it('toggle-group has All/HTTP/L4/RDP buttons with data-value attributes', async () => {
+  it('toggle-group has All/HTTP/L4 filter buttons and RDP nav button', async () => {
     selectAurora();
     const res = await agent.get('/routes').expect(200);
     assert.match(res.text, /data-value=""/, 'All toggle-btn (data-value="") present');
     assert.match(res.text, /data-value="http"/, 'HTTP toggle-btn present');
     assert.match(res.text, /data-value="l4"/, 'L4 toggle-btn present');
-    assert.match(res.text, /data-value="rdp"/, 'RDP toggle-btn present');
+    assert.match(res.text, /data-nav="\/rdp"/, 'RDP toggle-btn present');
   });
 
   it('Aurora layout omits limit-badge section and old routes-toolbar class', async () => {

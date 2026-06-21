@@ -525,6 +525,7 @@
     typeToggle.addEventListener('click', function (e) {
       var btn = e.target.closest('.toggle-btn');
       if (!btn) return;
+      if (btn.dataset.nav) { window.location.href = btn.dataset.nav; return; }
       typeToggle.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
       btn.classList.add('on');
       viewState.typeFilter = btn.dataset.value || null;
