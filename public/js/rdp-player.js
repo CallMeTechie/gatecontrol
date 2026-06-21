@@ -92,6 +92,7 @@
      */
     function scheduleReconnect() {
       if (userDisconnected) return;
+      clearTimer();
       var lg = logic();
 
       /* window guard */
@@ -249,6 +250,13 @@
       reconnectAttempt     = 0;
       reconnectWindowStart = null;
       clearTimer();
+
+      /* re-register beforeunload idempotently so reconnect still frees the guacd slot */
+      if (typeof window !== 'undefined' && beforeunloadHandler) {
+        window.removeEventListener('beforeunload', beforeunloadHandler);
+        window.addEventListener('beforeunload', beforeunloadHandler);
+      }
+
       transition('connect');
       performConnect();
     }
@@ -270,6 +278,13 @@
       if (activeClient) {
         try { activeClient.disconnect(); } catch (e) {}
         activeClient = null;
+      }
+
+      if (sharedKeyboard) {
+        sharedKeyboard.onkeydown = null;
+        sharedKeyboard.onkeyup   = null;
+        if (typeof sharedKeyboard.reset === 'function') sharedKeyboard.reset();
+        sharedKeyboard = null;
       }
 
       removeDisplayEl();
