@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.90.3] — 2026-06-21
+
+### Änderungen
+- RDP/VNC browser-session experience settings (apply Edit-RDP-Route display/quality/security to guacd) (#156)
+
+---
+
 ## [1.90.2] — 2026-06-21
 
 ### Fixes
