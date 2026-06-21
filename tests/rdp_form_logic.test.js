@@ -64,6 +64,11 @@ describe('rdp-form-logic', () => {
     const toTel = L.serializeForm({ protocol: 'telnet', sftp_username: 's', ssh_private_key: 'K' });
     assert.equal(toTel.sftp_username, null);
     assert.equal(toTel.ssh_private_key, null);
+    // shared username/password must SURVIVE a protocol switch (never nulled as foreign)
+    const kept = L.serializeForm({ protocol: 'rdp', username: 'u', password: 'p', ssh_private_key: 'K' });
+    assert.equal(kept.username, 'u');
+    assert.equal(kept.password, 'p');
+    assert.equal(kept.ssh_private_key, null);
   });
   it('hydrateForm: drops *_encrypted, keeps non-sensitive + has_* flags', () => {
     const s = L.hydrateForm({ id: 1, protocol: 'ssh', host: 'h', username_encrypted: 'x',

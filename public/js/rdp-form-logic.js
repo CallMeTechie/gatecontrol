@@ -36,8 +36,7 @@
       sftp_password: rdpvnc && internal && !!state.sftpEnabled,
       wol: p === 'rdp' || p === 'vnc',                     // WoL blocked for ssh/telnet
       // credential_mode 'none' (rdp/vnc) suppresses the required-field UX:
-      username_required: state.credentialMode !== 'none' && p === 'ssh' ? true
-        : (state.credentialMode === 'none' ? false : (p === 'rdp' || p === 'vnc')),
+      username_required: state.credentialMode !== 'none' && (p === 'ssh' || p === 'rdp' || p === 'vnc'),
     };
   }
 
