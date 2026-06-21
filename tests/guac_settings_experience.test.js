@@ -67,3 +67,22 @@ describe('rdp network_profile → experience flags', () => {
     assert.equal(c.settings['disable-bitmap-caching'], undefined);
   });
 });
+
+describe('rdp security + domain', () => {
+  it('nla_enabled=1 → security any (negotiate, preserves working behaviour)', () => {
+    const c = buildConnectionSettings(rdpRoute({ nla_enabled: 1 }), {});
+    assert.equal(c.settings.security, 'any');
+  });
+  it('nla_enabled=0 → security rdp (user explicitly disabled NLA)', () => {
+    const c = buildConnectionSettings(rdpRoute({ nla_enabled: 0 }), {});
+    assert.equal(c.settings.security, 'rdp');
+  });
+  it('domain is passed when set, omitted when empty', () => {
+    assert.equal(buildConnectionSettings(rdpRoute({ domain: 'CORP' }), {}).settings.domain, 'CORP');
+    assert.equal(buildConnectionSettings(rdpRoute({ domain: '' }), {}).settings.domain, undefined);
+    assert.equal(buildConnectionSettings(rdpRoute({ domain: null }), {}).settings.domain, undefined);
+  });
+  it('ignore-cert stays true', () => {
+    assert.equal(buildConnectionSettings(rdpRoute(), {}).settings['ignore-cert'], 'true');
+  });
+});

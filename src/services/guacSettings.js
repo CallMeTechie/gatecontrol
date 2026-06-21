@@ -36,6 +36,13 @@ function applySftp(settings, route, creds) {
   if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
 }
 
+function applySecurity(settings, route) {
+  settings.security = route.nla_enabled ? 'any' : 'rdp';
+  if (route.domain && typeof route.domain === 'string' && route.domain.length > 0) {
+    settings.domain = route.domain;
+  }
+}
+
 function applyExperience(settings, route) {
   if (route.protocol !== 'rdp') return;
   const profile = route.network_profile || 'auto';
@@ -57,7 +64,8 @@ function applyDisplay(settings, route) {
 
 function buildRdp(route, creds) {
   const t = resolveGuacTarget(route);
-  const settings = { hostname: t.host, port: String(t.port), security: 'any', 'ignore-cert': 'true' };
+  const settings = { hostname: t.host, port: String(t.port), 'ignore-cert': 'true' };
+  applySecurity(settings, route);
   applyClipboard(settings, route);
   applyDisplay(settings, route);
   applyExperience(settings, route);
@@ -129,4 +137,4 @@ function buildConnectionSettings(route, creds = {}) {
 // every request between the Task-4 and Task-10 commits (review-chain C3).
 const PHASE2A_PROTOCOLS = SUPPORTED_PROTOCOLS;
 
-module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience };
+module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience, applySecurity };
