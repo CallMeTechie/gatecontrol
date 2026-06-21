@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.0] — 2026-06-21
+
+### Features
+- Aurora mockup fidelity — all 13 admin pages (#157)
+
+---
+
 ## [1.90.3] — 2026-06-21
 
 ### Änderungen
