@@ -569,3 +569,13 @@ input[type=date]:focus, select:focus {
 /* .gw-relnotes — bare <a> in detailHead() gets Aurora link styling */
 .gw-relnotes{font-size:12px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;opacity:.8}
 .gw-relnotes:hover{opacity:1;color:var(--text)}
+
+/* ----------------------------------------------------------------------------
+   C · PEERS page — Aurora mockup fidelity (Task P2-3)
+   --------------------------------------------------------------------------- */
+
+/* Empty-state for the gateway unit-grid */
+.aurora-gw-empty{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+
+/* tag-dot helper used in Aurora status tags on gateway/peer rows */
+.tag.tag-dot::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle}

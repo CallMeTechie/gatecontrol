@@ -409,6 +409,7 @@
   var peersMobile = document.getElementById('peers-mobile');
 
   function actionBtns(p) {
+    if (isAurora()) return auroraActionBtns(p);
     var gatewayBtn = p.peer_type === 'gateway'
       ? '<button class="icon-btn" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
@@ -433,6 +434,7 @@
   }
 
   function renderPeers(peers) {
+    if (isAurora()) return auroraRenderPeers(peers);
     var colSpan = batchMode ? 7 : 6;
     if (!peers.length) {
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
@@ -617,10 +619,20 @@
     });
   }
 
+  var auroraStatusFilter = 'all';
+
   function applyFilters() {
     // Gateway peers live in their own section above the table — exclude
     // them from the client list so they don't appear twice.
     var filtered = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
+    // Aurora status-toggle filter (additive — only active in Aurora theme)
+    if (isAurora() && auroraStatusFilter !== 'all') {
+      filtered = filtered.filter(function(p) {
+        if (auroraStatusFilter === 'online') return p.enabled && p.isOnline;
+        if (auroraStatusFilter === 'offline') return !p.isOnline && p.enabled;
+        return true;
+      });
+    }
 
     // Group filter
     if (activeGroupFilter === 'ungrouped') {
@@ -2123,6 +2135,7 @@
   }
 
   function renderGatewayCard(gw) {
+    if (isAurora()) return auroraRenderGatewayCard(gw);
     var card = document.createElement('article');
     card.className = 'gw-card';
     var isOpen = gwExpanded.has(String(gw.peer_id));
@@ -2196,6 +2209,107 @@
     }
   }
 
+  // ─── Aurora theme-branched functions ─────────────────────────────────────
+  // These are pure siblings — no existing function body is modified.
+  // Guards (if(isAurora()) return aurora…()) above call these.
+
+  function auroraActionBtns(p) {
+    // Gateway-env download button (gateway peers only)
+    var gwBtn = p.peer_type === 'gateway'
+      ? '<button class="icon-action" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>'
+      : '';
+    return gwBtn +
+      '<button class="icon-action" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</button>' +
+      '<button class="icon-action" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>' +
+      '</button>' +
+      '<button class="icon-action" title="Edit" data-action="edit" data-id="' + p.id + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z" stroke-linejoin="round"/></svg>' +
+      '</button>' +
+      '<button class="icon-action danger" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>' +
+      '</button>';
+  }
+
+  function auroraRenderPeers(peers) {
+    if (!peers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = peers.map(function(p) {
+      var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '—';
+      var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
+      var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
+      var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
+      var statusTag = getStatusTag(p);
+      var checked = batchSelected.has(String(p.id)) ? ' checked' : '';
+      var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
+      return '<tr data-peer-id="' + p.id + '">' +
+        batchTd +
+        '<td class="cell-name">' + escapeHtml(p.name) + getExpiryTag(p) + getGroupBadge(p) + getGatewayBadge(p) + '</td>' +
+        '<td class="mono">' + escapeHtml(ip) + '</td>' +
+        '<td>' + lastContact + '</td>' +
+        '<td class="mono">↓' + rx + ' ↑' + tx + '</td>' +
+        '<td>' + statusTag + '</td>' +
+        '<td><div class="row-actions">' + auroraActionBtns(p) + '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function auroraRenderGatewayCard(gw) {
+    var h = gw.health || {};
+    var isOnline = gw.status === 'online';
+    var statusTag = isOnline
+      ? '<span class="tag tag-green tag-dot">' + escapeHtml(gwT('peers.gateway.status_online', 'Online')) + '</span>'
+      : '<span class="tag tag-grey tag-dot">' + escapeHtml(gwT('peers.gateway.status_offline', 'Offline')) + '</span>';
+    var handshake = (typeof h.wg_handshake_age_s === 'number') ? formatRelTime(Date.now() - h.wg_handshake_age_s * 1000 + Date.now()) : null;
+    // Use h.wg_handshake_age_s directly since formatRelTime expects a past timestamp
+    var handshakeText = (typeof h.wg_handshake_age_s === 'number')
+      ? (h.wg_handshake_age_s < 60 ? h.wg_handshake_age_s + 's' : Math.floor(h.wg_handshake_age_s / 60) + 'm') + ' ago'
+      : '—';
+    var t = h.telemetry || {};
+    var rx = formatBytes((t.wg_rx_bytes || 0));
+    var tx = formatBytes((t.wg_tx_bytes || 0));
+    var trafficText = '↓' + rx + ' ↑' + tx;
+
+    var unit = document.createElement('div');
+    unit.className = 'unit';
+    unit.style.cursor = 'pointer';
+    unit.innerHTML =
+      '<div class="uh">' +
+        '<span class="uav" style="background:linear-gradient(145deg,var(--teal),var(--teal-dim,#28b3a2))">' +
+          '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>' +
+        '</span>' +
+        '<div><div class="un">' + escapeHtml(gw.name) + '</div><div class="ud">' + escapeHtml(gw.ip || '') + '</div></div>' +
+        '<span style="margin-left:auto">' + statusTag + '</span>' +
+      '</div>' +
+      '<div class="urow"><span>' + escapeHtml(gwT('peers.gateway.wg_handshake', 'WG-Handshake')) + '</span><b>' + escapeHtml(handshakeText) + '</b></div>' +
+      '<div class="urow"><span>' + escapeHtml(gwT('peers.traffic', 'Traffic')) + '</span><b>' + trafficText + '</b></div>';
+
+    unit.addEventListener('click', function(e) {
+      if (e.target.closest('button, a')) return;
+      showEditModal(gw.peer_id);
+    });
+    return unit;
+  }
+
+  function auroraInitStatusToggle() {
+    var toggle = document.getElementById('aurora-status-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', function(e) {
+      var btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      auroraStatusFilter = btn.dataset.status || 'all';
+      toggle.querySelectorAll('.toggle-btn').forEach(function(b) {
+        b.classList.toggle('on', b === btn);
+      });
+      applyFilters();
+    });
+  }
+
   // Re-run stats when peers finish loading — wraps loadPeers to refresh stats.
   var _origLoadPeers = loadPeers;
   loadPeers = async function() {
@@ -2207,6 +2321,7 @@
   loadGroups();
   loadPeers();
   loadGateways();
+  if (isAurora()) auroraInitStatusToggle();
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
   setInterval(loadGateways, 20000);
