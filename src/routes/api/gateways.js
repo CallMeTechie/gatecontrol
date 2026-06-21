@@ -219,16 +219,20 @@ router.post('/:id/discover', require('../../middleware/license').requireFeature(
   const graceMs = SCAN_TIMEOUT_MS + 15000;  // §5.4: declare orphaned after timeout + 15s
   const requestId = require('node:crypto').randomUUID();
   discoveryCache.begin(id, requestId, graceMs);
+  // Per-request active_scan override (printer wizard): does NOT change the stored
+  // gateway setting; audit-logged below. Only a real boolean overrides.
+  const activeScan = (req.body && typeof req.body.active_scan === 'boolean')
+    ? req.body.active_scan : !!settings.active_scan;
   const r = await gateways.notifyLanScan(id, {
     request_id: requestId, subnets, category_mode: settings.category_mode, categories: settings.categories,
-    active_scan: !!settings.active_scan, timeout_ms: SCAN_TIMEOUT_MS,
+    active_scan: activeScan, timeout_ms: SCAN_TIMEOUT_MS,
   });
   if (!r || r.accepted !== true) { discoveryCache.cancel(id); return res.status(502).json({ ok: false, error: 'gateway_unreachable' }); }
 
   // §10 audit log.
   require('../../services/activity').log('gateway_scan_triggered',
     `Gateway ${id} LAN scan requested (${subnets.join(', ')})`,
-    { source: 'admin', severity: 'info', details: { peer_id: id, request_id: requestId, subnets, active_scan: !!settings.active_scan } });
+    { source: 'admin', severity: 'info', details: { peer_id: id, request_id: requestId, subnets, active_scan: activeScan } });
 
   // §5.4 terminal SSE event if the gateway never reports `done` within the grace —
   // so the admin UI spinner never hangs. get() lazily marks done+timed_out once past grace.
