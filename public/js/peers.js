@@ -14,6 +14,7 @@
   function _stopPairingCountdown() {
     if (_pairingCountdownTimer) { clearInterval(_pairingCountdownTimer); _pairingCountdownTimer = null; }
   }
+  function isAurora() { return !!document.querySelector('.app'); }
 
   function openGatewayTokensModal(peer, tokens) {
     var apiEl = document.getElementById('gateway-tokens-api-token');
@@ -206,8 +207,8 @@
     function activateTab(name) {
       tabs.forEach(function(b) {
         var on = b.getAttribute('data-gw-tab') === name;
-        b.style.borderBottomColor = on ? 'var(--accent)' : 'transparent';
-        b.style.color = on ? 'var(--accent)' : 'var(--muted)';
+        b.style.borderBottomColor = on ? (isAurora() ? 'var(--accent)' : '#2563eb') : 'transparent';
+        b.style.color = on ? (isAurora() ? 'var(--accent)' : '#2563eb') : (isAurora() ? 'var(--muted)' : '#6b7280');
         b.style.fontWeight = on ? '600' : 'normal';
       });
       panes.forEach(function(p) {
@@ -241,7 +242,7 @@
         var ms = expiresAt - Date.now();
         if (ms <= 0) {
           countdownEl.textContent = (GC.t['gateway_deploy_lxc_expired'] || 'Expired — click ↻ to regenerate');
-          countdownEl.style.color = 'var(--red)';
+          countdownEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
           _stopPairingCountdown();
           return;
         }
@@ -249,7 +250,7 @@
         var m = Math.floor(s / 60);
         var ss = String(s % 60).padStart(2, '0');
         countdownEl.textContent = (GC.t['gateway_deploy_lxc_valid_for'] || 'Valid for') + ' ' + m + ':' + ss;
-        countdownEl.style.color = ms < 2 * 60 * 1000 ? 'var(--red)' : 'var(--muted)';
+        countdownEl.style.color = ms < 2 * 60 * 1000 ? (isAurora() ? 'var(--red)' : '#dc2626') : (isAurora() ? 'var(--muted)' : '#6b7280');
       }
       tick();
       _pairingCountdownTimer = setInterval(tick, 1000);
@@ -280,7 +281,7 @@
         startCountdown(data.expiresAt);
       } catch (err) {
         statusEl.textContent = (GC.t['gateway_deploy_lxc_failed'] || 'Failed') + ': ' + err.message;
-        statusEl.style.color = 'var(--red)';
+        statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
       }
     }
 
@@ -1338,7 +1339,7 @@
     input.value = '';
     btn.disabled = true;
     statusEl.textContent = ' ';
-    statusEl.style.color = 'var(--muted)';
+    statusEl.style.color = (isAurora() ? 'var(--muted)' : '#6b7280');
 
     openModal('modal-gateway-delete');
 
@@ -1347,12 +1348,12 @@
       impact = await api.get('/api/peers/' + encodeURIComponent(peerId) + '/delete-impact');
     } catch (err) {
       statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = 'var(--red)';
+      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
       return;
     }
     if (!impact || !impact.ok || !impact.peer) {
       statusEl.textContent = (impact && impact.error) || (GC.t['common.error'] || 'Error');
-      statusEl.style.color = 'var(--red)';
+      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
       return;
     }
 
@@ -1383,15 +1384,15 @@
       if (v === gwDeletePeer.ip) {
         btn.disabled = false;
         statusEl.textContent = GC.t['gateway_delete_ip_match'] || '✓ IP matches';
-        statusEl.style.color = 'var(--green)';
+        statusEl.style.color = (isAurora() ? 'var(--green)' : '#10b981');
       } else {
         btn.disabled = true;
         if (v.length === 0) {
           statusEl.textContent = ' ';
-          statusEl.style.color = 'var(--muted)';
+          statusEl.style.color = (isAurora() ? 'var(--muted)' : '#6b7280');
         } else {
           statusEl.textContent = GC.t['gateway_delete_ip_mismatch'] || 'IP does not match';
-          statusEl.style.color = 'var(--red)';
+          statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
         }
       }
     };
@@ -1413,7 +1414,7 @@
       loadGroups();
     } catch (err) {
       statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = 'var(--red)';
+      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
       btn.disabled = false;
     } finally {
       btnReset(btn);
@@ -1519,7 +1520,7 @@
         '</div>';
       }
       return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-group-id="' + g.id + '">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : 'var(--muted)') + ';flex-shrink:0"></span>' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : (isAurora() ? 'var(--muted)' : '#6b7280')) + ';flex-shrink:0"></span>' +
         '<span style="font-size:13px;font-weight:500;flex:1">' + escapeHtml(g.name) + '</span>' +
         (g.description ? '<span style="font-size:11px;color:var(--text-3);flex:1">' + escapeHtml(g.description) + '</span>' : '') +
         '<span class="tag tag-grey" style="font-size:10px">' + g.peer_count + ' peer(s)</span>' +
