@@ -479,3 +479,75 @@ describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
     assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in aurora.css');
   });
 });
+
+// ── Task P2-4b: Routes wizards + modals ──────────────────────────────────────
+describe('aurora theme — routes wizards + modals (Task P2-4b)', () => {
+  it('renders wizard modal overlay ids on /routes under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /id="route-modal-overlay"/, '#route-modal-overlay present');
+    assert.match(res.text, /id="service-modal-overlay"/, '#service-modal-overlay present');
+    assert.match(res.text, /id="modal-edit-route"/, '#modal-edit-route present (via include)');
+    assert.match(res.text, /id="modal-confirm"/, '#modal-confirm present (via include)');
+  });
+
+  it('route-edit modal has data-edit-tab tabs and edit-route-panel sections', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /data-edit-tab="general"/, 'data-edit-tab="general" present');
+    assert.match(res.text, /data-edit-tab="auth"/, 'data-edit-tab="auth" present');
+    assert.match(res.text, /data-edit-tab="security"/, 'data-edit-tab="security" present');
+    assert.match(res.text, /class="edit-route-panel"/, '.edit-route-panel present');
+    assert.match(res.text, /data-panel="general"/, 'data-panel="general" present');
+  });
+
+  it('route-edit modal has all required submit/action button ids', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /id="btn-edit-route-submit"/, '#btn-edit-route-submit present');
+    assert.match(res.text, /id="route-wizard-save"/, '#route-wizard-save present');
+    assert.match(res.text, /id="route-wizard-next"/, '#route-wizard-next present');
+    assert.match(res.text, /id="route-wizard-prev"/, '#route-wizard-prev present');
+    assert.match(res.text, /id="service-next"/, '#service-next present');
+    assert.match(res.text, /id="service-back"/, '#service-back present');
+  });
+
+  it('create-route wizard uses Aurora modal shell classes', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /class="modal modal-xl modal-wizard"/, '.modal.modal-xl.modal-wizard present');
+    assert.match(res.text, /class="modal-head wiz-head"/, '.modal-head.wiz-head present in route wizard');
+    assert.match(res.text, /class="modal-foot wiz-foot"/, '.modal-foot.wiz-foot present');
+  });
+
+  it('create-service wizard uses Aurora modal shell classes', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /class="modal modal-wide modal-wizard"/, '.modal.modal-wide.modal-wizard present');
+    assert.match(res.text, /class="service-step-pill on"/, '.service-step-pill.on present');
+    assert.match(res.text, /id="service-wizard-steps"/, '#service-wizard-steps present');
+  });
+
+  it('wizard step progress dots are present with data-pill attributes', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /class="route-step-dot" data-pill="1"/, 'route-step-dot 1 present');
+    assert.match(res.text, /class="route-step-line"/, '.route-step-line present');
+    assert.match(res.text, /id="route-wizard-steps"/, '#route-wizard-steps present');
+  });
+
+  it('aurora.css carries wizard modal shell + step dots + service pills rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.modal\.modal-xl/, '.modal.modal-xl present in aurora.css');
+    assert.match(css, /\.modal\.modal-wizard/, '.modal.modal-wizard present in aurora.css');
+    assert.match(css, /\.modal-foot\.wiz-foot/, '.modal-foot.wiz-foot present in aurora.css');
+    assert.match(css, /\.route-step-dot/, '.route-step-dot present in aurora.css');
+    assert.match(css, /\.service-step-pill/, '.service-step-pill present in aurora.css');
+  });
+
+  it('wizard <style nonce> block has been removed from routes.njk (styles moved to aurora.css)', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'routes.njk'), 'utf8');
+    assert.doesNotMatch(njk, /\.route-step-dot\s*\{/, '.route-step-dot inline style block absent (moved to aurora.css)');
+    assert.doesNotMatch(njk, /\.wiz-row-2\s*\{/, '.wiz-row-2 inline style block absent (moved to aurora.css)');
+  });
+});

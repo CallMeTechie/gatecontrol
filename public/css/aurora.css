@@ -579,3 +579,59 @@ input[type=date]:focus, select:focus {
 
 /* tag-dot helper used in Aurora status tags on gateway/peer rows */
 .tag.tag-dot::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle}
+
+/* ----------------------------------------------------------------------------
+   D · ROUTES page — Wizard modal shells + step progress (Task P2-4b)
+   Service-bundle wizard + create-route wizard use Aurora .modal shell classes.
+   Styles previously in routes.njk <style nonce> block moved here.
+   --------------------------------------------------------------------------- */
+
+/* Wizard modal size/scroll modifiers */
+.modal.modal-xl{max-width:880px}
+.modal.modal-wizard{overflow-y:auto; max-height:88vh}
+/* Nested .modal-body must not create a second scroll container inside .modal-wizard */
+.modal.modal-wizard .modal-body{max-height:none; overflow-y:visible}
+
+/* Wizard head: two-row layout (title+close on top, step pills below) */
+.modal-head.wiz-head{flex-direction:column; align-items:stretch; padding-bottom:14px}
+.wiz-head-row{display:flex; align-items:flex-start; gap:12px}
+.wiz-head-row .modal-title{flex:1; font-size:20px}
+
+/* Wizard foot: prev/back on left, next/save on right */
+.modal-foot.wiz-foot{justify-content:space-between; align-items:center; background:var(--surface)}
+
+/* Route wizard step progress dots (moved from routes.njk inline <style nonce> block) */
+.route-step-dot{
+  width:28px; height:28px; border-radius:50%;
+  background:var(--surface-3); border:1.5px solid var(--line);
+  color:var(--faint); font-size:12px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+  cursor:default; flex-shrink:0; font-family:var(--font-mono);
+  transition:all 120ms ease;
+}
+.route-step-dot.active{
+  background:var(--teal); border-color:var(--teal); color:var(--btn-text);
+  box-shadow:0 0 0 3px var(--teal-soft);
+}
+.route-step-dot.done{
+  background:var(--teal-soft); border-color:var(--teal); color:var(--teal); cursor:pointer;
+}
+.route-step-dot.done:hover{filter:brightness(1.1)}
+.route-step-line{
+  flex:1; height:1.5px; background:var(--line); margin:0 2px; transition:background 120ms ease;
+}
+.route-step-line.done{background:var(--teal)}
+
+/* Wizard two-column form layout (moved from routes.njk inline <style nonce> block) */
+.wiz-row-2{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; margin-bottom:14px; align-items:start}
+.wiz-row-2 > *{margin-bottom:0 !important}
+.wiz-step-body{padding:20px 24px; min-height:480px}
+.wiz-step-body .toggle-group{align-self:flex-start}
+@media(max-width:640px){.wiz-row-2{grid-template-columns:1fr}}
+
+/* Service wizard step pills */
+.service-step-pill{
+  padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600;
+  background:var(--surface-3); border:1px solid var(--line); color:var(--faint); cursor:default;
+}
+.service-step-pill.on{background:var(--teal-soft); border-color:var(--teal-dim); color:var(--teal)}
