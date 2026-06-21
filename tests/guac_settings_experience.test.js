@@ -86,3 +86,15 @@ describe('rdp security + domain', () => {
     assert.equal(buildConnectionSettings(rdpRoute(), {}).settings['ignore-cert'], 'true');
   });
 });
+
+describe('rdp redirects (browser-mappable only)', () => {
+  it('enable-printing follows redirect_printers', () => {
+    assert.equal(buildConnectionSettings(rdpRoute({ redirect_printers: 1 }), {}).settings['enable-printing'], 'true');
+    assert.equal(buildConnectionSettings(rdpRoute({ redirect_printers: 0 }), {}).settings['enable-printing'], undefined);
+  });
+  it('native-only redirects are NOT mapped to guacd (no enable-drive / usb / smartcard)', () => {
+    const c = buildConnectionSettings(rdpRoute({ redirect_drives: 1, redirect_usb: 1, redirect_smartcard: 1, multi_monitor: 1 }), {});
+    assert.equal(c.settings['enable-drive'], undefined);
+    assert.equal(c.settings['enable-printing'], undefined);
+  });
+});

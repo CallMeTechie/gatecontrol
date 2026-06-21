@@ -53,6 +53,15 @@ function applyExperience(settings, route) {
   settings['enable-desktop-composition'] = isLanOrAuto ? 'true' : 'false';
 }
 
+function applyRedirects(settings, route) {
+  // Only redirect_printers is mappable to guacd's enable-printing.
+  // redirect_drives, redirect_usb, redirect_smartcard, multi_monitor, and
+  // bandwidth_limit are native-client-only: guacd RDP has no/limited support
+  // for drive/USB/smartcard redirection, and mapping a guacd-side drive share
+  // requires a writable container path — both are out of scope for browser sessions.
+  if (route.redirect_printers) settings['enable-printing'] = 'true';
+}
+
 function applyDisplay(settings, route) {
   settings['color-depth'] = String(route.color_depth || 32);
   if (route.protocol === 'rdp') {
@@ -72,6 +81,7 @@ function buildRdp(route, creds) {
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
   applyAudio(settings, route);
+  applyRedirects(settings, route);
   applySftp(settings, route, creds);
   return { type: 'rdp', settings };
 }
@@ -137,4 +147,4 @@ function buildConnectionSettings(route, creds = {}) {
 // every request between the Task-4 and Task-10 commits (review-chain C3).
 const PHASE2A_PROTOCOLS = SUPPORTED_PROTOCOLS;
 
-module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience, applySecurity };
+module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience, applySecurity, applyRedirects };
