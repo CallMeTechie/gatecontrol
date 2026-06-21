@@ -1404,7 +1404,6 @@
   "rdp.kv.health": "Health",
   "rdp.health_reachable": "Reachable",
   "rdp.health_checking": "Checking…",
-  "rdp.session_history": "Session History",
 
   "error.rdp.list": "Failed to load RDP routes",
   "error.rdp.get": "Failed to load RDP route",

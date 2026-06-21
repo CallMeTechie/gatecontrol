@@ -1864,13 +1864,6 @@
 
       card.appendChild(rowActions);
 
-      // Session-Verlauf button (Aurora addition — opens modal-peer-traffic)
-      var histBtn = document.createElement('button');
-      histBtn.className = 'btn btn-ghost btn-sm btn-block';
-      histBtn.style.marginTop = '14px';
-      histBtn.dataset.sessionHistory = r.id;
-      histBtn.textContent = GC.t['rdp.session_history'] || 'Session History';
-      card.appendChild(histBtn);
 
       container.appendChild(card);
     });
@@ -1878,12 +1871,4 @@
     grid.appendChild(container);
   }
 
-  // Aurora session-history button handler: opens modal-peer-traffic
-  if (isAurora()) {
-    grid.addEventListener('click', function (e) {
-      var histBtn = e.target.closest('[data-session-history]');
-      if (!histBtn) return;
-      if (typeof openModal === 'function') openModal('modal-peer-traffic');
-    });
-  }
 })();

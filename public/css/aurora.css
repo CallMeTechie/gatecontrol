@@ -715,7 +715,7 @@ input[type=date]:focus, select:focus {
 /* Modal shell: override legacy inline styles — use aurora modal sizing tokens */
 #rdp-modal.modal.modal-xl{width:880px; max-width:96vw; max-height:90vh; overflow-y:auto}
 .modal-head.wiz-head{padding:18px 24px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--surface); z-index:1}
-.modal-body{padding:20px 24px}
+#rdp-modal .modal-body{padding:20px 24px}
 .modal-foot.wiz-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; bottom:0; background:var(--surface)}
 
 /* Aurora RDP card grid (built by auroraRenderGrid()) */

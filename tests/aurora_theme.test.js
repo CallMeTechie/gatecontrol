@@ -1125,21 +1125,19 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     assert.match(res.text, /id="modal-peer-traffic"/, '#modal-peer-traffic present on rdp page');
   });
 
-  it('i18n has rdp.kv.mode, rdp.kv.target, rdp.kv.health, rdp.health_reachable, rdp.health_checking, rdp.session_history', () => {
+  it('i18n has rdp.kv.mode, rdp.kv.target, rdp.kv.health, rdp.health_reachable, rdp.health_checking', () => {
     const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
     assert.ok(en['rdp.kv.mode'], 'rdp.kv.mode present in en.json');
     assert.ok(en['rdp.kv.target'], 'rdp.kv.target present in en.json');
     assert.ok(en['rdp.kv.health'], 'rdp.kv.health present in en.json');
     assert.ok(en['rdp.health_reachable'], 'rdp.health_reachable present in en.json');
     assert.ok(en['rdp.health_checking'], 'rdp.health_checking present in en.json');
-    assert.ok(en['rdp.session_history'], 'rdp.session_history present in en.json');
     const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
     assert.ok(de['rdp.kv.mode'], 'rdp.kv.mode present in de.json');
     assert.ok(de['rdp.kv.target'], 'rdp.kv.target present in de.json');
     assert.ok(de['rdp.kv.health'], 'rdp.kv.health present in de.json');
     assert.ok(de['rdp.health_reachable'], 'rdp.health_reachable present in de.json');
     assert.ok(de['rdp.health_checking'], 'rdp.health_checking present in de.json');
-    assert.ok(de['rdp.session_history'], 'rdp.session_history present in de.json');
   });
 });
 
