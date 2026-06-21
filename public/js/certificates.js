@@ -4,6 +4,9 @@
   const certsList = document.getElementById('certificates-list');
   if (!certsList) return;
 
+  // ─── Aurora theme detector ────────────────────────────────
+  function isAurora() { return !!document.querySelector('.app'); }
+
   function t(key, fallback) {
     return (window.GC && GC.t && GC.t[key]) || fallback;
   }
@@ -83,6 +86,141 @@
     return t('certificates.sub_plain_l4', 'Layer-4 · TCP/UDP ohne Verschlüsselung');
   }
 
+  // ─── Aurora: table row builder ────────────────────────────
+  function auroraTableRow(r, caddyRunning) {
+    var status = certStatus(r);
+    var tr = document.createElement('tr');
+
+    // Domain cell
+    var tdDomain = document.createElement('td');
+    tdDomain.className = 'cell-name';
+    tdDomain.textContent = r.domain || '—';
+    tr.appendChild(tdDomain);
+
+    // Issuer cell (stubbed: Caddy Auto for auto-tls, — otherwise)
+    var tdIssuer = document.createElement('td');
+    tdIssuer.textContent = status === 'auto-tls' ? "Let's Encrypt" : '—';
+    tr.appendChild(tdIssuer);
+
+    // Valid until cell (stubbed: Caddy manages expiry automatically)
+    var tdValid = document.createElement('td');
+    tdValid.className = 'mono';
+    tdValid.textContent = status === 'auto-tls' ? t('certificates.col_caddy_auto', 'Caddy Auto') : '—';
+    tr.appendChild(tdValid);
+
+    // Status cell
+    var tdStatus = document.createElement('td');
+    var stEl = auroraStatusTag(status, caddyRunning);
+    tdStatus.appendChild(stEl);
+    tr.appendChild(tdStatus);
+
+    // Actions cell
+    var tdActions = document.createElement('td');
+    var rowActions = document.createElement('div');
+    rowActions.className = 'row-actions';
+    var delBtn = document.createElement('button');
+    delBtn.className = 'icon-action danger';
+    delBtn.title = t('certificates.action_delete', 'Löschen');
+    delBtn.dataset.action = 'delete-cert';
+    delBtn.dataset.domain = r.domain || '';
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+    delBtn.appendChild(svg);
+    rowActions.appendChild(delBtn);
+    tdActions.appendChild(rowActions);
+    tr.appendChild(tdActions);
+
+    return tr;
+  }
+
+  function auroraStatusTag(status, caddyRunning) {
+    var span = document.createElement('span');
+    if (status === 'auto-tls') {
+      if (!caddyRunning) {
+        span.className = 'tag tag-amber tag-dot';
+        span.textContent = t('certificates.status_caddy_offline', 'Caddy offline');
+      } else {
+        span.className = 'tag tag-green tag-dot';
+        span.textContent = t('certificates.status_auto_tls', 'Auto-TLS');
+      }
+    } else if (status === 'passthrough') {
+      span.className = 'tag tag-grey tag-dot';
+      span.textContent = t('certificates.status_passthrough', 'TLS-Passthrough');
+      span.title = t('certificates.status_passthrough_hint', 'TLS wird zum Backend durchgereicht — kein Zertifikat auf dem Server.');
+    } else {
+      span.className = 'tag tag-grey tag-dot';
+      span.textContent = t('certificates.status_plain_l4', 'L4 ohne TLS');
+    }
+    return span;
+  }
+
+  function auroraEmptyRow() {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 5;
+    td.style.cssText = 'text-align:center;color:var(--muted);padding:20px 0';
+    td.textContent = t('certificates.no_routes',
+      'Keine Routen mit Domain konfiguriert. Lege eine HTTP- oder L4-Route mit Domain an, um ein Zertifikat zu erhalten.');
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function auroraErrorRow(msg) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 5;
+    td.style.cssText = 'text-align:center;color:var(--red);padding:20px 0';
+    td.textContent = msg;
+    tr.appendChild(td);
+    return tr;
+  }
+
+  async function auroraLoadCertificates() {
+    try {
+      var results = await Promise.all([
+        window.api.get('/api/routes'),
+        window.api.get('/api/caddy/status'),
+      ]);
+      var routeData = results[0];
+      var caddyData = results[1];
+
+      var routes = (routeData && routeData.ok && Array.isArray(routeData.routes)) ? routeData.routes : [];
+      var caddyRunning = !!(caddyData && caddyData.running);
+
+      var visible = routes.filter(function(r) { return r.enabled && r.domain; });
+
+      clear(certsList);
+
+      if (!visible.length) {
+        certsList.appendChild(auroraEmptyRow());
+        return;
+      }
+
+      var order = { 'auto-tls': 0, 'passthrough': 1, 'plain-l4': 2 };
+      visible.sort(function(a, b) {
+        var oa = order[certStatus(a)] || 9;
+        var ob = order[certStatus(b)] || 9;
+        if (oa !== ob) return oa - ob;
+        return (a.domain || '').localeCompare(b.domain || '');
+      });
+
+      visible.forEach(function(r) {
+        certsList.appendChild(auroraTableRow(r, caddyRunning));
+      });
+    } catch (err) {
+      clear(certsList);
+      certsList.appendChild(auroraErrorRow(err.message));
+    }
+  }
+
   function buildRow(r, caddyRunning) {
     var status = certStatus(r);
     var iconColor = (status === 'auto-tls')
@@ -128,6 +266,7 @@
   }
 
   async function loadCertificates() {
+    if (isAurora()) return auroraLoadCertificates();
     try {
       var [routeData, caddyData] = await Promise.all([
         window.api.get('/api/routes'),

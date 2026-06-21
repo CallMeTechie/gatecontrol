@@ -674,3 +674,82 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.match(css, /\.tw-preset-label\b/, '.tw-preset-label rule present in aurora.css');
   });
 });
+
+// ── Task P2-6: Certificates page (Aurora mockup fidelity) ────────────────────
+describe('aurora theme — certificates layout (Task P2-6)', () => {
+  it('renders /certificates under aurora (200, aurora shell)', async () => {
+    selectAurora();
+    const res = await agent.get('/certificates').expect(200);
+    assert.match(res.text, /class="app"/, 'aurora .app shell present');
+    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+  });
+
+  it('renders Aurora grid structure and signature classes on /certificates', async () => {
+    selectAurora();
+    const res = await agent.get('/certificates').expect(200);
+    assert.match(res.text, /class="card span12"/, '.card.span12 full-width card present');
+    assert.match(res.text, /class="card-title"/, '.card-title present');
+    assert.match(res.text, /class="data-table"/, '.data-table present');
+  });
+
+  it('renders page-header with page-eyebrow and page-actions on /certificates', async () => {
+    selectAurora();
+    const res = await agent.get('/certificates').expect(200);
+    assert.match(res.text, /class="page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+    assert.match(res.text, /btn btn-primary/, 'primary action button present in page-actions');
+  });
+
+  it('renders data-table thead with Domain, Issuer, Valid-until, Status columns', async () => {
+    selectAurora();
+    // Check njk file uses correct i18n keys (Nunjucks renders them to text, not raw keys in HTML)
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'certificates.njk'), 'utf8');
+    assert.match(njk, /routes\.domain/, 'njk references routes.domain key for domain column');
+    assert.match(njk, /certificates\.col_issuer/, 'njk references certificates.col_issuer key');
+    assert.match(njk, /certificates\.col_valid_until/, 'njk references certificates.col_valid_until key');
+    assert.match(njk, /peers\.status/, 'njk references peers.status key for status column');
+    // Rendered HTML carries the translated column text (EN locale: Domain, Issuer, Valid until, Status)
+    const res = await agent.get('/certificates').expect(200);
+    assert.match(res.text, /<th[^>]*>.*Domain.*<\/th>|<th>Domain/, 'Domain column header rendered');
+    assert.match(res.text, /<th[^>]*>.*Issuer.*<\/th>|<th>Issuer/, 'Issuer column header rendered');
+    assert.match(res.text, /<th[^>]*>.*Valid until.*<\/th>|<th>Valid until/, 'Valid until column header rendered');
+    assert.match(res.text, /<th[^>]*>.*Status.*<\/th>|<th>Status/, 'Status column header rendered');
+  });
+
+  it('renders all phase0 contract IDs on /certificates under aurora', async () => {
+    selectAurora();
+    const res = await agent.get('/certificates').expect(200);
+    // certificates-list must be on the <tbody> for JS to append <tr> rows
+    assert.match(res.text, /id="certificates-list"/, '#certificates-list present');
+    // Refresh/upload button (JS uses btn-certificates-refresh)
+    assert.match(res.text, /id="btn-certificates-refresh"/, '#btn-certificates-refresh present');
+  });
+
+  it('certificates-list is inside the data-table (tbody child)', async () => {
+    selectAurora();
+    const res = await agent.get('/certificates').expect(200);
+    // tbody must carry certificates-list id (so JS-appended <tr> rows stay valid HTML)
+    assert.match(res.text, /<tbody id="certificates-list"/, '<tbody id="certificates-list"> present');
+  });
+
+  it('certificates.js contains isAurora() detector and aurora sibling functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'certificates.js'), 'utf8');
+    assert.match(js, /function isAurora\(\)/, 'isAurora() present in certificates.js');
+    assert.match(js, /function auroraTableRow\(/, 'auroraTableRow() present');
+    assert.match(js, /function auroraStatusTag\(/, 'auroraStatusTag() present');
+    assert.match(js, /function auroraLoadCertificates\(/, 'auroraLoadCertificates() present');
+    // Guard at entry point
+    assert.match(js, /if \(isAurora\(\)\) return auroraLoadCertificates/, 'loadCertificates() has isAurora guard');
+  });
+
+  it('aurora.css already carries data-table, row-actions, icon-action, tag-dot (no new rules needed)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
+    assert.match(css, /\.row-actions\b/, '.row-actions rule present in aurora.css');
+    assert.match(css, /\.icon-action\b/, '.icon-action rule present in aurora.css');
+    assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present in aurora.css');
+    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in aurora.css');
+    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
+  });
+});

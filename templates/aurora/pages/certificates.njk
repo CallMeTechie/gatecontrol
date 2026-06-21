@@ -4,19 +4,36 @@
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('nav.routing') }}</div>
-    <div class="page-title">{{ t('nav.certificates') }}</div>
-    <div class="page-sub">Let's Encrypt · Caddy Auto-TLS</div>
+    <div class="page-title">{{ t('certs.title') }}</div>
+    <div class="page-sub">ACME + {{ t('certificates.action_upload') }}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" id="btn-certificates-refresh">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>{{ t('certificates.action_upload') }}</span>
+    </button>
   </div>
 </div>
 
-<div class="card">
+<div class="card span12">
   <div class="card-head">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    <span class="card-title">{{ t('nav.certificates') }}</span>
+    <span class="card-title">{{ t('certs.title') }}</span>
   </div>
-  <div class="card-body" id="certificates-list">
-    <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
-  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t('routes.domain') }}</th>
+        <th>{{ t('certificates.col_issuer') }}</th>
+        <th>{{ t('certificates.col_valid_until') }}</th>
+        <th>{{ t('peers.status') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="certificates-list">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px 0">{{ t('common.loading') }}</td></tr>
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 
