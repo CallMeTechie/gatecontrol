@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.90.2] — 2026-06-21
+
+### Fixes
+- send display size (width/height/dpi) to guacd so the browser player renders (#155)
+
+---
+
 ## [1.90.1] — 2026-06-21
 
 ### Änderungen
