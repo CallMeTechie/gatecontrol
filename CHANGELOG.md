@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.4] — 2026-06-22
+
+### Fixes
+- Aurora gateway detail grid exactly 3 columns (1/3 each), not auto-fit (#163)
+
+---
+
 ## [1.91.3] — 2026-06-22
 
 ### Fixes
