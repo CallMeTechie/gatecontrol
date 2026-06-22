@@ -77,8 +77,11 @@
     nameWrap.appendChild(el('div', 'ud', (t.gateway_version || '—') + (g.hostname ? ' · ' + g.hostname : '')));
     uh.appendChild(nameWrap);
     var tagCls = 'tag ' + (st === 'online' ? 'tag-green' : st === 'degraded' ? 'tag-amber' : 'tag-grey') + ' tag-dot';
-    var stTag = el('span', tagCls, T('gateways.' + st, st)); stTag.style.marginLeft = 'auto';
-    uh.appendChild(stTag);
+    var stTag = el('span', tagCls, T('gateways.' + st, st));
+    // Issue 8: badge INSIDE card header — wrap in right container pushed to far-right
+    var right = el('span'); right.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-shrink:0';
+    right.appendChild(stTag);
+    uh.appendChild(right);
     wrap.appendChild(uh);
     // Body: resource bars (online/degraded) or empty-state (offline)
     if (st === 'offline') {
@@ -97,18 +100,52 @@
     wrap.appendChild(btn);
     return wrap;
   }
+  // Issue 10: Aurora-specific versions card — vertical kv list to prevent overflow
+  function auroraVersionsCard(g) {
+    var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
+    var c = el('div', 'gw');
+    var top = el('div', 'top'); top.appendChild(el('h3', null, T('gateways.sec_versions', 'Versionen & System'))); c.appendChild(top);
+    var body = el('div', 'body');
+    function addKv(k, v, vcls) { body.appendChild(kvRow(k, v, vcls)); }
+    var gwVal = el('span'); gwVal.appendChild(document.createTextNode((t.gateway_version || '—') + ' '));
+    if (g.update_available && latest) gwVal.appendChild(el('span', 'badge drift', '↑ ' + latest));
+    addKv(T('gateways.lbl_gateway', 'Gateway'), gwVal);
+    addKv(T('gateways.lbl_node', 'Node'), t.node_version || '—');
+    addKv(T('gateways.lbl_wgtools', 'wg-tools'), t.wg_tools_version || '—');
+    addKv(T('gateways.lbl_os', 'OS'), (t.os_platform || '—') + (t.os_release ? ' ' + t.os_release : ''));
+    addKv(T('gateways.lbl_arch', 'Arch'), t.arch || '—');
+    addKv(T('gateways.lbl_cores', 'Cores'), t.cpu_cores != null ? String(t.cpu_cores) : '—');
+    addKv(T('gateways.lbl_default_gw', 'Default gateway (LAN)'), t.default_gateway_ip || '—');
+    addKv(T('gateways.lbl_dns_resolvers', 'DNS resolvers'), (t.dns_resolvers && t.dns_resolvers.length) ? t.dns_resolvers.join(', ') : '—');
+    var cfgVal;
+    if (h.config_hash) {
+      cfgVal = el('span'); cfgVal.appendChild(document.createTextNode('✓ ' + T('gateways.config_synced', 'synchron') + ' · '));
+      cfgVal.appendChild(el('code', null, String(h.config_hash).slice(0, 8)));
+    } else { cfgVal = T('gateways.config_unknown', 'unbekannt'); }
+    addKv(T('gateways.lbl_config_hash', 'Config hash'), cfgVal);
+    var shortDigest = '—';
+    if (t.image_digest) { var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8); shortDigest = di.slice(-12); }
+    addKv(T('gateways.lbl_image_digest', 'Image'), shortDigest);
+    addKv(T('gateways.lbl_last_pull', 'Last pull'), t.last_pull_at ? ago(t.last_pull_at) : T('gateways.last_pull_never', 'never'));
+    c.appendChild(body);
+    return c;
+  }
   function auroraRenderDetail(g) {
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Back to fleet')); back.dataset.act = 'back';
     root.appendChild(back);
     root.appendChild(detailHead(g));
-    var grid2 = el('div', 'unit-grid');
-    grid2.appendChild(versionsCard(g));
+    // Issue 11: 3-column detail grid (1/3 width per card); auroraVersionsCard for Issue 10
+    var grid2 = el('div', 'gw-detail-grid');
+    grid2.appendChild(auroraVersionsCard(g));
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
-    grid2.appendChild(discoveredDevicesCard(g));
+    // Bottom two cards ("Discovered devices" + "Scan targets") at 1/2 width each
     var telE = (g.health && g.health.telemetry) || {};
-    if (telE.scan_egress === true) grid2.appendChild(egressCard(g));
+    var halfRow = el('div', 'gw-half-row');
+    halfRow.appendChild(discoveredDevicesCard(g));
+    if (telE.scan_egress === true) halfRow.appendChild(egressCard(g));
+    grid2.appendChild(halfRow);
     root.appendChild(grid2);
     detailView.replaceChildren(root);
   }

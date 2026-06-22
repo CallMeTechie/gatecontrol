@@ -230,27 +230,51 @@
 <!-- ── Row 4: System Resources ────────────────────────────────────────────── -->
 <div class="grid" style="margin-bottom:18px">
 
-  <!-- CPU -->
+  <!-- CPU — radial donut gauge (Aurora) -->
   <div class="card span4">
-    <div class="card-title">
-      {{ t('dashboard.cpu_usage') }}
-      <span class="card-sub" id="cpu-pct">—</span>
-    </div>
+    <div class="card-title">{{ t('dashboard.cpu_usage') }}</div>
     <div class="card-body">
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:6px" id="cpu-info">—</div>
-      <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--green)" id="cpu-bar"></div></div>
+      <div class="res-gauge-wrap">
+        <div class="donut-host">
+          <svg class="donut" id="cpu-donut" viewBox="0 0 36 36">
+            <circle class="track" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"/>
+            <circle class="val" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"
+              stroke-dasharray="0 100" stroke-dashoffset="25" stroke-linecap="round"/>
+          </svg>
+          <div class="donut-center">
+            <div class="big" id="cpu-pct">—</div>
+          </div>
+        </div>
+        <div class="res-gauge-info">
+          <div class="ri" id="cpu-info">—</div>
+        </div>
+      </div>
+      <!-- #cpu-bar kept hidden for shared-function ID contract -->
+      <div style="display:none"><div id="cpu-bar"></div></div>
     </div>
   </div>
 
-  <!-- RAM -->
+  <!-- RAM — radial donut gauge (Aurora) -->
   <div class="card span4">
-    <div class="card-title">
-      {{ t('dashboard.ram_usage') }}
-      <span class="card-sub" id="ram-pct">—</span>
-    </div>
+    <div class="card-title">{{ t('dashboard.ram_usage') }}</div>
     <div class="card-body">
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:6px" id="ram-info">—</div>
-      <div class="meter-bar"><div class="meter-fill" style="width:0%;background:var(--blue)" id="ram-bar"></div></div>
+      <div class="res-gauge-wrap">
+        <div class="donut-host">
+          <svg class="donut" id="ram-donut" viewBox="0 0 36 36">
+            <circle class="track" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"/>
+            <circle class="val" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3"
+              stroke-dasharray="0 100" stroke-dashoffset="25" stroke-linecap="round"/>
+          </svg>
+          <div class="donut-center">
+            <div class="big" id="ram-pct">—</div>
+          </div>
+        </div>
+        <div class="res-gauge-info">
+          <div class="ri" id="ram-info">—</div>
+        </div>
+      </div>
+      <!-- #ram-bar kept hidden for shared-function ID contract -->
+      <div style="display:none"><div id="ram-bar"></div></div>
     </div>
   </div>
 

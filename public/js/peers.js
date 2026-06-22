@@ -2264,37 +2264,112 @@
   }
 
   function auroraRenderGatewayCard(gw) {
+    // ── Issue 5: badge INSIDE the card header ──────────────────────────────
+    // ── Issue 6: gear button opens edit modal (not card click) ─────────────
+    // ── Issue 7: card click → /gateways#gw/<id> detail page ───────────────
     var h = gw.health || {};
     var isOnline = gw.status === 'online';
-    var statusTag = isOnline
-      ? '<span class="tag tag-green tag-dot">' + escapeHtml(gwT('peers.gateway.status_online', 'Online')) + '</span>'
-      : '<span class="tag tag-grey tag-dot">' + escapeHtml(gwT('peers.gateway.status_offline', 'Offline')) + '</span>';
+    var statusClass = isOnline ? 'tag tag-green tag-dot' : 'tag tag-grey tag-dot';
+    var statusLabel = isOnline
+      ? gwT('peers.gateway.status_online', 'Online')
+      : gwT('peers.gateway.status_offline', 'Offline');
     // Use h.wg_handshake_age_s directly since formatRelTime expects a past timestamp
     var handshakeText = (typeof h.wg_handshake_age_s === 'number')
       ? (h.wg_handshake_age_s < 60 ? h.wg_handshake_age_s + 's' : Math.floor(h.wg_handshake_age_s / 60) + 'm') + ' ago'
       : '—';
     var t = h.telemetry || {};
-    var rx = formatBytes((t.wg_rx_bytes || 0));
-    var tx = formatBytes((t.wg_tx_bytes || 0));
+    var rx = formatBytes(t.wg_rx_bytes || 0);
+    var tx = formatBytes(t.wg_tx_bytes || 0);
     var trafficText = '↓' + rx + ' ↑' + tx;
 
     var unit = document.createElement('div');
     unit.className = 'unit';
     unit.style.cursor = 'pointer';
-    unit.innerHTML =
-      '<div class="uh">' +
-        '<span class="uav" style="background:linear-gradient(145deg,var(--teal),var(--teal-dim,#28b3a2))">' +
-          '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>' +
-        '</span>' +
-        '<div><div class="un">' + escapeHtml(gw.name) + '</div><div class="ud">' + escapeHtml(gw.ip || '') + '</div></div>' +
-        '<span style="margin-left:auto">' + statusTag + '</span>' +
-      '</div>' +
-      '<div class="urow"><span>' + escapeHtml(gwT('peers.gateway.wg_handshake', 'WG-Handshake')) + '</span><b>' + escapeHtml(handshakeText) + '</b></div>' +
-      '<div class="urow"><span>' + escapeHtml(gwT('peers.traffic', 'Traffic')) + '</span><b>' + escapeHtml(trafficText) + '</b></div>';
+    // data-gw-detail carries the target URL for the card-click nav (Issue 7)
+    unit.dataset.gwDetail = '/gateways#gw/' + gw.peer_id;
 
+    // ── Card header row (.uh) ──────────────────────────────────────────────
+    var uh = document.createElement('div');
+    uh.className = 'uh';
+
+    // Avatar icon
+    var uav = document.createElement('span');
+    uav.className = 'uav';
+    uav.style.background = 'linear-gradient(145deg,var(--teal),var(--teal-dim,#28b3a2))';
+    uav.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>';
+    uh.appendChild(uav);
+
+    // Name + IP — flex:1+min-width:0 lets identity shrink so badge+gear always visible
+    var identity = document.createElement('div');
+    identity.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+    var un = document.createElement('div');
+    un.className = 'un';
+    un.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    un.textContent = gw.name;
+    var ud = document.createElement('div');
+    ud.className = 'ud';
+    ud.textContent = gw.ip || '';
+    identity.appendChild(un);
+    identity.appendChild(ud);
+    uh.appendChild(identity);
+
+    // Right side: status badge + gear button — gap:8px keeps them clearly separated
+    var right = document.createElement('span');
+    right.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0';
+
+    // Issue 5 — badge INSIDE the card, anchored top-right within header row
+    var badge = document.createElement('span');
+    badge.className = statusClass;
+    badge.textContent = statusLabel;
+    right.appendChild(badge);
+
+    // Issue 6 — gear button triggers edit modal; stops propagation so card-click
+    //           doesn't also fire (Issue 7 nav).
+    var gearBtn = document.createElement('button');
+    gearBtn.type = 'button';
+    gearBtn.className = 'icon-action';
+    gearBtn.setAttribute('data-action', 'edit');
+    gearBtn.setAttribute('data-id', String(gw.peer_id));
+    var gearLabel = gwT('peers.gateway.action_edit_gear', 'Edit gateway');
+    gearBtn.setAttribute('aria-label', gearLabel);
+    gearBtn.title = gearLabel;
+    // Gear / cog icon (Lucide settings)
+    gearBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+    gearBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      showEditModal(gw.peer_id);
+    });
+    right.appendChild(gearBtn);
+
+    uh.appendChild(right);
+    unit.appendChild(uh);
+
+    // Metric rows
+    var row1 = document.createElement('div');
+    row1.className = 'urow';
+    var r1k = document.createElement('span');
+    r1k.textContent = gwT('peers.gateway.wg_handshake', 'WG-Handshake');
+    var r1v = document.createElement('b');
+    r1v.textContent = handshakeText;
+    row1.appendChild(r1k);
+    row1.appendChild(r1v);
+    unit.appendChild(row1);
+
+    var row2 = document.createElement('div');
+    row2.className = 'urow';
+    var r2k = document.createElement('span');
+    r2k.textContent = gwT('peers.traffic', 'Traffic');
+    var r2v = document.createElement('b');
+    r2v.textContent = trafficText;
+    row2.appendChild(r2k);
+    row2.appendChild(r2v);
+    unit.appendChild(row2);
+
+    // Issue 7 — card click navigates to the gateway detail page.
+    //           Gear button and badge stop propagation so they don't also navigate.
     unit.addEventListener('click', function(e) {
       if (e.target.closest('button, a')) return;
-      showEditModal(gw.peer_id);
+      window.location.href = '/gateways#gw/' + gw.peer_id;
     });
     return unit;
   }

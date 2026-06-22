@@ -456,9 +456,69 @@
         </div>
 
         {# Browser-access section (hidden until toggle enabled; rdp.js reveals) #}
+        {# Issue 15: Add all 6 browser checkboxes + SFTP/audio inputs required by rdp.js populate code #}
         <div id="rdp-browser-reveal" style="display:none">
           <div style="font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('rdp.browser.section') }}</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-enabled" style="accent-color:var(--teal)"> {{ t('rdp.browser.enable') }}</label>
+          {# DA-2: SFTP + Audio are blocked for gateway/external access #}
+          <div id="rdp-browser-gateway-hint" style="display:none;margin-top:8px;font-size:11px;color:var(--faint)">{{ t('rdp.browser.gateway_blocked') }}</div>
+          {# Clipboard (not gated by access mode) #}
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:8px"><input type="checkbox" id="rdp-browser-clipboard" style="accent-color:var(--teal)"> {{ t('rdp.browser.clipboard') }}</label>
+          {# SFTP toggle #}
+          <div id="rdp-browser-sftp-row" style="margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-sftp" style="accent-color:var(--teal)"> {{ t('rdp.browser.sftp') }} <span id="rdp-browser-sftp-mode-hint" style="font-size:11px;color:var(--faint)"></span></label>
+          </div>
+          {# Audio — rdp (rdp_disable_audio shown INVERTED as "Audio active") #}
+          <div id="rdp-browser-audio-rdp-row" style="margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-audio-rdp" checked style="accent-color:var(--teal)"> {{ t('rdp.browser.audio_active') }}</label>
+          </div>
+          {# Audio — vnc (browser_enable_audio) #}
+          <div id="rdp-browser-audio-vnc-row" style="margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-browser-audio-vnc" style="accent-color:var(--teal)"> {{ t('rdp.browser.audio_vnc') }}</label>
+          </div>
+          {# Advanced — SFTP locks + secondary host/creds + audio servername #}
+          <details id="rdp-browser-advanced" style="margin-top:10px">
+            <summary style="font-size:12px;cursor:pointer;color:var(--muted)">{{ t('rdp.browser.advanced') }}</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+              <div id="rdp-sftp-locks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-sftp-disable-download" checked style="accent-color:var(--teal)"> {{ t('rdp.browser.sftp_lock_download') }}</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="rdp-sftp-disable-upload" checked style="accent-color:var(--teal)"> {{ t('rdp.browser.sftp_lock_upload') }}</label>
+              </div>
+              <div id="rdp-sftp-secondary" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_host') }}</label>
+                  <input type="text" id="rdp-sftp-host" autocomplete="off" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_port') }}</label>
+                  <input type="number" id="rdp-sftp-port" min="1" max="65535" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_username') }}</label>
+                  <input type="text" id="rdp-sftp-username" autocomplete="off" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_password') }}</label>
+                  <input type="password" id="rdp-sftp-password" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+                  <div id="rdp-cred-set-sftp-password" style="display:none;font-size:11px;color:var(--faint)">{{ t('rdp.browser.set_kept') }}</div>
+                </div>
+                <div style="grid-column:1/-1">
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_private_key') }}</label>
+                  <textarea id="rdp-sftp-private-key" rows="3" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-mono);box-sizing:border-box;resize:vertical"></textarea>
+                  <div id="rdp-cred-set-sftp-private-key" style="display:none;font-size:11px;color:var(--faint)">{{ t('rdp.browser.set_kept') }}</div>
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.sftp_passphrase') }}</label>
+                  <input type="password" id="rdp-sftp-passphrase" autocomplete="new-password" data-1p-ignore data-lpignore="true" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+                  <div id="rdp-cred-set-sftp-passphrase" style="display:none;font-size:11px;color:var(--faint)">{{ t('rdp.browser.set_kept') }}</div>
+                </div>
+              </div>
+              <div id="rdp-audio-servername-row">
+                <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.browser.audio_servername') }}</label>
+                <input type="text" id="rdp-audio-servername" autocomplete="off" style="width:100%;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-family:var(--font-body);box-sizing:border-box">
+              </div>
+            </div>
+          </details>
         </div>
 
       </div>

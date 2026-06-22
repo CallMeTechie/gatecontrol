@@ -1334,3 +1334,247 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.ok(de['profile.security_display'], 'profile.security_display present in de.json');
   });
 });
+
+// ── UX-fixes: Dashboard donut gauges + bug fixes ─────────────────────────────
+describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
+  it('dashboard.njk has #cpu-donut and #ram-donut SVG elements', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="cpu-donut"/, '#cpu-donut SVG present in aurora dashboard');
+    assert.match(res.text, /id="ram-donut"/, '#ram-donut SVG present in aurora dashboard');
+    // Both donuts must contain the .val arc circle
+    assert.match(res.text, /id="cpu-donut"[\s\S]{0,400}class="val"/, '#cpu-donut has .val arc');
+    assert.match(res.text, /id="ram-donut"[\s\S]{0,400}class="val"/, '#ram-donut has .val arc');
+  });
+
+  it('dashboard.njk still has all required resource IDs after donut redesign', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="cpu-pct"/, '#cpu-pct present inside donut center');
+    assert.match(res.text, /id="cpu-info"/, '#cpu-info present');
+    assert.match(res.text, /id="cpu-bar"/, '#cpu-bar present (hidden, for JS contract)');
+    assert.match(res.text, /id="ram-pct"/, '#ram-pct present inside donut center');
+    assert.match(res.text, /id="ram-info"/, '#ram-info present');
+    assert.match(res.text, /id="ram-bar"/, '#ram-bar present (hidden, for JS contract)');
+  });
+
+  it('dashboard.js uses /api/v1/pihole/summary (not the wrong /api/pihole/stats)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(js, /\/api\/v1\/pihole\/summary/, 'dashboard.js fetches /api/v1/pihole/summary');
+    assert.doesNotMatch(js, /\/api\/pihole\/stats/, '/api/pihole/stats (wrong URL) absent');
+  });
+
+  it('dashboard.js has auroraRefreshResources() and auroraSetResourceDonut() functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(js, /function auroraRefreshResources\(/, 'auroraRefreshResources() present');
+    assert.match(js, /function auroraSetResourceDonut\(/, 'auroraSetResourceDonut() present');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshResources/, 'refreshResources() has isAurora guard');
+  });
+
+  it('aurora.css has .res-gauge-wrap and .res-gauge-info rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.res-gauge-wrap\b/, '.res-gauge-wrap rule in aurora.css');
+    assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in aurora.css');
+  });
+});
+
+// ── UX-fixes: Peers gateway card — badge inside, gear-edit, card→detail nav ──
+describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
+  it('auroraRenderGatewayCard builds badge inside the card using DOM (not detached)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Badge is created with DOM createElement and appended inside uh (card header)
+    assert.match(js, /badge\.className\s*=\s*statusClass/, 'badge.className assigned from statusClass inside auroraRenderGatewayCard');
+    assert.match(js, /right\.appendChild\(badge\)/, 'badge appended to the right-side header span (inside card)');
+    // The "right" span is added to uh (header row), which is added to unit (card)
+    assert.match(js, /uh\.appendChild\(right\)/, 'right span appended to uh header row');
+    assert.match(js, /unit\.appendChild\(uh\)/, 'uh header row appended to unit card');
+  });
+
+  it('auroraRenderGatewayCard emits a gear button with data-action="edit" and data-id=peer_id', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Gear button gets setAttribute('data-action', 'edit')
+    assert.match(js, /gearBtn\.setAttribute\('data-action',\s*'edit'\)/, "gear button has data-action='edit'");
+    assert.match(js, /gearBtn\.setAttribute\('data-id',\s*String\(gw\.peer_id\)\)/, 'gear button data-id is String(gw.peer_id)');
+    // Gear button is appended inside the right span (inside card header)
+    assert.match(js, /right\.appendChild\(gearBtn\)/, 'gear button appended inside card header');
+  });
+
+  it('auroraRenderGatewayCard gear button stops propagation and calls showEditModal', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /e\.stopPropagation\(\)[\s\S]{0,40}showEditModal\(gw\.peer_id\)/, 'gear click: stopPropagation then showEditModal(gw.peer_id)');
+  });
+
+  it('auroraRenderGatewayCard sets dataset.gwDetail for test assertions and a11y', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /unit\.dataset\.gwDetail\s*=\s*'\/gateways#gw\/'/, "unit.dataset.gwDetail set to '/gateways#gw/' prefix");
+  });
+
+  it('auroraRenderGatewayCard card click navigates to /gateways#gw/<id> (Issue 7)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /window\.location\.href\s*=\s*'\/gateways#gw\/'/, "card click sets window.location.href to '/gateways#gw/' + peer_id");
+    // Must NOT call showEditModal on card click (that's now the gear's job)
+    // Check: the card-click listener no longer contains showEditModal (the gear listener has it)
+    // We verify this by checking that the card-click handler only has window.location.href
+    const cardClickMatch = js.match(/unit\.addEventListener\('click',\s*function\(e\)\s*\{([\s\S]*?)\}\);/g);
+    assert.ok(cardClickMatch, 'unit addEventListener click handler present');
+    const hasNav = cardClickMatch.some(function(s) { return /window\.location\.href/.test(s); });
+    assert.ok(hasNav, 'card-click handler navigates via window.location.href');
+  });
+
+  it('auroraRenderGatewayCard card click uses button/a guard (gear and badge excluded from nav)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Card click guard: e.target.closest('button, a') prevents nav when gear is clicked
+    assert.match(js, /e\.target\.closest\('button,\s*a'\)[\s\S]{0,20}return/, 'card-click has button/a closest guard before nav');
+  });
+
+  it('i18n has peers.gateway.action_edit_gear in both en.json and de.json', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
+    assert.ok(en['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in en.json');
+    assert.ok(de['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in de.json');
+  });
+});
+
+// ── UX-fixes: Gateways fleet card + detail (Issues 8/9/10/11) ────────────────
+describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
+  it('Issue 8: auroraCard builds badge inside card header using right container', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    // stTag appended to right container, right container appended to uh (inside card)
+    assert.match(js, /right\.appendChild\(stTag\)/, 'badge (stTag) appended to right container');
+    assert.match(js, /uh\.appendChild\(right\)/, 'right container appended to uh header row (inside card)');
+  });
+
+  it('Issue 9: aurora.css has .tag.tag-dot::after (dot after text) and suppresses ::before', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.tag\.tag-dot::after/, '.tag.tag-dot::after present (dot positioned after text)');
+    assert.match(css, /\.tag\.tag-dot::before\s*\{[^}]*content:\s*none/, '.tag.tag-dot::before has content:none (before-dot suppressed)');
+  });
+
+  it('Issue 10: auroraVersionsCard() present and called from auroraRenderDetail()', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    assert.match(js, /function auroraVersionsCard\(/, 'auroraVersionsCard() present in gateways.js');
+    assert.match(js, /grid2\.appendChild\(auroraVersionsCard\(g\)\)/, 'auroraRenderDetail() calls auroraVersionsCard(g)');
+  });
+
+  it('Issue 11: auroraRenderDetail uses gw-detail-grid and aurora.css has responsive column rule', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'auroraRenderDetail() uses gw-detail-grid class');
+    assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(auto-fit,minmax\(280px,1fr\)\)/, 'gw-detail-grid uses responsive auto-fit column layout');
+  });
+});
+
+// ── UX-fixes: RDP page (Issues 12/13/14/15/16) ───────────────────────────────
+describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
+  it('Issue 12: auroraRenderGrid uses rdp-card-grid container (not span6/full-width)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    // Container must use rdp-card-grid, not grid (which yields span6 half-width cards)
+    assert.match(js, /container\.className\s*=\s*'rdp-card-grid'/, "auroraRenderGrid uses 'rdp-card-grid' container");
+    // Cards must not use span6 (which is half-width in 12-col grid)
+    assert.doesNotMatch(js, /card\.className\s*=\s*'card span6'/, "card.className no longer uses 'card span6'");
+    // aurora.css must define the grid rule with auto-fill
+    assert.match(css, /\.rdp-card-grid\s*\{[^}]*auto-fill/, 'aurora.css .rdp-card-grid uses auto-fill grid');
+  });
+
+  it('Issue 13: status badge built inside card header (cardTitle) with tag-dot (text-left-of-dot)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Status tag is appended to cardTitle (inside header), not to a separate health kv row
+    assert.match(js, /statusTag\.style\.marginLeft\s*=\s*'auto'/, 'statusTag has margin-left:auto (pushed to header right)');
+    assert.match(js, /cardTitle\.appendChild\(statusTag\)/, 'statusTag appended to cardTitle (inside card header)');
+    // Uses tag-dot class (text left of dot via ::after in aurora.css)
+    assert.match(js, /statusTag\.className\s*=\s*'tag tag-green tag-dot'/, 'online state uses tag-green tag-dot');
+    assert.match(js, /statusTag\.className\s*=\s*'tag tag-red tag-dot'/, 'offline state uses tag-red tag-dot');
+  });
+
+  it('Issue 14: browser session button wired to /rdp/:id/session (real mechanism)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Button only shown when browser_enabled + browser_sessions licensed
+    assert.match(js, /r\.browser_enabled && GC\.features && GC\.features\.browser_sessions/, 'browser button gated on browser_enabled+license');
+    // Opens the real session URL
+    assert.match(js, /window\.open\('\/rdp\/' \+ id \+ '\/session'/, "browser button opens '/rdp/:id/session'");
+  });
+
+  it('Issue 15: aurora rdp.njk has all 6 browser checkbox ids', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'rdp.njk'), 'utf8');
+    assert.match(njk, /id="rdp-browser-clipboard"/, 'rdp-browser-clipboard present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-sftp"/, 'rdp-browser-sftp present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-sftp-disable-download"/, 'rdp-sftp-disable-download present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-sftp-disable-upload"/, 'rdp-sftp-disable-upload present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-audio-rdp"/, 'rdp-browser-audio-rdp present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-audio-vnc"/, 'rdp-browser-audio-vnc present in aurora rdp.njk');
+    // Also check the SFTP text inputs needed by populate code (lines 1053-1062)
+    assert.match(njk, /id="rdp-sftp-host"/, 'rdp-sftp-host present (populate code sets .value)');
+    assert.match(njk, /id="rdp-audio-servername"/, 'rdp-audio-servername present (populate code sets .value)');
+  });
+
+  it('Issue 15: aurora rdp template renders (200) with all browser-section ids visible in HTML', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    assert.match(res.text, /id="rdp-browser-clipboard"/, 'rdp-browser-clipboard in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-sftp"/, 'rdp-browser-sftp in rendered HTML');
+    assert.match(res.text, /id="rdp-sftp-disable-download"/, 'rdp-sftp-disable-download in rendered HTML');
+    assert.match(res.text, /id="rdp-sftp-disable-upload"/, 'rdp-sftp-disable-upload in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-audio-rdp"/, 'rdp-browser-audio-rdp in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-audio-vnc"/, 'rdp-browser-audio-vnc in rendered HTML');
+  });
+
+  it('Issue 16: aurora check handler uses isAurora() branch — color+icon, not big text', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Must have isAurora() branch inside check handler
+    assert.match(js, /if \(isAurora\(\)\)[\s\S]{0,200}checkBtn\.style\.color/, 'isAurora() branch sets color on checkBtn');
+    // Aurora branch sets innerHTML (icon), not textContent
+    assert.match(js, /checkBtn\.innerHTML\s*=\s*result\.online/, 'Aurora branch sets innerHTML to status icon on check result');
+    // Non-aurora path still sets textContent
+    assert.match(js, /checkBtn\.textContent\s*=\s*result\.online/, 'non-aurora branch still sets textContent');
+  });
+});
+
+// ── UX-fixes: Settings + sidebar chrome (Issues 17/18/19) ────────────────────
+describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () => {
+  it('Issue 17: settings default-theme picker has an aurora button (data-default-theme=aurora)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /data-default-theme="aurora"/, 'aurora theme button present in default-theme picker');
+  });
+
+  it('Issue 17: aurora settings.njk has data-default-theme="aurora" button in source', () => {
+    const njk = fs.readFileSync(
+      path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
+      'utf8'
+    );
+    assert.match(njk, /data-default-theme="aurora"/, 'aurora button present in settings.njk template');
+  });
+
+  it('Issue 18: aurora.css scopes align-items:start to settings panels (no card stretching)', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      'utf8'
+    );
+    assert.match(css, /\.settings-panel\s+\.grid\s*\{[^}]*align-items\s*:\s*start/, '.settings-panel .grid has align-items:start');
+  });
+
+  it('Issue 19: aurora.css .sidebar rule has position:static (sidebar stays in grid flow)', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      'utf8'
+    );
+    // Verify desktop .sidebar has position:static (overrides pro.css position:fixed)
+    assert.match(css, /\.sidebar\s*\{[^}]*position\s*:\s*static/, '.sidebar rule has position:static');
+    // Verify mobile media query is still present (drawer still works)
+    assert.match(css, /max-width\s*:\s*980px/, 'mobile 980px media query present');
+    // Both position:static (desktop) and position:fixed (mobile drawer) must co-exist in the file
+    assert.ok(
+      css.includes('position:static') && css.includes('position:fixed'),
+      'aurora.css has both position:static (desktop sidebar) and position:fixed (mobile drawer)'
+    );
+  });
+
+  it('Issue 19: app shell still renders with sidebar in grid after position:static fix', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    // .app-brand must be present in the rendered HTML (not hidden because sidebar covers it)
+    assert.match(res.text, /class="app-brand"/, '.app-brand present in aurora dashboard HTML');
+    assert.match(res.text, /class="[^"]*app[^"]*"/, '.app shell present');
+  });
+});

@@ -108,6 +108,7 @@
 
   // ─── System Resources ───────────────────────────────────────────────────────
   async function refreshResources() {
+    if (isAurora()) return auroraRefreshResources();
     try {
       const data = await api.get('/api/system/resources');
 
@@ -394,12 +395,13 @@
   // The original refreshStats/refreshActivity/renderChart else-paths remain byte-identical.
 
   async function auroraRefreshStats() {
+    var peerOnlineCount = 0; // Bug 2: captured here, applied after gateways fetch
+
     try {
       const data = await api.get('/api/dashboard/stats');
 
-      // Peers connected
-      var peersEl = document.getElementById('stat-peers');
-      if (peersEl) peersEl.textContent = data.peers.online;
+      // Bug 2: save count; will be adjusted after gateway subtraction below
+      peerOnlineCount = (data.peers && typeof data.peers.online === 'number') ? data.peers.online : 0;
 
       // Active routes
       var routesEl = document.getElementById('stat-routes');
@@ -458,17 +460,22 @@
       console.error('Aurora: Failed to refresh stats:', err);
     }
 
-    // Separate fetch for gateways KPI (not in /api/dashboard/stats)
+    // Separate fetch for gateways KPI (Bug 1: API returns { gateways:[…] }, not a bare array)
+    var onlineGateways = 0;
     try {
       var gwData = await api.get('/api/v1/gateways');
       var gwEl = document.getElementById('stat-gateways');
-      if (gwEl && gwData && Array.isArray(gwData)) {
-        var online = gwData.filter(function(g) { return g.status === 'online'; }).length;
-        gwEl.textContent = online + '/' + gwData.length;
+      if (gwData && Array.isArray(gwData.gateways)) {
+        onlineGateways = gwData.gateways.filter(function(g) { return g.status === 'online'; }).length;
+        if (gwEl) gwEl.textContent = onlineGateways + '/' + gwData.gateways.length;
       }
     } catch (err) {
       // non-fatal — gateways KPI stays at '—'
     }
+
+    // Peers KPI: subtract online gateways so only real (non-gateway) peers are shown (Bug 2)
+    var peersEl = document.getElementById('stat-peers');
+    if (peersEl) peersEl.textContent = Math.max(0, peerOnlineCount - onlineGateways);
 
     // Pi-hole donut (3-state: no card if gated off; donut on ok; empty-state on error)
     var donutCard = document.getElementById('pihole-donut-card');
@@ -485,8 +492,9 @@
     if (!donut) return;
 
     try {
-      var ph = await api.get('/api/pihole/stats');
-      var pct = (ph && ph.summary && ph.summary.queries && ph.summary.queries.percent) || 0;
+      // Bug 3: correct URL (/api/v1/pihole/summary) and response keys (ph.data.*)
+      var ph = await api.get('/api/v1/pihole/summary');
+      var pct = (ph && ph.data && ph.data.queries && ph.data.queries.percent) || 0;
       var pctRounded = Math.round(pct * 10) / 10;
 
       // Animate the donut arc
@@ -500,9 +508,9 @@
 
       // Pi-hole stats body
       if (statsBody) {
-        var blocked = (ph.summary && ph.summary.queries && ph.summary.queries.blocked) || 0;
-        var totalQ = (ph.summary && ph.summary.queries && ph.summary.queries.total) || 0;
-        var gravity = (ph.summary && ph.summary.gravity) || 0;
+        var blocked = (ph.data && ph.data.queries && ph.data.queries.blocked) || 0;
+        var totalQ = (ph.data && ph.data.queries && ph.data.queries.total) || 0;
+        var gravity = (ph.data && ph.data.gravity) || 0;
         statsBody.innerHTML =
           '<div class="s"><span class="n blk">' + blocked.toLocaleString() + '</span><span class="t">' + T('dashboard.pihole_blocked', 'Blocked') + '</span></div>' +
           '<div class="s"><span class="n">' + totalQ.toLocaleString() + '</span><span class="t">' + T('dashboard.pihole_total_queries', 'Total queries') + '</span></div>' +
@@ -520,6 +528,69 @@
       }
       if (donutSub) donutSub.textContent = '';
     }
+  }
+
+  // Enhancement 4: Aurora resource donut gauge update
+  async function auroraRefreshResources() {
+    try {
+      var data = await api.get('/api/system/resources');
+      var cpuPct = data.cpu.percent;
+      var ramPct = data.memory.percent;
+
+      // Write shared IDs (shared refreshResources() bypassed for aurora; we write here)
+      var cpuPctEl = document.getElementById('cpu-pct');
+      if (cpuPctEl) cpuPctEl.textContent = cpuPct + ' %';
+
+      var cpuBar = document.getElementById('cpu-bar');
+      if (cpuBar) {
+        cpuBar.style.width = cpuPct + '%';
+        cpuBar.style.background = cpuPct > 80 ? 'var(--red)' :
+          cpuPct > 50 ? 'var(--amber)' : 'var(--green)';
+      }
+
+      var cpuInfo = document.getElementById('cpu-info');
+      if (cpuInfo) cpuInfo.textContent = data.cpu.cores + ' Cores · ' + data.cpu.model.split(' ').slice(0, 3).join(' ');
+
+      var ramPctEl = document.getElementById('ram-pct');
+      if (ramPctEl) ramPctEl.textContent = ramPct + ' %';
+
+      var ramBar = document.getElementById('ram-bar');
+      if (ramBar) {
+        ramBar.style.width = ramPct + '%';
+        ramBar.style.background = ramPct > 90 ? 'var(--red)' :
+          ramPct > 70 ? 'var(--amber)' : 'var(--blue)';
+      }
+
+      var ramInfo = document.getElementById('ram-info');
+      if (ramInfo) ramInfo.textContent = formatBytes(data.memory.used) + ' / ' + formatBytes(data.memory.total);
+
+      var uptimeValue = document.getElementById('uptime-value');
+      if (uptimeValue) uptimeValue.textContent = data.uptime.formatted;
+
+      var uptimeBoot = document.getElementById('uptime-boot');
+      if (uptimeBoot && data.uptime && data.uptime.bootTime) {
+        var label = (GC.t && GC.t['dashboard.booted_on']) || 'Seit {date}';
+        uptimeBoot.textContent = label.replace('{date}', data.uptime.bootTime);
+      }
+
+      // Update radial donut gauge arcs
+      auroraSetResourceDonut('cpu-donut', cpuPct);
+      auroraSetResourceDonut('ram-donut', ramPct);
+
+    } catch (err) {
+      console.error('Aurora: Failed to refresh resources:', err);
+    }
+  }
+
+  // Set stroke-dasharray + color on a resource donut arc by load percentage
+  function auroraSetResourceDonut(donutId, pct) {
+    var donut = document.getElementById(donutId);
+    if (!donut) return;
+    var arc = donut.querySelector('.val');
+    if (!arc) return;
+    var p = Math.min(100, Math.max(0, Number(pct) || 0));
+    arc.setAttribute('stroke-dasharray', p + ' ' + (100 - p));
+    arc.style.stroke = p > 90 ? 'var(--red)' : p > 70 ? 'var(--amber)' : 'var(--teal)';
   }
 
   async function auroraRefreshActivity() {

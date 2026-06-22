@@ -215,7 +215,7 @@ a{color:inherit}
 
 /* sidebar (production: .sidebar, .nav-item, .nav-section-label, .nav-badge) */
 .sidebar{grid-area:side; border-right:1px solid var(--line); padding:16px 12px 24px; overflow-y:auto;
-  display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--surface),transparent 40%)}
+  display:flex; flex-direction:column; gap:3px; background:linear-gradient(180deg,var(--surface),transparent 40%); position:static}
 .nav-section-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--faint); font-weight:700; padding:14px 12px 6px}
 .nav-section-label:first-child{padding-top:2px}
 .nav-item{display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:10px; cursor:pointer;
@@ -444,6 +444,11 @@ input[type=date]:focus, select:focus {
 .pi-stats .s .n{font-family:var(--font-mono); font-weight:700; font-size:19px}
 .pi-stats .s .n.blk{color:var(--coral)} .pi-stats .s .t{color:var(--muted); font-size:13px}
 
+/* resource donut gauges — NEW (aurora): CPU + RAM radial donuts on dashboard */
+.res-gauge-wrap{display:flex; gap:18px; align-items:center; margin-top:8px; flex-wrap:wrap}
+.res-gauge-info{display:flex; flex-direction:column; justify-content:center; flex:1; min-width:0}
+.res-gauge-info .ri{font-family:var(--font-mono); font-size:11px; color:var(--muted); word-break:break-word}
+
 .toplist{margin-top:16px; border-top:1px solid var(--line); padding-top:13px}
 .toplist .h{font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:9px}
 .toplist ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
@@ -574,6 +579,13 @@ input[type=date]:focus, select:focus {
 .gw-relnotes{font-size:12px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;opacity:.8}
 .gw-relnotes:hover{opacity:1;color:var(--text)}
 
+/* Issue 11: Gateway detail — 3-column (1/3 each) sub-card grid */
+.gw-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.gw-detail-grid .gw.full{grid-column:1/-1}
+/* Fix 3: "Discovered devices" + "Scan targets" at 1/2 width each in their own row */
+.gw-half-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;grid-column:1/-1}
+@media(max-width:640px){.gw-half-row{grid-template-columns:1fr}}
+
 /* ----------------------------------------------------------------------------
    C · PEERS page — Aurora mockup fidelity (Task P2-3)
    --------------------------------------------------------------------------- */
@@ -581,8 +593,10 @@ input[type=date]:focus, select:focus {
 /* Empty-state for the gateway unit-grid */
 .aurora-gw-empty{padding:24px;text-align:center;color:var(--muted);font-size:13px}
 
-/* tag-dot helper used in Aurora status tags on gateway/peer rows */
-.tag.tag-dot::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle}
+/* tag-dot helper used in Aurora status tags on gateway/peer rows.
+   Issue 9: text LEFT of dot — suppress ::before, put dot via ::after */
+.tag.tag-dot::before{content:none}
+.tag.tag-dot::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-left:5px}
 
 /* ----------------------------------------------------------------------------
    D · ROUTES page — Wizard modal shells + step progress (Task P2-4b)
@@ -719,6 +733,8 @@ input[type=date]:focus, select:focus {
 .modal-foot.wiz-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; bottom:0; background:var(--surface)}
 
 /* Aurora RDP card grid (built by auroraRenderGrid()) */
+/* Issue 12: auto-fill minmax grid — matches .unit-grid sizing on gateways/peers pages */
+.rdp-card-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px}
 .rdp-aurora-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:12px}
 
 /* ── Settings page — Aurora mockup fidelity (Task P2-11) ─────────────────────── */
@@ -739,6 +755,8 @@ input[type=date]:focus, select:focus {
 
 /* Panel (moved from settings.njk <style nonce> block) */
 .settings-panel{display:flex; flex-direction:column; gap:14px}
+/* Cards size to own content within settings grids — prevents app-info from stretching to match tall neighbours */
+.settings-panel .grid{align-items:start}
 
 /* Mobile hamburger (moved from settings.njk <style nonce> block) */
 .settings-tab-toggle{
