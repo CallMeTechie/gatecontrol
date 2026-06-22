@@ -170,9 +170,15 @@
           dispH = Math.max(1, Math.min(7680, Math.round(ch0 * ratio)));
         }
         var dispDpi = Math.max(1, Math.round(96 * ratio));
-        var tunnelUrl = wsBase + wsPath + '?token=' + encodeURIComponent(token)
+        /* Guacamole.WebSocketTunnel.connect(data) opens the socket at `url + '?' + data`.
+         * Build the tunnel with the BARE path and pass token+size as the connect data so
+         * the query is well-formed. (Previously the full query lived in the constructor URL
+         * and client.connect() — called with no data — appended a literal '?undefined',
+         * corrupting the LAST param: guacd saw e.g. dpi="120?undefined" → fell back to dpi 96
+         * → wrong RDP DPI scaling / blur.) */
+        var connectParams = 'token=' + encodeURIComponent(token)
           + '&width=' + dispW + '&height=' + dispH + '&dpi=' + dispDpi;
-        var tunnel    = new Guacamole.WebSocketTunnel(tunnelUrl);
+        var tunnel    = new Guacamole.WebSocketTunnel(wsBase + wsPath);
         var client    = new Guacamole.Client(tunnel);
         activeClient  = client;
 
@@ -251,7 +257,7 @@
           handleUnintendedDrop({ reason: 'tunnel-error', status: status });
         };
 
-        client.connect();
+        client.connect(connectParams);
 
       }).catch(function (err) {
         if (userDisconnected) return;
