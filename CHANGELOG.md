@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.2] — 2026-06-22
+
+### Fixes
+- scale mouse coords + auto-fit on connect + CSS-pixel resolution (mouse offset / blur / perf / cut-off taskbar) (#159)
+
+---
+
 ## [1.91.1] — 2026-06-22
 
 ### Fixes
