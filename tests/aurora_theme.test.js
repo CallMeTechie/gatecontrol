@@ -1334,3 +1334,46 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.ok(de['profile.security_display'], 'profile.security_display present in de.json');
   });
 });
+
+// ── UX-fixes: Dashboard donut gauges + bug fixes ─────────────────────────────
+describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
+  it('dashboard.njk has #cpu-donut and #ram-donut SVG elements', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="cpu-donut"/, '#cpu-donut SVG present in aurora dashboard');
+    assert.match(res.text, /id="ram-donut"/, '#ram-donut SVG present in aurora dashboard');
+    // Both donuts must contain the .val arc circle
+    assert.match(res.text, /id="cpu-donut"[\s\S]{0,400}class="val"/, '#cpu-donut has .val arc');
+    assert.match(res.text, /id="ram-donut"[\s\S]{0,400}class="val"/, '#ram-donut has .val arc');
+  });
+
+  it('dashboard.njk still has all required resource IDs after donut redesign', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    assert.match(res.text, /id="cpu-pct"/, '#cpu-pct present inside donut center');
+    assert.match(res.text, /id="cpu-info"/, '#cpu-info present');
+    assert.match(res.text, /id="cpu-bar"/, '#cpu-bar present (hidden, for JS contract)');
+    assert.match(res.text, /id="ram-pct"/, '#ram-pct present inside donut center');
+    assert.match(res.text, /id="ram-info"/, '#ram-info present');
+    assert.match(res.text, /id="ram-bar"/, '#ram-bar present (hidden, for JS contract)');
+  });
+
+  it('dashboard.js uses /api/v1/pihole/summary (not the wrong /api/pihole/stats)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(js, /\/api\/v1\/pihole\/summary/, 'dashboard.js fetches /api/v1/pihole/summary');
+    assert.doesNotMatch(js, /\/api\/pihole\/stats/, '/api/pihole/stats (wrong URL) absent');
+  });
+
+  it('dashboard.js has auroraRefreshResources() and auroraSetResourceDonut() functions', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(js, /function auroraRefreshResources\(/, 'auroraRefreshResources() present');
+    assert.match(js, /function auroraSetResourceDonut\(/, 'auroraSetResourceDonut() present');
+    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshResources/, 'refreshResources() has isAurora guard');
+  });
+
+  it('aurora.css has .res-gauge-wrap and .res-gauge-info rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.res-gauge-wrap\b/, '.res-gauge-wrap rule in aurora.css');
+    assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in aurora.css');
+  });
+});

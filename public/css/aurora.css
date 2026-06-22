@@ -444,6 +444,11 @@ input[type=date]:focus, select:focus {
 .pi-stats .s .n{font-family:var(--font-mono); font-weight:700; font-size:19px}
 .pi-stats .s .n.blk{color:var(--coral)} .pi-stats .s .t{color:var(--muted); font-size:13px}
 
+/* resource donut gauges — NEW (aurora): CPU + RAM radial donuts on dashboard */
+.res-gauge-wrap{display:flex; gap:18px; align-items:center; margin-top:8px; flex-wrap:wrap}
+.res-gauge-info{display:flex; flex-direction:column; justify-content:center; flex:1; min-width:0}
+.res-gauge-info .ri{font-family:var(--font-mono); font-size:11px; color:var(--muted); word-break:break-word}
+
 .toplist{margin-top:16px; border-top:1px solid var(--line); padding-top:13px}
 .toplist .h{font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:9px}
 .toplist ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
