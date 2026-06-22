@@ -1762,22 +1762,28 @@
       var card = document.createElement('div');
       card.className = 'card';
 
-      // Card title: monitor icon + name + proto badge + status badge (Issue 13: badge inside header)
+      // Card title: monitor icon + [name+proto group] + status badge (Issue 13: badge inside header)
       var cardTitle = document.createElement('div');
       cardTitle.className = 'card-title';
       var ic = document.createElement('span');
       ic.className = 'ic';
       ic.innerHTML = MONITOR_SVG;
       cardTitle.appendChild(ic);
+      // nameGroup wraps name + proto so they shrink together, leaving room for statusTag
+      var nameGroup = document.createElement('span');
+      nameGroup.style.cssText = 'flex:1;min-width:0;display:inline-flex;align-items:center;gap:6px;overflow:hidden';
       var nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       nameSpan.textContent = r.name;
-      cardTitle.appendChild(nameSpan);
-      // Proto badge alongside name
+      nameGroup.appendChild(nameSpan);
+      // Proto badge alongside name (flex-shrink:0 keeps it fully visible)
       var protoBadgeWrap = document.createElement('span');
-      protoBadgeWrap.style.cssText = 'margin-left:6px;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;font-family:var(--font-body);color:var(--faint)';
+      protoBadgeWrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;font-family:var(--font-body);color:var(--faint);flex-shrink:0';
       protoBadgeWrap.appendChild(buildProtoBadge(r));
-      cardTitle.appendChild(protoBadgeWrap);
+      nameGroup.appendChild(protoBadgeWrap);
+      cardTitle.appendChild(nameGroup);
       // Issue 13: status badge inside card header, text LEFT of dot (uses .tag.tag-dot::after)
+      // margin-left:auto pushes badge to the right within the card title flex row
       var statusTag = document.createElement('span');
       if (isOnline) {
         statusTag.className = 'tag tag-green tag-dot';

@@ -140,9 +140,12 @@
     grid2.appendChild(auroraVersionsCard(g));
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
-    grid2.appendChild(discoveredDevicesCard(g));
+    // Bottom two cards ("Discovered devices" + "Scan targets") at 1/2 width each
     var telE = (g.health && g.health.telemetry) || {};
-    if (telE.scan_egress === true) grid2.appendChild(egressCard(g));
+    var halfRow = el('div', 'gw-half-row');
+    halfRow.appendChild(discoveredDevicesCard(g));
+    if (telE.scan_egress === true) halfRow.appendChild(egressCard(g));
+    grid2.appendChild(halfRow);
     root.appendChild(grid2);
     detailView.replaceChildren(root);
   }

@@ -2299,10 +2299,12 @@
     uav.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>';
     uh.appendChild(uav);
 
-    // Name + IP
+    // Name + IP — flex:1+min-width:0 lets identity shrink so badge+gear always visible
     var identity = document.createElement('div');
+    identity.style.cssText = 'flex:1;min-width:0;overflow:hidden';
     var un = document.createElement('div');
     un.className = 'un';
+    un.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     un.textContent = gw.name;
     var ud = document.createElement('div');
     ud.className = 'ud';
@@ -2311,9 +2313,9 @@
     identity.appendChild(ud);
     uh.appendChild(identity);
 
-    // Right side: status badge + gear button (pushed right by margin-left:auto)
+    // Right side: status badge + gear button — gap:8px keeps them clearly separated
     var right = document.createElement('span');
-    right.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0';
+    right.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0';
 
     // Issue 5 — badge INSIDE the card, anchored top-right within header row
     var badge = document.createElement('span');
