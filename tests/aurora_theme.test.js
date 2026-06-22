@@ -1529,3 +1529,52 @@ describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
     assert.match(js, /checkBtn\.textContent\s*=\s*result\.online/, 'non-aurora branch still sets textContent');
   });
 });
+
+// ── UX-fixes: Settings + sidebar chrome (Issues 17/18/19) ────────────────────
+describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () => {
+  it('Issue 17: settings default-theme picker has an aurora button (data-default-theme=aurora)', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.match(res.text, /data-default-theme="aurora"/, 'aurora theme button present in default-theme picker');
+  });
+
+  it('Issue 17: aurora settings.njk has data-default-theme="aurora" button in source', () => {
+    const njk = fs.readFileSync(
+      path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
+      'utf8'
+    );
+    assert.match(njk, /data-default-theme="aurora"/, 'aurora button present in settings.njk template');
+  });
+
+  it('Issue 18: aurora.css scopes align-items:start to settings panels (no card stretching)', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      'utf8'
+    );
+    assert.match(css, /\.settings-panel\s+\.grid\s*\{[^}]*align-items\s*:\s*start/, '.settings-panel .grid has align-items:start');
+  });
+
+  it('Issue 19: aurora.css .sidebar rule has position:static (sidebar stays in grid flow)', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      'utf8'
+    );
+    // Verify desktop .sidebar has position:static (overrides pro.css position:fixed)
+    assert.match(css, /\.sidebar\s*\{[^}]*position\s*:\s*static/, '.sidebar rule has position:static');
+    // Verify mobile media query is still present (drawer still works)
+    assert.match(css, /max-width\s*:\s*980px/, 'mobile 980px media query present');
+    // Both position:static (desktop) and position:fixed (mobile drawer) must co-exist in the file
+    assert.ok(
+      css.includes('position:static') && css.includes('position:fixed'),
+      'aurora.css has both position:static (desktop sidebar) and position:fixed (mobile drawer)'
+    );
+  });
+
+  it('Issue 19: app shell still renders with sidebar in grid after position:static fix', async () => {
+    selectAurora();
+    const res = await agent.get('/dashboard').expect(200);
+    // .app-brand must be present in the rendered HTML (not hidden because sidebar covers it)
+    assert.match(res.text, /class="app-brand"/, '.app-brand present in aurora dashboard HTML');
+    assert.match(res.text, /class="[^"]*app[^"]*"/, '.app shell present');
+  });
+});
