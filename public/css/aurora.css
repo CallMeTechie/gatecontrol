@@ -730,6 +730,8 @@ input[type=date]:focus, select:focus {
 .modal-foot.wiz-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; bottom:0; background:var(--surface)}
 
 /* Aurora RDP card grid (built by auroraRenderGrid()) */
+/* Issue 12: auto-fill minmax grid — matches .unit-grid sizing on gateways/peers pages */
+.rdp-card-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px}
 .rdp-aurora-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:12px}
 
 /* ── Settings page — Aurora mockup fidelity (Task P2-11) ─────────────────────── */

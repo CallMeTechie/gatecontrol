@@ -558,8 +558,17 @@
     if (checkBtn) {
       try {
         var result = await api.get('/api/v1/rdp/' + checkBtn.dataset.check + '/status');
-        checkBtn.textContent = result.online ? 'Online' : 'Offline';
-        checkBtn.style.color = result.online ? 'var(--success)' : 'var(--danger)';
+        if (isAurora()) {
+          // Issue 16: Aurora — color + distinct icon, no big text in button
+          checkBtn.style.color = result.online ? 'var(--green)' : 'var(--red)';
+          checkBtn.title = result.online ? (GC.t['rdp.online'] || 'Online') : (GC.t['rdp.offline'] || 'Offline');
+          checkBtn.innerHTML = result.online
+            ? '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        } else {
+          checkBtn.textContent = result.online ? 'Online' : 'Offline';
+          checkBtn.style.color = result.online ? 'var(--success)' : 'var(--danger)';
+        }
       } catch {}
       return;
     }
@@ -1737,8 +1746,10 @@
       return;
     }
     grid.style.cssText = '';
+    // Issue 12: use unit-grid-style auto-fill grid so cards are consistently sized
+    // (not stretched span6 in 12-col grid like other Aurora pages)
     var container = document.createElement('div');
-    container.className = 'grid';
+    container.className = 'rdp-card-grid';
 
     // Monitor SVG (matches mockup card-title icon)
     var MONITOR_SVG = '<svg viewBox="0 0 24 24" fill="none" width="15" height="15"><rect x="2" y="4" width="20" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -1747,10 +1758,11 @@
       var isOnline = r.status && r.status.online;
       var isMaintenance = r.maintenance_enabled;
 
+      // Issue 12: plain .card (no span6), sized by the .rdp-card-grid container
       var card = document.createElement('div');
-      card.className = 'card span6';
+      card.className = 'card';
 
-      // Card title: monitor icon + name
+      // Card title: monitor icon + name + proto badge + status badge (Issue 13: badge inside header)
       var cardTitle = document.createElement('div');
       cardTitle.className = 'card-title';
       var ic = document.createElement('span');
@@ -1762,13 +1774,26 @@
       cardTitle.appendChild(nameSpan);
       // Proto badge alongside name
       var protoBadgeWrap = document.createElement('span');
-      protoBadgeWrap.className = 'card-sub';
-      protoBadgeWrap.style.cssText = 'margin-left:6px;display:inline-flex;align-items:center;gap:4px';
+      protoBadgeWrap.style.cssText = 'margin-left:6px;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;font-family:var(--font-body);color:var(--faint)';
       protoBadgeWrap.appendChild(buildProtoBadge(r));
       cardTitle.appendChild(protoBadgeWrap);
+      // Issue 13: status badge inside card header, text LEFT of dot (uses .tag.tag-dot::after)
+      var statusTag = document.createElement('span');
+      if (isOnline) {
+        statusTag.className = 'tag tag-green tag-dot';
+        statusTag.textContent = GC.t['rdp.health_reachable'] || 'Reachable';
+      } else if (isMaintenance) {
+        statusTag.className = 'tag tag-amber tag-dot';
+        statusTag.textContent = GC.t['rdp.health_checking'] || 'Checking…';
+      } else {
+        statusTag.className = 'tag tag-red tag-dot';
+        statusTag.textContent = GC.t['rdp.offline'] || 'Offline';
+      }
+      statusTag.style.marginLeft = 'auto';
+      cardTitle.appendChild(statusTag);
       card.appendChild(cardTitle);
 
-      // KV rows: Mode / Target / Health
+      // KV rows: Mode / Target (Health removed from kv — now in header as Issue 13)
       var kv = document.createElement('div');
       kv.className = 'kv';
 
@@ -1799,30 +1824,6 @@
       targetRow.appendChild(targetV);
       kv.appendChild(targetRow);
 
-      // Health row (tag with .tag-dot per mockup)
-      var healthRow = document.createElement('div');
-      healthRow.className = 'row';
-      var healthK = document.createElement('span');
-      healthK.className = 'k';
-      healthK.textContent = GC.t['rdp.kv.health'] || 'Health';
-      var healthV = document.createElement('span');
-      healthV.className = 'v';
-      var healthTag = document.createElement('span');
-      if (isOnline) {
-        healthTag.className = 'tag tag-green tag-dot';
-        healthTag.textContent = GC.t['rdp.health_reachable'] || 'Reachable';
-      } else if (isMaintenance) {
-        healthTag.className = 'tag tag-amber tag-dot';
-        healthTag.textContent = GC.t['rdp.health_checking'] || 'Checking…';
-      } else {
-        healthTag.className = 'tag tag-red tag-dot';
-        healthTag.textContent = GC.t['rdp.offline'] || 'Offline';
-      }
-      healthV.appendChild(healthTag);
-      healthRow.appendChild(healthK);
-      healthRow.appendChild(healthV);
-      kv.appendChild(healthRow);
-
       card.appendChild(kv);
 
       // Action buttons — ALL actions from default card preserved, as .icon-action set
@@ -1848,6 +1849,21 @@
         disconnBtn.dataset.disconnectAll = r.id;
         disconnBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
         rowActions.appendChild(disconnBtn);
+      }
+
+      // Issue 14: browser session button — only when browser access is enabled and licensed.
+      // Real mechanism: GET /rdp/:id/session (confirmed in src/routes/index.js line 254).
+      if (r.browser_enabled && GC.features && GC.features.browser_sessions) {
+        var browserBtn = document.createElement('button');
+        browserBtn.className = 'icon-action';
+        browserBtn.title = GC.t['rdp.browser.open'] || 'Im Browser öffnen';
+        (function (id) {
+          browserBtn.addEventListener('click', function () {
+            window.open('/rdp/' + id + '/session', '_blank', 'noopener');
+          });
+        }(r.id));
+        browserBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M2 9h20M9 21h6"/></svg>';
+        rowActions.appendChild(browserBtn);
       }
 
       // Edit (always)

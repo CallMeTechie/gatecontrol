@@ -1463,3 +1463,69 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
     assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,1fr\)/, 'gw-detail-grid uses repeat(3,1fr) 3-column layout');
   });
 });
+
+// ── UX-fixes: RDP page (Issues 12/13/14/15/16) ───────────────────────────────
+describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
+  it('Issue 12: auroraRenderGrid uses rdp-card-grid container (not span6/full-width)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    // Container must use rdp-card-grid, not grid (which yields span6 half-width cards)
+    assert.match(js, /container\.className\s*=\s*'rdp-card-grid'/, "auroraRenderGrid uses 'rdp-card-grid' container");
+    // Cards must not use span6 (which is half-width in 12-col grid)
+    assert.doesNotMatch(js, /card\.className\s*=\s*'card span6'/, "card.className no longer uses 'card span6'");
+    // aurora.css must define the grid rule with auto-fill
+    assert.match(css, /\.rdp-card-grid\s*\{[^}]*auto-fill/, 'aurora.css .rdp-card-grid uses auto-fill grid');
+  });
+
+  it('Issue 13: status badge built inside card header (cardTitle) with tag-dot (text-left-of-dot)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Status tag is appended to cardTitle (inside header), not to a separate health kv row
+    assert.match(js, /statusTag\.style\.marginLeft\s*=\s*'auto'/, 'statusTag has margin-left:auto (pushed to header right)');
+    assert.match(js, /cardTitle\.appendChild\(statusTag\)/, 'statusTag appended to cardTitle (inside card header)');
+    // Uses tag-dot class (text left of dot via ::after in aurora.css)
+    assert.match(js, /statusTag\.className\s*=\s*'tag tag-green tag-dot'/, 'online state uses tag-green tag-dot');
+    assert.match(js, /statusTag\.className\s*=\s*'tag tag-red tag-dot'/, 'offline state uses tag-red tag-dot');
+  });
+
+  it('Issue 14: browser session button wired to /rdp/:id/session (real mechanism)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Button only shown when browser_enabled + browser_sessions licensed
+    assert.match(js, /r\.browser_enabled && GC\.features && GC\.features\.browser_sessions/, 'browser button gated on browser_enabled+license');
+    // Opens the real session URL
+    assert.match(js, /window\.open\('\/rdp\/' \+ id \+ '\/session'/, "browser button opens '/rdp/:id/session'");
+  });
+
+  it('Issue 15: aurora rdp.njk has all 6 browser checkbox ids', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'rdp.njk'), 'utf8');
+    assert.match(njk, /id="rdp-browser-clipboard"/, 'rdp-browser-clipboard present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-sftp"/, 'rdp-browser-sftp present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-sftp-disable-download"/, 'rdp-sftp-disable-download present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-sftp-disable-upload"/, 'rdp-sftp-disable-upload present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-audio-rdp"/, 'rdp-browser-audio-rdp present in aurora rdp.njk');
+    assert.match(njk, /id="rdp-browser-audio-vnc"/, 'rdp-browser-audio-vnc present in aurora rdp.njk');
+    // Also check the SFTP text inputs needed by populate code (lines 1053-1062)
+    assert.match(njk, /id="rdp-sftp-host"/, 'rdp-sftp-host present (populate code sets .value)');
+    assert.match(njk, /id="rdp-audio-servername"/, 'rdp-audio-servername present (populate code sets .value)');
+  });
+
+  it('Issue 15: aurora rdp template renders (200) with all browser-section ids visible in HTML', async () => {
+    selectAurora();
+    const res = await agent.get('/rdp').expect(200);
+    assert.match(res.text, /id="rdp-browser-clipboard"/, 'rdp-browser-clipboard in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-sftp"/, 'rdp-browser-sftp in rendered HTML');
+    assert.match(res.text, /id="rdp-sftp-disable-download"/, 'rdp-sftp-disable-download in rendered HTML');
+    assert.match(res.text, /id="rdp-sftp-disable-upload"/, 'rdp-sftp-disable-upload in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-audio-rdp"/, 'rdp-browser-audio-rdp in rendered HTML');
+    assert.match(res.text, /id="rdp-browser-audio-vnc"/, 'rdp-browser-audio-vnc in rendered HTML');
+  });
+
+  it('Issue 16: aurora check handler uses isAurora() branch — color+icon, not big text', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
+    // Must have isAurora() branch inside check handler
+    assert.match(js, /if \(isAurora\(\)\)[\s\S]{0,200}checkBtn\.style\.color/, 'isAurora() branch sets color on checkBtn');
+    // Aurora branch sets innerHTML (icon), not textContent
+    assert.match(js, /checkBtn\.innerHTML\s*=\s*result\.online/, 'Aurora branch sets innerHTML to status icon on check result');
+    // Non-aurora path still sets textContent
+    assert.match(js, /checkBtn\.textContent\s*=\s*result\.online/, 'non-aurora branch still sets textContent');
+  });
+});
