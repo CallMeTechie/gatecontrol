@@ -1456,11 +1456,11 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
     assert.match(js, /grid2\.appendChild\(auroraVersionsCard\(g\)\)/, 'auroraRenderDetail() calls auroraVersionsCard(g)');
   });
 
-  it('Issue 11: auroraRenderDetail uses gw-detail-grid and aurora.css has 3-column rule', () => {
+  it('Issue 11: auroraRenderDetail uses gw-detail-grid and aurora.css has responsive column rule', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
     assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'auroraRenderDetail() uses gw-detail-grid class');
-    assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,1fr\)/, 'gw-detail-grid uses repeat(3,1fr) 3-column layout');
+    assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(auto-fit,minmax\(280px,1fr\)\)/, 'gw-detail-grid uses responsive auto-fit column layout');
   });
 });
 

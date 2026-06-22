@@ -1376,6 +1376,7 @@
   "rdp.browser.not_found": "Connection not found.",
   "rdp.browser.not_authorized": "You are not authorized to access this connection.",
   "rdp.browser.maintenance_active": "This connection is currently in a maintenance window.",
+  "rdp.browser.section": "Browser access",
   "rdp.browser.enable": "Enable browser access",
   "rdp.browser.enable_hint": "Allow sessions directly in the browser (terminal/canvas via guacd). License: browser_sessions.",
   "rdp.browser.clipboard": "Allow clipboard",
