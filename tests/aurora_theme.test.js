@@ -1434,3 +1434,32 @@ describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
     assert.ok(de['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in de.json');
   });
 });
+
+// ── UX-fixes: Gateways fleet card + detail (Issues 8/9/10/11) ────────────────
+describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
+  it('Issue 8: auroraCard builds badge inside card header using right container', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    // stTag appended to right container, right container appended to uh (inside card)
+    assert.match(js, /right\.appendChild\(stTag\)/, 'badge (stTag) appended to right container');
+    assert.match(js, /uh\.appendChild\(right\)/, 'right container appended to uh header row (inside card)');
+  });
+
+  it('Issue 9: aurora.css has .tag.tag-dot::after (dot after text) and suppresses ::before', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.tag\.tag-dot::after/, '.tag.tag-dot::after present (dot positioned after text)');
+    assert.match(css, /\.tag\.tag-dot::before\s*\{[^}]*content:\s*none/, '.tag.tag-dot::before has content:none (before-dot suppressed)');
+  });
+
+  it('Issue 10: auroraVersionsCard() present and called from auroraRenderDetail()', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    assert.match(js, /function auroraVersionsCard\(/, 'auroraVersionsCard() present in gateways.js');
+    assert.match(js, /grid2\.appendChild\(auroraVersionsCard\(g\)\)/, 'auroraRenderDetail() calls auroraVersionsCard(g)');
+  });
+
+  it('Issue 11: auroraRenderDetail uses gw-detail-grid and aurora.css has 3-column rule', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'auroraRenderDetail() uses gw-detail-grid class');
+    assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,1fr\)/, 'gw-detail-grid uses repeat(3,1fr) 3-column layout');
+  });
+});
