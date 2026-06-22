@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.1] — 2026-06-22
+
+### Fixes
+- pass token+size via client.connect(data) so the WS query is well-formed (was corrupting dpi) (#158)
+
+---
+
 ## [1.91.0] — 2026-06-21
 
 ### Features
