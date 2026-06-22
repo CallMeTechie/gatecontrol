@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.3] — 2026-06-22
+
+### Fixes
+- Aurora UX fixes — dashboard counts/gauges, page layouts, RDP/peers/settings (#162)
+
+---
+
 ## [1.91.2] — 2026-06-22
 
 ### Fixes
