@@ -60,11 +60,10 @@
         resizeTimer = setTimeout(function () {
           resizeTimer = null;
           if (!activeClient) return;
-          var ratio = window.devicePixelRatio || 1;
           var cw = container.clientWidth  || window.innerWidth  || 1024;
           var ch = container.clientHeight || window.innerHeight || 768;
-          var w = Math.max(1, Math.min(7680, Math.round(cw * ratio)));
-          var h = Math.max(1, Math.min(7680, Math.round(ch * ratio)));
+          var w = Math.max(1, Math.min(7680, Math.round(cw)));
+          var h = Math.max(1, Math.min(7680, Math.round(ch)));
           activeClient.sendSize(w, h);
         }, 250);
       };
@@ -153,23 +152,24 @@
         var protocol = result.protocol;
         activeProtocol = protocol;
 
-        /* Optimal display size → guacd 'size' instruction. width/height/dpi are
-         * allow-listed by guacamole-lite; WITHOUT them guacd renders a 0-size
-         * display → black screen even though the session logs on. Physical pixels
-         * for HiDPI crispness; display.onresize fits the result to the container.
-         * fixed mode: send the configured resolution instead of container size. */
-        var ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-        var cw0   = container.clientWidth  || (typeof window !== 'undefined' ? window.innerWidth  : 1024);
-        var ch0   = container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 768);
+        /* Optimal display size → guacd 'size' instruction (allow-listed by
+         * guacamole-lite; without it guacd renders a 0-size display = black screen).
+         * Use CSS pixels — the container's VISIBLE size — NOT devicePixelRatio-scaled
+         * physical pixels: the remote desktop then matches the viewport so the
+         * fit-scale is ~1 (taskbar on-screen, mouse coords line up) and guacd
+         * renders/encodes far fewer pixels (much better performance over the tunnel).
+         * fixed mode: send the configured resolution instead. */
+        var cw0 = container.clientWidth  || (typeof window !== 'undefined' ? window.innerWidth  : 1024);
+        var ch0 = container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 768);
         var dispW, dispH;
         if (display.mode === 'fixed' && display.fixedWidth > 0 && display.fixedHeight > 0) {
           dispW = Math.max(1, Math.min(7680, Math.round(display.fixedWidth)));
           dispH = Math.max(1, Math.min(7680, Math.round(display.fixedHeight)));
         } else {
-          dispW = Math.max(1, Math.min(7680, Math.round(cw0 * ratio)));
-          dispH = Math.max(1, Math.min(7680, Math.round(ch0 * ratio)));
+          dispW = Math.max(1, Math.min(7680, Math.round(cw0)));
+          dispH = Math.max(1, Math.min(7680, Math.round(ch0)));
         }
-        var dispDpi = Math.max(1, Math.round(96 * ratio));
+        var dispDpi = 96;
         /* Guacamole.WebSocketTunnel.connect(data) opens the socket at `url + '?' + data`.
          * Build the tunnel with the BARE path and pass token+size as the connect data so
          * the query is well-formed. (Previously the full query lived in the constructor URL
@@ -195,7 +195,14 @@
         /* ---- Mouse (per-connection — new element each time) ---- */
         var mouse = new Guacamole.Mouse(displayEl);
         mouse.onmousedown = mouse.onmouseup = mouse.onmousemove = function (ms) {
-          if (activeClient) activeClient.sendMouseState(ms);
+          if (!activeClient) return;
+          /* Map element-space coords to remote-desktop pixels: divide by the current
+           * display scale. Without this the remote cursor is offset from the host
+           * cursor (and "fans out"/trails) whenever the display is scaled to fit. */
+          var sc = activeClient.getDisplay().getScale() || 1;
+          activeClient.sendMouseState(new Guacamole.Mouse.State(
+            ms.x / sc, ms.y / sc, ms.left, ms.middle, ms.right, ms.up, ms.down
+          ));
         };
 
         /* ---- Keyboard (shared across reconnects to avoid stale listeners) ---- */
@@ -244,6 +251,7 @@
             established       = true;
             reconnectAttempt  = 0;
             reconnectWindowStart = null;
+            setScale(currentScaleMode); // auto-fit on connect: taskbar on-screen + mouse aligns without a manual "Fit" click
             transition('open');
           } else if (s === Guacamole.Client.State.DISCONNECTED) {
             if (!userDisconnected) {
