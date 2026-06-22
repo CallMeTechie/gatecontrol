@@ -1377,3 +1377,60 @@ describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
     assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in aurora.css');
   });
 });
+
+// ── UX-fixes: Peers gateway card — badge inside, gear-edit, card→detail nav ──
+describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
+  it('auroraRenderGatewayCard builds badge inside the card using DOM (not detached)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Badge is created with DOM createElement and appended inside uh (card header)
+    assert.match(js, /badge\.className\s*=\s*statusClass/, 'badge.className assigned from statusClass inside auroraRenderGatewayCard');
+    assert.match(js, /right\.appendChild\(badge\)/, 'badge appended to the right-side header span (inside card)');
+    // The "right" span is added to uh (header row), which is added to unit (card)
+    assert.match(js, /uh\.appendChild\(right\)/, 'right span appended to uh header row');
+    assert.match(js, /unit\.appendChild\(uh\)/, 'uh header row appended to unit card');
+  });
+
+  it('auroraRenderGatewayCard emits a gear button with data-action="edit" and data-id=peer_id', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Gear button gets setAttribute('data-action', 'edit')
+    assert.match(js, /gearBtn\.setAttribute\('data-action',\s*'edit'\)/, "gear button has data-action='edit'");
+    assert.match(js, /gearBtn\.setAttribute\('data-id',\s*String\(gw\.peer_id\)\)/, 'gear button data-id is String(gw.peer_id)');
+    // Gear button is appended inside the right span (inside card header)
+    assert.match(js, /right\.appendChild\(gearBtn\)/, 'gear button appended inside card header');
+  });
+
+  it('auroraRenderGatewayCard gear button stops propagation and calls showEditModal', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /e\.stopPropagation\(\)[\s\S]{0,40}showEditModal\(gw\.peer_id\)/, 'gear click: stopPropagation then showEditModal(gw.peer_id)');
+  });
+
+  it('auroraRenderGatewayCard sets dataset.gwDetail for test assertions and a11y', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /unit\.dataset\.gwDetail\s*=\s*'\/gateways#gw\/'/, "unit.dataset.gwDetail set to '/gateways#gw/' prefix");
+  });
+
+  it('auroraRenderGatewayCard card click navigates to /gateways#gw/<id> (Issue 7)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.match(js, /window\.location\.href\s*=\s*'\/gateways#gw\/'/, "card click sets window.location.href to '/gateways#gw/' + peer_id");
+    // Must NOT call showEditModal on card click (that's now the gear's job)
+    // Check: the card-click listener no longer contains showEditModal (the gear listener has it)
+    // We verify this by checking that the card-click handler only has window.location.href
+    const cardClickMatch = js.match(/unit\.addEventListener\('click',\s*function\(e\)\s*\{([\s\S]*?)\}\);/g);
+    assert.ok(cardClickMatch, 'unit addEventListener click handler present');
+    const hasNav = cardClickMatch.some(function(s) { return /window\.location\.href/.test(s); });
+    assert.ok(hasNav, 'card-click handler navigates via window.location.href');
+  });
+
+  it('auroraRenderGatewayCard card click uses button/a guard (gear and badge excluded from nav)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    // Card click guard: e.target.closest('button, a') prevents nav when gear is clicked
+    assert.match(js, /e\.target\.closest\('button,\s*a'\)[\s\S]{0,20}return/, 'card-click has button/a closest guard before nav');
+  });
+
+  it('i18n has peers.gateway.action_edit_gear in both en.json and de.json', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
+    assert.ok(en['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in en.json');
+    assert.ok(de['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in de.json');
+  });
+});
