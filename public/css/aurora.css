@@ -301,6 +301,10 @@ a{color:inherit}
 /* "Collapse all" toolbar toggle */
 #aurora-collapse-all{color:var(--muted)}
 #aurora-collapse-all:hover{color:var(--text)}
+/* Grouped member rows — nested under their group header via indent + a left
+   rail, so they're clearly set off from standalone routes (which sit flush). */
+.data-table tr.aurora-route-sub td.cell-name{position:relative; padding-left:34px; color:var(--muted)}
+.data-table tr.aurora-route-sub td.cell-name::before{content:""; position:absolute; left:17px; top:0; bottom:0; width:2px; background:var(--line-2); border-radius:1px}
 .row-actions{display:flex; gap:6px; justify-content:flex-end}
 .icon-action{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--chip);color:var(--muted);
   display:grid;place-items:center;cursor:pointer;transition:.15s}
@@ -386,7 +390,9 @@ input[type=date]:focus, select:focus {
 .toggle{width:42px;height:24px;border-radius:999px;background:var(--surface-3);border:1px solid var(--line-2);position:relative;cursor:pointer;transition:.2s; flex:0 0 auto}
 .toggle::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:.2s}
 .toggle.on{background:linear-gradient(145deg,var(--teal),var(--teal-dim));border-color:transparent}
-.toggle.on::after{left:20px;background:#fff}
+/* transform:none resets pro.css's .toggle.on::after translateX(18px) — without
+   it the knob is shifted left:20px AND +18px, landing outside the switch. */
+.toggle.on::after{left:20px;transform:none;background:#fff}
 
 /* segmented button group (production: .toggle-group/.toggle-btn/.on) */
 .toggle-group{display:inline-flex; gap:2px; background:var(--surface-3); border:1px solid var(--line); border-radius:10px; padding:3px}
