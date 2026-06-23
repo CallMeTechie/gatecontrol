@@ -1708,7 +1708,7 @@
           },
         });
         if (data.ok) {
-          showMessage('portal-message', GC.t['security.saved'] || 'Settings saved', 'success');
+          showMessage('portal-message', GC.t['settings.portal.saved'] || 'Settings saved', 'success');
         } else {
           showMessage('portal-message', data.error || 'Failed', 'error');
         }

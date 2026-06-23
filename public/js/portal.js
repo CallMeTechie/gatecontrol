@@ -29,6 +29,13 @@
   const lang = (document.documentElement.lang || 'de').slice(0, 2).toLowerCase();
   const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ─── Client i18n map (injected by portal.njk) ──────────────────────────────
+  var PT = {};
+  try {
+    var _pt = document.getElementById('portal-i18n');
+    if (_pt) PT = JSON.parse(_pt.textContent || '{}');
+  } catch (_) {}
+
   // ─── Theme toggle ───────────────────────────────────────────────────────────
   (function initTheme() {
     const html = document.documentElement;
@@ -55,40 +62,42 @@
     }
   })();
 
-  // ─── Formatters ─────────────────────────────────────────────────────────────
+  // ─── Formatters ─────────────────────────────────────────────────────────────────
   const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
   function fmtBytes(bytes) {
-    if (!bytes || bytes <= 0) return '0 B';
+    if (!bytes || bytes <= 0) return '0 B';
     let v = Number(bytes);
     let i = 0;
     while (v >= 1024 && i < BYTE_UNITS.length - 1) { v /= 1024; i++; }
-    const numStr = i === 0 ? String(Math.round(v)) : v.toFixed(1);
-    const localized = lang === 'de' ? numStr.replace('.', ',') : numStr;
-    return localized + ' ' + BYTE_UNITS[i];
+    const numStr = i === 0
+      ? String(Math.round(v))
+      : new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(v);
+    return numStr + ' ' + BYTE_UNITS[i];
   }
 
+  var _rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
+  var _rtfAlways = new Intl.RelativeTimeFormat(lang, { numeric: 'always' });
   function fmtRelTime(ts) {
     if (!ts) return '—';
     const now = Date.now();
     const t = typeof ts === 'number' ? ts * 1000 : new Date(ts).getTime();
     const s = Math.floor((now - t) / 1000);
-    if (s < 5)  return lang === 'de' ? 'gerade eben' : 'just now';
-    if (s < 60) return lang === 'de' ? 'vor ' + s + ' Sek.' : s + 's ago';
+    if (s < 5)    return _rtf.format(0, 'second');
+    if (s < 60)   return _rtfAlways.format(-s, 'second');
     const m = Math.floor(s / 60);
-    if (s < 3600) return lang === 'de' ? 'vor ' + m + ' Min.' : m + 'm ago';
+    if (s < 3600) return _rtfAlways.format(-m, 'minute');
     const h = Math.floor(s / 3600);
-    if (s < 86400) return lang === 'de' ? 'vor ' + h + ' Std.' : h + 'h ago';
+    if (s < 86400) return _rtfAlways.format(-h, 'hour');
     const d = Math.floor(s / 86400);
-    return lang === 'de' ? 'vor ' + d + ' Tagen' : d + 'd ago';
+    return _rtfAlways.format(-d, 'day');
   }
 
-  const WKDAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-  const WKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var _wdFmt = new Intl.DateTimeFormat(lang, { weekday: 'short', timeZone: 'UTC' });
   function bucketLabel(isoStr, range, idx) {
     if (range === '30d') return 'W' + (idx + 1);
     const d = new Date(isoStr);
     if (range === '24h') return String(d.getUTCHours()).padStart(2, '0');
-    return (lang === 'de' ? WKDAYS_DE : WKDAYS_EN)[d.getUTCDay()];
+    return _wdFmt.format(d);
   }
 
   function escHtml(str) {
@@ -100,9 +109,6 @@
   }
 
   // ─── Shared state helpers ───────────────────────────────────────────────────
-  const FALLBACK_MSG = lang === 'de'
-    ? 'Dieses Gerät verbindet sich über ein Gateway — gerätespezifische Daten sind nicht verfügbar.'
-    : 'This device connects via a gateway — per-device data is unavailable.';
 
   function setLoading(card, on) {
     if (!card) return;
@@ -111,7 +117,7 @@
 
   function showFallback(el) {
     if (!el) return;
-    el.innerHTML = '<p class="portal-fallback">' + FALLBACK_MSG + '</p>';
+    el.innerHTML = '<p class="portal-fallback">' + (PT.fallbackGateway || '') + '</p>';
   }
 
   function showError(card, retryFn) {
@@ -122,11 +128,9 @@
       el.className = 'portal-error-state';
       card.appendChild(el);
     }
-    const unavail = lang === 'de' ? 'Nicht verfügbar' : 'Unavailable';
-    const retry   = lang === 'de' ? '↺ Erneut versuchen' : '↺ Retry';
     el.innerHTML =
-      '<span class="portal-error-msg">' + unavail + '</span>' +
-      '<button class="portal-retry-btn">' + retry + '</button>';
+      '<span class="portal-error-msg">' + (PT.unavailable || '') + '</span>' +
+      '<button class="portal-retry-btn">' + (PT.retry || '') + '</button>';
     el.querySelector('.portal-retry-btn').addEventListener('click', function () {
       el.remove();
       retryFn();
@@ -171,12 +175,12 @@
             statusEl.innerHTML =
               '<span class="badge-on">' +
               '<span class="dot" style="animation:none"></span>' +
-              (lang === 'de' ? 'Online' : 'Online') +
+              (PT.online || 'Online') +
               '</span>';
           } else {
             statusEl.innerHTML =
               '<span style="color:var(--muted)">' +
-              (lang === 'de' ? 'Offline' : 'Offline') +
+              (PT.offline || 'Offline') +
               '</span>';
           }
         }
@@ -325,8 +329,7 @@
         }
         const services = body.data;
         if (!services.length) {
-          const empty = lang === 'de' ? 'Noch keine Dienste freigegeben' : 'No services shared yet';
-          tilesEl.innerHTML = '<div class="portal-empty">' + empty + '</div>';
+          tilesEl.innerHTML = '<div class="portal-empty">' + (PT.noServices || '') + '</div>';
           return;
         }
         tilesEl.innerHTML = services.map(function (s, i) {

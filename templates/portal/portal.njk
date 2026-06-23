@@ -16,6 +16,15 @@
   })();
 </script>
 <link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
+<script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ {
+  fallbackGateway: t('portal.fallback.gateway'),
+  fallbackUnknown: t('portal.fallback.unknown'),
+  noServices: t('portal.services.none_shared'),
+  unavailable: t('portal.widget.unavailable'),
+  retry: t('portal.retry'),
+  online: t('portal.device.online'),
+  offline: t('portal.device.offline')
+} | dump | safe }}</script>
 <script src="/js/portal.js" defer></script>
 </head>
 <body>
