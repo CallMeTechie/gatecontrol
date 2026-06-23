@@ -283,6 +283,10 @@ router.use('/api/v1/gateway', apiLimiter, require('./api/gateway'));
 // ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
 router.get('/api/v1/events', requireAuth, require('./api/events'));
 
+// ─── Portal API (source-IP identity, no session auth) ──────────
+const portalIdentity = require('../middleware/portalIdentity');
+router.use('/api/v1/portal', apiLimiter, portalIdentity, require('./api/portal'));
+
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 
