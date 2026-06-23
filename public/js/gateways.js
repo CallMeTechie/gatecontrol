@@ -72,15 +72,23 @@
     var uh = el('div', 'uh');
     var uav = el('span', 'uav'); uav.style.background = gwAvatarGradient(g); uav.appendChild(gwCardIcon());
     uh.appendChild(uav);
-    var nameWrap = el('div');
-    nameWrap.appendChild(el('div', 'un', g.name));
+    var nameWrap = el('div'); nameWrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+    var unEl = el('div', 'un', g.name); unEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    nameWrap.appendChild(unEl);
     nameWrap.appendChild(el('div', 'ud', (t.gateway_version || '—') + (g.hostname ? ' · ' + g.hostname : '')));
     uh.appendChild(nameWrap);
     var tagCls = 'tag ' + (st === 'online' ? 'tag-green' : st === 'degraded' ? 'tag-amber' : 'tag-grey') + ' tag-dot';
     var stTag = el('span', tagCls, T('gateways.' + st, st));
-    // Issue 8: badge INSIDE card header — wrap in right container pushed to far-right
-    var right = el('span'); right.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-shrink:0';
+    // Header right cluster: status badge (left) + update-check icon (right).
+    var right = el('span'); right.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:8px;flex-shrink:0';
     right.appendChild(stTag);
+    // Update-check icon button (.recheck → grid click handler → probe()); replaces
+    // the former full-width "Check update" button at the card foot.
+    var rcBtn = el('button', 'icon-action recheck'); rcBtn.dataset.id = g.peer_id;
+    rcBtn.title = T('gateways.update_check', 'Check update');
+    rcBtn.setAttribute('aria-label', rcBtn.title);
+    rcBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
+    right.appendChild(rcBtn);
     uh.appendChild(right);
     wrap.appendChild(uh);
     // Body: resource bars (online/degraded) or empty-state (offline)
@@ -94,10 +102,7 @@
       if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); auroraResRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
       if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); auroraResRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
     }
-    // Update-check / recheck button (.recheck class → grid click handler → probe())
-    var btn = el('button', 'btn btn-ghost btn-sm btn-block recheck', T('gateways.update_check', 'Check update'));
-    btn.style.marginTop = '14px'; btn.dataset.id = g.peer_id;
-    wrap.appendChild(btn);
+    // (Update-check moved to the header icon button above.)
     return wrap;
   }
   // Issue 10: Aurora-specific versions card — vertical kv list to prevent overflow
