@@ -479,8 +479,13 @@
 
     var delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
 
+    // Batch-select checkbox (first column) — only while batch mode is active.
+    var batchCell = batchMode
+      ? '<td class="td-batch"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + (batchSelected.has(String(r.id)) ? ' checked' : '') + '></td>'
+      : '';
     var rowCls = opts.grouped ? ' class="aurora-route-sub"' : '';
     return '<tr data-route-id="' + r.id + '"' + rowCls + '>'
+      + batchCell
       + '<td class="cell-name">' + domainTxt + '</td>'
       + '<td>' + typeTag + '</td>'
       + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
@@ -515,7 +520,7 @@
       ? '<span class="tag tag-blue aurora-group-badge">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>'
       : '';
     var countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
-    return '<tr class="aurora-group-row' + (collapsed ? ' collapsed' : '') + '" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '"><td colspan="6">'
+    return '<tr class="aurora-group-row' + (collapsed ? ' collapsed' : '') + '" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '"><td colspan="' + (batchMode ? 7 : 6) + '">'
       + AURORA_GROUP_CHEVRON
       + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
       + '<span class="aurora-group-label">' + label + '</span>'
@@ -532,9 +537,9 @@
     var t = GC.t;
     var rows = '';
     auroraGroupKeys = [];
-    // Aurora: group-headed table (no batch column). Multi-route groups get a
-    // collapsible header row + indented sub-rows; collapsed groups hide their
-    // members. Standalone routes render bare.
+    // Aurora: group-headed table. Multi-route groups get a collapsible header
+    // row + indented sub-rows; collapsed groups hide their members. Standalone
+    // routes render bare. A batch-select checkbox column is prepended in batch mode.
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
       var grouped = !g.single && g.routes.length > 1;
@@ -552,7 +557,8 @@
       return '<div style="font-size:13px;color:var(--faint);padding:20px 0;text-align:center">'
         + escapeHtml(t['routes.no_routes'] || 'No routes configured') + '</div>';
     }
-    return '<table class="data-table"><thead><tr>'
+    return '<table class="data-table' + (batchMode ? ' batch-mode' : '') + '"><thead><tr>'
+      + (batchMode ? '<th class="td-batch"></th>' : '')
       + '<th>' + escapeHtml(t['routes.table_domain'] || 'Domain') + '</th>'
       + '<th>' + escapeHtml(t['routes.table_type'] || 'Type') + '</th>'
       + '<th>' + escapeHtml(t['routes.table_target'] || 'Target') + '</th>'
