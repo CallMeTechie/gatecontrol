@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.2] — 2026-06-23
+
+### Fixes
+- Aurora RDP card — dedicated Host row so long FQDNs show in full (#170)
+
+---
+
 ## [1.93.1] — 2026-06-23
 
 ### Fixes
