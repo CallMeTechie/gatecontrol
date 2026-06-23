@@ -29,3 +29,24 @@ test('portal.css does NOT contain Pi-hole/donut styles (correctly trimmed)', asy
   assert.ok(!res.text.includes('.pi-wrap'), 'found .pi-wrap — Pi-hole styles not fully removed');
   assert.ok(!res.text.includes('.c-pihole'), 'found .c-pihole — Pi-hole grid span not removed');
 });
+
+test('portal.css contains JS-state rules (moved from portal.js inline injector for CSP safety)', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  // Core rules that were previously injected as a <style> element (blocked by CSP)
+  assert.ok(res.text.includes('.portal-fallback'), 'missing .portal-fallback rule');
+  assert.ok(res.text.includes('gc-shimmer'), 'missing gc-shimmer keyframe animation');
+  assert.ok(res.text.includes('.c-services.loading'), 'missing .c-services.loading min-height rule');
+  assert.ok(res.text.includes('.portal-error-state'), 'missing .portal-error-state rule');
+  assert.ok(res.text.includes('.portal-empty'), 'missing .portal-empty rule');
+});
+
+test('portal.js does NOT inject a <style> element (CSP-clean)', async () => {
+  // The inline style injector was removed; all state CSS now lives in portal.css.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8'
+  );
+  assert.ok(!src.includes("createElement('style')"),
+    "portal.js must not inject a <style> element — it would be blocked by the page CSP");
+});

@@ -14,12 +14,17 @@ beforeEach(async () => {
 });
 afterEach(teardown);
 
-function runMw(ip) {
-  // Simulate a request that arrived via the internal Caddy site:
-  // connection from loopback + the Caddy-set reserved header.
+// Default home hostname for the test env (GC_DNS_DOMAIN not overridden here,
+// so it resolves to the config default 'gc.internal').
+const HOME_HOST = 'home.gc.internal';
+
+function runMw(ip, hostname) {
+  // Simulate a request that arrived via the internal home Caddy vhost:
+  // connection from loopback + the Caddy-set reserved header + home Host.
   const req = {
     socket: { remoteAddress: '127.0.0.1' },
     get: (h) => (String(h).toLowerCase() === 'x-gc-portal-peer-ip' ? ip : undefined),
+    hostname: hostname !== undefined ? hostname : HOME_HOST,
   };
   let called = false;
   portalIdentity(req, {}, () => { called = true; });
@@ -60,7 +65,11 @@ test('returns null when the reserved header is absent (not via internal site)', 
   const db = getDb();
   db.prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
               VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
-  const req = { socket: { remoteAddress: '127.0.0.1' }, get: () => undefined };
+  const req = {
+    socket: { remoteAddress: '127.0.0.1' },
+    get: () => undefined,
+    hostname: HOME_HOST,
+  };
   portalIdentity(req, {}, () => {});
   assert.equal(req.portalPeerId, null);
 });
@@ -70,8 +79,21 @@ test('returns null when the connection is NOT from loopback (direct-to-Node forg
   db.prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
               VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
   // Attacker hits the Node port directly over the tunnel with a forged header.
-  const req = { socket: { remoteAddress: '10.8.0.99' },
-                get: (h) => (String(h).toLowerCase() === 'x-gc-portal-peer-ip' ? '10.8.0.5' : undefined) };
+  const req = {
+    socket: { remoteAddress: '10.8.0.99' },
+    get: (h) => (String(h).toLowerCase() === 'x-gc-portal-peer-ip' ? '10.8.0.5' : undefined),
+    hostname: HOME_HOST,
+  };
   portalIdentity(req, {}, () => {});
   assert.equal(req.portalPeerId, null);
+});
+
+test('returns null when Host is a non-home vhost (mgmt-UI forgery blocked)', () => {
+  const db = getDb();
+  db.prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
+              VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
+  // loopback + correct header, but Host is the management UI vhost — must be rejected.
+  const { req } = runMw('10.8.0.5', 'admin.example.com');
+  assert.equal(req.portalPeerId, null,
+    'identity must NOT be established when Host is not the home vhost');
 });

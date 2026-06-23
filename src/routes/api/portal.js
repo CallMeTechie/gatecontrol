@@ -6,8 +6,15 @@ const routesSvc = require('../../services/routes');
 const caddyAcl = require('../../services/caddyAcl');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
+const portalConfig = require('../../services/portalConfig');
 
 const router = Router();
+
+// Master portal gate — 404 if the portal is disabled globally.
+router.use((req, res, next) => {
+  if (!portalConfig().enabled) return res.status(404).json({ ok: false });
+  next();
+});
 
 function unidentified(res) {
   return res.json({ ok: true, data: null, reason: 'unidentified' });
@@ -21,8 +28,10 @@ function toSQLite(date) {
 
 router.get('/device', async (req, res) => {
   try {
+    if (!portalConfig().widgets.device) return res.status(404).json({ ok: false });
     if (req.portalPeerId == null) return unidentified(res);
-    const all = await peers.getAll(); // async — merges live wg status
+    // Use a high limit so any identified peer is found regardless of total peer count.
+    const all = await peers.getAll({ limit: 1000000 }); // async — merges live wg status
     const p = all.find(x => x.id === req.portalPeerId);
     if (!p) return unidentified(res);
     res.json({ ok: true, data: {
@@ -43,6 +52,7 @@ router.get('/device', async (req, res) => {
 
 router.get('/traffic', (req, res) => {
   try {
+    if (!portalConfig().widgets.traffic) return res.status(404).json({ ok: false });
     if (req.portalPeerId == null) return unidentified(res);
     const p = peers.getById(req.portalPeerId); // sync
     if (!p) return unidentified(res);
@@ -100,6 +110,7 @@ router.get('/traffic', (req, res) => {
 
 router.get('/services', (req, res) => {
   try {
+    if (!portalConfig().widgets.services) return res.status(404).json({ ok: false });
     if (req.portalPeerId == null) return unidentified(res);
     const all = routesSvc.getAll().filter(r => r.enabled && r.route_type === 'http');
     const visible = all.filter(r => {

@@ -664,12 +664,18 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     },
   };
 
+  // Home portal hostname — computed early so it can be included in TLS
+  // automation (must be covered by the internal-CA issuer policy).
+  const homeHost = `home.${config.dns.domain}`;
+
   // TLS email. Split domains into public-TLD (gets real ACME) and
   // internal/private suffixes (gets Caddy's internal CA). Without the
   // split a single `.test`/`.local`/`.internal` route would hammer the
   // Let's Encrypt rate-limit endpoint with retries every hour and
   // pollute acme logs.
-  const tlsConfig = buildTlsAutomation(Object.keys(caddyRoutes), config.caddy);
+  // homeHost is passed explicitly because it is added to caddyRoutes below,
+  // AFTER this call, so it would otherwise be absent from the TLS policy.
+  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
@@ -683,6 +689,14 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           handle: [{
             handler: 'reverse_proxy',
             upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            // Belt-and-suspenders: strip the portal identity header on the
+            // management-UI vhost so it cannot be used to forge peer identity
+            // even if an external request somehow reaches Node via this path.
+            headers: {
+              request: {
+                delete: ['X-GC-Portal-Peer-IP'],
+              },
+            },
           }],
         }],
       };
@@ -699,7 +713,6 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   //     source IP, NOT from any forwarded header.
   //   • Rewrites bare / to /portal so VPN clients landing on home.<domain> see
   //     the portal immediately; asset/API paths pass through unchanged.
-  const homeHost = `home.${config.dns.domain}`;
   if (!caddyRoutes[homeHost]) {
     caddyRoutes[homeHost] = {
       listen: [':443', ':80'],

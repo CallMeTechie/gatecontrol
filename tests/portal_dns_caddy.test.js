@@ -126,3 +126,39 @@ test('home.<domain> site rewrites root path / to /portal without touching asset/
   assert.ok(rewriteHandler, 'rewrite handler not found inside path-matched subroute');
   assert.equal(rewriteHandler.uri, '/portal', 'rewrite URI should be /portal');
 });
+
+// ─── 5. home.<domain> included in TLS automation (internal CA) ───────────
+test('TLS automation includes home.<domain> under the internal issuer policy', () => {
+  // Set a Caddy email so buildTlsAutomation is active (it returns null without one).
+  process.env.GC_CADDY_EMAIL = 'test@example.com';
+  try {
+    // Re-require config so the new env var is picked up.
+    delete require.cache[require.resolve('../config/default')];
+    delete require.cache[require.resolve('../src/services/caddyConfig')];
+    const freshConfig = require('../config/default');
+    const freshCaddyConfig = require('../src/services/caddyConfig');
+
+    const cfg = freshCaddyConfig.buildCaddyConfig();
+    const wantHost = `home.${freshConfig.dns.domain}`; // 'home.gc.internal'
+
+    const policies = cfg?.apps?.tls?.automation?.policies || [];
+    assert.ok(policies.length > 0, 'TLS automation policies must be present when email is set');
+
+    // home.gc.internal ends in '.internal' — NON_PUBLIC_TLDS — so it must fall
+    // into the internal-CA policy, NOT the public ACME policy.
+    const internalPolicy = policies.find(p =>
+      Array.isArray(p.subjects) &&
+      p.subjects.includes(wantHost) &&
+      Array.isArray(p.issuers) &&
+      p.issuers.some(i => i.module === 'internal')
+    );
+    assert.ok(internalPolicy,
+      `home.<domain> (${wantHost}) must appear in an internal-CA TLS policy — ` +
+      'it was missing, meaning it would fall through to public ACME and get a broken cert');
+  } finally {
+    delete process.env.GC_CADDY_EMAIL;
+    // Restore original modules so other tests are unaffected.
+    delete require.cache[require.resolve('../config/default')];
+    delete require.cache[require.resolve('../src/services/caddyConfig')];
+  }
+});

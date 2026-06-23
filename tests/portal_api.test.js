@@ -14,12 +14,18 @@ beforeEach(async () => {
 });
 afterEach(teardown);
 
+// Home vhost host header (matches default GC_DNS_DOMAIN = 'gc.internal').
+const HOME_HOST = 'home.gc.internal';
+
 test('GET /api/v1/portal/device returns the calling peer (via reserved header)', async () => {
   getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
                    VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
   // supertest connects from loopback (like Caddy); the reserved header carries the peer IP.
+  // Host must match home.<domain> for identity to be established (anti-forgery gate).
   const res = await supertest(app).get('/api/v1/portal/device')
-    .set('X-GC-Portal-Peer-IP', '10.8.0.5').expect(200);
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', HOME_HOST)
+    .expect(200);
   assert.equal(res.body.ok, true);
   assert.equal(res.body.data.name, 'alice');
 });
@@ -39,6 +45,48 @@ test('portal endpoints never require a token and never 500 on unknown IP', async
   assert.equal(res.body.ok, true);
   assert.equal(res.body.data, null);
   assert.equal(res.body.reason, 'unidentified');
+});
+
+test('non-home Host with reserved header does NOT establish identity (mgmt-vhost forgery blocked)', async () => {
+  // Regression: attacker reaches the management-UI Caddy vhost (externally reachable)
+  // and supplies the reserved header — identity must be rejected because Host is wrong.
+  getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
+                   VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
+  const res = await supertest(app).get('/api/v1/portal/device')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', 'admin.example.com')
+    .expect(200);
+  assert.equal(res.body.data, null, 'must be unidentified — mgmt-vhost Host rejected');
+  assert.equal(res.body.reason, 'unidentified');
+});
+
+test('portal API returns 404 when portal master switch is off', async () => {
+  getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
+                   VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
+  require('../src/services/settings').set('portal.enabled', '0');
+  await supertest(app).get('/api/v1/portal/device')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', HOME_HOST)
+    .expect(404);
+});
+
+test('portal API returns 404 for a disabled widget, 200 for an enabled one', async () => {
+  getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
+                   VALUES ('alice','k1','10.8.0.5/32',1,'regular')`).run();
+  require('../src/services/settings').set('portal.widget.traffic', '0');
+
+  // /traffic disabled → 404
+  await supertest(app).get('/api/v1/portal/traffic')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', HOME_HOST)
+    .expect(404);
+
+  // /device still enabled → 200
+  const res = await supertest(app).get('/api/v1/portal/device')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', HOME_HOST)
+    .expect(200);
+  assert.equal(res.body.ok, true);
 });
 
 test('GET /api/v1/portal/traffic returns period buckets for the calling peer', async () => {
@@ -63,7 +111,9 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
   ).run(peerId);
 
   const res = await supertest(app).get('/api/v1/portal/traffic')
-    .set('X-GC-Portal-Peer-IP', '10.8.0.6').expect(200);
+    .set('X-GC-Portal-Peer-IP', '10.8.0.6')
+    .set('Host', HOME_HOST)
+    .expect(200);
 
   assert.equal(res.body.ok, true);
   const d = res.body.data;
@@ -178,7 +228,9 @@ test('GET /api/v1/portal/services returns only visible routes for the calling pe
   ).run();
 
   const res = await supertest(app).get('/api/v1/portal/services')
-    .set('X-GC-Portal-Peer-IP', '10.8.0.7').expect(200);
+    .set('X-GC-Portal-Peer-IP', '10.8.0.7')
+    .set('Host', HOME_HOST)
+    .expect(200);
 
   assert.equal(res.body.ok, true);
   const domains = res.body.data.map(s => s.domain);

@@ -1,6 +1,12 @@
 // src/middleware/portalIdentity.js
 'use strict';
 const { getDb } = require('../db/connection');
+const config = require('../../config/default');
+
+// The only vhost that may establish peer identity.
+// Other vhosts (management UI, etc.) also proxy to Node over loopback, so
+// loopback-origin alone is not sufficient — we additionally gate on the Host.
+const HOME_HOST = `home.${config.dns.domain}`;
 
 function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -25,10 +31,15 @@ function peerFromIp(ip) {
 
 /**
  * Establish per-device identity ONLY when the request provably arrived via the
- * internal Caddy site: (a) the direct connection is from loopback (Caddy → Node),
- * and (b) the Caddy-set reserved header X-GC-Portal-Peer-IP is present.
- * Caddy strips any client-supplied copy of that header (see Task 10), so a client
- * cannot forge it; a request hitting the Node port directly (non-loopback) is rejected.
+ * internal home-site Caddy vhost:
+ *   (a) the direct connection is from loopback (Caddy → Node),
+ *   (b) the Caddy-set reserved header X-GC-Portal-Peer-IP is present, AND
+ *   (c) the request Host matches home.<dns.domain> (belt-and-suspenders: the
+ *       management-UI vhost also proxies over loopback but has a different Host,
+ *       so without this check a forged X-GC-Portal-Peer-IP header reaching Node
+ *       via the mgmt vhost would establish false identity).
+ * Caddy strips any client-supplied copy of that header on the home vhost
+ * (see Task 10), so a VPN client cannot forge it via that path.
  * Generic X-Forwarded-For is intentionally NOT used for identity.
  */
 function portalIdentity(req, _res, next) {
@@ -36,7 +47,7 @@ function portalIdentity(req, _res, next) {
   req.portalPeerName = null;
   const direct = req.socket && req.socket.remoteAddress;
   const headerIp = req.get && req.get('X-GC-Portal-Peer-IP');
-  if (isLoopback(direct) && headerIp) {
+  if (isLoopback(direct) && headerIp && req.hostname === HOME_HOST) {
     const peer = peerFromIp(headerIp);
     if (peer) { req.portalPeerId = peer.id; req.portalPeerName = peer.name; }
   }

@@ -14,10 +14,17 @@ beforeEach(async () => {
 });
 afterEach(teardown);
 
+// Home vhost host header (matches default GC_DNS_DOMAIN = 'gc.internal').
+const HOME_HOST = 'home.gc.internal';
+
 test('GET /portal renders the page with the device name for a known peer', async () => {
   getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
                    VALUES ('Marc Phone','k1','10.8.0.5/32',1,'regular')`).run();
-  const res = await supertest(app).get('/portal').set('X-GC-Portal-Peer-IP', '10.8.0.5').expect(200);
+  // Host must be home.<domain> for portalIdentity to establish identity.
+  const res = await supertest(app).get('/portal')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.5')
+    .set('Host', HOME_HOST)
+    .expect(200);
   assert.match(res.text, /portal\.css/);
   assert.match(res.text, /Marc Phone/);
   assert.match(res.text, /<script nonce="[^"]+">/);
@@ -36,7 +43,10 @@ test('GET /portal without reserved header renders generic welcome (fail-safe)', 
 test('no untranslated portal key leaks in EN render', async () => {
   getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
                    VALUES ('Test Device','k2','10.8.0.6/32',1,'regular')`).run();
-  const res = await supertest(app).get('/portal?lang=en').set('X-GC-Portal-Peer-IP', '10.8.0.6').expect(200);
+  const res = await supertest(app).get('/portal?lang=en')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.6')
+    .set('Host', HOME_HOST)
+    .expect(200);
   // portal.css and portal.js are expected; no other portal.* key should appear as-is
   assert.doesNotMatch(res.text, /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in EN');
   // Confirm a known EN string is rendered (device widget heading)
@@ -46,7 +56,10 @@ test('no untranslated portal key leaks in EN render', async () => {
 test('no untranslated portal key leaks in DE render', async () => {
   getDb().prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
                    VALUES ('Test Gerät','k3','10.8.0.7/32',1,'regular')`).run();
-  const res = await supertest(app).get('/portal?lang=de').set('X-GC-Portal-Peer-IP', '10.8.0.7').expect(200);
+  const res = await supertest(app).get('/portal?lang=de')
+    .set('X-GC-Portal-Peer-IP', '10.8.0.7')
+    .set('Host', HOME_HOST)
+    .expect(200);
   assert.doesNotMatch(res.text, /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in DE');
   // Confirm a known DE string is rendered (device widget heading)
   assert.match(res.text, /Gerät/, 'expected DE translation "Gerät" in DE render');

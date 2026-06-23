@@ -3,29 +3,10 @@
 'use strict';
 (function () {
 
-  // ─── Inject minimal portal-JS CSS (loading skeleton + state elements) ──────
-  (function injectCSS() {
-    const s = document.createElement('style');
-    s.textContent =
-      '.card.loading{pointer-events:none}' +
-      '@keyframes gc-shimmer{0%,100%{opacity:.38}50%{opacity:.15}}' +
-      '@media(prefers-reduced-motion:no-preference){' +
-        '.card.loading>*:not(h2){animation:gc-shimmer 1.5s ease infinite}' +
-      '}' +
-      '.portal-fallback{padding:16px 0;color:var(--muted);font-size:13px;line-height:1.55}' +
-      '.portal-error-state{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;' +
-        'padding:10px 12px;border-radius:10px;background:rgba(245,196,81,.08);border:1px solid rgba(245,196,81,.2)}' +
-      '.portal-error-msg{font-size:13px;color:var(--amber);flex:1}' +
-      '.portal-retry-btn{background:transparent;border:1px solid var(--amber);color:var(--amber);' +
-        'padding:4px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--font-body);' +
-        'transition:.15s}' +
-      '.portal-retry-btn:hover{background:rgba(245,196,81,.12)}' +
-      '.portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}' +
-      '.c-services.loading{min-height:200px}';
-    document.head.appendChild(s);
-  })();
-
   // ─── Locale detection ───────────────────────────────────────────────────────
+  // NOTE: State CSS (.portal-fallback, .portal-error-state, gc-shimmer, etc.)
+  // is served via portal.css ('self') — not injected here — so it is not
+  // blocked by the page Content-Security-Policy (styleSrcElem = 'self' + nonce).
   const lang = (document.documentElement.lang || 'de').slice(0, 2).toLowerCase();
   const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -117,7 +98,10 @@
 
   function showFallback(el) {
     if (!el) return;
-    el.innerHTML = '<p class="portal-fallback">' + (PT.fallbackGateway || '') + '</p>';
+    // Use the generic/neutral message — fits both gateway-identified and
+    // unidentified contexts.  fallbackGateway is kept in the template i18n map
+    // for back-compat but is no longer referenced here.
+    el.innerHTML = '<p class="portal-fallback">' + (PT.fallbackUnknown || '') + '</p>';
   }
 
   function showError(card, retryFn) {

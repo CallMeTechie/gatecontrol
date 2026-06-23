@@ -240,6 +240,38 @@ body::before{
 }
 
 /* ============================================================
+   JS STATE CLASSES (loading skeleton, fallback, error, empty)
+   These were previously injected by portal.js via createElement('style'),
+   which is blocked by the page CSP (styleSrcElem = 'self' + nonce).
+   Serving them here makes them CSP-safe as a 'self' stylesheet.
+   ============================================================ */
+.card.loading{pointer-events:none}
+
+/* Shimmer animation for loading skeletons */
+@keyframes gc-shimmer{0%,100%{opacity:.38}50%{opacity:.15}}
+@media(prefers-reduced-motion:no-preference){
+  .card.loading>*:not(h2){animation:gc-shimmer 1.5s ease infinite}
+}
+
+/* Per-device data unavailable (gateway or unidentified) */
+.portal-fallback{padding:16px 0;color:var(--muted);font-size:13px;line-height:1.55}
+
+/* Error state with retry button */
+.portal-error-state{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;border-radius:10px;background:rgba(245,196,81,.08);border:1px solid rgba(245,196,81,.2)}
+.portal-error-msg{font-size:13px;color:var(--amber);flex:1}
+.portal-retry-btn{background:transparent;border:1px solid var(--amber);color:var(--amber);
+  padding:4px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--font-body);
+  transition:.15s}
+.portal-retry-btn:hover{background:rgba(245,196,81,.12)}
+
+/* Empty services grid placeholder */
+.portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}
+
+/* Reserve height for services card while tiles load */
+.c-services.loading{min-height:200px}
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 @media (prefers-reduced-motion: reduce){
