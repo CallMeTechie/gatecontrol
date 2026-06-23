@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.0] — 2026-06-23
+
+### Features
+- Aurora routes — batch multi-select (parity with pro/default) (#168)
+
+---
+
 ## [1.92.2] — 2026-06-23
 
 ### Fixes
