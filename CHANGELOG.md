@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.6] — 2026-06-23
+
+### Fixes
+- Aurora RDP 'Add route' modal — load form-logic scripts, style selectors, fix dup (#174)
+
+---
+
 ## [1.93.5] — 2026-06-23
 
 ### Fixes
