@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.1] — 2026-06-23
+
+### Fixes
+- Aurora — card status badges, table headers, gateway card header (#169)
+
+---
+
 ## [1.93.0] — 2026-06-23
 
 ### Features
