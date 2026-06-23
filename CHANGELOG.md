@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.92.2] — 2026-06-23
+
+### Fixes
+- Aurora parity — edit-modal tabs, routes buttons, GC contract, rdp-session (#167)
+
+---
+
 ## [1.92.1] — 2026-06-23
 
 ### Fixes
