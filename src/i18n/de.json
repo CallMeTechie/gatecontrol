@@ -243,6 +243,8 @@
   "routes.view_table": "Tabellenansicht",
   "routes.group_no_domain": "Ohne Domain",
   "routes.group_count": "{{count}} Routen",
+  "routes.collapse_all": "Alle einklappen",
+  "routes.expand_all": "Alle ausklappen",
   "routes.no_match": "Keine Routen entsprechen dem Filter",
   "routes.table_domain": "Domain",
   "routes.table_type": "Typ",
