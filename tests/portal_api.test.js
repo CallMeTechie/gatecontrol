@@ -234,11 +234,12 @@ test('GET /api/v1/portal/services returns only visible routes for the calling pe
 
   assert.equal(res.body.ok, true);
   const domains = res.body.data.map(s => s.domain);
-  assert.ok(domains.includes('open.example.com'), 'open route visible');
-  assert.ok(domains.includes('acl.example.com'), 'ACL route visible when peer is member');
-  assert.ok(!domains.includes('hidden.example.com'), 'ACL route NOT visible when peer is not member');
-  assert.ok(!domains.includes('disabled.example.com'), 'disabled route not visible');
-  assert.ok(!domains.includes('l4.example.com'), 'L4 route NOT visible (excluded by route_type filter)');
+  const domainSet = new Set(domains);
+  assert.ok(domainSet.has('open.example.com'), 'open route visible');
+  assert.ok(domainSet.has('acl.example.com'), 'ACL route visible when peer is member');
+  assert.ok(!domainSet.has('hidden.example.com'), 'ACL route NOT visible when peer is not member');
+  assert.ok(!domainSet.has('disabled.example.com'), 'disabled route not visible');
+  assert.ok(!domainSet.has('l4.example.com'), 'L4 route NOT visible (excluded by route_type filter)');
 
   // Each item has required shape
   const open = res.body.data.find(s => s.domain === 'open.example.com');

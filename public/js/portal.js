@@ -101,7 +101,11 @@
     // Use the generic/neutral message — fits both gateway-identified and
     // unidentified contexts.  fallbackGateway is kept in the template i18n map
     // for back-compat but is no longer referenced here.
-    el.innerHTML = '<p class="portal-fallback">' + (PT.fallbackUnknown || '') + '</p>';
+    el.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'portal-fallback';
+    p.textContent = PT.fallbackUnknown || '';
+    el.appendChild(p);
   }
 
   function showError(card, retryFn) {
@@ -112,10 +116,14 @@
       el.className = 'portal-error-state';
       card.appendChild(el);
     }
-    el.innerHTML =
-      '<span class="portal-error-msg">' + (PT.unavailable || '') + '</span>' +
-      '<button class="portal-retry-btn">' + (PT.retry || '') + '</button>';
-    el.querySelector('.portal-retry-btn').addEventListener('click', function () {
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'portal-error-msg';
+    msgSpan.textContent = PT.unavailable || '';
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'portal-retry-btn';
+    retryBtn.textContent = PT.retry || '';
+    el.replaceChildren(msgSpan, retryBtn);
+    retryBtn.addEventListener('click', function () {
       el.remove();
       retryFn();
     });
@@ -155,17 +163,21 @@
         // Status badge
         const statusEl = document.getElementById('deviceStatus');
         if (statusEl) {
+          statusEl.replaceChildren();
           if (d.isOnline) {
-            statusEl.innerHTML =
-              '<span class="badge-on">' +
-              '<span class="dot" style="animation:none"></span>' +
-              (PT.online || 'Online') +
-              '</span>';
+            const badge = document.createElement('span');
+            badge.className = 'badge-on';
+            const dot = document.createElement('span');
+            dot.className = 'dot';
+            dot.setAttribute('style', 'animation:none');
+            badge.appendChild(dot);
+            badge.appendChild(document.createTextNode(PT.online || 'Online'));
+            statusEl.appendChild(badge);
           } else {
-            statusEl.innerHTML =
-              '<span style="color:var(--muted)">' +
-              (PT.offline || 'Offline') +
-              '</span>';
+            const offSpan = document.createElement('span');
+            offSpan.setAttribute('style', 'color:var(--muted)');
+            offSpan.textContent = PT.offline || 'Offline';
+            statusEl.appendChild(offSpan);
           }
         }
 
@@ -313,7 +325,10 @@
         }
         const services = body.data;
         if (!services.length) {
-          tilesEl.innerHTML = '<div class="portal-empty">' + (PT.noServices || '') + '</div>';
+          const emptyDiv = document.createElement('div');
+          emptyDiv.className = 'portal-empty';
+          emptyDiv.textContent = PT.noServices || '';
+          tilesEl.replaceChildren(emptyDiv);
           return;
         }
         tilesEl.innerHTML = services.map(function (s, i) {
