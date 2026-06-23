@@ -495,14 +495,37 @@
       + '</div></td></tr>';
   }
 
+  // Aurora group-header row: shown for every multi-route group (service
+  // bundle or shared domain) so related routes read as a unit, not just a
+  // hinted-at indent. Mirrors the default theme's .routes-table-group row.
+  function auroraRenderGroupHead(g) {
+    var t = GC.t;
+    var label = g.label != null
+      ? escapeHtml(g.label)
+      : escapeHtml(t['routes.group_no_domain'] || 'Without domain');
+    var bundleTag = g.isBundle
+      ? '<span class="tag tag-blue aurora-group-badge">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>'
+      : '';
+    var countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+    return '<tr class="aurora-group-row" data-gkey="' + escapeHtml(g.key) + '"><td colspan="6">'
+      + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
+      + '<span class="aurora-group-label">' + label + '</span>'
+      + bundleTag
+      + '<span class="aurora-group-count">' + escapeHtml(countTxt) + '</span>'
+      + '</td></tr>';
+  }
+
   function auroraRenderTable(groups) {
     var t = GC.t;
     var rows = '';
-    // Aurora: flat table — no group chrome, no batch column
+    // Aurora: group-headed table (no batch column). Multi-route groups get a
+    // header row + indented sub-rows; standalone routes render bare.
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
+      var grouped = !g.single && g.routes.length > 1;
+      if (grouped) rows += auroraRenderGroupHead(g);
       for (var ri = 0; ri < g.routes.length; ri++) {
-        rows += auroraRenderTableRow(g.routes[ri], { subRow: g.routes.length > 1 && ri > 0 });
+        rows += auroraRenderTableRow(g.routes[ri], { subRow: grouped && ri > 0 });
       }
     }
     if (!rows) {
