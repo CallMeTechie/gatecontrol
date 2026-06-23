@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.91.5] — 2026-06-23
+
+### Fixes
+- Aurora routes list — restore group headers for related routes (#164)
+
+---
+
 ## [1.91.4] — 2026-06-22
 
 ### Fixes
