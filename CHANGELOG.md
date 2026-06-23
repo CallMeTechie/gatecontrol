@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.4] — 2026-06-23
+
+### Fixes
+- Aurora peers — bar-chart traffic modal + gateway card Name/IP rows (#172)
+
+---
+
 ## [1.93.3] — 2026-06-23
 
 ### Fixes
