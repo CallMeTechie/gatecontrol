@@ -282,7 +282,7 @@ a{color:inherit}
    --------------------------------------------------------------------------- */
 .data-table{width:100%; border-collapse:collapse; font-size:13.5px}
 .data-table th{text-align:left; font-weight:600; color:var(--faint); font-size:11px; text-transform:uppercase; letter-spacing:.06em;
-  padding:0 14px 11px; border-bottom:1px solid var(--line)}
+  padding:12px 14px; vertical-align:middle; border-bottom:1px solid var(--line)}
 .data-table td{padding:13px 14px; border-bottom:1px solid var(--line); vertical-align:middle}
 .data-table tr:last-child td{border-bottom:0}
 .data-table tbody tr:hover td{background:var(--chip)}
@@ -410,7 +410,7 @@ input[type=date]:focus, select:focus {
 /* ----------------------------------------------------------------------------
    11 · TAGS / BADGES / STATUS DOTS (production: .tag/.tag-*, .status-dot/.online…)
    --------------------------------------------------------------------------- */
-.tag{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line); font-family:var(--font-body)}
+.tag{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line); font-family:var(--font-body); white-space:nowrap}
 .tag-green{color:var(--green); background:var(--green-bg); border-color:var(--green-bd)}
 .tag-grey{color:var(--faint); background:var(--chip)}
 .tag-amber{color:var(--amber); background:var(--amber-bg); border-color:var(--amber-bd)}
@@ -623,6 +623,10 @@ input[type=date]:focus, select:focus {
 
 /* tag-dot helper used in Aurora status tags on gateway/peer rows.
    Issue 9: text LEFT of dot — suppress ::before, put dot via ::after */
+/* pro.css's standalone .tag-dot is a 5px dot; when combined as `tag tag-dot` on
+   one element (card status badges) it would force width/height:5px and collapse
+   the label. Reset so the text shows; aurora renders the dot via ::after. */
+.tag.tag-dot{width:auto;height:auto}
 .tag.tag-dot::before{content:none}
 .tag.tag-dot::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-left:5px}
 
