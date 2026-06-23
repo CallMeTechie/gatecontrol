@@ -243,9 +243,9 @@
             {# SSH auth-mode selector (password vs private key) — rdp.js shows it for SSH #}
             <div id="rdp-ssh-auth-mode" style="display:none;margin-bottom:10px">
               <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px">{{ t('rdp.auth.mode') }}</label>
-              <div id="rdp-ssh-auth-seg" class="rdp-auth-seg toggle-group" role="radiogroup" aria-label="{{ t('rdp.auth.mode') }}">
-                <button type="button" class="rdp-auth-opt toggle-btn active on" data-auth-mode="password">{{ t('rdp.auth.mode_password') }}</button>
-                <button type="button" class="rdp-auth-opt toggle-btn" data-auth-mode="key">{{ t('rdp.auth.mode_key') }}</button>
+              <div id="rdp-ssh-auth-seg" class="rdp-auth-seg" role="radiogroup" aria-label="{{ t('rdp.auth.mode') }}">
+                <button type="button" class="rdp-auth-opt active" data-auth-mode="password">{{ t('rdp.auth.mode_password') }}</button>
+                <button type="button" class="rdp-auth-opt" data-auth-mode="key">{{ t('rdp.auth.mode_key') }}</button>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -287,13 +287,6 @@
           <div id="rdp-cred-set-ssh-passphrase" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">
             <span class="rdp-cred-set-label"></span>
             <button type="button" class="btn btn-sm btn-ghost rdp-cred-remove" data-cred="ssh_passphrase" style="margin-left:6px"></button>
-          </div>
-          {# SSH auth mode selector (SSH protocol only) #}
-          <div id="rdp-ssh-auth-seg" style="display:none;margin-top:10px">
-            <div style="display:flex;gap:6px">
-              <button type="button" class="btn btn-sm btn-ghost active" data-auth-mode="password">{{ t('rdp.auth.password') }}</button>
-              <button type="button" class="btn btn-sm btn-ghost" data-auth-mode="key">{{ t('rdp.auth.key') }}</button>
-            </div>
           </div>
           <div id="rdp-ascii-hint" style="display:none;margin-top:8px;font-size:11px;color:var(--faint);line-height:1.4">{{ t('rdp.browser.ascii_hint') }}</div>
           <div style="margin-top:8px;font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px">
@@ -551,5 +544,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/rdp-form-logic.js?v={{ appVersion }}"></script>
+<script src="/js/rdp-cred-omission.js?v={{ appVersion }}"></script>
 <script src="/js/rdp.js?v={{ appVersion }}"></script>
 {% endblock %}

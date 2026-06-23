@@ -301,6 +301,12 @@ a{color:inherit}
 /* "Collapse all" toolbar toggle */
 #aurora-collapse-all{color:var(--muted)}
 #aurora-collapse-all:hover{color:var(--text)}
+/* RDP modal segmented selectors (protocol + SSH auth-mode) — styled like the
+   .toggle-group segmented control; JS toggles .active on the chosen option. */
+.rdp-proto-seg, .rdp-auth-seg{display:inline-flex; gap:2px; background:var(--surface-3); border:1px solid var(--line); border-radius:10px; padding:3px; flex-wrap:wrap}
+.rdp-proto-opt, .rdp-auth-opt{border:0; background:transparent; color:var(--muted); font-family:var(--font-body); font-weight:600; font-size:12.5px; padding:7px 14px; border-radius:7px; cursor:pointer; transition:.15s}
+.rdp-proto-opt:hover, .rdp-auth-opt:hover{color:var(--text)}
+.rdp-proto-opt.active, .rdp-auth-opt.active{background:var(--surface); color:var(--text); box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
 /* Batch-select checkbox column (shown only in batch mode) */
 .data-table .td-batch{width:34px; text-align:center; padding-right:0}
 .data-table .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer; vertical-align:middle}
