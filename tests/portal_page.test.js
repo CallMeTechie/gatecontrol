@@ -20,6 +20,7 @@ test('GET /portal renders the page with the device name for a known peer', async
   const res = await supertest(app).get('/portal').set('X-GC-Portal-Peer-IP', '10.8.0.5').expect(200);
   assert.match(res.text, /portal\.css/);
   assert.match(res.text, /Marc Phone/);
+  assert.match(res.text, /<script nonce="[^"]+">/);
 });
 
 test('a disabled-master portal returns 404', async () => {

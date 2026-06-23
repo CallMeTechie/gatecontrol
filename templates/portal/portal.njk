@@ -6,7 +6,7 @@
 <title>{{ appName }} — {{ t('portal.title') }}</title>
 <!-- no-FOUC: set the theme BEFORE first paint (blocking, in <head>).
      Reads from localStorage; falls back to prefers-color-scheme. -->
-<script>
+<script nonce="{{ cspNonce }}">
   (function(){
     try{
       var s = localStorage.getItem('gc-portal-theme');
