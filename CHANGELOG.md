@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.3] — 2026-06-23
+
+### Fixes
+- Aurora RDP card — move route name out of title into a Name row (#171)
+
+---
+
 ## [1.93.2] — 2026-06-23
 
 ### Fixes
