@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.92.0] — 2026-06-23
+
+### Features
+- Aurora routes — collapsible route groups (chevron + collapse-all) (#165)
+
+---
+
 ## [1.91.5] — 2026-06-23
 
 ### Fixes
