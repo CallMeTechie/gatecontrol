@@ -472,14 +472,15 @@
     var status = view.routeStatus(r);
     var toggleEl = '<div class="toggle' + (status !== 'disabled' ? ' on' : '') + '" data-action="toggle" data-id="' + r.id + '" style="cursor:pointer" title="Toggle"></div>';
 
-    // Domain display (sub-rows indent with └)
-    var domainTxt = opts.subRow
-      ? '<span style="color:var(--faint)">└ ' + (r.domain ? escapeHtml(r.domain) : '—') + '</span>'
-      : (r.domain ? escapeHtml(r.domain) : '—');
+    // Domain display. Grouped members are visually nested via the
+    // .aurora-route-sub class (indent + left rail in aurora.css) so they read
+    // as belonging to the group header above, distinct from standalone routes.
+    var domainTxt = (r.domain ? escapeHtml(r.domain) : '—');
 
     var delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
 
-    return '<tr data-route-id="' + r.id + '">'
+    var rowCls = opts.grouped ? ' class="aurora-route-sub"' : '';
+    return '<tr data-route-id="' + r.id + '"' + rowCls + '>'
       + '<td class="cell-name">' + domainTxt + '</td>'
       + '<td>' + typeTag + '</td>'
       + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
@@ -543,7 +544,7 @@
         if (collapsedGroups.has(g.key)) continue; // collapsed → members hidden
       }
       for (var ri = 0; ri < g.routes.length; ri++) {
-        rows += auroraRenderTableRow(g.routes[ri], { subRow: grouped && ri > 0 });
+        rows += auroraRenderTableRow(g.routes[ri], { grouped: grouped });
       }
     }
     auroraUpdateCollapseAll();
