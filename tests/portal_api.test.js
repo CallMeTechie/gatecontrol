@@ -48,7 +48,7 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
      VALUES ('bob','k2','10.8.0.6/32',1,'regular',500,300)`
   ).run();
 
-  // Insert snapshots: two in the last 24 h, one older (7d)
+  // Insert snapshots: two in the last 24 h, one older (3 days back)
   db.prepare(
     `INSERT INTO peer_traffic_snapshots (peer_id, download_bytes, upload_bytes, recorded_at)
      VALUES (?,100,50,datetime('now','-1 hours'))`
@@ -67,6 +67,8 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
 
   assert.equal(res.body.ok, true);
   const d = res.body.data;
+
+  // ── Period totals (existing assertions) ──────────────────────────────────
   // Total comes from peers.total_rx / total_tx
   assert.equal(d.total.rx, 500);
   assert.equal(d.total.tx, 300);
@@ -79,6 +81,59 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
   // last30d: all three rows
   assert.equal(d.last30d.rx, 700);
   assert.equal(d.last30d.tx, 280);
+
+  // ── Time-series assertions (new) ─────────────────────────────────────────
+  const s = d.series;
+  assert.ok(s, 'series field present');
+
+  // Shape: correct bucket counts
+  assert.ok(Array.isArray(s['24h']), 'series.24h is array');
+  assert.equal(s['24h'].length, 8,  '24h has 8 buckets (8 x 3h)');
+  assert.equal(s['7d'].length,  7,  '7d has 7 buckets (7 x 1d)');
+  assert.equal(s['30d'].length, 5,  '30d has 5 buckets (5 x 6d)');
+
+  // Each bucket has {t, rx, tx}
+  const sample = s['24h'][0];
+  assert.equal(typeof sample.t,  'string', 'bucket.t is string');
+  assert.equal(typeof sample.rx, 'number', 'bucket.rx is number');
+  assert.equal(typeof sample.tx, 'number', 'bucket.tx is number');
+
+  // 24h: last bucket (index 7 = now-3h..now) must contain the -1h and -2h snapshots
+  assert.equal(s['24h'][7].rx, 300, '24h last bucket rx = 100+200');
+  assert.equal(s['24h'][7].tx, 130, '24h last bucket tx = 50+80');
+
+  // 24h: all other buckets are zero (no older data in 24h window)
+  const other24h = s['24h'].slice(0, 7);
+  assert.ok(other24h.every(b => b.rx === 0), '24h buckets 0-6 all rx=0');
+  assert.ok(other24h.every(b => b.tx === 0), '24h buckets 0-6 all tx=0');
+
+  // 7d: last bucket (index 6 = now-1d..now) contains the -1h and -2h snapshots
+  assert.equal(s['7d'][6].rx, 300, '7d last-day bucket rx');
+  assert.equal(s['7d'][6].tx, 130, '7d last-day bucket tx');
+
+  // 7d: the -3d snapshot lands in the bucket whose lower boundary equals its
+  // recorded_at second. The snapshot was inserted with SQLite datetime('now','-3 days')
+  // (second precision). The bucket boundary is computed with Date.now() and then
+  // truncated via toSQLite(), giving the same second value. Result: the snapshot
+  // satisfies `recorded_at >= bucket_start` and lands in bucket 3 (if handler
+  // takes >1 s after insert) or bucket 4 (typical case: same second). We assert
+  // the snapshot is present somewhere in the expected range (buckets 3-5).
+  const bucket3dIdx = s['7d'].findIndex(b => b.rx === 400);
+  assert.ok(
+    bucket3dIdx >= 3 && bucket3dIdx <= 5,
+    '7d: -3d snapshot in expected range (buckets 3-5), found at bucket ' + bucket3dIdx
+  );
+  assert.equal(s['7d'][bucket3dIdx].tx, 150, '7d -3d snapshot bucket tx');
+
+  // 30d: last bucket (index 4 = now-6d..now) contains all three snapshots
+  // (-1h, -2h, and -3d are all well within the last 6 days)
+  assert.equal(s['30d'][4].rx, 700, '30d last bucket rx = 100+200+400');
+  assert.equal(s['30d'][4].tx, 280, '30d last bucket tx = 50+80+150');
+
+  // 30d: first 4 buckets are zero (all data is within last 6 days)
+  const other30d = s['30d'].slice(0, 4);
+  assert.ok(other30d.every(b => b.rx === 0), '30d buckets 0-3 all rx=0');
+  assert.ok(other30d.every(b => b.tx === 0), '30d buckets 0-3 all tx=0');
 });
 
 test('GET /api/v1/portal/services returns only visible routes for the calling peer', async () => {

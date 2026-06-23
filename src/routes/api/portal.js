@@ -41,6 +41,9 @@ router.get('/traffic', (req, res) => {
     const p = peers.getById(req.portalPeerId); // sync
     if (!p) return unidentified(res);
     const db = getDb();
+    const peerId = Number(req.portalPeerId);
+
+    // Period totals (back-compat)
     const periods = [
       ['last24h', '-24 hours'],
       ['last7d', '-7 days'],
@@ -51,9 +54,42 @@ router.get('/traffic', (req, res) => {
       const row = db.prepare(`
         SELECT COALESCE(SUM(download_bytes),0) rx, COALESCE(SUM(upload_bytes),0) tx
         FROM peer_traffic_snapshots WHERE peer_id = ? AND recorded_at >= datetime('now', ?)
-      `).get(Number(req.portalPeerId), interval);
+      `).get(peerId, interval);
       traffic[key] = { rx: row.rx, tx: row.tx };
     }
+
+    // Time-series buckets — stable counts regardless of data density.
+    // Shape: { t: ISO-string (bucket start), rx: number, tx: number }
+    // Buckets with no data → rx:0, tx:0 (axis stability).
+    //
+    // Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
+    // with SQLite's datetime('now') output format.
+    function toSQLite(date) {
+      return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+    }
+    // Prepare once; called 8 + 7 + 5 = 20 times — all parameterised.
+    const bucketStmt = db.prepare(`
+      SELECT COALESCE(SUM(download_bytes), 0) rx, COALESCE(SUM(upload_bytes), 0) tx
+      FROM peer_traffic_snapshots
+      WHERE peer_id = ? AND recorded_at >= ? AND recorded_at < ?
+    `);
+    function buildSeries(startMs, count, widthMs) {
+      return Array.from({ length: count }, (_, i) => {
+        const s = new Date(startMs + i * widthMs);
+        const e = new Date(startMs + (i + 1) * widthMs);
+        const row = bucketStmt.get(peerId, toSQLite(s), toSQLite(e));
+        return { t: s.toISOString(), rx: row.rx, tx: row.tx };
+      });
+    }
+    const nowMs = Date.now();
+    const H = 3600000;   // 1 h in ms
+    const D = 86400000;  // 1 d in ms
+    traffic.series = {
+      '24h': buildSeries(nowMs - 24 * H, 8, 3 * H),  // 8 x 3 h
+      '7d':  buildSeries(nowMs - 7 * D,  7, D),       // 7 x 1 d
+      '30d': buildSeries(nowMs - 30 * D, 5, 6 * D),   // 5 x 6 d
+    };
+
     res.json({ ok: true, data: traffic });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /traffic failed');
