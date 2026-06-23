@@ -127,6 +127,30 @@ test('home.<domain> site rewrites root path / to /portal without touching asset/
   assert.equal(rewriteHandler.uri, '/portal', 'rewrite URI should be /portal');
 });
 
+// ─── 5. SECURITY: management-UI vhost strips the portal identity header ───
+// Defense-in-depth for the identity-forgery class: every non-home Caddy vhost
+// that reverse-proxies to the local Node app must DELETE X-GC-Portal-Peer-IP,
+// so a forged header on e.g. the management host can never establish identity
+// even if req.hostname were spoofed. GC_BASE_URL=http://localhost:3000 here, so
+// the management vhost host is 'localhost'.
+test('management-UI vhost strips X-GC-Portal-Peer-IP (anti-forgery defense-in-depth)', () => {
+  const cfg = caddyConfigMod.buildCaddyConfig();
+  const gcHost = new URL(config.app.baseUrl).hostname;
+  const serverRoutes = cfg?.apps?.http?.servers?.srv0?.routes || [];
+
+  const mgmtRoute = serverRoutes.find(r =>
+    Array.isArray(r.match) && r.match.some(m => Array.isArray(m.host) && m.host.includes(gcHost))
+  );
+  assert.ok(mgmtRoute, `management vhost route for ${gcHost} not found`);
+
+  // Find the reverse_proxy to the local Node app and assert it deletes the header.
+  const rp = (mgmtRoute.handle || []).find(h => h.handler === 'reverse_proxy');
+  assert.ok(rp, 'management vhost has no reverse_proxy handler');
+  const del = rp.headers?.request?.delete || [];
+  assert.ok(del.includes('X-GC-Portal-Peer-IP'),
+    'management vhost must delete X-GC-Portal-Peer-IP to prevent identity forgery');
+});
+
 // ─── 5. home.<domain> included in TLS automation (internal CA) ───────────
 test('TLS automation includes home.<domain> under the internal issuer policy', () => {
   // Set a Caddy email so buildTlsAutomation is active (it returns null without one).
