@@ -20,7 +20,8 @@
         'padding:4px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--font-body);' +
         'transition:.15s}' +
       '.portal-retry-btn:hover{background:rgba(245,196,81,.12)}' +
-      '.portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}';
+      '.portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}' +
+      '.c-services.loading{min-height:200px}';
     document.head.appendChild(s);
   })();
 

@@ -59,7 +59,7 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
   ).run(peerId);
   db.prepare(
     `INSERT INTO peer_traffic_snapshots (peer_id, download_bytes, upload_bytes, recorded_at)
-     VALUES (?,400,150,datetime('now','-3 days'))`
+     VALUES (?,400,150,datetime('now','-3 days','-1 hour'))`
   ).run(peerId);
 
   const res = await supertest(app).get('/api/v1/portal/traffic')
@@ -111,18 +111,11 @@ test('GET /api/v1/portal/traffic returns period buckets for the calling peer', a
   assert.equal(s['7d'][6].rx, 300, '7d last-day bucket rx');
   assert.equal(s['7d'][6].tx, 130, '7d last-day bucket tx');
 
-  // 7d: the -3d snapshot lands in the bucket whose lower boundary equals its
-  // recorded_at second. The snapshot was inserted with SQLite datetime('now','-3 days')
-  // (second precision). The bucket boundary is computed with Date.now() and then
-  // truncated via toSQLite(), giving the same second value. Result: the snapshot
-  // satisfies `recorded_at >= bucket_start` and lands in bucket 3 (if handler
-  // takes >1 s after insert) or bucket 4 (typical case: same second). We assert
-  // the snapshot is present somewhere in the expected range (buckets 3-5).
+  // 7d: the -3d-1h snapshot falls unambiguously in bucket 3 ([now-4d, now-3d)).
+  // Seeding with an extra -1 hour ensures it never straddles the now-3d boundary
+  // regardless of sub-second timing between insert and handler execution.
   const bucket3dIdx = s['7d'].findIndex(b => b.rx === 400);
-  assert.ok(
-    bucket3dIdx >= 3 && bucket3dIdx <= 5,
-    '7d: -3d snapshot in expected range (buckets 3-5), found at bucket ' + bucket3dIdx
-  );
+  assert.equal(bucket3dIdx, 3, '7d: -3d-1h snapshot is in bucket 3 (now-4d..now-3d)');
   assert.equal(s['7d'][bucket3dIdx].tx, 150, '7d -3d snapshot bucket tx');
 
   // 30d: last bucket (index 4 = now-6d..now) contains all three snapshots

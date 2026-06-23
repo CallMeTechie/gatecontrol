@@ -13,6 +13,12 @@ function unidentified(res) {
   return res.json({ ok: true, data: null, reason: 'unidentified' });
 }
 
+// Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
+// with SQLite's datetime('now') output format.
+function toSQLite(date) {
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+}
+
 router.get('/device', async (req, res) => {
   try {
     if (req.portalPeerId == null) return unidentified(res);
@@ -62,11 +68,6 @@ router.get('/traffic', (req, res) => {
     // Shape: { t: ISO-string (bucket start), rx: number, tx: number }
     // Buckets with no data → rx:0, tx:0 (axis stability).
     //
-    // Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
-    // with SQLite's datetime('now') output format.
-    function toSQLite(date) {
-      return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
-    }
     // Prepare once; called 8 + 7 + 5 = 20 times — all parameterised.
     const bucketStmt = db.prepare(`
       SELECT COALESCE(SUM(download_bytes), 0) rx, COALESCE(SUM(upload_bytes), 0) tx
