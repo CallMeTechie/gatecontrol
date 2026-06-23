@@ -384,8 +384,11 @@ input[type=date]:focus, select:focus {
 .tabs.edit-route-tabs{border-bottom:0; gap:3px; background:var(--surface-3); border:1px solid var(--line); border-radius:10px; padding:3px}
 .tabs.edit-route-tabs .tab{padding:7px 12px; font-size:12.5px; border-radius:7px; border:0; margin:0}
 .tabs.edit-route-tabs .tab.active{background:var(--surface); color:var(--text); border:0}
-.edit-route-panel{display:none}
-.edit-route-panel.active{display:block; animation:fade .2s ease}
+/* The shared route-edit JS toggles panels via inline style.display (showing the
+   active one with display:'' → falls back to the stylesheet). So the base must
+   NOT be display:none, or no panel ever shows. Inactive panels carry inline
+   display:none from the template; the fade runs each time one is revealed. */
+.edit-route-panel{animation:fade .2s ease}
 
 .toggle{width:42px;height:24px;border-radius:999px;background:var(--surface-3);border:1px solid var(--line-2);position:relative;cursor:pointer;transition:.2s; flex:0 0 auto}
 .toggle::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:.2s}

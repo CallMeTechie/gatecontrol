@@ -12,6 +12,14 @@
   {# routes-count: hidden but present for JS contract (JS writes textContent) #}
   <span id="routes-count" style="display:none">0</span>
   <div class="page-actions">
+    <button class="btn btn-secondary" id="btn-add-service">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span>{{ t('service_bundle.add') }}</span>
+    </button>
+    <button class="btn btn-secondary" id="open-printer-preset" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      <span>{{ t('printer_preset.button') }}</span>
+    </button>
     <button class="btn btn-primary" id="btn-add-route">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       <span>{{ t('routes.new_route') }}</span>
@@ -46,6 +54,35 @@
   </div>
 </div>
 
+
+<!-- Printer-Preset Wizard Modal (opened by #open-printer-preset; body filled by JS) -->
+<div class="modal-overlay" id="printer-preset-overlay" style="display:none">
+  <div style="background:var(--bg-panel);border-radius:var(--radius);width:640px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);position:relative">
+    <div style="padding:18px 24px 0;position:sticky;top:0;background:var(--bg-panel);z-index:1">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="font-family:var(--font-display);font-size:20px;line-height:1.2">{{ t('printer_preset.title') }}</div>
+        <button type="button" class="icon-btn" id="printer-preset-close" title="{{ t('common.cancel') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:12px" id="printer-preset-steps">
+        <div class="service-step-pill on" data-pstep="1">1 · {{ t('printer_preset.step_device') }}</div>
+        <div class="service-step-pill" data-pstep="2">2 · {{ t('printer_preset.step_print') }}</div>
+        <div class="service-step-pill" data-pstep="3">3 · {{ t('printer_preset.step_scan') }}</div>
+        <div class="service-step-pill" data-pstep="4">4 · {{ t('printer_preset.step_review') }}</div>
+      </div>
+    </div>
+
+    <div style="padding:18px 24px" id="printer-preset-body"></div>
+
+    <div id="printer-preset-error" style="display:none;color:var(--red);font-size:12.5px;padding:0 24px 12px"></div>
+
+    <div style="display:flex;justify-content:space-between;padding:14px 24px;border-top:1px solid var(--border);background:var(--bg-base)" id="printer-preset-footer">
+      <button type="button" class="btn btn-ghost" id="printer-preset-back">{{ t('service_bundle.back') }}</button>
+      <button type="button" class="btn btn-primary" id="printer-preset-next">{{ t('service_bundle.next') }}</button>
+    </div>
+  </div>
+</div>
 
 <!-- Create-Service Wizard Modal (opened by #btn-add-service) -->
 <div class="modal-overlay" id="service-modal-overlay" style="display:none">
