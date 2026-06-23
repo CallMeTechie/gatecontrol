@@ -1422,6 +1422,7 @@
   "rdp.session.expired": "Session expired",
   "rdp.session.not_authorized": "Not authorized",
 
+  "rdp.kv.name": "Name",
   "rdp.kv.mode": "Mode",
   "rdp.kv.host": "Host",
   "rdp.kv.target": "Target",

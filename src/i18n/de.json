@@ -1422,6 +1422,7 @@
   "rdp.session.expired": "Sitzung abgelaufen",
   "rdp.session.not_authorized": "Nicht berechtigt",
 
+  "rdp.kv.name": "Name",
   "rdp.kv.mode": "Modus",
   "rdp.kv.host": "Host",
   "rdp.kv.target": "Ziel",
