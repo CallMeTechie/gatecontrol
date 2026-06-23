@@ -1465,9 +1465,31 @@
     }
   }
 
+  // Aurora renders the peer traffic as a bar chart (matching the dashboard's
+  // .chart/.col/.bar markup); default/pro keep the SVG line/area chart.
+  function renderAuroraTrafficBars(container, dataPoints) {
+    if (!dataPoints || dataPoints.length === 0) {
+      container.innerHTML = '<div class="empty-state" style="padding:30px 0;text-align:center;color:var(--faint);font-size:13px">' + escapeHtml(GC.t['dashboard.chart_no_data'] || 'No traffic data') + '</div>';
+      return;
+    }
+    var maxVal = Math.max(1, Math.max.apply(null, dataPoints.map(function(d) { return Math.max(d.upload || 0, d.download || 0); })));
+    var n = dataPoints.length;
+    container.innerHTML = dataPoints.map(function(d, i) {
+      var dnH = Math.max(2, Math.round(((d.download || 0) / maxVal) * 130));
+      var upH = Math.max(2, Math.round(((d.upload || 0) / maxVal) * 130));
+      var label = (n <= 12 || i % Math.ceil(n / 8) === 0) ? (d.label || '') : '';
+      return '<div class="col">'
+        + '<div class="bar" style="height:' + dnH + 'px"></div>'
+        + '<div class="bar up" style="height:' + upH + 'px"></div>'
+        + '<div class="lab">' + escapeHtml(label) + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
   function renderTrafficChart(dataPoints) {
     var svg = document.getElementById('traffic-peer-chart');
     if (!svg) return;
+    if (isAurora()) { renderAuroraTrafficBars(svg, dataPoints); return; }
     if (!dataPoints || dataPoints.length === 0) {
       svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="var(--text-3)" font-size="13">No data</text>';
       return;
@@ -2299,19 +2321,11 @@
     uav.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>';
     uh.appendChild(uav);
 
-    // Name + IP — flex:1+min-width:0 lets identity shrink so badge+gear always visible
-    var identity = document.createElement('div');
-    identity.style.cssText = 'flex:1;min-width:0;overflow:hidden';
-    var un = document.createElement('div');
-    un.className = 'un';
-    un.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-    un.textContent = gw.name;
-    var ud = document.createElement('div');
-    ud.className = 'ud';
-    ud.textContent = gw.ip || '';
-    identity.appendChild(un);
-    identity.appendChild(ud);
-    uh.appendChild(identity);
+    // Name + IP moved to dedicated rows below; a flex spacer keeps the status
+    // badge + gear pushed to the right of the header.
+    var spacer = document.createElement('div');
+    spacer.style.cssText = 'flex:1;min-width:0';
+    uh.appendChild(spacer);
 
     // Right side: status badge + gear button — gap:8px keeps them clearly separated
     var right = document.createElement('span');
@@ -2343,6 +2357,28 @@
 
     uh.appendChild(right);
     unit.appendChild(uh);
+
+    // Name + IP rows (moved out of the .uh title)
+    var nameRow = document.createElement('div');
+    nameRow.className = 'urow';
+    var nrk = document.createElement('span');
+    nrk.textContent = gwT('peers.gateway.name', 'Name');
+    var nrv = document.createElement('b');
+    nrv.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%';
+    nrv.textContent = gw.name;
+    nameRow.appendChild(nrk);
+    nameRow.appendChild(nrv);
+    unit.appendChild(nameRow);
+
+    var ipRow = document.createElement('div');
+    ipRow.className = 'urow';
+    var iprk = document.createElement('span');
+    iprk.textContent = gwT('peers.gateway.ip', 'IP');
+    var iprv = document.createElement('b');
+    iprv.textContent = gw.ip || '—';
+    ipRow.appendChild(iprk);
+    ipRow.appendChild(iprv);
+    unit.appendChild(ipRow);
 
     // Metric rows
     var row1 = document.createElement('div');
