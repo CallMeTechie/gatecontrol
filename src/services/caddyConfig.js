@@ -689,6 +689,49 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
   } catch {}
 
+  // Home portal site — internal-only reverse proxy to the local Node app.
+  // SECURITY-CRITICAL: This is the trusted-IP control for the VPN landing
+  // portal (Task 10). The site:
+  //   • Is restricted to INTERNAL_ONLY_RANGES (VPN subnet) — never externally
+  //     exposed. remote_ip match is on the real TCP source; cannot be spoofed.
+  //   • Strips any client-supplied X-GC-Portal-Peer-IP (prevents header forgery).
+  //   • Sets X-GC-Portal-Peer-IP from {http.request.remote.host} — the real TCP
+  //     source IP, NOT from any forwarded header.
+  //   • Rewrites bare / to /portal so VPN clients landing on home.<domain> see
+  //     the portal immediately; asset/API paths pass through unchanged.
+  const homeHost = `home.${config.dns.domain}`;
+  if (!caddyRoutes[homeHost]) {
+    caddyRoutes[homeHost] = {
+      listen: [':443', ':80'],
+      routes: [{
+        match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
+        handle: [
+          // Path-conditional rewrite: only / → /portal; other paths unchanged.
+          {
+            handler: 'subroute',
+            routes: [{
+              match: [{ path: ['/'] }],
+              handle: [{ handler: 'rewrite', uri: '/portal' }],
+            }],
+          },
+          // Reverse proxy to local Node app with trusted-IP header handling.
+          {
+            handler: 'reverse_proxy',
+            upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            headers: {
+              request: {
+                // Delete first: prevent any client-supplied copy from reaching Node.
+                delete: ['X-GC-Portal-Peer-IP'],
+                // Set from real TCP source — Caddy resolves this before XFF processing.
+                set: { 'X-GC-Portal-Peer-IP': ['{http.request.remote.host}'] },
+              },
+            },
+          },
+        ],
+      }],
+    };
+  }
+
   // Group routes into a single server
   const serverRoutes = [...serverRoutes_pending];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
