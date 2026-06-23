@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.92.1] — 2026-06-23
+
+### Fixes
+- Aurora routes — nest grouped sub-routes + fix status toggle knob (#166)
+
+---
+
 ## [1.92.0] — 2026-06-23
 
 ### Features
