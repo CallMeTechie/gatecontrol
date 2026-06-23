@@ -127,7 +127,9 @@ describe('aurora theme — dashboard layout (Task P2-1)', () => {
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
     // Grid layout
     assert.match(res.text, /class="grid"/, '.grid container present');
-    assert.match(res.text, /class="card kpi span3"/, '.kpi.span3 KPI cards present');
+    // KPI cards live in the responsive .aurora-kpi-grid (6-across → progressive stack)
+    assert.match(res.text, /class="aurora-kpi-grid"/, '.aurora-kpi-grid present');
+    assert.match(res.text, /class="card kpi"/, '.kpi KPI cards present');
     assert.match(res.text, /class="card-title"/, '.card-title present');
   });
 

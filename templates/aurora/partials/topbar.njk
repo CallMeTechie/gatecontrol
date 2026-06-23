@@ -5,6 +5,7 @@
   <div class="page-crumb">{{ title }}</div>
   <div class="topbar-spacer"></div>
   <div class="topbar-status" id="wg-status"><span class="pulse-dot"></span><span>{{ t('status.wg_active') }}</span></div>
+  <span id="au-status" class="au-actions"></span>
   <div class="topbar-lang" id="lang-switcher">
     {% for lang in availableLanguages %}
     <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}">{{ lang }}</button>
