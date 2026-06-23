@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.93.5] — 2026-06-23
+
+### Fixes
+- Aurora dashboard — compact KPI row, conditional Availability KPI, header auto-update, no reload (#173)
+
+---
+
 ## [1.93.4] — 2026-06-23
 
 ### Fixes
