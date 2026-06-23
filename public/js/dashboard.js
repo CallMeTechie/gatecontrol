@@ -301,13 +301,21 @@
       host.appendChild(p);
     }
 
-    var recheck = document.createElement('button'); recheck.className = 'btn btn-ghost';
-    recheck.textContent = T('autoupdate.recheck', 'Re-check');
+    // Re-check is an icon button (refresh) rather than a text button.
+    var recheck = document.createElement('button'); recheck.className = 'icon-btn';
+    recheck.style.cssText = 'width:30px;height:30px';
+    recheck.title = T('autoupdate.recheck', 'Re-check');
+    recheck.setAttribute('aria-label', recheck.title);
+    recheck.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
     recheck.addEventListener('click', loadAutoUpdate); host.appendChild(recheck);
 
-    var setup = document.createElement('button'); setup.className = 'btn btn-ghost';
-    setup.textContent = T('autoupdate.setup', 'Set up');
-    setup.addEventListener('click', openAuSetup); host.appendChild(setup);
+    // Setup button only while auto-update is NOT actually set up (status !== 'active');
+    // once configured (cron running + recent check) it is hidden.
+    if (d.status !== 'active') {
+      var setup = document.createElement('button'); setup.className = 'btn btn-ghost btn-sm';
+      setup.textContent = T('autoupdate.setup', 'Set up auto-update');
+      setup.addEventListener('click', openAuSetup); host.appendChild(setup);
+    }
 
     if (d.mode === 'manual') {
       var trig = document.createElement('button'); trig.className = 'btn btn-primary';
@@ -358,12 +366,6 @@
       refreshChart(tab.dataset.period);
     });
   });
-
-  // ─── Reload button ─────────────────────────────────────────────────────────
-  const reloadBtn = document.getElementById('btn-reload');
-  if (reloadBtn) {
-    reloadBtn.addEventListener('click', () => refreshAll());
-  }
 
   // ─── Refresh all ───────────────────────────────────────────────────────────
   async function refreshAll() {
@@ -422,6 +424,9 @@
         var up = parseInt(data.monitoring.up, 10) || 0;
         var total = parseInt(data.monitoring.total, 10) || 0;
         var down = parseInt(data.monitoring.down, 10) || 0;
+        // Availability KPI only shows when ≥1 route has monitoring enabled.
+        var monCard = document.getElementById('kpi-monitoring');
+        if (monCard) monCard.style.display = total > 0 ? '' : 'none';
         if (total > 0) {
           monitorEl.textContent = up + '/' + total;
           if (monitorSubEl) {

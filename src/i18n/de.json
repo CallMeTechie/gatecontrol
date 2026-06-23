@@ -686,7 +686,7 @@
   "rdp.feature.gateway_locked": "Home-Gateway-Routing für RDP erfordert eine Pro-Lizenz.",
   "rdp.feature.gateway_locked_upgrade": "Upgrade für RDP über Home-Gateway",
 
-  "status.wg_active": "WireGuard aktiv",
+  "status.wg_active": "Tunnel aktiv",
   "status.wg_inactive": "WireGuard inaktiv",
 
   "time.now": "jetzt",
@@ -1051,7 +1051,7 @@
   "autoupdate.mode_auto": "Automatisch",
   "autoupdate.mode_manual": "Manuell",
   "autoupdate.recheck": "Neu prüfen",
-  "autoupdate.setup": "Einrichten",
+  "autoupdate.setup": "Auto Update einrichten",
   "autoupdate.trigger": "Jetzt aktualisieren",
   "autoupdate.trigger_queued": "Update eingeplant — greift beim nächsten Cron-Lauf",
   "autoupdate.setup_title": "Auto-Update einrichten",
