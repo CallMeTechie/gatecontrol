@@ -495,11 +495,18 @@
       + '</div></td></tr>';
   }
 
+  // Chevron for collapsible Aurora group headers (rotates via CSS .collapsed).
+  var AURORA_GROUP_CHEVRON = '<svg class="aurora-group-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+
   // Aurora group-header row: shown for every multi-route group (service
   // bundle or shared domain) so related routes read as a unit, not just a
-  // hinted-at indent. Mirrors the default theme's .routes-table-group row.
+  // hinted-at indent. Collapsible — clicking the row toggles its members via
+  // the shared [data-gtoggle] handler + collapsedGroups set (same persisted
+  // localStorage state the default/pro card view uses). Mirrors the default
+  // theme's .routes-table-group row.
   function auroraRenderGroupHead(g) {
     var t = GC.t;
+    var collapsed = collapsedGroups.has(g.key);
     var label = g.label != null
       ? escapeHtml(g.label)
       : escapeHtml(t['routes.group_no_domain'] || 'Without domain');
@@ -507,7 +514,8 @@
       ? '<span class="tag tag-blue aurora-group-badge">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>'
       : '';
     var countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
-    return '<tr class="aurora-group-row" data-gkey="' + escapeHtml(g.key) + '"><td colspan="6">'
+    return '<tr class="aurora-group-row' + (collapsed ? ' collapsed' : '') + '" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '"><td colspan="6">'
+      + AURORA_GROUP_CHEVRON
       + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
       + '<span class="aurora-group-label">' + label + '</span>'
       + bundleTag
@@ -515,19 +523,30 @@
       + '</td></tr>';
   }
 
+  // Keys of the multi-route groups in the last Aurora render — drives the
+  // toolbar "collapse/expand all" toggle. Updated by auroraRenderTable().
+  var auroraGroupKeys = [];
+
   function auroraRenderTable(groups) {
     var t = GC.t;
     var rows = '';
+    auroraGroupKeys = [];
     // Aurora: group-headed table (no batch column). Multi-route groups get a
-    // header row + indented sub-rows; standalone routes render bare.
+    // collapsible header row + indented sub-rows; collapsed groups hide their
+    // members. Standalone routes render bare.
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
       var grouped = !g.single && g.routes.length > 1;
-      if (grouped) rows += auroraRenderGroupHead(g);
+      if (grouped) {
+        auroraGroupKeys.push(g.key);
+        rows += auroraRenderGroupHead(g);
+        if (collapsedGroups.has(g.key)) continue; // collapsed → members hidden
+      }
       for (var ri = 0; ri < g.routes.length; ri++) {
         rows += auroraRenderTableRow(g.routes[ri], { subRow: grouped && ri > 0 });
       }
     }
+    auroraUpdateCollapseAll();
     if (!rows) {
       return '<div style="font-size:13px;color:var(--faint);padding:20px 0;text-align:center">'
         + escapeHtml(t['routes.no_routes'] || 'No routes configured') + '</div>';
@@ -552,6 +571,39 @@
       typeToggle.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
       btn.classList.add('on');
       viewState.typeFilter = btn.dataset.value || null;
+      render();
+    });
+  }
+
+  // Reflects the "collapse all / expand all" toolbar button: hidden when no
+  // multi-route groups exist, otherwise labelled by what the click will do.
+  function auroraUpdateCollapseAll() {
+    var btn = document.getElementById('aurora-collapse-all');
+    if (!btn) return;
+    if (!auroraGroupKeys.length) { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    var allCollapsed = auroraGroupKeys.every(function (k) { return collapsedGroups.has(k); });
+    var lbl = btn.querySelector('.aurora-collapse-all-lbl');
+    if (lbl) {
+      lbl.textContent = allCollapsed
+        ? (GC.t['routes.expand_all'] || 'Expand all')
+        : (GC.t['routes.collapse_all'] || 'Collapse all');
+    }
+    btn.classList.toggle('all-collapsed', allCollapsed);
+  }
+
+  function auroraInitCollapseAll() {
+    var btn = document.getElementById('aurora-collapse-all');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var allCollapsed = auroraGroupKeys.length > 0
+        && auroraGroupKeys.every(function (k) { return collapsedGroups.has(k); });
+      // All collapsed → expand all; otherwise collapse all.
+      auroraGroupKeys.forEach(function (k) {
+        if (allCollapsed) collapsedGroups.delete(k);
+        else collapsedGroups.add(k);
+      });
+      lsSetSet('gc_routes_groups_collapsed_v1', collapsedGroups);
       render();
     });
   }
@@ -4028,6 +4080,7 @@
 
   // Aurora-only: wire the type toggle-group in the Aurora toolbar
   if (isAurora()) auroraInitTypeToggle();
+  if (isAurora()) auroraInitCollapseAll();
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();
