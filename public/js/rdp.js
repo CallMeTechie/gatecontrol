@@ -1769,14 +1769,10 @@
       ic.className = 'ic';
       ic.innerHTML = MONITOR_SVG;
       cardTitle.appendChild(ic);
-      // nameGroup wraps name + proto so they shrink together, leaving room for statusTag
+      // Title shows protocol only (route name moved to a Name row below); the
+      // proto badge sits left, status badge is pushed right via margin-left:auto.
       var nameGroup = document.createElement('span');
       nameGroup.style.cssText = 'flex:1;min-width:0;display:inline-flex;align-items:center;gap:6px;overflow:hidden';
-      var nameSpan = document.createElement('span');
-      nameSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      nameSpan.textContent = r.name;
-      nameGroup.appendChild(nameSpan);
-      // Proto badge alongside name (flex-shrink:0 keeps it fully visible)
       var protoBadgeWrap = document.createElement('span');
       protoBadgeWrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;font-family:var(--font-body);color:var(--faint);flex-shrink:0';
       protoBadgeWrap.appendChild(buildProtoBadge(r));
@@ -1816,6 +1812,20 @@
       modeRow.appendChild(modeK);
       modeRow.appendChild(modeV);
       kv.appendChild(modeRow);
+
+      // Name row (route name, moved out of the card title)
+      var nameRow = document.createElement('div');
+      nameRow.className = 'row';
+      var nameK = document.createElement('span');
+      nameK.className = 'k';
+      nameK.textContent = GC.t['rdp.kv.name'] || 'Name';
+      var nameVal = document.createElement('span');
+      nameVal.className = 'v';
+      nameVal.style.cssText = 'word-break:break-word;text-align:right';
+      nameVal.textContent = r.name || '—';
+      nameRow.appendChild(nameK);
+      nameRow.appendChild(nameVal);
+      kv.appendChild(nameRow);
 
       // Host row (hostname/domain on its own line so long FQDNs show in full)
       var hostRow = document.createElement('div');
