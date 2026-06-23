@@ -64,7 +64,7 @@ router.get('/traffic', (req, res) => {
 router.get('/services', (req, res) => {
   try {
     if (req.portalPeerId == null) return unidentified(res);
-    const all = routesSvc.getAll().filter(r => r.enabled);
+    const all = routesSvc.getAll().filter(r => r.enabled && r.route_type === 'http');
     const visible = all.filter(r => {
       if (!r.acl_enabled) return true; // open route — always reachable
       const aclPeers = caddyAcl.getAclPeers(r.id) || [];

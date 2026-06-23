@@ -123,6 +123,12 @@ test('GET /api/v1/portal/services returns only visible routes for the calling pe
      VALUES ('disabled.example.com','Disabled App','10.0.0.4',80,0,0)`
   ).run();
 
+  // Enabled L4 route (open ACL) — should NOT be visible (route_type filter)
+  db.prepare(
+    `INSERT INTO routes (domain, description, target_ip, target_port, enabled, acl_enabled, route_type)
+     VALUES ('l4.example.com','L4 App','10.0.0.5',443,1,0,'l4')`
+  ).run();
+
   const res = await supertest(app).get('/api/v1/portal/services')
     .set('X-GC-Portal-Peer-IP', '10.8.0.7').expect(200);
 
@@ -132,6 +138,7 @@ test('GET /api/v1/portal/services returns only visible routes for the calling pe
   assert.ok(domains.includes('acl.example.com'), 'ACL route visible when peer is member');
   assert.ok(!domains.includes('hidden.example.com'), 'ACL route NOT visible when peer is not member');
   assert.ok(!domains.includes('disabled.example.com'), 'disabled route not visible');
+  assert.ok(!domains.includes('l4.example.com'), 'L4 route NOT visible (excluded by route_type filter)');
 
   // Each item has required shape
   const open = res.body.data.find(s => s.domain === 'open.example.com');
