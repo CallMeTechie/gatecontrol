@@ -4079,7 +4079,8 @@
   })();
 
   // Aurora-only: wire the type toggle-group in the Aurora toolbar
-  if (isAurora()) { auroraInitTypeToggle(); auroraInitCollapseAll(); }
+  if (isAurora()) auroraInitTypeToggle();
+  if (isAurora()) auroraInitCollapseAll();
 
   // ─── Init ────────────────────────────────────────────────
   loadRoutes();
