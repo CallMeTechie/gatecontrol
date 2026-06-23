@@ -301,6 +301,10 @@ a{color:inherit}
 /* "Collapse all" toolbar toggle */
 #aurora-collapse-all{color:var(--muted)}
 #aurora-collapse-all:hover{color:var(--text)}
+/* Batch-select checkbox column (shown only in batch mode) */
+.data-table .td-batch{width:34px; text-align:center; padding-right:0}
+.data-table .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer; vertical-align:middle}
+.data-table.batch-mode tbody tr[data-route-id]{cursor:pointer}
 /* Grouped member rows — nested under their group header via indent + a left
    rail, so they're clearly set off from standalone routes (which sit flush). */
 .data-table tr.aurora-route-sub td.cell-name{position:relative; padding-left:34px; color:var(--muted)}
