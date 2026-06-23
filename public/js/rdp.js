@@ -1817,6 +1817,20 @@
       modeRow.appendChild(modeV);
       kv.appendChild(modeRow);
 
+      // Host row (hostname/domain on its own line so long FQDNs show in full)
+      var hostRow = document.createElement('div');
+      hostRow.className = 'row';
+      var hostK = document.createElement('span');
+      hostK.className = 'k';
+      hostK.textContent = GC.t['rdp.kv.host'] || 'Host';
+      var hostV = document.createElement('span');
+      hostV.className = 'v';
+      hostV.style.cssText = 'word-break:break-all;text-align:right';
+      hostV.textContent = r.host || '—';
+      hostRow.appendChild(hostK);
+      hostRow.appendChild(hostV);
+      kv.appendChild(hostRow);
+
       // Target row (host:port)
       var targetRow = document.createElement('div');
       targetRow.className = 'row';
@@ -1825,6 +1839,7 @@
       targetK.textContent = GC.t['rdp.kv.target'] || 'Target';
       var targetV = document.createElement('span');
       targetV.className = 'v';
+      targetV.style.cssText = 'word-break:break-all;text-align:right';
       targetV.textContent = (r.host || '') + ':' + (r.port || 3389);
       targetRow.appendChild(targetK);
       targetRow.appendChild(targetV);

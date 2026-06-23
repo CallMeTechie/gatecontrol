@@ -1423,6 +1423,7 @@
   "rdp.session.not_authorized": "Not authorized",
 
   "rdp.kv.mode": "Mode",
+  "rdp.kv.host": "Host",
   "rdp.kv.target": "Target",
   "rdp.kv.health": "Health",
   "rdp.health_reachable": "Reachable",
