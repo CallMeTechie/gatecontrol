@@ -287,6 +287,18 @@ router.get('/api/v1/events', requireAuth, require('./api/events'));
 const portalIdentity = require('../middleware/portalIdentity');
 router.use('/api/v1/portal', apiLimiter, portalIdentity, require('./api/portal'));
 
+// ─── Portal page (source-IP identity, no session auth) ─────────
+const portalConfig = require('../services/portalConfig');
+router.get('/portal', portalIdentity, (req, res) => {
+  const cfg = portalConfig();
+  if (!cfg.enabled) return res.sendStatus(404);
+  res.render('portal/portal.njk', {
+    widgets: cfg.widgets,
+    deviceName: req.portalPeerName,   // null → generic welcome
+    identified: req.portalPeerId != null,
+  });
+});
+
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
 
