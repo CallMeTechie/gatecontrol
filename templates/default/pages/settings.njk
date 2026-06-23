@@ -146,6 +146,7 @@
     <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
     <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
     {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
+    <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
   </div>
   <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
   <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
@@ -156,6 +157,7 @@
   <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
   <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
   {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
+  <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
 </div>
 
 {# ─── General Tab ─────────────────────────────────────── #}
@@ -1086,6 +1088,40 @@
   </div>
 </div>
 {% endif %}
+
+{# ─── Portal Tab ────────────────────────────────────────── #}
+<div class="settings-panel" data-settings-panel="portal" style="display:none">
+  <div class="two-col">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">{{ t('settings.portal.title') }}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:11px;padding:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.enabled') }}</span>
+          <div class="toggle" id="portal-enabled" data-managed="true"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-3);padding:4px 0">{{ t('settings.portal.widgets_section') or 'Widgets' }}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.widget_device') }}</span>
+          <div class="toggle" id="portal-widget-device" data-managed="true"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.widget_traffic') }}</span>
+          <div class="toggle" id="portal-widget-traffic" data-managed="true"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.widget_services') }}</span>
+          <div class="toggle" id="portal-widget-services" data-managed="true"></div>
+        </div>
+        <div id="portal-message" style="display:none"></div>
+        <div style="display:flex;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-primary" id="btn-portal-save">{{ t('common.save') or 'Save' }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
 

@@ -45,5 +45,6 @@ router.use('/', require('./network'));
 router.use('/', require('./observability'));
 router.use('/', require('./gateway'));
 router.use('/', require('./pihole'));
+router.use('/', require('./portal'));
 
 module.exports = router;
