@@ -50,6 +50,8 @@ test('PUT /domains/server-ip with empty string clears the override (200)', async
   const res = await agent.put('/api/v1/settings/domains/server-ip').set('X-CSRF-Token', csrf)
     .send({ ip: '' }).expect(200);
   assert.equal(res.body.ok, true);
+  const storedIp = require('../src/services/settings').get('server.public_ip', '');
+  assert.equal(storedIp, '');
 });
 
 test('DELETE /domains/:id removes the domain', async () => {

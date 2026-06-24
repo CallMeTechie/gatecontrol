@@ -56,8 +56,13 @@ router.post('/domains/:id/verify', async (req, res) => {
 });
 
 router.delete('/domains/:id', (req, res) => {
-  domains.remove(Number(req.params.id));
-  res.json({ ok: true });
+  try {
+    domains.remove(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    logger.warn({ err: err.message, id: req.params.id }, 'DELETE /domains/:id failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
 });
 
 router.put('/domains/server-ip', (req, res) => {
@@ -65,8 +70,13 @@ router.put('/domains/server-ip', (req, res) => {
   if (ip !== '' && !net.isIP(ip)) {
     return res.status(400).json({ ok: false, error: req.t('settings.domains.invalid_ip') });
   }
-  settings.set('server.public_ip', ip);
-  res.json({ ok: true });
+  try {
+    settings.set('server.public_ip', ip);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.warn({ err: err.message }, 'PUT /domains/server-ip failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
 });
 
 module.exports = router;
