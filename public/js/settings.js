@@ -506,19 +506,54 @@
     }
   }
 
-  var btnSecuritySave = document.getElementById('btn-security-save');
-  if (btnSecuritySave) {
-    btnSecuritySave.addEventListener('click', function() {
-      saveSecuritySettings(btnSecuritySave, 'security-message');
-    });
-  }
-
-  var btnPasswordSave = document.getElementById('btn-password-save');
-  if (btnPasswordSave) {
-    btnPasswordSave.addEventListener('click', function() {
-      saveSecuritySettings(btnPasswordSave, 'security-message-2');
-    });
-  }
+  // ─── Security Autosave (single bind over all 8 fields) ───
+  (function () {
+    var g = function (id) { return document.getElementById(id); };
+    function securityValues() {
+      return {
+        'security-lockout-enabled': g('security-lockout-enabled') ? g('security-lockout-enabled').classList.contains('on') : false,
+        'security-lockout-attempts': g('security-lockout-attempts') ? g('security-lockout-attempts').value : '',
+        'security-lockout-duration': g('security-lockout-duration') ? g('security-lockout-duration').value : '',
+        'security-password-enabled': g('security-password-enabled') ? g('security-password-enabled').classList.contains('on') : false,
+        'security-password-min-length': g('security-password-min-length') ? g('security-password-min-length').value : '',
+        'security-password-uppercase': g('security-password-uppercase') ? g('security-password-uppercase').classList.contains('on') : false,
+        'security-password-number': g('security-password-number') ? g('security-password-number').classList.contains('on') : false,
+        'security-password-special': g('security-password-special') ? g('security-password-special').classList.contains('on') : false,
+      };
+    }
+    function securitySave() {
+      var v = securityValues();
+      return api.put('/api/settings/security', {
+        lockout: {
+          enabled: v['security-lockout-enabled'],
+          max_attempts: v['security-lockout-attempts'],
+          duration: v['security-lockout-duration'],
+        },
+        password: {
+          complexity_enabled: v['security-password-enabled'],
+          min_length: v['security-password-min-length'],
+          require_uppercase: v['security-password-uppercase'],
+          require_number: v['security-password-number'],
+          require_special: v['security-password-special'],
+        },
+      });
+    }
+    var securityFieldIds = [
+      'security-lockout-enabled', 'security-lockout-attempts', 'security-lockout-duration',
+      'security-password-enabled', 'security-password-min-length', 'security-password-uppercase',
+      'security-password-number', 'security-password-special',
+    ];
+    var securityFields = securityFieldIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (securityFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'security',
+        fields: securityFields,
+        statusEl: document.getElementById('security-status'),
+        valuesById: securityValues,
+        save: securitySave,
+      });
+    }
+  })();
 
   // ─── Monitoring Settings ───────────────────────────────
 
@@ -729,6 +764,7 @@
   if (autobackupEnabledToggle) {
     autobackupEnabledToggle.addEventListener('click', function() {
       autobackupEnabledToggle.classList.toggle('on');
+      autobackupEnabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -856,28 +892,33 @@
     }
   }
 
-  var btnAutobackupSave = document.getElementById('btn-autobackup-save');
-  if (btnAutobackupSave) {
-    btnAutobackupSave.addEventListener('click', async function() {
-      btnLoading(btnAutobackupSave);
-      try {
-        var data = await api.put('/api/settings/autobackup', {
-          enabled: autobackupEnabledToggle.classList.contains('on'),
-          schedule: document.getElementById('autobackup-schedule').value,
-          retention: document.getElementById('autobackup-retention').value,
-        });
-        if (data.ok) {
-          showMessage('autobackup-message', GC.t['autobackup.saved'] || 'Auto-backup settings saved', 'success');
-        } else {
-          showMessage('autobackup-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('autobackup-message', err.message, 'error');
-      } finally {
-        btnReset(btnAutobackupSave);
-      }
-    });
-  }
+  // ─── Autobackup Autosave ───────────────────────────────
+  (function () {
+    var scheduleEl = document.getElementById('autobackup-schedule');
+    var retentionEl = document.getElementById('autobackup-retention');
+    var abFields = [autobackupEnabledToggle, scheduleEl, retentionEl].filter(Boolean);
+    if (abFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'autobackup',
+        fields: abFields,
+        statusEl: document.getElementById('autobackup-status'),
+        valuesById: function () {
+          return {
+            'autobackup-enabled': autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
+            'autobackup-schedule': scheduleEl ? scheduleEl.value : '',
+            'autobackup-retention': retentionEl ? retentionEl.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/autobackup', {
+            enabled: autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
+            schedule: scheduleEl ? scheduleEl.value : '',
+            retention: retentionEl ? retentionEl.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   var btnAutobackupRun = document.getElementById('btn-autobackup-run');
   if (btnAutobackupRun) {
@@ -1668,11 +1709,13 @@
   var widgetDevice = document.getElementById('portal-widget-device');
   var widgetTraffic = document.getElementById('portal-widget-traffic');
   var widgetServices = document.getElementById('portal-widget-services');
-  var saveBtn = document.getElementById('btn-portal-save');
   if (!enabledToggle) return;
 
   [enabledToggle, widgetDevice, widgetTraffic, widgetServices].forEach(function (el) {
-    if (el) el.addEventListener('click', function () { el.classList.toggle('on'); });
+    if (el) el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      el.dispatchEvent(new Event('change'));
+    });
   });
 
   function setToggle(el, val) {
@@ -1691,30 +1734,30 @@
     console.error('Failed to load portal settings:', err);
   });
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        var data = await api.put('/api/v1/settings/portal', {
-          enabled: enabledToggle.classList.contains('on'),
-          widgets: {
-            device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
-            traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
-            services: widgetServices ? widgetServices.classList.contains('on') : true,
-          },
-        });
-        if (data.ok) {
-          showMessage('portal-message', GC.t['settings.portal.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('portal-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('portal-message', err.message, 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
-  }
+  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices].filter(Boolean);
+  SettingsAutosave.bind({
+    cluster: 'portal',
+    fields: portalFields,
+    statusEl: document.getElementById('portal-status'),
+    valuesById: function () {
+      return {
+        'portal-enabled': enabledToggle.classList.contains('on'),
+        'portal-widget-device': widgetDevice ? widgetDevice.classList.contains('on') : true,
+        'portal-widget-traffic': widgetTraffic ? widgetTraffic.classList.contains('on') : true,
+        'portal-widget-services': widgetServices ? widgetServices.classList.contains('on') : true,
+      };
+    },
+    save: function () {
+      return api.put('/api/v1/settings/portal', {
+        enabled: enabledToggle.classList.contains('on'),
+        widgets: {
+          device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
+          traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
+          services: widgetServices ? widgetServices.classList.contains('on') : true,
+        },
+      });
+    },
+  });
 })();
 
 // ─── Route Block Default ──────────────────────────────

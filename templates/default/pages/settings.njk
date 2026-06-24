@@ -435,10 +435,7 @@
         <div style="font-size:12px;font-weight:600;color:var(--text-2)">{{ t('security.lockout.locked_accounts') }}</div>
         <div id="security-locked-list" style="font-size:12px;color:var(--text-3)">{{ t('security.lockout.no_locked') }}</div>
 
-        <div id="security-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-security-save">{{ t('security.save') }}</button>
-        </div>
+        <div id="security-status" class="autosave-status"></div>
       </div>
     </div>
 
@@ -470,10 +467,6 @@
               <span style="font-size:12px">{{ t('security.password.require_special') }}</span>
               <div class="toggle on" id="security-password-special" data-managed="true"></div>
             </div>
-          </div>
-          <div id="security-message-2" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-password-save">{{ t('security.save') }}</button>
           </div>
         </div>
       </div>
@@ -587,10 +580,10 @@
       </div>
 
       <div id="autobackup-message" style="display:none"></div>
+      <div id="autobackup-status" class="autosave-status"></div>
 
       <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
         <button class="btn btn-ghost" id="btn-autobackup-run">{{ t('autobackup.run_now') }}</button>
-        <button class="btn btn-primary" id="btn-autobackup-save">{{ t('autobackup.save') }}</button>
       </div>
 
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
@@ -1105,9 +1098,7 @@
           <div class="toggle" id="portal-widget-services" data-managed="true"></div>
         </div>
         <div id="portal-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-portal-save">{{ t('common.save') }}</button>
-        </div>
+        <div id="portal-status" class="autosave-status"></div>
       </div>
     </div>
   </div>

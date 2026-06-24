@@ -45,3 +45,9 @@ test('independent clusters migrated: buttons gone, autosave bound, mb fixed', as
   // machine-binding JS points statusEl at its dedicated badge, not the old hidden div
   assert.match(js.text, /getElementById\(['"]machine-binding-status['"]\)/);
 });
+
+test('security/backup/portal migrated; single security bind', async () => {
+  const page = await getAgent().get('/settings').expect(200);
+  ['btn-security-save','btn-password-save','btn-autobackup-save','btn-portal-save']
+    .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
+});
