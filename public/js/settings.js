@@ -1784,11 +1784,11 @@
   var addBtn = document.getElementById('domains-add-btn');
   var addError = document.getElementById('domains-add-error');
 
-  var labelVerified = tbl.dataset.labelVerified || 'Verified';
-  var labelFailed = tbl.dataset.labelFailed || 'Not pointing here';
-  var labelPending = tbl.dataset.labelPending || 'Pending';
-  var labelVerify = tbl.dataset.labelVerify || 'Re-check';
-  var labelRemove = tbl.dataset.labelRemove || 'Remove';
+  var labelVerified = tbl.dataset.labelVerified || '';
+  var labelFailed = tbl.dataset.labelFailed || '';
+  var labelPending = tbl.dataset.labelPending || '';
+  var labelVerify = tbl.dataset.labelVerify || '';
+  var labelRemove = tbl.dataset.labelRemove || '';
 
   function statusBadge(status) {
     var span = document.createElement('span');
@@ -1916,7 +1916,7 @@
       try {
         var r = await api.post('/api/v1/settings/domains', { domain: domain });
         if (!r.ok) {
-          if (addError) { addError.textContent = r.error || domain + ' is invalid'; addError.style.display = ''; }
+          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
         } else {
           if (addInput) addInput.value = '';
           await loadDomains();
@@ -1940,7 +1940,7 @@
           if (ipInput) ipInput.value = '';
           await loadDomains();
         } else {
-          if (addError) { addError.textContent = r.error || 'Invalid IP'; addError.style.display = ''; }
+          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
         }
       } catch (err) {
         if (addError) { addError.textContent = err.message; addError.style.display = ''; }
