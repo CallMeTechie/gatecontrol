@@ -97,6 +97,14 @@ ensure_guacd() {
   )
 }
 
+prune_images() {
+  # Reclaim disk after a successful update: each :latest pull leaves the previous
+  # image dangling. Without pruning the host fills up over time (incident
+  # 2026-06-23: 187 images → root fs 100% → pulls failed → auto-update stalled).
+  # -f removes ONLY dangling (untagged) images, so tagged/in-use images are safe.
+  docker image prune -f >>"$LOG" 2>&1 || true
+}
+
 needs_update() { # echoes "yes" if running image != :latest
   local latest running
   latest="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
@@ -116,7 +124,7 @@ if [ "$MODE" = "manual" ]; then
     err) log "could not resolve :latest digest"; write_state failed manual; exit 1 ;;
   esac
   log "manual trigger — recreating"
-  if recreate; then ensure_guacd || true; write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
+  if recreate; then ensure_guacd || true; prune_images || true; write_state updated manual; else log "recreate/health failed"; write_state failed manual; exit 1; fi
   exit 0
 fi
 
@@ -128,4 +136,4 @@ case "$(needs_update)" in
   err) log "could not resolve :latest digest"; write_state failed auto; exit 1 ;;
 esac
 log "auto: update needed — recreating"
-if recreate; then ensure_guacd || true; write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
+if recreate; then ensure_guacd || true; prune_images || true; write_state updated auto; else log "recreate/health failed"; write_state failed auto; exit 1; fi
