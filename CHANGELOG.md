@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.94.0] — 2026-06-24
+
+### Features
+- VPN Landing Portal (Roadmap #6) — Phase 1 (#175)
+
+---
+
 ## [1.93.6] — 2026-06-23
 
 ### Fixes
