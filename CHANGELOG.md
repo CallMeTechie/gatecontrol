@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.94.1] — 2026-06-24
+
+### Änderungen
+- prune dangling images after a successful auto-update (#176)
+
+---
+
 ## [1.94.0] — 2026-06-24
 
 ### Features
