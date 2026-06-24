@@ -39,8 +39,9 @@ after(() => {
 // ─── 1. dnsmasq friendly name ────────────────────────────────────────────
 test('renderHostsContent includes a home.<domain> A-record at the gateway IP', () => {
   const out = dns.renderHostsContent();
-  const escapedDomain = config.dns.domain.replace(/\./g, '\\.');
-  assert.match(out, new RegExp(`home\\.${escapedDomain}`),
+  // Plain substring checks (no regex building from the domain — avoids a
+  // sanitization-heuristic false positive in static analysis).
+  assert.ok(out.includes(`home.${config.dns.domain}`),
     'home.<domain> A-record missing from dnsmasq hosts output');
   assert.ok(out.includes(config.wireguard.gatewayIp),
     'home A-record should use the gateway IP');
