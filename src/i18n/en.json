@@ -1963,5 +1963,23 @@
   "settings.portal.widget_device": "Device status",
   "settings.portal.widget_traffic": "Traffic chart",
   "settings.portal.widget_services": "Services",
-  "settings.portal.saved": "Portal settings saved"
+  "settings.portal.saved": "Portal settings saved",
+
+  "settings.domains.title": "Domains",
+  "settings.domains.intro": "Register the main domains this server owns. A domain must point to this server (DNS A/AAAA → server IP) before it can be used.",
+  "settings.domains.add": "Add domain",
+  "settings.domains.domain": "Domain",
+  "settings.domains.status": "Status",
+  "settings.domains.verified_at": "Verified",
+  "settings.domains.verify": "Re-check",
+  "settings.domains.remove": "Remove",
+  "settings.domains.invalid": "Invalid domain name",
+  "settings.domains.invalid_ip": "Invalid IP address",
+  "settings.domains.status_verified": "Verified",
+  "settings.domains.status_failed": "Not pointing here",
+  "settings.domains.status_pending": "Pending",
+  "settings.domains.server_ip": "Detected server IP",
+  "settings.domains.server_ip_override": "Override server IP",
+  "settings.domains.server_ip_warning": "Could not confirm any domain against the server IP — please check/override the server IP. Existing routes keep working.",
+  "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless."
 }

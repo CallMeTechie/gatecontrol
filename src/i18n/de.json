@@ -1963,5 +1963,23 @@
   "settings.portal.widget_device": "Gerätestatus",
   "settings.portal.widget_traffic": "Traffic-Diagramm",
   "settings.portal.widget_services": "Dienste",
-  "settings.portal.saved": "Portal-Einstellungen gespeichert"
+  "settings.portal.saved": "Portal-Einstellungen gespeichert",
+
+  "settings.domains.title": "Domains",
+  "settings.domains.intro": "Hinterlege die Hauptdomains dieses Servers. Eine Domain muss auf diesen Server zeigen (DNS A/AAAA → Server-IP), bevor sie genutzt werden kann.",
+  "settings.domains.add": "Domain hinzufügen",
+  "settings.domains.domain": "Domain",
+  "settings.domains.status": "Status",
+  "settings.domains.verified_at": "Geprüft",
+  "settings.domains.verify": "Erneut prüfen",
+  "settings.domains.remove": "Entfernen",
+  "settings.domains.invalid": "Ungültiger Domainname",
+  "settings.domains.invalid_ip": "Ungültige IP-Adresse",
+  "settings.domains.status_verified": "Verifiziert",
+  "settings.domains.status_failed": "Zeigt nicht hierher",
+  "settings.domains.status_pending": "Ausstehend",
+  "settings.domains.server_ip": "Erkannte Server-IP",
+  "settings.domains.server_ip_override": "Server-IP überschreiben",
+  "settings.domains.server_ip_warning": "Keine Domain konnte gegen die Server-IP bestätigt werden — bitte Server-IP prüfen/überschreiben. Bestehende Routen laufen weiter.",
+  "settings.domains.points_note": "Verifiziert heißt: öffentliches DNS zeigt auf die Server-IP. Bestehende Routen/Portal laufen unabhängig weiter."
 }
