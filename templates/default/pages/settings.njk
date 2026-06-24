@@ -395,6 +395,53 @@
     </div>
   </div>
 
+  {# ─── Domains ─────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      <span class="card-title">{{ t('settings.domains.title') }}</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;color:var(--text-3)">{{ t('settings.domains.intro') }}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-2)">{{ t('settings.domains.server_ip') }}</span>
+          <code id="domains-server-ip" style="font-family:var(--font-mono);font-size:12px"></code>
+        </div>
+        <div id="domains-server-ip-warning" style="display:none;padding:8px 12px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">{{ t('settings.domains.server_ip_warning') }}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="domains-server-ip-input" placeholder="{{ t('settings.domains.server_ip_override') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="64" autocomplete="off">
+          <button class="btn btn-primary" id="domains-server-ip-save">{{ t('data.save') }}</button>
+        </div>
+      </div>
+      <table id="domains-table"
+        data-label-verified="{{ t('settings.domains.status_verified') }}"
+        data-label-failed="{{ t('settings.domains.status_failed') }}"
+        data-label-pending="{{ t('settings.domains.status_pending') }}"
+        data-label-verify="{{ t('settings.domains.verify') }}"
+        data-label-remove="{{ t('settings.domains.remove') }}"
+        style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.domain') }}</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.status') }}</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.verified_at') }}</th>
+            <th style="padding:6px 8px"></th>
+          </tr>
+        </thead>
+        <tbody id="domains-tbody"></tbody>
+      </table>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <div style="display:flex;gap:8px">
+          <input type="text" id="domains-add-input" placeholder="{{ t('settings.domains.domain') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="255" autocomplete="off">
+          <button class="btn btn-primary" id="domains-add-btn">{{ t('settings.domains.add') }}</button>
+        </div>
+        <div id="domains-add-error" class="form-error" style="display:none"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3)">{{ t('settings.domains.points_note') }}</div>
+    </div>
+  </div>
+
   {# ─── WG Stop Password Modal ────────────────────── #}
   <div id="wg-stop-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.5);align-items:center;justify-content:center">
     <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">

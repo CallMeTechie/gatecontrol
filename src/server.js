@@ -107,6 +107,20 @@ async function start() {
       }, config.intervals.caddySyncDelay);
     }
 
+    // Domain registry — seed base domains from routes and run a best-effort
+    // verify pass on boot. Non-blocking: errors are swallowed. Never marks
+    // rows 'failed'; only sets the server-IP warning setting if all domains
+    // mismatched (≥2). Re-runs only pending rows, so it is idempotent.
+    setTimeout(async () => {
+      try {
+        const { runDomainSeedAndVerify } = require('./services/domainBoot');
+        const r = await runDomainSeedAndVerify();
+        logger.info({ seeded: r.seeded, verified: r.verified, serverIpWarning: r.flagged }, 'Domain registry seed+verify done');
+      } catch (err) {
+        logger.warn({ error: err.message }, 'Domain registry boot pass skipped');
+      }
+    }, 8000); // after network/route sync settles; backoff not required (re-runs verify pending on next boot)
+
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
     startPoller(config.intervals.peerPoller);

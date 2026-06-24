@@ -28,6 +28,7 @@ const TOKEN_FORBIDDEN = [
   /^\/password$/,
   /^\/profile$/,
   /^\/route-block-default$/,
+  /^\/domains(\/|$)/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -46,5 +47,6 @@ router.use('/', require('./observability'));
 router.use('/', require('./gateway'));
 router.use('/', require('./pihole'));
 router.use('/', require('./portal'));
+router.use('/', require('./domains'));
 
 module.exports = router;
