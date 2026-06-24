@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="{{ language | default('de') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ appName }} — {{ t('portal.title') }}</title>
+<!-- no-FOUC: set the theme BEFORE first paint (blocking, in <head>).
+     Reads from localStorage; falls back to prefers-color-scheme. -->
+<script nonce="{{ cspNonce }}">
+  (function(){
+    try{
+      var s = localStorage.getItem('gc-portal-theme');
+      var t = s || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+  })();
+</script>
+<link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/bricolage-grotesque-latin.woff2">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/jetbrains-mono-latin.woff2">
+<link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
+<script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ {
+  fallbackUnknown: t('portal.fallback.unknown'),
+  noServices: t('portal.services.none_shared'),
+  unavailable: t('portal.widget.unavailable'),
+  retry: t('portal.retry'),
+  online: t('portal.device.online'),
+  offline: t('portal.device.offline')
+} | dump | safe }}</script>
+<script src="/js/portal.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      {{ appName }}
+    </div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="themeBtn" title="{{ t('portal.theme_toggle') }}" aria-label="{{ t('portal.theme_toggle') }}">
+      <svg class="ic-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="ic-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    </button>
+    {% if identified %}
+    <div class="devpill" id="devpill" title="{{ t('portal.devpill.title') }}">
+      <span class="dot" id="devDot"></span>
+      <span class="name" id="devName">{{ deviceName }}</span>
+      <span class="ip" id="devIp"></span>
+    </div>
+    {% endif %}
+    <a href="/login" class="btn-login">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{ t('portal.login') }}
+    </a>
+  </header>
+
+  <!-- hero -->
+  <section class="hero">
+    <h1>{% if identified %}{{ t('portal.greeting_home') }}{% else %}{{ t('portal.welcome') }}{% endif %}</h1>
+    <p>{{ t('portal.greeting_sub') }}</p>
+  </section>
+
+  <!-- widget grid -->
+  <main class="grid">
+
+    {% if widgets.device %}
+    <!-- device status -->
+    <section class="card c-device">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" stroke-width="2"/><path d="M11 18h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.device.title') }}</h2>
+      <div class="kv" id="deviceKv">
+        <div class="row"><span class="k">{{ t('portal.device.status') }}</span><span class="v" id="deviceStatus"></span></div>
+        <div class="row"><span class="k">{{ t('portal.device.last_handshake') }}</span><span class="v" id="deviceHandshake"></span></div>
+        <div class="row"><span class="k">{{ t('portal.device.vpn_address') }}</span><span class="v" id="deviceAddress"></span></div>
+        <div class="row"><span class="k">{{ t('portal.device.dns') }}</span><span class="v" id="deviceDns"></span></div>
+      </div>
+      <div class="xfer">
+        <div class="b down"><div class="lab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M6 13l6 6 6-6" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('portal.device.received') }}</div><div class="num" id="deviceRx"></div></div>
+        <div class="b up"><div class="lab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="var(--coral)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('portal.device.sent') }}</div><div class="num" id="deviceTx"></div></div>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if widgets.traffic %}
+    <!-- traffic -->
+    <section class="card c-traffic">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 16l3-5 3 3 4-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{{ t('portal.traffic.title') }}
+        <span class="legend"><i style="background:var(--teal)"></i>{{ t('portal.traffic.legend_rx') }}<i style="background:var(--coral);margin-left:8px"></i>{{ t('portal.traffic.legend_tx') }}</span>
+        <span class="seg" id="seg">
+          <button data-r="24h" class="on">{{ t('portal.traffic.range_24h') }}</button>
+          <button data-r="7d">{{ t('portal.traffic.range_7d') }}</button>
+          <button data-r="30d">{{ t('portal.traffic.range_30d') }}</button>
+        </span>
+      </h2>
+      <div class="chart" id="chart"></div>
+      <div class="traffic-foot">
+        <span class="t">{{ t('portal.traffic.total') }}: <b id="tTotal"></b></span>
+        <span class="t">{{ t('portal.traffic.avg_day') }}: <b id="tAvg"></b></span>
+        <span class="t" style="margin-left:auto">{{ t('portal.traffic.peak') }}: <b id="tPeak"></b></span>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if widgets.services %}
+    <!-- services -->
+    <section class="card c-services">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="13" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 7.5h.01M7 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>{{ t('portal.services.title') }}<span class="sub">{{ t('portal.services.sub') }}</span></h2>
+      <div class="tiles" id="servicesTiles"></div>
+    </section>
+    {% endif %}
+
+  </main>
+
+  <footer class="foot">
+    <span>{{ appName }}</span>
+  </footer>
+
+</div>
+</body>
+</html>

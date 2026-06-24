@@ -664,12 +664,18 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     },
   };
 
+  // Home portal hostname — computed early so it can be included in TLS
+  // automation (must be covered by the internal-CA issuer policy).
+  const homeHost = `home.${config.dns.domain}`;
+
   // TLS email. Split domains into public-TLD (gets real ACME) and
   // internal/private suffixes (gets Caddy's internal CA). Without the
   // split a single `.test`/`.local`/`.internal` route would hammer the
   // Let's Encrypt rate-limit endpoint with retries every hour and
   // pollute acme logs.
-  const tlsConfig = buildTlsAutomation(Object.keys(caddyRoutes), config.caddy);
+  // homeHost is passed explicitly because it is added to caddyRoutes below,
+  // AFTER this call, so it would otherwise be absent from the TLS policy.
+  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy, [homeHost]);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
@@ -683,11 +689,61 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           handle: [{
             handler: 'reverse_proxy',
             upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            // Belt-and-suspenders: strip the portal identity header on the
+            // management-UI vhost so it cannot be used to forge peer identity
+            // even if an external request somehow reaches Node via this path.
+            headers: {
+              request: {
+                delete: ['X-GC-Portal-Peer-IP'],
+              },
+            },
           }],
         }],
       };
     }
   } catch {}
+
+  // Home portal site — internal-only reverse proxy to the local Node app.
+  // SECURITY-CRITICAL: This is the trusted-IP control for the VPN landing
+  // portal (Task 10). The site:
+  //   • Is restricted to INTERNAL_ONLY_RANGES (VPN subnet) — never externally
+  //     exposed. remote_ip match is on the real TCP source; cannot be spoofed.
+  //   • Strips any client-supplied X-GC-Portal-Peer-IP (prevents header forgery).
+  //   • Sets X-GC-Portal-Peer-IP from {http.request.remote.host} — the real TCP
+  //     source IP, NOT from any forwarded header.
+  //   • Rewrites bare / to /portal so VPN clients landing on home.<domain> see
+  //     the portal immediately; asset/API paths pass through unchanged.
+  if (!caddyRoutes[homeHost]) {
+    caddyRoutes[homeHost] = {
+      listen: [':443', ':80'],
+      routes: [{
+        match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
+        handle: [
+          // Path-conditional rewrite: only / → /portal; other paths unchanged.
+          {
+            handler: 'subroute',
+            routes: [{
+              match: [{ path: ['/'] }],
+              handle: [{ handler: 'rewrite', uri: '/portal' }],
+            }],
+          },
+          // Reverse proxy to local Node app with trusted-IP header handling.
+          {
+            handler: 'reverse_proxy',
+            upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            headers: {
+              request: {
+                // Delete first: prevent any client-supplied copy from reaching Node.
+                delete: ['X-GC-Portal-Peer-IP'],
+                // Set from real TCP source — Caddy resolves this before XFF processing.
+                set: { 'X-GC-Portal-Peer-IP': ['{http.request.remote.host}'] },
+              },
+            },
+          },
+        ],
+      }],
+    };
+  }
 
   // Group routes into a single server
   const serverRoutes = [...serverRoutes_pending];

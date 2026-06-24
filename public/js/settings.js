@@ -1666,6 +1666,61 @@
   loadPihole();
 })();
 
+// ─── Portal Settings ─────────────────────────────────
+(function () {
+  var enabledToggle = document.getElementById('portal-enabled');
+  var widgetDevice = document.getElementById('portal-widget-device');
+  var widgetTraffic = document.getElementById('portal-widget-traffic');
+  var widgetServices = document.getElementById('portal-widget-services');
+  var saveBtn = document.getElementById('btn-portal-save');
+  if (!enabledToggle) return;
+
+  [enabledToggle, widgetDevice, widgetTraffic, widgetServices].forEach(function (el) {
+    if (el) el.addEventListener('click', function () { el.classList.toggle('on'); });
+  });
+
+  function setToggle(el, val) {
+    if (!el) return;
+    if (val) el.classList.add('on'); else el.classList.remove('on');
+  }
+
+  api.get('/api/v1/settings/portal').then(function (data) {
+    if (!data.ok) return;
+    var d = data.data;
+    setToggle(enabledToggle, d.enabled);
+    setToggle(widgetDevice, d.widgets && d.widgets.device);
+    setToggle(widgetTraffic, d.widgets && d.widgets.traffic);
+    setToggle(widgetServices, d.widgets && d.widgets.services);
+  }).catch(function (err) {
+    console.error('Failed to load portal settings:', err);
+  });
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async function () {
+      btnLoading(saveBtn);
+      try {
+        var data = await api.put('/api/v1/settings/portal', {
+          enabled: enabledToggle.classList.contains('on'),
+          widgets: {
+            device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
+            traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
+            services: widgetServices ? widgetServices.classList.contains('on') : true,
+          },
+        });
+        if (data.ok) {
+          showMessage('portal-message', GC.t['settings.portal.saved'] || 'Settings saved', 'success');
+        } else {
+          showMessage('portal-message', data.error || 'Failed', 'error');
+        }
+      } catch (err) {
+        showMessage('portal-message', err.message, 'error');
+      } finally {
+        btnReset(saveBtn);
+      }
+    });
+  }
+})();
+
 // ─── Route Block Default ──────────────────────────────
 (function () {
   var actionSel = document.getElementById('settings-route-block-action');
