@@ -4,7 +4,7 @@ process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBy
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const supertest = require('supertest');
-const { setup, teardown } = require('./helpers/setup');
+const { setup, teardown, getAgent } = require('./helpers/setup');
 
 let app;
 beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
@@ -29,4 +29,14 @@ test('field-saving style is served in both stylesheets', async () => {
   assert.match(appCss.text, /\.field-saving/);
   const proCss = await supertest(app).get('/css/pro.css').expect(200);
   assert.match(proCss.text, /\.field-saving/);
+});
+
+test('independent clusters migrated: buttons gone, autosave bound, mb fixed', async () => {
+  const js = await supertest(app).get('/js/settings.js').expect(200);
+  assert.match(js.text, /SettingsAutosave\.bind/);
+  assert.doesNotMatch(js.text, /getElementById\(['"]mb-msg['"]\)/);
+  assert.doesNotMatch(js.text, /fetch\(['"]\/api\/v1\/settings\/gateway-failover/); // now via api.put
+  const page = await getAgent().get('/settings').expect(200);
+  ['btn-metrics-save','btn-dns-save','btn-data-save','btn-monitoring-save','mb-save','au-mode-save']
+    .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
 });

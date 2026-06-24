@@ -540,33 +540,42 @@
     }
   }
 
-  var btnDataSave = document.getElementById('btn-data-save');
-  if (btnDataSave) {
-    btnDataSave.addEventListener('click', async function() {
-      btnLoading(btnDataSave);
-      try {
-        var data = await api.put('/api/settings/data', {
-          retention_traffic_days: document.getElementById('data-traffic-days').value,
-          retention_activity_days: document.getElementById('data-activity-days').value,
-          peer_online_timeout: document.getElementById('data-peer-timeout').value,
-        });
-        if (data.ok) {
-          showMessage('data-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('data-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('data-message', err.message, 'error');
-      } finally {
-        btnReset(btnDataSave);
-      }
-    });
-  }
+  (function () {
+    var trafficDays = document.getElementById('data-traffic-days');
+    var activityDays = document.getElementById('data-activity-days');
+    var peerTimeout = document.getElementById('data-peer-timeout');
+    var dataStatus = document.getElementById('data-status');
+    var dataFields = [trafficDays, activityDays, peerTimeout].filter(Boolean);
+    if (dataFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'data',
+        fields: dataFields,
+        statusEl: dataStatus,
+        valuesById: function () {
+          return {
+            'data-traffic-days': trafficDays ? trafficDays.value : '',
+            'data-activity-days': activityDays ? activityDays.value : '',
+            'data-peer-timeout': peerTimeout ? peerTimeout.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/data', {
+            retention_traffic_days: trafficDays ? trafficDays.value : '',
+            retention_activity_days: activityDays ? activityDays.value : '',
+            peer_online_timeout: peerTimeout ? peerTimeout.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── Monitoring Settings ───────────────────────────────
 
   var monEmailToggle = document.getElementById('monitoring-email-alerts');
-  if (monEmailToggle) monEmailToggle.addEventListener('click', function() { monEmailToggle.classList.toggle('on'); });
+  if (monEmailToggle) monEmailToggle.addEventListener('click', function() {
+    monEmailToggle.classList.toggle('on');
+    monEmailToggle.dispatchEvent(new Event('change'));
+  });
 
   async function loadMonitoringSettings() {
     try {
@@ -583,28 +592,32 @@
     }
   }
 
-  var btnMonSave = document.getElementById('btn-monitoring-save');
-  if (btnMonSave) {
-    btnMonSave.addEventListener('click', async function() {
-      btnLoading(btnMonSave);
-      try {
-        var data = await api.put('/api/settings/monitoring', {
-          interval: document.getElementById('monitoring-interval').value,
-          email_alerts: monEmailToggle.classList.contains('on'),
-          alert_email: document.getElementById('monitoring-alert-email').value,
-        });
-        if (data.ok) {
-          showMessage('monitoring-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('monitoring-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('monitoring-message', err.message, 'error');
-      } finally {
-        btnReset(btnMonSave);
-      }
-    });
-  }
+  (function () {
+    var intervalEl = document.getElementById('monitoring-interval');
+    var alertEmailEl = document.getElementById('monitoring-alert-email');
+    var monFields = [intervalEl, monEmailToggle, alertEmailEl].filter(Boolean);
+    if (monFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'monitoring',
+        fields: monFields,
+        statusEl: document.getElementById('monitoring-status'),
+        valuesById: function () {
+          return {
+            'monitoring-interval': intervalEl ? intervalEl.value : '',
+            'monitoring-email-alerts': monEmailToggle ? monEmailToggle.classList.contains('on') : false,
+            'monitoring-alert-email': alertEmailEl ? alertEmailEl.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/monitoring', {
+            interval: intervalEl ? intervalEl.value : '',
+            email_alerts: monEmailToggle ? monEmailToggle.classList.contains('on') : false,
+            alert_email: alertEmailEl ? alertEmailEl.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── Email Alert Settings ──────────────────────────────
 
@@ -893,6 +906,7 @@
   if (metricsEnabledToggle) {
     metricsEnabledToggle.addEventListener('click', function() {
       metricsEnabledToggle.classList.toggle('on');
+      metricsEnabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -909,24 +923,14 @@
     }
   }
 
-  var btnMetricsSave = document.getElementById('btn-metrics-save');
-  if (btnMetricsSave) {
-    btnMetricsSave.addEventListener('click', async function() {
-      btnLoading(btnMetricsSave);
-      try {
-        var data = await api.put('/api/settings/metrics', {
-          enabled: metricsEnabledToggle.classList.contains('on'),
-        });
-        if (data.ok) {
-          showMessage('metrics-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('metrics-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('metrics-message', err.message, 'error');
-      } finally {
-        btnReset(btnMetricsSave);
-      }
+  var metricsStatus = document.getElementById('metrics-status');
+  if (metricsEnabledToggle) {
+    SettingsAutosave.bind({
+      cluster: 'metrics',
+      fields: [metricsEnabledToggle],
+      statusEl: metricsStatus,
+      valuesById: function () { return { 'metrics-enabled': metricsEnabledToggle.classList.contains('on') }; },
+      save: function () { return api.put('/api/settings/metrics', { enabled: metricsEnabledToggle.classList.contains('on') }); },
     });
   }
 
@@ -1008,30 +1012,18 @@
 // ─── DNS Settings ─────────────────────────────
 (function () {
   var dnsInput = document.getElementById('settings-dns-input');
-  var dnsSaveBtn = document.getElementById('btn-dns-save');
 
   if (dnsInput) {
     api.get('/api/v1/settings/dns').then(function(data) {
       if (data.ok) dnsInput.value = data.data.dns || '';
     }).catch(function() {});
-  }
 
-  if (dnsSaveBtn) {
-    dnsSaveBtn.addEventListener('click', async function() {
-      var btn = this;
-      btnLoading(btn);
-      try {
-        var data = await api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() });
-        if (data.ok) {
-          showToast(GC.t['settings.dns_saved'] || 'DNS settings saved');
-        } else {
-          showToast(data.error || 'Error', 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      } finally {
-        btnReset(btn);
-      }
+    SettingsAutosave.bind({
+      cluster: 'dns',
+      fields: [dnsInput],
+      statusEl: document.getElementById('dns-status'),
+      valuesById: function () { return { dns: dnsInput.value.trim() }; },
+      save: function () { return api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() }); },
     });
   }
 })();
@@ -1044,19 +1036,15 @@
     var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
     if (el) el.checked = true;
   }).catch(function () {});
-  var save = document.getElementById('au-mode-save');
-  if (save) {
-    save.addEventListener('click', function () {
-      var sel = card.querySelector('input[name="au-mode"]:checked');
-      var mode = sel ? sel.value : 'auto';
-      window.api.put('/api/system/auto-update', { mode: mode }).then(function (j) {
-        if (window.showToast) {
-          window.showToast(
-            (window.GC && GC.t && GC.t['autoupdate.saved']) || 'Mode saved',
-            (j && j.ok) ? 'success' : 'error'
-          );
-        }
-      }).catch(function () {});
+  var auRadios = Array.prototype.slice.call(document.querySelectorAll('input[name="au-mode"]'));
+  if (auRadios.length) {
+    function auVal() { var c = document.querySelector('input[name="au-mode"]:checked'); return c ? c.value : ''; }
+    SettingsAutosave.bind({
+      cluster: 'auto-update',
+      fields: auRadios,
+      statusEl: document.getElementById('au-mode-status'),
+      valuesById: function () { return { 'au-mode': auVal() }; },
+      save: function () { return api.put('/api/system/auto-update', { mode: auVal() }); },
     });
   }
 })();
@@ -1065,8 +1053,7 @@
 // ── Machine Binding Settings ──────────────────────────
 (async function () {
   var modeSelect = document.getElementById('mb-mode');
-  var saveBtn = document.getElementById('mb-save');
-  var msg = document.getElementById('mb-msg');
+  var statusEl = document.getElementById('mb-message');
   if (!modeSelect) return;
 
   try {
@@ -1074,16 +1061,12 @@
     if (res.ok) modeSelect.value = res.data.mode;
   } catch {}
 
-  saveBtn.addEventListener('click', async function () {
-    try {
-      await api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value });
-      msg.textContent = GC.t['security.machine_binding.saved'] || 'Saved';
-      msg.style.color = 'var(--success)';
-      setTimeout(function () { msg.textContent = ''; }, 3000);
-    } catch (err) {
-      msg.style.color = 'var(--danger)';
-      msg.textContent = err.message || 'Error';
-    }
+  SettingsAutosave.bind({
+    cluster: 'machine-binding',
+    fields: [modeSelect],
+    statusEl: statusEl,
+    valuesById: function () { return { 'mb-mode': modeSelect.value }; },
+    save: function () { return api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value }); },
   });
 })();
 
@@ -1336,17 +1319,17 @@
   });
 })();
 
-(() => {
-  const sliderEl = document.getElementById('gw-down-threshold');
-  const sliderOut = document.getElementById('gw-down-threshold-value');
+(function () {
+  var sliderEl = document.getElementById('gw-down-threshold');
+  var sliderOut = document.getElementById('gw-down-threshold-value');
   if (sliderEl && sliderOut) {
-    sliderEl.addEventListener('input', () => { sliderOut.textContent = sliderEl.value + ' s'; });
-    sliderEl.addEventListener('change', async () => {
-      await fetch('/api/v1/settings/gateway-failover', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '' },
-        body: JSON.stringify({ gateway_down_threshold_s: parseInt(sliderEl.value, 10) }),
-      });
+    sliderEl.addEventListener('input', function () { sliderOut.textContent = sliderEl.value + ' s'; });
+    SettingsAutosave.bind({
+      cluster: 'gateway-failover',
+      fields: [sliderEl],
+      statusEl: document.getElementById('gw-failover-status'),
+      valuesById: function () { return { gw: sliderEl.value }; },
+      save: function () { return api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: parseInt(sliderEl.value, 10) }); },
     });
   }
 })();
