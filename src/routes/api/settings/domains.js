@@ -65,13 +65,20 @@ router.delete('/domains/:id', (req, res) => {
   }
 });
 
-router.put('/domains/server-ip', (req, res) => {
+router.put('/domains/server-ip', async (req, res) => {
   const ip = String(req.body?.ip ?? '').trim();
   if (ip !== '' && !net.isIP(ip)) {
     return res.status(400).json({ ok: false, error: req.t('settings.domains.invalid_ip') });
   }
   try {
     settings.set('server.public_ip', ip);
+    // Best-effort: re-verify all domains against the new IP so the
+    // server-IP warning is refreshed immediately (without restart).
+    try {
+      await require('../../../services/domainBoot').reverifyAllAndReflag();
+    } catch (verifyErr) {
+      logger.warn({ err: verifyErr.message }, 'reverifyAllAndReflag failed after server-ip save');
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.warn({ err: err.message }, 'PUT /domains/server-ip failed');
