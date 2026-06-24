@@ -3605,3 +3605,11 @@ body.rdp-session-body {
 /* Animations (rdp- prefix to avoid conflicts) */
 @keyframes rdp-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes rdp-spin  { to { transform: rotate(360deg); } }
+
+/* Settings autosave feedback */
+.autosave-status { font-size: 11px; color: var(--text-3); min-height: 14px; transition: filter .15s ease; }
+.autosave-status.field-saving { filter: blur(2px); opacity: .7; }
+.autosave-status.autosave-error { color: var(--danger, #dc2626); filter: none; opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .autosave-status.field-saving { filter: none; opacity: .5; }
+}

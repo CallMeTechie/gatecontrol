@@ -23,3 +23,10 @@ test('toggles dispatch a change event (setupManagedToggle)', async () => {
   const js = await supertest(app).get('/js/settings.js').expect(200);
   assert.match(js.text, /dispatchEvent\(new Event\(['"]change['"]\)\)/);
 });
+
+test('field-saving style is served in both stylesheets', async () => {
+  const appCss = await supertest(app).get('/css/app.css').expect(200);
+  assert.match(appCss.text, /\.field-saving/);
+  const proCss = await supertest(app).get('/css/pro.css').expect(200);
+  assert.match(proCss.text, /\.field-saving/);
+});
