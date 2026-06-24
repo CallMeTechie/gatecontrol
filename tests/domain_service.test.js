@@ -15,3 +15,13 @@ test('domains table exists with expected columns', () => {
     assert.ok(cols.includes(c), `missing column ${c}`);
   }
 });
+
+test('add upserts a verified row; listVerified/baseDomains/isVerified reflect it', async () => {
+  const domains = require('../src/services/domains');
+  const settings = require('../src/services/settings');
+  settings.set('server.public_ip', '198.51.100.7');
+  domains._setResolverForTest(async (h, f) => (f === 4 ? ['198.51.100.7'] : []));
+  await domains.add('home.example.com');
+  assert.equal(domains.isVerified('home.example.com'), true);
+  assert.deepEqual(domains.baseDomains(), ['home.example.com']);
+});
