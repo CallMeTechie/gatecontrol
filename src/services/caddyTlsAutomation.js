@@ -26,15 +26,24 @@ function isPublicDomain(domain) {
   return !NON_PUBLIC_TLDS.has(tld);
 }
 
-function buildTlsAutomation(routeDomains, caddyConfig) {
+function buildTlsAutomation(routeDomains, caddyConfig, forceInternalDomains = []) {
   if (!caddyConfig || !caddyConfig.email) return null;
 
   // Listener-only entries like ":443" land in caddyRoutes for the
   // server-block setup but are not domains — skip them so they don't
   // become bogus issuer subjects.
   const allDomains = routeDomains.filter(d => !/^:\d+$/.test(d));
-  const publicDomains = allDomains.filter(isPublicDomain);
-  const privateDomains = allDomains.filter(d => !isPublicDomain(d));
+  // forceInternalDomains overrides TLD classification: these are always
+  // treated as private/internal regardless of their public-looking TLD.
+  // Deduplicate to avoid double entries if a domain appears in both lists.
+  const forcedSet = new Set(forceInternalDomains.map(d => String(d).toLowerCase()));
+  const publicDomains = allDomains.filter(
+    d => isPublicDomain(d) && !forcedSet.has(String(d).toLowerCase()),
+  );
+  const privateDomains = [
+    ...allDomains.filter(d => !isPublicDomain(d)),
+    ...allDomains.filter(d => isPublicDomain(d) && forcedSet.has(String(d).toLowerCase())),
+  ].filter((d, i, arr) => arr.indexOf(d) === i); // dedupe
 
   const policies = [];
 

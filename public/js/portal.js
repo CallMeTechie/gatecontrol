@@ -99,8 +99,7 @@
   function showFallback(el) {
     if (!el) return;
     // Use the generic/neutral message — fits both gateway-identified and
-    // unidentified contexts.  fallbackGateway is kept in the template i18n map
-    // for back-compat but is no longer referenced here.
+    // unidentified contexts.
     el.replaceChildren();
     const p = document.createElement('p');
     p.className = 'portal-fallback';

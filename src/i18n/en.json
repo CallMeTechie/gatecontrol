@@ -1954,7 +1954,6 @@
   "portal.services.title": "Services",
   "portal.services.sub": "Shared with you",
   "portal.services.none_shared": "No services shared yet",
-  "portal.fallback.gateway": "This device connects via a gateway — per-device data is unavailable.",
   "portal.fallback.unknown": "Device data unavailable.",
   "portal.widget.unavailable": "Unavailable",
   "portal.retry": "↺ Retry",

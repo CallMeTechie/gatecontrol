@@ -5,11 +5,10 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown } = require('./helpers/setup');
 
-let portalIdentity, peers, getDb;
+let portalIdentity, getDb;
 beforeEach(async () => {
   await setup();
   portalIdentity = require('../src/middleware/portalIdentity');
-  peers = require('../src/services/peers');
   getDb = require('../src/db/connection').getDb;
 });
 afterEach(teardown);

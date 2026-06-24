@@ -1954,7 +1954,6 @@
   "portal.services.title": "Dienste",
   "portal.services.sub": "Für dich freigegeben",
   "portal.services.none_shared": "Noch keine Dienste freigegeben",
-  "portal.fallback.gateway": "Dieses Gerät verbindet sich über ein Gateway — gerätespezifische Daten sind nicht verfügbar.",
   "portal.fallback.unknown": "Gerätedaten nicht verfügbar.",
   "portal.widget.unavailable": "Nicht verfügbar",
   "portal.retry": "↺ Erneut versuchen",

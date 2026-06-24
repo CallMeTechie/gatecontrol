@@ -48,6 +48,7 @@
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-weight: 500 700;
+  font-stretch: 100%;
   font-display: swap;
   /* metric-matched fallback: ui-monospace is a close width match on macOS/iOS */
   src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');

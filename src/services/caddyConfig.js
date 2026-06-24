@@ -675,7 +675,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // pollute acme logs.
   // homeHost is passed explicitly because it is added to caddyRoutes below,
   // AFTER this call, so it would otherwise be absent from the TLS policy.
-  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy);
+  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy, [homeHost]);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route

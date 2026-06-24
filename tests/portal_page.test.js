@@ -61,6 +61,6 @@ test('no untranslated portal key leaks in DE render', async () => {
     .set('Host', HOME_HOST)
     .expect(200);
   assert.doesNotMatch(res.text, /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in DE');
-  // Confirm a known DE string is rendered (device widget heading)
-  assert.match(res.text, /Gerät/, 'expected DE translation "Gerät" in DE render');
+  // Confirm a translation-only string that cannot come from seeded peer data
+  assert.match(res.text, /Willkommen zu Hause/, 'expected DE translation "Willkommen zu Hause" (portal.greeting_home) in DE render');
 });
