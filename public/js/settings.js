@@ -395,7 +395,11 @@
   // Toggle helpers for managed toggles
   function setupManagedToggle(id) {
     var el = document.getElementById(id);
-    if (el) el.addEventListener('click', function() { el.classList.toggle('on'); });
+    if (!el) return;
+    el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      el.dispatchEvent(new Event('change'));    // <-- enables autosave on toggles
+    });
   }
   ['security-lockout-enabled', 'security-password-enabled', 'security-password-uppercase',
    'security-password-number', 'security-password-special'].forEach(setupManagedToggle);
