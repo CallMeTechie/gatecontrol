@@ -27,7 +27,7 @@ router.get('/settings', (req, res) => {
 // PUT /api/smtp/settings — save SMTP settings
 router.put('/settings', (req, res) => {
   (async () => {
-    const { host, port, user, password, from, secure } = req.body;
+    const { host, port, user, password, from, secure, clear_password } = req.body;
 
     if (!host) {
       return res.status(400).json({ ok: false, error: req.t('smtp.error.host_required') });
@@ -44,7 +44,7 @@ router.put('/settings', (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('smtp.error.port_invalid') });
     }
 
-    saveSmtpSettings({ host, port: portNum, user, password, from, secure });
+    saveSmtpSettings({ host, port: portNum, user, password, from, secure, clear_password });
     res.json({ ok: true });
   })().catch((err) => { logger.error({ err: err.message }, 'smtp handler failed'); res.status(500).json({ ok: false, error: req.t('common.error') }); });
 });

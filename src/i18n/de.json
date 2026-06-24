@@ -1963,5 +1963,12 @@
   "settings.portal.widget_device": "Gerätestatus",
   "settings.portal.widget_traffic": "Traffic-Diagramm",
   "settings.portal.widget_services": "Dienste",
-  "settings.portal.saved": "Portal-Einstellungen gespeichert"
+  "settings.portal.saved": "Portal-Einstellungen gespeichert",
+  "settings.autosave.saved": "Gespeichert",
+  "settings.autosave.error": "Speichern fehlgeschlagen",
+  "settings.autosave.pending": "Wird gespeichert, sobald alle Pflichtfelder ausgefüllt sind",
+  "settings.autosave.confirm_self": "Diese Änderung kann deine aktuelle Sitzung betreffen. Übernehmen?",
+  "settings.autosave.confirm_mb_mode": "Dies ändert die Gerätebindung und kann den Zugriff betreffen. Übernehmen?",
+  "settings.autosave.clear_secret": "Entfernen",
+  "settings.autosave.clear_secret_confirm": "Gespeicherten Wert entfernen?"
 }

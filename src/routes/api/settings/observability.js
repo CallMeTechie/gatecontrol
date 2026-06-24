@@ -97,8 +97,13 @@ router.get('/ip2location', (req, res) => {
  */
 router.put('/ip2location', (req, res) => {
   try {
-    const { api_key } = req.body;
-    if (api_key !== undefined) settings.set('ip2location.api_key', String(api_key));
+    const { api_key, clear } = req.body;
+    if (clear === true) {
+      settings.set('ip2location.api_key', '');
+    } else if (api_key !== undefined && String(api_key) !== '') {
+      settings.set('ip2location.api_key', String(api_key));
+    }
+    // empty api_key without clear → leave unchanged
     activity.log('ip2location_settings_updated', 'ip2location API key updated', {
       source: 'admin', ipAddress: req.ip, severity: 'info',
     });

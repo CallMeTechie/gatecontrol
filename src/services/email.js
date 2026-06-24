@@ -239,7 +239,7 @@ async function sendTestEmail(to) {
 /**
  * Upsert SMTP settings into the settings table. Encrypts password if provided.
  */
-function saveSmtpSettings({ host, port, user, password, from, secure }) {
+function saveSmtpSettings({ host, port, user, password, from, secure, clear_password }) {
   const db = getDb();
 
   function upsert(key, value) {
@@ -257,7 +257,9 @@ function saveSmtpSettings({ host, port, user, password, from, secure }) {
   if (from !== undefined) upsert('smtp_from', from);
   if (secure !== undefined) upsert('smtp_secure', secure ? '1' : '0');
 
-  if (password !== undefined && password !== null && password !== '') {
+  if (clear_password === true) {
+    upsert('smtp_password_encrypted', '');
+  } else if (password !== undefined && password !== null && password !== '') {
     const encrypted = encrypt(String(password));
     upsert('smtp_password_encrypted', encrypted);
   }
