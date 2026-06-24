@@ -1053,7 +1053,7 @@
 // ── Machine Binding Settings ──────────────────────────
 (async function () {
   var modeSelect = document.getElementById('mb-mode');
-  var statusEl = document.getElementById('mb-message');
+  var statusEl = document.getElementById('machine-binding-status');
   if (!modeSelect) return;
 
   try {
@@ -1300,6 +1300,14 @@
 (function () {
   var container = document.getElementById('default-theme-buttons');
   if (!container) return;
+  var statusEl = document.getElementById('default-theme-status');
+  function flash() {
+    if (!statusEl) return;
+    statusEl.classList.remove('autosave-error');
+    statusEl.classList.add('field-saving');
+    statusEl.textContent = (window.GC && GC.t && GC.t['settings.autosave.saved']) || 'Saved';
+    setTimeout(function () { statusEl.classList.remove('field-saving'); }, 500);
+  }
   container.addEventListener('click', async function (e) {
     var btn = e.target.closest('[data-default-theme]');
     if (!btn) return;
@@ -1310,6 +1318,7 @@
         container.querySelectorAll('[data-default-theme]').forEach(function (b) {
           b.className = b.dataset.defaultTheme === selected ? 'btn btn-primary' : 'btn btn-ghost';
         });
+        flash();
         // Reload page to apply the new theme (templates are server-rendered)
         setTimeout(function () { window.location.reload(); }, 300);
       }

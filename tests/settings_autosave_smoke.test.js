@@ -39,4 +39,9 @@ test('independent clusters migrated: buttons gone, autosave bound, mb fixed', as
   const page = await getAgent().get('/settings').expect(200);
   ['btn-metrics-save','btn-dns-save','btn-data-save','btn-monitoring-save','mb-save','au-mode-save']
     .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
+  // dedicated status badges present (incl. machine-binding + default-theme)
+  ['machine-binding-status','default-theme-status']
+    .forEach(id => assert.match(page.text, new RegExp('id="' + id + '"')));
+  // machine-binding JS points statusEl at its dedicated badge, not the old hidden div
+  assert.match(js.text, /getElementById\(['"]machine-binding-status['"]\)/);
 });
