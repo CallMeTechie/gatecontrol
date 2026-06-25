@@ -50,18 +50,35 @@ test('renderHostsContent includes a home.<domain> A-record at the gateway IP', (
     'home A-record FQDN missing');
 });
 
-// ─── 2. Caddy site with reserved-header handling ─────────────────────────
-test('buildCaddyConfig adds an internal home.<domain> site with strip+set of reserved header', () => {
+// ─── 2. Caddy site SETS the reserved identity header (set-only, never delete+set) ──
+test('portal gate route SETS X-GC-Portal-Peer-IP from the real TCP source and does NOT also delete it', () => {
   const cfg = caddyConfigMod.buildCaddyConfig();
   const wantHost = `home.${config.dns.domain}`;
-  const json = JSON.stringify(cfg);
+  const serverRoutes = cfg?.apps?.http?.servers?.srv0?.routes || [];
 
-  assert.ok(json.includes(wantHost),
-    `home.<domain> site missing from Caddy config (looked for ${wantHost})`);
-  assert.ok(json.includes('X-GC-Portal-Peer-IP'),
-    'reserved header X-GC-Portal-Peer-IP handling missing from Caddy config');
-  assert.ok(json.includes('{http.request.remote.host}'),
-    'real-IP placeholder {http.request.remote.host} missing from Caddy config');
+  // Drill: outer host route → subroute → the remote_ip gate route → its reverse_proxy.
+  const homeRoute = serverRoutes.find(r =>
+    Array.isArray(r.match) && r.match.some(m => Array.isArray(m.host) && m.host.includes(wantHost)));
+  assert.ok(homeRoute, `home.<domain> route not found (looked for ${wantHost})`);
+  const innerRoutes = ((homeRoute.handle || []).find(h => h.handler === 'subroute') || {}).routes || [];
+  const gateRoute = innerRoutes.find(r =>
+    Array.isArray(r.match) && r.match.some(m => m.remote_ip));
+  assert.ok(gateRoute, 'remote_ip gate route missing inside the portal subroute');
+  const rp = (gateRoute.handle || []).find(h => h.handler === 'reverse_proxy');
+  assert.ok(rp, 'portal gate route has no reverse_proxy handler');
+
+  const reqHdr = (rp.headers && rp.headers.request) || {};
+  const setVals = (reqHdr.set && reqHdr.set['X-GC-Portal-Peer-IP']) || [];
+  assert.ok(setVals.includes('{http.request.remote.host}'),
+    'gate route must SET X-GC-Portal-Peer-IP from {http.request.remote.host} (the real TCP source)');
+
+  // REGRESSION GUARD: Caddy applies `delete` AFTER `set`, so a delete + set on the SAME
+  // header wipes the value we just set and Node never sees the identity header (portal
+  // shows no per-device data). `set` alone is already forgery-safe (it replaces any
+  // client-supplied copy). The gate route must therefore NOT delete this header.
+  const delVals = reqHdr.delete || [];
+  assert.ok(!delVals.includes('X-GC-Portal-Peer-IP'),
+    'gate route must NOT delete X-GC-Portal-Peer-IP — delete-after-set nukes the value Node needs');
 });
 
 // ─── 3. Internal-only (remote_ip gate in inner subroute + 404 fallback) ──────────
