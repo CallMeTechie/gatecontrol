@@ -60,11 +60,11 @@ router.put('/portal', (req, res) => {
       const prefix = String(body.prefix !== undefined ? (body.prefix == null ? '' : body.prefix) : settings.get('portal.prefix', 'home')).trim().toLowerCase();
       const v = validatePortalHost(base, prefix);
       if (!v.ok) return res.status(400).json({ ok: false, error: req.t('settings.portal.host_' + v.error) });
-      // Preflight: a public host needs an ACME email, else Caddy requests no cert and the
-      // feature silently fails its core value. Reject before persisting/syncing.
-      if (base && !config.caddy.email) {
-        return res.status(400).json({ ok: false, error: req.t('settings.portal.host_requires_caddy_email') });
-      }
+      // NOTE: GC_CADDY_EMAIL is intentionally NOT required. ACME issuance (Let's Encrypt)
+      // does not need an account email; when GC_CADDY_EMAIL is empty, buildTlsAutomation
+      // emits no explicit tls policy and Caddy's default automation obtains a public cert
+      // for the portal host exactly as it already does for every route domain. An email is
+      // optional (only used for LE expiry notices, which Caddy's auto-renew makes moot).
       settings.set('portal.base_domain', base);
       settings.set('portal.prefix', prefix);
       // ALWAYS re-sync when a host field was submitted + validated — NO "only when changed"
