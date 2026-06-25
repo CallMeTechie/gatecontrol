@@ -1964,6 +1964,10 @@
   "settings.portal.widget_traffic": "Traffic-Diagramm",
   "settings.portal.widget_services": "Dienste",
   "settings.portal.saved": "Portal-Einstellungen gespeichert",
+  "settings.portal.host_not_verified": "Domain ist nicht verifiziert",
+  "settings.portal.host_invalid_prefix": "Ungültiges Subdomain-Präfix",
+  "settings.portal.host_collision": "Host kollidiert mit der GateControl-Adresse, einer Route-Domain oder einem Peer-Hostnamen",
+  "settings.portal.host_requires_caddy_email": "Eine öffentliche Domain benötigt eine konfigurierte ACME-E-Mail (GC_CADDY_EMAIL) für die Zertifikatsausstellung",
 
   "settings.domains.title": "Domains",
   "settings.domains.intro": "Hinterlege die Hauptdomains dieses Servers. Eine Domain muss auf diesen Server zeigen (DNS A/AAAA → Server-IP), bevor sie genutzt werden kann.",
