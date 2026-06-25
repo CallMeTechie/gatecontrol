@@ -4,6 +4,7 @@ const { getDb } = require('../db/connection');
 const domains = require('./domains');
 const settings = require('./settings');
 const { extractBaseDomains, shouldFlagServerIp } = require('./domainSeed');
+const { isPublicDomain } = require('./caddyTlsAutomation');
 
 /**
  * Verify a set of domain names against the server IP, persist results, and
@@ -34,8 +35,20 @@ async function verifyAndReflag(domainNames, { verifyEach = domains.verify } = {}
 
 async function runDomainSeedAndVerify({ verifyEach = domains.verify } = {}) {
   const routeDomains = getDb().prepare('SELECT DISTINCT domain FROM routes WHERE domain IS NOT NULL').all().map(r => r.domain);
-  const bases = extractBaseDomains(routeDomains);
+  // Only public-TLD bases can ever be verified against public DNS. Non-public
+  // bases (.internal/.lan/...) would otherwise linger forever as 'pending'
+  // noise on the Domains page, so they are never seeded.
+  const bases = extractBaseDomains(routeDomains).filter(isPublicDomain);
   for (const d of bases) domains.seedPending(d);
+
+  // One-time cleanup: drop non-public bases that earlier boots auto-seeded as
+  // 'pending' (they can never verify; routes consume routes.domain directly and
+  // nothing references the domains table by FK). Verified rows are never touched.
+  const lingering = getDb().prepare("SELECT domain FROM domains WHERE status='pending'").all().map(r => r.domain);
+  const delStmt = getDb().prepare('DELETE FROM domains WHERE domain=?');
+  for (const d of lingering) {
+    if (!isPublicDomain(d)) delStmt.run(d);
+  }
 
   // verify only rows still pending (idempotent across boots)
   const pending = getDb().prepare("SELECT domain FROM domains WHERE status='pending'").all().map(r => r.domain);
