@@ -212,6 +212,8 @@
   "routes.prefix_hint": "leer = direkt auf der Domain",
   "routes.other_domain": "Andere/interne Domain (Freitext)",
   "routes.no_verified_domains_hint": "Keine verifizierten Domains — Einstellungen → Allgemein → Domains",
+  "routes.unverified_base_option": "(unverifiziert · Bestand)",
+  "routes.unverified_base_prefix_warning": "Präfix-Änderung verlangt eine verifizierte Basis — Domain zuerst verifizieren",
   "routes.description": "Beschreibung",
   "routes.description_placeholder": "Optionale Beschreibung",
   "routes.target_peer": "Ziel-Peer",

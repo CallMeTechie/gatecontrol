@@ -1529,6 +1529,41 @@
     if (pfx) pfx.addEventListener('input', updatePreview);
   })();
 
+  // Edit-modal domain-registry fields: freetext toggle + preview + unverified warning
+  (function setupEditDomainRegistry() {
+    const sel = document.getElementById('edit-route-base-domain');
+    const pfx = document.getElementById('edit-route-prefix');
+    const ft = document.getElementById('edit-route-domain-freetext');
+    const prev = document.getElementById('edit-route-domain-preview');
+    const unvWarn = document.getElementById('edit-route-unverified-warning');
+    function updateEditPreview() {
+      if (!sel) return;
+      const isFt = sel.value === '';
+      if (ft) ft.style.display = isFt ? '' : 'none';
+      if (prev) {
+        if (isFt) { prev.style.display = 'none'; return; }
+        const assembled = window.RouteDomain
+          ? window.RouteDomain.assembleRouteDomain((pfx && pfx.value) || '', sel.value)
+          : sel.value;
+        if (assembled) { prev.textContent = assembled; prev.style.display = ''; }
+        else prev.style.display = 'none';
+      }
+    }
+    function updateEditUnverifiedWarning() {
+      if (!sel || !unvWarn) return;
+      const selectedOpt = sel.options[sel.selectedIndex];
+      const isUnverified = selectedOpt && selectedOpt.dataset && selectedOpt.dataset.unverified === '1';
+      if (isUnverified) {
+        unvWarn.textContent = GC.t['routes.unverified_base_prefix_warning'] || 'Changing the prefix requires a verified base — verify the domain first';
+        unvWarn.style.display = '';
+      } else {
+        unvWarn.style.display = 'none';
+      }
+    }
+    if (sel) sel.addEventListener('change', function() { updateEditPreview(); updateEditUnverifiedWarning(); });
+    if (pfx) pfx.addEventListener('input', updateEditPreview);
+  })();
+
   // Refresh visible steps if route-type changes mid-wizard
   if (routeTypeInput) {
     const routeTypeGroup = document.getElementById('route-type-group');
@@ -1771,10 +1806,81 @@
     if (!route) return;
 
     document.getElementById('edit-route-id').value = id;
-    document.getElementById('edit-route-domain').value = route.domain || '';
     // Reset DNS hint on modal open
-    const editDnsHintEl = document.getElementById('edit-route-dns-hint');
-    if (editDnsHintEl) editDnsHintEl.style.display = 'none';
+    const _eDnsHintEl = document.getElementById('edit-route-dns-hint');
+    if (_eDnsHintEl) _eDnsHintEl.style.display = 'none';
+    // ─── Edit domain: path detection ─────────────────────────────────────
+    {
+      const _eBaseSel = document.getElementById('edit-route-base-domain');
+      const _ePfxEl = document.getElementById('edit-route-prefix');
+      const _eFtEl = document.getElementById('edit-route-domain-freetext');
+      const _ePrevEl = document.getElementById('edit-route-domain-preview');
+      const _eUnvWarn = document.getElementById('edit-route-unverified-warning');
+      // Reset state
+      if (_ePrevEl) _ePrevEl.style.display = 'none';
+      if (_eUnvWarn) _eUnvWarn.style.display = 'none';
+      if (route.domainIsPublic === true) {
+        // Dropdown + prefix path
+        if (_eFtEl) _eFtEl.style.display = 'none';
+        // Compute last-two-labels base and prefix
+        const _d = route.domain || '';
+        const _dParts = _d ? _d.split('.') : [];
+        const _base = _dParts.length >= 2 ? _dParts.slice(-2).join('.') : _d;
+        const _pfx = (_d && _base && _d.length > _base.length + 1)
+          ? _d.slice(0, _d.length - _base.length - 1) : '';
+        if (_ePfxEl) _ePfxEl.value = _pfx;
+        // Load verified domains async, populate dropdown, preselect base
+        (async function _loadEditDomains() {
+          if (!_eBaseSel) return;
+          while (_eBaseSel.firstChild) _eBaseSel.removeChild(_eBaseSel.firstChild);
+          const _ftOpt = document.createElement('option');
+          _ftOpt.value = '';
+          _ftOpt.textContent = GC.t['routes.other_domain'] || 'Other / internal domain (free text)';
+          _eBaseSel.appendChild(_ftOpt);
+          const _verifiedSet = [];
+          try {
+            const _resp = await api.get('/api/v1/settings/domains');
+            const _domList = (_resp.data && _resp.data.domains) || [];
+            const _verList = _domList.filter(function(d) { return d.status === 'verified'; });
+            for (var _vi = 0; _vi < _verList.length; _vi++) {
+              const _opt = document.createElement('option');
+              _opt.value = _verList[_vi].domain;
+              _opt.textContent = _verList[_vi].domain;
+              _eBaseSel.insertBefore(_opt, _ftOpt);
+              _verifiedSet.push(_verList[_vi].domain);
+            }
+          } catch (_e) { /* network error: proceed to inject unverified as fallback */ }
+          // Preselect base: inject as unverified legacy if not in verified list
+          if (_base) {
+            if (_verifiedSet.includes(_base)) {
+              _eBaseSel.value = _base;
+            } else {
+              const _unvOpt = document.createElement('option');
+              _unvOpt.value = _base;
+              _unvOpt.textContent = _base + ' ' + (GC.t['routes.unverified_base_option'] || '(unverified · legacy)');
+              _unvOpt.dataset.unverified = '1';
+              _eBaseSel.insertBefore(_unvOpt, _ftOpt);
+              _eBaseSel.value = _base;
+              if (_eUnvWarn) {
+                _eUnvWarn.textContent = GC.t['routes.unverified_base_prefix_warning'] || 'Changing the prefix requires a verified base — verify the domain first';
+                _eUnvWarn.style.display = '';
+              }
+            }
+          }
+          // Update preview
+          const _assembled = (_eBaseSel.value && window.RouteDomain)
+            ? window.RouteDomain.assembleRouteDomain((_ePfxEl && _ePfxEl.value) || '', _eBaseSel.value) : '';
+          if (_ePrevEl) {
+            if (_assembled) { _ePrevEl.textContent = _assembled; _ePrevEl.style.display = ''; }
+            else _ePrevEl.style.display = 'none';
+          }
+        })();
+      } else {
+        // Freetext path: internal domain / no domain / stale cache — safe default
+        if (_eFtEl) { _eFtEl.value = route.domain || ''; _eFtEl.style.display = ''; }
+        if (_eBaseSel) _eBaseSel.value = '';  // ensure "other/internal" option is selected
+      }
+    }
     document.getElementById('edit-route-desc').value = route.description || '';
     document.getElementById('edit-route-port').value = route.target_port || '';
 
@@ -2293,7 +2399,13 @@
     currentEditRouteId = id;
     stopTracePolling();
     openModal('modal-edit-route');
-    document.getElementById('edit-route-domain').focus();
+    // Focus the active domain element: freetext (if visible) or base-domain select
+    (function() {
+      const _ft = document.getElementById('edit-route-domain-freetext');
+      if (_ft && _ft.style.display !== 'none') { _ft.focus(); return; }
+      const _base = document.getElementById('edit-route-base-domain');
+      if (_base) _base.focus();
+    })();
   }
 
   const btnEditSubmit = document.getElementById('btn-edit-route-submit');
@@ -2301,7 +2413,16 @@
     btnEditSubmit.addEventListener('click', async function() {
       const btn = this;
       const id = document.getElementById('edit-route-id').value;
-      const domain = document.getElementById('edit-route-domain').value.trim();
+      // Read domain from active path: freetext if visible, else assemble from base+prefix dropdown
+      const _eDomFt = document.getElementById('edit-route-domain-freetext');
+      const _eDomBase = document.getElementById('edit-route-base-domain');
+      const _eDomPfx = document.getElementById('edit-route-prefix');
+      const _isFtPath = _eDomFt && _eDomFt.style.display !== 'none';
+      const domain = _isFtPath
+        ? (_eDomFt ? _eDomFt.value.trim() : '')
+        : (window.RouteDomain && _eDomBase && _eDomBase.value
+            ? window.RouteDomain.assembleRouteDomain((_eDomPfx && _eDomPfx.value) || '', _eDomBase.value)
+            : (_eDomBase ? _eDomBase.value.trim() : ''));
       const description = document.getElementById('edit-route-desc').value.trim();
       const target_port = document.getElementById('edit-route-port').value.trim();
       const editPeerSelect = document.getElementById('edit-route-peer');
@@ -2449,7 +2570,11 @@
         if (!data.ok) {
           if (data.fields) {
             showFieldErrors(data.fields, {
-              domain: 'edit-route-domain', target_port: 'edit-route-port',
+              domain: (function() {
+                // Point to active domain element: freetext if visible, else base select
+                const _sft = document.getElementById('edit-route-domain-freetext');
+                return (_sft && _sft.style.display !== 'none') ? 'edit-route-domain-freetext' : 'edit-route-base-domain';
+              })(), target_port: 'edit-route-port',
               description: 'edit-route-desc', target_ip: 'edit-route-ip',
             });
           } else {
@@ -2656,11 +2781,16 @@
     const editTlsMode = document.getElementById('edit-l4-tls-mode')?.value || 'none';
     applyDomainContext(
       routeType, editTlsMode,
-      document.getElementById('edit-route-domain'),
+      document.getElementById('edit-route-base-domain'),
       document.getElementById('edit-route-domain-wrap'),
       document.getElementById('edit-route-domain-label'),
       document.getElementById('edit-route-domain-ctx-hint')
     );
+    // Also clear edit-side freetext on L4-none (applyDomainContext only clears create-side freetext)
+    if (routeType === 'l4' && editTlsMode === 'none') {
+      const _eftClear = document.getElementById('edit-route-domain-freetext');
+      if (_eftClear) _eftClear.value = '';
+    }
 
     updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
   }
@@ -3484,7 +3614,7 @@
       });
     }
 
-    const editDomainInput = document.getElementById('edit-route-domain');
+    const editDomainInput = document.getElementById('edit-route-domain-freetext');
     const editDnsHint = document.getElementById('edit-route-dns-hint');
     if (editDomainInput && editDnsHint) {
       editDomainInput.addEventListener('blur', function() {
