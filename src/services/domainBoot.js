@@ -45,8 +45,9 @@ async function runDomainSeedAndVerify({ verifyEach = domains.verify } = {}) {
   // 'pending' (they can never verify; routes consume routes.domain directly and
   // nothing references the domains table by FK). Verified rows are never touched.
   const lingering = getDb().prepare("SELECT domain FROM domains WHERE status='pending'").all().map(r => r.domain);
+  const delStmt = getDb().prepare('DELETE FROM domains WHERE domain=?');
   for (const d of lingering) {
-    if (!isPublicDomain(d)) getDb().prepare('DELETE FROM domains WHERE domain=?').run(d);
+    if (!isPublicDomain(d)) delStmt.run(d);
   }
 
   // verify only rows still pending (idempotent across boots)

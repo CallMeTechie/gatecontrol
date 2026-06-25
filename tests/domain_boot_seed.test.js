@@ -41,12 +41,14 @@ test('skips non-public-TLD bases and prunes lingering pending non-public rows', 
     verifyEach: async (d) => ({ status: 'verified', resolvedIp: '1.2.3.4', expectedIp: '1.2.3.4', error: null }),
   });
 
-  const rows = getDb().prepare('SELECT domain FROM domains ORDER BY domain').all().map(r => r.domain);
+  // Set membership (exact match) — avoids CodeQL's js/incomplete-url-substring
+  // false-positive that fires on Array.includes('host.tld') in tests.
+  const present = new Set(getDb().prepare('SELECT domain FROM domains').all().map(r => r.domain));
   assert.equal(res.seeded, 2, 'only the 2 public bases are seeded');
-  assert.ok(!rows.includes('gc.internal'), 'non-public base must not be seeded');
-  assert.ok(!rows.includes('old.lan'), 'lingering pending non-public row must be pruned');
-  assert.ok(rows.includes('kept.internal'), 'verified rows must never be pruned');
-  assert.ok(rows.includes('domaincaster.com') && rows.includes('marcbackes.net'), 'public bases seeded');
+  assert.ok(!present.has('gc.internal'), 'non-public base must not be seeded');
+  assert.ok(!present.has('old.lan'), 'lingering pending non-public row must be pruned');
+  assert.ok(present.has('kept.internal'), 'verified rows must never be pruned');
+  assert.ok(present.has('domaincaster.com') && present.has('marcbackes.net'), 'public bases seeded');
 });
 
 test('>=2 all-mismatch sets the server-IP warning and keeps rows pending', async () => {
