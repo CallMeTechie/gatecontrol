@@ -343,7 +343,10 @@
 
   function openUserModal() {
     hideError(userFormError);
-    userOverlay.style.display = '';
+    // Explicit 'flex' (not '') so the overlay overrides aurora.css's base
+    // `.modal-overlay{display:none}`; inline style beats the class rule. Matches
+    // routes.js. Opening with '' would fall back to that rule and stay hidden.
+    userOverlay.style.display = 'flex';
   }
 
   function closeUserModal() {
@@ -595,7 +598,9 @@
     // Custom scopes checkboxes
     renderCustomScopes();
 
-    tokenOverlay.style.display = '';
+    // Explicit 'flex' (not '') — see openUserModal: aurora.css base hides
+    // .modal-overlay, so '' would fall back to display:none and stay hidden.
+    tokenOverlay.style.display = 'flex';
   }
 
   function renderCustomScopes() {
