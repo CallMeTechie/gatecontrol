@@ -1580,3 +1580,27 @@ describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () =>
     assert.match(res.text, /class="[^"]*app[^"]*"/, '.app shell present');
   });
 });
+
+describe('users modals — Aurora-safe overlay open (regression)', () => {
+  // aurora.css base `.modal-overlay{display:none}` (loaded after pro.css, same
+  // specificity → wins). The shared users.js must therefore open overlays with an
+  // explicit inline display:flex (inline beats the class rule), exactly like
+  // routes.js does. Opening with style.display='' falls back to aurora.css → none,
+  // so the Add User / Edit User (and token) modals never appear in Aurora.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'users.js'), 'utf8');
+
+  it('aurora.css hides .modal-overlay by default (documents why flex is required)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    assert.match(css, /\.modal-overlay\s*\{[^}]*display\s*:\s*none/, 'aurora .modal-overlay base is display:none');
+  });
+
+  it('user modal overlay is opened with display:flex, not an empty string', () => {
+    assert.match(js, /userOverlay\.style\.display\s*=\s*'flex'/, "openUserModal must set userOverlay display to 'flex'");
+    assert.doesNotMatch(js, /userOverlay\.style\.display\s*=\s*''/, "userOverlay must not be opened with '' (aurora.css → none)");
+  });
+
+  it('token modal overlay is opened with display:flex, not an empty string', () => {
+    assert.match(js, /tokenOverlay\.style\.display\s*=\s*'flex'/, "token modal must set tokenOverlay display to 'flex'");
+    assert.doesNotMatch(js, /tokenOverlay\.style\.display\s*=\s*''/, "tokenOverlay must not be opened with '' (aurora.css → none)");
+  });
+});
