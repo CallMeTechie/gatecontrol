@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.98.2] — 2026-06-25
+
+### Fixes
+- skip non-public-TLD bases in boot seeding + prune lingering pending rows (#186)
+
+---
+
 ## [1.98.1] — 2026-06-25
 
 ### Fixes
