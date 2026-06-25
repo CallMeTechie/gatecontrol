@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.97.2] — 2026-06-25
+
+### Fixes
+- resync autosave dirty-snapshot after async load; align valuesById keys to element ids (#182)
+
+---
+
 ## [1.97.1] — 2026-06-25
 
 ### Fixes
