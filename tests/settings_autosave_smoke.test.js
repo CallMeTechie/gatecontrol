@@ -69,7 +69,8 @@ test('full-payload clusters migrated; list mutations use the queue', async () =>
   assert.match(js.text, /SettingsAutosave\.enqueue\(['"]split-tunnel['"]/);
 });
 
-test('two rapid pihole PUTs both land (no lost update)', async () => {
+test('two concurrent pihole PUTs leave a deterministic (non-corrupted) DB state', async () => {
+  // Server/DB-level sanity check; the JS-level per-cluster queue serialization is covered by settings_autosave_core.test.js (createQueue).
   const agent = getAgent(); const csrf = getCsrf();
   const base = { enabled: true, manage_dns_chain: false, sync_interval_sec: 30 };
   await Promise.all([
