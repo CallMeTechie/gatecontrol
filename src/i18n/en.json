@@ -186,6 +186,8 @@
   "error.tags.list": "Failed to load tags",
   "error.tags.create": "Failed to create tag",
   "error.tags.delete": "Failed to delete tag",
+  "peers.owner.label": "Owner",
+  "peers.owner.none": "(no owner)",
   "peers.expires": "Expires",
   "peers.expires_never": "Never",
   "peers.expires_1d": "1 day",

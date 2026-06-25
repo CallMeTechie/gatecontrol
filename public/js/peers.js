@@ -385,6 +385,19 @@
     });
   }
 
+  // ─── Load owner selects ──────────────────────────────────
+  function populateOwnerSelects(ids) {
+    api.get('/api/v1/users').then(function (r) {
+      var users = (r.data || r.users || []);
+      (ids || ['add-peer-owner', 'edit-peer-owner']).forEach(function (id) {
+        var sel = document.getElementById(id); if (!sel) return;
+        sel.innerHTML = '';
+        sel.appendChild(new Option((window.GC && GC.t && GC.t['peers.owner.none']) || '(no owner)', ''));
+        users.forEach(function (u) { sel.appendChild(new Option(u.username, String(u.id))); });
+      });
+    }).catch(function () {});
+  }
+
   // ─── Load peers ──────────────────────────────────────────
   async function loadPeers() {
     try {
@@ -799,6 +812,8 @@
     document.getElementById('add-peer-desc').value = '';
     document.getElementById('add-peer-tags').value = '';
     document.getElementById('add-peer-group').value = '';
+    var addOwnerSel = document.getElementById('add-peer-owner');
+    if (addOwnerSel) addOwnerSel.value = '';
     document.getElementById('add-peer-expires').value = '';
     document.getElementById('add-peer-expires-date').value = '';
     document.getElementById('add-peer-expires-date').style.display = 'none';
@@ -838,7 +853,9 @@
       var isGateway = !!(isGatewayEl && isGatewayEl.checked);
       var apiPort = apiPortEl ? parseInt(apiPortEl.value, 10) || 9876 : 9876;
       var proxyPort = proxyPortEl ? parseInt(proxyPortEl.value, 10) || 8080 : 8080;
-      var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined };
+      var addOwnerEl = document.getElementById('add-peer-owner');
+      var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined,
+        user_id: addOwnerEl ? (addOwnerEl.value === '' ? null : Number(addOwnerEl.value)) : null };
       if (isGateway) {
         payload.is_gateway = true;
         payload.api_port = apiPort;
@@ -1059,6 +1076,8 @@
 
     renderGroupDropdowns();
     document.getElementById('edit-peer-group').value = peer.group_id ? String(peer.group_id) : '';
+    var editOwnerSel = document.getElementById('edit-peer-owner');
+    if (editOwnerSel) editOwnerSel.value = peer.user_id != null ? String(peer.user_id) : '';
 
     var editExpiresSel = document.getElementById('edit-peer-expires');
     var editExpiresDate = document.getElementById('edit-peer-expires-date');
@@ -1204,7 +1223,9 @@
     try {
       var dns = document.getElementById('edit-peer-dns') ? document.getElementById('edit-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('edit-peer-expires', 'edit-peer-expires-date');
-      var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined });
+      var editOwnerEl = document.getElementById('edit-peer-owner');
+      var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined,
+        user_id: editOwnerEl ? (editOwnerEl.value === '' ? null : Number(editOwnerEl.value)) : null });
       if (!data.ok) {
         if (data.fields) {
           showFieldErrors(data.fields, { name: 'edit-peer-name', description: 'edit-peer-desc' });
@@ -2435,6 +2456,7 @@
   loadGroups();
   loadPeers();
   loadGateways();
+  populateOwnerSelects();
   if (isAurora()) auroraInitStatusToggle();
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
