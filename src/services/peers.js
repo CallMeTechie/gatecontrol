@@ -79,8 +79,8 @@ async function create(data) {
 
     const result = db.prepare(`
       INSERT INTO peers (name, description, public_key, private_key_encrypted, preshared_key_encrypted,
-                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id, peer_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                         allowed_ips, dns, persistent_keepalive, enabled, tags, expires_at, group_id, peer_type, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `).run(
       sanitize(data.name),
       sanitize(data.description) || null,
@@ -93,7 +93,8 @@ async function create(data) {
       sanitize(data.tags) || '',
       data.expiresAt || null,
       data.groupId || null,
-      data.peerType || 'regular'
+      data.peerType || 'regular',
+      data.userId != null ? Number(data.userId) : null
     );
 
     return { peerId: result.lastInsertRowid, ip, allowedIps };
@@ -132,6 +133,7 @@ async function create(data) {
     ip_address: ip,
     peer_type: data.peerType || 'regular',
     expires_at: data.expiresAt || null,
+    user_id: data.userId != null ? Number(data.userId) : null,
   };
 }
 
@@ -189,6 +191,9 @@ async function update(id, data) {
   // Handle group_id: explicit null clears group, undefined means no change
   const groupIdValue = data.groupId !== undefined ? (data.groupId || null) : undefined;
 
+  // Handle user_id: explicit null clears owner, undefined means no change
+  const userIdValue = data.userId !== undefined ? (data.userId == null ? null : Number(data.userId)) : undefined;
+
   db.prepare(`
     UPDATE peers SET
       name = COALESCE(?, name),
@@ -199,6 +204,7 @@ async function update(id, data) {
       tags = COALESCE(?, tags),
       expires_at = CASE WHEN ? = 1 THEN ? ELSE expires_at END,
       group_id = CASE WHEN ? = 1 THEN ? ELSE group_id END,
+      user_id = CASE WHEN ? = 1 THEN ? ELSE user_id END,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -212,6 +218,8 @@ async function update(id, data) {
     expiresAtValue !== undefined ? expiresAtValue : null,
     groupIdValue !== undefined ? 1 : 0,
     groupIdValue !== undefined ? groupIdValue : null,
+    userIdValue !== undefined ? 1 : 0,
+    userIdValue !== undefined ? userIdValue : null,
     id
   );
 
