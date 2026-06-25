@@ -131,6 +131,27 @@ describe('extractCaddyRouteIds', () => {
     };
     assert.deepEqual([...extractCaddyRouteIds(cfg)], ['gc_route_deep']);
   });
+
+  test('ignores the gc_owner_ ownership marker (no drift / repair loop)', () => {
+    // caddyOwner.js appends a gc_owner_<id> marker route to srv0. It is NOT a
+    // DB route and never appears in listDbRouteIds, so if the reconciler
+    // counted it every cycle would report drift and auto-repair would loop.
+    const cfg = {
+      apps: {
+        http: {
+          servers: {
+            srv0: {
+              routes: [
+                { '@id': 'gc_route_1', match: [{ host: ['a'] }] },
+                { '@id': 'gc_owner_abc123', match: [{ host: ['gc-owner.invalid'] }] },
+              ],
+            },
+          },
+        },
+      },
+    };
+    assert.deepEqual([...extractCaddyRouteIds(cfg)], ['gc_route_1']);
+  });
 });
 
 describe('runReconciliationCycle', () => {

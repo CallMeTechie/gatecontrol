@@ -46,6 +46,7 @@ const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubro
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
+const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision } = require('./caddyOwner');
 const {
   caddyApi,
   _caddyApi,
@@ -834,6 +835,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   }
 
   if (serverRoutes.length > 0) {
+    // Ownership marker — LAST route, impossible host match (never served).
+    // Tags this config with our instance id so a foreign process reading the
+    // live config refuses to overwrite us. gc_owner_ prefix is ignored by the
+    // caddyReconciler (which counts only gc_route_ ids), so it never drifts.
+    serverRoutes.push(ownerMarkerRoute(getOwnerId()));
     caddyConfig.apps.http.servers.srv0 = {
       listen: [':443', ':80'],
       routes: serverRoutes,
@@ -928,9 +934,34 @@ async function _syncToCaddyInner() {
   if (process.env.NODE_ENV === 'test') return;
 
   let previousConfig = null;
+  let readError = null;
   try {
+    // caddyApi returns null (not throws) when Caddy is simply not running.
     previousConfig = await caddyApi('/config/');
-  } catch {}
+  } catch (err) {
+    readError = err;
+  }
+
+  // Ownership guard: never overwrite a Caddy that belongs to a DIFFERENT
+  // GateControl instance. The container runs network_mode: host, so
+  // 127.0.0.1:2019 is shared with every host process (incl. dev/test runs in
+  // .claude worktrees). Without this, a foreign process that forgot
+  // NODE_ENV=test clobbers the live prod config (the 2026-06-25
+  // ERR_SSL_PROTOCOL_ERROR incident). See caddyOwner.ownershipDecision:
+  //   read-error → fail closed (cannot verify owner; don't risk a clobber)
+  //   foreign    → refuse; proceed → null/fresh (claimable) or our own.
+  const decision = ownershipDecision(previousConfig, readError, getOwnerId());
+  if (decision === 'read-error') {
+    logger.error({ err: readError && readError.message }, 'Could not read live Caddy config to verify ownership — skipping sync');
+    return false;
+  }
+  if (decision === 'foreign') {
+    logger.error(
+      { liveOwner: extractOwner(previousConfig), myOwner: getOwnerId() },
+      'Live Caddy is owned by another GateControl instance — refusing /load to avoid clobbering it',
+    );
+    return false;
+  }
 
   const caddyConfig = buildCaddyConfig();
 
