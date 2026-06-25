@@ -1964,6 +1964,20 @@
   "settings.portal.widget_traffic": "Traffic chart",
   "settings.portal.widget_services": "Services",
   "settings.portal.saved": "Portal settings saved",
+  "settings.portal.host_not_verified": "Domain is not verified",
+  "settings.portal.host_invalid_prefix": "Invalid subdomain prefix",
+  "settings.portal.host_collision": "Host collides with the GateControl address, a route domain, or a peer hostname",
+  "settings.portal.host_requires_caddy_email": "A public domain needs an ACME email (GC_CADDY_EMAIL) configured for certificate issuance",
+  "settings.portal.address": "Portal address",
+  "settings.portal.base_domain": "Base domain",
+  "settings.portal.prefix": "Subdomain prefix",
+  "settings.portal.prefix_hint": "Empty = serve directly on the domain (apex)",
+  "settings.portal.internal_default": "Internal (default)",
+  "settings.portal.effective_host": "Portal reachable at",
+  "settings.portal.apply": "Apply",
+  "settings.portal.host_note": "The portal stays internal-only (VPN). A verified public domain serves a valid certificate instead of the browser warning — but the subdomain and its certificate become discoverable in public Certificate Transparency logs and the TLS handshake is publicly reachable.",
+  "settings.portal.switch_warning": "While switching, the portal is briefly unreachable until the certificate is issued, and the previous name stops working. If the warning does not clear within a few minutes, switch back to Internal (default).",
+  "settings.portal.no_domains_hint": "No verified domains yet. Add and verify one under Settings → General → Domains to use a public portal address.",
   "settings.autosave.saved": "Saved",
   "settings.autosave.error": "Save failed",
   "settings.autosave.pending": "Will save once all required fields are filled",
@@ -1988,5 +2002,6 @@
   "settings.domains.server_ip": "Detected server IP",
   "settings.domains.server_ip_override": "Override server IP",
   "settings.domains.server_ip_warning": "Could not confirm any domain against the server IP — please check/override the server IP. Existing routes keep working.",
-  "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless."
+  "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless.",
+  "settings.domains.in_use_portal": "Domain is in use by the portal — change the portal address first."
 }

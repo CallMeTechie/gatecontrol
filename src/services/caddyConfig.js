@@ -665,8 +665,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   };
 
   // Home portal hostname — computed early so it can be included in TLS
-  // automation (must be covered by the internal-CA issuer policy).
-  const homeHost = `home.${config.dns.domain}`;
+  // automation. When a verified public domain is configured the portal host
+  // is public (uses ACME); otherwise it falls back to the internal default.
+  const { effectivePortalHost } = require('./portalConfig');
+  const portal = effectivePortalHost();
+  const homeHost = portal.host;
 
   // TLS email. Split domains into public-TLD (gets real ACME) and
   // internal/private suffixes (gets Caddy's internal CA). Without the
@@ -675,7 +678,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // pollute acme logs.
   // homeHost is passed explicitly because it is added to caddyRoutes below,
   // AFTER this call, so it would otherwise be absent from the TLS policy.
-  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy, [homeHost]);
+  const forceInternal = portal.public ? [] : [homeHost];
+  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
@@ -716,32 +720,49 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   if (!caddyRoutes[homeHost]) {
     caddyRoutes[homeHost] = {
       listen: [':443', ':80'],
-      routes: [{
-        match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
-        handle: [
-          // Path-conditional rewrite: only / → /portal; other paths unchanged.
-          {
-            handler: 'subroute',
-            routes: [{
-              match: [{ path: ['/'] }],
-              handle: [{ handler: 'rewrite', uri: '/portal' }],
-            }],
-          },
-          // Reverse proxy to local Node app with trusted-IP header handling.
-          {
-            handler: 'reverse_proxy',
-            upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
-            headers: {
-              request: {
-                // Delete first: prevent any client-supplied copy from reaching Node.
-                delete: ['X-GC-Portal-Peer-IP'],
-                // Set from real TCP source — Caddy resolves this before XFF processing.
-                set: { 'X-GC-Portal-Peer-IP': ['{http.request.remote.host}'] },
+      routes: [
+        // (0) Explicit, UNGATED ACME-challenge route (Spec §6 safeguard): matches the
+        //     challenge path from ANY source with an empty handle → the request is NOT
+        //     captured by the 404 route (2) and falls through to Caddy's internal
+        //     HTTP-01 handling, which serves the token. Guarantees cert issuance even
+        //     when Caddy's auto-interception doesn't fire before user routes.
+        {
+          match: [{ path: ['/.well-known/acme-challenge/*'] }],
+          handle: [],
+        },
+        // (1) Internal sources → portal (remote_ip = real TCP source; header strip/set unchanged).
+        {
+          match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
+          handle: [
+            // Path-conditional rewrite: only / → /portal; other paths unchanged.
+            {
+              handler: 'subroute',
+              routes: [{
+                match: [{ path: ['/'] }],
+                handle: [{ handler: 'rewrite', uri: '/portal' }],
+              }],
+            },
+            // Reverse proxy to local Node app with trusted-IP header handling.
+            {
+              handler: 'reverse_proxy',
+              upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+              headers: {
+                request: {
+                  // Delete first: prevent any client-supplied copy from reaching Node.
+                  delete: ['X-GC-Portal-Peer-IP'],
+                  // Set from real TCP source — Caddy resolves this before XFF processing.
+                  set: { 'X-GC-Portal-Peer-IP': ['{http.request.remote.host}'] },
+                },
               },
             },
-          },
-        ],
-      }],
+          ],
+        },
+        // (2) Non-internal & NOT ACME-challenge → clean 404 (no silent 200, no portal content).
+        {
+          match: [{ not: [{ path: ['/.well-known/acme-challenge/*'] }] }],
+          handle: [{ handler: 'static_response', status_code: 404 }],
+        },
+      ],
     };
   }
 

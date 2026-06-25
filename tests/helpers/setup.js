@@ -29,7 +29,6 @@ process.env.GC_DATA_DIR = tmpDir;
 // on suites that run many setup()/teardown() cycles.
 process.env.GC_RATE_LIMIT_LOGIN = '100000';
 process.env.GC_RATE_LIMIT_API = '100000';
-
 // Now import app modules
 const { runMigrations } = require('../../src/db/migrations');
 const { seedAdminUser } = require('../../src/db/seed');

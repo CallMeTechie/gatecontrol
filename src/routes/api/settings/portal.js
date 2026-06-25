@@ -1,28 +1,40 @@
 'use strict';
 
-// Portal settings cluster — master switch + per-widget toggles.
-// Keys: portal.enabled, portal.widget.{device,traffic,services}
-// All default to '1' (on); '0' = off.
+// Portal settings cluster — master switch + per-widget toggles + public host.
+// Keys: portal.enabled, portal.widget.{device,traffic,services},
+//       portal.base_domain, portal.prefix
 
 const { Router } = require('express');
 const settings = require('../../../services/settings');
 const portalConfig = require('../../../services/portalConfig');
+const { validatePortalHost, effectivePortalHost, isPublicPortalHost } = require('../../../services/portalConfig');
 const activity = require('../../../services/activity');
+const config = require('../../../../config/default');
+const caddySync = require('../../../services/caddySync');
+const dns = require('../../../services/dns');
+const logger = require('../../../utils/logger');
 
 const router = Router();
 
 /**
- * GET /api/v1/settings/portal — Return current portal settings as booleans
+ * GET /api/v1/settings/portal — Return current portal settings as booleans + host info
  */
 router.get('/portal', (req, res) => {
-  res.json({ ok: true, data: portalConfig() });
+  res.json({ ok: true, data: Object.assign({}, portalConfig(), {
+    base_domain: settings.get('portal.base_domain', ''),
+    prefix: settings.get('portal.prefix', 'home'),
+    effectiveHost: effectivePortalHost().host,
+    isPublic: isPublicPortalHost(),
+    internalHost: `home.${config.dns.domain}`,
+  }) });
 });
 
 /**
- * PUT /api/v1/settings/portal — Update portal master switch + widget toggles
+ * PUT /api/v1/settings/portal — Update portal master switch + widget toggles + host
  *
  * Accepts:
- *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool } }
+ *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool },
+ *     base_domain: string, prefix: string }
  */
 router.put('/portal', (req, res) => {
   try {
@@ -40,6 +52,26 @@ router.put('/portal', (req, res) => {
     }
     if (widgets.services !== undefined) {
       settings.set('portal.widget.services', widgets.services ? '1' : '0');
+    }
+
+    // Host change (base_domain + prefix committed together).
+    if (body.base_domain !== undefined || body.prefix !== undefined) {
+      const base = String(body.base_domain !== undefined ? body.base_domain : settings.get('portal.base_domain', '') || '').trim().toLowerCase();
+      const prefix = String(body.prefix !== undefined ? (body.prefix == null ? '' : body.prefix) : settings.get('portal.prefix', 'home')).trim().toLowerCase();
+      const v = validatePortalHost(base, prefix);
+      if (!v.ok) return res.status(400).json({ ok: false, error: req.t('settings.portal.host_' + v.error) });
+      // Preflight: a public host needs an ACME email, else Caddy requests no cert and the
+      // feature silently fails its core value. Reject before persisting/syncing.
+      if (base && !config.caddy.email) {
+        return res.status(400).json({ ok: false, error: req.t('settings.portal.host_requires_caddy_email') });
+      }
+      settings.set('portal.base_domain', base);
+      settings.set('portal.prefix', prefix);
+      // ALWAYS re-sync when a host field was submitted + validated — NO "only when changed"
+      // guard: requestCaddySync is coalesced/idempotent and dns.rebuildNow is idempotent, so
+      // a failed sync stays RECOVERABLE — re-pressing Apply fires the sync again.
+      caddySync.requestCaddySync().catch(e => logger.warn({ err: e.message }, 'portal: caddy sync failed'));
+      try { dns.rebuildNow(); } catch (e) { logger.warn({ err: e.message }, 'portal: dns rebuild failed'); }
     }
 
     activity.log('portal_settings_updated', 'Portal settings updated', {
