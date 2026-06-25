@@ -273,6 +273,24 @@ body::before{
 .c-services.loading{min-height:200px}
 
 /* ============================================================
+   PI-HOLE WIDGET
+   ============================================================ */
+.c-pihole .pihole-body{display:flex;flex-direction:column;gap:10px}
+.pihole-rate{display:flex;align-items:baseline;gap:3px}
+.pihole-rate b{font-size:2.2rem;font-weight:700;color:var(--teal, #3ec8b0);line-height:1}
+.pihole-rate span{font-size:1.1rem;color:var(--muted)}
+.pihole-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+.pihole-bar i{display:block;height:100%;border-radius:3px;background:var(--teal, #3ec8b0);
+  transition:width .4s ease;width:0}
+.pihole-nums{display:flex;gap:12px;flex-wrap:wrap}
+.pihole-nums>div{display:flex;flex-direction:column;gap:2px;min-width:60px}
+.pihole-nums b{font-size:1.1rem;font-weight:600;color:var(--text)}
+.pihole-nums span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.pihole-foot{font-size:11px;color:var(--faint);margin-top:4px}
+.pihole-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
+.c-pihole.loading{min-height:160px}
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 @media (prefers-reduced-motion: reduce){

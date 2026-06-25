@@ -346,9 +346,43 @@
       });
   }
 
+  // ─── Pi-hole widget ─────────────────────────────────────────────────────────
+  function hydratePihole() {
+    const card = document.querySelector('.pihole-widget');
+    if (!card) return;                       // widget toggled off → not in DOM → no fetch
+    setLoading(card, true);
+    fetch('/api/v1/portal/pihole')
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (body) {
+        setLoading(card, false);
+        const msg = document.getElementById('piMsg');
+        const bodyEl = card.querySelector('.pihole-body');
+        if (!body.ok || body.data === null) {
+          var key = { unavailable:'piholeUnavailable', collapsed:'piholeCollapsed', no_data:'piholeNoData', unidentified:'piholeUnidentified' }[body.reason] || 'piholeUnavailable';
+          if (bodyEl) bodyEl.style.display = 'none';
+          if (msg) { msg.textContent = (PT[key] || ''); msg.style.display = 'block'; } // PT = i18n map (portal.js line 14)
+          return;
+        }
+        if (bodyEl) bodyEl.style.display = '';
+        var d = body.data;
+        document.getElementById('piPct').textContent = String(d.blockedPct);
+        var bar = document.getElementById('piBar'); if (bar) bar.style.width = d.blockedPct + '%';
+        document.getElementById('piTotal').textContent = String(d.total);
+        document.getElementById('piBlocked').textContent = String(d.blocked);
+        document.getElementById('piAllowed').textContent = String(d.allowed);
+        // genuine idle device (in a list, count 0) → show "no queries today" note (spec §5)
+        if (msg) {
+          if (d.total === 0) { msg.textContent = (PT['piholeZeroQueries'] || ''); msg.style.display = 'block'; }
+          else { msg.style.display = 'none'; }
+        }
+      })
+      .catch(function () { setLoading(card, false); showError(card, hydratePihole); });
+  }
+
   // ─── Boot ───────────────────────────────────────────────────────────────────
   hydrateDevice();
   hydrateTraffic();
   hydrateServices();
+  hydratePihole();
 
 })();

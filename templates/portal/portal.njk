@@ -24,7 +24,12 @@
   unavailable: t('portal.widget.unavailable'),
   retry: t('portal.retry'),
   online: t('portal.device.online'),
-  offline: t('portal.device.offline')
+  offline: t('portal.device.offline'),
+  piholeUnavailable:   t('portal.pihole.unavailable'),
+  piholeCollapsed:     t('portal.pihole.collapsed'),
+  piholeNoData:        t('portal.pihole.no_data'),
+  piholeUnidentified:  t('portal.pihole.unidentified'),
+  piholeZeroQueries:   t('portal.pihole.zero_queries')
 } | dump | safe }}</script>
 <script src="/js/portal.js" defer></script>
 </head>
@@ -106,6 +111,24 @@
     <section class="card c-services">
       <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="13" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 7.5h.01M7 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>{{ t('portal.services.title') }}<span class="sub">{{ t('portal.services.sub') }}</span></h2>
       <div class="tiles" id="servicesTiles"></div>
+    </section>
+    {% endif %}
+
+    {% if widgets.pihole %}
+    <!-- pi-hole / DNS protection -->
+    <section class="card c-pihole pihole-widget">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}</h2>
+      <div class="pihole-body">
+        <div class="pihole-rate"><b id="piPct">–</b><span>%</span></div>
+        <div class="pihole-bar"><i id="piBar"></i></div>
+        <div class="pihole-nums">
+          <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
+          <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>
+          <div><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
+        </div>
+        <div class="pihole-foot">{{ t('portal.pihole.foot') }}</div>
+      </div>
+      <div class="pihole-msg" id="piMsg" style="display:none"></div>
     </section>
     {% endif %}
 
