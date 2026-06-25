@@ -228,6 +228,19 @@ pages.forEach(({ path, template, titleKey }) => {
       } catch { extraLocals.pools = []; extraLocals.gatewayPeers = []; }
     }
 
+    // Settings page: gw-down-threshold is the only server-rendered settings
+    // value (template reads `settings.gateway_down_threshold_s`). The `settings`
+    // template var is otherwise never injected, so the slider always showed the
+    // hardcoded default 90. Inject just that one key (not getAll(), to avoid
+    // exposing secrets) so the slider reflects the persisted value.
+    if (template === 'settings') {
+      try {
+        extraLocals.settings = {
+          gateway_down_threshold_s: require('../services/settings').get('gateway_down_threshold_s'),
+        };
+      } catch { extraLocals.settings = {}; }
+    }
+
     // Dashboard-only: gateways that need re-pairing after master-key rotation
     if (template === 'dashboard') {
       try {
