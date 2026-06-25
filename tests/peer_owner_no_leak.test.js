@@ -23,10 +23,10 @@ afterEach(teardown);
 
 test('portal /device whitelists fields and never emits user_id/owner_name (behavioral)', async () => {
   // Insert a peer so the handler returns data rather than the `unidentified` envelope.
-  // supertest connects from loopback (like Caddy); X-GC-Portal-Peer-IP is the
-  // reserved header that portalIdentity reads to establish req.portalPeerId.
-  // Host must match the portal home vhost (home.<dns.domain>) for identity to pass
-  // the mgmt-vhost anti-forgery gate.
+  // Identity is established via loopback (supertest behavior, like Caddy), the
+  // X-GC-Portal-Peer-IP header (reserved; read by portalIdentity to set req.portalPeerId),
+  // and the home Host vhost (matches effectivePortalHost().host for mgmt-vhost anti-forgery).
+  // This test FAILS if the peer is not identified (data would be null).
   getDb().prepare(
     `INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type)
      VALUES ('devP','pk-no-leak-test','10.8.0.99/32',1,'regular')`
@@ -45,18 +45,23 @@ test('portal /device whitelists fields and never emits user_id/owner_name (behav
 });
 
 test('client-facing + portal route sources never reference user_id/owner_name', () => {
+  const clientDir = path.join(__dirname, '..', 'src/routes/api/client');
+  const clientFiles = fs.existsSync(clientDir)
+    ? fs.readdirSync(clientDir)
+        .filter(f => f.endsWith('.js'))
+        .map(f => path.join(clientDir, f))
+    : [];
+  const portalFile = path.join(__dirname, '..', 'src/routes/api/portal.js');
   const candidates = [
-    'src/routes/api/client/peers.js',
-    'src/routes/api/client/status.js',
-    'src/routes/api/client/traffic.js',
-    'src/routes/api/portal.js',
-  ].map(f => path.join(__dirname, '..', f)).filter(fs.existsSync);
+    ...clientFiles,
+    ...(fs.existsSync(portalFile) ? [portalFile] : []),
+  ];
 
   // Guard: a scan matching zero files is silent-green and worthless.
-  // At minimum portal.js + client/peers.js must be present.
+  // At minimum portal.js + at least one client/*.js file must be present.
   assert.ok(
     candidates.length >= 2,
-    `source scan matched only ${candidates.length} file(s) — expected at least 2 (portal.js + client/peers.js)`
+    `source scan matched only ${candidates.length} file(s) — expected at least 2 (portal.js + ≥1 client route)`
   );
 
   for (const f of candidates) {
