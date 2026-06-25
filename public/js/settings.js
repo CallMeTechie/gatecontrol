@@ -1773,7 +1773,7 @@
   // Deliberate, confirmed commit (NOT autosave): a host change causes a brief
   // portal outage (single-host switch window), so it stays an explicit action.
   if (applyBtn) applyBtn.addEventListener('click', async function () {
-    if (errEl) { errEl.classList.remove('autosave-error'); errEl.textContent = ''; }
+    if (errEl) { errEl.classList.remove('autosave-error'); errEl.textContent = ''; errEl.style.display = 'none'; }
     if (effective() === currentHost) return;     // no-op: nothing changed
     if (!window.confirm(t['settings.portal.switch_warning'] || 'The portal will be briefly unreachable while switching, and the previous name stops working. Continue?')) {
       // Cancel: restore the persisted selection so the warning clears and a stray re-Apply is avoided.
@@ -1784,9 +1784,9 @@
     try {
       var res = await api.put('/api/v1/settings/portal', { base_domain: sel.value, prefix: prefix.value });
       if (res && res.ok) { curBase = sel.value; curPrefix = prefix.value; currentHost = effective(); renderPreview(); showToast(t['settings.portal.saved'] || 'Saved'); }
-      else if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = (res && res.error) || ''; }
+      else if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = (res && res.error) || ''; errEl.style.display = ''; }
     } catch (err) {
-      if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = err.message; }
+      if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = err.message; errEl.style.display = ''; }
     } finally { btnReset(applyBtn); }
   });
 })();

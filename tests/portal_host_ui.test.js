@@ -7,8 +7,7 @@ const supertest = require('supertest');
 const fs = require('node:fs'); const path = require('node:path');
 const { setup, teardown, getAgent } = require('./helpers/setup');
 
-let app;
-beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
+beforeEach(async () => { await setup(); });
 afterEach(teardown);
 
 test('settings page renders the Portal address card, no raw i18n keys', async () => {
