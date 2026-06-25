@@ -1467,7 +1467,7 @@
         if (verified.length > 0) {
           sel.value = verified[0].domain;
         } else {
-          const noHint = document.getElementById('create-route-domain-preview');
+          const noHint = document.getElementById('create-route-domain-ctx-hint');
           if (noHint) { noHint.textContent = GC.t['routes.no_verified_domains_hint'] || 'No verified domains'; noHint.style.display = ''; }
         }
       } catch (_e) {}
