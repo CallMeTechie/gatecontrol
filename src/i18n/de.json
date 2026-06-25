@@ -721,6 +721,7 @@
   "error.peers.no_ips": "Keine verfügbaren IP-Adressen im Subnetz",
   "error.peers.failover_home_blocked": "Dieses Gateway ist aktuell das Zuhause failover-umgezogener Routen. Hole sie zuerst zurück oder ziehe sie dauerhaft um.",
   "error.peers.owner_invalid": "Ausgewählter Besitzer existiert nicht",
+  "error.peers.bulk_invalid_ids": "Ungültige oder zu viele Geräte-IDs",
 
   "error.client.hostname_required": "Hostname ist erforderlich",
   "error.client.invalid_hostname": "Ungültiger Hostname für Peer-Name",

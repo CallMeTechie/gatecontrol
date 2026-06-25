@@ -60,6 +60,29 @@ router.post('/batch', async (req, res) => {
   }
 });
 
+// Bulk owner assignment. Registered BEFORE '/:id' so the literal path isn't
+// captured as id="batch-owner". Inherits the same admin auth + CSRF (mount point).
+router.post('/batch-owner', (req, res) => {
+  try {
+    const { peer_ids, user_id } = req.body;
+    const MAX = 500;
+    if (!Array.isArray(peer_ids) || peer_ids.length === 0 || peer_ids.length > MAX
+        || !peer_ids.every(n => Number.isInteger(n))) {
+      return res.status(400).json({ ok: false, error: req.t('error.peers.bulk_invalid_ids') });
+    }
+    if (user_id != null && (!Number.isInteger(Number(user_id)) || !require('../../services/users').getById(Number(user_id)))) {
+      return res.status(400).json({ ok: false, error: req.t('error.peers.owner_invalid') });
+    }
+    const db = getDb();
+    const ph = peer_ids.map(() => '?').join(',');
+    const info = db.prepare(`UPDATE peers SET user_id = ?, updated_at = datetime('now') WHERE id IN (${ph})`)
+      .run(user_id == null ? null : Number(user_id), ...peer_ids);
+    res.json({ ok: true, affected: info.changes });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 /**
  * GET /api/peers — List all peers with live status
  */

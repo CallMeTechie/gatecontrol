@@ -721,6 +721,7 @@
   "error.peers.no_ips": "No available IP addresses in subnet",
   "error.peers.failover_home_blocked": "This gateway is currently the home of failed-over routes. Restore them or permanently relocate them first.",
   "error.peers.owner_invalid": "Selected owner does not exist",
+  "error.peers.bulk_invalid_ids": "Invalid or too many peer IDs",
 
   "error.client.hostname_required": "Hostname is required",
   "error.client.invalid_hostname": "Invalid hostname for peer name",
