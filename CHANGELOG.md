@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.98.1] — 2026-06-25
+
+### Fixes
+- restore radio groups by name on autosave rollback (#184)
+
+---
+
 ## [1.98.0] — 2026-06-25
 
 ### Features
