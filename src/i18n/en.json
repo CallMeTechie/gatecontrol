@@ -1967,7 +1967,6 @@
   "settings.portal.host_not_verified": "Domain is not verified",
   "settings.portal.host_invalid_prefix": "Invalid subdomain prefix",
   "settings.portal.host_collision": "Host collides with the GateControl address, a route domain, or a peer hostname",
-  "settings.portal.host_requires_caddy_email": "A public domain needs an ACME email (GC_CADDY_EMAIL) configured for certificate issuance",
   "settings.portal.address": "Portal address",
   "settings.portal.base_domain": "Base domain",
   "settings.portal.prefix": "Subdomain prefix",
