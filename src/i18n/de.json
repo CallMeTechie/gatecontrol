@@ -214,6 +214,8 @@
   "routes.no_verified_domains_hint": "Keine verifizierten Domains — Einstellungen → Allgemein → Domains",
   "routes.unverified_base_option": "(unverifiziert · Bestand)",
   "routes.unverified_base_prefix_warning": "Präfix-Änderung verlangt eine verifizierte Basis — Domain zuerst verifizieren",
+  "routes.unverified_base_badge": "Domain unverifiziert",
+  "routes.unverified_base_tooltip": "Die Basis dieser Domain ist nicht verifiziert — unter Einstellungen → Allgemein → Domains verifizieren",
   "routes.description": "Beschreibung",
   "routes.description_placeholder": "Optionale Beschreibung",
   "routes.target_peer": "Ziel-Peer",

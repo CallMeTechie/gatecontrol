@@ -38,3 +38,9 @@ test('edit modal carries registry ids in all three themes', () => {
       .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));
   }
 });
+
+test('routes.js renders an unverified-base badge from baseUnverified', async () => {
+  const js = await supertest(app).get('/js/routes.js').expect(200);
+  assert.match(js.text, /baseUnverified/);
+  assert.match(js.text, /routes\.unverified_base_badge|unverified-base/);
+});

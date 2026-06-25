@@ -214,6 +214,8 @@
   "routes.no_verified_domains_hint": "No verified domains — go to Settings → General → Domains",
   "routes.unverified_base_option": "(unverified · legacy)",
   "routes.unverified_base_prefix_warning": "Changing the prefix requires a verified base — verify the domain first",
+  "routes.unverified_base_badge": "Domain unverified",
+  "routes.unverified_base_tooltip": "This domain's base is not verified — verify it under Settings → General → Domains",
   "routes.description": "Description",
   "routes.description_placeholder": "Optional description",
   "routes.target_peer": "Target Peer",

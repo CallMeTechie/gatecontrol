@@ -325,13 +325,17 @@
         showDescLine = false;
       }
 
+      const unverifiedBaseTag = r.baseUnverified
+        ? '<span class="tag tag-amber" style="margin-left:4px" title="' + escapeHtml(GC.t['routes.unverified_base_tooltip'] || 'This domain\'s base is not verified — verify it under Settings → General → Domains') + '">' + escapeHtml(GC.t['routes.unverified_base_badge'] || 'Domain unverified') + '</span>'
+        : '';
+
       // Badge budget: status/monitoring/circuit-breaker/L4 type are always
       // visible; the first two feature badges follow, the rest collapse
       // behind a "+N" toggle (expandedBadges survives SSE re-renders).
       const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
       const extraTags = [internalTag, blockActionTag, debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
         backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
-        routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
+        routeAuthTags, headersTag, mirrorTag, unverifiedBaseTag].filter(function (tag) { return !!tag; });
       let visibleExtras, moreBtn = '';
       if (expandedBadges.has(String(r.id)) || extraTags.length <= 3) {
         visibleExtras = extraTags.join('');
