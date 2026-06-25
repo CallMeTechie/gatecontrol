@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.98.3] — 2026-06-25
+
+### Fixes
+- inject gateway_down_threshold_s so the slider shows the saved value (#187)
+
+---
+
 ## [1.98.2] — 2026-06-25
 
 ### Fixes
