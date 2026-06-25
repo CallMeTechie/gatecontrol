@@ -59,5 +59,9 @@
     };
   }
 
-  return { SETTINGS_CLUSTERS, classify, isDirty, stripEmptySecrets, needsConfirm, isAtomicReady, createQueue };
+  function missingValueKeys(fieldIds, valuesObj) {
+    return (fieldIds || []).filter(function(id) { return id && !(id in (valuesObj || {})); });
+  }
+
+  return { SETTINGS_CLUSTERS, classify, isDirty, stripEmptySecrets, needsConfirm, isAtomicReady, createQueue, missingValueKeys };
 });

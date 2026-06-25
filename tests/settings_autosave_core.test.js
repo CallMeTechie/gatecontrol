@@ -55,3 +55,14 @@ test('createQueue continues after a rejected task', async () => {
   await enqueue('k', async () => { order.push('next'); });
   assert.deepEqual(order, ['next']);
 });
+
+test('missingValueKeys returns [] when all fields covered, missing ids when not', () => {
+  assert.deepEqual(core.missingValueKeys(['a', 'b'], { a: 1, b: 2 }), []);
+  assert.deepEqual(core.missingValueKeys(['a', 'b', 'c'], { a: 1, b: 2 }), ['c']);
+  assert.deepEqual(core.missingValueKeys([], { a: 1 }), []);
+  // Empty-string ids are ignored (elements without id attribute)
+  assert.deepEqual(core.missingValueKeys(['', 'a'], { a: 1 }), []);
+  // Null/undefined guards
+  assert.deepEqual(core.missingValueKeys(null, { a: 1 }), []);
+  assert.deepEqual(core.missingValueKeys(['a'], null), ['a']);
+});

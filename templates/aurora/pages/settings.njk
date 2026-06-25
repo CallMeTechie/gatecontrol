@@ -506,14 +506,14 @@
         <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-top:4px">{{ t('alerts.events_label') or 'Notify on these events:' }}</div>
         <div id="alerts-events" style="display:flex;flex-direction:column;gap:6px">
           {% set alertGroups = [
-            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed' },
-            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired' },
-            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted' },
-            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert' }
+            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed', id: 'alerts-events-security' },
+            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired', id: 'alerts-events-peers' },
+            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted', id: 'alerts-events-routes' },
+            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert', id: 'alerts-events-system' }
           ] %}
           {% for g in alertGroups %}
           <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px">
-            <input type="checkbox" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
+            <input type="checkbox" id="{{ g.id }}" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
             <span>{{ g.label }}</span>
           </label>
           {% endfor %}

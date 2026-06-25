@@ -45,6 +45,11 @@
     var valuesById = opts.valuesById || function () { return {}; };
     var snapshot = JSON.stringify(valuesById());   // last successfully persisted state
 
+    // Dev guard: warn if any bound field id is absent from valuesById (would never be dirty).
+    var _boundIds = fields.map(function(f) { return f && f.id; }).filter(Boolean);
+    var _missing = Core.missingValueKeys(_boundIds, valuesById());
+    if (_missing.length) console.warn('[autosave] ' + cluster + ' valuesById missing bound fields: ' + _missing.join(','));
+
     function requiredOverride() { return opts.requiredForCommit ? opts.requiredForCommit() : undefined; }
 
     function rollbackField(el) {

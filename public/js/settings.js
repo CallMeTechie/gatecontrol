@@ -305,7 +305,7 @@
       else tlsToggle.classList.remove('on');
       if (data.data.hasPassword) {
         var hint = document.getElementById('smtp-password-hint');
-        hint.textContent = 'Password is set';
+        hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set';
         hint.style.display = '';
       }
     }
@@ -325,9 +325,19 @@
   // SMTP autosave
   var Core = window.SettingsAutosaveCore;
   function smtpValues() {
+    var hostEl = document.getElementById('smtp-host');
+    var portEl = document.getElementById('smtp-port');
+    var userEl = document.getElementById('smtp-user');
+    var fromEl = document.getElementById('smtp-from');
+    var tlsEl = document.getElementById('smtp-tls');
+    var pwEl = document.getElementById('smtp-password');
     return {
-      'smtp-host': document.getElementById('smtp-host').value,
-      'smtp-from': document.getElementById('smtp-from').value,
+      'smtp-host': hostEl ? hostEl.value : '',
+      'smtp-port': portEl ? portEl.value : '',
+      'smtp-user': userEl ? userEl.value : '',
+      'smtp-from': fromEl ? fromEl.value : '',
+      'smtp-tls': tlsEl ? tlsEl.classList.contains('on') : false,
+      'smtp-password': pwEl ? pwEl.value : '',
     };
   }
   function smtpSave() {
@@ -344,8 +354,7 @@
     return api.put('/api/smtp/settings', payload).then(function (res) {
       if (res && res.ok && pw) {
         var hint = document.getElementById('smtp-password-hint');
-        if (hint) { hint.textContent = 'Password is set'; hint.style.display = ''; }
-        document.getElementById('smtp-password').value = '';
+        if (hint) { hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set'; hint.style.display = ''; }
       }
       return res;
     });
@@ -493,36 +502,6 @@
       });
     } catch (err) {
       listEl.textContent = GC.t['security.lockout.no_locked'] || 'No locked accounts';
-    }
-  }
-
-  async function saveSecuritySettings(triggerBtn, messageId) {
-    btnLoading(triggerBtn);
-    try {
-      var payload = {
-        lockout: {
-          enabled: document.getElementById('security-lockout-enabled').classList.contains('on'),
-          max_attempts: document.getElementById('security-lockout-attempts').value,
-          duration: document.getElementById('security-lockout-duration').value,
-        },
-        password: {
-          complexity_enabled: document.getElementById('security-password-enabled').classList.contains('on'),
-          min_length: document.getElementById('security-password-min-length').value,
-          require_uppercase: document.getElementById('security-password-uppercase').classList.contains('on'),
-          require_number: document.getElementById('security-password-number').classList.contains('on'),
-          require_special: document.getElementById('security-password-special').classList.contains('on'),
-        },
-      };
-      var data = await api.put('/api/settings/security', payload);
-      if (data.ok) {
-        showMessage(messageId, GC.t['security.saved'] || 'Security settings saved', 'success');
-      } else {
-        showMessage(messageId, data.error || 'Failed to save', 'error');
-      }
-    } catch (err) {
-      showMessage(messageId, err.message, 'error');
-    } finally {
-      btnReset(triggerBtn);
     }
   }
 
@@ -715,7 +694,16 @@
         cluster: 'alerts',
         fields: alertsFields,
         statusEl: document.getElementById('alerts-status'),
-        valuesById: function () { return { 'alerts-email': alertsEmail ? alertsEmail.value : '' }; },
+        valuesById: function () {
+          var vals = {
+            'alerts-email': alertsEmail ? alertsEmail.value : '',
+            'alerts-backup-days': alertsBackupDays ? alertsBackupDays.value : '',
+            'alerts-cpu': alertsCpu ? alertsCpu.value : '',
+            'alerts-ram': alertsRam ? alertsRam.value : '',
+          };
+          alertsEventGroups.forEach(function(cb) { if (cb.id) vals[cb.id] = cb.checked; });
+          return vals;
+        },
         requiredForCommit: function () { return alertsEventsActive() ? ['alerts-email'] : []; },
         save: function () {
           var events = [];
@@ -1841,6 +1829,7 @@
   function rbValues() {
     return {
       'settings-route-block-action': actionSel.value,
+      'settings-route-block-body': bodyEl ? bodyEl.value || '' : '',
       'settings-route-block-redirect': redirectEl ? redirectEl.value || '' : '',
     };
   }

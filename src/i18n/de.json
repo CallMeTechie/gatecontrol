@@ -1970,5 +1970,6 @@
   "settings.autosave.confirm_self": "Diese Änderung kann deine aktuelle Sitzung betreffen. Übernehmen?",
   "settings.autosave.confirm_mb_mode": "Dies ändert die Gerätebindung und kann den Zugriff betreffen. Übernehmen?",
   "settings.autosave.clear_secret": "Entfernen",
-  "settings.autosave.clear_secret_confirm": "Gespeicherten Wert entfernen?"
+  "settings.autosave.clear_secret_confirm": "Gespeicherten Wert entfernen?",
+  "settings.smtp.password_set": "Passwort ist gesetzt"
 }

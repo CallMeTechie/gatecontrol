@@ -69,6 +69,23 @@ test('full-payload clusters migrated; list mutations use the queue', async () =>
   assert.match(js.text, /SettingsAutosave\.enqueue\(['"]split-tunnel['"]/);
 });
 
+test('expanded valuesById covers all bound fields for smtp/alerts/route-block', async () => {
+  const js = await supertest(app).get('/js/settings.js').expect(200);
+  // SMTP: all 6 bound fields must appear as keys in smtpValues()
+  assert.match(js.text, /'smtp-port'/);
+  assert.match(js.text, /'smtp-user'/);
+  assert.match(js.text, /'smtp-tls'/);
+  assert.match(js.text, /'smtp-password'/);
+  // Alerts: threshold ids must appear in alerts valuesById
+  assert.match(js.text, /'alerts-backup-days'/);
+  assert.match(js.text, /'alerts-cpu'/);
+  assert.match(js.text, /'alerts-ram'/);
+  // Route-block: body field must be present
+  assert.match(js.text, /'settings-route-block-body'/);
+  // SMTP post-save must NOT clear the password input
+  assert.doesNotMatch(js.text, /smtp-password.*\.value\s*=\s*['"]['"]|['"]['"].*smtp-password.*\.value\s*=/);
+});
+
 test('two concurrent pihole PUTs leave a deterministic (non-corrupted) DB state', async () => {
   // Server/DB-level sanity check; the JS-level per-cluster queue serialization is covered by settings_autosave_core.test.js (createQueue).
   const agent = getAgent(); const csrf = getCsrf();
