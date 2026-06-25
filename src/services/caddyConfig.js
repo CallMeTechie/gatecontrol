@@ -730,7 +730,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           match: [{ path: ['/.well-known/acme-challenge/*'] }],
           handle: [],
         },
-        // (1) Internal sources → portal (remote_ip = real TCP source; header strip/set unchanged).
+        // (1) Internal sources → portal (remote_ip = real TCP source; reverse_proxy SETS the identity header).
         {
           match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
           handle: [
@@ -748,9 +748,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
               upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
               headers: {
                 request: {
-                  // Delete first: prevent any client-supplied copy from reaching Node.
-                  delete: ['X-GC-Portal-Peer-IP'],
-                  // Set from real TCP source — Caddy resolves this before XFF processing.
+                  // SET ONLY — do NOT also `delete` this header here. Caddy's header
+                  // handler applies `delete` AFTER `set`, so a `delete` + `set` on the
+                  // SAME header nukes the value we just set, and Node never receives the
+                  // identity header (portal then shows no per-device data). `set` alone is
+                  // already forgery-safe: it REPLACES any client-supplied copy with the
+                  // real TCP source, so a VPN client cannot inject a foreign peer IP.
                   set: { 'X-GC-Portal-Peer-IP': ['{http.request.remote.host}'] },
                 },
               },
