@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.99.1] — 2026-06-25
+
+### Fixes
+- Aurora add/edit user (and token) modals never opened (#190)
+
+---
+
 ## [1.99.0] — 2026-06-25
 
 ### Features
