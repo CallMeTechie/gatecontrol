@@ -151,12 +151,6 @@ async function create(data, opts = {}) {
     if (domainErr) throw new Error(domainErr);
   }
 
-  if (routeType === 'http' || data.domain) {
-    const { checkDomainPolicy } = require('./routeDomainPolicy');
-    const pol = checkDomainPolicy(data.domain, { routeType });
-    if (pol.error) throw Object.assign(new Error('Domain policy violation: ' + pol.error), { code: pol.error });
-  }
-
   const portErr = validatePort(data.target_port);
   if (portErr) throw new Error(portErr);
 
@@ -425,12 +419,6 @@ async function update(id, data) {
       listenPort: data.l4_listen_port !== undefined ? data.l4_listen_port : route.l4_listen_port,
       excludeId: id,
     });
-  }
-
-  if (data.domain !== undefined) {
-    const { checkDomainPolicy } = require('./routeDomainPolicy');
-    const pol = checkDomainPolicy(data.domain, { currentDomain: route.domain, routeType });
-    if (pol.error) throw Object.assign(new Error('Domain policy violation: ' + pol.error), { code: pol.error });
   }
 
   validateIfProvided(data, 'target_port', validatePort);

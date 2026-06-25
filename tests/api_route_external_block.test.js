@@ -2,9 +2,10 @@
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+const { getDb } = require('../src/db/connection');
 
 let agent, csrf;
-beforeEach(async () => { await setup(); agent = getAgent(); csrf = getCsrf(); });
+beforeEach(async () => { await setup(); agent = getAgent(); csrf = getCsrf(); getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.com','verified')").run(); });
 afterEach(teardown);
 
 const MINIMAL = { domain: 'block-api.example.com', target_ip: '93.184.216.34', target_port: 80 };

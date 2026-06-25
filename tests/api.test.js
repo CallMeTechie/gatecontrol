@@ -4,6 +4,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+const { getDb } = require('../src/db/connection');
 
 let agent, csrf;
 let hasWg = false;
@@ -13,6 +14,7 @@ before(async () => {
   const ctx = await setup();
   agent = ctx.agent;
   csrf = ctx.csrfToken;
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.com','verified')").run();
 });
 
 after(() => teardown());
