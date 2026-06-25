@@ -263,36 +263,26 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ─── Server public IP cache ──────────────────────────────
-let _cachedServerIp = null;
-
-function isPublicIp(str) {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(str);
-}
-
-async function getServerIp() {
-  if (_cachedServerIp) return _cachedServerIp;
-  const wgHost = config.wireguard.host;
-  if (wgHost && isPublicIp(wgHost)) {
-    _cachedServerIp = wgHost;
-    return _cachedServerIp;
-  }
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch('https://api.ipify.org', { signal: controller.signal });
-    clearTimeout(timeout);
-    const ip = (await res.text()).trim();
-    if (isPublicIp(ip)) {
-      _cachedServerIp = ip;
-      return _cachedServerIp;
-    }
-  } catch (_) { /* ignore */ }
-  return null;
+// SSRF guard: block private / loopback / reserved IPv4 ranges as direct route
+// targets. Input is already IP_RE-validated dotted-quad IPv4.
+function isPrivateOrReservedIpv4(ip) {
+  const p = String(ip).split('.').map(Number);
+  return (
+    p[0] === 0 ||                                   // 0.0.0.0/8 "this host"
+    p[0] === 10 ||                                  // 10/8 RFC1918
+    p[0] === 127 ||                                 // 127/8 loopback
+    (p[0] === 100 && p[1] >= 64 && p[1] <= 127) || // 100.64/10 CGNAT (RFC6598)
+    (p[0] === 169 && p[1] === 254) ||              // 169.254/16 link-local
+    (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||  // 172.16/12 RFC1918
+    (p[0] === 192 && p[1] === 168)                  // 192.168/16 RFC1918
+  );
 }
 
 /**
- * POST /api/routes/check-dns — Check if domain resolves to server IP
+ * POST /api/routes/check-dns — Check if domain resolves to server IP.
+ * Uses the single source of truth for the server's public IP
+ * (domainsService.getServerPublicIp: settings override + explicit resolver),
+ * so the DNS check agrees with the domain-registry verification path.
  */
 router.post('/check-dns', async (req, res) => {
   const { domain } = req.body || {};
@@ -305,10 +295,11 @@ router.post('/check-dns', async (req, res) => {
     const dnsTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('DNS timeout')), 2000)
     );
-    const [serverIp, addresses] = await Promise.all([
-      getServerIp(),
+    const [server, addresses] = await Promise.all([
+      require('../../services/domains').getServerPublicIp(),
       Promise.race([dns.resolve4(domain), dnsTimeout]),
     ]);
+    const serverIp = server.ip;
     const resolves = serverIp ? addresses.includes(serverIp) : false;
     return res.json({ ok: true, resolves, expected: serverIp });
   } catch (err) {
@@ -428,12 +419,7 @@ router.post('/',
     // gateway-typed routes (LAN host is intentionally private and only
     // reachable via the home gateway's WG tunnel, not directly proxied).
     if (target_ip && !peer_id && req.body.target_kind !== 'gateway') {
-      const parts = target_ip.split('.').map(Number);
-      if (parts[0] === 127 || parts[0] === 10 ||
-          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-          (parts[0] === 192 && parts[1] === 168) ||
-          (parts[0] === 169 && parts[1] === 254) ||
-          parts[0] === 0) {
+      if (isPrivateOrReservedIpv4(target_ip)) {
         return res.status(400).json({ ok: false, error: req.t('error.routes.private_ip') || 'Private/loopback IPs are not allowed as route targets' });
       }
     }
@@ -513,7 +499,7 @@ router.post('/',
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
-      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id); } catch {}
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id).catch(() => {}); } catch {}
     }
     res.status(201).json({ ok: true, route: stripRoute(route) });
   } catch (err) {
@@ -602,12 +588,7 @@ router.put('/:id',
     // SSRF protection: block private/loopback IPs for direct target_ip.
     // Skipped for peer-linked and gateway-typed routes (see POST handler).
     if (target_ip && !peer_id && req.body.target_kind !== 'gateway') {
-      const parts = target_ip.split('.').map(Number);
-      if (parts[0] === 127 || parts[0] === 10 ||
-          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-          (parts[0] === 192 && parts[1] === 168) ||
-          (parts[0] === 169 && parts[1] === 254) ||
-          parts[0] === 0) {
+      if (isPrivateOrReservedIpv4(target_ip)) {
         return res.status(400).json({ ok: false, error: req.t('error.routes.private_ip') || 'Private/loopback IPs are not allowed as route targets' });
       }
     }
@@ -686,7 +667,7 @@ router.put('/:id',
     }
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {
-      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id); } catch {}
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id).catch(() => {}); } catch {}
     }
     res.json({ ok: true, route: stripRoute(route) });
   } catch (err) {
@@ -914,40 +895,40 @@ router.delete('/:id/branding/bg-image', (req, res) => {
 // GET /routes/:id/trace — read trace log entries for a route
 router.get('/:id/trace', asyncHandler(async (req, res) => {
   const routeId = req.params.id;
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
   const since = req.query.since || '';
   const logPath = '/data/caddy/caddy-stdout.log';
 
   const entries = [];
   try {
-    const fs = require('fs');
-    // Open the log first and size it from the file descriptor (fstatSync)
-    // rather than existsSync→statSync→openSync on the path: that check-then-use
-    // sequence is a TOCTOU race if the log rotates between calls. A missing
-    // file (ENOENT) simply yields no entries.
-    let fd;
+    const fsp = require('fs').promises;
+    // Open the log first and size it from the file handle (fh.stat) rather than
+    // exists→stat→open on the path: that check-then-use sequence is a TOCTOU
+    // race if the log rotates between calls. A missing file (ENOENT) simply
+    // yields no entries.
+    let fh;
     try {
-      fd = fs.openSync(logPath, 'r');
+      fh = await fsp.open(logPath, 'r');
     } catch {
       return res.json({ ok: true, data: { entries: [] } });
     }
-    // Read only the tail of the log. caddy-stdout.log can grow to hundreds of
-    // MB; a full read would block the event loop for seconds and can OOM the
-    // process under concurrent traces. Entries are sorted newest-first and
-    // capped at `limit` (<=200), so the last few MB always hold more than
-    // enough candidates. Older traces simply fall outside the window.
+    // Read only the tail of the log, asynchronously so a multi-MB read never
+    // blocks the event loop. caddy-stdout.log can grow to hundreds of MB.
+    // Entries are sorted newest-first and capped at `limit` (<=200), so the last
+    // few MB always hold more than enough candidates. Older traces fall outside
+    // the window.
     const MAX_TRACE_BYTES = 8 * 1024 * 1024;
     let text;
     let start = 0;
     try {
-      const size = fs.fstatSync(fd).size;
+      const size = (await fh.stat()).size;
       start = Math.max(0, size - MAX_TRACE_BYTES);
       const len = size - start;
       const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, start);
+      await fh.read(buf, 0, len, start);
       text = buf.toString('utf8');
     } finally {
-      fs.closeSync(fd);
+      await fh.close();
     }
     // When starting mid-file we likely cut a line in half — drop that partial
     // leading fragment so JSON.parse doesn't choke on it.

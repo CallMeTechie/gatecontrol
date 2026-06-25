@@ -2,6 +2,7 @@
 'use strict';
 const dns = require('node:dns').promises;
 const net = require('node:net');
+const ipaddr = require('ipaddr.js');
 const { getDb } = require('../db/connection');
 const settings = require('./settings');
 const config = require('../../config/default');
@@ -60,6 +61,15 @@ async function getServerPublicIp() {
   return { ip: null, family: null, source: 'unknown' };
 }
 
+// Canonicalize an IP for comparison. Resolver output is already canonical, but a
+// user-entered override / config literal may be non-canonical IPv6 (uppercase,
+// leading zeros, '::' compression) — a plain string compare would then miss a
+// correctly-pointing AAAA record. Falls back to lowercase for non-IP input.
+function canonIp(ip) {
+  try { return ipaddr.parse(String(ip)).toNormalizedString(); }
+  catch { return String(ip || '').trim().toLowerCase(); }
+}
+
 async function verify(domain) {
   const host = normalizeHost(domain);
   const server = await getServerPublicIp();
@@ -73,7 +83,8 @@ async function verify(domain) {
   if (all.length === 0) {
     return { status: 'failed', resolvedIp: null, expectedIp: server.ip, error: 'no A/AAAA records' };
   }
-  if (all.includes(server.ip)) {
+  const wanted = canonIp(server.ip);
+  if (all.some(a => canonIp(a) === wanted)) {
     return { status: 'verified', resolvedIp: server.ip, expectedIp: server.ip, error: null };
   }
   return { status: 'failed', resolvedIp: all[0], expectedIp: server.ip,
@@ -89,15 +100,16 @@ function isVerified(domain) { const r = row(domain); return !!r && r.status === 
 
 function upsert(domain, v) {
   const db = getDb();
-  db.prepare(`INSERT INTO domains (domain, status, resolved_ip, last_error, verified_at, last_checked_at)
+  // RETURNING * hands back the written row directly — no second SELECT round-trip.
+  return db.prepare(`INSERT INTO domains (domain, status, resolved_ip, last_error, verified_at, last_checked_at)
     VALUES (@domain, @status, @resolved_ip, @last_error, @verified_at, datetime('now'))
     ON CONFLICT(domain) DO UPDATE SET status=excluded.status, resolved_ip=excluded.resolved_ip,
-      last_error=excluded.last_error, verified_at=excluded.verified_at, last_checked_at=excluded.last_checked_at`)
-    .run({
+      last_error=excluded.last_error, verified_at=excluded.verified_at, last_checked_at=excluded.last_checked_at
+    RETURNING *`)
+    .get({
       domain: normalizeHost(domain), status: v.status, resolved_ip: v.resolvedIp || null,
       last_error: v.error || null, verified_at: v.status === 'verified' ? new Date().toISOString() : null,
     });
-  return row(domain);
 }
 
 async function add(domain) {

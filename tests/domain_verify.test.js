@@ -28,6 +28,15 @@ test('failed when resolves elsewhere (server IP known-good)', async () => {
   assert.match(r.error, /198\.51\.100\.7/); // expected IP in the message
 });
 
+test('verified for IPv6 server IP regardless of canonical form', async () => {
+  // Override is non-canonical (uppercase + '::' compression); the resolver returns
+  // the fully-expanded canonical AAAA. A plain string compare would miss this.
+  settings.set('server.public_ip', '2001:DB8::1');
+  domains._setResolverForTest(async (h, f) => (f === 6 ? ['2001:db8:0:0:0:0:0:1'] : []));
+  const r = await domains.verify('v6.example.com');
+  assert.equal(r.status, 'verified');
+});
+
 test('pending (not failed) when server IP unknown', async () => {
   settings.set('server.public_ip', '');               // clear the override → must derive
   // CRITICAL: the stub answers ALL hosts incl. GC_WG_HOST (test.example.com). To make
