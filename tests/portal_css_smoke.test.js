@@ -23,11 +23,13 @@ test('portal.css contains dark and light theme token blocks', async () => {
   assert.ok(res.text.includes('[data-theme="light"]'), 'missing light theme block');
 });
 
-test('portal.css does NOT contain Pi-hole/donut styles (correctly trimmed)', async () => {
+test('portal.css contains the TP2a per-device DNS-protection widget, not the old donut styling', async () => {
   const res = await supertest(app).get('/css/portal.css').expect(200);
-  assert.ok(!res.text.includes('.donut'), 'found .donut — Pi-hole styles not fully removed');
-  assert.ok(!res.text.includes('.pi-wrap'), 'found .pi-wrap — Pi-hole styles not fully removed');
-  assert.ok(!res.text.includes('.c-pihole'), 'found .c-pihole — Pi-hole grid span not removed');
+  // TP2a re-adds the per-device Pi-hole widget (the "DNS-Schutz" card) deliberately.
+  assert.ok(res.text.includes('.c-pihole'), 'missing .c-pihole — TP2a per-device DNS widget styles');
+  // It uses a block-rate bar, NOT the old donut/pi-wrap implementation, which stays removed.
+  assert.ok(!res.text.includes('.donut'), 'found .donut — old Pi-hole donut styling must not return');
+  assert.ok(!res.text.includes('.pi-wrap'), 'found .pi-wrap — old Pi-hole donut styling must not return');
 });
 
 test('portal.css contains JS-state rules (moved from portal.js inline injector for CSP safety)', async () => {
