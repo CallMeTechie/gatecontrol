@@ -817,7 +817,7 @@
           <small class="form-hint">{{ t('settings.split_tunnel_lock_hint') }}</small>
         </div>
       </div>
-      <button class="btn btn-primary" id="st-save" style="margin-top:12px">{{ t('data.save') }}</button>
+      <div id="st-status" class="autosave-status"></div>
     </div>
   </div>
 </div>
@@ -847,9 +847,7 @@
           <label class="form-label" for="pihole-sync-interval">{{ t('pihole.cfg.sync_interval') }}</label>
           <input type="number" id="pihole-sync-interval" value="30" min="10" max="3600" style="width:100%">
         </div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-pihole-save">{{ t('pihole.cfg.save') }}</button>
-        </div>
+        <div id="pihole-status" class="autosave-status"></div>
       </div>
     </div>
 

@@ -1325,7 +1325,7 @@
       del.className = 'icon-btn';
       del.style.cssText = 'color:var(--red);margin-left:auto';
       del.textContent = '\u2715';
-      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); });
+      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); SettingsAutosave.enqueue('split-tunnel', stSave); });
       row.appendChild(del);
       customList.appendChild(row);
     });
@@ -1342,6 +1342,7 @@
     }
     customNets.push({ label: label, cidr: cidr });
     renderCustom();
+    SettingsAutosave.enqueue('split-tunnel', stSave);
   });
 
   async function loadST() {
@@ -1360,14 +1361,26 @@
     } catch {}
   }
 
-  document.getElementById('st-save').addEventListener('click', async function () {
+  function stSave() {
     var networks = customNets.slice();
-    if (privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
-    if (linkLocal.checked) networks.push(LINK_LOCAL);
-    try {
-      await api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb.checked });
-      if (typeof GC.toast === 'function') GC.toast(GC.t['settings.saved'] || 'Saved');
-    } catch (err) { alert(err.message || 'Failed to save'); }
+    if (privateNets && privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
+    if (linkLocal && linkLocal.checked) networks.push(LINK_LOCAL);
+    return api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb ? lockedCb.checked : false });
+  }
+
+  SettingsAutosave.bind({
+    cluster: 'split-tunnel',
+    fields: [modeSelect, privateNets, linkLocal, lockedCb].filter(Boolean),
+    statusEl: document.getElementById('st-status'),
+    valuesById: function () {
+      return {
+        'st-mode': modeSelect ? modeSelect.value : 'off',
+        'st-private-nets': privateNets ? privateNets.checked : false,
+        'st-link-local': linkLocal ? linkLocal.checked : false,
+        'st-locked': lockedCb ? lockedCb.checked : false,
+      };
+    },
+    save: stSave,
   });
 
   loadST();
@@ -1426,11 +1439,10 @@
   var editingIndex = -1;
   var t = window.GC && window.GC.t || {};
 
-  var saveBtn = document.getElementById('btn-pihole-save');
   var addBtn = document.getElementById('btn-pihole-add-instance');
   var instancesList = document.getElementById('pihole-instances-list');
   var instanceForm = document.getElementById('pihole-instance-form');
-  if (!saveBtn && !addBtn && !instancesList) return;
+  if (!addBtn && !instancesList) return;
 
   async function loadPihole() {
     try {
@@ -1552,6 +1564,7 @@
         if (!confirm(t['pihole.cfg.confirm_delete'] || 'Delete this instance?')) return;
         phInstances.splice(idx, 1);
         renderInstances();
+        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
       } else if (action === 'edit') {
         editingIndex = idx;
         showInstanceForm(inst);
@@ -1624,7 +1637,7 @@
       renderInstances();
       hideInstanceForm();
       try {
-        await savePihole(true);
+        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
       } catch (err) {
         showToast(err.message || 'Error', 'error');
       }
@@ -1683,6 +1696,7 @@
   if (enabledToggle) {
     enabledToggle.addEventListener('click', function () {
       enabledToggle.classList.toggle('on');
+      enabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -1690,6 +1704,7 @@
   if (chainToggle) {
     chainToggle.addEventListener('click', function () {
       chainToggle.classList.toggle('on');
+      chainToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -1723,18 +1738,20 @@
     }
   }
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        await savePihole(true);
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
-  }
+  var phIntervalEl = document.getElementById('pihole-sync-interval');
+  SettingsAutosave.bind({
+    cluster: 'pihole',
+    fields: [enabledToggle, chainToggle, phIntervalEl].filter(Boolean),
+    statusEl: document.getElementById('pihole-status'),
+    valuesById: function () {
+      return {
+        'pihole-enabled': enabledToggle ? enabledToggle.classList.contains('on') : false,
+        'pihole-manage-chain': chainToggle ? chainToggle.classList.contains('on') : false,
+        'pihole-sync-interval': phIntervalEl ? phIntervalEl.value : '30',
+      };
+    },
+    save: function () { return savePihole(false); },
+  });
 
   loadPihole();
 })();

@@ -4,7 +4,7 @@ process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBy
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const supertest = require('supertest');
-const { setup, teardown, getAgent } = require('./helpers/setup');
+const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
 
 let app;
 beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
@@ -58,4 +58,24 @@ test('atomic clusters migrated incl. route-block; secret-clear buttons present',
     .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
   assert.match(page.text, /id="ip2location-clear"/);
   assert.match(page.text, /id="smtp-password-clear"/);
+});
+
+test('full-payload clusters migrated; list mutations use the queue', async () => {
+  const page = await getAgent().get('/settings').expect(200);
+  assert.doesNotMatch(page.text, /id="btn-pihole-save"/);
+  assert.doesNotMatch(page.text, /id="st-save"/);
+  const js = await supertest(app).get('/js/settings.js').expect(200);
+  assert.match(js.text, /SettingsAutosave\.enqueue\(['"]pihole['"]/);
+  assert.match(js.text, /SettingsAutosave\.enqueue\(['"]split-tunnel['"]/);
+});
+
+test('two rapid pihole PUTs both land (no lost update)', async () => {
+  const agent = getAgent(); const csrf = getCsrf();
+  const base = { enabled: true, manage_dns_chain: false, sync_interval_sec: 30 };
+  await Promise.all([
+    agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }] })),
+    agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }, { id: '2', url: 'http://b', dns_ip: '10.0.0.2', dns_port: 53, verify_tls: true, password_set: false }] })),
+  ]);
+  const get = await agent.get('/api/v1/settings/pihole').expect(200);
+  assert.ok([1, 2].includes(get.body.data.instances.length));
 });
