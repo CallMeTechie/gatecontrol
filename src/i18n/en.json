@@ -188,6 +188,8 @@
   "error.tags.delete": "Failed to delete tag",
   "peers.owner.label": "Owner",
   "peers.owner.none": "(no owner)",
+  "peers.owner.bulk_assign": "Assign owner",
+  "peers.owner.bulk_done": "Owners updated",
   "peers.expires": "Expires",
   "peers.expires_never": "Never",
   "peers.expires_1d": "1 day",

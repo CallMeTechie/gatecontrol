@@ -2456,7 +2456,17 @@
   loadGroups();
   loadPeers();
   loadGateways();
-  populateOwnerSelects();
+  populateOwnerSelects(['add-peer-owner', 'edit-peer-owner', 'peer-bulk-owner']);
+
+  var applyBtn = document.getElementById('peer-bulk-owner-apply');
+  if (applyBtn) applyBtn.addEventListener('click', function () {
+    var ids = Array.from(batchSelected).map(Number);
+    if (!ids.length) return;
+    var v = document.getElementById('peer-bulk-owner').value;
+    api.post('/api/v1/peers/batch-owner', { peer_ids: ids, user_id: v === '' ? null : Number(v) })
+      .then(function () { batchSelected.clear(); loadPeers(); showToast((GC.t && GC.t['peers.owner.bulk_done']) || 'Owners updated'); })
+      .catch(function (e) { showToast(e.message, 'error'); });
+  });
   if (isAurora()) auroraInitStatusToggle();
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);

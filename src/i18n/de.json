@@ -188,6 +188,8 @@
   "error.tags.delete": "Tag konnte nicht gelöscht werden",
   "peers.owner.label": "Besitzer",
   "peers.owner.none": "(kein Besitzer)",
+  "peers.owner.bulk_assign": "Besitzer zuweisen",
+  "peers.owner.bulk_done": "Besitzer aktualisiert",
   "peers.expires": "Ablaufdatum",
   "peers.expires_never": "Nie",
   "peers.expires_1d": "1 Tag",
