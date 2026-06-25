@@ -7,6 +7,8 @@ const caddyAcl = require('../../services/caddyAcl');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const portalConfig = require('../../services/portalConfig');
+const pihole = require('../../services/pihole');
+const license = require('../../services/license');
 
 const router = Router();
 
@@ -127,6 +129,37 @@ router.get('/services', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'portal /services failed');
     return unidentified(res);
+  }
+});
+
+router.get('/pihole', (req, res) => {
+  try {
+    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
+    // Reuse the existing Pro feature gate; INLINE (not requireFeature middleware) so the
+    // frontend gets a clean "hide" signal (data:null) instead of a 403.
+    const cache = pihole.getCache();
+    if (!license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0) {
+      return res.json({ ok: true, data: null, reason: 'unavailable' });
+    }
+    if (req.portalPeerId == null) return unidentified(res); // reuse the existing helper (siblings do too)
+    if (cache.attribution === 'collapsed') return res.json({ ok: true, data: null, reason: 'collapsed' });
+
+    const pid = req.portalPeerId;
+    const allowedEntry = (cache.topClients || []).find(c => c.peerId === pid);
+    const blockedEntry = (cache.topClientsBlocked || []).find(c => c.peerId === pid);
+    // Device present in NEITHER top-N list → no_data. Do NOT fake zeros (would lie that
+    // Pi-hole saw this device). Keep this null-check — do not collapse back to flat 0.
+    if (!allowedEntry && !blockedEntry) return res.json({ ok: true, data: null, reason: 'no_data' });
+
+    const allowed = allowedEntry ? allowedEntry.count : 0;
+    const blocked = blockedEntry ? blockedEntry.count : 0;
+    const total = allowed + blocked;
+    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
+    res.json({ ok: true, data: { total, blocked, allowed, blockedPct, asOf: cache.lastSyncAt } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /pihole failed');
+    // intentional: a service/cache error is 'unavailable', NOT 'unidentified'
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
   }
 });
 
