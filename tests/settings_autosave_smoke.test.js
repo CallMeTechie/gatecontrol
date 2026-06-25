@@ -5,6 +5,7 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const supertest = require('supertest');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+const license = require('../src/services/license');
 
 let app;
 beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
@@ -88,12 +89,18 @@ test('expanded valuesById covers all bound fields for smtp/alerts/route-block', 
 
 test('two concurrent pihole PUTs leave a deterministic (non-corrupted) DB state', async () => {
   // Server/DB-level sanity check; the JS-level per-cluster queue serialization is covered by settings_autosave_core.test.js (createQueue).
-  const agent = getAgent(); const csrf = getCsrf();
-  const base = { enabled: true, manage_dns_chain: false, sync_interval_sec: 30 };
-  await Promise.all([
-    agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }] })),
-    agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }, { id: '2', url: 'http://b', dns_ip: '10.0.0.2', dns_port: 53, verify_tls: true, password_set: false }] })),
-  ]);
-  const get = await agent.get('/api/v1/settings/pihole').expect(200);
-  assert.ok([1, 2].includes(get.body.data.instances.length));
+  // pihole_integration is NOT in the global setup() unlock — enable it locally (mirrors pihole_api.test.js pattern).
+  license._overrideForTest({ pihole_integration: true });
+  try {
+    const agent = getAgent(); const csrf = getCsrf();
+    const base = { enabled: true, manage_dns_chain: false, sync_interval_sec: 30 };
+    await Promise.all([
+      agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }] })),
+      agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send(Object.assign({}, base, { instances: [{ id: '1', url: 'http://a', dns_ip: '10.0.0.1', dns_port: 53, verify_tls: true, password_set: false }, { id: '2', url: 'http://b', dns_ip: '10.0.0.2', dns_port: 53, verify_tls: true, password_set: false }] })),
+    ]);
+    const get = await agent.get('/api/v1/settings/pihole').expect(200);
+    assert.ok([1, 2].includes(get.body.data.instances.length));
+  } finally {
+    license._overrideForTest({ pihole_integration: false });
+  }
 });

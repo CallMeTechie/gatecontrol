@@ -77,7 +77,6 @@ async function setup() {
     gateway_pools_limit: 100,
     share_links: true,
     access_windows: true,
-    pihole_integration: true,
   });
 
   app = createApp();

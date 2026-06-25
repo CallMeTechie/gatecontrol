@@ -1184,11 +1184,11 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
     assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action always present');
-    assert.match(res.text, /id="btn-data-save"/, 'btn-data-save present');
+    assert.doesNotMatch(res.text, /id="btn-data-save"/, 'btn-data-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="data-traffic-days"/, 'data-traffic-days present');
     assert.match(res.text, /id="data-activity-days"/, 'data-activity-days present');
     assert.match(res.text, /id="data-peer-timeout"/, 'data-peer-timeout present');
-    assert.match(res.text, /id="btn-route-block-save"/, 'btn-route-block-save present');
+    assert.doesNotMatch(res.text, /id="btn-route-block-save"/, 'btn-route-block-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action present');
     assert.match(res.text, /id="default-theme-buttons"/, 'default-theme-buttons present');
     assert.match(res.text, /data-default-theme="default"/, 'data-default-theme=default present');
@@ -1206,11 +1206,11 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     assert.match(res.text, /id="security-lockout-enabled"/, 'security-lockout-enabled present');
     assert.match(res.text, /id="security-lockout-attempts"/, 'security-lockout-attempts present');
     assert.match(res.text, /id="security-lockout-duration"/, 'security-lockout-duration present');
-    assert.match(res.text, /id="btn-security-save"/, 'btn-security-save present');
+    assert.doesNotMatch(res.text, /id="btn-security-save"/, 'btn-security-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="security-password-enabled"/, 'security-password-enabled present');
-    assert.match(res.text, /id="btn-password-save"/, 'btn-password-save present');
+    assert.doesNotMatch(res.text, /id="btn-password-save"/, 'btn-password-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="mb-mode"/, 'mb-mode present');
-    assert.match(res.text, /id="mb-save"/, 'mb-save present');
+    assert.doesNotMatch(res.text, /id="mb-save"/, 'mb-save absent (autosave)'); // removed by autosave feature
   });
 
   it('renders key form field IDs on /settings (backup, advanced tabs)', async () => {
@@ -1221,8 +1221,8 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     assert.match(res.text, /id="autobackup-enabled"/, 'autobackup-enabled present');
     assert.match(res.text, /id="autobackup-schedule"/, 'autobackup-schedule present');
     assert.match(res.text, /id="autobackup-retention"/, 'autobackup-retention present');
-    assert.match(res.text, /id="btn-autobackup-save"/, 'btn-autobackup-save present');
-    assert.match(res.text, /id="btn-monitoring-save"/, 'btn-monitoring-save present');
+    assert.doesNotMatch(res.text, /id="btn-autobackup-save"/, 'btn-autobackup-save absent (autosave)'); // removed by autosave feature
+    assert.doesNotMatch(res.text, /id="btn-monitoring-save"/, 'btn-monitoring-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="metrics-enabled"/, 'metrics-enabled present');
     assert.match(res.text, /id="gw-down-threshold"/, 'gw-down-threshold present');
     assert.match(res.text, /id="ip2location-key"/, 'ip2location-key present');
@@ -1231,7 +1231,7 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     assert.match(res.text, /id="btn-add-webhook"/, 'btn-add-webhook present');
     assert.match(res.text, /id="card-autoupdate"/, 'card-autoupdate present');
     assert.match(res.text, /name="au-mode"/, 'au-mode radio inputs present');
-    assert.match(res.text, /id="au-mode-save"/, 'au-mode-save present');
+    assert.doesNotMatch(res.text, /id="au-mode-save"/, 'au-mode-save absent (autosave)'); // removed by autosave feature
   });
 
   it('renders wg-stop-modal as modal-overlay pattern on /settings', async () => {
