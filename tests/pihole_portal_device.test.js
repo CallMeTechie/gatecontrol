@@ -89,6 +89,7 @@ test('collapsed attribution → reason collapsed', async () => {
 });
 
 test('feature off → reason unavailable', async () => {
+  pihole.getCache = () => ({ instances:[{id:'p1',connected:true}], attribution:'per_peer', lastSyncAt:1, topClients:[], topClientsBlocked:[] });
   license.hasFeature = () => false;
   const r = await ident(supertest(app).get('/api/v1/portal/pihole')).expect(200);
   assert.equal(r.body.data, null);

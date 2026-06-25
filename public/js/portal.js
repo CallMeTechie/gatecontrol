@@ -358,6 +358,7 @@
         const msg = document.getElementById('piMsg');
         const bodyEl = card.querySelector('.pihole-body');
         if (!body.ok || body.data === null) {
+          if (body.reason === 'unavailable') { card.style.display = 'none'; return; }
           var key = { unavailable:'piholeUnavailable', collapsed:'piholeCollapsed', no_data:'piholeNoData', unidentified:'piholeUnidentified' }[body.reason] || 'piholeUnavailable';
           if (bodyEl) bodyEl.style.display = 'none';
           if (msg) { msg.textContent = (PT[key] || ''); msg.style.display = 'block'; } // PT = i18n map (portal.js line 14)
