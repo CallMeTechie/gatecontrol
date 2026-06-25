@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.97.1] — 2026-06-25
+
+### Fixes
+- drop GC_CADDY_EMAIL preflight — ACME issues portal cert without an account email (#181)
+
+---
+
 ## [1.97.0] — 2026-06-25
 
 ### Features
