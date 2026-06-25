@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.96.0] — 2026-06-25
+
+### Features
+- globales Settings-Autosave (kein Speichern-Button) (#179)
+
+---
+
 ## [1.95.1] — 2026-06-24
 
 ### Änderungen

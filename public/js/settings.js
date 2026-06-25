@@ -305,7 +305,7 @@
       else tlsToggle.classList.remove('on');
       if (data.data.hasPassword) {
         var hint = document.getElementById('smtp-password-hint');
-        hint.textContent = 'Password is set';
+        hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set';
         hint.style.display = '';
       }
     }
@@ -318,44 +318,73 @@
   if (smtpTlsToggle) {
     smtpTlsToggle.addEventListener('click', function() {
       smtpTlsToggle.classList.toggle('on');
+      smtpTlsToggle.dispatchEvent(new Event('change'));
     });
   }
 
-  // Save SMTP settings
-  var btnSmtpSave = document.getElementById('btn-smtp-save');
-  if (btnSmtpSave) {
-    btnSmtpSave.addEventListener('click', async function() {
-      btnLoading(btnSmtpSave);
-      try {
-        var payload = {
+  // SMTP autosave
+  var Core = window.SettingsAutosaveCore;
+  function smtpValues() {
+    var hostEl = document.getElementById('smtp-host');
+    var portEl = document.getElementById('smtp-port');
+    var userEl = document.getElementById('smtp-user');
+    var fromEl = document.getElementById('smtp-from');
+    var tlsEl = document.getElementById('smtp-tls');
+    var pwEl = document.getElementById('smtp-password');
+    return {
+      'smtp-host': hostEl ? hostEl.value : '',
+      'smtp-port': portEl ? portEl.value : '',
+      'smtp-user': userEl ? userEl.value : '',
+      'smtp-from': fromEl ? fromEl.value : '',
+      'smtp-tls': tlsEl ? tlsEl.classList.contains('on') : false,
+      'smtp-password': pwEl ? pwEl.value : '',
+    };
+  }
+  function smtpSave() {
+    var payload = {
+      host: document.getElementById('smtp-host').value,
+      port: document.getElementById('smtp-port').value,
+      user: document.getElementById('smtp-user').value,
+      from: document.getElementById('smtp-from').value,
+      secure: document.getElementById('smtp-tls').classList.contains('on'),
+    };
+    var pw = document.getElementById('smtp-password').value;
+    if (pw) payload.password = pw;
+    payload = Core.stripEmptySecrets(payload, ['password']);
+    return api.put('/api/smtp/settings', payload).then(function (res) {
+      if (res && res.ok && pw) {
+        var hint = document.getElementById('smtp-password-hint');
+        if (hint) { hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set'; hint.style.display = ''; }
+      }
+      return res;
+    });
+  }
+  (function () {
+    var smtpFields = ['smtp-host', 'smtp-port', 'smtp-user', 'smtp-from', 'smtp-tls', 'smtp-password']
+      .map(function (i) { return document.getElementById(i); }).filter(Boolean);
+    if (smtpFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'smtp',
+        fields: smtpFields,
+        statusEl: document.getElementById('smtp-status'),
+        valuesById: smtpValues,
+        save: smtpSave,
+      });
+    }
+  })();
+  // SMTP password clear
+  var smtpClear = document.getElementById('smtp-password-clear');
+  if (smtpClear) {
+    smtpClear.addEventListener('click', function () {
+      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+      SettingsAutosave.enqueue('smtp', function () {
+        return api.put('/api/smtp/settings', {
           host: document.getElementById('smtp-host').value,
           port: document.getElementById('smtp-port').value,
-          user: document.getElementById('smtp-user').value,
           from: document.getElementById('smtp-from').value,
-          secure: document.getElementById('smtp-tls').classList.contains('on'),
-        };
-        var pw = document.getElementById('smtp-password').value;
-        if (pw) payload.password = pw;
-        var data = await api.put('/api/smtp/settings', payload);
-        if (data.ok) {
-          if (pw) {
-            var hint = document.getElementById('smtp-password-hint');
-            hint.textContent = 'Password is set';
-            hint.style.display = '';
-            document.getElementById('smtp-password').value = '';
-          }
-          showMessage('smtp-test-result', 'SMTP settings saved', 'success');
-          document.getElementById('smtp-test-result').style.display = '';
-        } else {
-          showMessage('smtp-test-result', data.error || 'Failed to save SMTP settings', 'error');
-          document.getElementById('smtp-test-result').style.display = '';
-        }
-      } catch (err) {
-        showMessage('smtp-test-result', err.message, 'error');
-        document.getElementById('smtp-test-result').style.display = '';
-      } finally {
-        btnReset(btnSmtpSave);
-      }
+          clear_password: true,
+        });
+      });
     });
   }
 
@@ -395,7 +424,11 @@
   // Toggle helpers for managed toggles
   function setupManagedToggle(id) {
     var el = document.getElementById(id);
-    if (el) el.addEventListener('click', function() { el.classList.toggle('on'); });
+    if (!el) return;
+    el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      el.dispatchEvent(new Event('change'));    // <-- enables autosave on toggles
+    });
   }
   ['security-lockout-enabled', 'security-password-enabled', 'security-password-uppercase',
    'security-password-number', 'security-password-special'].forEach(setupManagedToggle);
@@ -472,49 +505,54 @@
     }
   }
 
-  async function saveSecuritySettings(triggerBtn, messageId) {
-    btnLoading(triggerBtn);
-    try {
-      var payload = {
+  // ─── Security Autosave (single bind over all 8 fields) ───
+  (function () {
+    var g = function (id) { return document.getElementById(id); };
+    function securityValues() {
+      return {
+        'security-lockout-enabled': g('security-lockout-enabled') ? g('security-lockout-enabled').classList.contains('on') : false,
+        'security-lockout-attempts': g('security-lockout-attempts') ? g('security-lockout-attempts').value : '',
+        'security-lockout-duration': g('security-lockout-duration') ? g('security-lockout-duration').value : '',
+        'security-password-enabled': g('security-password-enabled') ? g('security-password-enabled').classList.contains('on') : false,
+        'security-password-min-length': g('security-password-min-length') ? g('security-password-min-length').value : '',
+        'security-password-uppercase': g('security-password-uppercase') ? g('security-password-uppercase').classList.contains('on') : false,
+        'security-password-number': g('security-password-number') ? g('security-password-number').classList.contains('on') : false,
+        'security-password-special': g('security-password-special') ? g('security-password-special').classList.contains('on') : false,
+      };
+    }
+    function securitySave() {
+      var v = securityValues();
+      return api.put('/api/settings/security', {
         lockout: {
-          enabled: document.getElementById('security-lockout-enabled').classList.contains('on'),
-          max_attempts: document.getElementById('security-lockout-attempts').value,
-          duration: document.getElementById('security-lockout-duration').value,
+          enabled: v['security-lockout-enabled'],
+          max_attempts: v['security-lockout-attempts'],
+          duration: v['security-lockout-duration'],
         },
         password: {
-          complexity_enabled: document.getElementById('security-password-enabled').classList.contains('on'),
-          min_length: document.getElementById('security-password-min-length').value,
-          require_uppercase: document.getElementById('security-password-uppercase').classList.contains('on'),
-          require_number: document.getElementById('security-password-number').classList.contains('on'),
-          require_special: document.getElementById('security-password-special').classList.contains('on'),
+          complexity_enabled: v['security-password-enabled'],
+          min_length: v['security-password-min-length'],
+          require_uppercase: v['security-password-uppercase'],
+          require_number: v['security-password-number'],
+          require_special: v['security-password-special'],
         },
-      };
-      var data = await api.put('/api/settings/security', payload);
-      if (data.ok) {
-        showMessage(messageId, GC.t['security.saved'] || 'Security settings saved', 'success');
-      } else {
-        showMessage(messageId, data.error || 'Failed to save', 'error');
-      }
-    } catch (err) {
-      showMessage(messageId, err.message, 'error');
-    } finally {
-      btnReset(triggerBtn);
+      });
     }
-  }
-
-  var btnSecuritySave = document.getElementById('btn-security-save');
-  if (btnSecuritySave) {
-    btnSecuritySave.addEventListener('click', function() {
-      saveSecuritySettings(btnSecuritySave, 'security-message');
-    });
-  }
-
-  var btnPasswordSave = document.getElementById('btn-password-save');
-  if (btnPasswordSave) {
-    btnPasswordSave.addEventListener('click', function() {
-      saveSecuritySettings(btnPasswordSave, 'security-message-2');
-    });
-  }
+    var securityFieldIds = [
+      'security-lockout-enabled', 'security-lockout-attempts', 'security-lockout-duration',
+      'security-password-enabled', 'security-password-min-length', 'security-password-uppercase',
+      'security-password-number', 'security-password-special',
+    ];
+    var securityFields = securityFieldIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (securityFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'security',
+        fields: securityFields,
+        statusEl: document.getElementById('security-status'),
+        valuesById: securityValues,
+        save: securitySave,
+      });
+    }
+  })();
 
   // ─── Monitoring Settings ───────────────────────────────
 
@@ -536,33 +574,42 @@
     }
   }
 
-  var btnDataSave = document.getElementById('btn-data-save');
-  if (btnDataSave) {
-    btnDataSave.addEventListener('click', async function() {
-      btnLoading(btnDataSave);
-      try {
-        var data = await api.put('/api/settings/data', {
-          retention_traffic_days: document.getElementById('data-traffic-days').value,
-          retention_activity_days: document.getElementById('data-activity-days').value,
-          peer_online_timeout: document.getElementById('data-peer-timeout').value,
-        });
-        if (data.ok) {
-          showMessage('data-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('data-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('data-message', err.message, 'error');
-      } finally {
-        btnReset(btnDataSave);
-      }
-    });
-  }
+  (function () {
+    var trafficDays = document.getElementById('data-traffic-days');
+    var activityDays = document.getElementById('data-activity-days');
+    var peerTimeout = document.getElementById('data-peer-timeout');
+    var dataStatus = document.getElementById('data-status');
+    var dataFields = [trafficDays, activityDays, peerTimeout].filter(Boolean);
+    if (dataFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'data',
+        fields: dataFields,
+        statusEl: dataStatus,
+        valuesById: function () {
+          return {
+            'data-traffic-days': trafficDays ? trafficDays.value : '',
+            'data-activity-days': activityDays ? activityDays.value : '',
+            'data-peer-timeout': peerTimeout ? peerTimeout.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/data', {
+            retention_traffic_days: trafficDays ? trafficDays.value : '',
+            retention_activity_days: activityDays ? activityDays.value : '',
+            peer_online_timeout: peerTimeout ? peerTimeout.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── Monitoring Settings ───────────────────────────────
 
   var monEmailToggle = document.getElementById('monitoring-email-alerts');
-  if (monEmailToggle) monEmailToggle.addEventListener('click', function() { monEmailToggle.classList.toggle('on'); });
+  if (monEmailToggle) monEmailToggle.addEventListener('click', function() {
+    monEmailToggle.classList.toggle('on');
+    monEmailToggle.dispatchEvent(new Event('change'));
+  });
 
   async function loadMonitoringSettings() {
     try {
@@ -579,28 +626,32 @@
     }
   }
 
-  var btnMonSave = document.getElementById('btn-monitoring-save');
-  if (btnMonSave) {
-    btnMonSave.addEventListener('click', async function() {
-      btnLoading(btnMonSave);
-      try {
-        var data = await api.put('/api/settings/monitoring', {
-          interval: document.getElementById('monitoring-interval').value,
-          email_alerts: monEmailToggle.classList.contains('on'),
-          alert_email: document.getElementById('monitoring-alert-email').value,
-        });
-        if (data.ok) {
-          showMessage('monitoring-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('monitoring-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('monitoring-message', err.message, 'error');
-      } finally {
-        btnReset(btnMonSave);
-      }
-    });
-  }
+  (function () {
+    var intervalEl = document.getElementById('monitoring-interval');
+    var alertEmailEl = document.getElementById('monitoring-alert-email');
+    var monFields = [intervalEl, monEmailToggle, alertEmailEl].filter(Boolean);
+    if (monFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'monitoring',
+        fields: monFields,
+        statusEl: document.getElementById('monitoring-status'),
+        valuesById: function () {
+          return {
+            'monitoring-interval': intervalEl ? intervalEl.value : '',
+            'monitoring-email-alerts': monEmailToggle ? monEmailToggle.classList.contains('on') : false,
+            'monitoring-alert-email': alertEmailEl ? alertEmailEl.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/monitoring', {
+            interval: intervalEl ? intervalEl.value : '',
+            email_alerts: monEmailToggle ? monEmailToggle.classList.contains('on') : false,
+            alert_email: alertEmailEl ? alertEmailEl.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── Email Alert Settings ──────────────────────────────
 
@@ -629,35 +680,47 @@
     }
   }
 
-  var btnAlertsSave = document.getElementById('btn-alerts-save');
-  if (btnAlertsSave) {
-    btnAlertsSave.addEventListener('click', async function() {
-      btnLoading(btnAlertsSave);
-      try {
-        // Collect selected events from checkboxes
-        var events = [];
-        document.querySelectorAll('.alert-event-group:checked').forEach(function(cb) {
-          cb.dataset.events.split(',').forEach(function(e) { if (events.indexOf(e) === -1) events.push(e); });
-        });
-        var data = await api.put('/api/settings/alerts', {
-          email: document.getElementById('alerts-email').value,
-          email_events: events.join(','),
-          backup_reminder_days: document.getElementById('alerts-backup-days').value,
-          resource_cpu_threshold: document.getElementById('alerts-cpu').value,
-          resource_ram_threshold: document.getElementById('alerts-ram').value,
-        });
-        if (data.ok) {
-          showMessage('alerts-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('alerts-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('alerts-message', err.message, 'error');
-      } finally {
-        btnReset(btnAlertsSave);
-      }
-    });
-  }
+  // Alerts autosave
+  function alertsEventsActive() { return !!document.querySelector('.alert-event-group:checked'); }
+  (function () {
+    var alertsEmail = document.getElementById('alerts-email');
+    var alertsBackupDays = document.getElementById('alerts-backup-days');
+    var alertsCpu = document.getElementById('alerts-cpu');
+    var alertsRam = document.getElementById('alerts-ram');
+    var alertsEventGroups = Array.from(document.querySelectorAll('.alert-event-group'));
+    var alertsFields = [alertsEmail].concat(alertsEventGroups).concat([alertsBackupDays, alertsCpu, alertsRam]).filter(Boolean);
+    if (alertsFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'alerts',
+        fields: alertsFields,
+        statusEl: document.getElementById('alerts-status'),
+        valuesById: function () {
+          var vals = {
+            'alerts-email': alertsEmail ? alertsEmail.value : '',
+            'alerts-backup-days': alertsBackupDays ? alertsBackupDays.value : '',
+            'alerts-cpu': alertsCpu ? alertsCpu.value : '',
+            'alerts-ram': alertsRam ? alertsRam.value : '',
+          };
+          alertsEventGroups.forEach(function(cb) { if (cb.id) vals[cb.id] = cb.checked; });
+          return vals;
+        },
+        requiredForCommit: function () { return alertsEventsActive() ? ['alerts-email'] : []; },
+        save: function () {
+          var events = [];
+          document.querySelectorAll('.alert-event-group:checked').forEach(function (cb) {
+            cb.dataset.events.split(',').forEach(function (e) { if (events.indexOf(e) === -1) events.push(e); });
+          });
+          return api.put('/api/settings/alerts', {
+            email: alertsEmail ? alertsEmail.value : '',
+            email_events: events.join(','),
+            backup_reminder_days: alertsBackupDays ? alertsBackupDays.value : '',
+            resource_cpu_threshold: alertsCpu ? alertsCpu.value : '',
+            resource_ram_threshold: alertsRam ? alertsRam.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── ip2location Settings ──────────────────────────────
 
@@ -706,12 +769,26 @@
     });
   }
 
+  // ip2location clear
+  var ip2lClear = document.getElementById('ip2location-clear');
+  if (ip2lClear) {
+    ip2lClear.addEventListener('click', function () {
+      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+      SettingsAutosave.enqueue('ip2location', function () {
+        return api.put('/api/v1/settings/ip2location', { api_key: '', clear: true });
+      });
+      var keyEl = document.getElementById('ip2location-key');
+      if (keyEl) keyEl.value = '';
+    });
+  }
+
   // ─── Auto-Backup Settings ──────────────────────────────
 
   var autobackupEnabledToggle = document.getElementById('autobackup-enabled');
   if (autobackupEnabledToggle) {
     autobackupEnabledToggle.addEventListener('click', function() {
       autobackupEnabledToggle.classList.toggle('on');
+      autobackupEnabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -839,28 +916,33 @@
     }
   }
 
-  var btnAutobackupSave = document.getElementById('btn-autobackup-save');
-  if (btnAutobackupSave) {
-    btnAutobackupSave.addEventListener('click', async function() {
-      btnLoading(btnAutobackupSave);
-      try {
-        var data = await api.put('/api/settings/autobackup', {
-          enabled: autobackupEnabledToggle.classList.contains('on'),
-          schedule: document.getElementById('autobackup-schedule').value,
-          retention: document.getElementById('autobackup-retention').value,
-        });
-        if (data.ok) {
-          showMessage('autobackup-message', GC.t['autobackup.saved'] || 'Auto-backup settings saved', 'success');
-        } else {
-          showMessage('autobackup-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('autobackup-message', err.message, 'error');
-      } finally {
-        btnReset(btnAutobackupSave);
-      }
-    });
-  }
+  // ─── Autobackup Autosave ───────────────────────────────
+  (function () {
+    var scheduleEl = document.getElementById('autobackup-schedule');
+    var retentionEl = document.getElementById('autobackup-retention');
+    var abFields = [autobackupEnabledToggle, scheduleEl, retentionEl].filter(Boolean);
+    if (abFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'autobackup',
+        fields: abFields,
+        statusEl: document.getElementById('autobackup-status'),
+        valuesById: function () {
+          return {
+            'autobackup-enabled': autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
+            'autobackup-schedule': scheduleEl ? scheduleEl.value : '',
+            'autobackup-retention': retentionEl ? retentionEl.value : '',
+          };
+        },
+        save: function () {
+          return api.put('/api/settings/autobackup', {
+            enabled: autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
+            schedule: scheduleEl ? scheduleEl.value : '',
+            retention: retentionEl ? retentionEl.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   var btnAutobackupRun = document.getElementById('btn-autobackup-run');
   if (btnAutobackupRun) {
@@ -889,6 +971,7 @@
   if (metricsEnabledToggle) {
     metricsEnabledToggle.addEventListener('click', function() {
       metricsEnabledToggle.classList.toggle('on');
+      metricsEnabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -905,24 +988,14 @@
     }
   }
 
-  var btnMetricsSave = document.getElementById('btn-metrics-save');
-  if (btnMetricsSave) {
-    btnMetricsSave.addEventListener('click', async function() {
-      btnLoading(btnMetricsSave);
-      try {
-        var data = await api.put('/api/settings/metrics', {
-          enabled: metricsEnabledToggle.classList.contains('on'),
-        });
-        if (data.ok) {
-          showMessage('metrics-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('metrics-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('metrics-message', err.message, 'error');
-      } finally {
-        btnReset(btnMetricsSave);
-      }
+  var metricsStatus = document.getElementById('metrics-status');
+  if (metricsEnabledToggle) {
+    SettingsAutosave.bind({
+      cluster: 'metrics',
+      fields: [metricsEnabledToggle],
+      statusEl: metricsStatus,
+      valuesById: function () { return { 'metrics-enabled': metricsEnabledToggle.classList.contains('on') }; },
+      save: function () { return api.put('/api/settings/metrics', { enabled: metricsEnabledToggle.classList.contains('on') }); },
     });
   }
 
@@ -1004,30 +1077,18 @@
 // ─── DNS Settings ─────────────────────────────
 (function () {
   var dnsInput = document.getElementById('settings-dns-input');
-  var dnsSaveBtn = document.getElementById('btn-dns-save');
 
   if (dnsInput) {
     api.get('/api/v1/settings/dns').then(function(data) {
       if (data.ok) dnsInput.value = data.data.dns || '';
     }).catch(function() {});
-  }
 
-  if (dnsSaveBtn) {
-    dnsSaveBtn.addEventListener('click', async function() {
-      var btn = this;
-      btnLoading(btn);
-      try {
-        var data = await api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() });
-        if (data.ok) {
-          showToast(GC.t['settings.dns_saved'] || 'DNS settings saved');
-        } else {
-          showToast(data.error || 'Error', 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      } finally {
-        btnReset(btn);
-      }
+    SettingsAutosave.bind({
+      cluster: 'dns',
+      fields: [dnsInput],
+      statusEl: document.getElementById('dns-status'),
+      valuesById: function () { return { dns: dnsInput.value.trim() }; },
+      save: function () { return api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() }); },
     });
   }
 })();
@@ -1040,19 +1101,15 @@
     var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
     if (el) el.checked = true;
   }).catch(function () {});
-  var save = document.getElementById('au-mode-save');
-  if (save) {
-    save.addEventListener('click', function () {
-      var sel = card.querySelector('input[name="au-mode"]:checked');
-      var mode = sel ? sel.value : 'auto';
-      window.api.put('/api/system/auto-update', { mode: mode }).then(function (j) {
-        if (window.showToast) {
-          window.showToast(
-            (window.GC && GC.t && GC.t['autoupdate.saved']) || 'Mode saved',
-            (j && j.ok) ? 'success' : 'error'
-          );
-        }
-      }).catch(function () {});
+  var auRadios = Array.prototype.slice.call(document.querySelectorAll('input[name="au-mode"]'));
+  if (auRadios.length) {
+    function auVal() { var c = document.querySelector('input[name="au-mode"]:checked'); return c ? c.value : ''; }
+    SettingsAutosave.bind({
+      cluster: 'auto-update',
+      fields: auRadios,
+      statusEl: document.getElementById('au-mode-status'),
+      valuesById: function () { return { 'au-mode': auVal() }; },
+      save: function () { return api.put('/api/system/auto-update', { mode: auVal() }); },
     });
   }
 })();
@@ -1061,8 +1118,7 @@
 // ── Machine Binding Settings ──────────────────────────
 (async function () {
   var modeSelect = document.getElementById('mb-mode');
-  var saveBtn = document.getElementById('mb-save');
-  var msg = document.getElementById('mb-msg');
+  var statusEl = document.getElementById('machine-binding-status');
   if (!modeSelect) return;
 
   try {
@@ -1070,16 +1126,12 @@
     if (res.ok) modeSelect.value = res.data.mode;
   } catch {}
 
-  saveBtn.addEventListener('click', async function () {
-    try {
-      await api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value });
-      msg.textContent = GC.t['security.machine_binding.saved'] || 'Saved';
-      msg.style.color = 'var(--success)';
-      setTimeout(function () { msg.textContent = ''; }, 3000);
-    } catch (err) {
-      msg.style.color = 'var(--danger)';
-      msg.textContent = err.message || 'Error';
-    }
+  SettingsAutosave.bind({
+    cluster: 'machine-binding',
+    fields: [modeSelect],
+    statusEl: statusEl,
+    valuesById: function () { return { 'mb-mode': modeSelect.value }; },
+    save: function () { return api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value }); },
   });
 })();
 
@@ -1261,7 +1313,7 @@
       del.className = 'icon-btn';
       del.style.cssText = 'color:var(--red);margin-left:auto';
       del.textContent = '\u2715';
-      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); });
+      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); SettingsAutosave.enqueue('split-tunnel', stSave); });
       row.appendChild(del);
       customList.appendChild(row);
     });
@@ -1278,6 +1330,7 @@
     }
     customNets.push({ label: label, cidr: cidr });
     renderCustom();
+    SettingsAutosave.enqueue('split-tunnel', stSave);
   });
 
   async function loadST() {
@@ -1296,14 +1349,26 @@
     } catch {}
   }
 
-  document.getElementById('st-save').addEventListener('click', async function () {
+  function stSave() {
     var networks = customNets.slice();
-    if (privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
-    if (linkLocal.checked) networks.push(LINK_LOCAL);
-    try {
-      await api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb.checked });
-      if (typeof GC.toast === 'function') GC.toast(GC.t['settings.saved'] || 'Saved');
-    } catch (err) { alert(err.message || 'Failed to save'); }
+    if (privateNets && privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
+    if (linkLocal && linkLocal.checked) networks.push(LINK_LOCAL);
+    return api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb ? lockedCb.checked : false });
+  }
+
+  SettingsAutosave.bind({
+    cluster: 'split-tunnel',
+    fields: [modeSelect, privateNets, linkLocal, lockedCb].filter(Boolean),
+    statusEl: document.getElementById('st-status'),
+    valuesById: function () {
+      return {
+        'st-mode': modeSelect ? modeSelect.value : 'off',
+        'st-private-nets': privateNets ? privateNets.checked : false,
+        'st-link-local': linkLocal ? linkLocal.checked : false,
+        'st-locked': lockedCb ? lockedCb.checked : false,
+      };
+    },
+    save: stSave,
   });
 
   loadST();
@@ -1313,6 +1378,14 @@
 (function () {
   var container = document.getElementById('default-theme-buttons');
   if (!container) return;
+  var statusEl = document.getElementById('default-theme-status');
+  function flash() {
+    if (!statusEl) return;
+    statusEl.classList.remove('autosave-error');
+    statusEl.classList.add('field-saving');
+    statusEl.textContent = (window.GC && GC.t && GC.t['settings.autosave.saved']) || 'Saved';
+    setTimeout(function () { statusEl.classList.remove('field-saving'); }, 500);
+  }
   container.addEventListener('click', async function (e) {
     var btn = e.target.closest('[data-default-theme]');
     if (!btn) return;
@@ -1323,6 +1396,7 @@
         container.querySelectorAll('[data-default-theme]').forEach(function (b) {
           b.className = b.dataset.defaultTheme === selected ? 'btn btn-primary' : 'btn btn-ghost';
         });
+        flash();
         // Reload page to apply the new theme (templates are server-rendered)
         setTimeout(function () { window.location.reload(); }, 300);
       }
@@ -1332,17 +1406,17 @@
   });
 })();
 
-(() => {
-  const sliderEl = document.getElementById('gw-down-threshold');
-  const sliderOut = document.getElementById('gw-down-threshold-value');
+(function () {
+  var sliderEl = document.getElementById('gw-down-threshold');
+  var sliderOut = document.getElementById('gw-down-threshold-value');
   if (sliderEl && sliderOut) {
-    sliderEl.addEventListener('input', () => { sliderOut.textContent = sliderEl.value + ' s'; });
-    sliderEl.addEventListener('change', async () => {
-      await fetch('/api/v1/settings/gateway-failover', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '' },
-        body: JSON.stringify({ gateway_down_threshold_s: parseInt(sliderEl.value, 10) }),
-      });
+    sliderEl.addEventListener('input', function () { sliderOut.textContent = sliderEl.value + ' s'; });
+    SettingsAutosave.bind({
+      cluster: 'gateway-failover',
+      fields: [sliderEl],
+      statusEl: document.getElementById('gw-failover-status'),
+      valuesById: function () { return { gw: sliderEl.value }; },
+      save: function () { return api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: parseInt(sliderEl.value, 10) }); },
     });
   }
 })();
@@ -1353,11 +1427,10 @@
   var editingIndex = -1;
   var t = window.GC && window.GC.t || {};
 
-  var saveBtn = document.getElementById('btn-pihole-save');
   var addBtn = document.getElementById('btn-pihole-add-instance');
   var instancesList = document.getElementById('pihole-instances-list');
   var instanceForm = document.getElementById('pihole-instance-form');
-  if (!saveBtn && !addBtn && !instancesList) return;
+  if (!addBtn && !instancesList) return;
 
   async function loadPihole() {
     try {
@@ -1479,6 +1552,7 @@
         if (!confirm(t['pihole.cfg.confirm_delete'] || 'Delete this instance?')) return;
         phInstances.splice(idx, 1);
         renderInstances();
+        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
       } else if (action === 'edit') {
         editingIndex = idx;
         showInstanceForm(inst);
@@ -1551,7 +1625,7 @@
       renderInstances();
       hideInstanceForm();
       try {
-        await savePihole(true);
+        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
       } catch (err) {
         showToast(err.message || 'Error', 'error');
       }
@@ -1610,6 +1684,7 @@
   if (enabledToggle) {
     enabledToggle.addEventListener('click', function () {
       enabledToggle.classList.toggle('on');
+      enabledToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -1617,6 +1692,7 @@
   if (chainToggle) {
     chainToggle.addEventListener('click', function () {
       chainToggle.classList.toggle('on');
+      chainToggle.dispatchEvent(new Event('change'));
     });
   }
 
@@ -1650,18 +1726,20 @@
     }
   }
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        await savePihole(true);
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
-  }
+  var phIntervalEl = document.getElementById('pihole-sync-interval');
+  SettingsAutosave.bind({
+    cluster: 'pihole',
+    fields: [enabledToggle, chainToggle, phIntervalEl].filter(Boolean),
+    statusEl: document.getElementById('pihole-status'),
+    valuesById: function () {
+      return {
+        'pihole-enabled': enabledToggle ? enabledToggle.classList.contains('on') : false,
+        'pihole-manage-chain': chainToggle ? chainToggle.classList.contains('on') : false,
+        'pihole-sync-interval': phIntervalEl ? phIntervalEl.value : '30',
+      };
+    },
+    save: function () { return savePihole(false); },
+  });
 
   loadPihole();
 })();
@@ -1672,11 +1750,13 @@
   var widgetDevice = document.getElementById('portal-widget-device');
   var widgetTraffic = document.getElementById('portal-widget-traffic');
   var widgetServices = document.getElementById('portal-widget-services');
-  var saveBtn = document.getElementById('btn-portal-save');
   if (!enabledToggle) return;
 
   [enabledToggle, widgetDevice, widgetTraffic, widgetServices].forEach(function (el) {
-    if (el) el.addEventListener('click', function () { el.classList.toggle('on'); });
+    if (el) el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      el.dispatchEvent(new Event('change'));
+    });
   });
 
   function setToggle(el, val) {
@@ -1695,30 +1775,30 @@
     console.error('Failed to load portal settings:', err);
   });
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        var data = await api.put('/api/v1/settings/portal', {
-          enabled: enabledToggle.classList.contains('on'),
-          widgets: {
-            device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
-            traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
-            services: widgetServices ? widgetServices.classList.contains('on') : true,
-          },
-        });
-        if (data.ok) {
-          showMessage('portal-message', GC.t['settings.portal.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('portal-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('portal-message', err.message, 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
-  }
+  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices].filter(Boolean);
+  SettingsAutosave.bind({
+    cluster: 'portal',
+    fields: portalFields,
+    statusEl: document.getElementById('portal-status'),
+    valuesById: function () {
+      return {
+        'portal-enabled': enabledToggle.classList.contains('on'),
+        'portal-widget-device': widgetDevice ? widgetDevice.classList.contains('on') : true,
+        'portal-widget-traffic': widgetTraffic ? widgetTraffic.classList.contains('on') : true,
+        'portal-widget-services': widgetServices ? widgetServices.classList.contains('on') : true,
+      };
+    },
+    save: function () {
+      return api.put('/api/v1/settings/portal', {
+        enabled: enabledToggle.classList.contains('on'),
+        widgets: {
+          device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
+          traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
+          services: widgetServices ? widgetServices.classList.contains('on') : true,
+        },
+      });
+    },
+  });
 })();
 
 // ─── Portal Address ───────────────────────────────────
@@ -1796,7 +1876,6 @@
   var actionSel = document.getElementById('settings-route-block-action');
   var bodyEl = document.getElementById('settings-route-block-body');
   var redirectEl = document.getElementById('settings-route-block-redirect');
-  var saveBtn = document.getElementById('btn-route-block-save');
   if (!actionSel) return;
 
   function syncSettingsBlockVisibility() {
@@ -1817,27 +1896,29 @@
     console.error('Failed to load route block default:', err);
   });
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        var data = await api.put('/api/v1/settings/route-block-default', {
-          action: actionSel.value,
-          body: bodyEl ? bodyEl.value : '',
-          redirect_url: redirectEl ? redirectEl.value : '',
-        });
-        if (data.ok) {
-          showMessage('settings-route-block-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('settings-route-block-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('settings-route-block-message', err.message, 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
+  function rbValues() {
+    return {
+      'settings-route-block-action': actionSel.value,
+      'settings-route-block-body': bodyEl ? bodyEl.value || '' : '',
+      'settings-route-block-redirect': redirectEl ? redirectEl.value || '' : '',
+    };
   }
+  var rbFields = ['settings-route-block-action', 'settings-route-block-body', 'settings-route-block-redirect']
+    .map(function (i) { return document.getElementById(i); }).filter(Boolean);
+  SettingsAutosave.bind({
+    cluster: 'route-block',
+    fields: rbFields,
+    statusEl: document.getElementById('route-block-status'),
+    valuesById: rbValues,
+    requiredForCommit: function () { return actionSel.value === 'redirect' ? ['settings-route-block-redirect'] : []; },
+    save: function () {
+      return api.put('/api/v1/settings/route-block-default', {
+        action: actionSel.value,
+        body: bodyEl ? bodyEl.value : '',
+        redirect_url: redirectEl ? redirectEl.value : '',
+      });
+    },
+  });
 })();
 
 // ─── Domains Registry ─────────────────────────────
