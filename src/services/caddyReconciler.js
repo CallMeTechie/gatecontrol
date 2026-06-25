@@ -73,7 +73,7 @@ function extractCaddyRouteIds(caddyConfig) {
   if (!servers) return ids;
   for (const name of Object.keys(servers)) {
     const srv = servers[name];
-    collectRouteIds(srv.routes, ids);
+    collectRouteIds(srv && srv.routes, ids);
   }
   return ids;
 }
@@ -81,7 +81,11 @@ function extractCaddyRouteIds(caddyConfig) {
 function collectRouteIds(routes, ids) {
   if (!Array.isArray(routes)) return;
   for (const r of routes) {
-    if (r && r['@id'] && typeof r['@id'] === 'string') ids.add(r['@id']);
+    // Only DB-route markers (gc_route_<id>) count toward parity. The
+    // gc_owner_ ownership marker (see caddyOwner.js) is intentionally NOT a
+    // route id — counting it would make every cycle report drift (it is never
+    // in listDbRouteIds) and trigger an endless auto-repair loop.
+    if (r && typeof r['@id'] === 'string' && r['@id'].startsWith('gc_route_')) ids.add(r['@id']);
     const handlers = r && Array.isArray(r.handle) ? r.handle : [];
     for (const h of handlers) {
       if (h && Array.isArray(h.routes)) collectRouteIds(h.routes, ids);
