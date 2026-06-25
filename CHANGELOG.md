@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.99.2] — 2026-06-25
+
+### Fixes
+- refuse Caddy /load over a config owned by another instance (#191)
+
+---
+
 ## [1.99.1] — 2026-06-25
 
 ### Fixes
