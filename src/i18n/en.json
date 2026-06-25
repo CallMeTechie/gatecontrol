@@ -757,6 +757,8 @@
   "error.routes.relocate_item_invalid": "Invalid route selection.",
   "error.routes.relocate_lan_host_invalid": "Invalid LAN target address.",
   "error.routes.relocate_lan_port_invalid": "Invalid LAN target port.",
+  "error.routes.public_domain_use_verified": "Public domains must be picked from the verified list — verify it under Settings → General → Domains",
+  "error.routes.domain_collision": "This host collides with the GateControl or portal address",
 
   "error.settings.profile_get": "Failed to get profile",
   "error.settings.profile_update": "Failed to update profile",

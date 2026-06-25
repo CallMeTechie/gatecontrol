@@ -12,6 +12,7 @@ const { uploadLimiter } = require('../../middleware/rateLimit');
 const config = require('../../../config/default');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
+const { checkDomainPolicy } = require('../../services/routeDomainPolicy');
 const multer = require('multer');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -380,6 +381,10 @@ router.post('/',
       const domErr = validateDomain(domain);
       if (domErr) fields.domain = req.t('error.routes.domain_invalid') || domErr;
     }
+    if ((rt === 'http' || domain) && !fields.domain) {
+      const pol = checkDomainPolicy(domain, { routeType: rt });
+      if (pol.error) fields.domain = req.t('error.routes.' + pol.error);
+    }
     const portErr = validatePort(target_port);
     if (portErr) fields.target_port = req.t('error.routes.port_invalid') || portErr;
     if (description) {
@@ -540,6 +545,14 @@ router.put('/:id',
     if (domain !== undefined) {
       const domErr = validateDomain(domain);
       if (domErr) fields.domain = req.t('error.routes.domain_invalid') || domErr;
+    }
+    if (domain !== undefined && !fields.domain) {
+      const cur = getDb().prepare('SELECT domain, route_type FROM routes WHERE id = ?').get(Number(req.params.id));
+      const pol = checkDomainPolicy(domain, {
+        currentDomain: cur ? cur.domain : null,
+        routeType: req.body.route_type || (cur && cur.route_type) || 'http',
+      });
+      if (pol.error) fields.domain = req.t('error.routes.' + pol.error);
     }
     if (target_port !== undefined) {
       const portErr = validatePort(target_port);

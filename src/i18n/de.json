@@ -757,6 +757,8 @@
   "error.routes.relocate_item_invalid": "Ungültige Routen-Auswahl.",
   "error.routes.relocate_lan_host_invalid": "Ungültige LAN-Ziel-Adresse.",
   "error.routes.relocate_lan_port_invalid": "Ungültiger LAN-Ziel-Port.",
+  "error.routes.public_domain_use_verified": "Öffentliche Domains bitte aus der verifizierten Liste wählen — unter Einstellungen → Allgemein → Domains verifizieren",
+  "error.routes.domain_collision": "Dieser Host kollidiert mit der GateControl- oder Portal-Adresse",
 
   "error.settings.profile_get": "Profil konnte nicht geladen werden",
   "error.settings.profile_update": "Profil konnte nicht aktualisiert werden",
