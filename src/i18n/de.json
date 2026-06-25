@@ -1979,6 +1979,7 @@
   "settings.portal.widget_device": "Gerätestatus",
   "settings.portal.widget_traffic": "Traffic-Diagramm",
   "settings.portal.widget_services": "Dienste",
+  "settings.portal.widget_pihole": "Pi-hole-Widget",
   "settings.portal.saved": "Portal-Einstellungen gespeichert",
   "settings.portal.host_not_verified": "Domain ist nicht verifiziert",
   "settings.portal.host_invalid_prefix": "Ungültiges Subdomain-Präfix",
