@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.98.0] — 2026-06-25
+
+### Features
+- Domain-Registry-Bindung — Präfix + verifizierte Basis, Carve-out, Grandfathering, Nudge (#185)
+
+---
+
 ## [1.97.3] — 2026-06-25
 
 ### Fixes
