@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.97.0] — 2026-06-25
+
+### Features
+- configurable portal subdomain with real ACME cert, strictly internal (sub-project C) (#180)
+
+---
+
 ## [1.96.0] — 2026-06-25
 
 ### Features
