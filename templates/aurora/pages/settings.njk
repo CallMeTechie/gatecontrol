@@ -71,6 +71,7 @@
             <button class="btn {{ 'btn-primary' if theme == 'aurora' else 'btn-ghost' }}" data-default-theme="aurora" style="flex:1;justify-content:center">{{ t('profile.theme_aurora') }}</button>
           </div>
           <div style="font-size:11px;color:var(--text-3)">{{ t('settings.default_theme_hint') }}</div>
+          <div id="default-theme-status" class="autosave-status"></div>
         </div>
       </div>
 
@@ -135,9 +136,7 @@
             <input type="text" id="settings-dns-input" placeholder="{{ t('peers.dns_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12.5px;font-family:var(--font-mono)">
           </div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">{{ t('settings.dns_desc') }}</div>
-          <div style="display:flex;justify-content:flex-end">
-            <button class="btn btn-primary" id="btn-dns-save">{{ t('data.save') or 'Save' }}</button>
-          </div>
+          <div id="dns-status" class="autosave-status"></div>
           {% else %}
           <div class="set-row">
             <span class="l">{{ t('settings.dns') }} <span class="lock-icon"></span></span>
@@ -170,9 +169,7 @@
             <small class="form-hint">{{ t('data.peer_timeout_hint') or 'Peer is considered offline after no handshake for this many seconds' }}</small>
           </div>
           <div id="data-message" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-data-save">{{ t('data.save') or 'Save' }}</button>
-          </div>
+          <div id="data-status" class="autosave-status"></div>
         </div>
       </div>
 
@@ -194,9 +191,7 @@
           <textarea id="settings-route-block-body" style="display:none;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
           <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="{{ t('routes.block_redirect_ph') or 'https://...' }}">
           <div id="settings-route-block-message" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-route-block-save">{{ t('data.save') }}</button>
-          </div>
+          <div id="route-block-status" class="autosave-status"></div>
         </div>
       </div>
 
@@ -338,10 +333,7 @@
         </div>
         <div class="set-sec"><div class="sh"><b>{{ t('security.lockout.locked_accounts') }}</b></div></div>
         <div id="security-locked-list" style="font-size:12px;color:var(--text-3)">{{ t('security.lockout.no_locked') }}</div>
-        <div id="security-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-security-save">{{ t('security.save') }}</button>
-        </div>
+        <div id="security-status" class="autosave-status"></div>
       </div>
     </div>
 
@@ -374,10 +366,6 @@
               <div class="toggle on" id="security-password-special" data-managed="true"></div>
             </div>
           </div>
-          <div id="security-message-2" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-password-save">{{ t('security.save') }}</button>
-          </div>
         </div>
       </div>
 
@@ -404,9 +392,7 @@
             </select>
           </div>
           <div id="mb-message" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="mb-save" {% if mbLocked %}disabled{% endif %}>{{ t('security.save') }}</button>
-          </div>
+          <div id="machine-binding-status" class="autosave-status"></div>
         </div>
       </div>
     </div>
@@ -477,9 +463,9 @@
           <span id="autobackup-last-run" style="font-size:11px;font-family:var(--font-mono);color:var(--text-3)">{{ t('autobackup.last_run_never') }}</span>
         </div>
         <div id="autobackup-message" style="display:none"></div>
+        <div id="autobackup-status" class="autosave-status"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
           <button class="btn btn-ghost" id="btn-autobackup-run">{{ t('autobackup.run_now') }}</button>
-          <button class="btn btn-primary" id="btn-autobackup-save">{{ t('autobackup.save') }}</button>
         </div>
         <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
           <div class="set-sec"><div class="sh"><b>{{ t('autobackup.existing_files') }}</b></div></div>
@@ -519,6 +505,7 @@
             <label class="form-label">{{ t('route_auth.smtp_password') }}</label>
             <input type="password" id="smtp-password" style="width:100%">
             <small class="form-hint" id="smtp-password-hint" style="display:none"></small>
+            <button class="btn btn-ghost" id="smtp-password-clear" style="font-size:12px;margin-top:4px">{{ t('settings.autosave.clear_secret') }}</button>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">{{ t('route_auth.smtp_from') }}</label>
@@ -532,9 +519,7 @@
             </div>
             <div class="toggle on" id="smtp-tls" data-managed="true"></div>
           </div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-smtp-save">{{ t('route_auth.smtp_save') }}</button>
-          </div>
+          <div id="smtp-status" class="autosave-status"></div>
         </div>
       </div>
 
@@ -568,14 +553,14 @@
         <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-top:4px">{{ t('alerts.events_label') or 'Notify on these events:' }}</div>
         <div id="alerts-events" style="display:flex;flex-direction:column;gap:6px">
           {% set alertGroups = [
-            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed' },
-            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired' },
-            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted' },
-            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert' }
+            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed', id: 'alerts-events-security' },
+            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired', id: 'alerts-events-peers' },
+            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted', id: 'alerts-events-routes' },
+            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert', id: 'alerts-events-system' }
           ] %}
           {% for g in alertGroups %}
           <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px">
-            <input type="checkbox" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
+            <input type="checkbox" id="{{ g.id }}" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
             <span>{{ g.label }}</span>
           </label>
           {% endfor %}
@@ -598,9 +583,7 @@
           </div>
         </div>
         <div id="alerts-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-alerts-save">{{ t('alerts.save') or 'Save' }}</button>
-        </div>
+        <div id="alerts-status" class="autosave-status"></div>
       </div>
     </div>
   </div>
@@ -631,9 +614,7 @@
           <input type="email" id="monitoring-alert-email" placeholder="admin@example.com" style="width:100%">
         </div>
         <div id="monitoring-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-monitoring-save">{{ t('monitoring.save') or 'Save' }}</button>
-        </div>
+        <div id="monitoring-status" class="autosave-status"></div>
       </div>
     </div>
 
@@ -653,9 +634,7 @@
           <code style="font-family:var(--font-mono);font-size:11px">/metrics</code>
         </div>
         <div id="metrics-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-metrics-save">{{ t('common.save') }}</button>
-        </div>
+        <div id="metrics-status" class="autosave-status"></div>
       </div>
     </div>
 
@@ -673,6 +652,7 @@
           </div>
         </div>
         <p style="margin:0;font-size:11px;color:var(--text-2)">{{ t('gateway_failover_settings.down_threshold_help') }}</p>
+        <div id="gw-failover-status" class="autosave-status"></div>
       </div>
     </div>
   </div>
@@ -695,6 +675,7 @@
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" id="btn-ip2location-save" style="font-size:12px">{{ t('ip2location.save') or 'Save' }}</button>
           <button class="btn btn-ghost" id="btn-ip2location-test" style="font-size:12px">{{ t('ip2location.test') or 'Test' }}</button>
+          <button class="btn btn-ghost" id="ip2location-clear" style="font-size:12px">{{ t('settings.autosave.clear_secret') }}</button>
         </div>
         <div id="ip2location-result" style="display:none"></div>
       </div>
@@ -732,9 +713,7 @@
           <input type="radio" name="au-mode" value="manual" style="accent-color:var(--accent)">
           <span>{{ t('autoupdate.mode_manual') }}</span>
         </label>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="au-mode-save">{{ t('autoupdate.save') }}</button>
-        </div>
+        <div id="au-mode-status" class="autosave-status"></div>
       </div>
     </div>
   </div>
@@ -885,7 +864,7 @@
           <small class="form-hint">{{ t('settings.split_tunnel_lock_hint') }}</small>
         </div>
       </div>
-      <button class="btn btn-primary" id="st-save" style="margin-top:12px">{{ t('data.save') }}</button>
+      <div id="st-status" class="autosave-status"></div>
     </div>
   </div>
 </div>
@@ -915,9 +894,7 @@
           <label class="form-label" for="pihole-sync-interval">{{ t('pihole.cfg.sync_interval') }}</label>
           <input type="number" id="pihole-sync-interval" value="30" min="10" max="3600" style="width:100%">
         </div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-pihole-save">{{ t('pihole.cfg.save') }}</button>
-        </div>
+        <div id="pihole-status" class="autosave-status"></div>
       </div>
     </div>
 
@@ -997,9 +974,7 @@
           <div class="toggle" id="portal-widget-services" data-managed="true"></div>
         </div>
         <div id="portal-message" style="display:none"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="btn-portal-save">{{ t('common.save') }}</button>
-        </div>
+        <div id="portal-status" class="autosave-status"></div>
       </div>
     </div>
   </div>
@@ -1008,6 +983,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/settingsAutosaveCore.js?v={{ appVersion }}"></script>
+<script src="/js/settingsAutosave.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 <script src="/js/peer-groups-admin.js?v={{ appVersion }}"></script>
 <script src="/js/tags-admin.js?v={{ appVersion }}"></script>
