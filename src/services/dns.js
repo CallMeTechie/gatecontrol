@@ -258,9 +258,10 @@ function renderHostsContent() {
     lines.push(`${gwIp}\t${host}`);
   }
 
-  // Portal home name — VPN clients reach the landing portal via home.<domain>.
+  // Portal home name — VPN clients reach the landing portal via the effective host.
   // Resolves to the gateway IP so the name works on any split-tunnel config.
-  lines.push(`${gwIp}\thome.${domain}`);
+  const { effectivePortalHost } = require('./portalConfig');
+  lines.push(`${gwIp}\t${effectivePortalHost().host}`);
 
   return lines.join('\n') + '\n';
 }
