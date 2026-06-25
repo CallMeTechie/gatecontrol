@@ -98,15 +98,27 @@ router.get('/ip2location', (req, res) => {
 router.put('/ip2location', (req, res) => {
   try {
     const { api_key, clear } = req.body;
+    const oldKey = settings.get('ip2location.api_key', '');
+
+    // Determine effective new value (mirrors the write logic below).
+    let newKey;
     if (clear === true) {
-      settings.set('ip2location.api_key', '');
+      newKey = '';
     } else if (api_key !== undefined && String(api_key) !== '') {
-      settings.set('ip2location.api_key', String(api_key));
+      newKey = String(api_key);
+    } else {
+      // empty api_key without clear → no change → skip write and audit
+      return res.json({ ok: true });
     }
-    // empty api_key without clear → leave unchanged
-    activity.log('ip2location_settings_updated', 'ip2location API key updated', {
-      source: 'admin', ipAddress: req.ip, severity: 'info',
-    });
+
+    // Only write and log when the value actually changed.
+    if (newKey !== oldKey) {
+      settings.set('ip2location.api_key', newKey);
+      activity.log('ip2location_settings_updated', 'ip2location API key updated', {
+        source: 'admin', ipAddress: req.ip, severity: 'info',
+      });
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: req.t('common.error') });
