@@ -1850,3 +1850,186 @@
     },
   });
 })();
+
+// ─── Domains Registry ─────────────────────────────
+(function () {
+  var tbl = document.getElementById('domains-table');
+  if (!tbl) return;
+
+  var tbody = document.getElementById('domains-tbody');
+  var serverIpEl = document.getElementById('domains-server-ip');
+  var warningEl = document.getElementById('domains-server-ip-warning');
+  var ipInput = document.getElementById('domains-server-ip-input');
+  var ipSaveBtn = document.getElementById('domains-server-ip-save');
+  var addInput = document.getElementById('domains-add-input');
+  var addBtn = document.getElementById('domains-add-btn');
+  var addError = document.getElementById('domains-add-error');
+
+  var labelVerified = tbl.dataset.labelVerified || '';
+  var labelFailed = tbl.dataset.labelFailed || '';
+  var labelPending = tbl.dataset.labelPending || '';
+  var labelVerify = tbl.dataset.labelVerify || '';
+  var labelRemove = tbl.dataset.labelRemove || '';
+
+  function statusBadge(status) {
+    var span = document.createElement('span');
+    span.className = 'tag ' + (status === 'verified' ? 'tag-green' : status === 'failed' ? 'tag-amber' : 'tag-grey');
+    span.style.fontSize = '11px';
+    var dot = document.createElement('span');
+    dot.className = 'tag-dot';
+    span.appendChild(dot);
+    span.appendChild(document.createTextNode(
+      status === 'verified' ? labelVerified : status === 'failed' ? labelFailed : labelPending
+    ));
+    return span;
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleDateString(); } catch (e) { return iso; }
+  }
+
+  function renderRows(domains) {
+    tbody.textContent = '';
+    if (!domains || domains.length === 0) return;
+    domains.forEach(function (d) {
+      var tr = document.createElement('tr');
+      tr.dataset.domainId = d.id;
+      tr.style.borderBottom = '1px solid var(--border)';
+
+      var tdDomain = document.createElement('td');
+      tdDomain.style.cssText = 'padding:8px;font-family:var(--font-mono);font-size:12px';
+      tdDomain.textContent = d.domain;
+      if (d.last_error && d.status === 'failed') {
+        var errEl = document.createElement('div');
+        errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;font-family:inherit';
+        errEl.textContent = d.last_error;
+        tdDomain.appendChild(errEl);
+      }
+      tr.appendChild(tdDomain);
+
+      var tdStatus = document.createElement('td');
+      tdStatus.style.padding = '8px';
+      tdStatus.appendChild(statusBadge(d.status));
+      tr.appendChild(tdStatus);
+
+      var tdDate = document.createElement('td');
+      tdDate.style.cssText = 'padding:8px;font-size:11px;color:var(--text-3)';
+      tdDate.textContent = formatDate(d.verified_at);
+      tr.appendChild(tdDate);
+
+      var tdAct = document.createElement('td');
+      tdAct.style.cssText = 'padding:8px;white-space:nowrap';
+
+      var verifyBtn = document.createElement('button');
+      verifyBtn.className = 'btn btn-ghost';
+      verifyBtn.style.cssText = 'font-size:11px;padding:3px 8px;margin-right:4px';
+      verifyBtn.textContent = labelVerify;
+      verifyBtn.addEventListener('click', (function (domainId, row) {
+        return function () { recheckDomain(domainId, row); };
+      })(d.id, tr));
+      tdAct.appendChild(verifyBtn);
+
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'btn btn-ghost';
+      removeBtn.style.cssText = 'font-size:11px;padding:3px 8px;color:var(--red)';
+      removeBtn.textContent = labelRemove;
+      removeBtn.addEventListener('click', (function (domainId, row) {
+        return function () { removeDomain(domainId, row); };
+      })(d.id, tr));
+      tdAct.appendChild(removeBtn);
+
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadDomains() {
+    try {
+      var r = await api.get('/api/v1/settings/domains');
+      if (!r.ok) return;
+      renderRows(r.data.domains);
+      if (serverIpEl) serverIpEl.textContent = r.data.serverIp || '—';
+      if (warningEl) warningEl.style.display = r.data.serverIpWarning ? '' : 'none';
+    } catch (err) {
+      console.error('Failed to load domains:', err);
+    }
+  }
+
+  async function recheckDomain(id, tr) {
+    try {
+      var r = await api.post('/api/v1/settings/domains/' + id + '/verify', {});
+      if (r.ok && r.data) {
+        var d = r.data;
+        var domainCell = tr.cells[0];
+        domainCell.textContent = d.domain;
+        if (d.last_error && d.status === 'failed') {
+          var errEl = document.createElement('div');
+          errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px';
+          errEl.textContent = d.last_error;
+          domainCell.appendChild(errEl);
+        }
+        var statusCell = tr.cells[1];
+        statusCell.textContent = '';
+        statusCell.appendChild(statusBadge(d.status));
+        tr.cells[2].textContent = formatDate(d.verified_at);
+      }
+    } catch (err) {
+      console.error('Recheck failed:', err);
+    }
+  }
+
+  async function removeDomain(id, tr) {
+    try {
+      var r = await api.del('/api/v1/settings/domains/' + id);
+      if (r.ok) tr.remove();
+    } catch (err) {
+      console.error('Remove domain failed:', err);
+    }
+  }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', async function () {
+      var domain = addInput ? addInput.value.trim() : '';
+      if (!domain) return;
+      if (addError) { addError.style.display = 'none'; addError.textContent = ''; }
+      btnLoading(addBtn);
+      try {
+        var r = await api.post('/api/v1/settings/domains', { domain: domain });
+        if (!r.ok) {
+          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
+        } else {
+          if (addInput) addInput.value = '';
+          await loadDomains();
+        }
+      } catch (err) {
+        if (addError) { addError.textContent = err.message; addError.style.display = ''; }
+      } finally {
+        btnReset(addBtn);
+      }
+    });
+  }
+
+  if (ipSaveBtn) {
+    ipSaveBtn.addEventListener('click', async function () {
+      var ip = ipInput ? ipInput.value.trim() : '';
+      if (addError) { addError.style.display = 'none'; addError.textContent = ''; }
+      btnLoading(ipSaveBtn);
+      try {
+        var r = await api.put('/api/v1/settings/domains/server-ip', { ip: ip });
+        if (r.ok) {
+          if (ipInput) ipInput.value = '';
+          await loadDomains();
+        } else {
+          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
+        }
+      } catch (err) {
+        if (addError) { addError.textContent = err.message; addError.style.display = ''; }
+      } finally {
+        btnReset(ipSaveBtn);
+      }
+    });
+  }
+
+  loadDomains();
+})();

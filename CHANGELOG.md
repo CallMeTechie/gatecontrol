@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.95.1] — 2026-06-24
+
+### Änderungen
+- patch 11 Dependabot alerts (Caddy 2.11.4 + transitive npm) (#178)
+
+---
+
+## [1.95.0] — 2026-06-24
+
+### Features
+- zentrale verifizierte Domain-Registry (Teilprojekt A) (#177)
+
+---
+
 ## [1.94.1] — 2026-06-24
 
 ### Änderungen

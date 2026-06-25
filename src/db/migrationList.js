@@ -1031,6 +1031,21 @@ const migrations = [
     ON egress_routes(near_peer_id, lan_listen_port) WHERE enabled = 1 AND near_peer_id IS NOT NULL;`,
     detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_egress_near_port_unique'").get(),
   },
+  {
+    version: 58,
+    name: 'create_domains_registry',
+    sql: `CREATE TABLE IF NOT EXISTS domains (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain          TEXT NOT NULL UNIQUE,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      resolved_ip     TEXT,
+      last_error      TEXT,
+      verified_at     TEXT,
+      last_checked_at TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );`,
+    detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='domains'").get(),
+  },
 ];
 
 module.exports = { migrations };
