@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.97.3] — 2026-06-25
+
+### Fixes
+- identity header was deleted-after-set, so the portal showed no data (#183)
+
+---
+
 ## [1.97.2] — 2026-06-25
 
 ### Fixes
