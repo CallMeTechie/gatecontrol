@@ -1721,6 +1721,76 @@
   }
 })();
 
+// ─── Portal Address ───────────────────────────────────
+(function () {
+  var sel = document.getElementById('portal-base-domain');
+  if (!sel) return;
+  var prefix = document.getElementById('portal-prefix');
+  var preview = document.getElementById('portal-effective-host');
+  var errEl = document.getElementById('portal-host-error');
+  var applyBtn = document.getElementById('portal-host-apply');
+  var switchWarn = document.getElementById('portal-switch-warning');
+  var noDomainsHint = document.getElementById('portal-no-domains-hint');
+  var t = (window.GC && window.GC.t) || {};
+  var currentHost = '';     // the live, persisted effective host (from initial GET)
+  var internalHost = '';    // home.<gc.internal> for the "Internal (default)" preview
+  var curBase = '';         // persisted base_domain (for confirm-cancel restore)
+  var curPrefix = 'home';   // persisted prefix
+
+  function effective() {
+    var base = sel.value; var p = (prefix.value || '').trim();
+    return base ? (p ? p + '.' + base : base) : internalHost;
+  }
+  function renderPreview() {
+    preview.textContent = effective();
+    prefix.disabled = !sel.value;
+    // Show the switch warning ONLY when the selection differs from the live host
+    // (no false alarm for an already-configured, stable host on page load).
+    if (switchWarn) switchWarn.style.display = (effective() !== currentHost) ? '' : 'none';
+  }
+
+  // Populate verified domains + current selection.
+  Promise.all([api.get('/api/v1/settings/domains'), api.get('/api/v1/settings/portal')]).then(function (r) {
+    var verified = (r[0].data.domains || []).filter(function (d) { return d.status === 'verified'; });
+    var cur = r[1].data;
+    currentHost = cur.effectiveHost || '';
+    internalHost = cur.internalHost || '';
+    curBase = cur.base_domain || '';
+    curPrefix = cur.prefix || 'home';
+    sel.appendChild(new Option(t['settings.portal.internal_default'] || 'Internal (default)', ''));
+    verified.forEach(function (d) { sel.appendChild(new Option(d.domain, d.domain)); });
+    sel.value = curBase;
+    prefix.value = curPrefix;
+    // Empty state: no verified domains → only "Internal (default)" + a hint pointing to the registry.
+    if (noDomainsHint) noDomainsHint.style.display = verified.length ? 'none' : '';
+    renderPreview();
+  }).catch(function () {});
+
+  // Preview only — selecting/typing does NOT switch the live host.
+  sel.addEventListener('change', renderPreview);
+  prefix.addEventListener('input', renderPreview);
+
+  // Deliberate, confirmed commit (NOT autosave): a host change causes a brief
+  // portal outage (single-host switch window), so it stays an explicit action.
+  if (applyBtn) applyBtn.addEventListener('click', async function () {
+    if (errEl) { errEl.classList.remove('autosave-error'); errEl.textContent = ''; }
+    if (effective() === currentHost) return;     // no-op: nothing changed
+    if (!window.confirm(t['settings.portal.switch_warning'] || 'The portal will be briefly unreachable while switching, and the previous name stops working. Continue?')) {
+      // Cancel: restore the persisted selection so the warning clears and a stray re-Apply is avoided.
+      sel.value = curBase; prefix.value = curPrefix; renderPreview();
+      return;
+    }
+    btnLoading(applyBtn);
+    try {
+      var res = await api.put('/api/v1/settings/portal', { base_domain: sel.value, prefix: prefix.value });
+      if (res && res.ok) { curBase = sel.value; curPrefix = prefix.value; currentHost = effective(); renderPreview(); showToast(t['settings.autosave.saved'] || 'Saved'); }
+      else if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = (res && res.error) || ''; }
+    } catch (err) {
+      if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = err.message; }
+    } finally { btnReset(applyBtn); }
+  });
+})();
+
 // ─── Route Block Default ──────────────────────────────
 (function () {
   var actionSel = document.getElementById('settings-route-block-action');

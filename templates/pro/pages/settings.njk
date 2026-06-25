@@ -1056,6 +1056,34 @@
         </div>
       </div>
     </div>
+    <div class="card">
+      <div class="card-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span class="card-title">{{ t('settings.portal.address') }}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.base_domain') }}</span>
+          <select id="portal-base-domain" class="input" style="font-size:12px;padding:4px 6px;min-width:160px"></select>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.prefix') }}</span>
+          <input type="text" id="portal-prefix" class="input" style="font-size:12px;padding:4px 6px;width:120px" placeholder="home">
+        </div>
+        <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.prefix_hint') }}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <span style="font-size:13px">{{ t('settings.portal.effective_host') }}</span>
+          <span id="portal-effective-host" style="font-size:12px;font-family:monospace;color:var(--text-2)"></span>
+        </div>
+        <div id="portal-host-error" class="autosave-status" style="display:none"></div>
+        <div id="portal-switch-warning" style="display:none;font-size:11px;color:var(--text-warn,var(--warning,#e6a817));padding:0 4px">{{ t('settings.portal.switch_warning') }}</div>
+        <div id="portal-no-domains-hint" style="display:none;font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.no_domains_hint') }} <a href="/settings?tab=general">{{ t('settings.general.title') }}</a></div>
+        <div style="font-size:11px;color:var(--text-3);padding:0 4px;border-top:1px solid var(--border);padding-top:8px">{{ t('settings.portal.host_note') }}</div>
+        <div style="display:flex;justify-content:flex-end;padding-top:4px">
+          <button class="btn btn-primary" id="portal-host-apply">{{ t('settings.portal.apply') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
