@@ -33,3 +33,18 @@ test('widget toggles still work (no regression)', async () => {
   const get = await agent.get('/api/v1/settings/portal').expect(200);
   assert.equal(get.body.data.enabled, false);
 });
+
+test('partial PUT preserves the other host field (no silent base_domain reset)', async () => {
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  const agent = getAgent(); const csrf = getCsrf();
+  // First: set both base_domain and prefix
+  await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
+    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(200);
+  // Then: update only prefix, omitting base_domain
+  await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
+    .send({ prefix: 'vpn' }).expect(200);
+  // Verify: base_domain is still 'domaincaster.com', NOT reset to ''
+  const get = await agent.get('/api/v1/settings/portal').expect(200);
+  assert.equal(get.body.data.base_domain, 'domaincaster.com');
+  assert.equal(get.body.data.effectiveHost, 'vpn.domaincaster.com');
+});
