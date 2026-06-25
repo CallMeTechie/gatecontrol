@@ -45,3 +45,19 @@ test('update changing domain to unverified public base → 400', async () => {
   assert.equal(res.status, 400);
   assert.ok(res.body.fields.domain);
 });
+
+test('routes list flags public routes with unverified base', async () => {
+  getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled) VALUES ('x.unverified.com','10.0.0.4',80,'http',1)").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('verified.com','verified')").run();
+  getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled) VALUES ('y.verified.com','10.0.0.5',80,'http',1)").run();
+  getDb().prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled) VALUES ('z.gc.internal','10.0.0.6',80,'http',1)").run();
+  const res = await agent.get('/api/v1/routes').expect(200);
+  const by = Object.fromEntries(res.body.routes.map(r => [r.domain, r]));
+  assert.equal(by['x.unverified.com'].baseUnverified, true);
+  assert.equal(by['y.verified.com'].baseUnverified, false);
+  assert.equal(by['z.gc.internal'].baseUnverified, false);   // non-public → never flagged
+  // domainIsPublic is a first-class flag (drives Task 6 edit-modal path detection):
+  assert.equal(by['x.unverified.com'].domainIsPublic, true);
+  assert.equal(by['y.verified.com'].domainIsPublic, true);
+  assert.equal(by['z.gc.internal'].domainIsPublic, false);
+});
