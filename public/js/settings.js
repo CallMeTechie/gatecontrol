@@ -1783,7 +1783,7 @@
     btnLoading(applyBtn);
     try {
       var res = await api.put('/api/v1/settings/portal', { base_domain: sel.value, prefix: prefix.value });
-      if (res && res.ok) { curBase = sel.value; curPrefix = prefix.value; currentHost = effective(); renderPreview(); showToast(t['settings.autosave.saved'] || 'Saved'); }
+      if (res && res.ok) { curBase = sel.value; curPrefix = prefix.value; currentHost = effective(); renderPreview(); showToast(t['settings.portal.saved'] || 'Saved'); }
       else if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = (res && res.error) || ''; }
     } catch (err) {
       if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = err.message; }
