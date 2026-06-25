@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.99.0] — 2026-06-25
+
+### Features
+- Geräte-Besitzer-Zuordnung (TP1 — peers.user_id + Admin-UI) (#189)
+
+---
+
 ## [1.98.4] — 2026-06-25
 
 ### Fixes
