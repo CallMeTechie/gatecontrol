@@ -3,6 +3,7 @@
   var Core = window.SettingsAutosaveCore;
   var enqueue = Core.createQueue();           // shared per-cluster serialization
   var t = (window.GC && window.GC.t) || {};
+  var binds = {};                             // registry of bound clusters → { resync }
   window.SettingsAutosave = { enqueue: enqueue };
 
   function flash(statusEl) {
@@ -44,6 +45,8 @@
     var statusEl = opts.statusEl || null;
     var valuesById = opts.valuesById || function () { return {}; };
     var snapshot = JSON.stringify(valuesById());   // last successfully persisted state
+    function resync() { snapshot = JSON.stringify(valuesById()); }
+    if (cluster) binds[cluster] = { resync: resync };
 
     // Dev guard: warn if any bound field id is absent from valuesById (would never be dirty).
     var _boundIds = fields.map(function(f) { return f && f.id; }).filter(Boolean);
@@ -93,7 +96,10 @@
         });
       }
     });
+
+    return { resync: resync };
   }
 
   window.SettingsAutosave.bind = bind;
+  window.SettingsAutosave.resync = function (cluster) { if (binds[cluster] && binds[cluster].resync) binds[cluster].resync(); };
 })();

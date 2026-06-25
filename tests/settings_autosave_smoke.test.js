@@ -104,3 +104,28 @@ test('two concurrent pihole PUTs leave a deterministic (non-corrupted) DB state'
     license._overrideForTest({ pihole_integration: false });
   }
 });
+
+test('resync mechanism: controller exposes resync and keeps a binds registry', async () => {
+  const ctrl = await supertest(app).get('/js/settingsAutosave.js').expect(200);
+  assert.match(ctrl.text, /SettingsAutosave\.resync/);
+  assert.match(ctrl.text, /binds\[/);
+  assert.match(ctrl.text, /function resync\(\)/);
+});
+
+test('settings.js calls SettingsAutosave.resync for all async-populated clusters', async () => {
+  const js = await supertest(app).get('/js/settings.js').expect(200);
+  const clusters = ['smtp', 'security', 'data', 'monitoring', 'alerts', 'autobackup', 'metrics', 'dns', 'auto-update', 'split-tunnel', 'pihole', 'portal', 'route-block'];
+  clusters.forEach(function (c) {
+    assert.match(js.text, new RegExp("SettingsAutosave\\.resync\\('" + c.replace('-', '\\-') + "'\\)"), 'missing resync for cluster: ' + c);
+  });
+});
+
+test('valuesById keys align with element ids: dns uses settings-dns-input, gateway-failover uses gw-down-threshold', async () => {
+  const js = await supertest(app).get('/js/settings.js').expect(200);
+  // dns valuesById must use the element id, not the semantic payload key 'dns'
+  assert.match(js.text, /'settings-dns-input': dnsInput/);
+  // gateway-failover valuesById must use the element id
+  assert.match(js.text, /'gw-down-threshold': sliderEl/);
+  // old semantic key 'gw' must be gone from valuesById (return { gw: sliderEl... })
+  assert.doesNotMatch(js.text, /return \{ gw: sliderEl/);
+});

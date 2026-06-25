@@ -308,6 +308,7 @@
         hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set';
         hint.style.display = '';
       }
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('smtp');
     }
   }).catch(function(err) {
     console.error('Failed to load SMTP settings:', err);
@@ -457,6 +458,7 @@
       if (pwNum) { if (pw.require_number) pwNum.classList.add('on'); else pwNum.classList.remove('on'); }
       var pwSpecial = document.getElementById('security-password-special');
       if (pwSpecial) { if (pw.require_special) pwSpecial.classList.add('on'); else pwSpecial.classList.remove('on'); }
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('security');
     } catch (err) {
       console.error('Failed to load security settings:', err);
     }
@@ -569,6 +571,7 @@
       if (el2) el2.value = d.retention_activity_days;
       var el3 = document.getElementById('data-peer-timeout');
       if (el3) el3.value = d.peer_online_timeout;
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('data');
     } catch (err) {
       console.error('Failed to load data settings:', err);
     }
@@ -621,6 +624,7 @@
       if (monEmailToggle) { if (d.emailAlerts) monEmailToggle.classList.add('on'); else monEmailToggle.classList.remove('on'); }
       var emailEl = document.getElementById('monitoring-alert-email');
       if (emailEl) emailEl.value = d.alertEmail || '';
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('monitoring');
     } catch (err) {
       console.error('Failed to load monitoring settings:', err);
     }
@@ -675,6 +679,7 @@
         var groupEvents = cb.dataset.events.split(',');
         cb.checked = groupEvents.some(function(e) { return configuredEvents.includes(e); });
       });
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('alerts');
     } catch (err) {
       console.error('Failed to load alert settings:', err);
     }
@@ -839,6 +844,7 @@
           ? new Date(d.lastRun).toLocaleString()
           : (GC.t['autobackup.last_run_never'] || 'Never');
       }
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('autobackup');
     } catch (err) {
       console.error('Failed to load auto-backup settings:', err);
     }
@@ -983,6 +989,7 @@
         if (data.data.enabled) metricsEnabledToggle.classList.add('on');
         else metricsEnabledToggle.classList.remove('on');
       }
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('metrics');
     } catch (err) {
       console.error('Failed to load metrics settings:', err);
     }
@@ -1080,14 +1087,17 @@
 
   if (dnsInput) {
     api.get('/api/v1/settings/dns').then(function(data) {
-      if (data.ok) dnsInput.value = data.data.dns || '';
+      if (data.ok) {
+        dnsInput.value = data.data.dns || '';
+        if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('dns');
+      }
     }).catch(function() {});
 
     SettingsAutosave.bind({
       cluster: 'dns',
       fields: [dnsInput],
       statusEl: document.getElementById('dns-status'),
-      valuesById: function () { return { dns: dnsInput.value.trim() }; },
+      valuesById: function () { return { 'settings-dns-input': dnsInput.value.trim() }; },
       save: function () { return api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() }); },
     });
   }
@@ -1100,6 +1110,7 @@
   window.api.get('/api/system/auto-update').then(function (d) {
     var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
     if (el) el.checked = true;
+    if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('auto-update');
   }).catch(function () {});
   var auRadios = Array.prototype.slice.call(document.querySelectorAll('input[name="au-mode"]'));
   if (auRadios.length) {
@@ -1346,6 +1357,7 @@
       linkLocal.checked = nets.some(function (n) { return n.cidr === LINK_LOCAL.cidr; });
       customNets = nets.filter(function (n) { return pCidrs.indexOf(n.cidr) < 0 && n.cidr !== LINK_LOCAL.cidr; });
       renderCustom();
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('split-tunnel');
     } catch {}
   }
 
@@ -1415,7 +1427,7 @@
       cluster: 'gateway-failover',
       fields: [sliderEl],
       statusEl: document.getElementById('gw-failover-status'),
-      valuesById: function () { return { gw: sliderEl.value }; },
+      valuesById: function () { return { 'gw-down-threshold': sliderEl.value }; },
       save: function () { return api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: parseInt(sliderEl.value, 10) }); },
     });
   }
@@ -1445,6 +1457,7 @@
       if (intervalEl) intervalEl.value = cfg.sync_interval_sec || 30;
       phInstances = (cfg.instances || []).slice();
       renderInstances();
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('pihole');
     } catch (err) {
       console.error('Failed to load Pi-hole settings:', err);
     }
@@ -1771,6 +1784,7 @@
     setToggle(widgetDevice, d.widgets && d.widgets.device);
     setToggle(widgetTraffic, d.widgets && d.widgets.traffic);
     setToggle(widgetServices, d.widgets && d.widgets.services);
+    if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('portal');
   }).catch(function (err) {
     console.error('Failed to load portal settings:', err);
   });
@@ -1891,6 +1905,7 @@
       if (bodyEl) bodyEl.value = r.data.body || '';
       if (redirectEl) redirectEl.value = r.data.redirect_url || '';
       syncSettingsBlockVisibility();
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('route-block');
     }
   }).catch(function (err) {
     console.error('Failed to load route block default:', err);
