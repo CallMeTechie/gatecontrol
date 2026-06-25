@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+process.env.GC_CADDY_EMAIL = process.env.GC_CADDY_EMAIL || 'test@example.com';
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');

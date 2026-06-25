@@ -29,10 +29,6 @@ process.env.GC_DATA_DIR = tmpDir;
 // on suites that run many setup()/teardown() cycles.
 process.env.GC_RATE_LIMIT_LOGIN = '100000';
 process.env.GC_RATE_LIMIT_API = '100000';
-// Caddy ACME email — required so portal host validation does not reject
-// public base-domain submissions in integration tests.
-process.env.GC_CADDY_EMAIL = process.env.GC_CADDY_EMAIL || 'test@example.com';
-
 // Now import app modules
 const { runMigrations } = require('../../src/db/migrations');
 const { seedAdminUser } = require('../../src/db/seed');

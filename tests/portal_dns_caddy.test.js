@@ -64,41 +64,55 @@ test('buildCaddyConfig adds an internal home.<domain> site with strip+set of res
     'real-IP placeholder {http.request.remote.host} missing from Caddy config');
 });
 
-// ─── 3. Internal-only (remote_ip matcher + no external exposure) ──────────
+// ─── 3. Internal-only (remote_ip gate in inner subroute + 404 fallback) ──────────
 test('home.<domain> site is internal-only and absent from external-exposure routes', () => {
   const cfg = caddyConfigMod.buildCaddyConfig();
   const wantHost = `home.${config.dns.domain}`;
 
   const serverRoutes = cfg?.apps?.http?.servers?.srv0?.routes || [];
 
-  // Find the route that matches home.<domain>
+  // Find the outer route by host matcher (outer match is host-only; gate lives inside subroute)
   const homeRoute = serverRoutes.find(r =>
     Array.isArray(r.match) && r.match.some(m => Array.isArray(m.host) && m.host.includes(wantHost))
   );
   assert.ok(homeRoute, `home.<domain> route not found in srv0.routes`);
 
-  // Must carry a remote_ip matcher (not just a host matcher)
-  const hasRemoteIp = homeRoute.match.some(
-    m => m.remote_ip && Array.isArray(m.remote_ip.ranges) && m.remote_ip.ranges.length > 0
-  );
-  assert.ok(hasRemoteIp,
-    'home.<domain> route is missing remote_ip matcher — it is NOT internal-only');
+  // The outer handle must contain a subroute that wraps the three inner routes
+  const outerSubroute = (homeRoute.handle || []).find(h => h.handler === 'subroute');
+  assert.ok(outerSubroute, 'outer subroute handler missing from home.<domain> route handle');
 
-  // The remote_ip ranges must match config.wireguard.internalOnlyRanges
-  const remoteIpMatch = homeRoute.match.find(m => m.remote_ip);
+  const innerRoutes = outerSubroute.routes || [];
+
+  // (a) Exactly one inner route carries a remote_ip matcher whose ranges deepEqual internalOnlyRanges
+  const gateRoutes = innerRoutes.filter(r =>
+    Array.isArray(r.match) && r.match.some(m => m.remote_ip && Array.isArray(m.remote_ip.ranges) && m.remote_ip.ranges.length > 0)
+  );
+  assert.equal(gateRoutes.length, 1,
+    'expected exactly one inner route with a remote_ip (gate) matcher inside the subroute');
+  const gateRoute = gateRoutes[0];
+  const remoteIpMatch = gateRoute.match.find(m => m.remote_ip);
   assert.deepEqual(remoteIpMatch.remote_ip.ranges, config.wireguard.internalOnlyRanges,
     'remote_ip ranges do not match config.wireguard.internalOnlyRanges');
 
-  // home.<domain> must NOT appear as a bare host-only route (no external-block fallback)
-  const externalExposedRoutes = serverRoutes.filter(r =>
+  // (b) An inner route returns static_response 404 behind a not-path matcher
+  //     (external/non-internal sources get 404, not portal content)
+  const notPathFallback = innerRoutes.find(r =>
     Array.isArray(r.match) &&
-    r.match.some(m => Array.isArray(m.host) && m.host.includes(wantHost) && !m.remote_ip)
+    r.match.some(m => Array.isArray(m.not) && m.not.some(n => Array.isArray(n.path))) &&
+    (r.handle || []).some(h => h.handler === 'static_response' && h.status_code === 404)
   );
-  assert.equal(externalExposedRoutes.length, 0,
-    `home.<domain> appears in an external-exposure route (should be internal-only)`);
+  assert.ok(notPathFallback,
+    'no inner fallback route returning 404 for non-internal/non-ACME sources (external sources must get 404)');
+
+  // (c) The portal reverse_proxy lives INSIDE the gate route only — never in any ungated inner route
+  const reverseProxyOutsideGate = innerRoutes
+    .filter(r => r !== gateRoute)
+    .some(r => JSON.stringify(r).includes('"reverse_proxy"'));
+  assert.ok(!reverseProxyOutsideGate,
+    'reverse_proxy handler found outside the remote_ip gate — portal content is NOT internal-only');
 });
 
-// ─── 4. Root-path rewrite to /portal ────────────────────────────────────
+// ─── 4. Root-path rewrite to /portal (inside the remote_ip gate) ────────────────────────────────────
 test('home.<domain> site rewrites root path / to /portal without touching asset/API paths', () => {
   const cfg = caddyConfigMod.buildCaddyConfig();
   const wantHost = `home.${config.dns.domain}`;
@@ -109,22 +123,28 @@ test('home.<domain> site rewrites root path / to /portal without touching asset/
   );
   assert.ok(homeRoute, 'home.<domain> route not found');
 
-  const json = JSON.stringify(homeRoute);
-  assert.ok(json.includes('rewrite'), 'rewrite handler missing from home site');
-  assert.ok(json.includes('/portal'), 'rewrite target /portal missing from home site');
+  // Drill into the outer subroute (host wrapper)
+  const outerSubroute = (homeRoute.handle || []).find(h => h.handler === 'subroute');
+  assert.ok(outerSubroute, 'outer subroute handler missing');
 
-  // The rewrite must be path-matched (only on '/'), not a blanket rewrite
-  // Verify by checking that a path matcher containing '/' is present alongside 'rewrite'
-  const handlers = homeRoute.handle || [];
-  // find subroute handler containing the rewrite
-  const subrouteHandler = handlers.find(h => h.handler === 'subroute');
-  assert.ok(subrouteHandler, 'subroute handler for path-conditional rewrite missing');
-  const rewriteRoute = subrouteHandler.routes?.find(r =>
+  // Find the remote_ip gate route inside the outer subroute
+  const gateRoute = (outerSubroute.routes || []).find(r =>
+    Array.isArray(r.match) && r.match.some(m => m.remote_ip)
+  );
+  assert.ok(gateRoute, 'remote_ip gate route not found inside outer subroute');
+
+  // Find the nested subroute handler inside the gate route (path-conditional rewrite)
+  const innerSubroute = (gateRoute.handle || []).find(h => h.handler === 'subroute');
+  assert.ok(innerSubroute, 'inner subroute handler for path-conditional rewrite missing from gate route');
+
+  // Find the path-matched route for '/' inside the inner subroute
+  const rewriteRoute = (innerSubroute.routes || []).find(r =>
     Array.isArray(r.match) && r.match.some(m => Array.isArray(m.path) && m.path.includes('/'))
   );
-  assert.ok(rewriteRoute, 'path-matched route for / not found in subroute');
-  const rewriteHandler = rewriteRoute.handle?.find(h => h.handler === 'rewrite');
-  assert.ok(rewriteHandler, 'rewrite handler not found inside path-matched subroute');
+  assert.ok(rewriteRoute, 'path-matched route for / not found in inner subroute');
+
+  const rewriteHandler = (rewriteRoute.handle || []).find(h => h.handler === 'rewrite');
+  assert.ok(rewriteHandler, 'rewrite handler not found inside path-matched inner subroute');
   assert.equal(rewriteHandler.uri, '/portal', 'rewrite URI should be /portal');
 });
 
