@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.98.4] — 2026-06-25
+
+### Fixes
+- address footgun review findings (async/correctness/perf/security) (#188)
+
+---
+
 ## [1.98.3] — 2026-06-25
 
 ### Fixes
