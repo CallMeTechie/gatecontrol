@@ -51,3 +51,11 @@ test('security/backup/portal migrated; single security bind', async () => {
   ['btn-security-save','btn-password-save','btn-autobackup-save','btn-portal-save']
     .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
 });
+
+test('atomic clusters migrated incl. route-block; secret-clear buttons present', async () => {
+  const page = await getAgent().get('/settings').expect(200);
+  ['btn-smtp-save','btn-alerts-save','btn-route-block-save']
+    .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
+  assert.match(page.text, /id="ip2location-clear"/);
+  assert.match(page.text, /id="smtp-password-clear"/);
+});

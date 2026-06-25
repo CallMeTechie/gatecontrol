@@ -318,44 +318,64 @@
   if (smtpTlsToggle) {
     smtpTlsToggle.addEventListener('click', function() {
       smtpTlsToggle.classList.toggle('on');
+      smtpTlsToggle.dispatchEvent(new Event('change'));
     });
   }
 
-  // Save SMTP settings
-  var btnSmtpSave = document.getElementById('btn-smtp-save');
-  if (btnSmtpSave) {
-    btnSmtpSave.addEventListener('click', async function() {
-      btnLoading(btnSmtpSave);
-      try {
-        var payload = {
+  // SMTP autosave
+  var Core = window.SettingsAutosaveCore;
+  function smtpValues() {
+    return {
+      'smtp-host': document.getElementById('smtp-host').value,
+      'smtp-from': document.getElementById('smtp-from').value,
+    };
+  }
+  function smtpSave() {
+    var payload = {
+      host: document.getElementById('smtp-host').value,
+      port: document.getElementById('smtp-port').value,
+      user: document.getElementById('smtp-user').value,
+      from: document.getElementById('smtp-from').value,
+      secure: document.getElementById('smtp-tls').classList.contains('on'),
+    };
+    var pw = document.getElementById('smtp-password').value;
+    if (pw) payload.password = pw;
+    payload = Core.stripEmptySecrets(payload, ['password']);
+    return api.put('/api/smtp/settings', payload).then(function (res) {
+      if (res && res.ok && pw) {
+        var hint = document.getElementById('smtp-password-hint');
+        if (hint) { hint.textContent = 'Password is set'; hint.style.display = ''; }
+        document.getElementById('smtp-password').value = '';
+      }
+      return res;
+    });
+  }
+  (function () {
+    var smtpFields = ['smtp-host', 'smtp-port', 'smtp-user', 'smtp-from', 'smtp-tls', 'smtp-password']
+      .map(function (i) { return document.getElementById(i); }).filter(Boolean);
+    if (smtpFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'smtp',
+        fields: smtpFields,
+        statusEl: document.getElementById('smtp-status'),
+        valuesById: smtpValues,
+        save: smtpSave,
+      });
+    }
+  })();
+  // SMTP password clear
+  var smtpClear = document.getElementById('smtp-password-clear');
+  if (smtpClear) {
+    smtpClear.addEventListener('click', function () {
+      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+      SettingsAutosave.enqueue('smtp', function () {
+        return api.put('/api/smtp/settings', {
           host: document.getElementById('smtp-host').value,
           port: document.getElementById('smtp-port').value,
-          user: document.getElementById('smtp-user').value,
           from: document.getElementById('smtp-from').value,
-          secure: document.getElementById('smtp-tls').classList.contains('on'),
-        };
-        var pw = document.getElementById('smtp-password').value;
-        if (pw) payload.password = pw;
-        var data = await api.put('/api/smtp/settings', payload);
-        if (data.ok) {
-          if (pw) {
-            var hint = document.getElementById('smtp-password-hint');
-            hint.textContent = 'Password is set';
-            hint.style.display = '';
-            document.getElementById('smtp-password').value = '';
-          }
-          showMessage('smtp-test-result', 'SMTP settings saved', 'success');
-          document.getElementById('smtp-test-result').style.display = '';
-        } else {
-          showMessage('smtp-test-result', data.error || 'Failed to save SMTP settings', 'error');
-          document.getElementById('smtp-test-result').style.display = '';
-        }
-      } catch (err) {
-        showMessage('smtp-test-result', err.message, 'error');
-        document.getElementById('smtp-test-result').style.display = '';
-      } finally {
-        btnReset(btnSmtpSave);
-      }
+          clear_password: true,
+        });
+      });
     });
   }
 
@@ -681,35 +701,38 @@
     }
   }
 
-  var btnAlertsSave = document.getElementById('btn-alerts-save');
-  if (btnAlertsSave) {
-    btnAlertsSave.addEventListener('click', async function() {
-      btnLoading(btnAlertsSave);
-      try {
-        // Collect selected events from checkboxes
-        var events = [];
-        document.querySelectorAll('.alert-event-group:checked').forEach(function(cb) {
-          cb.dataset.events.split(',').forEach(function(e) { if (events.indexOf(e) === -1) events.push(e); });
-        });
-        var data = await api.put('/api/settings/alerts', {
-          email: document.getElementById('alerts-email').value,
-          email_events: events.join(','),
-          backup_reminder_days: document.getElementById('alerts-backup-days').value,
-          resource_cpu_threshold: document.getElementById('alerts-cpu').value,
-          resource_ram_threshold: document.getElementById('alerts-ram').value,
-        });
-        if (data.ok) {
-          showMessage('alerts-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('alerts-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('alerts-message', err.message, 'error');
-      } finally {
-        btnReset(btnAlertsSave);
-      }
-    });
-  }
+  // Alerts autosave
+  function alertsEventsActive() { return !!document.querySelector('.alert-event-group:checked'); }
+  (function () {
+    var alertsEmail = document.getElementById('alerts-email');
+    var alertsBackupDays = document.getElementById('alerts-backup-days');
+    var alertsCpu = document.getElementById('alerts-cpu');
+    var alertsRam = document.getElementById('alerts-ram');
+    var alertsEventGroups = Array.from(document.querySelectorAll('.alert-event-group'));
+    var alertsFields = [alertsEmail].concat(alertsEventGroups).concat([alertsBackupDays, alertsCpu, alertsRam]).filter(Boolean);
+    if (alertsFields.length) {
+      SettingsAutosave.bind({
+        cluster: 'alerts',
+        fields: alertsFields,
+        statusEl: document.getElementById('alerts-status'),
+        valuesById: function () { return { 'alerts-email': alertsEmail ? alertsEmail.value : '' }; },
+        requiredForCommit: function () { return alertsEventsActive() ? ['alerts-email'] : []; },
+        save: function () {
+          var events = [];
+          document.querySelectorAll('.alert-event-group:checked').forEach(function (cb) {
+            cb.dataset.events.split(',').forEach(function (e) { if (events.indexOf(e) === -1) events.push(e); });
+          });
+          return api.put('/api/settings/alerts', {
+            email: alertsEmail ? alertsEmail.value : '',
+            email_events: events.join(','),
+            backup_reminder_days: alertsBackupDays ? alertsBackupDays.value : '',
+            resource_cpu_threshold: alertsCpu ? alertsCpu.value : '',
+            resource_ram_threshold: alertsRam ? alertsRam.value : '',
+          });
+        },
+      });
+    }
+  })();
 
   // ─── ip2location Settings ──────────────────────────────
 
@@ -755,6 +778,19 @@
         }
       } catch (err) { showMessage('ip2location-result', err.message, 'error'); }
       finally { btnReset(btnIp2Test); }
+    });
+  }
+
+  // ip2location clear
+  var ip2lClear = document.getElementById('ip2location-clear');
+  if (ip2lClear) {
+    ip2lClear.addEventListener('click', function () {
+      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+      SettingsAutosave.enqueue('ip2location', function () {
+        return api.put('/api/v1/settings/ip2location', { api_key: '', clear: true });
+      });
+      var keyEl = document.getElementById('ip2location-key');
+      if (keyEl) keyEl.value = '';
     });
   }
 
@@ -1765,7 +1801,6 @@
   var actionSel = document.getElementById('settings-route-block-action');
   var bodyEl = document.getElementById('settings-route-block-body');
   var redirectEl = document.getElementById('settings-route-block-redirect');
-  var saveBtn = document.getElementById('btn-route-block-save');
   if (!actionSel) return;
 
   function syncSettingsBlockVisibility() {
@@ -1786,25 +1821,26 @@
     console.error('Failed to load route block default:', err);
   });
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async function () {
-      btnLoading(saveBtn);
-      try {
-        var data = await api.put('/api/v1/settings/route-block-default', {
-          action: actionSel.value,
-          body: bodyEl ? bodyEl.value : '',
-          redirect_url: redirectEl ? redirectEl.value : '',
-        });
-        if (data.ok) {
-          showMessage('settings-route-block-message', GC.t['security.saved'] || 'Settings saved', 'success');
-        } else {
-          showMessage('settings-route-block-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('settings-route-block-message', err.message, 'error');
-      } finally {
-        btnReset(saveBtn);
-      }
-    });
+  function rbValues() {
+    return {
+      'settings-route-block-action': actionSel.value,
+      'settings-route-block-redirect': redirectEl ? redirectEl.value || '' : '',
+    };
   }
+  var rbFields = ['settings-route-block-action', 'settings-route-block-body', 'settings-route-block-redirect']
+    .map(function (i) { return document.getElementById(i); }).filter(Boolean);
+  SettingsAutosave.bind({
+    cluster: 'route-block',
+    fields: rbFields,
+    statusEl: document.getElementById('route-block-status'),
+    valuesById: rbValues,
+    requiredForCommit: function () { return actionSel.value === 'redirect' ? ['settings-route-block-redirect'] : []; },
+    save: function () {
+      return api.put('/api/v1/settings/route-block-default', {
+        action: actionSel.value,
+        body: bodyEl ? bodyEl.value : '',
+        redirect_url: redirectEl ? redirectEl.value : '',
+      });
+    },
+  });
 })();

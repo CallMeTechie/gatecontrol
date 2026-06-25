@@ -259,9 +259,7 @@
           <textarea id="settings-route-block-body" style="display:none;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
           <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="{{ t('routes.block_redirect_ph') or 'https://...' }}">
           <div id="settings-route-block-message" style="display:none"></div>
-          <div style="display:flex;justify-content:flex-end;padding-top:4px">
-            <button class="btn btn-primary" id="btn-route-block-save">{{ t('data.save') }}</button>
-          </div>
+          <div id="route-block-status" class="autosave-status"></div>
         </div>
       </div>
     </div>
@@ -624,6 +622,7 @@
         <label class="form-label">{{ t('route_auth.smtp_password') }}</label>
         <input type="password" id="smtp-password" style="width:100%">
         <small class="form-hint" id="smtp-password-hint" style="display:none"></small>
+        <button class="btn btn-ghost" id="smtp-password-clear" style="font-size:12px;margin-top:4px">{{ t('settings.autosave.clear_secret') }}</button>
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label class="form-label">{{ t('route_auth.smtp_from') }}</label>
@@ -637,9 +636,7 @@
         </div>
         <div class="toggle on" id="smtp-tls" data-managed="true"></div>
       </div>
-      <div style="display:flex;justify-content:flex-end;padding-top:4px">
-        <button class="btn btn-primary" id="btn-smtp-save">{{ t('route_auth.smtp_save') }}</button>
-      </div>
+      <div id="smtp-status" class="autosave-status"></div>
     </div>
   </div>
 
@@ -703,9 +700,7 @@
         </div>
       </div>
       <div id="alerts-message" style="display:none"></div>
-      <div style="display:flex;justify-content:flex-end;padding-top:4px">
-        <button class="btn btn-primary" id="btn-alerts-save">{{ t('alerts.save') or 'Save' }}</button>
-      </div>
+      <div id="alerts-status" class="autosave-status"></div>
     </div>
   </div>
   </div>
@@ -797,6 +792,7 @@
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" id="btn-ip2location-save" style="font-size:12px">{{ t('ip2location.save') or 'Save' }}</button>
           <button class="btn btn-ghost" id="btn-ip2location-test" style="font-size:12px">{{ t('ip2location.test') or 'Test' }}</button>
+          <button class="btn btn-ghost" id="ip2location-clear" style="font-size:12px">{{ t('settings.autosave.clear_secret') }}</button>
         </div>
         <div id="ip2location-result" style="display:none"></div>
       </div>
