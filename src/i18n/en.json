@@ -1985,5 +1985,6 @@
   "settings.domains.server_ip": "Detected server IP",
   "settings.domains.server_ip_override": "Override server IP",
   "settings.domains.server_ip_warning": "Could not confirm any domain against the server IP — please check/override the server IP. Existing routes keep working.",
-  "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless."
+  "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless.",
+  "settings.domains.in_use_portal": "Domain is in use by the portal — change the portal address first."
 }

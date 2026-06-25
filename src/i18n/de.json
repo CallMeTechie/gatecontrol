@@ -1985,5 +1985,6 @@
   "settings.domains.server_ip": "Erkannte Server-IP",
   "settings.domains.server_ip_override": "Server-IP überschreiben",
   "settings.domains.server_ip_warning": "Keine Domain konnte gegen die Server-IP bestätigt werden — bitte Server-IP prüfen/überschreiben. Bestehende Routen laufen weiter.",
-  "settings.domains.points_note": "Verifiziert heißt: öffentliches DNS zeigt auf die Server-IP. Bestehende Routen/Portal laufen unabhängig weiter."
+  "settings.domains.points_note": "Verifiziert heißt: öffentliches DNS zeigt auf die Server-IP. Bestehende Routen/Portal laufen unabhängig weiter.",
+  "settings.domains.in_use_portal": "Domain wird vom Portal genutzt — bitte zuerst die Portal-Adresse ändern."
 }

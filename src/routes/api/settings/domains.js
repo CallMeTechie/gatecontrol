@@ -57,6 +57,10 @@ router.post('/domains/:id/verify', async (req, res) => {
 
 router.delete('/domains/:id', (req, res) => {
   try {
+    const row = getDb().prepare('SELECT domain FROM domains WHERE id = ?').get(Number(req.params.id));
+    if (row && String(settings.get('portal.base_domain', '')).toLowerCase() === String(row.domain).toLowerCase()) {
+      return res.status(409).json({ ok: false, error: req.t('settings.domains.in_use_portal') });
+    }
     domains.remove(Number(req.params.id));
     res.json({ ok: true });
   } catch (err) {
