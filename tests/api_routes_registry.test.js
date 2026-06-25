@@ -61,3 +61,17 @@ test('routes list flags public routes with unverified base', async () => {
   assert.equal(by['y.verified.com'].domainIsPublic, true);
   assert.equal(by['z.gc.internal'].domainIsPublic, false);
 });
+
+test('create with CGNAT target_ip (100.64.0.0/10) is rejected by the SSRF guard', async () => {
+  // internal-TLD domain → carve-out passes the domain policy, so the SSRF guard is reached.
+  const res = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf)
+    .send({ domain: 'cgnat.gc.internal', target_ip: '100.64.0.1', target_port: 80, route_type: 'http' });
+  assert.equal(res.status, 400);
+});
+
+test('create with a non-CGNAT 100.x target_ip (100.128.0.1) is allowed', async () => {
+  // boundary: 100.128/9 is public space, must NOT be blocked by the 100.64/10 rule.
+  const res = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf)
+    .send({ domain: 'pub100.gc.internal', target_ip: '100.128.0.1', target_port: 80, route_type: 'http' });
+  assert.equal(res.status, 201);
+});

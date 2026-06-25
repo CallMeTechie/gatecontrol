@@ -3,7 +3,7 @@
 const { getDb } = require('../db/connection');
 const domains = require('./domains');
 const settings = require('./settings');
-const { extractBaseDomains, shouldFlagServerIp } = require('./domainSeed');
+const { extractBaseDomains, shouldFlagServerIp, normalizeHost } = require('./domainSeed');
 const { isPublicDomain } = require('./caddyTlsAutomation');
 
 /**
@@ -17,15 +17,22 @@ const { isPublicDomain } = require('./caddyTlsAutomation');
  * Returns { verified, flagged }.
  */
 async function verifyAndReflag(domainNames, { verifyEach = domains.verify } = {}) {
+  // Verifications are independent (each does its own DNS lookup) → run concurrently,
+  // then persist. Statements are prepared once, not per row.
+  const verifications = await Promise.all(
+    domainNames.map(async (d) => ({ domain: d, v: await verifyEach(d) }))
+  );
+  const db = getDb();
+  const verifiedStmt = db.prepare("UPDATE domains SET status='verified', resolved_ip=?, last_error=NULL, verified_at=datetime('now'), last_checked_at=datetime('now') WHERE domain=?");
+  const pendingStmt = db.prepare("UPDATE domains SET status='pending', last_checked_at=datetime('now') WHERE domain=?");
   const results = [];
-  for (const d of domainNames) {
-    const v = await verifyEach(d);
+  for (const { domain: d, v } of verifications) {
     results.push({ domain: d, matched: v.status === 'verified' });
     if (v.status === 'verified') {
-      getDb().prepare("UPDATE domains SET status='verified', resolved_ip=?, last_error=NULL, verified_at=datetime('now'), last_checked_at=datetime('now') WHERE domain=?").run(v.resolvedIp || null, d);
+      verifiedStmt.run(v.resolvedIp || null, d);
     } else {
       // keep/reset to pending; do NOT write 'failed' on this path
-      getDb().prepare("UPDATE domains SET status='pending', last_checked_at=datetime('now') WHERE domain=?").run(d);
+      pendingStmt.run(d);
     }
   }
   const flagged = shouldFlagServerIp(results);
@@ -39,7 +46,8 @@ async function runDomainSeedAndVerify({ verifyEach = domains.verify } = {}) {
   // bases (.internal/.lan/...) would otherwise linger forever as 'pending'
   // noise on the Domains page, so they are never seeded.
   const bases = extractBaseDomains(routeDomains).filter(isPublicDomain);
-  for (const d of bases) domains.seedPending(d);
+  const seedStmt = getDb().prepare("INSERT OR IGNORE INTO domains (domain, status) VALUES (?, 'pending')");
+  for (const d of bases) seedStmt.run(normalizeHost(d));
 
   // One-time cleanup: drop non-public bases that earlier boots auto-seeded as
   // 'pending' (they can never verify; routes consume routes.domain directly and
