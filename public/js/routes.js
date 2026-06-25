@@ -325,13 +325,17 @@
         showDescLine = false;
       }
 
+      const unverifiedBaseTag = r.baseUnverified
+        ? '<span class="tag tag-amber" style="margin-left:4px" title="' + escapeHtml(GC.t['routes.unverified_base_tooltip'] || 'This domain\'s base is not verified — verify it under Settings → General → Domains') + '">' + escapeHtml(GC.t['routes.unverified_base_badge'] || 'Domain unverified') + '</span>'
+        : '';
+
       // Badge budget: status/monitoring/circuit-breaker/L4 type are always
       // visible; the first two feature badges follow, the rest collapse
       // behind a "+N" toggle (expandedBadges survives SSE re-renders).
       const primaryTags = statusTag + monitorTag + cbTag + l4Tags;
       const extraTags = [internalTag, blockActionTag, debugTag, botTag, aclTag, ipFilterTag, rateLimitTag, retryTag,
         backendsTag, stickyTag, httpsTag, backendHttpsTag, compressTag, authTag,
-        routeAuthTags, headersTag, mirrorTag].filter(function (tag) { return !!tag; });
+        routeAuthTags, headersTag, mirrorTag, unverifiedBaseTag].filter(function (tag) { return !!tag; });
       let visibleExtras, moreBtn = '';
       if (expandedBadges.has(String(r.id)) || extraTags.length <= 3) {
         visibleExtras = extraTags.join('');
@@ -953,7 +957,15 @@
     e.preventDefault();
 
     const fd = new FormData(routeForm);
-    const domain = fd.get('domain').trim();
+    const _cBaseSel = document.getElementById('create-route-base-domain');
+    const _cPfxEl = document.getElementById('create-route-prefix');
+    const _cFtEl = document.getElementById('create-route-domain-freetext');
+    const _cFtMode = _cBaseSel && _cBaseSel.value === '';
+    const domain = _cFtMode
+      ? ((_cFtEl && _cFtEl.value) || '').trim()
+      : (window.RouteDomain && _cBaseSel
+          ? window.RouteDomain.assembleRouteDomain((_cPfxEl && _cPfxEl.value) || '', _cBaseSel.value || '')
+          : '');
     const description = fd.get('description') ? fd.get('description').trim() : '';
     const targetKind = (document.getElementById('create-route-target-kind')?.value) || 'peer';
     const isGateway = targetKind === 'gateway';
@@ -1191,7 +1203,7 @@
         // In gateway mode #route-port is inside a display:none div, so the error
         // would be attached to an invisible element.
         showFieldErrors(data.fields, {
-          domain: 'create-route-domain',
+          domain: (document.getElementById('create-route-base-domain')?.value === '' ? 'create-route-domain-freetext' : 'create-route-base-domain'),
           target_port: isGateway ? 'create-route-lan-port' : 'route-port',
           description: 'route-description', target_ip: 'route-ip',
         });
@@ -1298,11 +1310,19 @@
 
   function validateWizardStep(n) {
     if (n !== 1) return true;
-    const domainEl = document.getElementById('create-route-domain');
-    const domain = (domainEl && domainEl.value || '').trim();
+    const _vBaseSel = document.getElementById('create-route-base-domain');
+    const _vPfxEl = document.getElementById('create-route-prefix');
+    const _vFtEl = document.getElementById('create-route-domain-freetext');
+    const _vFtMode = _vBaseSel && _vBaseSel.value === '';
+    const domain = _vFtMode
+      ? ((_vFtEl && _vFtEl.value) || '').trim()
+      : (window.RouteDomain && _vBaseSel
+          ? window.RouteDomain.assembleRouteDomain((_vPfxEl && _vPfxEl.value) || '', _vBaseSel.value || '')
+          : (_vBaseSel && _vBaseSel.value || ''));
+    const domainErrEl = _vFtMode ? _vFtEl : _vBaseSel;
     const tlsModeC = (document.getElementById('l4-tls-mode') || {}).value || 'none';
     const isL4None = isL4Route() && tlsModeC === 'none';
-    if (!domain && !isL4None) return wizardError('routes.domain_required', 'Domain is required', domainEl);
+    if (!domain && !isL4None) return wizardError('routes.domain_required', 'Domain is required', domainErrEl);
     if (isL4Route()) {
       const lpEl = document.getElementById('l4-listen-port');
       if (!lpEl || !lpEl.value.trim()) return wizardError('routes.l4_listen_port_required', 'Listen-Port erforderlich', lpEl);
@@ -1343,7 +1363,15 @@
     if (!wizardReviewEl) return;
     while (wizardReviewEl.firstChild) wizardReviewEl.removeChild(wizardReviewEl.firstChild);
 
-    const domain = ((document.getElementById('create-route-domain') || {}).value || '').trim() || '—';
+    const _rBaseSel = document.getElementById('create-route-base-domain');
+    const _rPfxEl = document.getElementById('create-route-prefix');
+    const _rFtEl = document.getElementById('create-route-domain-freetext');
+    const _rFtMode = _rBaseSel && _rBaseSel.value === '';
+    const domain = _rFtMode
+      ? ((_rFtEl && _rFtEl.value) || '').trim() || '—'
+      : (window.RouteDomain && _rBaseSel
+          ? (window.RouteDomain.assembleRouteDomain((_rPfxEl && _rPfxEl.value) || '', _rBaseSel.value || '') || '—')
+          : ((_rBaseSel && _rBaseSel.value) || '—'));
     const type = (routeTypeInput && routeTypeInput.value) || 'http';
     let target = '—';
     if (isL4Route()) {
@@ -1419,9 +1447,36 @@
     showWizardStep(1);
     syncBlockVisibility('create');
     setTimeout(() => {
-      const f = document.getElementById('create-route-domain');
+      const f = document.getElementById('create-route-base-domain');
       if (f) f.focus();
     }, 50);
+    (async function _loadDomains() {
+      const sel = document.getElementById('create-route-base-domain');
+      if (!sel) return;
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      const ftOpt = document.createElement('option');
+      ftOpt.value = '';
+      ftOpt.textContent = GC.t['routes.other_domain'] || 'Other / internal domain (free text)';
+      sel.appendChild(ftOpt);
+      try {
+        const resp = await api.get('/api/v1/settings/domains');
+        const domainsList = (resp.data && resp.data.domains) || [];
+        const verified = domainsList.filter(function(d) { return d.status === 'verified'; });
+        for (var _i = 0; _i < verified.length; _i++) {
+          const opt = document.createElement('option');
+          opt.value = verified[_i].domain;
+          opt.textContent = verified[_i].domain;
+          sel.insertBefore(opt, ftOpt);
+        }
+        if (verified.length > 0) {
+          sel.value = verified[0].domain;
+        } else {
+          const noHint = document.getElementById('create-route-domain-ctx-hint');
+          if (noHint) { noHint.textContent = GC.t['routes.no_verified_domains_hint'] || 'No verified domains'; noHint.style.display = ''; }
+        }
+      } catch (_e) {}
+      sel.dispatchEvent(new Event('change'));
+    })();
   }
 
   function closeRouteWizard() {
@@ -1454,6 +1509,64 @@
       });
     });
   }
+
+  // Domain-registry fields: freetext toggle + preview
+  (function setupCreateDomainRegistry() {
+    const sel = document.getElementById('create-route-base-domain');
+    const pfx = document.getElementById('create-route-prefix');
+    const ft = document.getElementById('create-route-domain-freetext');
+    const prev = document.getElementById('create-route-domain-preview');
+    function updatePreview() {
+      if (!sel) return;
+      const isFt = sel.value === '';
+      if (ft) ft.style.display = isFt ? '' : 'none';
+      if (prev) {
+        if (isFt) { prev.style.display = 'none'; return; }
+        const assembled = window.RouteDomain
+          ? window.RouteDomain.assembleRouteDomain((pfx && pfx.value) || '', sel.value)
+          : sel.value;
+        if (assembled) { prev.textContent = assembled; prev.style.display = ''; }
+        else prev.style.display = 'none';
+      }
+    }
+    if (sel) sel.addEventListener('change', updatePreview);
+    if (pfx) pfx.addEventListener('input', updatePreview);
+  })();
+
+  // Edit-modal domain-registry fields: freetext toggle + preview + unverified warning
+  (function setupEditDomainRegistry() {
+    const sel = document.getElementById('edit-route-base-domain');
+    const pfx = document.getElementById('edit-route-prefix');
+    const ft = document.getElementById('edit-route-domain-freetext');
+    const prev = document.getElementById('edit-route-domain-preview');
+    const unvWarn = document.getElementById('edit-route-unverified-warning');
+    function updateEditPreview() {
+      if (!sel) return;
+      const isFt = sel.value === '';
+      if (ft) ft.style.display = isFt ? '' : 'none';
+      if (prev) {
+        if (isFt) { prev.style.display = 'none'; return; }
+        const assembled = window.RouteDomain
+          ? window.RouteDomain.assembleRouteDomain((pfx && pfx.value) || '', sel.value)
+          : sel.value;
+        if (assembled) { prev.textContent = assembled; prev.style.display = ''; }
+        else prev.style.display = 'none';
+      }
+    }
+    function updateEditUnverifiedWarning() {
+      if (!sel || !unvWarn) return;
+      const selectedOpt = sel.options[sel.selectedIndex];
+      const isUnverified = selectedOpt && selectedOpt.dataset && selectedOpt.dataset.unverified === '1';
+      if (isUnverified) {
+        unvWarn.textContent = GC.t['routes.unverified_base_prefix_warning'] || 'Changing the prefix requires a verified base — verify the domain first';
+        unvWarn.style.display = '';
+      } else {
+        unvWarn.style.display = 'none';
+      }
+    }
+    if (sel) sel.addEventListener('change', function() { updateEditPreview(); updateEditUnverifiedWarning(); });
+    if (pfx) pfx.addEventListener('input', updateEditPreview);
+  })();
 
   // Refresh visible steps if route-type changes mid-wizard
   if (routeTypeInput) {
@@ -1697,10 +1810,81 @@
     if (!route) return;
 
     document.getElementById('edit-route-id').value = id;
-    document.getElementById('edit-route-domain').value = route.domain || '';
     // Reset DNS hint on modal open
-    const editDnsHintEl = document.getElementById('edit-route-dns-hint');
-    if (editDnsHintEl) editDnsHintEl.style.display = 'none';
+    const _eDnsHintEl = document.getElementById('edit-route-dns-hint');
+    if (_eDnsHintEl) _eDnsHintEl.style.display = 'none';
+    // ─── Edit domain: path detection ─────────────────────────────────────
+    {
+      const _eBaseSel = document.getElementById('edit-route-base-domain');
+      const _ePfxEl = document.getElementById('edit-route-prefix');
+      const _eFtEl = document.getElementById('edit-route-domain-freetext');
+      const _ePrevEl = document.getElementById('edit-route-domain-preview');
+      const _eUnvWarn = document.getElementById('edit-route-unverified-warning');
+      // Reset state
+      if (_ePrevEl) _ePrevEl.style.display = 'none';
+      if (_eUnvWarn) _eUnvWarn.style.display = 'none';
+      if (route.domainIsPublic === true) {
+        // Dropdown + prefix path
+        if (_eFtEl) _eFtEl.style.display = 'none';
+        // Compute last-two-labels base and prefix
+        const _d = route.domain || '';
+        const _dParts = _d ? _d.split('.') : [];
+        const _base = _dParts.length >= 2 ? _dParts.slice(-2).join('.') : _d;
+        const _pfx = (_d && _base && _d.length > _base.length + 1)
+          ? _d.slice(0, _d.length - _base.length - 1) : '';
+        if (_ePfxEl) _ePfxEl.value = _pfx;
+        // Load verified domains async, populate dropdown, preselect base
+        (async function _loadEditDomains() {
+          if (!_eBaseSel) return;
+          while (_eBaseSel.firstChild) _eBaseSel.removeChild(_eBaseSel.firstChild);
+          const _ftOpt = document.createElement('option');
+          _ftOpt.value = '';
+          _ftOpt.textContent = GC.t['routes.other_domain'] || 'Other / internal domain (free text)';
+          _eBaseSel.appendChild(_ftOpt);
+          const _verifiedSet = [];
+          try {
+            const _resp = await api.get('/api/v1/settings/domains');
+            const _domList = (_resp.data && _resp.data.domains) || [];
+            const _verList = _domList.filter(function(d) { return d.status === 'verified'; });
+            for (var _vi = 0; _vi < _verList.length; _vi++) {
+              const _opt = document.createElement('option');
+              _opt.value = _verList[_vi].domain;
+              _opt.textContent = _verList[_vi].domain;
+              _eBaseSel.insertBefore(_opt, _ftOpt);
+              _verifiedSet.push(_verList[_vi].domain);
+            }
+          } catch (_e) { /* network error: proceed to inject unverified as fallback */ }
+          // Preselect base: inject as unverified legacy if not in verified list
+          if (_base) {
+            if (_verifiedSet.includes(_base)) {
+              _eBaseSel.value = _base;
+            } else {
+              const _unvOpt = document.createElement('option');
+              _unvOpt.value = _base;
+              _unvOpt.textContent = _base + ' ' + (GC.t['routes.unverified_base_option'] || '(unverified · legacy)');
+              _unvOpt.dataset.unverified = '1';
+              _eBaseSel.insertBefore(_unvOpt, _ftOpt);
+              _eBaseSel.value = _base;
+              if (_eUnvWarn) {
+                _eUnvWarn.textContent = GC.t['routes.unverified_base_prefix_warning'] || 'Changing the prefix requires a verified base — verify the domain first';
+                _eUnvWarn.style.display = '';
+              }
+            }
+          }
+          // Update preview
+          const _assembled = (_eBaseSel.value && window.RouteDomain)
+            ? window.RouteDomain.assembleRouteDomain((_ePfxEl && _ePfxEl.value) || '', _eBaseSel.value) : '';
+          if (_ePrevEl) {
+            if (_assembled) { _ePrevEl.textContent = _assembled; _ePrevEl.style.display = ''; }
+            else _ePrevEl.style.display = 'none';
+          }
+        })();
+      } else {
+        // Freetext path: internal domain / no domain / stale cache — safe default
+        if (_eFtEl) { _eFtEl.value = route.domain || ''; _eFtEl.style.display = ''; }
+        if (_eBaseSel) _eBaseSel.value = '';  // ensure "other/internal" option is selected
+      }
+    }
     document.getElementById('edit-route-desc').value = route.description || '';
     document.getElementById('edit-route-port').value = route.target_port || '';
 
@@ -2219,7 +2403,13 @@
     currentEditRouteId = id;
     stopTracePolling();
     openModal('modal-edit-route');
-    document.getElementById('edit-route-domain').focus();
+    // Focus the active domain element: freetext (if visible) or base-domain select
+    (function() {
+      const _ft = document.getElementById('edit-route-domain-freetext');
+      if (_ft && _ft.style.display !== 'none') { _ft.focus(); return; }
+      const _base = document.getElementById('edit-route-base-domain');
+      if (_base) _base.focus();
+    })();
   }
 
   const btnEditSubmit = document.getElementById('btn-edit-route-submit');
@@ -2227,7 +2417,16 @@
     btnEditSubmit.addEventListener('click', async function() {
       const btn = this;
       const id = document.getElementById('edit-route-id').value;
-      const domain = document.getElementById('edit-route-domain').value.trim();
+      // Read domain from active path: freetext if visible, else assemble from base+prefix dropdown
+      const _eDomFt = document.getElementById('edit-route-domain-freetext');
+      const _eDomBase = document.getElementById('edit-route-base-domain');
+      const _eDomPfx = document.getElementById('edit-route-prefix');
+      const _isFtPath = _eDomFt && _eDomFt.style.display !== 'none';
+      const domain = _isFtPath
+        ? (_eDomFt ? _eDomFt.value.trim() : '')
+        : (window.RouteDomain && _eDomBase && _eDomBase.value
+            ? window.RouteDomain.assembleRouteDomain((_eDomPfx && _eDomPfx.value) || '', _eDomBase.value)
+            : (_eDomBase ? _eDomBase.value.trim() : ''));
       const description = document.getElementById('edit-route-desc').value.trim();
       const target_port = document.getElementById('edit-route-port').value.trim();
       const editPeerSelect = document.getElementById('edit-route-peer');
@@ -2375,7 +2574,11 @@
         if (!data.ok) {
           if (data.fields) {
             showFieldErrors(data.fields, {
-              domain: 'edit-route-domain', target_port: 'edit-route-port',
+              domain: (function() {
+                // Point to active domain element: freetext if visible, else base select
+                const _sft = document.getElementById('edit-route-domain-freetext');
+                return (_sft && _sft.style.display !== 'none') ? 'edit-route-domain-freetext' : 'edit-route-base-domain';
+              })(), target_port: 'edit-route-port',
               description: 'edit-route-desc', target_ip: 'edit-route-ip',
             });
           } else {
@@ -2525,6 +2728,8 @@
       if (row) row.classList.add('gc-row-collapsed');
       input.required = false;
       input.value = '';
+      const _ftClear = document.getElementById('create-route-domain-freetext');
+      if (_ftClear) _ftClear.value = '';
       if (ctxHint) ctxHint.style.display = 'none';
     } else {
       if (wrap) wrap.style.display = '';
@@ -2552,7 +2757,7 @@
     const tlsMode = document.getElementById('l4-tls-mode')?.value || 'none';
     applyDomainContext(
       routeType, tlsMode,
-      document.getElementById('create-route-domain'),
+      document.getElementById('create-route-base-domain'),
       document.getElementById('create-route-domain-wrap'),
       document.getElementById('create-route-domain-label'),
       document.getElementById('create-route-domain-ctx-hint')
@@ -2580,11 +2785,16 @@
     const editTlsMode = document.getElementById('edit-l4-tls-mode')?.value || 'none';
     applyDomainContext(
       routeType, editTlsMode,
-      document.getElementById('edit-route-domain'),
+      document.getElementById('edit-route-base-domain'),
       document.getElementById('edit-route-domain-wrap'),
       document.getElementById('edit-route-domain-label'),
       document.getElementById('edit-route-domain-ctx-hint')
     );
+    // Also clear edit-side freetext on L4-none (applyDomainContext only clears create-side freetext)
+    if (routeType === 'l4' && editTlsMode === 'none') {
+      const _eftClear = document.getElementById('edit-route-domain-freetext');
+      if (_eftClear) _eftClear.value = '';
+    }
 
     updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
   }
@@ -3364,7 +3574,7 @@
   // ─── DNS check ──────────────────────────────────────────
   async function checkDns(domain, hintEl, inputEl) {
     if (!domain || !hintEl || !inputEl) return;
-    const routeTypeId = inputEl.id === 'create-route-domain' ? 'route-type' : 'edit-route-type';
+    const routeTypeId = inputEl.id === 'create-route-domain-freetext' ? 'route-type' : 'edit-route-type';
     const routeType = document.getElementById(routeTypeId)?.value || 'http';
     if (routeType === 'l4') {
       hintEl.style.display = 'none';
@@ -3398,7 +3608,7 @@
 
   // Attach DNS check blur handlers
   (function setupDnsCheck() {
-    const createDomainInput = document.getElementById('create-route-domain');
+    const createDomainInput = document.getElementById('create-route-domain-freetext');
     const createDnsHint = document.getElementById('create-route-dns-hint');
     if (createDomainInput && createDnsHint) {
       createDomainInput.addEventListener('blur', function() {
@@ -3408,7 +3618,7 @@
       });
     }
 
-    const editDomainInput = document.getElementById('edit-route-domain');
+    const editDomainInput = document.getElementById('edit-route-domain-freetext');
     const editDnsHint = document.getElementById('edit-route-dns-hint');
     if (editDomainInput && editDnsHint) {
       editDomainInput.addEventListener('blur', function() {
@@ -4829,7 +5039,7 @@
       // own field-visibility refresh (a 'change' event on the hidden input is a no-op).
       var rt = document.getElementById('route-type');
       if (rt) { rt.value = cls.routeType; if (typeof updateFieldVisibility === 'function') updateFieldVisibility(); }
-      var dom = document.getElementById('create-route-domain'); if (dom && !dom.value) dom.value = suggestDomainFrom(dev.hostname);
+      var _dfBaseSel = document.getElementById('create-route-base-domain'); var _dfFt = document.getElementById('create-route-domain-freetext'); if (_dfFt && _dfBaseSel && !_dfFt.value) { _dfBaseSel.value = ''; _dfFt.value = suggestDomainFrom(dev.hostname); _dfBaseSel.dispatchEvent(new Event('change')); }
       if (dev.mac) { var wolCb = document.getElementById('create-route-wol-enabled'); var macI = document.getElementById('create-route-wol-mac');
         if (wolCb) { wolCb.checked = true; wolCb.dispatchEvent(new Event('change')); } if (macI) macI.value = dev.mac; }
     }

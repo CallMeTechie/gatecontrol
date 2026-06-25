@@ -270,10 +270,15 @@
         <div class="wiz-row-2">
           <div id="create-route-domain-wrap">
             <label id="create-route-domain-label" style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
-            <input type="text" id="create-route-domain" name="domain" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px" required maxlength="253"
+            {# required is inert: wizard submits via JS .value reads, not native requestSubmit #}
+            <select id="create-route-base-domain" style="width:100%;padding:8px 12px;margin-bottom:6px"></select>
+            <input type="text" id="create-route-prefix" placeholder="{{ t('routes.prefix') }}" style="width:100%;padding:8px 12px;margin-bottom:4px" maxlength="63">
+            <small class="form-hint">{{ t('routes.prefix_hint') }}</small>
+            <input type="text" id="create-route-domain-freetext" placeholder="{{ t('routes.domain_placeholder') }}" style="width:100%;padding:8px 12px;display:none" maxlength="253"
               data-dns-checking="{{ t('routes.dns_checking') }}"
               data-dns-ok="{{ t('routes.dns_ok') }}"
               data-dns-warning="{{ t('routes.dns_warning') }}">
+            <small id="create-route-domain-preview" class="form-hint" style="display:none"></small>
             <small id="create-route-domain-ctx-hint" class="form-hint" style="display:none"></small>
             <small id="create-route-dns-hint" class="form-hint" style="display:none"></small>
           </div>
@@ -911,5 +916,6 @@
 {% block scripts %}
 <script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
 <script src="/js/routes-view.js?v={{ appVersion }}"></script>
+<script src="/js/routeDomain.js?v={{ appVersion }}"></script>
 <script src="/js/routes.js?v={{ appVersion }}"></script>
 {% endblock %}
