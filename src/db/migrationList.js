@@ -1046,6 +1046,18 @@ const migrations = [
     );`,
     detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='domains'").get(),
   },
+  {
+    version: 59,
+    name: 'peer_owner_user_id',
+    // Peer → owner (users.id). NO inline REFERENCES: ALTER TABLE ADD COLUMN
+    // silently ignores REFERENCES in some SQLite versions (see 'add_gateway_support').
+    // FK semantics live in the service layer (validation + null-on-user-delete).
+    sql: `
+      ALTER TABLE peers ADD COLUMN user_id INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_peers_user_id ON peers(user_id);
+    `,
+    detect: (db) => hasColumn(db, 'peers', 'user_id'),
+  },
 ];
 
 module.exports = { migrations };
