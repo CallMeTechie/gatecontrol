@@ -28,6 +28,27 @@ test('seeds distinct base domains and verifies them', async () => {
   assert.ok(rows.every(r => r.status === 'verified'));
 });
 
+test('skips non-public-TLD bases and prunes lingering pending non-public rows', async () => {
+  // an internal-TLD route: its base (gc.internal) must NEVER be seeded
+  getDb().prepare(`INSERT INTO routes (description, domain, target_ip, target_port, enabled, route_type)
+                   VALUES ('r3','nas.gc.internal','10.0.0.4','80',1,'http')`).run();
+  // a non-public base auto-seeded by an earlier boot → must be pruned
+  getDb().prepare("INSERT OR IGNORE INTO domains (domain, status) VALUES ('old.lan','pending')").run();
+  // a verified row must survive — cleanup only targets pending rows
+  getDb().prepare("INSERT OR IGNORE INTO domains (domain, status) VALUES ('kept.internal','verified')").run();
+
+  const res = await domainBoot.runDomainSeedAndVerify({
+    verifyEach: async (d) => ({ status: 'verified', resolvedIp: '1.2.3.4', expectedIp: '1.2.3.4', error: null }),
+  });
+
+  const rows = getDb().prepare('SELECT domain FROM domains ORDER BY domain').all().map(r => r.domain);
+  assert.equal(res.seeded, 2, 'only the 2 public bases are seeded');
+  assert.ok(!rows.includes('gc.internal'), 'non-public base must not be seeded');
+  assert.ok(!rows.includes('old.lan'), 'lingering pending non-public row must be pruned');
+  assert.ok(rows.includes('kept.internal'), 'verified rows must never be pruned');
+  assert.ok(rows.includes('domaincaster.com') && rows.includes('marcbackes.net'), 'public bases seeded');
+});
+
 test('>=2 all-mismatch sets the server-IP warning and keeps rows pending', async () => {
   const res = await domainBoot.runDomainSeedAndVerify({
     verifyEach: async (d) => ({ status: 'failed', resolvedIp: '9.9.9.9', expectedIp: '1.2.3.4', error: 'x' }),
