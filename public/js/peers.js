@@ -2464,7 +2464,7 @@
     if (!ids.length) return;
     var v = document.getElementById('peer-bulk-owner').value;
     api.post('/api/v1/peers/batch-owner', { peer_ids: ids, user_id: v === '' ? null : Number(v) })
-      .then(function () { batchSelected.clear(); loadPeers(); showToast((GC.t && GC.t['peers.owner.bulk_done']) || 'Owners updated'); })
+      .then(function () { batchSelected.clear(); if (batchSelectAll) batchSelectAll.checked = false; updateBatchBar(); loadPeers(); showToast((GC.t && GC.t['peers.owner.bulk_done']) || 'Owners updated'); })
       .catch(function (e) { showToast(e.message, 'error'); });
   });
   if (isAurora()) auroraInitStatusToggle();
