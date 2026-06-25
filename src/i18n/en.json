@@ -210,7 +210,6 @@
   "routes.domain_placeholder": "service.example.com",
   "routes.prefix": "Subdomain prefix",
   "routes.prefix_hint": "empty = directly on the domain",
-  "routes.base_domain": "Base domain",
   "routes.other_domain": "Other / internal domain (free text)",
   "routes.no_verified_domains_hint": "No verified domains — go to Settings → General → Domains",
   "routes.description": "Description",

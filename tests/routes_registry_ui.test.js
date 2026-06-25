@@ -16,7 +16,11 @@ test('create wizard has prefix + base-domain dropdown + free-text carve-out (ser
   assert.match(res.text, /create-route-prefix/);
   assert.match(res.text, /create-route-base-domain/);
   assert.match(res.text, /create-route-domain-freetext/);
-  assert.doesNotMatch(res.text, /routes\.(prefix|base_domain|other_domain)\b/);
+  // routes.other_domain and routes.no_verified_domains_hint are intentionally in GC.t (for JS);
+  // the following keys must NOT appear as unrendered template artefacts:
+  assert.doesNotMatch(res.text, /routes\.(prefix|prefix_hint|base_domain)\b/);
+  // prefix_hint must be server-rendered (Nunjucks), not leaked as a raw key
+  assert.match(res.text, /empty = directly on the domain|leer = direkt auf der Domain/);
 });
 
 test('all three themes carry the create-route registry ids', () => {

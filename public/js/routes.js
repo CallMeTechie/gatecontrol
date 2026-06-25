@@ -2599,6 +2599,8 @@
       if (row) row.classList.add('gc-row-collapsed');
       input.required = false;
       input.value = '';
+      const _ftClear = document.getElementById('create-route-domain-freetext');
+      if (_ftClear) _ftClear.value = '';
       if (ctxHint) ctxHint.style.display = 'none';
     } else {
       if (wrap) wrap.style.display = '';
