@@ -108,10 +108,12 @@
 <!-- Batch action bar -->
 <div id="batch-bar-peers" class="batch-bar" style="display:none">
   <span id="batch-bar-peers-count"></span>
-  <div style="display:flex;gap:8px">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <button class="btn btn-ghost" id="batch-enable-peers">{{ t('batch.enable') }}</button>
     <button class="btn btn-ghost" id="batch-disable-peers">{{ t('batch.disable') }}</button>
     <button class="btn btn-danger" id="batch-delete-peers">{{ t('batch.delete') }}</button>
+    <select class="form-select" id="peer-bulk-owner" style="width:auto"></select>
+    <button class="btn btn-ghost" id="peer-bulk-owner-apply">{{ t('peers.owner.bulk_assign') }}</button>
     <button class="btn btn-ghost" id="batch-cancel-peers">{{ t('batch.cancel') }}</button>
   </div>
 </div>

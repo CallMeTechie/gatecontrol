@@ -21,6 +21,10 @@
         </select>
       </div>
       <div class="form-group">
+        <label class="form-label" for="edit-peer-owner">{{ t('peers.owner.label') }}</label>
+        <select id="edit-peer-owner" style="width:100%"></select>
+      </div>
+      <div class="form-group">
         <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">
         <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('peers.tags_hint') or 'Comma-separated tags for grouping' }}</div>

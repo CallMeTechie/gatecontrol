@@ -286,7 +286,10 @@ function remove(id) {
     }
   }
 
-  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('UPDATE peers SET user_id = NULL WHERE user_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  })();
 
   activity.log('user_deleted', `User "${user.username}" deleted`, {
     source: 'admin',
