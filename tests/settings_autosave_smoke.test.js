@@ -112,6 +112,13 @@ test('resync mechanism: controller exposes resync and keeps a binds registry', a
   assert.match(ctrl.text, /function resync\(\)/);
 });
 
+test('rollbackField restores radio groups by name (not by missing element id)', async () => {
+  const ctrl = await supertest(app).get('/js/settingsAutosave.js').expect(200);
+  // grouped radios (e.g. au-mode) lack element ids; rollback must use the group name
+  assert.match(ctrl.text, /getElementsByName/);
+  assert.match(ctrl.text, /snap\[el\.name\]/);
+});
+
 test('settings.js calls SettingsAutosave.resync for all async-populated clusters', async () => {
   const js = await supertest(app).get('/js/settings.js').expect(200);
   const clusters = ['smtp', 'security', 'data', 'monitoring', 'alerts', 'autobackup', 'metrics', 'dns', 'auto-update', 'split-tunnel', 'pihole', 'portal', 'route-block'];

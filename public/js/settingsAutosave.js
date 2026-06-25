@@ -60,7 +60,16 @@
       try {
         var snap = JSON.parse(snapshot || '{}');
         if (el.classList && el.classList.contains('toggle')) el.classList.toggle('on', !!snap[el.id]);
-        else if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!snap[el.id];
+        else if (el.type === 'radio') {
+          // Radio groups are keyed in valuesById by the group name (not per-element id,
+          // which grouped radios often lack). Restore the whole group to the snapshot value.
+          var want = snap[el.name];
+          if (want != null) {
+            var group = el.name ? document.getElementsByName(el.name) : [el];
+            for (var i = 0; i < group.length; i++) group[i].checked = (group[i].value === String(want));
+          }
+        }
+        else if (el.type === 'checkbox') el.checked = !!snap[el.id];
         else if (el.tagName === 'SELECT' && snap[el.id] != null) el.value = snap[el.id];
       } catch (e) {}
     }
