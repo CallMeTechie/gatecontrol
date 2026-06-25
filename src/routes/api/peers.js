@@ -14,6 +14,15 @@ const router = Router();
 
 const peerCountFn = () => getDb().prepare('SELECT COUNT(*) as count FROM peers').get().count;
 
+function validateOwner(req, res, userId) {
+  if (userId == null) return true;
+  const uid = Number(userId);
+  if (!Number.isInteger(uid) || !require('../../services/users').getById(uid)) {
+    res.status(400).json({ ok: false, error: req.t('error.peers.owner_invalid') }); return false;
+  }
+  return true;
+}
+
 const stripPeer = (p) => stripFields(p, ['private_key_encrypted', 'preshared_key_encrypted']);
 
 /** Map service-layer error messages to i18n keys */
@@ -59,7 +68,9 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const list = await peers.getAll({ limit, offset });
-    res.json({ ok: true, peers: list.map(stripPeer), limit, offset });
+    const uMap = new Map(getDb().prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
+    const enriched = list.map(p => ({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }));
+    res.json({ ok: true, peers: enriched.map(stripPeer), limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list peers');
     res.status(500).json({ ok: false, error: req.t('error.peers.list') });
@@ -85,7 +96,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -130,7 +141,8 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
       });
     }
 
-    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null, dns });
+    if (!validateOwner(req, res, user_id)) return;
+    const peer = await peers.create({ name, description, tags, expiresAt: expires_at || null, groupId: group_id !== undefined ? group_id : null, dns, userId: user_id });
     res.status(201).json({ ok: true, peer: stripPeer(peer) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create peer');
@@ -144,7 +156,7 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id } = req.body;
+    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id, user_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -167,6 +179,10 @@ router.put('/:id', async (req, res) => {
     }
     if (group_id !== undefined) {
       updateData.groupId = group_id || null;
+    }
+    if (user_id !== undefined && !validateOwner(req, res, user_id)) return;
+    if (user_id !== undefined) {
+      updateData.userId = user_id;
     }
 
     const peer = await peers.update(req.params.id, updateData);

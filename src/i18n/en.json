@@ -720,6 +720,7 @@
   "error.peers.name_exists": "A peer with this name already exists",
   "error.peers.no_ips": "No available IP addresses in subnet",
   "error.peers.failover_home_blocked": "This gateway is currently the home of failed-over routes. Restore them or permanently relocate them first.",
+  "error.peers.owner_invalid": "Selected owner does not exist",
 
   "error.client.hostname_required": "Hostname is required",
   "error.client.invalid_hostname": "Invalid hostname for peer name",
