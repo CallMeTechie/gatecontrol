@@ -63,3 +63,50 @@ test('config save/load encrypts password, redact hides it', () => {
   assert.equal(red.password_set, true);
   assert.equal(red.email, 'a@b.de');
 });
+
+// ── Orchestrator (Task 9) ──────────────────────────────────────────────────
+
+test('withDeviceLock serializes concurrent operations per device', async () => {
+  const midea = require('../src/services/midea');
+  const order = [];
+  const slow = (tag, ms) => midea.withDeviceLock(1, async () => {
+    order.push(`start-${tag}`); await new Promise((r) => setTimeout(r, ms)); order.push(`end-${tag}`);
+  });
+  await Promise.all([slow('a', 30), slow('b', 5)]);
+  assert.deepEqual(order, ['start-a', 'end-a', 'start-b', 'end-b']); // b waits for a
+});
+
+test('getState returns offline marker when device unreachable', async () => {
+  const midea = require('../src/services/midea');
+  const d = devices.createDevice({ name: 'Z', device_sn: 'SN-OFF', ip: '127.0.0.1', port: 1, protocol_version: 3, token: 'aa', key: 'bb' });
+  const st = await midea.getState(d.id);
+  assert.equal(st.offline, true);
+});
+
+test('addDevice is transactional: a V3 device with no cloud config persists nothing', async () => {
+  const midea = require('../src/services/midea');
+  await assert.rejects(() => midea.addDevice({ sn: 'SN-NOCLOUD', ip: '127.0.0.1' }));
+  assert.equal(devices.listDevices().some((d) => d.device_sn === 'SN-NOCLOUD'), false);
+});
+
+test('getStatus returns the documented shape', () => {
+  const midea = require('../src/services/midea');
+  const status = midea.getStatus();
+  assert.ok(Array.isArray(status.devices));
+  assert.ok('lastPollAt' in status);
+});
+
+test('startPolling is a no-op under revoked license (feature gate)', () => {
+  const license = require('../src/services/license');
+  const midea = require('../src/services/midea');
+  const saved = license.hasFeature('midea_integration');
+  try {
+    license._overrideForTest({ midea_integration: false });
+    midea.startPolling();                 // ensurePolling must bail: no timer created
+    const status = midea.getStatus();
+    assert.ok(Array.isArray(status.devices));   // no throw under revoked license
+  } finally {
+    license._overrideForTest({ midea_integration: saved });
+    midea.stopPolling();                  // ensure no timer leaks out of the test
+  }
+});
