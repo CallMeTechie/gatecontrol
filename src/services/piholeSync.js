@@ -71,17 +71,17 @@ function createSync(deps) {
   /**
    * Pull all data from a single client in parallel.
    */
-  async function pull(client) {
+  async function pull(client, count) {
     const [summary, history, topDomains, topClients, topClientsBlocked, queryTypes, blocking] =
       await Promise.all([
         client.getSummary(),
         client.getHistory(),
         client.getTopDomains(true),
-        client.getTopClients(),
+        client.getTopClients(false, count),
         // NOTE: getTopClients(true) requires Pi-hole v6 FTL. On a v5 instance this call
         // throws; the .catch(() => []) degrades silently to an empty blocked list instead
         // of rejecting pull() entirely (which would mark the instance connected:false).
-        client.getTopClients(true).catch(() => []),
+        client.getTopClients(true, count).catch(() => []),
         client.getQueryTypes(),
         client.getBlocking(),
       ]);
@@ -148,7 +148,8 @@ function createSync(deps) {
       if (!activeIds.has(id)) clientCache.delete(id);
     }
     const clients = config.instances.map(getOrCreateClient);
-    const results = await Promise.allSettled(clients.map(pull));
+    const count = config.top_clients_count || 1000;
+    const results = await Promise.allSettled(clients.map(c => pull(c, count)));
 
     // Build per-instance metadata and collect fulfilled data
     const instances = [];
@@ -178,9 +179,9 @@ function createSync(deps) {
       const peerIps = peers.map(p => p.ip);
 
       const summary = mergeSummary(ok.map(r => r.summary));
-      const topClientsRaw = mergeTopList(ok.map(r => r.topClients), 'ip', 10);
+      const topClientsRaw = mergeTopList(ok.map(r => r.topClients), 'ip', count);
       const topClients = mapClientsToPeers(topClientsRaw, peersByIp);
-      const topClientsBlockedRaw = mergeTopList(ok.map(r => r.topClientsBlocked ?? []), 'ip', 10);
+      const topClientsBlockedRaw = mergeTopList(ok.map(r => r.topClientsBlocked ?? []), 'ip', count);
       const topClientsBlocked = mapClientsToPeers(topClientsBlockedRaw, peersByIp);
       const blocking = mergeBlocking(perInstanceBlocking.filter(Boolean));
       const history = mergeHistory(ok.map(r => r.history), config.sync_interval_sec || 60);
