@@ -164,3 +164,105 @@ function discover({ timeoutMs = 3000, broadcast = '255.255.255.255', ports = [64
 }
 
 module.exports = Object.assign(module.exports, { detectVersion, parseDiscoveryResponse, discover, DISCOVERY_MSG });
+
+// ---- Part D: TCP transport LanDevice ----
+const net = require('node:net');
+const mideaAc = require('./mideaAc');
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`midea ${label} timeout`)), ms)),
+  ]);
+}
+
+class LanDevice {
+  constructor({ ip, port = 6444, deviceId, protocolVersion = 3, token = null, key = null, timeoutMs = 8000 }) {
+    if (protocolVersion === 3 && (!token || !key)) {
+      throw new Error('token and key are required for protocol version 3');
+    }
+    this.ip = ip; this.port = port; this.deviceId = deviceId;
+    this.version = protocolVersion;
+    this.token = token ? Buffer.from(token, 'hex') : null;
+    this.key = key ? Buffer.from(key, 'hex') : null;
+    this.timeoutMs = timeoutMs;
+    this._packetId = 0;
+  }
+
+  _nextPid() { this._packetId = (this._packetId + 1) & 0xfff; return this._packetId; }
+
+  _connect() {
+    return new Promise((resolve, reject) => {
+      const sock = net.createConnection({ host: this.ip, port: this.port }, () => resolve(sock));
+      sock.setTimeout(this.timeoutMs);
+      sock.on('timeout', () => { sock.destroy(); reject(new Error('midea connect timeout')); });
+      sock.on('error', reject);
+    });
+  }
+
+  _readOnce(sock) {
+    return new Promise((resolve, reject) => {
+      let buf = Buffer.alloc(0);
+      const need = (b) => {
+        if (b.length < 6) return Infinity;
+        if (b[0] === 0x83 && b[1] === 0x70) return b.readUInt16BE(2) + 8;   // 8370
+        if (b[0] === 0x5a && b[1] === 0x5a) return b.readUInt16LE(4);       // 5a5a
+        return b.length;
+      };
+      const onData = (d) => {
+        buf = Buffer.concat([buf, d]);
+        if (buf.length >= need(buf)) { sock.off('data', onData); resolve(buf); }
+      };
+      sock.on('data', onData);
+      sock.once('error', reject);
+    });
+  }
+
+  async _send(sock, payload) {
+    sock.write(payload);
+    return withTimeout(this._readOnce(sock), this.timeoutMs, 'read');
+  }
+
+  async _authenticate(sock) {
+    const req = encodeHandshakeRequest(this.token, this._nextPid());
+    const resp = await this._send(sock, req);
+    const data = decodeHandshakeResponse(resp);
+    return getLocalKey(this.key, data);          // localKey
+  }
+
+  // Sends a 0xAA frame, returns parsed AcState.
+  async _command(frame) {
+    const sock = await this._connect();
+    try {
+      let localKey = null;
+      if (this.version === 3) localKey = await this._authenticate(sock);
+      const v2 = encodePacket(Number(this.deviceId) || 0, frame);
+      let reply;
+      if (this.version === 3) {
+        const req = encodeEncryptedRequest(localKey, v2, this._nextPid());
+        const raw = await this._send(sock, req);
+        const innerV2 = decodeEncryptedResponse(localKey, raw);
+        reply = decodePacket(innerV2);
+      } else {
+        const raw = await this._send(sock, v2);
+        reply = decodePacket(raw);
+      }
+      return mideaAc.parseState(reply);
+    } finally {
+      try { sock.destroy(); } catch {}
+    }
+  }
+
+  async getState() {
+    return this._command(mideaAc.buildQuery({ messageId: this._nextPid() & 0xff }));
+  }
+
+  async setState(patch) {
+    const current = await this.getState();        // read
+    const merged = { ...current, ...patch };       // modify
+    await this._command(mideaAc.buildSet(merged, { messageId: this._nextPid() & 0xff })); // write
+    return this.getState();                        // confirm
+  }
+}
+
+module.exports = Object.assign(module.exports, { LanDevice });

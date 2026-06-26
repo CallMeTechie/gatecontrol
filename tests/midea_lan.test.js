@@ -61,3 +61,34 @@ test('detectVersion by magic bytes', () => {
   assert.equal(lan.detectVersion(Buffer.from('837000c8', 'hex')), 3);
   assert.equal(lan.detectVersion(Buffer.from('3c3f786d', 'hex')), 1); // '<?xm' → V1 XML
 });
+
+// ---- LanDevice ----
+
+test('LanDevice requires token/key for V3', () => {
+  const { LanDevice } = require('../src/services/midea/mideaLan');
+  assert.throws(() => new LanDevice({ ip: '1.2.3.4', deviceId: '1', protocolVersion: 3 }),
+    /token.*required|key.*required/i);
+});
+
+test('LanDevice V2 constructs without token/key', () => {
+  const { LanDevice } = require('../src/services/midea/mideaLan');
+  const dev = new LanDevice({ ip: '1.2.3.4', deviceId: '42', protocolVersion: 2 });
+  assert.equal(dev.ip, '1.2.3.4');
+  assert.equal(dev.version, 2);
+  assert.equal(dev.token, null);
+  assert.equal(dev.key, null);
+});
+
+test('LanDevice _nextPid wraps at 0xfff', () => {
+  const { LanDevice } = require('../src/services/midea/mideaLan');
+  const dev = new LanDevice({ ip: '1.2.3.4', deviceId: '1', protocolVersion: 2 });
+  dev._packetId = 0xfff;
+  assert.equal(dev._nextPid(), 0); // (0xfff + 1) & 0xfff === 0
+});
+
+test('LanDevice live getState', { skip: !process.env.GC_MIDEA_LIVE }, async () => {
+  const { LanDevice } = require('../src/services/midea/mideaLan');
+  const dev = new LanDevice(JSON.parse(process.env.GC_MIDEA_LIVE)); // {ip,port,deviceId,protocolVersion,token,key}
+  const st = await dev.getState();
+  assert.equal(typeof st.indoorTemp, 'number');
+});
