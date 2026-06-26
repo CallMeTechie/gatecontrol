@@ -395,6 +395,14 @@
         if (bodyEl) bodyEl.style.display = '';
         var d = body.data;
 
+        // ── Scope-visibility: deterministically show/hide cross-scope fields ─
+        var allowedWrap = document.getElementById('piAllowedWrap');
+        if (allowedWrap) allowedWrap.style.display = (scope === 'household') ? 'none' : '';
+        var ownerExtra = document.getElementById('piOwnerExtra');
+        if (ownerExtra) ownerExtra.style.display = (scope === 'owner') ? '' : 'none';
+        var hhExtra = document.getElementById('piHouseholdExtra');
+        if (hhExtra) hhExtra.style.display = (scope === 'household') ? '' : 'none';
+
         // ── Stats common to all scopes ──────────────────────────────────────
         var pctEl = document.getElementById('piPct');
         if (pctEl) pctEl.textContent = String(d.blockedPct);

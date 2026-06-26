@@ -289,6 +289,8 @@ body::before{
 .pihole-foot{font-size:11px;color:var(--faint);margin-top:4px}
 .pihole-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
 .c-pihole.loading{min-height:160px}
+.pihole-seg{font-size:12px;margin-left:auto}
+.pihole-hint{font-size:11px;color:var(--muted)}
 
 /* ============================================================
    REDUCED MOTION
