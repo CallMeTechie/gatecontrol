@@ -1058,6 +1058,28 @@ const migrations = [
     `,
     detect: (db) => hasColumn(db, 'peers', 'user_id'),
   },
+  {
+    version: 60,
+    name: 'create_midea_devices',
+    sql: `CREATE TABLE IF NOT EXISTS midea_devices (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      name             TEXT NOT NULL,
+      device_sn        TEXT NOT NULL UNIQUE,
+      device_id        TEXT,
+      ip               TEXT,
+      port             INTEGER NOT NULL DEFAULT 6444,
+      protocol_version INTEGER NOT NULL DEFAULT 3,
+      token_enc        TEXT,
+      key_enc          TEXT,
+      model            TEXT,
+      enabled          INTEGER NOT NULL DEFAULT 1,
+      last_seen_at     TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_midea_enabled ON midea_devices(enabled);`,
+    detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='midea_devices'").get(),
+  },
 ];
 
 module.exports = { migrations };
