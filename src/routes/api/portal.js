@@ -163,4 +163,27 @@ router.get('/pihole', (req, res) => {
   }
 });
 
+router.get('/pihole/owner', (req, res) => {
+  try {
+    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
+    const cache = pihole.getCache();
+    if (!license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0) {
+      return res.json({ ok: true, data: null, reason: 'unavailable' });
+    }
+    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
+    if (cache.attribution === 'collapsed') return res.json({ ok: true, data: null, reason: 'collapsed' });
+    const ownerPeerIds = new Set(peers.peersOfOwner(req.portalOwnerId)); // owner id NEVER from req body/query
+    let allowed = 0, blocked = 0; const seen = new Set();
+    for (const c of (cache.topClients || []))        if (ownerPeerIds.has(c.peerId)) { allowed += c.count; seen.add(c.peerId); }
+    for (const c of (cache.topClientsBlocked || [])) if (ownerPeerIds.has(c.peerId)) { blocked += c.count; seen.add(c.peerId); }
+    if (seen.size === 0) return res.json({ ok: true, data: null, reason: 'no_data' });
+    const total = allowed + blocked;
+    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
+    res.json({ ok: true, data: { total, blocked, allowed, blockedPct, deviceCount: seen.size, asOf: cache.lastSyncAt } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /pihole/owner failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
 module.exports = router;
