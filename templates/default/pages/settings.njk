@@ -1056,9 +1056,14 @@
           </div>
           <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('pihole.cfg.manage_chain_hint') }}</div>
         </div>
-        <div class="form-group" style="margin-bottom:0">
+        <div class="form-group">
           <label class="form-label" for="pihole-sync-interval">{{ t('pihole.cfg.sync_interval') }}</label>
           <input type="number" id="pihole-sync-interval" value="30" min="10" max="3600" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" for="pihole-top-clients-count">{{ t('pihole.cfg.top_clients_count') }}</label>
+          <input type="number" id="pihole-top-clients-count" value="1000" min="1" max="5000" style="width:100%">
+          <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('pihole.cfg.top_clients_count_hint') }}</div>
         </div>
         <div id="pihole-status" class="autosave-status"></div>
       </div>
