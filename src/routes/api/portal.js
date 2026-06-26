@@ -186,4 +186,23 @@ router.get('/pihole/owner', (req, res) => {
   }
 });
 
+router.get('/pihole/household', (req, res) => {
+  try {
+    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
+    const cache = pihole.getCache();
+    if (!license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0) {
+      return res.json({ ok: true, data: null, reason: 'unavailable' });
+    }
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' }); // trust switch never relaxes household
+    const s = cache.summary;
+    if (!s || !s.queries) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    const total = s.queries.total || 0, blocked = s.queries.blocked || 0;
+    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
+    res.json({ ok: true, data: { total, blocked, blockedPct, activeClients: (s.clients && s.clients.active != null) ? s.clients.active : null, asOf: cache.lastSyncAt } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /pihole/household failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
 module.exports = router;
