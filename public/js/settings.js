@@ -1764,9 +1764,10 @@
   var widgetTraffic = document.getElementById('portal-widget-traffic');
   var widgetServices = document.getElementById('portal-widget-services');
   var widgetPihole = document.getElementById('portal-widget-pihole');
+  var trustToggle = document.getElementById('portal-trust-owner-mapping');
   if (!enabledToggle) return;
 
-  [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole].forEach(function (el) {
+  [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, trustToggle].forEach(function (el) {
     if (el) el.addEventListener('click', function () {
       el.classList.toggle('on');
       el.dispatchEvent(new Event('change'));
@@ -1786,12 +1787,13 @@
     setToggle(widgetTraffic, d.widgets && d.widgets.traffic);
     setToggle(widgetServices, d.widgets && d.widgets.services);
     setToggle(widgetPihole, d.widgets && d.widgets.pihole);
+    setToggle(trustToggle, d.trustOwnerMapping);
     if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('portal');
   }).catch(function (err) {
     console.error('Failed to load portal settings:', err);
   });
 
-  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole].filter(Boolean);
+  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, trustToggle].filter(Boolean);
   SettingsAutosave.bind({
     cluster: 'portal',
     fields: portalFields,
@@ -1803,6 +1805,7 @@
         'portal-widget-traffic': widgetTraffic ? widgetTraffic.classList.contains('on') : true,
         'portal-widget-services': widgetServices ? widgetServices.classList.contains('on') : true,
         'portal-widget-pihole': widgetPihole ? widgetPihole.classList.contains('on') : true,
+        'portal-trust-owner-mapping': trustToggle ? trustToggle.classList.contains('on') : false,
       };
     },
     save: function () {
@@ -1814,6 +1817,7 @@
           services: widgetServices ? widgetServices.classList.contains('on') : true,
           pihole: widgetPihole ? widgetPihole.classList.contains('on') : true,
         },
+        trust_owner_mapping: trustToggle ? trustToggle.classList.contains('on') : false,
       });
     },
   });

@@ -1980,6 +1980,8 @@
   "settings.portal.widget_traffic": "Traffic-Diagramm",
   "settings.portal.widget_services": "Dienste",
   "settings.portal.widget_pihole": "Pi-hole-Widget",
+  "settings.portal.trust_owner_mapping": "Gerät→Besitzer-Vertrauen (pro-Besitzer ohne Login)",
+  "settings.portal.trust_owner_mapping_help": "Wenn aktiv, sehen nicht eingeloggte Nutzer auf Geräten mit zugeordnetem Besitzer dessen aggregierte DNS-Zahlen ohne Login. Nur aktivieren, wenn Geräte ausschließlich vom zugeordneten Besitzer genutzt werden.",
   "settings.portal.saved": "Portal-Einstellungen gespeichert",
   "settings.portal.host_not_verified": "Domain ist nicht verifiziert",
   "settings.portal.host_invalid_prefix": "Ungültiges Subdomain-Präfix",
