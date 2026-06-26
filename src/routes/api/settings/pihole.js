@@ -44,6 +44,7 @@ router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
     enabled: !!body.enabled,
     sync_interval_sec: Number(body.sync_interval_sec) || 30,
     manage_dns_chain: body.manage_dns_chain !== false,
+    top_clients_count: Math.max(1, Math.min(5000, parseInt(body.top_clients_count, 10) || 1000)),
     instances,
   });
 
