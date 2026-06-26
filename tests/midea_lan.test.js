@@ -44,3 +44,20 @@ test('getLocalKey inverts a synthetic handshake response', () => {
   assert.equal(localKey.length, 32);
   assert.deepEqual(localKey, strxor(session, key));
 });
+
+test('parseDiscoveryResponse decodes a real V2 discovery response (test_discover.py:12)', () => {
+  const V2 = Buffer.from('5a5a011178007a8000000000000000000000000060ca0000000e0000000000000000000001000000c08651cb1b88a167bdcf7d37534ef81312d39429bf9b2673f200b635fae369a560fa9655eab8344be22b1e3b024ef5dfd392dc3db64dbffb6a66fb9cd5ec87a78000cd9043833b9f76991e8af29f3496', 'hex');
+  const info = lan.parseDiscoveryResponse(V2);
+  assert.equal(info.version, 2);
+  assert.equal(info.port, 6444);
+  assert.equal(info.deviceType, 0xac);
+  assert.equal(info.sn, '000000P0000000Q1F0C9D153F7B40000');
+  assert.equal(String(info.deviceId), '15393162840672');
+  assert.equal(info.ip, '10.100.1.140');
+});
+
+test('detectVersion by magic bytes', () => {
+  assert.equal(lan.detectVersion(Buffer.from('5a5a0111', 'hex')), 2);
+  assert.equal(lan.detectVersion(Buffer.from('837000c8', 'hex')), 3);
+  assert.equal(lan.detectVersion(Buffer.from('3c3f786d', 'hex')), 1); // '<?xm' → V1 XML
+});

@@ -105,3 +105,62 @@ module.exports = Object.assign(module.exports, {
   encodeEncryptedRequest, decodeEncryptedResponse,
   encodeHandshakeRequest, decodeHandshakeResponse, getLocalKey,
 });
+
+// ---- Part C: UDP discovery (discover.py) ----
+const dgram = require('node:dgram');
+
+// 72-byte broadcast probe — from const.py DISCOVERY_MSG
+const DISCOVERY_MSG = Buffer.from(
+  '5a5a011148009200' +
+  '0000000000000000000000000000000000000000000000000000000000000000' +
+  '7f75bd6b3e4f8b762e849c6e578d6590036e9d4342a50f1f569eb8ec918e92e5',
+  'hex'
+);
+// assert DISCOVERY_MSG.length === 72 (verified: 16+64+64 hex chars = 72 bytes)
+
+function detectVersion(d) {
+  if (d[0] === 0x5a && d[1] === 0x5a) return 2;
+  if (d[0] === 0x83 && d[1] === 0x70) return 3;
+  return 1; // V1 XML (unsupported for AC)
+}
+
+function parseDiscoveryResponse(datagram) {
+  const version = detectVersion(datagram);
+  let data = datagram;
+  if (version === 3) data = data.slice(8, -16); // strip 8370 header + 16-byte hash → inner 5a5a
+  // 6-byte LE device id (bytes 20..25):
+  let devId = 0n;
+  for (let i = 0; i < 6; i++) devId += BigInt(data[20 + i]) << BigInt(8 * i);
+  const encrypted = data.slice(40, -16);
+  const decrypted = decryptAesEcb(encrypted);
+  const ip = `${decrypted[3]}.${decrypted[2]}.${decrypted[1]}.${decrypted[0]}`;
+  const port = decrypted.readUInt16LE(4);
+  const sn = decrypted.slice(8, 40).toString('ascii');
+  const nameLen = decrypted[40];
+  const name = decrypted.slice(41, 41 + nameLen).toString('ascii');
+  const deviceType = parseInt(name.split('_')[1], 16);
+  return { ip, port, deviceId: devId.toString(), sn, deviceType, version };
+}
+
+function discover({ timeoutMs = 3000, broadcast = '255.255.255.255', ports = [6445, 20086] } = {}) {
+  return new Promise((resolve) => {
+    const sock = dgram.createSocket('udp4');
+    const found = new Map();
+    sock.on('message', (msg) => {
+      try {
+        const v = detectVersion(msg);
+        if (v === 1) return;
+        const info = parseDiscoveryResponse(msg);
+        if (info.deviceType === 0xac) found.set(info.deviceId, info);
+      } catch { /* ignore malformed */ }
+    });
+    sock.on('error', () => { try { sock.close(); } catch {} resolve([]); });
+    sock.bind(() => {
+      sock.setBroadcast(true);
+      for (const port of ports) for (let i = 0; i < 3; i++) sock.send(DISCOVERY_MSG, port, broadcast);
+    });
+    setTimeout(() => { try { sock.close(); } catch {} resolve([...found.values()]); }, timeoutMs);
+  });
+}
+
+module.exports = Object.assign(module.exports, { detectVersion, parseDiscoveryResponse, discover, DISCOVERY_MSG });
