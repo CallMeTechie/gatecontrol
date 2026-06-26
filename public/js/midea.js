@@ -93,6 +93,20 @@
           <span>${esc(d.name)} <span class="muted">${esc(d.sn)}</span></span>
           <button class="btn btn-sm" data-add="${esc(d.sn)}" data-name="${esc(d.name)}">${T('midea.devices.add')}</button>
         </div>`).join('');
+      // Populate the manual-by-IP cloud-device picker (keep the static first
+      // "no cloud" option; append cloud entries via DOM API → XSS-safe).
+      const sel = document.querySelector('#midea-ip-form select[name="sn"]');
+      if (sel) {
+        const first = sel.querySelector('option');
+        sel.innerHTML = '';
+        if (first) sel.appendChild(first);
+        for (const d of devices) {
+          const o = document.createElement('option');
+          o.value = d.sn;
+          o.textContent = `${d.name} (${d.sn})`;
+          sel.appendChild(o);
+        }
+      }
     } catch { /* not connected yet */ }
   }
 
@@ -107,6 +121,35 @@
   $('#midea-discover').addEventListener('click', async () => {
     try { const { devices } = await api('POST', '/discover'); alert(`${devices.length} ${T('midea.discover.result')}`); }
     catch (e) { alert(e.message); }
+  });
+
+  // Manual add by IP (when discovery can't reach the device). A selected cloud
+  // device (sn) makes it a V3 add (keys fetched from the cloud); none = V2.
+  const ipForm = $('#midea-ip-form');
+  if (ipForm) ipForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const ip = (f.ip.value || '').trim();
+    const name = (f.name.value || '').trim();
+    const sn = f.sn ? f.sn.value : '';
+    const msg = $('#midea-ip-msg');
+    if (!ip) { f.ip.focus(); return; }
+    const btn = f.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    msg.textContent = '…';
+    try {
+      const body = { ip };
+      if (name) body.name = name;
+      if (sn) body.sn = sn;
+      const { device } = await api('POST', '/devices', body);
+      msg.textContent = '✓ ' + ((device && device.name) || ip);
+      f.reset();
+      await loadDevices();
+    } catch (e) {
+      msg.textContent = e.message;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   loadDevices();

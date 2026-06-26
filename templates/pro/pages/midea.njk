@@ -27,6 +27,24 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head">
+    <span class="card-title">{{ t('midea.manual.title') }}</span>
+  </div>
+  <div class="card-body">
+    <p style="color:var(--text-3);margin-bottom:8px">{{ t('midea.manual.hint') }}</p>
+    <form id="midea-ip-form" class="form-grid">
+      <label>{{ t('midea.manual.ip') }}<input name="ip" type="text" inputmode="decimal" placeholder="192.168.x.y" autocomplete="off"></label>
+      <label>{{ t('midea.manual.name') }}<input name="name" type="text" autocomplete="off"></label>
+      <label>{{ t('midea.manual.cloud_device') }}
+        <select name="sn"><option value="">{{ t('midea.manual.no_cloud') }}</option></select>
+      </label>
+      <button type="submit" class="btn btn-primary">{{ t('midea.devices.add') }}</button>
+    </form>
+    <p id="midea-ip-msg" style="color:var(--text-3);margin-top:8px"></p>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-head">
     <span class="card-title">{{ t('midea.devices.title') }}</span>
