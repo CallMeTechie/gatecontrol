@@ -43,7 +43,9 @@ router.get('/top-domains', (req, res) => {
 
 router.get('/top-clients', (req, res) => {
   const cache = pihole.getCache();
-  res.json({ ok: true, data: scopeFilter(req, cache.topClients) });
+  // Display cap: the monitoring card is a top-10 widget; cache.topClients may now hold
+  // up to top_clients_count for portal.js per-device/per-owner attribution.
+  res.json({ ok: true, data: scopeFilter(req, cache.topClients || []).slice(0, 10) });
 });
 
 router.get('/query-types', (req, res) => {
