@@ -45,7 +45,12 @@ describe('encrypt / decrypt', () => {
   it('throws on tampered ciphertext', () => {
     const ciphertext = encrypt('secret');
     const parts = ciphertext.split(':');
-    parts[2] = 'ff' + parts[2].slice(2); // tamper with encrypted data
+    // Flip the first ciphertext byte (XOR 0xff) so the tamper is ALWAYS a real change.
+    // Overwriting with a fixed 'ff' was a no-op ~1/256 of the time (when the random GCM
+    // ciphertext already started with 0xff), making this test flaky.
+    const buf = Buffer.from(parts[2], 'hex');
+    buf[0] ^= 0xff;
+    parts[2] = buf.toString('hex'); // tamper with encrypted data
     assert.throws(() => decrypt(parts.join(':')));
   });
 
