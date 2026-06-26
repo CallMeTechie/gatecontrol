@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Midea: MSmartHome-Cloud-Login — Anfrage-Felder `format`/`clientType`/`platform` jetzt als Zahlen (statt Strings) gemäß Referenz; behebt die Cloud-Ablehnung „value is illegal". Fehlermeldungen führen nun den Midea-Fehlercode mit.
+
+---
+
 ## [1.103.0] — 2026-06-26
 
 ### Features

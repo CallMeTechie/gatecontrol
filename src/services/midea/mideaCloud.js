@@ -119,8 +119,11 @@ class MideaCloud {
     const body = opts.raw ? data : {
       appId: c.appId,
       src: c.appId,
-      format: '2',
-      clientType: '1',
+      // NUMERIC types per cloud.py BaseCloud.FORMAT=2 / CLIENT_TYPE=1 (NOT strings):
+      // the Midea cloud validates these strictly and answers "value is illegal"
+      // when they arrive JSON-encoded as "2"/"1".
+      format: 2,
+      clientType: 1,
       language: 'en_US',
       deviceId: this.deviceId,
       stamp: timestamp(),
@@ -152,7 +155,9 @@ class MideaCloud {
     if (m.includes('2fa') || m.includes('verification') || m.includes('captcha')) {
       return new MideaCloudError(msg || '2FA required', 'MIDEA_CLOUD_2FA_REQUIRED');
     }
-    return new MideaCloudError(msg || `cloud error ${code}`, 'MIDEA_CLOUD_ERROR');
+    // Surface the Midea error code so an unverified cloud schema can be diagnosed
+    // from the user-visible message (e.g. "value is illegal (Midea-Code 1010)").
+    return new MideaCloudError(`${msg || 'cloud error'} (Midea-Code ${code})`, 'MIDEA_CLOUD_ERROR');
   }
 
   async _getLoginId(account) {
@@ -204,13 +209,13 @@ class MideaCloud {
       // request cloud.py does NOT pass through _build_request_body).
       const r = await this._request('/mj/user/login', {
         data: {
-          platform: '2',
+          platform: 2,            // BaseCloud.FORMAT (number), cloud.py:283
           deviceId: this.deviceId,
         },
         iotData: {
           appId: this.cfg.appId,
           src: this.cfg.appId,
-          clientType: '1',
+          clientType: 1,          // BaseCloud.CLIENT_TYPE (number), cloud.py:289
           loginAccount: email,
           iampwd: this._hashIamPassword(loginId, password),
           password: this._hashPassword(loginId, password),

@@ -34,6 +34,26 @@ test('getToken builds idBytes for both endians without RangeError', async () => 
   assert.equal(calls.length, 2);
 });
 
+test('MSmartHome request body sends NUMERIC format/clientType (cloud.py types)', async () => {
+  const c = new cloud.MideaCloud('msmarthome');
+  let sent;
+  const origFetch = global.fetch;
+  global.fetch = async (_url, opts) => { sent = JSON.parse(opts.body); return { status: 200, json: async () => ({ code: '0', data: {} }) }; };
+  try {
+    await c._requestMSmart('/v1/user/login/id/get', { loginAccount: 'a@b.de' });
+  } finally { global.fetch = origFetch; }
+  // The Midea cloud rejects "2"/"1" (strings) with "value is illegal" — these must be numbers.
+  assert.strictEqual(sent.format, 2);
+  assert.strictEqual(sent.clientType, 1);
+  assert.equal(typeof sent.format, 'number');
+  assert.equal(typeof sent.clientType, 'number');
+  // common fields present + passthrough data merged
+  assert.equal(sent.appId, '1010');
+  assert.equal(sent.language, 'en_US');
+  assert.equal(sent.loginAccount, 'a@b.de');
+  assert.ok(sent.stamp && sent.reqId && sent.deviceId);
+});
+
 test('live login + listDevices', { skip: !process.env.GC_MIDEA_CLOUD }, async () => {
   const { email, password, app } = JSON.parse(process.env.GC_MIDEA_CLOUD);
   const c = new cloud.MideaCloud(app);
