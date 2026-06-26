@@ -78,9 +78,10 @@ function createSync(deps) {
         client.getHistory(),
         client.getTopDomains(true),
         client.getTopClients(),
-        // NOTE: getTopClients(true) requires Pi-hole v6 FTL. A v5 instance throws here,
-        // which rejects pull() entirely → Promise.allSettled marks it connected:false.
-        client.getTopClients(true),
+        // NOTE: getTopClients(true) requires Pi-hole v6 FTL. On a v5 instance this call
+        // throws; the .catch(() => []) degrades silently to an empty blocked list instead
+        // of rejecting pull() entirely (which would mark the instance connected:false).
+        client.getTopClients(true).catch(() => []),
         client.getQueryTypes(),
         client.getBlocking(),
       ]);

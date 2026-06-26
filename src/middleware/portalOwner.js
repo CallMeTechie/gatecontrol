@@ -25,6 +25,10 @@ function portalOwner(req, _res, next) {
   if (req.portalLoggedIn) {
     req.portalOwnerId = req.session.userId;
     req.portalOwnerSource = 'session';
+  // Kiosk trade-off (Design §4.6): when device-trust is admin-enabled, co-users of a
+  // shared peer IP see the owner's aggregation without logging in. This is intentional
+  // kiosk behaviour — secured by default-off + admin opt-in + the mandatory help text
+  // shown in the admin UI. Session login always takes precedence (checked above).
   } else if (trustEnabled() && req.portalPeerId != null) {
     const uid = ownerOfPeer(req.portalPeerId);
     req.portalOwnerId = uid;
