@@ -5,8 +5,9 @@ const settings = require('./settings');
 /**
  * Returns the current VPN landing portal configuration derived from settings.
  * All values default to enabled ('1') unless explicitly set to '0'.
+ * Note: trustOwnerMapping defaults to disabled ('0') — unlike the widgets.
  *
- * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean } }}
+ * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean }, trustOwnerMapping: boolean }}
  */
 const on = (key) => settings.get(key, '1') !== '0';
 
@@ -19,6 +20,7 @@ function portalConfig() {
       services: on('portal.widget.services'),
       pihole:   on('portal.widget.pihole'),
     },
+    trustOwnerMapping: settings.get('portal.trust_owner_mapping', '0') !== '0',
   };
 }
 
