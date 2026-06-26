@@ -146,8 +146,12 @@ function createClient(instance) {
     return (r.domains || []).map(d => ({ domain: d.domain, count: d.count }));
   }
 
-  async function getTopClients(blocked = false) {
-    const r = await request(`/api/stats/top_clients${blocked ? '?blocked=true' : ''}`);
+  async function getTopClients(blocked = false, count) {
+    const params = [];
+    if (blocked) params.push('blocked=true');
+    if (Number.isInteger(count) && count > 0) params.push('count=' + count);
+    const qs = params.length ? '?' + params.join('&') : '';
+    const r = await request(`/api/stats/top_clients${qs}`);
     return (r.clients || []).map(c => ({ ip: c.ip, count: c.count }));
   }
 
