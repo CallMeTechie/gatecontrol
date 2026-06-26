@@ -6,7 +6,7 @@ const settings = require('./settings');
  * Returns the current VPN landing portal configuration derived from settings.
  * All values default to enabled ('1') unless explicitly set to '0'.
  *
- * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean } }}
+ * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean } }}
  */
 const on = (key) => settings.get(key, '1') !== '0';
 
@@ -17,6 +17,7 @@ function portalConfig() {
       device:   on('portal.widget.device'),
       traffic:  on('portal.widget.traffic'),
       services: on('portal.widget.services'),
+      pihole:   on('portal.widget.pihole'),
     },
   };
 }

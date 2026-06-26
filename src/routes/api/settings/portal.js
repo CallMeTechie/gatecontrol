@@ -1,7 +1,7 @@
 'use strict';
 
 // Portal settings cluster — master switch + per-widget toggles + public host.
-// Keys: portal.enabled, portal.widget.{device,traffic,services},
+// Keys: portal.enabled, portal.widget.{device,traffic,services,pihole},
 //       portal.base_domain, portal.prefix
 
 const { Router } = require('express');
@@ -33,7 +33,7 @@ router.get('/portal', (req, res) => {
  * PUT /api/v1/settings/portal — Update portal master switch + widget toggles + host
  *
  * Accepts:
- *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool },
+ *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool, pihole: bool },
  *     base_domain: string, prefix: string }
  */
 router.put('/portal', (req, res) => {
@@ -52,6 +52,9 @@ router.put('/portal', (req, res) => {
     }
     if (widgets.services !== undefined) {
       settings.set('portal.widget.services', widgets.services ? '1' : '0');
+    }
+    if (widgets.pihole !== undefined) {
+      settings.set('portal.widget.pihole', widgets.pihole ? '1' : '0');
     }
 
     // Host change (base_domain + prefix committed together).

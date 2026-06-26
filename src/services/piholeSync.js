@@ -60,6 +60,7 @@ function createSync(deps) {
     history: [],
     topDomains: [],
     topClients: [],
+    topClientsBlocked: [],
     queryTypes: {},
     blocking: { state: 'unknown', timer: null },
     instances: [],
@@ -71,16 +72,19 @@ function createSync(deps) {
    * Pull all data from a single client in parallel.
    */
   async function pull(client) {
-    const [summary, history, topDomains, topClients, queryTypes, blocking] =
+    const [summary, history, topDomains, topClients, topClientsBlocked, queryTypes, blocking] =
       await Promise.all([
         client.getSummary(),
         client.getHistory(),
         client.getTopDomains(true),
         client.getTopClients(),
+        // NOTE: getTopClients(true) requires Pi-hole v6 FTL. A v5 instance throws here,
+        // which rejects pull() entirely → Promise.allSettled marks it connected:false.
+        client.getTopClients(true),
         client.getQueryTypes(),
         client.getBlocking(),
       ]);
-    return { summary, history, topDomains, topClients, queryTypes, blocking };
+    return { summary, history, topDomains, topClients, topClientsBlocked, queryTypes, blocking };
   }
 
   /**
@@ -175,6 +179,8 @@ function createSync(deps) {
       const summary = mergeSummary(ok.map(r => r.summary));
       const topClientsRaw = mergeTopList(ok.map(r => r.topClients), 'ip', 10);
       const topClients = mapClientsToPeers(topClientsRaw, peersByIp);
+      const topClientsBlockedRaw = mergeTopList(ok.map(r => r.topClientsBlocked ?? []), 'ip', 10);
+      const topClientsBlocked = mapClientsToPeers(topClientsBlockedRaw, peersByIp);
       const blocking = mergeBlocking(perInstanceBlocking.filter(Boolean));
       const history = mergeHistory(ok.map(r => r.history), config.sync_interval_sec || 60);
       const topDomains = mergeTopList(ok.map(r => r.topDomains), 'domain', 10);
@@ -188,6 +194,7 @@ function createSync(deps) {
         history,
         topDomains,
         topClients,
+        topClientsBlocked,
         queryTypes,
         blocking,
         instances,
