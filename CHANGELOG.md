@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.102.0] — 2026-06-26
+
+### Features
+- Midea-Klimasteuerung TP1 — Protokoll-Kern + Admin-Konfig (#195)
+
+---
+
 ## [Unreleased]
 
 ### Features
