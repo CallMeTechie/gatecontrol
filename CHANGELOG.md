@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.0] — 2026-06-26
+
+### Features
+- subnet-directed discovery + manual add-by-IP (#196)
+
+---
+
 ## [1.102.0] — 2026-06-26
 
 ### Features
