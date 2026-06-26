@@ -101,10 +101,18 @@ function loadConfig() {
   const raw = settings.get(CONFIG_KEY);
   if (!raw) return { ...DEFAULT_CONFIG };
   const parsed = JSON.parse(raw);
+  // session is an OBJECT stored as encrypt(JSON.stringify(...)). A malformed
+  // or legacy (pre-encryption) value must not brick loadConfig — null it so
+  // the app simply re-logs in.
+  let session = null;
+  if (parsed.session) {
+    try { session = JSON.parse(decrypt(parsed.session)); } catch { session = null; }
+  }
   return {
     ...DEFAULT_CONFIG,
     ...parsed,
     password: parsed.password ? decrypt(parsed.password) : '',
+    session,
   };
 }
 
@@ -113,7 +121,7 @@ function saveConfig(cfg) {
     app: cfg.app || 'msmarthome',
     email: cfg.email || '',
     password: cfg.password ? encrypt(cfg.password) : '',
-    session: cfg.session || null,
+    session: cfg.session ? encrypt(JSON.stringify(cfg.session)) : null,
   };
   settings.set(CONFIG_KEY, JSON.stringify(toStore));
 }

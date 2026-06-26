@@ -55,13 +55,24 @@ test('updateDevice patches fields, re-encrypts secrets, toggles enabled, clears 
 });
 
 test('config save/load encrypts password, redact hides it', () => {
-  devices.saveConfig({ app: 'msmarthome', email: 'a@b.de', password: 'secret', session: null });
+  const settings = require('../src/services/settings');
+  const sessionObj = { accessToken: 'tok123', loginId: 'x' };
+  devices.saveConfig({ app: 'msmarthome', email: 'a@b.de', password: 'secret', session: sessionObj });
   const cfg = devices.loadConfig();
   assert.equal(cfg.password, 'secret');
+  assert.deepEqual(cfg.session, sessionObj);     // round-trips through encryption
   const red = devices.redactConfig(cfg);
   assert.equal(red.password, undefined);
   assert.equal(red.password_set, true);
   assert.equal(red.email, 'a@b.de');
+  assert.equal(red.session, undefined);
+  assert.equal(red.session_active, true);
+
+  // RAW stored value must be ciphertext (iv:tag:ct), never plaintext secrets.
+  const stored = JSON.parse(settings.get('midea_config'));
+  assert.ok(!stored.password.includes('secret'), 'password stored as ciphertext');
+  assert.ok(!stored.session.includes('tok123'), 'session stored as ciphertext');
+  assert.match(stored.session, /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
 });
 
 // ── Orchestrator (Task 9) ──────────────────────────────────────────────────
