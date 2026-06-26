@@ -9,8 +9,9 @@
 
 ## [Unreleased]
 
-### Features
-- Midea-Klimasteuerung (TP1): nativer LAN-Protokoll-Port (Discovery/V2/V3) + Midea-Cloud-Login, Admin-Seite `/midea` zum Verbinden, Entdecken und Live-Testen von Klimageräten. Lizenz-gegated über `midea_integration`.
+### Änderungen
+- Midea: subnetz-gerichtete Geräteerkennung für Multi-Homed-Hosts — Discovery sendet jetzt je Netzwerk-Interface an dessen Subnetz-Broadcast statt nur global (`255.255.255.255`).
+- Midea: „Manuell hinzufügen (per IP)" auf der `/midea`-Seite — Gerät über seine LAN-IP einbinden, wenn die Erkennung es nicht findet (V3-Schlüssel weiterhin aus der Cloud).
 
 ---
 
