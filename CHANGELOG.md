@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.2] — 2026-06-26
+
+### Änderungen
+- make tampered-ciphertext tamper deterministic (fix 1/256 flake) (#199)
+
+---
+
 ## [1.103.1] — 2026-06-26
 
 ### Fixes
