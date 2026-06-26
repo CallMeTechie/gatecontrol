@@ -97,9 +97,7 @@
       // "no cloud" option; append cloud entries via DOM API → XSS-safe).
       const sel = document.querySelector('#midea-ip-form select[name="sn"]');
       if (sel) {
-        const first = sel.querySelector('option');
-        sel.innerHTML = '';
-        if (first) sel.appendChild(first);
+        sel.options.length = 1; // keep the static "no cloud" option, drop prior cloud entries
         for (const d of devices) {
           const o = document.createElement('option');
           o.value = d.sn;
