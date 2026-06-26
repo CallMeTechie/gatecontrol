@@ -43,3 +43,7 @@ test('unauthenticated request → 401 (admin guard precedes requireFeature)', as
   const res = await anonAgent.get('/api/v1/midea/devices');
   assert.equal(res.status, 401);
 });
+
+test('GET /midea renders without 500', async () => {
+  await agent.get('/midea').expect(200);
+});

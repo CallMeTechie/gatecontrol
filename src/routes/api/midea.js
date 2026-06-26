@@ -49,7 +49,7 @@ function wrap(fn) {
 router.post('/cloud/connect', wrap(async (req, res) => {
   const { email, password, app } = req.body || {};
   if (!email || !password) {
-    return res.status(400).json({ ok: false, error: 'email and password required' });
+    return res.status(400).json({ ok: false, error: req.t('error.midea.email_password_required') });
   }
   res.json(await midea.connectCloud(email, password, app || 'msmarthome'));
 }));
@@ -68,7 +68,7 @@ router.post('/discover', wrap(async (req, res) => {
 router.post('/devices', wrap(async (req, res) => {
   const { sn, name, ip } = req.body || {};
   if (!sn && !ip) {
-    return res.status(400).json({ ok: false, error: 'sn or ip required' });
+    return res.status(400).json({ ok: false, error: req.t('error.midea.sn_or_ip_required') });
   }
   res.json({ device: await midea.addDevice({ sn, name, ip }) });
 }));

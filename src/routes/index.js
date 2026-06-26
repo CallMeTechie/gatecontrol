@@ -193,6 +193,7 @@ const pages = [
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
+  { path: '/midea', template: 'midea', titleKey: 'midea.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
