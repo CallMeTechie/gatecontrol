@@ -50,7 +50,8 @@
       gateway_scan_egress: {{ ('true' if license.features.gateway_scan_egress else 'false') | safe }},
       l4_routes: {{ license.features.l4_routes | default(0) }},
       http_routes: {{ license.features.http_routes | default(0) }},
-      browser_sessions: {{ ('true' if license.hasFeature('browser_sessions') else 'false') | safe }}
+      browser_sessions: {{ ('true' if license.hasFeature('browser_sessions') else 'false') | safe }},
+      midea_integration: {{ ('true' if license.features.midea_integration else 'false') | safe }}
     },
     t: {
       'peers.no_peers': {{ t('peers.no_peers') | dump | safe }},
@@ -395,7 +396,27 @@
       'printer_preset.step_print': {{ t('printer_preset.step_print') | dump | safe }},
       'printer_preset.step_scan': {{ t('printer_preset.step_scan') | dump | safe }},
       'printer_preset.step_review': {{ t('printer_preset.step_review') | dump | safe }},
-      'printer_preset.step_device': {{ t('printer_preset.step_device') | dump | safe }}
+      'printer_preset.step_device': {{ t('printer_preset.step_device') | dump | safe }},
+      'midea.devices.none': {{ t('midea.devices.none') | dump | safe }},
+      'midea.devices.add': {{ t('midea.devices.add') | dump | safe }},
+      'midea.device.test': {{ t('midea.device.test') | dump | safe }},
+      'midea.device.power': {{ t('midea.device.power') | dump | safe }},
+      'midea.device.remove': {{ t('midea.device.remove') | dump | safe }},
+      'midea.device.offline': {{ t('midea.device.offline') | dump | safe }},
+      'midea.device.indoor': {{ t('midea.device.indoor') | dump | safe }},
+      'midea.device.target': {{ t('midea.device.target') | dump | safe }},
+      'midea.device.mode': {{ t('midea.device.mode') | dump | safe }},
+      'midea.cloud.connected': {{ t('midea.cloud.connected') | dump | safe }},
+      'midea.cloud.twofa': {{ t('midea.cloud.twofa') | dump | safe }},
+      'midea.cloud.ratelimit': {{ t('midea.cloud.ratelimit') | dump | safe }},
+      'midea.mode.auto': {{ t('midea.mode.auto') | dump | safe }},
+      'midea.mode.cool': {{ t('midea.mode.cool') | dump | safe }},
+      'midea.mode.heat': {{ t('midea.mode.heat') | dump | safe }},
+      'midea.mode.dry': {{ t('midea.mode.dry') | dump | safe }},
+      'midea.mode.fan': {{ t('midea.mode.fan') | dump | safe }},
+      'midea.discover.result': {{ t('midea.discover.result') | dump | safe }},
+      'midea.device.on': {{ t('midea.device.on') | dump | safe }},
+      'midea.device.off': {{ t('midea.device.off') | dump | safe }}
     }
   };
 </script>

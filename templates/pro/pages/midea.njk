@@ -1,0 +1,43 @@
+{% extends theme + "/layout.njk" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('nav.system') }}</div>
+    <div class="page-title">{{ t('midea.title') }}</div>
+    <div class="page-sub">{{ t('midea.subtitle') }}</div>
+  </div>
+  <button id="midea-discover" class="btn">{{ t('midea.discover') }}</button>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head">
+    <span class="card-title">{{ t('midea.cloud.title') }}</span>
+  </div>
+  <div class="card-body">
+    <form id="midea-cloud-form" class="form-grid">
+      <label>{{ t('midea.cloud.app') }}
+        <select name="app"><option value="msmarthome">MSmartHome</option><option value="nethome">NetHome Plus</option></select>
+      </label>
+      <label>{{ t('midea.cloud.email') }}<input name="email" type="email" autocomplete="username"></label>
+      <label>{{ t('midea.cloud.password') }}<input name="password" type="password" autocomplete="current-password"></label>
+      <button type="submit" class="btn btn-primary">{{ t('midea.cloud.connect') }}</button>
+    </form>
+    <p id="midea-cloud-msg" style="color:var(--text-3);margin-top:8px"></p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">{{ t('midea.devices.title') }}</span>
+  </div>
+  <div class="card-body">
+    <div id="midea-cloud-list"></div>
+    <div id="midea-devices"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/midea.js" defer></script>
+{% endblock %}
