@@ -360,7 +360,90 @@
     var card = document.querySelector('.pihole-widget');
     if (!card) return;                       // widget toggled off → not in DOM → no fetch
     setLoading(card, true);
-    var url = PI_ENDPOINTS[scope] || PI_ENDPOINTS.device;
+    // Whitelist scope to guard against proto-poisoning (__proto__, constructor, etc.)
+    var url = (scope === 'device' || scope === 'owner' || scope === 'household') ? PI_ENDPOINTS[scope] : PI_ENDPOINTS.device;
+
+    // ── Render helpers (inner functions — closed over card, scope) ────────
+
+    function renderPiholeReason(msg, bodyEl, reason) {
+      if (bodyEl) bodyEl.style.display = 'none';
+      if (msg) {
+        msg.replaceChildren();
+        if (reason === 'no_owner' || reason === 'login_required') {
+          // DOM-safe login affordance — no innerHTML with i18n text or /login href
+          var hintKey = reason === 'no_owner' ? 'piholeNoOwner' : 'piholeLoginRequired';
+          var hintSpan = document.createElement('span');
+          hintSpan.textContent = PT[hintKey] || '';
+          var a = document.createElement('a');
+          a.href = '/login';
+          a.textContent = PT.piholeLoginLink || 'Log in';
+          msg.appendChild(hintSpan);
+          msg.appendChild(document.createTextNode(' '));
+          msg.appendChild(a);
+        } else {
+          var key = { collapsed:'piholeCollapsed', no_data:'piholeNoData', unidentified:'piholeUnidentified' }[reason] || 'piholeUnavailable';
+          msg.textContent = PT[key] || ''; // PT = i18n map (portal.js ~line 14)
+        }
+        msg.style.display = 'block';
+      }
+    }
+
+    function renderPiholeStats(d, msg) {
+      // ── Scope-visibility: deterministically show/hide cross-scope fields ─
+      var allowedWrap = document.getElementById('piAllowedWrap');
+      if (allowedWrap) allowedWrap.style.display = (scope === 'household') ? 'none' : '';
+      var ownerExtra = document.getElementById('piOwnerExtra');
+      if (ownerExtra) ownerExtra.style.display = (scope === 'owner') ? '' : 'none';
+      var hhExtra = document.getElementById('piHouseholdExtra');
+      if (hhExtra) hhExtra.style.display = (scope === 'household') ? '' : 'none';
+
+      // ── Stats common to all scopes ──────────────────────────────────────
+      var pctEl = document.getElementById('piPct');
+      if (pctEl) pctEl.textContent = String(d.blockedPct);
+      var bar = document.getElementById('piBar');
+      if (bar) bar.style.width = d.blockedPct + '%';
+      var totalEl = document.getElementById('piTotal');
+      if (totalEl) totalEl.textContent = String(d.total);
+      var blockedEl = document.getElementById('piBlocked');
+      if (blockedEl) blockedEl.textContent = String(d.blocked);
+
+      // ── Scope-specific fields ───────────────────────────────────────────
+      if (scope !== 'household') {
+        // device + owner: show allowed count
+        var allowedEl = document.getElementById('piAllowed');
+        if (allowedEl) allowedEl.textContent = String(d.allowed);
+      }
+
+      if (scope === 'owner') {
+        // owner: device count across the owner's peers
+        var devCountEl = document.getElementById('piOwnerDevices');
+        if (devCountEl) {
+          devCountEl.textContent = (PT['piholeOwnerDevices'] || '{n}').replace('{n}', String(d.deviceCount));
+        }
+        var devHintEl = document.getElementById('piOwnerDevicesHint');
+        if (devHintEl) devHintEl.textContent = PT['piholeOwnerDevicesHint'] || '';
+      }
+
+      if (scope === 'household') {
+        // household: active client count, no allowed stat
+        var clientsEl = document.getElementById('piActiveClients');
+        if (clientsEl) {
+          clientsEl.textContent = (PT['piholeActiveClients'] || '{n}').replace('{n}', String(d.activeClients || 0));
+        }
+      }
+
+      // ── Zero-queries notice (spec §5) ───────────────────────────────────
+      if (msg) {
+        msg.replaceChildren();
+        if (d.total === 0) {
+          msg.textContent = PT['piholeZeroQueries'] || '';
+          msg.style.display = 'block';
+        } else {
+          msg.style.display = 'none';
+        }
+      }
+    }
+
     fetch(url)
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (body) {
@@ -370,84 +453,11 @@
         if (!body.ok || body.data === null) {
           var reason = body.reason;
           if (reason === 'unavailable' && scope === 'device') { card.style.display = 'none'; return; }
-          if (bodyEl) bodyEl.style.display = 'none';
-          if (msg) {
-            msg.replaceChildren();
-            if (reason === 'no_owner' || reason === 'login_required') {
-              // DOM-safe login affordance — no innerHTML with i18n text or /login href
-              var hintKey = reason === 'no_owner' ? 'piholeNoOwner' : 'piholeLoginRequired';
-              var hintSpan = document.createElement('span');
-              hintSpan.textContent = PT[hintKey] || '';
-              var a = document.createElement('a');
-              a.href = '/login';
-              a.textContent = PT.piholeLoginLink || 'Log in';
-              msg.appendChild(hintSpan);
-              msg.appendChild(document.createTextNode(' '));
-              msg.appendChild(a);
-            } else {
-              var key = { collapsed:'piholeCollapsed', no_data:'piholeNoData', unidentified:'piholeUnidentified' }[reason] || 'piholeUnavailable';
-              msg.textContent = PT[key] || ''; // PT = i18n map (portal.js ~line 14)
-            }
-            msg.style.display = 'block';
-          }
+          renderPiholeReason(msg, bodyEl, reason);
           return;
         }
         if (bodyEl) bodyEl.style.display = '';
-        var d = body.data;
-
-        // ── Scope-visibility: deterministically show/hide cross-scope fields ─
-        var allowedWrap = document.getElementById('piAllowedWrap');
-        if (allowedWrap) allowedWrap.style.display = (scope === 'household') ? 'none' : '';
-        var ownerExtra = document.getElementById('piOwnerExtra');
-        if (ownerExtra) ownerExtra.style.display = (scope === 'owner') ? '' : 'none';
-        var hhExtra = document.getElementById('piHouseholdExtra');
-        if (hhExtra) hhExtra.style.display = (scope === 'household') ? '' : 'none';
-
-        // ── Stats common to all scopes ──────────────────────────────────────
-        var pctEl = document.getElementById('piPct');
-        if (pctEl) pctEl.textContent = String(d.blockedPct);
-        var bar = document.getElementById('piBar');
-        if (bar) bar.style.width = d.blockedPct + '%';
-        var totalEl = document.getElementById('piTotal');
-        if (totalEl) totalEl.textContent = String(d.total);
-        var blockedEl = document.getElementById('piBlocked');
-        if (blockedEl) blockedEl.textContent = String(d.blocked);
-
-        // ── Scope-specific fields ───────────────────────────────────────────
-        if (scope !== 'household') {
-          // device + owner: show allowed count
-          var allowedEl = document.getElementById('piAllowed');
-          if (allowedEl) allowedEl.textContent = String(d.allowed);
-        }
-
-        if (scope === 'owner') {
-          // owner: device count across the owner's peers
-          var devCountEl = document.getElementById('piOwnerDevices');
-          if (devCountEl) {
-            devCountEl.textContent = (PT['piholeOwnerDevices'] || '{n}').replace('{n}', String(d.deviceCount));
-          }
-          var devHintEl = document.getElementById('piOwnerDevicesHint');
-          if (devHintEl) devHintEl.textContent = PT['piholeOwnerDevicesHint'] || '';
-        }
-
-        if (scope === 'household') {
-          // household: active client count, no allowed stat
-          var clientsEl = document.getElementById('piActiveClients');
-          if (clientsEl) {
-            clientsEl.textContent = (PT['piholeActiveClients'] || '{n}').replace('{n}', String(d.activeClients || 0));
-          }
-        }
-
-        // ── Zero-queries notice (spec §5) ───────────────────────────────────
-        if (msg) {
-          msg.replaceChildren();
-          if (d.total === 0) {
-            msg.textContent = PT['piholeZeroQueries'] || '';
-            msg.style.display = 'block';
-          } else {
-            msg.style.display = 'none';
-          }
-        }
+        renderPiholeStats(body.data, msg);
       })
       .catch(function () { setLoading(card, false); showError(card, function () { hydratePiholeScope(scope); }); });
   }
@@ -470,7 +480,7 @@
         hydratePiholeScope(piScopeActive);
       });
     }
-    hydratePiholeScope('device');
+    hydratePiholeScope(piScopeActive);
   }
 
   // ─── Boot ───────────────────────────────────────────────────────────────────

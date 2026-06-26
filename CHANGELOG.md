@@ -7,6 +7,13 @@
 
 ---
 
+## [1.101.1] — 2026-06-26
+
+### Änderungen
+- Pi-hole-Portal footgun-Review-Befunde (v5-Isolation + Härtung) (#194)
+
+---
+
 ## [1.101.0] — 2026-06-26
 
 ### Features
