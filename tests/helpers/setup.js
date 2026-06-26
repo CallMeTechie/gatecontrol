@@ -44,6 +44,7 @@ let csrfToken = null;
  * Initialize test app, run migrations, seed admin, authenticate
  */
 async function setup() {
+  process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
   runMigrations();
   await seedAdminUser();
 
@@ -76,6 +77,7 @@ async function setup() {
     gateway_pools_limit: 100,
     share_links: true,
     access_windows: true,
+    midea_integration: true,
   });
 
   app = createApp();
