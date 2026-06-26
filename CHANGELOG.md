@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Midea-Klimasteuerung (TP1): nativer LAN-Protokoll-Port (Discovery/V2/V3) + Midea-Cloud-Login, Admin-Seite `/midea` zum Verbinden, Entdecken und Live-Testen von Klimageräten. Lizenz-gegated über `midea_integration`.
+
+---
+
 ## [1.101.0] — 2026-06-26
 
 ### Features
