@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.1] — 2026-06-26
+
+### Fixes
+- MSmartHome login numeric types — value is illegal (#198)
+
+---
+
 ## [Unreleased]
 
 ### Fixes
