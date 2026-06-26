@@ -163,4 +163,46 @@ router.get('/pihole', (req, res) => {
   }
 });
 
+router.get('/pihole/owner', (req, res) => {
+  try {
+    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
+    const cache = pihole.getCache();
+    if (!license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0) {
+      return res.json({ ok: true, data: null, reason: 'unavailable' });
+    }
+    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
+    if (cache.attribution === 'collapsed') return res.json({ ok: true, data: null, reason: 'collapsed' });
+    const ownerPeerIds = new Set(peers.peersOfOwner(req.portalOwnerId)); // owner id NEVER from req body/query
+    let allowed = 0, blocked = 0; const seen = new Set();
+    for (const c of (cache.topClients || []))        if (ownerPeerIds.has(c.peerId)) { allowed += c.count; seen.add(c.peerId); }
+    for (const c of (cache.topClientsBlocked || [])) if (ownerPeerIds.has(c.peerId)) { blocked += c.count; seen.add(c.peerId); }
+    if (seen.size === 0) return res.json({ ok: true, data: null, reason: 'no_data' });
+    const total = allowed + blocked;
+    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
+    res.json({ ok: true, data: { total, blocked, allowed, blockedPct, deviceCount: seen.size, asOf: cache.lastSyncAt } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /pihole/owner failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+router.get('/pihole/household', (req, res) => {
+  try {
+    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
+    const cache = pihole.getCache();
+    if (!license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0) {
+      return res.json({ ok: true, data: null, reason: 'unavailable' });
+    }
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' }); // trust switch never relaxes household
+    const s = cache.summary;
+    if (!s || !s.queries) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    const total = s.queries.total || 0, blocked = s.queries.blocked || 0;
+    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
+    res.json({ ok: true, data: { total, blocked, blockedPct, activeClients: (s.clients && s.clients.active != null) ? s.clients.active : null, asOf: cache.lastSyncAt } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /pihole/household failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
 module.exports = router;

@@ -29,9 +29,15 @@
   piholeCollapsed:     t('portal.pihole.collapsed'),
   piholeNoData:        t('portal.pihole.no_data'),
   piholeUnidentified:  t('portal.pihole.unidentified'),
-  piholeZeroQueries:   t('portal.pihole.zero_queries')
+  piholeZeroQueries:   t('portal.pihole.zero_queries'),
+  piholeNoOwner:          t('portal.pihole.no_owner'),
+  piholeLoginRequired:    t('portal.pihole.login_required'),
+  piholeLoginLink:        t('portal.pihole.login_link'),
+  piholeOwnerDevices:     t('portal.pihole.owner.devices_in_snapshot'),
+  piholeOwnerDevicesHint: t('portal.pihole.owner.devices_in_snapshot_hint'),
+  piholeActiveClients:    t('portal.pihole.household.active_clients')
 } | dump | safe }}</script>
-<script src="/js/portal.js" defer></script>
+<script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
 <body>
 <div class="wrap">
@@ -117,15 +123,23 @@
     {% if widgets.pihole %}
     <!-- pi-hole / DNS protection -->
     <section class="card c-pihole pihole-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}</h2>
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}
+        <span class="seg pihole-seg" id="piholeSeg">
+          <button data-scope="device" class="on">{{ t('portal.pihole.scope_device') }}</button>
+          <button data-scope="owner">{{ t('portal.pihole.scope_owner') }}</button>
+          <button data-scope="household">{{ t('portal.pihole.scope_household') }}</button>
+        </span>
+      </h2>
       <div class="pihole-body">
         <div class="pihole-rate"><b id="piPct">–</b><span>%</span></div>
         <div class="pihole-bar"><i id="piBar"></i></div>
         <div class="pihole-nums">
           <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
           <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>
-          <div><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
+          <div id="piAllowedWrap"><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
         </div>
+        <div id="piOwnerExtra" style="display:none"><b id="piOwnerDevices"></b> <span class="pihole-hint" id="piOwnerDevicesHint"></span></div>
+        <div id="piHouseholdExtra" style="display:none"><b id="piActiveClients">–</b></div>
         <div class="pihole-foot">{{ t('portal.pihole.foot') }}</div>
       </div>
       <div class="pihole-msg" id="piMsg" style="display:none"></div>

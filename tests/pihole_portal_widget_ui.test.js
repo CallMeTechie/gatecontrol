@@ -16,13 +16,16 @@ test('portal.js has hydratePihole wired to the endpoint + DOM guard', () => {
   assert.ok(/querySelector\(\s*['"]\.pihole-widget['"]\s*\)/.test(js), 'no DOM guard on .pihole-widget');
   assert.ok(/hydratePihole\(\);/.test(js), 'hydratePihole not called at boot');
 });
-test('hydratePihole uses PT for i18n (not undefined I18N) and leaks no raw fields', () => {
+test('hydratePiholeScope uses PT for i18n (not undefined I18N) and leaks no raw fields', () => {
+  // TP2b refactor: the render logic that TP2a kept in hydratePihole() now lives in
+  // hydratePiholeScope(scope); hydratePihole() is a thin delegator that wires the
+  // segment switcher and calls hydratePiholeScope('device'). Inspect the render fn.
   const js = fs.readFileSync(path.join(__dirname,'..','public','js','portal.js'),'utf8');
-  const m = js.match(/function hydratePihole\([\s\S]*?\n  \}/);
-  assert.ok(m, 'hydratePihole not found');
+  const m = js.match(/function hydratePiholeScope\([\s\S]*?\n  \}/);
+  assert.ok(m, 'hydratePiholeScope not found');
   const body = m[0];
   assert.ok(/\bPT\[/.test(body), 'must use PT[key] (the real i18n object, portal.js:14)');
   assert.ok(!/\bI18N\b/.test(body), 'I18N is undefined in portal.js — use PT');
   // client-side structural leak guard (spec §6 test 3, second half): only whitelisted fields
-  assert.ok(!/\.topClients\b|\.clients\b|\.ip\b/.test(body), 'hydratePihole references a raw cache field');
+  assert.ok(!/\.topClients\b|\.clients\b|\.ip\b/.test(body), 'hydratePiholeScope references a raw cache field');
 });
