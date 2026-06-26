@@ -14,4 +14,6 @@ test('portal.js wires scope switching to the 3 endpoints + login affordance, DOM
   // DOM-safety: the login affordance must NOT be built by concatenating i18n text into innerHTML
   assert.ok(!/innerHTML\s*[+=][^;]*PT\.pihole(NoOwner|LoginRequired)/.test(js), 'innerHTML + PT i18n (XSS risk)');
   assert.ok(!/innerHTML\s*[+=][^;]*['"]\/login['"]/.test(js), 'login href via innerHTML');
+  // card-hide on unavailable must be gated to device scope only (owner/household must keep card+switcher visible)
+  assert.ok(/reason\s*===\s*['"]unavailable['"]\s*&&\s*scope\s*===\s*['"]device['"]/.test(js), 'unavailable card-hide must be gated to device scope');
 });

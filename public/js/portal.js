@@ -369,7 +369,7 @@
         var bodyEl = card.querySelector('.pihole-body');
         if (!body.ok || body.data === null) {
           var reason = body.reason;
-          if (reason === 'unavailable') { card.style.display = 'none'; return; }
+          if (reason === 'unavailable' && scope === 'device') { card.style.display = 'none'; return; }
           if (bodyEl) bodyEl.style.display = 'none';
           if (msg) {
             msg.replaceChildren();
