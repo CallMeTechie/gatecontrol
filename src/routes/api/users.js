@@ -155,6 +155,10 @@ router.delete('/:id', (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('error.users.self_delete') });
     }
     users.remove(id);
+    // Invalidate the deleted user's sessions (route-level, like the password-change flow).
+    if (req.sessionStore && typeof req.sessionStore.destroyByUserId === 'function') {
+      req.sessionStore.destroyByUserId(id);
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete user');
