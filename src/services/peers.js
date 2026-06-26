@@ -711,6 +711,14 @@ async function batch(action, ids) {
   return ids.length;
 }
 
+/**
+ * Get all peer IDs owned by a user
+ */
+function peersOfOwner(userId) {
+  if (userId == null) return [];
+  return getDb().prepare('SELECT id FROM peers WHERE user_id = ?').all(userId).map(r => r.id);
+}
+
 module.exports = {
   getAll,
   getById,
@@ -724,4 +732,5 @@ module.exports = {
   batch,
   setHostname,
   markHostnamesStale,
+  peersOfOwner,
 };
