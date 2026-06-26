@@ -1917,6 +1917,8 @@
   "pihole.cfg.manage_chain": "Manage DNS chain",
   "pihole.cfg.manage_chain_hint": "GateControl will set Pi-hole as the DNS upstream in WireGuard. Changes require a WireGuard restart.",
   "pihole.cfg.sync_interval": "Sync interval (seconds)",
+  "pihole.cfg.top_clients_count": "Top clients to fetch",
+  "pihole.cfg.top_clients_count_hint": "How many top clients Pi-hole returns per sync — higher = more complete per-device/per-owner stats. Default 1000.",
   "pihole.cfg.instances_title": "Pi-hole Instances",
   "pihole.cfg.no_instances": "No instances configured",
   "pihole.cfg.add_instance": "Add instance",

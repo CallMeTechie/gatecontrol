@@ -9,12 +9,13 @@ const DEFAULT = {
   enabled: false,
   sync_interval_sec: 30,
   manage_dns_chain: true,
+  top_clients_count: 1000,
   instances: [],
 };
 
 /**
  * Load pihole config from settings, decrypting each instance's app_password.
- * @returns {{ enabled: boolean, sync_interval_sec: number, manage_dns_chain: boolean, instances: Array }}
+ * @returns {{ enabled: boolean, sync_interval_sec: number, manage_dns_chain: boolean, top_clients_count: number, instances: Array }}
  */
 function load() {
   const raw = settings.get(KEY);
@@ -31,7 +32,7 @@ function load() {
 
 /**
  * Save pihole config to settings, encrypting each instance's app_password.
- * @param {{ enabled: boolean, sync_interval_sec: number, manage_dns_chain: boolean, instances: Array }} config
+ * @param {{ enabled: boolean, sync_interval_sec: number, manage_dns_chain: boolean, top_clients_count: number, instances: Array }} config
  */
 function save(config) {
   const instances = (config.instances || []).map((inst) => ({

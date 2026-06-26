@@ -1455,6 +1455,7 @@
       if (enabledEl) enabledEl.classList.toggle('on', !!cfg.enabled);
       if (chainEl) chainEl.classList.toggle('on', !!cfg.manage_dns_chain);
       if (intervalEl) intervalEl.value = cfg.sync_interval_sec || 30;
+      var countEl = document.getElementById('pihole-top-clients-count'); if (countEl) countEl.value = cfg.top_clients_count || 1000;
       phInstances = (cfg.instances || []).slice();
       renderInstances();
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('pihole');
@@ -1713,10 +1714,12 @@
     var enabledEl = document.getElementById('pihole-enabled');
     var chainEl = document.getElementById('pihole-manage-chain');
     var intervalEl = document.getElementById('pihole-sync-interval');
+    var countEl = document.getElementById('pihole-top-clients-count');
     var payload = {
       enabled: enabledEl ? enabledEl.classList.contains('on') : false,
       manage_dns_chain: chainEl ? chainEl.classList.contains('on') : false,
       sync_interval_sec: intervalEl ? (parseInt(intervalEl.value, 10) || 30) : 30,
+      top_clients_count: countEl ? (parseInt(countEl.value, 10) || 1000) : 1000,
       instances: phInstances.map(function (inst) {
         var out = {
           id: inst.id,
@@ -1740,15 +1743,17 @@
   }
 
   var phIntervalEl = document.getElementById('pihole-sync-interval');
+  var phCountEl = document.getElementById('pihole-top-clients-count');
   SettingsAutosave.bind({
     cluster: 'pihole',
-    fields: [enabledToggle, chainToggle, phIntervalEl].filter(Boolean),
+    fields: [enabledToggle, chainToggle, phIntervalEl, phCountEl].filter(Boolean),
     statusEl: document.getElementById('pihole-status'),
     valuesById: function () {
       return {
         'pihole-enabled': enabledToggle ? enabledToggle.classList.contains('on') : false,
         'pihole-manage-chain': chainToggle ? chainToggle.classList.contains('on') : false,
         'pihole-sync-interval': phIntervalEl ? phIntervalEl.value : '30',
+        'pihole-top-clients-count': phCountEl ? phCountEl.value : '1000',
       };
     },
     save: function () { return savePihole(false); },
