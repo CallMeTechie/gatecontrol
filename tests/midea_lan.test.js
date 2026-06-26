@@ -62,6 +62,19 @@ test('detectVersion by magic bytes', () => {
   assert.equal(lan.detectVersion(Buffer.from('3c3f786d', 'hex')), 1); // '<?xm' → V1 XML
 });
 
+test('computeBroadcast derives the subnet-directed broadcast address', () => {
+  assert.equal(lan.computeBroadcast('192.168.1.50', '255.255.255.0'), '192.168.1.255');
+  assert.equal(lan.computeBroadcast('10.0.5.4', '255.255.255.0'), '10.0.5.255');
+  assert.equal(lan.computeBroadcast('172.16.5.4', '255.255.0.0'), '172.16.255.255');
+  assert.equal(lan.computeBroadcast('192.168.1.50', '255.255.255.128'), '192.168.1.127');
+  assert.equal(lan.computeBroadcast('10.1.2.3', '255.0.0.0'), '10.255.255.255');
+  // malformed inputs → null (never throws)
+  assert.equal(lan.computeBroadcast('not-an-ip', '255.255.255.0'), null);
+  assert.equal(lan.computeBroadcast('192.168.1.1', 'bad'), null);
+  assert.equal(lan.computeBroadcast('192.168.1.', '255.255.255.0'), null);   // trailing-dot / empty octet
+  assert.equal(lan.computeBroadcast('192.168.1.999', '255.255.255.0'), null); // out-of-range octet
+});
+
 // ---- LanDevice ----
 
 test('LanDevice requires token/key for V3', () => {

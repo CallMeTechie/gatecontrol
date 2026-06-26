@@ -108,6 +108,40 @@ module.exports = Object.assign(module.exports, {
 
 // ---- Part C: UDP discovery (discover.py) ----
 const dgram = require('node:dgram');
+const os = require('node:os');
+
+// Derive the subnet-directed broadcast address for an IPv4 address+netmask,
+// e.g. ('192.168.1.50','255.255.255.0') → '192.168.1.255'. Returns null on
+// malformed input (never throws).
+function computeBroadcast(address, netmask) {
+  if (typeof address !== 'string' || typeof netmask !== 'string') return null;
+  // /^\d{1,3}$/ rejects empty octets (e.g. a trailing-dot '192.168.1.') and non-digits.
+  const toOctets = (s) => s.split('.').map((o) => (/^\d{1,3}$/.test(o) ? Number(o) : NaN));
+  const a = toOctets(address);
+  const m = toOctets(netmask);
+  if (a.length !== 4 || m.length !== 4) return null;
+  if (a.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+  if (m.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+  return a.map((o, i) => ((o & m[i]) | (~m[i] & 0xff))).join('.');
+}
+
+// Subnet-directed broadcast address per non-internal IPv4 interface. On a
+// multi-homed host (VPN gateway: wg0 + docker + LAN) a single global
+// 255.255.255.255 only egresses one interface; directed broadcasts reach
+// every attached subnet. Deduplicated.
+function subnetBroadcasts() {
+  const out = new Set();
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] || []) {
+      if (ni.internal) continue;
+      if (ni.family !== 'IPv4' && ni.family !== 4) continue;
+      const bc = computeBroadcast(ni.address, ni.netmask);
+      if (bc) out.add(bc);
+    }
+  }
+  return [...out];
+}
 
 // 72-byte broadcast probe — from const.py DISCOVERY_MSG
 const DISCOVERY_MSG = Buffer.from(
@@ -157,13 +191,24 @@ function discover({ timeoutMs = 3000, broadcast = '255.255.255.255', ports = [64
     sock.on('error', () => { try { sock.close(); } catch {} resolve([]); });
     sock.bind(() => {
       sock.setBroadcast(true);
-      for (const port of ports) for (let i = 0; i < 3; i++) sock.send(DISCOVERY_MSG, port, broadcast);
+      // Global broadcast + every interface's subnet-directed broadcast, deduped.
+      const targets = [...new Set([broadcast, ...subnetBroadcasts()])];
+      for (const tgt of targets) {
+        for (const port of ports) {
+          for (let i = 0; i < 3; i++) {
+            // Per-send callback absorbs a single target's failure (e.g. an
+            // interface that rejects directed broadcast) so it can't trip the
+            // socket 'error' handler and abort discovery for all targets.
+            sock.send(DISCOVERY_MSG, port, tgt, () => {});
+          }
+        }
+      }
     });
     setTimeout(() => { try { sock.close(); } catch {} resolve([...found.values()]); }, timeoutMs);
   });
 }
 
-module.exports = Object.assign(module.exports, { detectVersion, parseDiscoveryResponse, discover, DISCOVERY_MSG });
+module.exports = Object.assign(module.exports, { detectVersion, parseDiscoveryResponse, discover, computeBroadcast, subnetBroadcasts, DISCOVERY_MSG });
 
 // ---- Part D: TCP transport LanDevice ----
 const net = require('node:net');
