@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.100.0] — 2026-06-26
+
+### Features
+- Pi-hole DNS-Schutz-Widget pro-Gerät (TP2a, zero-login) (#192)
+
+---
+
 ## [1.99.2] — 2026-06-25
 
 ### Fixes
