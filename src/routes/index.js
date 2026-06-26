@@ -298,7 +298,8 @@ router.get('/api/v1/events', requireAuth, require('./api/events'));
 
 // ─── Portal API (source-IP identity, no session auth) ──────────
 const portalIdentity = require('../middleware/portalIdentity');
-router.use('/api/v1/portal', apiLimiter, portalIdentity, require('./api/portal'));
+const portalOwner = require('../middleware/portalOwner');
+router.use('/api/v1/portal', apiLimiter, portalIdentity, portalOwner, require('./api/portal'));
 
 // ─── Portal page (source-IP identity, no session auth) ─────────
 const portalConfig = require('../services/portalConfig');
