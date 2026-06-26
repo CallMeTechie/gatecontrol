@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.101.0] — 2026-06-26
+
+### Features
+- Pi-hole-Portal-Widget pro-Besitzer + Haushalt (TP2b) (#193)
+
+---
+
 ## [1.100.0] — 2026-06-26
 
 ### Features
