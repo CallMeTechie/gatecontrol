@@ -19,6 +19,10 @@
 
   const $ = (sel) => document.querySelector(sel);
 
+  // Module-scope handles so repeated loadDevices() calls never stack listeners or intervals.
+  let _visController = null;
+  let _visTimer = null;
+
   async function loadDevices() {
     const [{ devices }, statusData] = await Promise.all([
       api('GET', '/devices'),
@@ -59,22 +63,28 @@
       </div>`).join('');
 
     // Page-Visibility-bound cloud refresh: poll Cloud devices while tab is visible, ≥120s interval.
+    // Always tear down the previous listener + interval first so repeated loadDevices() calls
+    // never stack (each call produces exactly one listener and one interval at most).
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      if (_visTimer) { clearInterval(_visTimer); _visTimer = null; }
+      if (_visController) { _visController.abort(); _visController = null; }
+
       const cloudIds = devices.filter((d) => d.transport === 'cloud').map((d) => d.id);
       if (cloudIds.length) {
-        let visTimer = null;
+        _visController = new AbortController();
         const startVis = () => {
-          if (visTimer) return;
-          visTimer = setInterval(() => {
+          if (_visTimer) return;
+          _visTimer = setInterval(() => {
             for (const cid of cloudIds) {
               const row = el.querySelector(`.device-row[data-id="${cid}"]`);
               if (row) refreshState(cid, row);
             }
           }, 120000);
         };
-        const stopVis = () => { clearInterval(visTimer); visTimer = null; };
+        const stopVis = () => { clearInterval(_visTimer); _visTimer = null; };
+        const onVisChange = () => (document.hidden ? stopVis() : startVis());
         if (!document.hidden) startVis();
-        document.addEventListener('visibilitychange', () => document.hidden ? stopVis() : startVis());
+        document.addEventListener('visibilitychange', onVisChange, { signal: _visController.signal });
       }
     }
   }

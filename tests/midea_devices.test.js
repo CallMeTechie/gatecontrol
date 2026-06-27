@@ -233,6 +233,60 @@ test('cloud_needs_reauth is set true when getState receives MIDEA_CLOUD_2FA_REQU
     await midea.getState(d.id);
     assert.equal(midea.getStatus().cloud_needs_reauth, true);
   } finally {
+    // Reset cloudNeedsReauth so it does not leak into subsequent tests.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);           // success path sets cloudNeedsReauth = false
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});
+
+test('cloud_needs_reauth resets to false after successful getState following a 2FA error', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C4', device_sn: 'c-4r', transport: 'cloud', cloud_appliance_id: '2FA-RESET' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  try {
+    // Step 1: trigger 2FA → flag becomes true.
+    cloud.MideaCloud.prototype.sendCommand = async () => {
+      const e = new Error('2FA required');
+      e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+      throw e;
+    };
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, true, '2FA error sets flag');
+    // Step 2: successful command → flag clears to false.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, false, 'successful call clears flag');
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});
+
+test('setState sets cloud_needs_reauth when the write sendCommand throws MIDEA_CLOUD_2FA_REQUIRED', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C5', device_sn: 'c-5w', transport: 'cloud', cloud_appliance_id: 'SET-2FA' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  let callCount = 0;
+  cloud.MideaCloud.prototype.sendCommand = async (_applianceCode, _frame) => {
+    callCount++;
+    if (callCount === 1) return CLOUD_SAMPLE;   // read (query) succeeds
+    const e = new Error('2FA required on write');
+    e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+    throw e;                                     // write (control) triggers 2FA
+  };
+  try {
+    await midea.setState(d.id, { targetTemp: 23 });
+    assert.equal(midea.getStatus().cloud_needs_reauth, true, '2FA on setState write sets flag');
+  } finally {
+    // Reset cloudNeedsReauth for isolation.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);
     cloud.MideaCloud.prototype.sendCommand = origSend;
     midea.stopPolling();
   }
