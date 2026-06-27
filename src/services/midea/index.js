@@ -3,6 +3,7 @@
 const devices = require('./mideaDevices');
 const { LanDevice, discover } = require('./mideaLan');
 const { MideaCloud } = require('./mideaCloud');
+const mideaAc = require('./mideaAc');
 const eventBus = require('../eventBus');
 const license = require('../license');
 const logger = require('../../utils/logger');
@@ -49,6 +50,22 @@ function lanFor(d) {
 async function getState(id) {
   const d = devices.getDevice(id);
   if (!d) throw new Error('device not found');
+
+  if (d.transport === 'cloud') {
+    return withDeviceLock(id, async () => {
+      try {
+        const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildQuery()));
+        const state = mideaAc.parseState(resp);
+        cache.set(id, { state, online: true, lastAt: Date.now() });
+        return state;
+      } catch (err) {
+        logger.debug({ err: err.message, id }, 'midea getState (cloud) failed (offline)');
+        cache.set(id, { state: null, online: false, lastAt: Date.now() });
+        return { offline: true };
+      }
+    });
+  }
+
   return withDeviceLock(id, async () => {
     try {
       const state = await lanFor(d).getState();
@@ -66,6 +83,30 @@ async function getState(id) {
 async function setState(id, patch) {
   const d = devices.getDevice(id);
   if (!d) throw new Error('device not found');
+
+  if (d.transport === 'cloud') {
+    return withDeviceLock(id, async () => {
+      try {
+        // Inline read-modify-write inside the single lock (withDeviceLock is NOT
+        // reentrant — never call the public getState() here).
+        const cur = mideaAc.parseState(
+          await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildQuery())),
+        );
+        const merged = { ...cur, ...patch };
+        const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildSet(merged)));
+        const state = mideaAc.parseState(resp);
+        cache.set(id, { state, online: true, lastAt: Date.now() });
+        eventBus.publish('midea:state', { deviceId: id, state });
+        return state;
+      } catch (err) {
+        // Non-alarming: 2FA-specific handling lands in Task 5, do not throw here.
+        logger.debug({ err: err.message, id }, 'midea setState (cloud) failed (offline)');
+        cache.set(id, { state: null, online: false, lastAt: Date.now() });
+        return { offline: true };
+      }
+    });
+  }
+
   return withDeviceLock(id, async () => {
     const state = await lanFor(d).setState(patch);
     cache.set(id, { state, online: true, lastAt: Date.now() });

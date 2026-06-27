@@ -134,3 +134,62 @@ test('default transport is lan', () => {
   const d = devices.createDevice({ name: 'AC-Lan', device_sn: 'lan-x' });
   assert.equal(d.transport, 'lan');
 });
+
+// ── Orchestrator transport switch (Task 3) ──────────────────────────────────
+
+// Frame parsed by mideaAc.parseState → targetTemp 21, mode 'cool', power true.
+const CLOUD_SAMPLE = Buffer.from(
+  'aa23ac00000000000303c00145660000003c0010045c6b20000000000000000000020d79', 'hex',
+);
+
+function preconfigureCloudSession() {
+  // Provide a session so withCloud()→ensure() skips the real login() call.
+  devices.saveConfig({
+    app: 'msmarthome', email: 't@e.st', password: 'pw',
+    session: { accessToken: 'tok', aesKey: '00'.repeat(16), aesIv: '11'.repeat(16) },
+  });
+}
+
+test('getState for a cloud device routes through mideaCloud.sendCommand, not LanDevice', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C', device_sn: 'c-1', transport: 'cloud', cloud_appliance_id: '999' });
+  const calls = [];
+  const orig = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async function (applianceCode, frame) {
+    calls.push({ applianceCode, frame });
+    return CLOUD_SAMPLE;       // returning a frame proves the LAN path never ran (would connect/timeout)
+  };
+  try {
+    const st = await midea.getState(d.id);
+    assert.equal(st.targetTemp, 21.0);                  // parsed from the stubbed cloud frame
+    assert.equal(calls.length, 1);                      // exactly one cloud round-trip (the query)
+    assert.equal(calls[0].applianceCode, '999');        // addressed by cloud_appliance_id
+    assert.equal(calls[0].frame[9], 0x03);              // FRAME_QUERY frame type
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = orig;
+    midea.stopPolling();
+  }
+});
+
+test('setState for a cloud device does inline read-modify-write via sendCommand, not LanDevice', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C2', device_sn: 'c-2', transport: 'cloud', cloud_appliance_id: '777' });
+  const frameTypes = [];
+  const orig = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async function (applianceCode, frame) {
+    frameTypes.push(frame[9]);
+    return CLOUD_SAMPLE;
+  };
+  try {
+    const st = await midea.setState(d.id, { targetTemp: 23 });
+    assert.deepEqual(frameTypes, [0x03, 0x02]);         // read (query) then write (control) in one lock
+    assert.equal(st.targetTemp, 21.0);                  // parsed from the stubbed control response
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = orig;
+    midea.stopPolling();
+  }
+});
