@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+### Features
+- Midea-Cloud-Steuerung (TP-C): Klimageräte über die Midea-Cloud steuern (dritter Transport neben Direkt-LAN), für cloud-verriegelte Geräte ohne LAN-Token. Derselbe `mideaAc`-Befehls-Frame über den Cloud-`transparent-send`-Endpoint (synchrone Antwort). Minimaler Cloud-Fußabdruck: kein 24/7-Dauer-Polling für Cloud-Geräte (Status aus der Befehlsantwort + manueller Aktualisieren-Button + optionales seitengebundenes Polling), 2FA/Re-Auth als sichtbarer Account-Zustand statt stillem Offline. Lizenz-gegated `midea_integration`, admin-only.
+- Hinweis Credential-Custody: Cloud-Steuerung nutzt das Midea-Konto des Nutzers. Da die Midea-Cloud (Stand Spike) keinen bewiesenen passwortlosen Token-Refresh bietet, speichert GateControl das Midea-Passwort weiterhin verschlüsselt at-rest (`iv:tag:ct`), damit das automatische Re-Login funktioniert. Bewusste Produkt-Haftungs-Entscheidung; ein passwortloser Token-Refresh-Pfad ist Folgearbeit.
+
 ### Fixes
 - Midea: MSmartHome-Cloud-Login — Anfrage-Felder `format`/`clientType`/`platform` jetzt als Zahlen (statt Strings) gemäß Referenz; behebt die Cloud-Ablehnung „value is illegal". Fehlermeldungen führen nun den Midea-Fehlercode mit.
 
