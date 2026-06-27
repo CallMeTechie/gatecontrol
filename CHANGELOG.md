@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.3] — 2026-06-27
+
+### Änderungen
+- Midea-Cloud-Steuerung (TP-C) — dritter Transport (Cloud transparent-send)
+
+---
+
 ## [1.103.2] — 2026-06-26
 
 ### Änderungen
