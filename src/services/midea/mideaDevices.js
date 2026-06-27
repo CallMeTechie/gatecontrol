@@ -20,6 +20,8 @@ function rowToPublic(row) {
     protocol_version: row.protocol_version,
     model: row.model,
     enabled: row.enabled === 1,
+    transport: row.transport,
+    cloud_appliance_id: row.cloud_appliance_id,
     last_seen_at: row.last_seen_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -56,8 +58,8 @@ function createDevice(data) {
   const db = getDb();
   const info = db.prepare(`
     INSERT INTO midea_devices
-      (name, device_sn, device_id, ip, port, protocol_version, token_enc, key_enc, model, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (name, device_sn, device_id, ip, port, protocol_version, token_enc, key_enc, model, enabled, transport, cloud_appliance_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.name,
     data.device_sn,
@@ -69,11 +71,13 @@ function createDevice(data) {
     data.key ? encrypt(data.key) : null,
     data.model ?? null,
     data.enabled === false ? 0 : 1,
+    data.transport ?? 'lan',
+    data.cloud_appliance_id ?? null,
   );
   return getDevice(info.lastInsertRowid);
 }
 
-const FIELD_MAP = { name: 'name', ip: 'ip', port: 'port', model: 'model', device_id: 'device_id', last_seen_at: 'last_seen_at' };
+const FIELD_MAP = { name: 'name', ip: 'ip', port: 'port', model: 'model', device_id: 'device_id', last_seen_at: 'last_seen_at', transport: 'transport', cloud_appliance_id: 'cloud_appliance_id' };
 
 function updateDevice(id, patch) {
   const db = getDb();

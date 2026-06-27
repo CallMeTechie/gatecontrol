@@ -1080,6 +1080,13 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS idx_midea_enabled ON midea_devices(enabled);`,
     detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='midea_devices'").get(),
   },
+  {
+    version: 61,
+    name: 'midea_devices_cloud_transport',
+    sql: `ALTER TABLE midea_devices ADD COLUMN transport TEXT NOT NULL DEFAULT 'lan';
+          ALTER TABLE midea_devices ADD COLUMN cloud_appliance_id TEXT;`,
+    detect: (db) => hasColumn(db, 'midea_devices', 'transport'),
+  },
 ];
 
 module.exports = { migrations };

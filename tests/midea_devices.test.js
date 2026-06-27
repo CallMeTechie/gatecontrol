@@ -121,3 +121,16 @@ test('startPolling is a no-op under revoked license (feature gate)', () => {
     midea.stopPolling();                  // ensure no timer leaks out of the test
   }
 });
+
+test('createDevice persists transport + cloud_appliance_id', () => {
+  const d = devices.createDevice({ name: 'AC-Cloud', device_sn: 'cloud-1', transport: 'cloud', cloud_appliance_id: '153931628798542' });
+  assert.equal(d.transport, 'cloud');
+  assert.equal(d.cloud_appliance_id, '153931628798542');
+  const got = devices.getDevice(d.id);
+  assert.equal(got.transport, 'cloud');
+  assert.equal(got.cloud_appliance_id, '153931628798542');
+});
+test('default transport is lan', () => {
+  const d = devices.createDevice({ name: 'AC-Lan', device_sn: 'lan-x' });
+  assert.equal(d.transport, 'lan');
+});
