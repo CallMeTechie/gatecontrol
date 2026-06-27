@@ -85,6 +85,7 @@
 
     <form method="POST" action="/login">
       <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      {% if returnTo %}<input type="hidden" name="returnTo" value="{{ returnTo }}">{% endif %}
       <div class="login-field">
         <label for="username">{{ t('auth.username') }}</label>
         <input type="text" id="username" name="username" autocomplete="username" autofocus required maxlength="64">

@@ -87,11 +87,20 @@ function requireAuth(req, res, next) {
   return res.redirect('/login');
 }
 
+// Validate a post-login `returnTo` target. Internal-only and deliberately
+// restricted to the portal path so a portal login returns to the portal —
+// never an open redirect. Rejects protocol-relative (`//host`), backslash
+// tricks, and any non-portal path (which falls back to the admin default).
+function safeReturnTo(v) {
+  if (typeof v !== 'string' || v.includes('\\')) return null;
+  return /^\/portal(?:[/?#]|$)/.test(v) ? v : null;
+}
+
 function guestOnly(req, res, next) {
   if (req.session && req.session.userId) {
-    return res.redirect('/');
+    return res.redirect(safeReturnTo(req.query && req.query.returnTo) || '/');
   }
   return next();
 }
 
-module.exports = { requireAuth, guestOnly };
+module.exports = { requireAuth, guestOnly, safeReturnTo };

@@ -7,6 +7,7 @@ const { ensureCsrfToken } = require('../middleware/csrf');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
+const { safeReturnTo } = require('../middleware/auth');
 
 // Precomputed dummy argon2id hash used when the username does not exist,
 // so verify() runs against a real hash and attackers cannot enumerate
@@ -24,11 +25,16 @@ const authRoutes = {
     res.render(`${res.locals.theme}/pages/login.njk`, {
       title: res.locals.t('auth.login'),
       layout: false,
+      // Carry a validated portal returnTo through the form so the POST can
+      // send the user back to the portal after login (empty = admin default).
+      returnTo: safeReturnTo(req.query && req.query.returnTo) || '',
     });
   },
 
   async login(req, res) {
     const { username, password } = req.body;
+    // Validated internal-only redirect target (portal path); null → /dashboard.
+    const returnTo = safeReturnTo(req.body && req.body.returnTo);
 
     if (!username || !password) {
       setFlash(req, 'error', res.locals.t('auth.error_required'));
@@ -95,7 +101,7 @@ const authRoutes = {
         req.session.language = language;
 
         logger.info({ username, ip: req.ip }, 'Successful login');
-        return res.redirect('/dashboard');
+        return res.redirect(returnTo || '/dashboard');
       });
     } catch (err) {
       logger.error({ err }, 'Login error');

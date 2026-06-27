@@ -1949,6 +1949,7 @@
   "portal.greeting_home": "Welcome Home",
   "portal.greeting_sub": "Your VPN is active — here's everything at a glance.",
   "portal.login": "Login",
+  "portal.logout": "Log out",
   "portal.theme_toggle": "Toggle theme",
   "portal.devpill.title": "Your device",
   "portal.device.title": "Device",
