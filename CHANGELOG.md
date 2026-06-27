@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.4] — 2026-06-27
+
+### Änderungen
+- Portal-Login-Fix (returnTo aufs Portal + Header-Login-Zustand)
+
+---
+
 ## [1.103.3] — 2026-06-27
 
 ### Änderungen
