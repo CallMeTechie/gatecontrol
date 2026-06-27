@@ -2085,5 +2085,6 @@
   "midea.transport.cloud": "Cloud",
   "error.midea.cloud_appliance_id_required": "Cloud-Geräte-ID ist erforderlich",
   "midea.device.refresh": "Aktualisieren",
-  "midea.cloud.reauth": "Cloud-Konto braucht erneute Bestätigung — in der Midea-App bestätigen, dann erneut versuchen"
+  "midea.cloud.reauth": "Cloud-Konto braucht erneute Bestätigung — in der Midea-App bestätigen, dann erneut versuchen",
+  "midea.cloud.usage_hint": "Cloud-Geräte werden über Ihr eigenes Midea-Konto gesteuert. Intensive Nutzung kann zu vorübergehenden Konto-Sperren bei Midea führen; ohne geöffnete Seite ist der Status evtl. nicht tagesaktuell."
 }
