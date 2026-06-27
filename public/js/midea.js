@@ -74,10 +74,14 @@
         _visController = new AbortController();
         const startVis = () => {
           if (_visTimer) return;
-          _visTimer = setInterval(() => {
+          _visTimer = setInterval(async () => {
             for (const cid of cloudIds) {
               const row = el.querySelector(`.device-row[data-id="${cid}"]`);
-              if (row) refreshState(cid, row);
+              if (row) {
+                // eslint-disable-next-line no-await-in-loop
+                const r = await refreshState(cid, row);
+                if (r && r.suspend) { clearInterval(_visTimer); _visTimer = null; break; }
+              }
             }
           }, 120000);
         };
@@ -95,7 +99,11 @@
       row.querySelector('.device-state').textContent = state.offline
         ? T('midea.device.offline')
         : `${state.power ? T('midea.device.on') : T('midea.device.off')} · ${T('midea.device.indoor')} ${state.indoorTemp}° · → ${state.targetTemp}° · ${T('midea.mode.' + state.mode)}`;
-    } catch (e) { row.querySelector('.device-state').textContent = e.message; }
+      return { suspend: !!state.offline };
+    } catch (e) {
+      row.querySelector('.device-state').textContent = e.message;
+      return { suspend: e.code === 'MIDEA_CLOUD_RATE_LIMITED' };
+    }
   }
 
   document.addEventListener('click', async (ev) => {

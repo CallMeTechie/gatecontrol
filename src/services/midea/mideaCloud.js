@@ -277,8 +277,10 @@ class MideaCloud {
           const { aesKey, aesIv } = deriveSessionKeys(this.cfg.loginKey, r.accessToken, r.randomData);
           session.aesKey = aesKey.toString('hex');
           session.aesIv = aesIv.toString('hex');
-        } catch (_e) {
+        } catch (e) {
           // Leave the session keys unset; sendCommand will throw a clear error if used.
+          // eslint-disable-next-line no-console
+          console.warn('midea: session key derivation failed:', e && e.message);
         }
       }
       this.session = session;
@@ -350,7 +352,7 @@ class MideaCloud {
     const orderPlain = Buffer.from(Array.from(frame).join(','), 'ascii');   // comma-decimal
     const order = sessionCbcEncrypt(aesKey, aesIv, orderPlain).toString('hex');
 
-    const maxAttempts = this.sendCommandRetries || 3;
+    const maxAttempts = this.sendCommandRetries ?? 3;
     const backoffMs = this.sendCommandBackoffMs == null ? 1500 : this.sendCommandBackoffMs;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
