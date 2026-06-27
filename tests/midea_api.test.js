@@ -47,3 +47,19 @@ test('unauthenticated request → 401 (admin guard precedes requireFeature)', as
 test('GET /midea renders without 500', async () => {
   await agent.get('/midea').expect(200);
 });
+
+test('POST /devices with transport=cloud creates a cloud device', async () => {
+  const res = await agent.post('/api/v1/midea/devices')
+    .set('x-csrf-token', csrfToken)
+    .send({ transport: 'cloud', cloud_appliance_id: '153931628798542', name: 'Klima' })
+    .expect(200);
+  assert.equal(res.body.device.transport, 'cloud');
+  assert.equal(res.body.device.has_credentials, false);
+});
+
+test('POST /devices with transport=cloud and no cloud_appliance_id → 400', async () => {
+  await agent.post('/api/v1/midea/devices')
+    .set('x-csrf-token', csrfToken)
+    .send({ transport: 'cloud' })
+    .expect(400);
+});

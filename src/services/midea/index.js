@@ -169,7 +169,27 @@ async function listCloudDevices() {
 
 // ── Add device (V3 transactional: token fetched BEFORE persistence) ───────────
 
-async function addDevice({ sn, name, ip }) {
+async function addDevice({ sn, name, ip, transport, cloud_appliance_id }) {
+  // ── Cloud-only path ───────────────────────────────────────────────────────
+  if (transport === 'cloud') {
+    if (!cloud_appliance_id) throw new Error('cloud_appliance_id required');
+    const deviceSn = 'cloud-' + cloud_appliance_id;
+    if (devices.listDevices().some((x) => x.device_sn === deviceSn)) {
+      const e = new Error('device already added');
+      e.code = 'MIDEA_DEVICE_EXISTS';
+      throw e;
+    }
+    const d = devices.createDevice({
+      name: name || `Midea Cloud ${cloud_appliance_id}`,
+      device_sn: deviceSn,
+      transport: 'cloud',
+      cloud_appliance_id,
+    });
+    // No ensurePolling() for cloud devices (Task 5 handles cloud polling).
+    const { token: _t, key: _k, ...redacted } = d;
+    return { ...redacted, has_credentials: false };
+  }
+
   if (!sn && !ip) throw new Error('sn or ip required');
 
   // Duplicate pre-check BEFORE expensive cloud calls

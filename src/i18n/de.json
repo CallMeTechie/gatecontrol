@@ -2080,5 +2080,8 @@
   "midea.mode.dry": "Entfeuchten",
   "midea.mode.fan": "Lüften",
   "error.midea.email_password_required": "E-Mail und Passwort sind erforderlich",
-  "error.midea.sn_or_ip_required": "Geräte-SN oder IP ist erforderlich"
+  "error.midea.sn_or_ip_required": "Geräte-SN oder IP ist erforderlich",
+  "midea.cloud.add": "Hinzufügen (Cloud)",
+  "midea.transport.cloud": "Cloud",
+  "error.midea.cloud_appliance_id_required": "Cloud-Geräte-ID ist erforderlich"
 }

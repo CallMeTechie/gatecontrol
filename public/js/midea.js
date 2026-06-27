@@ -25,7 +25,9 @@
     if (!devices.length) { el.innerHTML = `<p class="muted">${T('midea.devices.none')}</p>`; return; }
     el.innerHTML = devices.map((d) => `
       <div class="device-row" data-id="${d.id}">
-        <strong>${esc(d.name)}</strong> <span class="muted">${esc(d.ip || '')} · v${d.protocol_version}</span>
+        <strong>${esc(d.name)}</strong> ${d.transport === 'cloud'
+          ? `<span class="muted tag">${esc(T('midea.transport.cloud'))}</span>`
+          : `<span class="muted">${esc(d.ip || '')} · v${d.protocol_version}</span>`}
         <span class="device-state"></span>
         <label>${T('midea.device.target')} <input type="number" step="0.5" min="16" max="30" data-act="target" style="width:5em"></label>
         <select data-act="mode">
@@ -92,6 +94,7 @@
         <div class="cloud-row">
           <span>${esc(d.name)} <span class="muted">${esc(d.sn)}</span></span>
           <button class="btn btn-sm" data-add="${esc(d.sn)}" data-name="${esc(d.name)}">${T('midea.devices.add')}</button>
+          <button class="btn btn-sm" data-cloud-id="${esc(String(d.id))}" data-name="${esc(d.name)}">${T('midea.cloud.add')}</button>
         </div>`).join('');
       // Populate the manual-by-IP cloud-device picker (keep the static first
       // "no cloud" option; append cloud entries via DOM API → XSS-safe).
@@ -114,6 +117,16 @@
     add.disabled = true;
     try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); }
     catch (e) { alert(e.message); } finally { add.disabled = false; }
+  });
+
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-cloud-id]');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      await api('POST', '/devices', { transport: 'cloud', cloud_appliance_id: btn.dataset.cloudId, name: btn.dataset.name });
+      await loadDevices();
+    } catch (e) { alert(e.message); } finally { btn.disabled = false; }
   });
 
   $('#midea-discover').addEventListener('click', async () => {

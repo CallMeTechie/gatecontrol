@@ -2080,5 +2080,8 @@
   "midea.mode.dry": "Dry",
   "midea.mode.fan": "Fan",
   "error.midea.email_password_required": "Email and password are required",
-  "error.midea.sn_or_ip_required": "Device SN or IP is required"
+  "error.midea.sn_or_ip_required": "Device SN or IP is required",
+  "midea.cloud.add": "Add (Cloud)",
+  "midea.transport.cloud": "Cloud",
+  "error.midea.cloud_appliance_id_required": "Cloud appliance ID is required"
 }
