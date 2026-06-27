@@ -20,8 +20,27 @@
   const $ = (sel) => document.querySelector(sel);
 
   async function loadDevices() {
-    const { devices } = await api('GET', '/devices');
+    const [{ devices }, statusData] = await Promise.all([
+      api('GET', '/devices'),
+      api('GET', '/status').catch(() => ({})),
+    ]);
     const el = $('#midea-devices');
+
+    // Re-auth banner: show when cloud account needs re-authentication.
+    let banner = el.previousElementSibling && el.previousElementSibling.dataset.role === 'reauth-banner'
+      ? el.previousElementSibling : null;
+    if (statusData.cloud_needs_reauth) {
+      if (!banner) {
+        banner = document.createElement('p');
+        banner.dataset.role = 'reauth-banner';
+        banner.style.cssText = 'color:var(--color-danger,#d9534f);margin-bottom:8px';
+        el.parentNode.insertBefore(banner, el);
+      }
+      banner.textContent = T('midea.cloud.reauth');
+    } else if (banner) {
+      banner.remove();
+    }
+
     if (!devices.length) { el.innerHTML = `<p class="muted">${T('midea.devices.none')}</p>`; return; }
     el.innerHTML = devices.map((d) => `
       <div class="device-row" data-id="${d.id}">
@@ -32,11 +51,32 @@
         <label>${T('midea.device.target')} <input type="number" step="0.5" min="16" max="30" data-act="target" style="width:5em"></label>
         <select data-act="mode">
           ${['auto','cool','heat','dry','fan'].map((m) => `<option value="${m}">${T('midea.mode.' + m)}</option>`).join('')}
-        </select>
-        <button class="btn btn-sm" data-act="test">${T('midea.device.test')}</button>
+        </select>${d.transport === 'cloud'
+          ? `\n        <button class="btn btn-sm" data-act="refresh">${T('midea.device.refresh')}</button>`
+          : `\n        <button class="btn btn-sm" data-act="test">${T('midea.device.test')}</button>`}
         <button class="btn btn-sm" data-act="power">${T('midea.device.power')}</button>
         <button class="btn btn-sm" data-act="remove">${T('midea.device.remove')}</button>
       </div>`).join('');
+
+    // Page-Visibility-bound cloud refresh: poll Cloud devices while tab is visible, ≥120s interval.
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      const cloudIds = devices.filter((d) => d.transport === 'cloud').map((d) => d.id);
+      if (cloudIds.length) {
+        let visTimer = null;
+        const startVis = () => {
+          if (visTimer) return;
+          visTimer = setInterval(() => {
+            for (const cid of cloudIds) {
+              const row = el.querySelector(`.device-row[data-id="${cid}"]`);
+              if (row) refreshState(cid, row);
+            }
+          }, 120000);
+        };
+        const stopVis = () => { clearInterval(visTimer); visTimer = null; };
+        if (!document.hidden) startVis();
+        document.addEventListener('visibilitychange', () => document.hidden ? stopVis() : startVis());
+      }
+    }
   }
 
   async function refreshState(id, row) {
@@ -55,6 +95,7 @@
     const id = row.dataset.id;
     try {
       if (btn.dataset.act === 'test') { await api('POST', `/devices/${id}/test`); await refreshState(id, row); }
+      if (btn.dataset.act === 'refresh') { await refreshState(id, row); }
       if (btn.dataset.act === 'power') {
         const { state } = await api('GET', `/devices/${id}/state`);
         await api('POST', `/devices/${id}/state`, { patch: { power: !(state && state.power) } });

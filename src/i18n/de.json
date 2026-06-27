@@ -2083,5 +2083,7 @@
   "error.midea.sn_or_ip_required": "Geräte-SN oder IP ist erforderlich",
   "midea.cloud.add": "Hinzufügen (Cloud)",
   "midea.transport.cloud": "Cloud",
-  "error.midea.cloud_appliance_id_required": "Cloud-Geräte-ID ist erforderlich"
+  "error.midea.cloud_appliance_id_required": "Cloud-Geräte-ID ist erforderlich",
+  "midea.device.refresh": "Aktualisieren",
+  "midea.cloud.reauth": "Cloud-Konto braucht erneute Bestätigung — in der Midea-App bestätigen, dann erneut versuchen"
 }

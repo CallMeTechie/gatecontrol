@@ -193,3 +193,47 @@ test('setState for a cloud device does inline read-modify-write via sendCommand,
     midea.stopPolling();
   }
 });
+
+// ── Task 5: minimal cloud footprint ────────────────────────────────────────
+
+test('pollTick skips cloud devices (no cloud sendCommand) but polls lan devices', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  let cloudCalls = 0;
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async () => { cloudCalls++; return Buffer.alloc(0); };
+  try {
+    devices.createDevice({ name: 'C', device_sn: 'c-2', transport: 'cloud', cloud_appliance_id: '1', enabled: true });
+    await midea.pollTick();                  // ein Tick, ohne Timer
+    assert.equal(cloudCalls, 0);             // Cloud-Gerät NICHT automatisch gepollt
+  } finally { cloud.MideaCloud.prototype.sendCommand = origSend; midea.stopPolling(); }
+});
+
+test('getStatus includes transport per device and cloud_needs_reauth boolean', () => {
+  const midea = require('../src/services/midea');
+  devices.createDevice({ name: 'AC-T', device_sn: 'lan-t', ip: '10.0.0.1' });
+  const status = midea.getStatus();
+  assert.equal(typeof status.cloud_needs_reauth, 'boolean');
+  assert.ok(status.devices.length > 0);
+  assert.ok('transport' in status.devices[0]);
+});
+
+test('cloud_needs_reauth is set true when getState receives MIDEA_CLOUD_2FA_REQUIRED', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C3', device_sn: 'c-3', transport: 'cloud', cloud_appliance_id: '2FA' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async () => {
+    const e = new Error('2FA required');
+    e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+    throw e;
+  };
+  try {
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, true);
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});

@@ -63,3 +63,11 @@ test('POST /devices with transport=cloud and no cloud_appliance_id → 400', asy
     .send({ transport: 'cloud' })
     .expect(400);
 });
+
+test('GET /api/v1/midea/status includes cloud_needs_reauth boolean and device transport', async () => {
+  const res = await agent.get('/api/v1/midea/status').expect(200);
+  assert.equal(typeof res.body.cloud_needs_reauth, 'boolean');
+  for (const d of res.body.devices) {
+    assert.ok('transport' in d, 'each device has transport field');
+  }
+});

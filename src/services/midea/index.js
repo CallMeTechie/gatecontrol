@@ -16,6 +16,7 @@ const locks = new Map();          // deviceId -> Promise chain tail
 const lockDepth = new Map();      // deviceId -> active operation count
 let pollTimer = null;
 let lastPollAt = null;
+let cloudNeedsReauth = false;     // set true on 2FA error, cleared on successful cloud command
 
 // ── Per-device mutex ──────────────────────────────────────────────────────────
 
@@ -56,9 +57,11 @@ async function getState(id) {
       try {
         const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildQuery()));
         const state = mideaAc.parseState(resp);
+        cloudNeedsReauth = false;
         cache.set(id, { state, online: true, lastAt: Date.now() });
         return state;
       } catch (err) {
+        if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') cloudNeedsReauth = true;
         logger.debug({ err: err.message, id }, 'midea getState (cloud) failed (offline)');
         cache.set(id, { state: null, online: false, lastAt: Date.now() });
         return { offline: true };
@@ -95,11 +98,12 @@ async function setState(id, patch) {
         const merged = { ...cur, ...patch };
         const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildSet(merged)));
         const state = mideaAc.parseState(resp);
+        cloudNeedsReauth = false;
         cache.set(id, { state, online: true, lastAt: Date.now() });
         eventBus.publish('midea:state', { deviceId: id, state });
         return state;
       } catch (err) {
-        // Non-alarming: 2FA-specific handling lands in Task 5, do not throw here.
+        if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') cloudNeedsReauth = true;
         logger.debug({ err: err.message, id }, 'midea setState (cloud) failed (offline)');
         cache.set(id, { state: null, online: false, lastAt: Date.now() });
         return { offline: true };
@@ -274,9 +278,10 @@ function getStatus() {
   return {
     devices: devices.listDevicesRedacted().map((d) => {
       const c = cache.get(d.id) || {};
-      return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(c.online), state: c.state || null };
+      return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(c.online), state: c.state || null, transport: d.transport };
     }),
     lastPollAt,
+    cloud_needs_reauth: cloudNeedsReauth,
   };
 }
 
@@ -296,6 +301,7 @@ async function pollTick() {
   try {
     for (const d of devices.listDevices()) {
       if (!d.enabled) continue;
+      if (d.transport === 'cloud') continue;         // no 24/7 cloud polling (Task 5)
       if (lockDepth.get(d.id)) continue;            // skip devices with active queue (Spec §8)
       try { await getState(d.id); } catch { /* offline handled internally */ }
     }
@@ -324,5 +330,5 @@ function stopPolling() {
 module.exports = {
   connectCloud, listCloudDevices, addDevice, discoverLan,
   getDevices, getState, setState, testConnection, removeDevice,
-  getStatus, startPolling, stopPolling, withDeviceLock,
+  getStatus, startPolling, stopPolling, pollTick, withDeviceLock,
 };

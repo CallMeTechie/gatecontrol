@@ -2083,5 +2083,7 @@
   "error.midea.sn_or_ip_required": "Device SN or IP is required",
   "midea.cloud.add": "Add (Cloud)",
   "midea.transport.cloud": "Cloud",
-  "error.midea.cloud_appliance_id_required": "Cloud appliance ID is required"
+  "error.midea.cloud_appliance_id_required": "Cloud appliance ID is required",
+  "midea.device.refresh": "Refresh",
+  "midea.cloud.reauth": "Cloud account needs re-authentication — confirm in the Midea app, then retry"
 }
