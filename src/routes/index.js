@@ -311,6 +311,9 @@ router.get('/portal', portalIdentity, (req, res) => {
     widgets: cfg.widgets,
     deviceName: req.portalPeerName,   // null → generic welcome
     identified: req.portalPeerId != null,
+    // Reflect the (host-scoped) session so the header shows Login vs Logout.
+    // csrfToken for the logout form is already a res.local (injectCsrfToken).
+    loggedIn: !!(req.session && req.session.userId),
   });
 });
 
