@@ -32,6 +32,41 @@ class MideaCloudError extends Error {
 
 function hexToken(n) { return crypto.randomBytes(n).toString('hex'); }
 
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// ---- transparent-send session codec (NOT the app-key ECB codec in mideaCrypto) ----
+// AES-128-CBC with PKCS7 and the per-session DERIVED IV. Used for `order` (outbound
+// command) and `reply` (inbound state frame). The existing mideaCrypto.encryptAesCbc
+// (IV=0, no padding) and encryptAesEcb (app-key) are the WRONG codecs for this path
+// (the latter produced 解密失败/1011 live).
+function cbcAlgo(key) { return key.length === 32 ? 'aes-256-cbc' : 'aes-128-cbc'; }
+function sessionCbcEncrypt(key, iv, buf) {
+  const c = crypto.createCipheriv(cbcAlgo(key), key, iv);
+  c.setAutoPadding(true);
+  return Buffer.concat([c.update(buf), c.final()]);
+}
+function sessionCbcDecrypt(key, iv, buf) {
+  const d = crypto.createDecipheriv(cbcAlgo(key), key, iv);
+  d.setAutoPadding(true);
+  return Buffer.concat([d.update(buf), d.final()]);
+}
+
+/**
+ * Derive the per-session AES key + IV from the login response.
+ * The top-level login response carries `accessToken` (64-hex = encrypted key) and
+ * `randomData` (64-hex = encrypted IV). Decrypt both with a key/iv derived from the
+ * app loginKey: tmp = sha256(loginKey).hex; tmpKey = ascii(tmp[0:16]); tmpIv = ascii(tmp[16:32]).
+ * Matches midealocal MSmartCloudSecurity.set_aes_keys. Returns 16-byte Buffers.
+ */
+function deriveSessionKeys(loginKey, encAccessTokenHex, encRandomDataHex) {
+  const tmp = sha256(Buffer.from(loginKey, 'ascii')).toString('hex');
+  const tmpKey = Buffer.from(tmp.slice(0, 16), 'ascii');
+  const tmpIv = Buffer.from(tmp.slice(16, 32), 'ascii');
+  const aesKey = sessionCbcDecrypt(tmpKey, tmpIv, Buffer.from(encAccessTokenHex, 'hex'));
+  const aesIv = sessionCbcDecrypt(tmpKey, tmpIv, Buffer.from(encRandomDataHex, 'hex'));
+  return { aesKey, aesIv };
+}
+
 /**
  * Compute the udpid for a device id byte buffer (6 bytes).
  * udpid = strxor(sha256(idBytes)[0:16], sha256(idBytes)[16:32]).hex()
@@ -153,11 +188,16 @@ class MideaCloud {
   _mapError(code, msg) {
     const m = String(msg || '').toLowerCase();
     if (m.includes('2fa') || m.includes('verification') || m.includes('captcha')) {
-      return new MideaCloudError(msg || '2FA required', 'MIDEA_CLOUD_2FA_REQUIRED');
+      const err = new MideaCloudError(msg || '2FA required', 'MIDEA_CLOUD_2FA_REQUIRED');
+      err.mideaCode = String(code);
+      return err;
     }
     // Surface the Midea error code so an unverified cloud schema can be diagnosed
     // from the user-visible message (e.g. "value is illegal (Midea-Code 1010)").
-    return new MideaCloudError(`${msg || 'cloud error'} (Midea-Code ${code})`, 'MIDEA_CLOUD_ERROR');
+    const err = new MideaCloudError(`${msg || 'cloud error'} (Midea-Code ${code})`, 'MIDEA_CLOUD_ERROR');
+    // Raw numeric Midea code, for callers that branch on it (e.g. 3176 retry).
+    err.mideaCode = String(code);
+    return err;
   }
 
   async _getLoginId(account) {
@@ -227,7 +267,23 @@ class MideaCloud {
       }, { raw: true });
       // accessToken lives in mdata per cloud.py:306
       const accessToken = r.mdata ? r.mdata.accessToken : r.accessToken;
-      this.session = { accessToken, loginId, email };
+      const session = { accessToken, loginId, email };
+      // Capture the per-session AES key/IV for transparent-send (live-validated path).
+      // The top-level response carries encrypted accessToken/randomData; the bearer
+      // header still comes from mdata.accessToken (above) — these are different values.
+      // Stored as hex so they survive JSON saveConfig/loadConfig + setSession.
+      if (r.accessToken && r.randomData) {
+        try {
+          const { aesKey, aesIv } = deriveSessionKeys(this.cfg.loginKey, r.accessToken, r.randomData);
+          session.aesKey = aesKey.toString('hex');
+          session.aesIv = aesIv.toString('hex');
+        } catch (e) {
+          // Leave the session keys unset; sendCommand will throw a clear error if used.
+          // eslint-disable-next-line no-console
+          console.warn('midea: session key derivation failed:', e && e.message);
+        }
+      }
+      this.session = session;
     }
     return { ok: true, accountId: loginId };
   }
@@ -271,6 +327,60 @@ class MideaCloud {
       if (entry) return { token: entry.token, key: entry.key };
     }
     throw new MideaCloudError('no token for device', 'MIDEA_CLOUD_NO_TOKEN');
+  }
+
+  /**
+   * Send a 0xAA AC frame to a device via the cloud transparent-send transport and
+   * return the device's SYNCHRONOUS reply frame (decrypted) as a Buffer.
+   *
+   * @param {string|number} applianceCode  the numeric cloud appliance id (e.g. "153931628798542").
+   * @param {Buffer} frame                 a frame from mideaAc.buildQuery/buildSet.
+   * @returns {Promise<Buffer>}            the decrypted reply state frame (parse later via mideaAc.parseState).
+   *
+   * Outbound `order` = hex(AES-128-CBC-PKCS7(ascii(comma-decimal bytes))) with the
+   * per-session key/IV. Inbound `data.reply` (hex) decrypts the same way to a
+   * comma-decimal ASCII string → bytes. The cloud occasionally answers code 3176
+   * ("asyn reply does not exist") = the device did not reply in time and the command
+   * may NOT have been applied; we retry with a short backoff before giving up.
+   */
+  async sendCommand(applianceCode, frame) {
+    if (!this.session || !this.session.aesKey || !this.session.aesIv) {
+      throw new MideaCloudError('no session key (login required)', 'MIDEA_CLOUD_NO_SESSION');
+    }
+    const aesKey = Buffer.from(this.session.aesKey, 'hex');
+    const aesIv = Buffer.from(this.session.aesIv, 'hex');
+    const orderPlain = Buffer.from(Array.from(frame).join(','), 'ascii');   // comma-decimal
+    const order = sessionCbcEncrypt(aesKey, aesIv, orderPlain).toString('hex');
+
+    const maxAttempts = this.sendCommandRetries ?? 3;
+    const backoffMs = this.sendCommandBackoffMs == null ? 1500 : this.sendCommandBackoffMs;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let data;
+      try {
+        data = await this._request('/v1/appliance/transparent/send', {
+          applianceCode: String(applianceCode),
+          order,
+          funId: 0,
+          waitResp: true,
+          isFull: false,
+        });
+      } catch (e) {
+        // 3176 = the device's async reply didn't arrive in the waitResp window.
+        if (e && e.mideaCode === '3176') {
+          if (attempt < maxAttempts) { await sleep(backoffMs); continue; }
+          throw new MideaCloudError('device did not reply in time (Midea-Code 3176)', 'MIDEA_CLOUD_NO_REPLY');
+        }
+        throw e;
+      }
+      if (!data || !data.reply) {
+        throw new MideaCloudError('cloud reply missing', 'MIDEA_CLOUD_NO_REPLY');
+      }
+      const replyBytes = sessionCbcDecrypt(aesKey, aesIv, Buffer.from(data.reply, 'hex'));
+      return Buffer.from(replyBytes.toString('ascii').split(',').map((n) => parseInt(n, 10) & 0xff));
+    }
+    // Unreachable: the loop either returns or throws.
+    throw new MideaCloudError('device did not reply in time', 'MIDEA_CLOUD_NO_REPLY');
   }
 }
 

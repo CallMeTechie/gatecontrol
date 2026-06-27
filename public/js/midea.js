@@ -19,22 +19,78 @@
 
   const $ = (sel) => document.querySelector(sel);
 
+  // Module-scope handles so repeated loadDevices() calls never stack listeners or intervals.
+  let _visController = null;
+  let _visTimer = null;
+
   async function loadDevices() {
-    const { devices } = await api('GET', '/devices');
+    const [{ devices }, statusData] = await Promise.all([
+      api('GET', '/devices'),
+      api('GET', '/status').catch(() => ({})),
+    ]);
     const el = $('#midea-devices');
+
+    // Re-auth banner: show when cloud account needs re-authentication.
+    let banner = el.previousElementSibling && el.previousElementSibling.dataset.role === 'reauth-banner'
+      ? el.previousElementSibling : null;
+    if (statusData.cloud_needs_reauth) {
+      if (!banner) {
+        banner = document.createElement('p');
+        banner.dataset.role = 'reauth-banner';
+        banner.style.cssText = 'color:var(--color-danger,#d9534f);margin-bottom:8px';
+        el.parentNode.insertBefore(banner, el);
+      }
+      banner.textContent = T('midea.cloud.reauth');
+    } else if (banner) {
+      banner.remove();
+    }
+
     if (!devices.length) { el.innerHTML = `<p class="muted">${T('midea.devices.none')}</p>`; return; }
     el.innerHTML = devices.map((d) => `
       <div class="device-row" data-id="${d.id}">
-        <strong>${esc(d.name)}</strong> <span class="muted">${esc(d.ip || '')} · v${d.protocol_version}</span>
+        <strong>${esc(d.name)}</strong> ${d.transport === 'cloud'
+          ? `<span class="muted tag">${esc(T('midea.transport.cloud'))}</span>`
+          : `<span class="muted">${esc(d.ip || '')} · v${d.protocol_version}</span>`}
         <span class="device-state"></span>
         <label>${T('midea.device.target')} <input type="number" step="0.5" min="16" max="30" data-act="target" style="width:5em"></label>
         <select data-act="mode">
           ${['auto','cool','heat','dry','fan'].map((m) => `<option value="${m}">${T('midea.mode.' + m)}</option>`).join('')}
-        </select>
-        <button class="btn btn-sm" data-act="test">${T('midea.device.test')}</button>
+        </select>${d.transport === 'cloud'
+          ? `\n        <button class="btn btn-sm" data-act="refresh">${T('midea.device.refresh')}</button>`
+          : `\n        <button class="btn btn-sm" data-act="test">${T('midea.device.test')}</button>`}
         <button class="btn btn-sm" data-act="power">${T('midea.device.power')}</button>
         <button class="btn btn-sm" data-act="remove">${T('midea.device.remove')}</button>
       </div>`).join('');
+
+    // Page-Visibility-bound cloud refresh: poll Cloud devices while tab is visible, ≥120s interval.
+    // Always tear down the previous listener + interval first so repeated loadDevices() calls
+    // never stack (each call produces exactly one listener and one interval at most).
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      if (_visTimer) { clearInterval(_visTimer); _visTimer = null; }
+      if (_visController) { _visController.abort(); _visController = null; }
+
+      const cloudIds = devices.filter((d) => d.transport === 'cloud').map((d) => d.id);
+      if (cloudIds.length) {
+        _visController = new AbortController();
+        const startVis = () => {
+          if (_visTimer) return;
+          _visTimer = setInterval(async () => {
+            for (const cid of cloudIds) {
+              const row = el.querySelector(`.device-row[data-id="${cid}"]`);
+              if (row) {
+                // eslint-disable-next-line no-await-in-loop
+                const r = await refreshState(cid, row);
+                if (r && r.suspend) { clearInterval(_visTimer); _visTimer = null; break; }
+              }
+            }
+          }, 120000);
+        };
+        const stopVis = () => { clearInterval(_visTimer); _visTimer = null; };
+        const onVisChange = () => (document.hidden ? stopVis() : startVis());
+        if (!document.hidden) startVis();
+        document.addEventListener('visibilitychange', onVisChange, { signal: _visController.signal });
+      }
+    }
   }
 
   async function refreshState(id, row) {
@@ -43,7 +99,11 @@
       row.querySelector('.device-state').textContent = state.offline
         ? T('midea.device.offline')
         : `${state.power ? T('midea.device.on') : T('midea.device.off')} · ${T('midea.device.indoor')} ${state.indoorTemp}° · → ${state.targetTemp}° · ${T('midea.mode.' + state.mode)}`;
-    } catch (e) { row.querySelector('.device-state').textContent = e.message; }
+      return { suspend: !!state.offline };
+    } catch (e) {
+      row.querySelector('.device-state').textContent = e.message;
+      return { suspend: e.code === 'MIDEA_CLOUD_RATE_LIMITED' };
+    }
   }
 
   document.addEventListener('click', async (ev) => {
@@ -53,6 +113,7 @@
     const id = row.dataset.id;
     try {
       if (btn.dataset.act === 'test') { await api('POST', `/devices/${id}/test`); await refreshState(id, row); }
+      if (btn.dataset.act === 'refresh') { await refreshState(id, row); }
       if (btn.dataset.act === 'power') {
         const { state } = await api('GET', `/devices/${id}/state`);
         await api('POST', `/devices/${id}/state`, { patch: { power: !(state && state.power) } });
@@ -92,6 +153,7 @@
         <div class="cloud-row">
           <span>${esc(d.name)} <span class="muted">${esc(d.sn)}</span></span>
           <button class="btn btn-sm" data-add="${esc(d.sn)}" data-name="${esc(d.name)}">${T('midea.devices.add')}</button>
+          <button class="btn btn-sm" data-cloud-id="${esc(String(d.id))}" data-name="${esc(d.name)}">${T('midea.cloud.add')}</button>
         </div>`).join('');
       // Populate the manual-by-IP cloud-device picker (keep the static first
       // "no cloud" option; append cloud entries via DOM API → XSS-safe).
@@ -114,6 +176,16 @@
     add.disabled = true;
     try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); }
     catch (e) { alert(e.message); } finally { add.disabled = false; }
+  });
+
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-cloud-id]');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      await api('POST', '/devices', { transport: 'cloud', cloud_appliance_id: btn.dataset.cloudId, name: btn.dataset.name });
+      await loadDevices();
+    } catch (e) { alert(e.message); } finally { btn.disabled = false; }
   });
 
   $('#midea-discover').addEventListener('click', async () => {

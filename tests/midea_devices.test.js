@@ -121,3 +121,173 @@ test('startPolling is a no-op under revoked license (feature gate)', () => {
     midea.stopPolling();                  // ensure no timer leaks out of the test
   }
 });
+
+test('createDevice persists transport + cloud_appliance_id', () => {
+  const d = devices.createDevice({ name: 'AC-Cloud', device_sn: 'cloud-1', transport: 'cloud', cloud_appliance_id: '153931628798542' });
+  assert.equal(d.transport, 'cloud');
+  assert.equal(d.cloud_appliance_id, '153931628798542');
+  const got = devices.getDevice(d.id);
+  assert.equal(got.transport, 'cloud');
+  assert.equal(got.cloud_appliance_id, '153931628798542');
+});
+test('default transport is lan', () => {
+  const d = devices.createDevice({ name: 'AC-Lan', device_sn: 'lan-x' });
+  assert.equal(d.transport, 'lan');
+});
+
+// ── Orchestrator transport switch (Task 3) ──────────────────────────────────
+
+// Frame parsed by mideaAc.parseState → targetTemp 21, mode 'cool', power true.
+const CLOUD_SAMPLE = Buffer.from(
+  'aa23ac00000000000303c00145660000003c0010045c6b20000000000000000000020d79', 'hex',
+);
+
+function preconfigureCloudSession() {
+  // Provide a session so withCloud()→ensure() skips the real login() call.
+  devices.saveConfig({
+    app: 'msmarthome', email: 't@e.st', password: 'pw',
+    session: { accessToken: 'tok', aesKey: '00'.repeat(16), aesIv: '11'.repeat(16) },
+  });
+}
+
+test('getState for a cloud device routes through mideaCloud.sendCommand, not LanDevice', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C', device_sn: 'c-1', transport: 'cloud', cloud_appliance_id: '999' });
+  const calls = [];
+  const orig = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async function (applianceCode, frame) {
+    calls.push({ applianceCode, frame });
+    return CLOUD_SAMPLE;       // returning a frame proves the LAN path never ran (would connect/timeout)
+  };
+  try {
+    const st = await midea.getState(d.id);
+    assert.equal(st.targetTemp, 21.0);                  // parsed from the stubbed cloud frame
+    assert.equal(calls.length, 1);                      // exactly one cloud round-trip (the query)
+    assert.equal(calls[0].applianceCode, '999');        // addressed by cloud_appliance_id
+    assert.equal(calls[0].frame[9], 0x03);              // FRAME_QUERY frame type
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = orig;
+    midea.stopPolling();
+  }
+});
+
+test('setState for a cloud device does inline read-modify-write via sendCommand, not LanDevice', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C2', device_sn: 'c-2', transport: 'cloud', cloud_appliance_id: '777' });
+  const frameTypes = [];
+  const orig = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async function (applianceCode, frame) {
+    frameTypes.push(frame[9]);
+    return CLOUD_SAMPLE;
+  };
+  try {
+    const st = await midea.setState(d.id, { targetTemp: 23 });
+    assert.deepEqual(frameTypes, [0x03, 0x02]);         // read (query) then write (control) in one lock
+    assert.equal(st.targetTemp, 21.0);                  // parsed from the stubbed control response
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = orig;
+    midea.stopPolling();
+  }
+});
+
+// ── Task 5: minimal cloud footprint ────────────────────────────────────────
+
+test('pollTick skips cloud devices (no cloud sendCommand) but polls lan devices', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  let cloudCalls = 0;
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async () => { cloudCalls++; return Buffer.alloc(0); };
+  try {
+    devices.createDevice({ name: 'C', device_sn: 'c-2', transport: 'cloud', cloud_appliance_id: '1', enabled: true });
+    await midea.pollTick();                  // ein Tick, ohne Timer
+    assert.equal(cloudCalls, 0);             // Cloud-Gerät NICHT automatisch gepollt
+  } finally { cloud.MideaCloud.prototype.sendCommand = origSend; midea.stopPolling(); }
+});
+
+test('getStatus includes transport per device and cloud_needs_reauth boolean', () => {
+  const midea = require('../src/services/midea');
+  devices.createDevice({ name: 'AC-T', device_sn: 'lan-t', ip: '10.0.0.1' });
+  const status = midea.getStatus();
+  assert.equal(typeof status.cloud_needs_reauth, 'boolean');
+  assert.ok(status.devices.length > 0);
+  assert.ok('transport' in status.devices[0]);
+});
+
+test('cloud_needs_reauth is set true when getState receives MIDEA_CLOUD_2FA_REQUIRED', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C3', device_sn: 'c-3', transport: 'cloud', cloud_appliance_id: '2FA' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async () => {
+    const e = new Error('2FA required');
+    e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+    throw e;
+  };
+  try {
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, true);
+  } finally {
+    // Reset cloudNeedsReauth so it does not leak into subsequent tests.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);           // success path sets cloudNeedsReauth = false
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});
+
+test('cloud_needs_reauth resets to false after successful getState following a 2FA error', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C4', device_sn: 'c-4r', transport: 'cloud', cloud_appliance_id: '2FA-RESET' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  try {
+    // Step 1: trigger 2FA → flag becomes true.
+    cloud.MideaCloud.prototype.sendCommand = async () => {
+      const e = new Error('2FA required');
+      e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+      throw e;
+    };
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, true, '2FA error sets flag');
+    // Step 2: successful command → flag clears to false.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);
+    assert.equal(midea.getStatus().cloud_needs_reauth, false, 'successful call clears flag');
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});
+
+test('setState sets cloud_needs_reauth when the write sendCommand throws MIDEA_CLOUD_2FA_REQUIRED', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C5', device_sn: 'c-5w', transport: 'cloud', cloud_appliance_id: 'SET-2FA' });
+  const origSend = cloud.MideaCloud.prototype.sendCommand;
+  let callCount = 0;
+  cloud.MideaCloud.prototype.sendCommand = async (_applianceCode, _frame) => {
+    callCount++;
+    if (callCount === 1) return CLOUD_SAMPLE;   // read (query) succeeds
+    const e = new Error('2FA required on write');
+    e.code = 'MIDEA_CLOUD_2FA_REQUIRED';
+    throw e;                                     // write (control) triggers 2FA
+  };
+  try {
+    await midea.setState(d.id, { targetTemp: 23 });
+    assert.equal(midea.getStatus().cloud_needs_reauth, true, '2FA on setState write sets flag');
+  } finally {
+    // Reset cloudNeedsReauth for isolation.
+    cloud.MideaCloud.prototype.sendCommand = async () => CLOUD_SAMPLE;
+    await midea.getState(d.id);
+    cloud.MideaCloud.prototype.sendCommand = origSend;
+    midea.stopPolling();
+  }
+});

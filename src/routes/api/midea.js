@@ -64,13 +64,17 @@ router.post('/discover', wrap(async (req, res) => {
   res.json({ devices: await midea.discoverLan({}) });
 }));
 
-// POST /devices — add a device (sn or ip required)
+// POST /devices — add a device (sn or ip required for LAN; cloud_appliance_id for cloud)
 router.post('/devices', wrap(async (req, res) => {
-  const { sn, name, ip } = req.body || {};
-  if (!sn && !ip) {
+  const { sn, name, ip, transport, cloud_appliance_id } = req.body || {};
+  if (transport === 'cloud') {
+    if (!cloud_appliance_id) {
+      return res.status(400).json({ ok: false, error: req.t('error.midea.cloud_appliance_id_required') });
+    }
+  } else if (!sn && !ip) {
     return res.status(400).json({ ok: false, error: req.t('error.midea.sn_or_ip_required') });
   }
-  res.json({ device: await midea.addDevice({ sn, name, ip }) });
+  res.json({ device: await midea.addDevice({ sn, name, ip, transport, cloud_appliance_id }) });
 }));
 
 // GET /devices — list all devices (redacted: no token/key)
