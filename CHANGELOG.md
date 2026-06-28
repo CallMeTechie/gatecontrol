@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.107.0] — 2026-06-28
+
+### Features
+- align AC mode-segment look + icons with admin /midea (padded track, active pill, same icons)
+
+---
+
 ## [1.106.0] — 2026-06-28
 
 ### Features
