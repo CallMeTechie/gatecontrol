@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Klima-Widget im Portal neu gestaltet: Geräte als Karten-Grid mit Temperatur-Ring (Ist-Temp),
+  Zieltemperatur-Stepper, 5-Icon-Modus-Segment (Auto/Kühlen/Heizen/Entfeuchten/Lüften) und farbiger
+  Status-Pille — angelehnt an die Admin-/midea-Karte, in der Portal-Designsprache (Dark + Light). Reines
+  Frontend; APIs/Datenfluss/Owner-Scope unverändert.
+
+---
+
 ## [1.103.11] — 2026-06-28
 
 ### Änderungen

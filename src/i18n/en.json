@@ -2118,6 +2118,8 @@
   "portal.midea.login_link": "Log in",
   "portal.midea.offline": "Offline",
   "portal.midea.current": "current",
+  "portal.midea.target": "Target",
+  "portal.midea.mode": "Mode",
   "portal.midea.power": "Power",
   "portal.midea.error": "Action failed",
   "portal.midea.mode_auto": "Auto",

@@ -296,30 +296,81 @@ body::before{
    MIDEA CLIMATE WIDGET
    // portal: an .c-pihole angelehnt
    ============================================================ */
-.c-midea .midea-list{display:grid;gap:12px}
-.midea-card{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--r-sm);
-  background:var(--surface-2);border:1px solid var(--line-2)}
-.midea-card .midea-name{font-weight:600;font-size:13.5px}
-.midea-card .midea-temp{display:flex;align-items:baseline;gap:6px}
-.midea-card .midea-temp .midea-curr{font-size:1.8rem;font-weight:700;color:var(--teal,#3ec8b0);line-height:1}
-.midea-card .midea-temp .midea-curr-label{font-size:11px;color:var(--muted)}
-.midea-card .midea-temp .midea-target{font-size:1.1rem;color:var(--muted)}
-.midea-card .midea-status{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.midea-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px}
-.midea-controls button{background:transparent;border:1px solid var(--line-2);color:var(--text);
-  padding:4px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--font-body);
-  transition:.15s}
-.midea-controls button:hover:not([disabled]):not(.is-readonly){background:var(--surface-3);border-color:var(--teal,#3ec8b0)}
-.midea-controls button.active{background:var(--teal,#3ec8b0);border-color:var(--teal,#3ec8b0);color:#000}
-.midea-controls button[disabled],.midea-controls button.is-readonly{opacity:.4;cursor:not-allowed;pointer-events:none}
-.midea-stepper{display:flex;align-items:center;gap:6px}
-.midea-stepper button{padding:2px 8px;border-radius:6px}
-.midea-stepper .midea-setpoint{min-width:36px;text-align:center;font-weight:600;font-size:13px}
-.midea-login-hint{font-size:12px;color:var(--muted);margin-top:6px}
-.midea-login-hint a{color:var(--teal,#3ec8b0);text-decoration:none}
-.midea-login-hint a:hover{text-decoration:underline}
-.midea-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
+.c-midea h2{margin-bottom:16px}
+.c-midea .midea-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
 .c-midea.loading{min-height:160px}
+
+/* Karte */
+.midea-card{display:flex;flex-direction:column;background:var(--surface-3);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:16px;transition:border-color .15s, transform .15s}
+.midea-card:hover{transform:translateY(-2px);border-color:var(--line-2)}
+.midea-card.offline{opacity:.72}
+
+/* Kopf: Icon + Name/Transport + Status-Pill */
+.midea-card .ac-head{display:flex;align-items:center;gap:11px}
+.midea-card .ac-ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--surface);color:var(--teal)}
+.midea-card .ac-ic svg{width:18px;height:18px}
+.midea-card .ac-headtext{flex:1;min-width:0}
+.midea-card .ac-name{font-family:var(--font-display);font-weight:700;font-size:15px;line-height:1.1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.midea-card .ac-meta{font-size:11.5px;color:var(--faint);font-family:var(--font-mono);margin-top:2px}
+.midea-card .ac-status{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;
+  padding:3px 10px;border-radius:999px;flex:0 0 auto;white-space:nowrap}
+.midea-card .ac-status .sdot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.midea-card .ac-status.on{color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd)}
+.midea-card .ac-status.off{color:var(--muted);background:var(--chip);border:1px solid var(--line)}
+.midea-card .ac-status.off-line{color:var(--coral);background:var(--chip);border:1px solid var(--line-2)}
+
+/* Klima-Block: Ring-Gauge + Stell-Spalte */
+.midea-card .ac-climate{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.midea-card .ring{width:92px;height:92px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  background:conic-gradient(var(--teal) var(--ring-val,0%), var(--line-2) 0)} /* full-circle gauge; % is a valid conic stop */
+.midea-card .ring-in{width:72px;height:72px;border-radius:50%;background:var(--surface);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.midea-card .ring-v{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}
+.midea-card .ring-l{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700}
+.midea-card .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.midea-card .set-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
+  font-weight:700;margin-bottom:7px}
+
+/* Stepper */
+.midea-card .stepper{display:inline-flex;align-items:center;border:1px solid var(--line-2);border-radius:10px;
+  background:var(--chip);overflow:hidden}
+.midea-card .stepper button{width:34px;height:34px;border:0;background:transparent;color:var(--muted);
+  font-size:19px;cursor:pointer;transition:.12s}
+.midea-card .stepper button:hover:not([disabled]){background:var(--surface-2);color:var(--text)}
+.midea-card .stepper .v{font-family:var(--font-mono);font-weight:700;font-size:14px;min-width:62px;
+  text-align:center;color:var(--text)}
+
+/* Modus-Segment: 5 Icon-Buttons gleichmäßig über die Breite */
+.midea-card .modes{display:flex;width:100%;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;background:var(--chip)}
+.midea-card .modes .m{flex:1 1 0;min-width:0;padding:8px 0;display:flex;align-items:center;justify-content:center;
+  border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;transition:.12s}
+.midea-card .modes .m:last-child{border-right:0}
+.midea-card .modes .m svg{width:17px;height:17px}
+.midea-card .modes .m:hover:not([disabled]){background:var(--surface-2);color:var(--text)}
+.midea-card .modes .m.active{background:linear-gradient(145deg,var(--teal),var(--teal-dim));color:var(--btn-text)}
+
+/* Power-Aktion */
+.midea-card .ac-foot{display:flex;gap:9px;align-items:center}
+.midea-card .btn-power{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:9px 12px;border-radius:10px;font-family:var(--font-body);font-weight:600;font-size:13px;cursor:pointer;
+  border:1px solid var(--line-2);background:var(--chip);color:var(--text);transition:.15s}
+.midea-card .btn-power:hover:not([disabled]){border-color:var(--teal);color:var(--teal)}
+.midea-card .btn-power.is-on{background:linear-gradient(145deg,var(--teal),var(--teal-dim));border-color:transparent;color:var(--btn-text)}
+.midea-card .btn-power svg{width:16px;height:16px}
+
+/* zweistufig: ungeloggt/offline → Steuerelemente gesperrt */
+.midea-card [disabled]{opacity:.4;cursor:not-allowed;pointer-events:none}
+
+.midea-login-hint{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);
+  background:var(--chip);border:1px dashed var(--line-2);border-radius:10px;padding:9px 12px}
+.midea-login-hint a{margin-left:auto;color:var(--btn-text);text-decoration:none;font-weight:600;font-size:12px;
+  background:linear-gradient(145deg,var(--teal),var(--teal-dim));padding:6px 12px;border-radius:8px}
+.midea-login-hint a:hover{filter:brightness(1.05)}
+.midea-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
 
 /* ============================================================
    REDUCED MOTION
