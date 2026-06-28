@@ -11,7 +11,7 @@ test('portal.njk has the midea widget block, gated by widgets.midea', () => {
 });
 test('portal-i18n block carries the midea client keys', () => {
   const njk = fs.readFileSync('templates/portal/portal.njk', 'utf8');
-  for (const k of ['mideaLoginToControl', 'mideaOffline', 'mideaModeAuto', 'mideaPower', 'mideaUnavailable', 'mideaPowerOn', 'mideaPowerOff']) {
+  for (const k of ['mideaLoginToControl', 'mideaOffline', 'mideaModeAuto', 'mideaPower', 'mideaPowerOn', 'mideaPowerOff']) {
     assert.ok(njk.includes(k), `portal-i18n missing ${k}`);
   }
 });

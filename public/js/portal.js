@@ -495,7 +495,7 @@
 
   function renderMideaCard(d) {
     var st = d.state || {};
-    var offline = !st || st.offline;
+    var offline = !d.state || !!d.state.offline;
     var powered = !offline && !!st.power;
     var temp = offline ? '—' : Math.round(st.indoorTemp) + '°';
     var statusTxt = offline ? (PT.mideaOffline || 'Offline') : (powered ? (PT.mideaPowerOn || 'On') : (PT.mideaPowerOff || 'Off'));
@@ -532,9 +532,9 @@
     var id = Number(cardEl.dataset.id);
     fetch('/api/v1/portal/midea/' + id + '/state', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: patch }),
-    }).then(function (r) { return r.json(); }).then(function (body) {
+    }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (body) {
       var m = document.getElementById('mideaMsg');
-      if (body.ok && body.data && body.data.state) { patchMideaCard(id, body.data.state); }
+      if (body && body.ok && body.data && body.data.state) { patchMideaCard(id, body.data.state); }
       else if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; }
     }).catch(function () { var m = document.getElementById('mideaMsg'); if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; } });
   }
@@ -588,7 +588,7 @@
       var gen = ++_mideaPollGen;
       _mideaTimer = setInterval(function () {
         _mideaDevices.forEach(function (d) {
-          fetch('/api/v1/portal/midea/' + Number(d.id) + '/state')
+          fetch('/api/v1/portal/midea/' + Number(d.id) + '/state', { signal: _mideaCtl.signal })
             .then(function (r) { if (r.status === 429) { if (gen === _mideaPollGen) { clearInterval(_mideaTimer); _mideaTimer = null; } return null; } return r.json(); })
             .then(function (body) { if (body && body.ok && body.data && body.data.state) patchMideaCard(Number(d.id), body.data.state); })
             .catch(function () {});
