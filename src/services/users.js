@@ -5,6 +5,7 @@ const { getDb } = require('../db/connection');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 const argon2Options = require('../utils/argon2Options');
+const mideaOwners = require('./midea/mideaOwners');
 
 const NO_PASSWORD_SENTINEL = '!';
 
@@ -288,6 +289,7 @@ function remove(id) {
 
   db.transaction(() => {
     db.prepare('UPDATE peers SET user_id = NULL WHERE user_id = ?').run(id);
+    mideaOwners.removeAllForUser(id);                 // clear AC ownership (no own tx)
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   })();
 

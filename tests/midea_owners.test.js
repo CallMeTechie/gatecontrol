@@ -85,3 +85,20 @@ test('removeAllForDevice / removeAllForUser clear rows', () => {
   owners.removeAllForDevice(d.id);
   assert.equal(owners.ownersOf(d.id).length, 0);
 });
+
+test('deleting a user removes their owner rows', async () => {
+  const d = require('../src/services/midea/mideaDevices').createDevice({ name: 'c-u', device_sn: 'c-u' });
+  const carolId = (await users.create({ username: 'carol', password: 'TestPass123!', role: 'user' })).id;
+  owners.setOwners(d.id, [adminId, carolId]);
+  users.remove(carolId);
+  assert.deepEqual(owners.ownersOf(d.id).map((o) => o.id), [adminId]);  // carol gone, admin stays
+});
+
+test('deleting a device removes its owner rows', () => {
+  const d = devices.createDevice({ name: 'c-d', device_sn: 'c-d' });
+  owners.setOwners(d.id, [adminId, bobId]);
+  devices.removeDevice(d.id);
+  // table row count for that device is zero
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM midea_device_owners WHERE midea_device_id = ?').get(d.id).c, 0);
+  assert.equal(devices.getDevice(d.id), null);   // device gone too
+});

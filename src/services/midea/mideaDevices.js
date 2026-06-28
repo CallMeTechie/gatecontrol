@@ -3,6 +3,7 @@
 const { getDb } = require('../../db/connection');
 const settings = require('../settings');
 const { encrypt, decrypt } = require('../../utils/crypto');
+const mideaOwners = require('./mideaOwners');
 
 const CONFIG_KEY = 'midea_config';
 const DEFAULT_CONFIG = { app: 'msmarthome', email: '', password: '', session: null };
@@ -97,7 +98,11 @@ function updateDevice(id, patch) {
 }
 
 function removeDevice(id) {
-  getDb().prepare('DELETE FROM midea_devices WHERE id = ?').run(id);
+  const db = getDb();
+  db.transaction(() => {
+    mideaOwners.removeAllForDevice(id);               // child first (no own tx)
+    db.prepare('DELETE FROM midea_devices WHERE id = ?').run(id);
+  })();
   return { ok: true };
 }
 
