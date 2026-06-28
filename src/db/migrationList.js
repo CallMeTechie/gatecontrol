@@ -1087,6 +1087,18 @@ const migrations = [
           ALTER TABLE midea_devices ADD COLUMN cloud_appliance_id TEXT;`,
     detect: (db) => hasColumn(db, 'midea_devices', 'transport'),
   },
+  {
+    version: 62,
+    name: 'midea_device_owners',
+    sql: `CREATE TABLE IF NOT EXISTS midea_device_owners (
+      midea_device_id INTEGER NOT NULL,
+      user_id         INTEGER NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (midea_device_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_midea_owners_user ON midea_device_owners(user_id);`,
+    detect: (db) => tableExists(db, 'midea_device_owners'),
+  },
 ];
 
 module.exports = { migrations };
