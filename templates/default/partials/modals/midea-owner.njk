@@ -1,0 +1,24 @@
+<div class="modal-overlay midea-modal" id="midea-owner-modal" style="display:none">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <span class="mi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+      <div>
+        <div class="modal-title">{{ t('midea.owners.modal_title') }}</div>
+        <div class="modal-sub" id="midea-owner-device"></div>
+      </div>
+      <button class="modal-close" data-close-modal aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="midea-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="midea-owner-search" placeholder="{{ t('midea.owners.search') }}">
+      </div>
+      <div class="pick-count" id="midea-owner-count"></div>
+      <div class="pick-list" id="midea-owner-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>{{ t('midea.owners.cancel') }}</button>
+      <button class="btn btn-primary" id="midea-owner-save">{{ t('midea.owners.save') }}</button>
+    </div>
+  </div>
+</div>

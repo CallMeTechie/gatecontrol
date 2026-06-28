@@ -1,48 +1,27 @@
 {% extends theme + "/layout.njk" %}
 
+{% block head %}<link rel="stylesheet" href="/css/midea.css">{% endblock %}
+
 {% block content %}
-<div class="page-header">
-  <div>
-    <p class="eyebrow">{{ t('nav.system') }}</p>
-    <h1>{{ t('midea.title') }}</h1>
-    <p class="subtitle">{{ t('midea.subtitle') }}</p>
+<div class="midea-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{ t('nav.system') }} · Klima</div>
+      <h1 class="page-title">{{ t('midea.title') }}</h1>
+      <div class="page-sub">{{ t('midea.subtitle') }}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:center">
+      <button id="midea-discover" class="btn btn-ghost">{{ t('midea.discover') }}</button>
+      <button id="midea-add-open" class="btn btn-primary">{{ t('midea.add.title') }}</button>
+    </div>
   </div>
-  <button id="midea-discover" class="btn">{{ t('midea.discover') }}</button>
+
+  <div class="kpi-strip" id="midea-kpis"></div>
+  <div class="ac-grid" id="midea-devices"></div>
+
+  {% include theme + "/partials/modals/midea-owner.njk" %}
+  {% include theme + "/partials/modals/midea-add.njk" %}
 </div>
-
-<section class="card">
-  <h2>{{ t('midea.cloud.title') }}</h2>
-  <form id="midea-cloud-form" class="form-grid">
-    <label>{{ t('midea.cloud.app') }}
-      <select name="app"><option value="msmarthome">MSmartHome</option><option value="nethome">NetHome Plus</option></select>
-    </label>
-    <label>{{ t('midea.cloud.email') }}<input name="email" type="email" autocomplete="username"></label>
-    <label>{{ t('midea.cloud.password') }}<input name="password" type="password" autocomplete="current-password"></label>
-    <button type="submit" class="btn btn-primary">{{ t('midea.cloud.connect') }}</button>
-  </form>
-  <p id="midea-cloud-msg" class="muted"></p>
-</section>
-
-<section class="card">
-  <h2>{{ t('midea.manual.title') }}</h2>
-  <p class="subtitle">{{ t('midea.manual.hint') }}</p>
-  <form id="midea-ip-form" class="form-grid">
-    <label>{{ t('midea.manual.ip') }}<input name="ip" type="text" inputmode="decimal" placeholder="192.168.x.y" autocomplete="off"></label>
-    <label>{{ t('midea.manual.name') }}<input name="name" type="text" autocomplete="off"></label>
-    <label>{{ t('midea.manual.cloud_device') }}
-      <select name="sn"><option value="">{{ t('midea.manual.no_cloud') }}</option></select>
-    </label>
-    <button type="submit" class="btn btn-primary">{{ t('midea.devices.add') }}</button>
-  </form>
-  <p id="midea-ip-msg" class="muted"></p>
-</section>
-
-<section class="card">
-  <h2>{{ t('midea.devices.title') }}</h2>
-  <p class="subtitle">{{ t('midea.cloud.usage_hint') }}</p>
-  <div id="midea-cloud-list"></div>
-  <div id="midea-devices"></div>
-</section>
 {% endblock %}
 
 {% block scripts %}

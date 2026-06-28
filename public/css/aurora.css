@@ -90,6 +90,7 @@
   --bg-input-focus: var(--surface);   /* pro.css uses #fff; aurora uses surface */
   --purple-light:   var(--purple-bg); /* pro.css: #F5F3FF — used by .tag-purple/.badge-purple */
   --amber-border:   var(--amber-bd);  /* pro.css: #FDE68A — used by .btn-amber */
+  --purple-bd:      var(--purple-border); /* ponytail: fills aurora vocab gap; not yet consumed by midea.css */
 }
 
 /* ----------------------------------------------------------------------------
