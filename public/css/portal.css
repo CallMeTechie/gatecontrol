@@ -326,7 +326,7 @@ body::before{
 .midea-card .ac-climate{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
   border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .midea-card .ring{width:92px;height:92px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
-  background:conic-gradient(var(--teal) var(--ring-val,0%), var(--line-2) 0)} /* full-circle gauge; % is a valid conic stop */
+  background:conic-gradient(var(--ring-c,var(--teal)) var(--ring-val,0%), var(--line-2) 0)} /* full-circle gauge; fill color per mode (heat→coral) */
 .midea-card .ring-in{width:72px;height:72px;border-radius:50%;background:var(--surface);display:flex;
   flex-direction:column;align-items:center;justify-content:center;gap:1px}
 .midea-card .ring-v{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}

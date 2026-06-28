@@ -513,6 +513,7 @@
     var indoor = Number(st.indoorTemp);
     var hasIndoor = !offline && !isNaN(indoor);
     var pct = hasIndoor ? Math.max(0, Math.min(100, ((indoor - 16) / 14) * 100)) : 0; // ring fill, 16–30 °C span
+    var ringC = (!offline && st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)';     // heat → coral, else teal
     var temp = hasIndoor ? Math.round(indoor) + '°' : '—';
     var tgt = Number(st.targetTemp);
     var hasTgt = !offline && !isNaN(tgt);
@@ -539,7 +540,7 @@
         '<span class="ac-status midea-status ' + statusCls + '" data-power="' + (powered ? 'true' : 'false') + '"><span class="sdot"></span>' + escHtml(statusTxt) + '</span>' +
       '</div>' +
       '<div class="ac-climate">' +
-        '<div class="ring" style="--ring-val:' + pct + '%"><div class="ring-in"><span class="ring-v">' + escHtml(temp) + '</span><span class="ring-l">' + escHtml(PT.mideaCurrent || '') + '</span></div></div>' +
+        '<div class="ring" style="--ring-val:' + pct + '%;--ring-c:' + ringC + '"><div class="ring-in"><span class="ring-v">' + escHtml(temp) + '</span><span class="ring-l">' + escHtml(PT.mideaCurrent || '') + '</span></div></div>' +
         '<div class="ac-set">' +
           '<div><div class="set-lbl">' + escHtml(PT.mideaTarget || '') + '</div>' +
             '<div class="stepper"><button type="button" data-step="-1"' + dis + '>−</button><span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span><button type="button" data-step="1"' + dis + '>+</button></div></div>' +
