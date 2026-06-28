@@ -118,7 +118,7 @@
               <div class="stepper">
                 <button type="button" data-step="-1">−</button>
                 <span class="v">— °C</span>
-                <input type="number" step="0.5" min="16" max="30" data-act="target">
+                <input type="number" step="1" min="16" max="30" data-act="target">
                 <button type="button" data-step="1">+</button>
               </div>
             </div>
@@ -196,12 +196,14 @@
     const ringV = card.querySelector('.ac-ring-v');
     const status = card.querySelector('.device-status');
     const stepperV = card.querySelector('.stepper .v');
+    const stepper = card.querySelector('.stepper');
     const input = card.querySelector('input[data-act="target"]');
     if (!state || state.offline) {
       card.classList.add('offline');
       if (ring) ring.style.setProperty('--ring-val', '0%');
       if (ringV) ringV.textContent = '—';
       if (status) status.innerHTML = `<span class="tag-dot"></span>${T('midea.device.offline')}`;
+      if (stepper) stepper.classList.remove('pending', 'confirmed');
       updateOnlineKpi();
       return;
     }
@@ -214,6 +216,9 @@
     const targetNum = Number(state.targetTemp);
     if (input && !isNaN(targetNum)) input.value = targetNum;
     if (stepperV) stepperV.textContent = isNaN(targetNum) ? '— °C' : targetNum + ' °C';
+    // The displayed target now reflects the device's actual setpoint → confirmed (green),
+    // and the change (if any) is no longer pending.
+    if (stepper) { stepper.classList.remove('pending'); stepper.classList.toggle('confirmed', !isNaN(targetNum)); }
     card.querySelectorAll('.mode-group .toggle-btn').forEach((b) =>
       b.classList.toggle('active', b.dataset.mode === state.mode));
     updateOnlineKpi();
@@ -285,23 +290,33 @@
     } catch (e) { alert(e.message); }
   });
 
+  // Target-temp stepper: 1° steps (this AC rounds to whole degrees) + optimistic UI.
+  // The displayed value changes immediately (amber = pending), the command is sent
+  // debounced in the background, and setCardState turns it green once the device
+  // confirms the setpoint.
+  function commitTargetTemp(card, id, value) {
+    const wrap = card.querySelector('.stepper');
+    if (wrap._sendTimer) clearTimeout(wrap._sendTimer);
+    wrap._sendTimer = setTimeout(async () => {
+      try {
+        await api('POST', `/devices/${id}/state`, { patch: { targetTemp: value } });
+        await refreshState(id, card); // setCardState marks the confirmed setpoint green
+      } catch (e) { wrap.classList.remove('pending'); alert(e.message); }
+    }, 500); // coalesce rapid +/- clicks into one command
+  }
+
   document.addEventListener('click', (ev) => {
     const step = ev.target.closest('button[data-step]');
     if (!step) return;
+    const card = step.closest('.ac-card'); const id = Number(card.dataset.id);
     const wrap = step.closest('.stepper');
     const input = wrap.querySelector('input[data-act="target"]');
-    if (!input.value) return; // ponytail: noch kein State — kein Default-22-Senden
-    const cur = Number(input.value);
-    input.value = Math.min(30, Math.max(16, cur + Number(step.dataset.step) * 0.5));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-
-  document.addEventListener('change', async (ev) => {
-    const ctrl = ev.target.closest('[data-act="target"]');
-    if (!ctrl) return;
-    const card = ctrl.closest('.ac-card'); const id = Number(card.dataset.id);
-    try { await api('POST', `/devices/${id}/state`, { patch: { targetTemp: Number(ctrl.value) } }); await refreshState(id, card); }
-    catch (e) { alert(e.message); }
+    if (!input.value) return; // ponytail: noch kein State — kein Default senden
+    const next = Math.min(30, Math.max(16, Number(input.value) + Number(step.dataset.step))); // 1° steps
+    input.value = next;
+    const v = wrap.querySelector('.v'); if (v) v.textContent = next + ' °C';
+    wrap.classList.add('pending'); wrap.classList.remove('confirmed'); // optimistic feedback
+    commitTargetTemp(card, id, next);
   });
 
   $('#midea-cloud-form').addEventListener('submit', async (ev) => {
