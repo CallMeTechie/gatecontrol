@@ -111,6 +111,27 @@ describe('caddyConfig contract: top-level shape', () => {
     assert.ok(!cfg.apps.layer4, 'no layer4 app when no l4 routes');
   });
 
+  it('ownership marker host is excluded from automatic_https (no doomed ACME order)', () => {
+    const { MARKER_HOST } = require('../src/services/caddyOwner');
+    const cfg = buildCaddyConfig([{
+      id: 1, domain: 'a.example.com', route_type: 'http',
+      target_kind: 'peer', target_ip: '10.8.0.7', target_port: 80,
+      enabled: 1, https_enabled: 1,
+    }]);
+    const skip = cfg.apps.http.servers.srv0.automatic_https
+      && cfg.apps.http.servers.srv0.automatic_https.skip;
+    assert.ok(Array.isArray(skip) && skip.includes(MARKER_HOST),
+      'srv0.automatic_https.skip must contain the marker host');
+    // and it must never appear as an ACME subject
+    const policies = (cfg.apps.tls && cfg.apps.tls.automation && cfg.apps.tls.automation.policies) || [];
+    for (const p of policies) {
+      const acme = (p.issuers || []).some(i => i.module === 'acme');
+      if (acme && Array.isArray(p.subjects)) {
+        assert.ok(!p.subjects.includes(MARKER_HOST), 'marker host must not be an ACME subject');
+      }
+    }
+  });
+
   it('l4 routes add apps.layer4.servers', () => {
     const cfg = buildCaddyConfig([{
       id: 10, route_type: 'l4', target_kind: 'peer',
