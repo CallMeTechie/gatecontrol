@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.10] — 2026-06-28
+
+### Fixes
+- AC widget post-merge minors (safe JSON parse, abort poll fetches, drop dead state guard + unused i18n keys)
+
+---
+
 ## [1.103.9] — 2026-06-28
 
 ### Änderungen
