@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.3] — 2026-06-28
+
+### Fixes
+- stop watchdog interval on graceful shutdown (timer leak)
+
+---
+
 ## [Unreleased]
 
 ### Fixes
