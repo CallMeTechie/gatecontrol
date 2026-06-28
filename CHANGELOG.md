@@ -32,6 +32,8 @@
   Anzeige — der Wert ändert sich sofort (amber = Befehl unterwegs), schnelle +/−-Klicks werden debounced
   zu einem Befehl mit dem Endwert zusammengefasst, und nach Geräte-Quittung wird der Sollwert grün.
   Angeglichen an das Verhalten der Admin-/midea-Steuerung.
+- Klima-Widget Modus-Segment optisch an die Admin-/midea-Karte angeglichen: gepolsterter Inset-Track mit
+  Lücken statt Trennlinien, abgesetzte aktive Pille, gleiche Icons und Dimensionen.
 
 ---
 

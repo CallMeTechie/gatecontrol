@@ -346,14 +346,14 @@ body::before{
 .midea-card .stepper.pending .v{color:var(--amber)}     /* command in flight (optimistic) */
 .midea-card .stepper.confirmed .v{color:var(--green)}   /* device confirmed the setpoint */
 
-/* Modus-Segment: 5 Icon-Buttons gleichmäßig über die Breite */
-.midea-card .modes{display:flex;width:100%;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;background:var(--chip)}
-.midea-card .modes .m{flex:1 1 0;min-width:0;padding:8px 0;display:flex;align-items:center;justify-content:center;
-  border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;transition:.12s}
-.midea-card .modes .m:last-child{border-right:0}
-.midea-card .modes .m svg{width:17px;height:17px}
-.midea-card .modes .m:hover:not([disabled]){background:var(--surface-2);color:var(--text)}
-.midea-card .modes .m.active{background:linear-gradient(145deg,var(--teal),var(--teal-dim));color:var(--btn-text)}
+/* Modus-Segment: an die Admin-/midea-Karte angeglichen (.toggle-group/.mode-group):
+   gepolsterter Inset-Track mit Lücken statt Trennlinien, abgesetzte aktive Pille. */
+.midea-card .modes{display:flex;width:100%;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-2)}
+.midea-card .modes .m{flex:1 1 0;min-width:0;padding:7px 0;display:flex;align-items:center;justify-content:center;
+  border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;transition:.12s}
+.midea-card .modes .m svg{width:16px;height:16px}
+.midea-card .modes .m:hover:not([disabled]):not(.active){color:var(--text)}
+.midea-card .modes .m.active{background:var(--surface-3);color:var(--text);box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
 
 /* Power-Aktion */
 .midea-card .ac-foot{display:flex;gap:9px;align-items:center}

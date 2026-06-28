@@ -493,12 +493,12 @@
 
   var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
   // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
-  var MIDEA_MODE_ICONS = {
-    auto: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-    cool: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2v20M4 7l16 10M20 7L4 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-    heat: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 22c4-3 5-6 3-9-1.4-2.1-1-4 .5-6-3 .5-6 2.5-6 6 0 1.7.7 2.6-1 3.5C7 12 7 9 7 9c-2 2-3 4.5-3 7a8 8 0 008 6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
-    dry: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3s6 6.5 6 11a6 6 0 11-12 0c0-4.5 6-11 6-11z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
-    fan: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 12c0-4 1-6 3-6s3 2 1 4-4 2-4 2zm0 0c4 0 6 1 6 3s-2 3-4 1-2-4-2-4zm0 0c0 4-1 6-3 6s-3-2-1-4 4-2 4-2zm0 0c-4 0-6-1-6-3s2-3 4-1 2 4 2 4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  var MIDEA_MODE_ICONS = { // same icon set as the admin /midea card
+    auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
+    cool: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
+    heat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4"/></svg>',
+    dry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>',
+    fan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></svg>',
   };
   var MIDEA_AC_ICON = '<svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var MIDEA_POWER_ICON = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v9M6.5 6.5a8 8 0 1011 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
