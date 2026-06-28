@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.1] — 2026-06-28
+
+### Änderungen
+- remove dead Phase-2a guac smoke page (_guac-smoke.html)
+
+---
+
 ## [1.108.0] — 2026-06-28
 
 ### Features
