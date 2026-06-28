@@ -34,6 +34,10 @@
 .midea-page .stepper .v{font-family:var(--font-mono);font-weight:700;font-size:15px;min-width:62px;text-align:center;color:var(--text-1)}
 .midea-page .stepper input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 
+/* Modus-Segment der Karte: 5 Buttons gleichmäßig auf volle Spaltenbreite (sonst überläuft .toggle-group die Karte) */
+.midea-page .mode-group{display:flex;width:100%}
+.midea-page .mode-group .toggle-btn{flex:1 1 0;min-width:0;padding-left:4px;padding-right:4px;font-size:11.5px;text-align:center;justify-content:center;white-space:nowrap}
+
 /* Besitzer-Block */
 .midea-page .ac-owners{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
 .midea-page .ac-owners-l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:700;width:100%;display:flex;align-items:center;gap:7px}
