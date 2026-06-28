@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.9] — 2026-06-28
+
+### Änderungen
+- Klimaanlage im Portal — Portal-Widget (Sub-B)
+
+---
+
 ## [1.103.8] — 2026-06-28
 
 ### Änderungen
