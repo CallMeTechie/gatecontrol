@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.6] — 2026-06-28
+
+### Änderungen
+- /midea-Seite im Aurora-Stil neu gestaltet (Karten-Grid, Besitzer-Dialog, Add-Dialog; 3 Themes)
+
+---
+
 ## [1.103.5] — 2026-06-28
 
 ### Änderungen
