@@ -399,6 +399,10 @@ function startWatchdog() {
   }, 30_000);
 }
 
+function stopWatchdog() {
+  if (_watchdogInterval) { clearInterval(_watchdogInterval); _watchdogInterval = null; }
+}
+
 async function onHeartbeatReceived(peerId) {
   const { transition } = evaluatePeer(peerId);
   if (transition) {
@@ -417,5 +421,5 @@ module.exports = {
   _onTransition,
   reconcileFailoverState,
   watchdogTick,
-  startWatchdog,  onHeartbeatReceived,
+  startWatchdog, stopWatchdog, onHeartbeatReceived,
 };

@@ -360,6 +360,7 @@ const shutdown = createShutdownHandler({
     () => stopAutoBackup(),
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
+    () => require('./services/gatewayHealth').stopWatchdog(),
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),
   ],

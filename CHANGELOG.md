@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Gateway-Watchdog wird beim Graceful-Shutdown nun sauber gestoppt (`stopWatchdog` ins Shutdown-`stoppers`-Array
+  eingehängt). Vorher lief das 30-Sekunden-`setInterval` beim Herunterfahren weiter (Timer-Leak); jetzt wird es
+  wie alle anderen Hintergrund-Intervalle beim Stop gecleart.
+
+---
+
 ## [1.108.2] — 2026-06-28
 
 ### Änderungen
