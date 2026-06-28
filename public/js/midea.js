@@ -17,6 +17,21 @@
     return json;
   }
 
+  async function apiRoot(method, path, body) {
+    const res = await fetch('/api/v1' + path, {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(json.error || res.statusText), { code: json.code });
+    return json;
+  }
+  let _usersCache = null;
+  async function loadUsers() {
+    if (_usersCache) return _usersCache;
+    try { const r = await apiRoot('GET', '/users'); _usersCache = r.users || []; } catch { _usersCache = []; }
+    return _usersCache;   // GET /api/v1/users → { ok:true, users:[{id,username,…}] }
+  }
+
   const $ = (sel) => document.querySelector(sel);
 
   // Module-scope handles so repeated loadDevices() calls never stack listeners or intervals.
@@ -24,9 +39,10 @@
   let _visTimer = null;
 
   async function loadDevices() {
-    const [{ devices }, statusData] = await Promise.all([
+    const [{ devices }, statusData, usersList] = await Promise.all([
       api('GET', '/devices'),
       api('GET', '/status').catch(() => ({})),
+      loadUsers(),
     ]);
     const el = $('#midea-devices');
 
@@ -46,7 +62,22 @@
     }
 
     if (!devices.length) { el.innerHTML = `<p class="muted">${T('midea.devices.none')}</p>`; return; }
-    el.innerHTML = devices.map((d) => `
+    el.innerHTML = devices.map((d) => {
+      // ponytail: O(n)-Checkbox-Liste, Suche erst wenn n>50 relevant.
+      const ownerIds = new Set((d.owners || []).map((o) => o.id));
+      const ownerLabel = (d.owners && d.owners.length)
+        ? d.owners.map((o) => esc(o.username)).join(', ')
+        : T('midea.owners.none');
+      const ownerPicker = `
+  <div class="midea-owners" data-id="${d.id}">
+    <span class="muted">${T('midea.owners.label')}: ${ownerLabel}</span>
+    <details>
+      <summary>${T('midea.owners.label')}</summary>
+      ${usersList.map((u) => `<label><input type="checkbox" value="${u.id}" ${ownerIds.has(u.id) ? 'checked' : ''}> ${esc(u.username)}</label>`).join('')}
+      <button class="btn btn-sm" data-act="save-owners">${T('midea.owners.save')}</button>
+    </details>
+  </div>`;
+      return `
       <div class="device-row" data-id="${d.id}">
         <strong>${esc(d.name)}</strong> ${d.transport === 'cloud'
           ? `<span class="muted tag">${esc(T('midea.transport.cloud'))}</span>`
@@ -60,7 +91,9 @@
           : `\n        <button class="btn btn-sm" data-act="test">${T('midea.device.test')}</button>`}
         <button class="btn btn-sm" data-act="power">${T('midea.device.power')}</button>
         <button class="btn btn-sm" data-act="remove">${T('midea.device.remove')}</button>
-      </div>`).join('');
+        ${ownerPicker}
+      </div>`;
+    }).join('');
 
     // Page-Visibility-bound cloud refresh: poll Cloud devices while tab is visible, ≥120s interval.
     // Always tear down the previous listener + interval first so repeated loadDevices() calls
@@ -120,6 +153,15 @@
         await refreshState(id, row);
       }
       if (btn.dataset.act === 'remove') { await api('DELETE', `/devices/${id}`); await loadDevices(); }
+      if (btn.dataset.act === 'save-owners') {
+        const box = btn.closest('.midea-owners');
+        const ids = [...box.querySelectorAll('input[type=checkbox]:checked')].map((c) => Number(c.value));
+        try {
+          await api('PUT', `/devices/${Number(box.dataset.id)}/owners`, { user_ids: ids });
+          btn.textContent = T('midea.owners.saved');   // transient feedback before the re-render
+          await loadDevices();                          // re-renders the row (button text resets)
+        } catch (e) { alert(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message); }
+      }
     } catch (e) { alert(e.message); }
   });
 

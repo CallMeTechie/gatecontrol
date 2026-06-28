@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Klimaanlage-Besitzer-Zuordnung (Sub-A): Admin kann pro Midea-Klimagerät mehrere Besitzer (Nutzerkonten)
+  zuweisen (n:m, Migration V62). Fundament für die kommende Portal-Steuerung „nur eigene Geräte" (Sub-B).
+  Transaktionaler Cleanup bei User-/Geräte-Löschung. Lizenz-gegated `midea_integration`, admin-only.
+
+---
+
 ## [1.103.4] — 2026-06-27
 
 ### Änderungen
