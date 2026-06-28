@@ -293,6 +293,35 @@ body::before{
 .pihole-hint{font-size:11px;color:var(--muted)}
 
 /* ============================================================
+   MIDEA CLIMATE WIDGET
+   // portal: an .c-pihole angelehnt
+   ============================================================ */
+.c-midea .midea-list{display:grid;gap:12px}
+.midea-card{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--r-sm);
+  background:var(--surface-2);border:1px solid var(--line-2)}
+.midea-card .midea-name{font-weight:600;font-size:13.5px}
+.midea-card .midea-temp{display:flex;align-items:baseline;gap:6px}
+.midea-card .midea-temp .midea-curr{font-size:1.8rem;font-weight:700;color:var(--teal,#3ec8b0);line-height:1}
+.midea-card .midea-temp .midea-curr-label{font-size:11px;color:var(--muted)}
+.midea-card .midea-temp .midea-target{font-size:1.1rem;color:var(--muted)}
+.midea-card .midea-status{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.midea-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px}
+.midea-controls button{background:transparent;border:1px solid var(--line-2);color:var(--text);
+  padding:4px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--font-body);
+  transition:.15s}
+.midea-controls button:hover:not([disabled]):not(.is-readonly){background:var(--surface-3);border-color:var(--teal,#3ec8b0)}
+.midea-controls button.active{background:var(--teal,#3ec8b0);border-color:var(--teal,#3ec8b0);color:#000}
+.midea-controls button[disabled],.midea-controls button.is-readonly{opacity:.4;cursor:not-allowed;pointer-events:none}
+.midea-stepper{display:flex;align-items:center;gap:6px}
+.midea-stepper button{padding:2px 8px;border-radius:6px}
+.midea-stepper .midea-setpoint{min-width:36px;text-align:center;font-weight:600;font-size:13px}
+.midea-login-hint{font-size:12px;color:var(--muted);margin-top:6px}
+.midea-login-hint a{color:var(--teal,#3ec8b0);text-decoration:none}
+.midea-login-hint a:hover{text-decoration:underline}
+.midea-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
+.c-midea.loading{min-height:160px}
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 @media (prefers-reduced-motion: reduce){

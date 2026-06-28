@@ -9,6 +9,9 @@ const logger = require('../../utils/logger');
 const portalConfig = require('../../services/portalConfig');
 const pihole = require('../../services/pihole');
 const license = require('../../services/license');
+const mideaOwners = require('../../services/midea/mideaOwners');
+const midea = require('../../services/midea');
+const mideaDevices = require('../../services/midea/mideaDevices');
 
 const router = Router();
 
@@ -24,6 +27,26 @@ function unidentified(res) {
 
 function piholeUnavailable(cache) {
   return !license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0;
+}
+
+function mideaUnavailable() {
+  return !license.hasFeature('midea_integration') || mideaDevices.listDevices().length === 0;
+}
+// Redact to portal-safe fields only (drop cloud_appliance_id / any secrets).
+function redactMideaDevice(id) {
+  const d = mideaDevices.getDevice(id);
+  return d ? { id: d.id, name: d.name, transport: d.transport } : null;
+}
+
+const MIDEA_MODES = new Set(['auto', 'cool', 'heat', 'dry', 'fan']);
+// Whitelist + range/type-check; returns a clean patch or null (→ 400). At least one valid field required.
+function validateMideaPatch(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const patch = {};
+  if ('power' in raw) { if (typeof raw.power !== 'boolean') return null; patch.power = raw.power; }
+  if ('targetTemp' in raw) { const t = Number(raw.targetTemp); if (!Number.isFinite(t) || t < 16 || t > 30) return null; patch.targetTemp = t; }
+  if ('mode' in raw) { if (!MIDEA_MODES.has(raw.mode)) return null; patch.mode = raw.mode; }
+  return Object.keys(patch).length ? patch : null;
 }
 
 // Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
@@ -211,6 +234,61 @@ router.get('/pihole/household', (req, res) => {
     res.json({ ok: true, data: { total, blocked, blockedPct, activeClients: (s.clients && s.clients.active != null) ? s.clients.active : null, asOf: cache.lastSyncAt } });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /pihole/household failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// GET /midea — owner-scoped device list (trust allowed). Owner id from middleware only.
+router.get('/midea', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
+    if (mideaUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
+    const ids = mideaOwners.devicesOwnedBy(req.portalOwnerId);
+    if (!ids.length) return res.json({ ok: true, data: null, reason: 'no_data' });
+    // Parallel live state — O(1) roundtrip; per-device offline never aborts the list.
+    const states = await Promise.all(ids.map((id) => midea.getState(id).catch(() => ({ offline: true }))));
+    const devices = ids.map((id, i) => {
+      const d = redactMideaDevice(id);
+      return d ? { ...d, state: states[i] } : null;
+    }).filter(Boolean);
+    res.json({ ok: true, data: { devices, loggedIn: req.portalLoggedIn } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /midea failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// GET /midea/:id/state — single-card refresh for the auto-poll (trust allowed, read-only).
+router.get('/midea/:id/state', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
+    if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    const id = Number(req.params.id);
+    if (!mideaOwners.isOwner(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
+    const state = await midea.getState(id); // {offline:true} is a known state → passes through
+    res.json({ ok: true, data: { state } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /midea state failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// POST /midea/:id/state — control. Login-required (trust does NOT control) + isOwner.
+router.post('/midea/:id/state', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
+    if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
+    const id = Number(req.params.id);
+    if (!mideaOwners.isOwner(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
+    const patch = validateMideaPatch(req.body && req.body.patch);
+    if (!patch) return res.status(400).json({ ok: false, error: 'MIDEA_INVALID_PATCH' });
+    const state = await midea.setState(id, patch);
+    if (!state || state.offline) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    res.json({ ok: true, data: { state } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /midea control failed');
     return res.json({ ok: true, data: null, reason: 'unavailable' });
   }
 });

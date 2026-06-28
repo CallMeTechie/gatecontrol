@@ -483,10 +483,130 @@
     hydratePiholeScope(piScopeActive);
   }
 
+  // ─── Klima (Midea) widget ───────────────────────────────────────────────────
+  var _mideaCtl = null;     // AbortController for visibility/network listeners
+  var _mideaTimer = null;   // poll interval
+  var _mideaPollGen = 0;    // generation guard against stale 429 callbacks
+  var _mideaLoggedIn = false;
+  var _mideaDevices = [];
+
+  var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
+  function mideaModeLabel(m) { return PT['mideaMode' + m.charAt(0).toUpperCase() + m.slice(1)] || m; }
+
+  function renderMideaCard(d) {
+    var st = d.state || {};
+    var offline = !st || st.offline;
+    var powered = !offline && !!st.power;
+    var temp = offline ? '—' : Math.round(st.indoorTemp) + '°';
+    var statusTxt = offline ? (PT.mideaOffline || 'Offline') : (powered ? (PT.mideaPowerOn || 'On') : (PT.mideaPowerOff || 'Off'));
+    var dis = (_mideaLoggedIn && !offline) ? '' : ' disabled';
+    var modeBtns = MIDEA_MODES.map(function (m) {
+      var on = (!offline && st.mode === m) ? ' on' : '';
+      return '<button class="midea-mode' + on + '" data-mode="' + m + '"' + dis + '>' + escHtml(mideaModeLabel(m)) + '</button>';
+    }).join('');
+    var login = _mideaLoggedIn ? '' :
+      '<div class="midea-login-hint"><span>' + escHtml(PT.mideaLoginToControl || '') + '</span> <a href="/login">' + escHtml(PT.mideaLoginLink || 'Log in') + '</a></div>';
+    return '<div class="midea-card" data-id="' + Number(d.id) + '">' +
+      '<div class="midea-head"><b>' + escHtml(d.name) + '</b><span class="midea-status" data-power="' + (powered ? 'true' : 'false') + '">' + escHtml(statusTxt) + '</span></div>' +
+      '<div class="midea-temp">' + escHtml(temp) + ' <small>' + escHtml(PT.mideaCurrent || '') + '</small></div>' +
+      '<div class="midea-controls">' +
+        '<button class="midea-power" data-act="power"' + dis + '>' + escHtml(PT.mideaPower || '') + '</button>' +
+        '<span class="midea-stepper"><button data-step="-1"' + dis + '>−</button><span class="midea-target">' + escHtml(String(offline ? '—' : st.targetTemp)) + '°</span><button data-step="1"' + dis + '>+</button></span>' +
+        '<span class="midea-modes">' + modeBtns + '</span>' +
+      '</div>' + login +
+    '</div>';
+  }
+
+  function renderMidea(devices) {
+    var list = document.getElementById('midea-list');
+    if (!list) return;
+    list.innerHTML = devices.map(renderMideaCard).join('');
+  }
+
+  function patchMideaCard(id, state) {
+    _mideaDevices = _mideaDevices.map(function (d) { return d.id === id ? Object.assign({}, d, { state: state }) : d; });
+    renderMidea(_mideaDevices);
+  }
+
+  function mideaControl(cardEl, patch) {
+    var id = Number(cardEl.dataset.id);
+    fetch('/api/v1/portal/midea/' + id + '/state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: patch }),
+    }).then(function (r) { return r.json(); }).then(function (body) {
+      var m = document.getElementById('mideaMsg');
+      if (body.ok && body.data && body.data.state) { patchMideaCard(id, body.data.state); }
+      else if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; }
+    }).catch(function () { var m = document.getElementById('mideaMsg'); if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; } });
+  }
+
+  function onMideaClick(ev) {
+    var cardEl = ev.target.closest('.midea-card');
+    if (!cardEl) return;
+    var patch = null;
+    var powerBtn = ev.target.closest('button[data-act="power"]');
+    var stepBtn = ev.target.closest('button[data-step]');
+    var modeBtn = ev.target.closest('button[data-mode]');
+    if (powerBtn) {
+      var powered = cardEl.querySelector('.midea-status').dataset.power === 'true';
+      patch = { power: !powered };
+    } else if (stepBtn) {
+      var cur = parseFloat(cardEl.querySelector('.midea-target').textContent);
+      if (!Number.isFinite(cur)) return;
+      patch = { targetTemp: Math.min(30, Math.max(16, cur + Number(stepBtn.dataset.step) * 0.5)) };
+    } else if (modeBtn) {
+      patch = { mode: modeBtn.dataset.mode };
+    }
+    if (patch) mideaControl(cardEl, patch);
+  }
+
+  function hydrateMidea() {
+    var card = document.querySelector('.c-midea');
+    if (!card) return;
+    if (!card.dataset.wired) { card.dataset.wired = '1'; card.addEventListener('click', onMideaClick); } // scoped, once
+    setLoading(card, true);
+    fetch('/api/v1/portal/midea')
+      .then(function (r) { if (!r.ok) { if (r.status === 404) card.style.display = 'none'; throw new Error('HTTP ' + r.status); } return r.json(); })
+      .then(function (body) {
+        setLoading(card, false);
+        if (!body.ok || body.data === null) { card.style.display = 'none'; return; } // hide on unavailable/no_owner/no_data
+        _mideaLoggedIn = !!body.data.loggedIn;
+        _mideaDevices = body.data.devices || [];
+        renderMidea(_mideaDevices);
+        startMideaPoll();
+      })
+      .catch(function () { setLoading(card, false); showError(card, hydrateMidea); });
+  }
+
+  // Visibility + network-bound poll: one timer, teardown before re-bind. >=120s; pause on hidden/offline/429.
+  function startMideaPoll() {
+    if (_mideaTimer) { clearInterval(_mideaTimer); _mideaTimer = null; }
+    if (_mideaCtl) { _mideaCtl.abort(); _mideaCtl = null; }
+    if (!_mideaDevices.length) return;
+    _mideaCtl = new AbortController();
+    var run = function () {
+      if (_mideaTimer) return;
+      var gen = ++_mideaPollGen;
+      _mideaTimer = setInterval(function () {
+        _mideaDevices.forEach(function (d) {
+          fetch('/api/v1/portal/midea/' + Number(d.id) + '/state')
+            .then(function (r) { if (r.status === 429) { if (gen === _mideaPollGen) { clearInterval(_mideaTimer); _mideaTimer = null; } return null; } return r.json(); })
+            .then(function (body) { if (body && body.ok && body.data && body.data.state) patchMideaCard(Number(d.id), body.data.state); })
+            .catch(function () {});
+        });
+      }, 120000);
+    };
+    var stop = function () { if (_mideaTimer) { clearInterval(_mideaTimer); _mideaTimer = null; } };
+    if (!document.hidden) run();
+    document.addEventListener('visibilitychange', function () { return document.hidden ? stop() : run(); }, { signal: _mideaCtl.signal });
+    window.addEventListener('offline', stop, { signal: _mideaCtl.signal });
+    window.addEventListener('online', run, { signal: _mideaCtl.signal });
+  }
+
   // ─── Boot ───────────────────────────────────────────────────────────────────
   hydrateDevice();
   hydrateTraffic();
   hydrateServices();
   hydratePihole();
+  hydrateMidea();
 
 })();
