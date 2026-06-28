@@ -35,6 +35,15 @@
 
   const $ = (sel) => document.querySelector(sel);
 
+  // Mode segment: icons instead of text labels (label kept as title/aria-label for i18n + a11y).
+  const MODE_ICONS = {
+    auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
+    cool: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
+    heat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4"/></svg>',
+    dry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>',
+    fan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></svg>',
+  };
+
   // Module-scope handles so repeated loadDevices() calls never stack listeners or intervals.
   let _visController = null;
   let _visTimer = null;
@@ -116,7 +125,7 @@
             <div>
               <div class="ac-set-lbl">${T('midea.device.mode')}</div>
               <div class="toggle-group mode-group">
-                ${['auto', 'cool', 'heat', 'dry', 'fan'].map((m) => `<button type="button" class="toggle-btn" data-act="mode" data-mode="${m}">${T('midea.mode.' + m)}</button>`).join('')}
+                ${['auto', 'cool', 'heat', 'dry', 'fan'].map((m) => `<button type="button" class="toggle-btn mode-btn" data-act="mode" data-mode="${m}" title="${esc(T('midea.mode.' + m))}" aria-label="${esc(T('midea.mode.' + m))}">${MODE_ICONS[m]}</button>`).join('')}
               </div>
             </div>
           </div>
@@ -133,6 +142,15 @@
         </div>
       </div>`;
     }).join('');
+
+    // Initial state load: fetch every device's live status right after render so the
+    // card shows the real state on page load (not "—"/offline until a manual Refresh).
+    // Fire-and-forget + parallel → does not block render; refreshState handles
+    // offline/errors/rate-limit per card.
+    devices.forEach((d) => {
+      const card = el.querySelector(`.ac-card[data-id="${d.id}"]`);
+      if (card) refreshState(d.id, card);
+    });
 
     // Page-Visibility-bound cloud refresh: poll Cloud devices while tab is visible, ≥120s interval.
     // Always tear down the previous listener + interval first so repeated loadDevices() calls
@@ -303,9 +321,16 @@
   async function loadCloudDevices() {
     try {
       const { devices } = await api('GET', '/cloud/devices');
-      $('#midea-cloud-list').innerHTML = devices.map((d) => `
+      // Hide devices already added locally (match by serial or cloud appliance id) —
+      // the long serial is no longer rendered (caused horizontal overflow), and an
+      // already-added device should not reappear in the "add" list.
+      const added = _devicesCache || [];
+      const isAdded = (d) => added.some((x) =>
+        x.device_sn === d.sn || x.device_sn === 'cloud-' + d.id || String(x.cloud_appliance_id) === String(d.id));
+      const pending = devices.filter((d) => !isAdded(d));
+      $('#midea-cloud-list').innerHTML = pending.map((d) => `
         <div class="cloud-row">
-          <span>${esc(d.name)} <span class="muted">${esc(d.sn)}</span></span>
+          <span class="cloud-name">${esc(d.name)}</span>
           <button class="btn btn-sm" data-add="${esc(d.sn)}" data-name="${esc(d.name)}">${T('midea.devices.add')}</button>
           <button class="btn btn-sm" data-cloud-id="${esc(String(d.id))}" data-name="${esc(d.name)}">${T('midea.cloud.add')}</button>
         </div>`).join('');
@@ -328,7 +353,7 @@
     const add = ev.target.closest('button[data-add]');
     if (!add) return;
     add.disabled = true;
-    try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); window.closeModal('midea-add-modal'); }
+    try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); await loadCloudDevices(); window.closeModal('midea-add-modal'); }
     catch (e) { alert(e.message); } finally { add.disabled = false; }
   });
 
@@ -338,7 +363,7 @@
     btn.disabled = true;
     try {
       await api('POST', '/devices', { transport: 'cloud', cloud_appliance_id: btn.dataset.cloudId, name: btn.dataset.name });
-      await loadDevices(); window.closeModal('midea-add-modal');
+      await loadDevices(); await loadCloudDevices(); window.closeModal('midea-add-modal');
     } catch (e) { alert(e.message); } finally { btn.disabled = false; }
   });
 
