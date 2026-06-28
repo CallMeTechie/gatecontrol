@@ -1984,6 +1984,8 @@
   "settings.portal.widget_services": "Services",
   "settings.portal.widget_pihole": "Pi-hole widget",
   "settings.portal.widget_midea": "Climate widget",
+  "settings.portal.autoappear": "Auto-open portal on connect",
+  "settings.portal.autoappear_help": "When enabled, VPN clients automatically open the portal after connecting. Disable to keep the portal accessible but not auto-opened.",
   "settings.portal.trust_owner_mapping": "Trust device→owner mapping (zero-login per-owner)",
   "settings.portal.trust_owner_mapping_help": "When enabled, unauthenticated users on a device with an assigned owner see that owner's aggregated DNS counts without logging in. Enable only when devices are used exclusively by their assigned owner.",
   "settings.portal.saved": "Portal settings saved",
