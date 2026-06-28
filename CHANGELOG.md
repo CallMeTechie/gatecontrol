@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.4] — 2026-06-28
+
+### Änderungen
+- Portal auto-open on connect (server: portalUrl+autoOpenPortal on /permissions, portal.autoappear admin toggle)
+
+---
+
 ## [1.108.3] — 2026-06-28
 
 ### Fixes
