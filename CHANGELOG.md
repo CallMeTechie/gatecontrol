@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.105.0] — 2026-06-28
+
+### Features
+- tint AC ring by mode (cool→teal, heat→coral)
+
+---
+
 ## [1.104.0] — 2026-06-28
 
 ### Features
