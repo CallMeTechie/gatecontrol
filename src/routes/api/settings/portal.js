@@ -56,6 +56,9 @@ router.put('/portal', (req, res) => {
     if (widgets.pihole !== undefined) {
       settings.set('portal.widget.pihole', widgets.pihole ? '1' : '0');
     }
+    if (widgets.midea !== undefined) {
+      settings.set('portal.widget.midea', widgets.midea ? '1' : '0');
+    }
 
     if (body.trust_owner_mapping !== undefined) {
       settings.set('portal.trust_owner_mapping', body.trust_owner_mapping ? '1' : '0');
