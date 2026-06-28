@@ -188,12 +188,14 @@
       return;
     }
     card.classList.remove('offline');
-    const pct = Math.max(0, Math.min(100, ((Number(state.indoorTemp) - 16) / (30 - 16)) * 100));
+    const indoorNum = Number(state.indoorTemp);
+    const pct = isNaN(indoorNum) ? 0 : Math.max(0, Math.min(100, ((indoorNum - 16) / (30 - 16)) * 100));
     if (ring) ring.style.setProperty('--ring-val', pct + '%');
-    if (ringV) ringV.textContent = `${Math.round(state.indoorTemp)}°`;
+    if (ringV) ringV.textContent = isNaN(indoorNum) ? '—' : Math.round(indoorNum) + '°';
     if (status) status.innerHTML = `<span class="tag-dot"></span>${state.power ? T('midea.device.on') : T('midea.device.off')}`;
-    if (input) input.value = state.targetTemp;
-    if (stepperV) stepperV.textContent = `${state.targetTemp} °C`;
+    const targetNum = Number(state.targetTemp);
+    if (input && !isNaN(targetNum)) input.value = targetNum;
+    if (stepperV) stepperV.textContent = isNaN(targetNum) ? '— °C' : targetNum + ' °C';
     card.querySelectorAll('.mode-group .toggle-btn').forEach((b) =>
       b.classList.toggle('active', b.dataset.mode === state.mode));
     updateOnlineKpi();
