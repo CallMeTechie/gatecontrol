@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Toten Code entfernt (per 3-fach-Subagent-Verifikation einstimmig bestätigt): ungenutzte Funktionen
+  `users.getByUsername`/`getByIdWithHash`/`getByUsernameWithHash` (Login nutzt direkte DB-Abfragen),
+  `tokens.getBoundPeerId`, `wireguard.getConfig` (+ ungenutzter `readFile`-Import), `crypto.privateKeyDecrypt`,
+  `ip.isInSubnet`, `gatewayHealth.stopWatchdog` sowie die toten Test-Alias-Exporte `tags._splitCsv`/`_validateName`.
+  Keine Verhaltensänderung.
+
+---
+
 ## [1.108.1] — 2026-06-28
 
 ### Änderungen

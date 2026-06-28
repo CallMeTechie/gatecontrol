@@ -73,20 +73,8 @@ function getNextAvailableIp() {
   return null; // Subnet exhausted
 }
 
-/**
- * Validate that an IP is within the configured subnet
- */
-function isInSubnet(ip) {
-  const { ipNum: subnetBase, prefixLen } = parseCidr(config.wireguard.subnet);
-  const mask = (0xFFFFFFFF << (32 - prefixLen)) >>> 0;
-  const targetNum = ipToNum(ip);
-  return ((targetNum & mask) >>> 0) === ((subnetBase & mask) >>> 0);
-}
-
 module.exports = {
-  getNextAvailableIp,
-  isInSubnet,
-  ipToNum,
+  getNextAvailableIp,  ipToNum,
   numToIp,
   parseCidr,
 };
