@@ -85,11 +85,16 @@ Diese Kontrakte halten CSS und JS synchron:
   `conic-gradient(var(--accent) var(--ring-val,0%), var(--bg-hover) 0)`
   (Vollkreis-Gauge — **kein** `calc(% * deg)`, das wäre ungültiges CSS). `pct` ist
   die Innentemperatur auf 16–30 °C normiert.
-- **Stepper:** Ein **separater** Click-Listener setzt den versteckten
-  `<input data-act="target">` (geklemmt 16–30) und dispatcht
-  `new Event('change', { bubbles:true })` → der bestehende Change-Handler greift
-  unverändert. Bei noch nicht geladenem State (`!input.value`) wird **kein**
-  API-Call abgesetzt.
+- **Stepper (optimistisch, 1°-Schritte):** Ein **separater** Click-Listener ändert
+  die Zieltemperatur in **ganzen Grad** (geklemmt 16–30) und aktualisiert die
+  Anzeige (`.v` + verstecktes `<input data-act="target">`) **sofort** — Zustand
+  `pending` (amber). Der Set-Befehl geht **debounced** (~500 ms, koalesziert rasche
+  Klicks zu **einem** Befehl mit dem Endwert) im Hintergrund raus; nach Geräte-
+  Bestätigung markiert `setCardState` den Sollwert als `confirmed` (grün). Bei noch
+  nicht geladenem State (`!input.value`) wird **kein** Befehl gesendet.
+  (1° statt 0,5°, weil die real getesteten Geräte auf ganze Grad runden — das
+  Protokoll kann 0,5°, das Gerät nicht; bei einem 0,5°-fähigen Gerät müsste die
+  Schrittweite gerätespezifisch werden.)
 - **Modus:** früher `<select data-act="mode">` (change), jetzt
   `.toggle-btn[data-act="mode"]` (click). Der Click-Handler bekam den Modus-Zweig,
   der Change-Handler verlor ihn (kein Doppel-Fire).
@@ -114,7 +119,8 @@ Diese Kontrakte halten CSS und JS synchron:
 ## Bedienung
 
 - `/midea` zeigt das Karten-Grid mit KPI-Streifen.
-- Temperatur per Stepper (±0,5 °C), Modus per Segment, Ein/Aus per Power.
+- Temperatur per Stepper (±1 °C, sofortige Anzeige, grün sobald das Gerät bestätigt),
+  Modus per Segment, Ein/Aus per Power.
 - „Verwalten"/„Zuweisen" → Besitzer-Dialog (suchen, an-/abwählen, speichern).
 - „Gerät hinzufügen" → Dialog mit Cloud-/Manuell-Segment.
 - „Geräte suchen" (Discover) und alle übrigen Aktionen unverändert.
