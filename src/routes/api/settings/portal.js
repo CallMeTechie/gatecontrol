@@ -21,6 +21,7 @@ const router = Router();
  */
 router.get('/portal', (req, res) => {
   res.json({ ok: true, data: Object.assign({}, portalConfig(), {
+    autoappear: settings.get('portal.autoappear', '1') !== '0',
     base_domain: settings.get('portal.base_domain', ''),
     prefix: settings.get('portal.prefix', 'home'),
     effectiveHost: effectivePortalHost().host,
@@ -62,6 +63,9 @@ router.put('/portal', (req, res) => {
 
     if (body.trust_owner_mapping !== undefined) {
       settings.set('portal.trust_owner_mapping', body.trust_owner_mapping ? '1' : '0');
+    }
+    if (body.autoappear !== undefined) {
+      settings.set('portal.autoappear', body.autoappear ? '1' : '0');
     }
 
     // Host change (base_domain + prefix committed together).
