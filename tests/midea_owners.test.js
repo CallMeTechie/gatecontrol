@@ -92,6 +92,11 @@ test('deleting a user removes their owner rows', async () => {
   owners.setOwners(d.id, [adminId, carolId]);
   users.remove(carolId);
   assert.deepEqual(owners.ownersOf(d.id).map((o) => o.id), [adminId]);  // carol gone, admin stays
+  // raw COUNT: ownersOf JOINs users so an orphan row is invisible there — assert the row is truly gone
+  assert.equal(
+    db.prepare('SELECT COUNT(*) c FROM midea_device_owners WHERE user_id = ?').get(carolId).c,
+    0,
+  );
 });
 
 test('deleting a device removes its owner rows', () => {
