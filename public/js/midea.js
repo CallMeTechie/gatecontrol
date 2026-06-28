@@ -328,7 +328,7 @@
     const add = ev.target.closest('button[data-add]');
     if (!add) return;
     add.disabled = true;
-    try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); }
+    try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); window.closeModal('midea-add-modal'); }
     catch (e) { alert(e.message); } finally { add.disabled = false; }
   });
 
@@ -338,7 +338,7 @@
     btn.disabled = true;
     try {
       await api('POST', '/devices', { transport: 'cloud', cloud_appliance_id: btn.dataset.cloudId, name: btn.dataset.name });
-      await loadDevices();
+      await loadDevices(); window.closeModal('midea-add-modal');
     } catch (e) { alert(e.message); } finally { btn.disabled = false; }
   });
 
@@ -368,7 +368,7 @@
       const { device } = await api('POST', '/devices', body);
       msg.textContent = '✓ ' + ((device && device.name) || ip);
       f.reset();
-      await loadDevices();
+      await loadDevices(); window.closeModal('midea-add-modal');
     } catch (e) {
       msg.textContent = e.message;
     } finally {
@@ -403,6 +403,24 @@
       alert(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message);
     }
   });
+
+  // Add-device dialog open + segment switch (close via data-close-modal + Escape from app.js).
+  const addModal = $('#midea-add-modal');
+  if (addModal) {
+    $('#midea-add-open').addEventListener('click', () => window.openModal('midea-add-modal'));
+    const tabCloud = $('#midea-add-tab-cloud');
+    const tabManual = $('#midea-add-tab-manual');
+    const paneCloud = $('#midea-pane-cloud');
+    const paneManual = $('#midea-pane-manual');
+    function showPane(cloud) {
+      tabCloud.classList.toggle('active', cloud);
+      tabManual.classList.toggle('active', !cloud);
+      paneCloud.hidden = !cloud;
+      paneManual.hidden = cloud;
+    }
+    tabCloud.addEventListener('click', () => showPane(true));
+    tabManual.addEventListener('click', () => showPane(false));
+  }
 
   loadDevices();
   loadCloudDevices();
