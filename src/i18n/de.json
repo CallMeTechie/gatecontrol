@@ -2095,5 +2095,21 @@
   "midea.owners.none": "Keine Besitzer",
   "midea.owners.save": "Besitzer speichern",
   "midea.owners.saved": "Besitzer gespeichert",
-  "midea.owners.error_unknown_user": "Unbekannter Nutzer"
+  "midea.owners.error_unknown_user": "Unbekannter Nutzer",
+  "midea.owners.manage": "Verwalten",
+  "midea.owners.assign": "Zuweisen",
+  "midea.owners.modal_title": "Besitzer verwalten",
+  "midea.owners.modal_sub": "Wer darf dieses Gerät sehen & steuern?",
+  "midea.owners.search": "Nutzer suchen…",
+  "midea.owners.selected": "ausgewählt",
+  "midea.owners.cancel": "Abbrechen",
+  "midea.kpi.devices": "Geräte",
+  "midea.kpi.online": "Online",
+  "midea.kpi.assigned": "Mit Besitzer",
+  "midea.kpi.cloud": "Cloud-Konto",
+  "midea.add.title": "Gerät hinzufügen",
+  "midea.add.tab_cloud": "Cloud-Konto",
+  "midea.add.tab_manual": "Manuell (per IP)",
+  "midea.device.current": "aktuell",
+  "midea.device.online": "Online"
 }
