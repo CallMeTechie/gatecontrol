@@ -48,6 +48,10 @@ test('GET /midea renders without 500', async () => {
   await agent.get('/midea').expect(200);
 });
 
+test('GET /midea still renders 200 with owner UI', async () => {
+  await agent.get('/midea').expect(200);
+});
+
 test('POST /devices with transport=cloud creates a cloud device', async () => {
   const res = await agent.post('/api/v1/midea/devices')
     .set('x-csrf-token', csrfToken)
