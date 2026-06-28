@@ -213,6 +213,35 @@
     }
   }
 
+  // Owner-assign dialog. Opened per device; reuses the cached usersList.
+  let _ownerDeviceId = null;
+  function openOwnerModal(device, usersList) {
+    _ownerDeviceId = device.id;
+    const ownerIds = new Set((device.owners || []).map((o) => o.id));
+    $('#midea-owner-device').textContent = T('midea.owners.modal_sub') + ' — ' + device.name;
+    const search = $('#midea-owner-search');
+    search.value = '';
+    const list = $('#midea-owner-list');
+    list.innerHTML = usersList.map((u) => {
+      const sel = ownerIds.has(u.id) ? ' sel' : '';
+      const role = u.role ? ` · ${esc(u.role)}` : '';
+      return `<div class="pick-row${sel}" data-uid="${u.id}">
+        <span class="avatar lg ${['av-accent','av-blue','av-purple','av-green','av-amber'][u.id % 5]}">${esc((u.username || '?')[0].toUpperCase())}</span>
+        <span class="pick-name"><b>${esc(u.username)}</b><small>${esc(u.username)}${role}</small></span>
+        <span class="pick-check">✓</span></div>`;
+    }).join('');
+    updateOwnerCount();
+    window.openModal('midea-owner-modal');
+    search.focus();
+  }
+  function updateOwnerCount() {
+    const list = $('#midea-owner-list');
+    const total = list.querySelectorAll('.pick-row').length;
+    const sel = list.querySelectorAll('.pick-row.sel').length;
+    $('#midea-owner-count').innerHTML = `<b>${sel}</b> / ${total} ${T('midea.owners.selected')}`;
+  }
+  function closeOwnerModal() { window.closeModal('midea-owner-modal'); _ownerDeviceId = null; }
+
   document.addEventListener('click', async (ev) => {
     const btn = ev.target.closest('button[data-act]');
     if (!btn) return;
@@ -226,14 +255,9 @@
         await refreshState(id, card);
       }
       if (btn.dataset.act === 'remove') { await api('DELETE', `/devices/${id}`); await loadDevices(); }
-      if (btn.dataset.act === 'save-owners') {
-        const box = btn.closest('.midea-owners');
-        const ids = [...box.querySelectorAll('input[type=checkbox]:checked')].map((c) => Number(c.value));
-        try {
-          await api('PUT', `/devices/${Number(box.dataset.id)}/owners`, { user_ids: ids });
-          btn.textContent = T('midea.owners.saved');   // transient feedback before the re-render
-          await loadDevices();                          // re-renders the row (button text resets)
-        } catch (e) { alert(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message); }
+      if (btn.dataset.act === 'owners') {
+        const device = _devicesCache.find((d) => String(d.id) === card.dataset.id);
+        if (device) openOwnerModal(device, await loadUsers());
       }
       if (btn.dataset.act === 'mode') {
         const card = btn.closest('.ac-card'); const id = Number(card.dataset.id);
@@ -349,6 +373,34 @@
       msg.textContent = e.message;
     } finally {
       if (btn) btn.disabled = false;
+    }
+  });
+
+  // Toggle a user row
+  $('#midea-owner-list').addEventListener('click', (ev) => {
+    const row = ev.target.closest('.pick-row');
+    if (!row) return;
+    row.classList.toggle('sel');
+    updateOwnerCount();
+  });
+  // Client-side filter (// ponytail: O(n)-Filter, reicht ≤50 Nutzer)
+  $('#midea-owner-search').addEventListener('input', (ev) => {
+    const q = ev.target.value.toLowerCase();
+    $('#midea-owner-list').querySelectorAll('.pick-row').forEach((r) => {
+      r.style.display = r.querySelector('b').textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+  // (Schließen via data-close-modal + Escape von app.js — kein eigener Listener nötig.)
+  // Da app.js direkt `display:none` setzt, wird `_ownerDeviceId` beim nächsten Öffnen ohnehin neu gesetzt — Reset ist unkritisch.
+  $('#midea-owner-save').addEventListener('click', async () => {
+    if (_ownerDeviceId == null) return;
+    const ids = [...$('#midea-owner-list').querySelectorAll('.pick-row.sel')].map((r) => Number(r.dataset.uid));
+    try {
+      await api('PUT', `/devices/${_ownerDeviceId}/owners`, { user_ids: ids });
+      window.closeModal('midea-owner-modal');
+      await loadDevices();
+    } catch (e) {
+      alert(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message);
     }
   });
 
