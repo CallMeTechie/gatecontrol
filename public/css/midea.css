@@ -1,0 +1,75 @@
+/* Klimaanlage (/midea) — gemeinsame Komponenten. Nur Legacy-Token-Vokabular →
+   themt sich automatisch (aurora dark, default light, pro). Alles gescopt. */
+
+/* Layout */
+.midea-page .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
+.midea-page .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;display:flex;flex-direction:column;gap:6px}
+.midea-page .kpi-l{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3);font-weight:700}
+.midea-page .kpi-v{font-family:var(--font-display);font-weight:800;font-size:24px;line-height:1}
+.midea-page .kpi-v small{font-size:.5em;font-weight:600;color:var(--text-2)}
+.midea-page .ac-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px;margin-bottom:18px}
+
+/* Karte */
+.midea-page .ac-card{display:flex;flex-direction:column}
+.midea-page .ac-card.offline{opacity:.78}
+.midea-page .ac-head{display:flex;align-items:flex-start;gap:12px}
+.midea-page .ac-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;background:var(--accent-lt);color:var(--accent)}
+.midea-page .ac-name{font-family:var(--font-display);font-weight:700;font-size:16px;line-height:1.1}
+.midea-page .ac-sub{font-size:12px;color:var(--text-2);margin-top:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+
+/* Klima-Block */
+.midea-page .ac-climate{display:flex;align-items:center;gap:18px;margin:18px 0;padding:16px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.midea-page .ac-ring{width:92px;height:92px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  background:conic-gradient(var(--accent) var(--ring-val,0%), var(--bg-hover) 0)} /* full-circle gauge; % is a valid conic stop */
+.midea-page .ac-ring-in{width:72px;height:72px;border-radius:50%;background:var(--bg-card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.midea-page .ac-ring-v{font-family:var(--font-display);font-weight:800;font-size:24px;line-height:1}
+.midea-page .ac-ring-l{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:700}
+.midea-page .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:11px}
+.midea-page .ac-set-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:700;margin-bottom:6px}
+
+/* Stepper (versteckter <input> treibt den Change-Handler) */
+.midea-page .stepper{display:inline-flex;align-items:center;border:1px solid var(--border-hi);border-radius:10px;background:var(--bg-input);overflow:hidden}
+.midea-page .stepper button{width:34px;height:34px;border:0;background:transparent;color:var(--text-2);font-size:18px;cursor:pointer}
+.midea-page .stepper button:hover{background:var(--bg-hover);color:var(--text-1)}
+.midea-page .stepper .v{font-family:var(--font-mono);font-weight:700;font-size:15px;min-width:62px;text-align:center;color:var(--text-1)}
+.midea-page .stepper input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+
+/* Besitzer-Block */
+.midea-page .ac-owners{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
+.midea-page .ac-owners-l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:700;width:100%;display:flex;align-items:center;gap:7px}
+.midea-page .chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap;flex:1;min-width:0}
+.midea-page .owner-chip{display:inline-flex;align-items:center;gap:7px;padding:4px 11px 4px 4px;background:var(--bg-hover);border:1px solid var(--border);border-radius:999px;font-size:12.5px;font-weight:600}
+.midea-page .no-owner{font-size:12.5px;color:var(--text-3);font-style:italic}
+
+/* Avatare (Karte + Dialog) */
+.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;font-family:var(--font-display);font-weight:800;font-size:11px;color:#fff}
+.avatar.lg{width:32px;height:32px;font-size:13px}
+.av-accent{background:var(--accent)}
+.av-blue{background:var(--blue)}
+.av-purple{background:var(--purple)}
+.av-green{background:var(--green)}
+.av-amber{background:var(--amber)}
+
+/* Dialog: Sichtbarkeit + Rahmen via app.js window.openModal + Theme-.modal-*.
+   midea.css liefert nur Innen-Klassen + Gap-Füller fürs default-Theme. */
+.midea-modal .modal-sub{font-size:12px;color:var(--text-2);margin-top:2px}
+.midea-modal .mi{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;background:var(--accent-lt);color:var(--accent)}
+.midea-page .btn-sm,.midea-modal .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:9px} /* app.css lacks .btn-sm */
+.midea-page .toggle-btn.active,.midea-modal .toggle-btn.active{background:var(--bg-card);color:var(--text-1)} /* app.css only has .toggle-btn.on */
+.midea-modal .midea-search{display:flex;align-items:center;gap:9px;padding:9px 13px;border:1px solid var(--border);background:var(--bg-input);border-radius:10px;color:var(--text-2);margin-bottom:14px}
+.midea-modal .midea-search input{border:0;background:transparent;outline:0;color:var(--text-1);font-size:13.5px;width:100%}
+.midea-modal .pick-count{font-size:12px;color:var(--text-2);margin:2px 0 12px}
+.midea-modal .pick-list{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.midea-modal .pick-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer}
+.midea-modal .pick-row:last-child{border-bottom:0}
+.midea-modal .pick-row:hover{background:var(--bg-hover)}
+.midea-modal .pick-row.sel{background:var(--accent-lt)}
+.midea-modal .pick-name{flex:1;min-width:0}
+.midea-modal .pick-name b{display:block;font-size:13.5px;font-weight:600}
+.midea-modal .pick-name small{font-size:11.5px;color:var(--text-2)}
+.midea-modal .pick-check{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--border-hi);display:grid;place-items:center;flex:0 0 auto;color:transparent;background:var(--bg-input)}
+.midea-modal .pick-row.sel .pick-check{background:var(--accent);border-color:transparent;color:#fff}
+
+/* Hinzufügen-Dialog: Segment-Panes */
+.midea-modal .seg-pane{margin-top:16px}
+.midea-modal .seg-pane[hidden]{display:none}
