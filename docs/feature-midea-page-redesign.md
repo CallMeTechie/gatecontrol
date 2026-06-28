@@ -53,7 +53,8 @@ Eingebunden wird `midea.css` **page-scoped** via `{% block head %}` im Template
 
 Jede `.ac-card[data-id]` zeigt: Kopf (Icon, Name, Transport-Tag, Online/Offline-
 Status-Tag), Klima-Block (Temperatur-Ring mit Innentemperatur, Stepper für die
-Zieltemperatur, Modus-Segment mit allen fünf Modi Auto/Cool/Heat/Dry/Fan),
+Zieltemperatur, Modus-Segment mit allen fünf Modi Auto/Cool/Heat/Dry/Fan als
+Icons — der Modusname steht in `title`/`aria-label`),
 Besitzer-Block (Avatar-Chips der `owners` + Button „Verwalten"/„Zuweisen") und die
 Aktionszeile (Power, Refresh|Test, Entfernen). Über dem Grid liegt ein
 KPI-Streifen (Geräte, Online, Mit Besitzer, Cloud-Konto).
@@ -105,6 +106,10 @@ Diese Kontrakte halten CSS und JS synchron:
   brechen.
 - **`_devicesCache`** (Modul-Scope, in `loadDevices()` gesetzt) liefert dem
   Besitzer-Dialog das Gerät zum geklickten `card.dataset.id` (kein `window`-Global).
+- **Initialer State-Load:** direkt nach dem Karten-Render ruft `loadDevices()` für
+  **jedes** Gerät `refreshState` auf (fire-and-forget, parallel) — der Live-Status
+  erscheint also automatisch beim Laden, ohne dass „Aktualisieren"/„Test" geklickt
+  werden muss. Fehler/Offline/Rate-Limit behandelt `refreshState` pro Karte.
 
 ## Bedienung
 
@@ -144,8 +149,9 @@ Nutzer-/Gerätenamen werden im Frontend über `esc()` ausgegeben (XSS).
 - **Modus-Segment:** Es werden bewusst alle fünf Modi (Auto/Cool/Heat/Dry/Fan)
   angeboten — das entspricht dem bisherigen `<select>`. Das abgenommene Mockup
   zeigte nur drei Modi; eine Reduktion wäre eine Funktionsregression gewesen.
-  Damit fünf Buttons in die Karte passen, ist `.midea-page .mode-group` auf
-  `flex:1`/kleinere Schrift gesetzt (statt Modi zu streichen).
+  Damit fünf Buttons in die Karte passen (und die Beschriftung nicht überläuft),
+  sind sie als **Icons** dargestellt (`.midea-page .mode-group .mode-btn`, je
+  `flex:1`); der Modusname steht in `title`/`aria-label`.
 - **Besitzer-Anzahl:** Zielfall Haushalt = ≤5 Besitzer/Gerät → die 5er-Avatar-
   Palette ist eindeutig. Bei 6–10 wiederholen sich Farben (per Name-Initial
   unterscheidbar). >10 ist kein erwarteter Fall.
