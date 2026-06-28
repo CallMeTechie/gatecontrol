@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.0] — 2026-06-28
+
+### Features
+- login/logout as bordered icon-buttons (drop white-on-teal text button)
+
+---
+
 ## [1.107.0] — 2026-06-28
 
 ### Features
