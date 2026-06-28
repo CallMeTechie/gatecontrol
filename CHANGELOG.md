@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.106.0] — 2026-06-28
+
+### Features
+- align AC stepper with admin (1° steps, optimistic + debounced, pending/confirmed)
+
+---
+
 ## [1.105.0] — 2026-06-28
 
 ### Features
