@@ -41,6 +41,8 @@
   Angeglichen an das Verhalten der Admin-/midea-Steuerung.
 - Klima-Widget Modus-Segment optisch an die Admin-/midea-Karte angeglichen: gepolsterter Inset-Track mit
   Lücken statt Trennlinien, abgesetzte aktive Pille, gleiche Icons und Dimensionen.
+- Portal-Header: Anmelden/Abmelden sind jetzt umrandete Icon-Buttons (wie der Theme-Umschalter) statt
+  Textbuttons — kein randloser Weiß-auf-Teal-Abmelden-Button mehr; Hover-Akzent (Anmelden teal, Abmelden coral).
 
 ---
 
