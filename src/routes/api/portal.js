@@ -38,6 +38,17 @@ function redactMideaDevice(id) {
   return d ? { id: d.id, name: d.name, transport: d.transport } : null;
 }
 
+const MIDEA_MODES = new Set(['auto', 'cool', 'heat', 'dry', 'fan']);
+// Whitelist + range/type-check; returns a clean patch or null (→ 400). At least one valid field required.
+function validateMideaPatch(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const patch = {};
+  if ('power' in raw) { if (typeof raw.power !== 'boolean') return null; patch.power = raw.power; }
+  if ('targetTemp' in raw) { const t = Number(raw.targetTemp); if (!Number.isFinite(t) || t < 16 || t > 30) return null; patch.targetTemp = t; }
+  if ('mode' in raw) { if (!MIDEA_MODES.has(raw.mode)) return null; patch.mode = raw.mode; }
+  return Object.keys(patch).length ? patch : null;
+}
+
 // Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
 // with SQLite's datetime('now') output format.
 function toSQLite(date) {
@@ -259,6 +270,25 @@ router.get('/midea/:id/state', async (req, res) => {
     res.json({ ok: true, data: { state } });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /midea state failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// POST /midea/:id/state — control. Login-required (trust does NOT control) + isOwner.
+router.post('/midea/:id/state', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
+    if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
+    const id = Number(req.params.id);
+    if (!mideaOwners.isOwner(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
+    const patch = validateMideaPatch(req.body && req.body.patch);
+    if (!patch) return res.status(400).json({ ok: false, error: 'MIDEA_INVALID_PATCH' });
+    const state = await midea.setState(id, patch);
+    if (!state || state.offline) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    res.json({ ok: true, data: { state } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /midea control failed');
     return res.json({ ok: true, data: null, reason: 'unavailable' });
   }
 });
