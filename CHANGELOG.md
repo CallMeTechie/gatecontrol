@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.11] — 2026-06-28
+
+### Änderungen
+- Merge origin/master into master (parallel work)
+
+---
+
 ## [1.103.10] — 2026-06-28
 
 ### Fixes
