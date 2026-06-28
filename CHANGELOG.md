@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.8] — 2026-06-28
+
+### Änderungen
+- /midea-Redesign Papercut-Fixes (Status-Autoload, Modus-Icons, Add-Formular-Layout, Cloud-Key)
+
+---
+
 ## [1.103.7] — 2026-06-28
 
 ### Änderungen
