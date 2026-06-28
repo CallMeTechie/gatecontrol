@@ -17,6 +17,10 @@
 - Klimaanlage-Besitzer-Zuordnung (Sub-A): Admin kann pro Midea-Klimagerät mehrere Besitzer (Nutzerkonten)
   zuweisen (n:m, Migration V62). Fundament für die kommende Portal-Steuerung „nur eigene Geräte" (Sub-B).
   Transaktionaler Cleanup bei User-/Geräte-Löschung. Lizenz-gegated `midea_integration`, admin-only.
+- Klimaanlage im Portal (Sub-B): eingeloggte Portal-Nutzer sehen und steuern im VPN-Landing-Portal
+  nur ihre eigenen Midea-Klimageräte (Ein/Aus, Zieltemperatur, Modus). Anzeige owner-gescopt
+  (Session oder Geräte-Trust), Steuerung login-pflichtig mit isOwner-Guard; visibility-gebundener
+  Auto-Poll. Neues, abschaltbares Portal-Widget. Lizenz-gegated `midea_integration`.
 
 ---
 
