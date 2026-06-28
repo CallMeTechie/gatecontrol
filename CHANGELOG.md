@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.104.0] — 2026-06-28
+
+### Features
+- redesign AC widget (temp-ring + stepper + icon mode-segment)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
