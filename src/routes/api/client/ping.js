@@ -3,6 +3,8 @@
 const { Router } = require('express');
 const { hasFeature } = require('../../../services/license');
 const tokens = require('../../../services/tokens');
+const portalConfig = require('../../../services/portalConfig');
+const settings = require('../../../services/settings');
 
 const router = Router();
 
@@ -17,8 +19,14 @@ router.get('/permissions', (req, res) => {
   const scopes = req.tokenScopes || [];
   const hasScope = (s) => scopes.includes('full-access') || scopes.includes(s);
 
+  const enabled = portalConfig().enabled;
+  const portalUrl = enabled ? `https://${portalConfig.effectivePortalHost().host}` : null;
+  const autoOpenPortal = enabled && settings.get('portal.autoappear', '1') !== '0';
+
   res.json({
     ok: true,
+    portalUrl,
+    autoOpenPortal,
     permissions: {
       services: hasScope('client:services'),
       traffic: hasScope('client:traffic'),
