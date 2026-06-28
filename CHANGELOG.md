@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.7] — 2026-06-28
+
+### Änderungen
+- Doku-Batch /midea-Redesign (feature-midea-page-redesign.md)
+
+---
+
 ## [1.103.6] — 2026-06-28
 
 ### Änderungen
