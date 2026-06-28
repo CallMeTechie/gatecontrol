@@ -4,6 +4,8 @@ const { Router } = require('express');
 const { requireFeature } = require('../../middleware/license');
 const users = require('../../services/users');
 const midea = require('../../services/midea');
+const mideaOwners = require('../../services/midea/mideaOwners');
+const mideaDevices = require('../../services/midea/mideaDevices');
 
 const router = Router();
 
@@ -77,9 +79,31 @@ router.post('/devices', wrap(async (req, res) => {
   res.json({ device: await midea.addDevice({ sn, name, ip, transport, cloud_appliance_id }) });
 }));
 
-// GET /devices — list all devices (redacted: no token/key)
+// GET /devices — list all devices (redacted) + owners
 router.get('/devices', wrap(async (req, res) => {
-  res.json({ devices: midea.getDevices() });
+  const devs = midea.getDevices().map((d) => ({ ...d, owners: mideaOwners.ownersOf(d.id) }));
+  res.json({ devices: devs });
+}));
+
+// PUT /devices/:id/owners — replace the owner set (admin-only, license-gated by router)
+router.put('/devices/:id/owners', wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!mideaDevices.getDevice(id)) {
+    return res.status(404).json({ ok: false, error: req.t('error.midea.device_not_found') });
+  }
+  const rawIds = req.body && req.body.user_ids;
+  if (!Array.isArray(rawIds)) {
+    return res.status(400).json({ ok: false, error: req.t('error.midea.user_ids_required') });
+  }
+  try {
+    const owners = mideaOwners.setOwners(id, rawIds);
+    res.json({ device_id: id, owners });
+  } catch (e) {
+    if (e.code === 'MIDEA_OWNER_UNKNOWN_USER') {
+      return res.status(400).json({ ok: false, error: req.t('error.midea.owner_unknown_user'), code: e.code });
+    }
+    throw e;
+  }
 }));
 
 // GET /devices/:id/state — fetch live state from device

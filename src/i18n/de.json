@@ -2085,6 +2085,9 @@
   "midea.cloud.add": "Hinzufügen (Cloud)",
   "midea.transport.cloud": "Cloud",
   "error.midea.cloud_appliance_id_required": "Cloud-Geräte-ID ist erforderlich",
+  "error.midea.device_not_found": "Gerät nicht gefunden",
+  "error.midea.owner_unknown_user": "Eine oder mehrere Benutzer-IDs sind unbekannt",
+  "error.midea.user_ids_required": "user_ids muss ein Array sein",
   "midea.device.refresh": "Aktualisieren",
   "midea.cloud.reauth": "Cloud-Konto braucht erneute Bestätigung — in der Midea-App bestätigen, dann erneut versuchen",
   "midea.cloud.usage_hint": "Cloud-Geräte werden über Ihr eigenes Midea-Konto gesteuert. Intensive Nutzung kann zu vorübergehenden Konto-Sperren bei Midea führen; ohne geöffnete Seite ist der Status evtl. nicht tagesaktuell."

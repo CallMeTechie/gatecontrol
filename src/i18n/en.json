@@ -2085,6 +2085,9 @@
   "midea.cloud.add": "Add (Cloud)",
   "midea.transport.cloud": "Cloud",
   "error.midea.cloud_appliance_id_required": "Cloud appliance ID is required",
+  "error.midea.device_not_found": "Device not found",
+  "error.midea.owner_unknown_user": "One or more user IDs are unknown",
+  "error.midea.user_ids_required": "user_ids must be an array",
   "midea.device.refresh": "Refresh",
   "midea.cloud.reauth": "Cloud account needs re-authentication — confirm in the Midea app, then retry",
   "midea.cloud.usage_hint": "Cloud devices are controlled through your own Midea account. Heavy use can lead to temporary account locks at Midea; without this page open the status may not be up to date."
