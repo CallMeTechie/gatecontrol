@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.2] — 2026-06-28
+
+### Änderungen
+- remove dead functions + unused exports (3-agent verified)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
