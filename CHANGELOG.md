@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.103.5] — 2026-06-28
+
+### Änderungen
+- AC-Besitzer-Zuordnung (midea_device_owners n:m)
+
+---
+
 ## [Unreleased]
 
 ### Features
