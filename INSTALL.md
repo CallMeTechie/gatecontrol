@@ -108,7 +108,7 @@ Download and run `setup.sh`. It installs Docker if missing, walks you through `.
 cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/default.env.example
 bash setup.sh
 ```
 
@@ -119,10 +119,10 @@ Skip straight to [§6 First login](#6-first-login) — setup.sh does the rest.
 ```bash
 cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
-curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
+curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/default.env.example
 curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
 chmod +x update.sh
-cp .env.example .env
+cp default.env.example .env
 ```
 
 Proceed to [§4 Configure `.env`](#4-configure-env).
@@ -137,7 +137,7 @@ docker load < gatecontrol-image.tar.gz
 rm gatecontrol-image.tar.gz
 ```
 
-Continue with the `docker-compose.yml` and `.env.example` from Option B.
+Continue with the `docker-compose.yml` and `default.env.example` from Option B.
 
 ---
 

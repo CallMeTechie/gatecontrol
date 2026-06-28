@@ -46,7 +46,7 @@ const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubro
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
-const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision } = require('./caddyOwner');
+const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision, MARKER_HOST } = require('./caddyOwner');
 const {
   caddyApi,
   _caddyApi,
@@ -843,6 +843,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     caddyConfig.apps.http.servers.srv0 = {
       listen: [':443', ':80'],
       routes: serverRoutes,
+      // The ownership marker's host (RFC 6761 reserved .invalid TLD) is a real
+      // host matcher Caddy would otherwise feed to automatic_https → a doomed
+      // public ACME order ("not a valid public suffix") retried forever. It
+      // never serves on the wire, so skip cert management for it entirely.
+      automatic_https: { skip: [MARKER_HOST] },
       logs: {
         default_logger_name: 'access',
       },
