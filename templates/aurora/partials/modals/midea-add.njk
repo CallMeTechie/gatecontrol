@@ -1,0 +1,38 @@
+<div class="modal-overlay midea-modal" id="midea-add-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">{{ t('midea.add.title') }}</div>
+      <button class="modal-close" data-close-modal aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="toggle-group" style="width:100%">
+        <button class="toggle-btn active" id="midea-add-tab-cloud" style="flex:1">{{ t('midea.add.tab_cloud') }}</button>
+        <button class="toggle-btn" id="midea-add-tab-manual" style="flex:1">{{ t('midea.add.tab_manual') }}</button>
+      </div>
+      <div class="seg-pane" id="midea-pane-cloud">
+        <form id="midea-cloud-form" class="form-grid">
+          <label>{{ t('midea.cloud.app') }}
+            <select name="app"><option value="msmarthome">MSmartHome</option><option value="nethome">NetHome Plus</option></select>
+          </label>
+          <label>{{ t('midea.cloud.email') }}<input name="email" type="email" autocomplete="username"></label>
+          <label>{{ t('midea.cloud.password') }}<input name="password" type="password" autocomplete="current-password"></label>
+          <button type="submit" class="btn btn-primary">{{ t('midea.cloud.connect') }}</button>
+        </form>
+        <p id="midea-cloud-msg" class="muted"></p>
+        <div id="midea-cloud-list"></div>
+      </div>
+      <div class="seg-pane" id="midea-pane-manual" hidden>
+        <p class="subtitle">{{ t('midea.manual.hint') }}</p>
+        <form id="midea-ip-form" class="form-grid">
+          <label>{{ t('midea.manual.ip') }}<input name="ip" type="text" inputmode="decimal" placeholder="192.168.x.y" autocomplete="off"></label>
+          <label>{{ t('midea.manual.name') }}<input name="name" type="text" autocomplete="off"></label>
+          <label>{{ t('midea.manual.cloud_device') }}
+            <select name="sn"><option value="">{{ t('midea.manual.no_cloud') }}</option></select>
+          </label>
+          <button type="submit" class="btn btn-primary">{{ t('midea.devices.add') }}</button>
+        </form>
+        <p id="midea-ip-msg" class="muted"></p>
+      </div>
+    </div>
+  </div>
+</div>

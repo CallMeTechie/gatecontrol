@@ -14,3 +14,10 @@ test('aurora.css defines the --purple-bd alias', () => {
   const css = fs.readFileSync('public/css/aurora.css', 'utf8');
   assert.ok(/--purple-bd\s*:/.test(css), 'aurora.css missing --purple-bd alias');
 });
+
+test('midea.css is linked (page-scoped) in all 3 midea pages', () => {
+  for (const theme of ['aurora', 'default', 'pro']) {
+    const page = fs.readFileSync(`templates/${theme}/pages/midea.njk`, 'utf8');
+    assert.ok(page.includes('/css/midea.css'), `${theme}/pages/midea.njk does not link midea.css`);
+  }
+});
