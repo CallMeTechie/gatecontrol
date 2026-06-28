@@ -2,39 +2,49 @@
 // Einmal-Spike: beweist, ob der zentrale (oeffentliche) GC-Server die deCONZ-REST-API
 // real erreicht, und ueber welchen Pfad. Bestimmt resolveBaseUrl (Plan Task 4 / Spec 2 + 15).
 //
-// Zwei Proben pro Kandidat:
-//   1) GET  <base>/api/config   -> unauthentifizierte deCONZ-Probe. JSON mit "apiversion"/
-//      "swversion" = dieser Pfad erreicht deCONZ. Braucht KEIN offenes Link-Fenster.
-//   2) POST <base>/api          -> Key-Acquire (nur sinnvoll mit offenem Phoscon-Link-Fenster):
-//      {"success":{"username":"..."}} = Key; {"error":{"type":101}} = Pfad ok, Fenster zu.
+// Erkenntnis nach Diagnose:
+//   - Route-Domain (Pfad A) -> 404 = remote_ip-Gate sperrt die eigene Server-IP (extern).
+//   - direkte LAN-IP (D/E)  -> kein Tunnel-Route zum LAN-Subnetz.
+//   - Der GC-Server erreicht LAN-Ziele wie Caddy: ueber den Gateway-Companion-HTTP-Proxy
+//     auf <Peer>:8080 MIT Header X-Gateway-Target=<lanHost:lanPort> (Pfad F). <- erwartet gruen
+//
+// Proben pro Kandidat:
+//   1) GET  /api/config  -> unauth deCONZ-Probe (kein Link-Fenster noetig). JSON mit
+//      "apiversion"/"swversion" = Pfad erreicht deCONZ.
+//   2) POST /api         -> Key-Acquire (Phoscon-Link-Fenster offen): {"success":{"username"}}
+//      = Key; {"error":{"type":101}} = Pfad ok, Fenster zu.
 //
 // Aufruf:
-//   node scripts/deconz-spike.js            # Probe + Acquire-Versuch ueber alle Pfade
-//   node scripts/deconz-spike.js <apiKey>   # zusaetzlich GET /lights mit Key (Lese-Bestaetigung)
+//   node scripts/deconz-spike.js            # Probe + Acquire ueber alle Pfade
+//   node scripts/deconz-spike.js <apiKey>   # zusaetzlich GET /lights (Lese-Bestaetigung)
 //
-// Tuning-Knoepfe (echte Netzadressen, kein Datei-Edit noetig):
-//   SPIKE_LAN_HOST=192.168.2.30   LAN-IP des deCONZ/Phoscon-Geraets (Pfad D/E)
-//   SPIKE_TUNNEL_BASE=...         alternative Basis (Pfad B)
+// Tuning-Knoepfe (kein Datei-Edit noetig):
+//   SPIKE_PEER=10.8.0.8        WG-Tunnel-IP des Gateway-Peers vor deCONZ
+//   SPIKE_PROXY_PORT=8080      Companion-Proxy-Port des Peers (DSM ggf. abweichend)
+//   SPIKE_LAN_TARGET=192.168.2.30:80   LAN-Ziel host:port (deCONZ)
 'use strict';
 
 const API_KEY = process.argv[2]; // optional
 
 const ROUTE_DOMAIN = 'phoscon.marcbackes.net';
-const LAN_HOST = process.env.SPIKE_LAN_HOST || '192.168.2.30';
-const TUNNEL_BASE = process.env.SPIKE_TUNNEL_BASE || 'http://10.8.0.8:80';
+const PEER = process.env.SPIKE_PEER || '10.8.0.8';
+const PROXY_PORT = process.env.SPIKE_PROXY_PORT || '8080';
+const LAN_TARGET = process.env.SPIKE_LAN_TARGET || '192.168.2.30:80';
+const LAN_HOST = LAN_TARGET.split(':')[0];
+
+const GW_HEADERS = { 'X-Gateway-Target': LAN_TARGET, 'X-Gateway-Target-Domain': ROUTE_DOMAIN };
 
 const CANDIDATES = [
-  { name: 'A route-domain', base: `http://${ROUTE_DOMAIN}` },
-  { name: 'D direct-lan-80',   base: `http://${LAN_HOST}:80` },
-  { name: 'E direct-lan-8080', base: `http://${LAN_HOST}:8080` },
-  { name: 'B tunnel-peer',  base: TUNNEL_BASE },
+  { name: 'A route-domain',  base: `http://${ROUTE_DOMAIN}` },
+  { name: 'F companion-proxy', base: `http://${PEER}:${PROXY_PORT}`, headers: GW_HEADERS },
+  { name: 'D direct-lan',    base: `http://${LAN_TARGET}` },
 ];
 
 async function probe(label, url, opts) {
   try {
     const res = await fetch(url, opts);
     const text = await res.text();
-    console.log(`[${label}] ${res.status} ${opts && opts.method || 'GET'} ${url} -> ${text.slice(0, 160).replace(/\s+/g, ' ')}`);
+    console.log(`[${label}] ${res.status} ${(opts && opts.method) || 'GET'} ${url} -> ${text.slice(0, 160).replace(/\s+/g, ' ')}`);
   } catch (err) {
     console.log(`[${label}] ERROR ${url} -> ${err.message}`);
   }
@@ -43,13 +53,13 @@ async function probe(label, url, opts) {
 (async () => {
   console.log('== Reachability-Probe: GET /api/config (unauth, kein Link-Fenster noetig) ==');
   for (const c of CANDIDATES) {
-    await probe(c.name, `${c.base}/api/config`, { headers: c.host ? { Host: c.host } : {} });
+    await probe(c.name, `${c.base}/api/config`, { headers: { ...(c.headers || {}) } });
   }
 
   if (API_KEY) {
     console.log('\n== Lese-Bestaetigung: GET /lights mit Key ==');
     for (const c of CANDIDATES) {
-      await probe(c.name, `${c.base}/api/${API_KEY}/lights`, { headers: c.host ? { Host: c.host } : {} });
+      await probe(c.name, `${c.base}/api/${API_KEY}/lights`, { headers: { ...(c.headers || {}) } });
     }
     return;
   }
@@ -58,7 +68,7 @@ async function probe(label, url, opts) {
   for (const c of CANDIDATES) {
     await probe(c.name, `${c.base}/api`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(c.host ? { Host: c.host } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(c.headers || {}) },
       body: JSON.stringify({ devicetype: 'GateControl' }),
     });
   }
