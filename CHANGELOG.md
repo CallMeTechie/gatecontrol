@@ -21,6 +21,10 @@
   Zieltemperatur-Stepper, 5-Icon-Modus-Segment (Auto/Kühlen/Heizen/Entfeuchten/Lüften) und farbiger
   Status-Pille — angelehnt an die Admin-/midea-Karte, in der Portal-Designsprache (Dark + Light). Reines
   Frontend; APIs/Datenfluss/Owner-Scope unverändert.
+- Klima-Widget Zieltemperatur: ganze 1°-Schritte (das Gerät rundet auf ganze Grad) mit optimistischer
+  Anzeige — der Wert ändert sich sofort (amber = Befehl unterwegs), schnelle +/−-Klicks werden debounced
+  zu einem Befehl mit dem Endwert zusammengefasst, und nach Geräte-Quittung wird der Sollwert grün.
+  Angeglichen an das Verhalten der Admin-/midea-Steuerung.
 
 ---
 

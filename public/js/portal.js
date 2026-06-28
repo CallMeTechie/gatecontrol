@@ -489,6 +489,7 @@
   var _mideaPollGen = 0;    // generation guard against stale 429 callbacks
   var _mideaLoggedIn = false;
   var _mideaDevices = [];
+  var _mideaSendTimers = {}; // id → debounce timer for target-temp commits
 
   var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
   // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
@@ -557,10 +558,25 @@
     list.innerHTML = devices.map(renderMideaCard).join('');
   }
 
-  function patchMideaCard(id, state) {
+  function mideaSetDevice(id, state) {
     _mideaDevices = _mideaDevices.map(function (d) { return d.id === id ? Object.assign({}, d, { state: state }) : d; });
-    renderMidea(_mideaDevices);
   }
+
+  // Re-render a single card in place (keeps other cards' optimistic/pending state intact).
+  // confirmed=true marks the target green (device confirmed the setpoint).
+  function mideaRenderCard(id, confirmed) {
+    var dev = null;
+    _mideaDevices.forEach(function (d) { if (d.id === id) dev = d; });
+    var old = document.querySelector('.midea-card[data-id="' + id + '"]');
+    if (!dev || !old) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = renderMideaCard(dev);
+    var fresh = tmp.firstElementChild;
+    if (confirmed) { var s = fresh.querySelector('.stepper'); if (s) s.classList.add('confirmed'); }
+    old.parentNode.replaceChild(fresh, old);
+  }
+
+  function patchMideaCard(id, state) { mideaSetDevice(id, state); mideaRenderCard(id, false); }
 
   function mideaControl(cardEl, patch) {
     var id = Number(cardEl.dataset.id);
@@ -573,20 +589,54 @@
     }).catch(function () { var m = document.getElementById('mideaMsg'); if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; } });
   }
 
+  // Target-temp stepper: 1° steps (this AC rounds to whole degrees) + optimistic UI.
+  // The displayed value changes immediately (amber = pending); the command is sent
+  // debounced so rapid +/- clicks coalesce into one command with the final value;
+  // the device's confirmed setpoint turns it green.
+  function mideaStep(cardEl, delta) {
+    var tEl = cardEl.querySelector('.midea-target');
+    var cur = parseFloat(tEl.dataset.val);
+    if (!Number.isFinite(cur)) return; // no state yet → don't send a default
+    var next = Math.min(30, Math.max(16, Math.round(cur) + delta)); // whole-degree steps
+    tEl.dataset.val = String(next);
+    tEl.textContent = String(next) + ' °C';
+    var stepper = cardEl.querySelector('.stepper');
+    if (stepper) { stepper.classList.add('pending'); stepper.classList.remove('confirmed'); } // optimistic feedback
+    mideaCommitTarget(Number(cardEl.dataset.id), next);
+  }
+
+  function mideaCommitTarget(id, value) {
+    if (_mideaSendTimers[id]) clearTimeout(_mideaSendTimers[id]);
+    _mideaSendTimers[id] = setTimeout(function () {
+      delete _mideaSendTimers[id];
+      fetch('/api/v1/portal/midea/' + id + '/state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { targetTemp: value } }),
+      }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (body) {
+        if (body && body.ok && body.data && body.data.state) {
+          mideaSetDevice(id, body.data.state); mideaRenderCard(id, true); // confirmed → green
+        } else { mideaTargetError(id); }
+      }).catch(function () { mideaTargetError(id); });
+    }, 500); // coalesce rapid +/- clicks into one command with the final value
+  }
+
+  function mideaTargetError(id) {
+    var stepper = document.querySelector('.midea-card[data-id="' + id + '"] .stepper');
+    if (stepper) stepper.classList.remove('pending');
+    var m = document.getElementById('mideaMsg');
+    if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; }
+  }
+
   function onMideaClick(ev) {
     var cardEl = ev.target.closest('.midea-card');
     if (!cardEl) return;
+    var stepBtn = ev.target.closest('button[data-step]');
+    if (stepBtn) { mideaStep(cardEl, Number(stepBtn.dataset.step)); return; } // optimistic + debounced
     var patch = null;
     var powerBtn = ev.target.closest('button[data-act="power"]');
-    var stepBtn = ev.target.closest('button[data-step]');
     var modeBtn = ev.target.closest('button[data-mode]');
     if (powerBtn) {
       var powered = cardEl.querySelector('.midea-status').dataset.power === 'true';
       patch = { power: !powered };
-    } else if (stepBtn) {
-      var cur = parseFloat(cardEl.querySelector('.midea-target').dataset.val);
-      if (!Number.isFinite(cur)) return;
-      patch = { targetTemp: Math.min(30, Math.max(16, cur + Number(stepBtn.dataset.step) * 0.5)) };
     } else if (modeBtn) {
       patch = { mode: modeBtn.dataset.mode };
     }

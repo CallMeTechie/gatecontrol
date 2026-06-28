@@ -342,7 +342,9 @@ body::before{
   font-size:19px;cursor:pointer;transition:.12s}
 .midea-card .stepper button:hover:not([disabled]){background:var(--surface-2);color:var(--text)}
 .midea-card .stepper .v{font-family:var(--font-mono);font-weight:700;font-size:14px;min-width:62px;
-  text-align:center;color:var(--text)}
+  text-align:center;color:var(--text);transition:color .15s}
+.midea-card .stepper.pending .v{color:var(--amber)}     /* command in flight (optimistic) */
+.midea-card .stepper.confirmed .v{color:var(--green)}   /* device confirmed the setpoint */
 
 /* Modus-Segment: 5 Icon-Buttons gleichmäßig über die Breite */
 .midea-card .modes{display:flex;width:100%;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;background:var(--chip)}
