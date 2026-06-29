@@ -69,7 +69,7 @@
     const body = document.createElement('div'); body.className = 'sh-body';
     // Power
     const pwr = document.createElement('div'); pwr.className = 'sh-pwr';
-    pwr.innerHTML = `<span>${T('smarthome.power')}</span><div class="sh-switch"><i></i></div>`;
+    pwr.innerHTML = `<span>${T('smarthome.power')}</span><div class="sh-switch${(r.state && r.state.on) ? ' on' : ''}"><i></i></div>`;
     pwr.querySelector('.sh-switch').addEventListener('click', (e) => {
       const on = !e.currentTarget.classList.contains('on');
       e.currentTarget.classList.toggle('on', on);
@@ -79,7 +79,7 @@
     // Brightness
     if (caps.bri) {
       const wrap = document.createElement('div');
-      wrap.innerHTML = `<div class="sh-ctl-lbl">${T('smarthome.brightness')}</div><input class="sh-bri" type="range" min="0" max="100" value="0">`;
+      wrap.innerHTML = `<div class="sh-ctl-lbl">${T('smarthome.brightness')}</div><input class="sh-bri" type="range" min="0" max="100" value="${(r.state && r.state.bri != null) ? Number(r.state.bri) : 0}">`;
       wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { bri: Number(e.target.value) }).catch(() => {}));
       body.appendChild(wrap);
     }
@@ -113,9 +113,23 @@
     return el;
   }
 
+  function formatValue(r) {
+    const s = r.state || {}; const v = s.value;
+    switch (s.type) {
+      case 'temperature': return v == null ? '—' : `${v} °C`;
+      case 'humidity': return v == null ? '—' : `${v} %`;
+      case 'lightlevel': return v == null ? '—' : `${v} lx`;
+      case 'presence': return T(v ? 'smarthome.val.motion' : 'smarthome.val.idle');
+      case 'open': return T(v ? 'smarthome.val.open' : 'smarthome.val.closed');
+      case 'water': return T(v ? 'smarthome.val.wet' : 'smarthome.val.dry');
+      default: return v == null ? '—' : String(v);
+    }
+  }
+
   function renderSensor(r) {
     const el = cardShell(r);
-    const v = document.createElement('div'); v.className = 'sh-sensorval'; v.id = `sv-${r.id}`; v.textContent = '—';
+    const v = document.createElement('div'); v.className = 'sh-sensorval'; v.id = `sv-${r.id}`;
+    v.textContent = formatValue(r);
     el.appendChild(v);
     return el;
   }
@@ -175,6 +189,21 @@
     }
     const first = gateways.find((g) => g.enabled) || gateways[0];
     await loadResources(first ? first.id : undefined);
+  }
+
+  // Live-value refresh: server polls deCONZ ~30s; mirror that here. Pause when the
+  // tab is hidden or a control is focused (don't yank an active slider/select).
+  let autoTimer = null;
+  function startAutoPoll() {
+    if (autoTimer) return;
+    autoTimer = setInterval(() => {
+      if (document.hidden) return;
+      const ae = document.activeElement;
+      if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+      if ($('#sh-connect-modal') && $('#sh-connect-modal').style.display === 'flex') return;
+      const sel = $('#sh-gateway-select');
+      loadResources(sel && sel.value ? Number(sel.value) : undefined);
+    }, 30000);
   }
 
   async function fillRoutes() {
@@ -237,6 +266,6 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => { wireModal(); fillRoutes(); wireConnect(); wireTest(); loadGateways(); });
+  document.addEventListener('DOMContentLoaded', () => { wireModal(); fillRoutes(); wireConnect(); wireTest(); loadGateways(); startAutoPoll(); });
   window.SmartHome = { loadGateways, loadResources, api };
 })();

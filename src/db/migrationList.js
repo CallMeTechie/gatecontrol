@@ -1170,6 +1170,12 @@ const migrations = [
         AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL)
         AND (SELECT COUNT(*) FROM service_bundles sb2 WHERE sb2.domain = routes.domain) = 1;`,
   },
+  {
+    version: 65,
+    name: 'smarthome_resources_state',
+    sql: `ALTER TABLE smarthome_resources ADD COLUMN state_json TEXT;`,
+    detect: (db) => hasColumn(db, 'smarthome_resources', 'state_json'),
+  },
 ];
 
 module.exports = { migrations };

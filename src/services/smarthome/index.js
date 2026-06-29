@@ -1,7 +1,7 @@
 'use strict';
 
 const dev = require('./smarthomeDevices');
-const { createClient } = require('./deconzClient');
+const { createClient, briFromDeconz } = require('./deconzClient');
 const license = require('../license');
 
 const FEATURE = 'smarthome';
@@ -35,6 +35,18 @@ function sensorReading(sensor) {
   if ('lightlevel' in s) return { type: 'lightlevel', value: s.lux != null ? s.lux : s.lightlevel };
   if ('buttonevent' in s) return { type: 'button', value: s.buttonevent };
   return { type: 'unknown', value: null };
+}
+
+// Normalized live state cached on each resource (bri 0-100, internal repr).
+function lightStateOf(light) {
+  const s = light.state || {};
+  const st = { on: !!s.on, reachable: s.reachable !== false };
+  if ('bri' in s) st.bri = briFromDeconz(s.bri);
+  return st;
+}
+function groupStateOf(group) {
+  const s = group.state || {};
+  return { on: !!s.any_on };
 }
 
 // deCONZ /lights also carries plugs + the virtual "Configuration tool".
@@ -75,7 +87,7 @@ async function syncGateway(gatewayId) {
     for (const [id, l] of Object.entries(lights)) {
       const kind = lightKind(l);
       if (!kind) continue; // skip Configuration tool (virtual)
-      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l) });
+      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l), state: lightStateOf(l) });
       seen.push(`lights:${id}`); counts[kind === 'plug' ? 'plugs' : 'lights']++;
     }
   } catch (_) { /* best-effort */ }
@@ -83,7 +95,7 @@ async function syncGateway(gatewayId) {
   try {
     const groups = await client.getGroups();
     for (const [id, g] of Object.entries(groups)) {
-      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'groups', kind: 'group', name: g.name, capabilities: { on: true, bri: true, color: 'hs' } });
+      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'groups', kind: 'group', name: g.name, capabilities: { on: true, bri: true, color: 'hs' }, state: groupStateOf(g) });
       seen.push(`groups:${id}`); counts.groups++;
       for (const sc of (g.scenes || [])) {
         const sceneKey = `${id}/${sc.id}`;
@@ -98,7 +110,8 @@ async function syncGateway(gatewayId) {
     for (const [id, s] of Object.entries(sensors)) {
       const kind = sensorKind(s);
       if (!kind) continue; // skip CLIP*/Daylight (virtual)
-      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: sensorReading(s).type } });
+      const rd = sensorReading(s);
+      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: rd.type }, state: rd });
       seen.push(`sensors:${id}`); counts[kind === 'switch' ? 'switches' : 'sensors']++;
     }
   } catch (_) { /* best-effort */ }
