@@ -1,0 +1,27 @@
+{% extends theme + "/layout.njk" %}
+
+{% block head %}<link rel="stylesheet" href="/css/smarthome.css?v={{ appVersion }}">{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('smarthome.eyebrow') }}</div>
+    <h1 class="page-title">{{ t('smarthome.title') }}</h1>
+    <div class="page-sub">{{ t('smarthome.subtitle') }}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:center">
+    <select id="sh-gateway-select" class="form-select" style="min-width:180px"></select>
+    <button class="btn btn-ghost" id="sh-test">{{ t('smarthome.test') }}</button>
+    <button class="btn btn-ghost" id="sh-sync">{{ t('smarthome.sync') }}</button>
+    <button class="btn btn-primary" onclick="document.getElementById('sh-connect-modal').style.display='flex'">{{ t('smarthome.connect') }}</button>
+  </div>
+</div>
+<div id="sh-test-result" style="display:none"></div>
+<div id="smarthome-kpis" class="sh-kpis"></div>
+<div id="smarthome-devices"></div>
+{% include theme + "/partials/modals/smarthome-connect.njk" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/smarthome.js?v={{ appVersion }}" defer></script>
+{% endblock %}

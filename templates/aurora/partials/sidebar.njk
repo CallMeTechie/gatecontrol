@@ -27,6 +27,9 @@
   {% if license.features.midea_integration %}
   <a href="/midea" class="nav-item {{ 'active' if activeNav == 'midea' }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="9" rx="2"/><path d="M6 17v2M12 17v2M18 17v2"/></svg>{{ t('nav.midea') }}</a>
   {% endif %}
+  {% if license.features.smarthome %}
+  <a href="/smarthome" class="nav-item {{ 'active' if activeNav == 'smarthome' }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21h6M10 21v-3a2 2 0 0 1 4 0v3"/><path d="M5.5 11a6.5 6.5 0 1 1 13 0c0 2.5-1.5 3.8-2.5 4.8-.6.6-1 1.2-1 2.2H9c0-1-.4-1.6-1-2.2C7 14.8 5.5 13.5 5.5 11z"/></svg>{{ t('nav.smarthome') }}</a>
+  {% endif %}
   <a href="/logs" class="nav-item {{ 'active' if activeNav == 'logs' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.logs') }}</a>
   <a href="/settings" class="nav-item {{ 'active' if activeNav == 'settings' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}</a>
 </nav>

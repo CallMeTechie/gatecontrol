@@ -946,6 +946,21 @@ async function batch(action, ids) {
 }
 
 /**
+ * Resolve the server-side companion proxy URL for a gateway route.
+ * The GC server reaches deCONZ/companion via the peer's WireGuard IP on the
+ * companion proxy port (default 8080). Callers also get the domain so they
+ * can set X-Gateway-Target-Domain on every request.
+ * Returns { baseUrl, domain } or null if the route/peer is not found.
+ */
+function resolveCompanionUrl(routeId) {
+  const route = getById(routeId);
+  if (!route || !route.target_peer_ip) return null;
+  const peerIp = String(route.target_peer_ip).split('/')[0];
+  // ponytail: companion proxy port default 8080; per-peer override via gm.proxy_port wenn nötig
+  return { baseUrl: 'http://' + peerIp + ':8080', domain: route.domain };
+}
+
+/**
  * Get HTTP routes filtered by user_ids for client API.
  * If user_ids is set on a route, only matching users see it.
  * If not set, route is visible to all.
@@ -982,4 +997,5 @@ module.exports = {
   setAclPeers,
   batch,
   getForUser,
+  resolveCompanionUrl,
 };

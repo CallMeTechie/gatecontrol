@@ -49,5 +49,6 @@ router.use('/client', require('./client'));
 router.use('/rdp', require('./rdp'));
 router.use('/pihole', require('./pihole'));
 router.use('/midea', require('./midea'));
+router.use('/smarthome', require('./smarthome'));
 
 module.exports = router;
