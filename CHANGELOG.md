@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.6] — 2026-06-29
+
+### Änderungen
+- Merge pull request #202 from CallMeTechie/feat/midea-ac-extra-controls
+
+---
+
 ## [1.108.5] — 2026-06-29
 
 ### Änderungen
