@@ -2114,6 +2114,13 @@
   "midea.add.tab_cloud": "Cloud-Konto",
   "midea.add.tab_manual": "Manuell (per IP)",
   "midea.device.current": "aktuell",
+  "midea.fan.label": "Lüfter",
+  "midea.fan.auto": "Auto",
+  "midea.fan.silent": "Silent",
+  "midea.extras.label": "Extras",
+  "midea.turbo": "Turbo",
+  "midea.eco": "Eco",
+  "midea.device.outdoor": "Außen",
   "midea.device.online": "Online",
   "portal.midea.title": "Klimaanlage",
   "portal.midea.login_to_control": "Zum Steuern anmelden",
@@ -2130,5 +2137,12 @@
   "portal.midea.mode_dry": "Entfeuchten",
   "portal.midea.mode_fan": "Lüften",
   "portal.midea.power_on": "Ein",
-  "portal.midea.power_off": "Aus"
+  "portal.midea.power_off": "Aus",
+  "portal.midea.fan": "Lüfter",
+  "portal.midea.fan_auto": "Auto",
+  "portal.midea.fan_silent": "Silent",
+  "portal.midea.extras": "Extras",
+  "portal.midea.turbo": "Turbo",
+  "portal.midea.eco": "Eco",
+  "portal.midea.outdoor": "Außen"
 }

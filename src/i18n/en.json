@@ -2114,6 +2114,13 @@
   "midea.add.tab_cloud": "Cloud account",
   "midea.add.tab_manual": "Manual (by IP)",
   "midea.device.current": "current",
+  "midea.fan.label": "Fan",
+  "midea.fan.auto": "Auto",
+  "midea.fan.silent": "Silent",
+  "midea.extras.label": "Extras",
+  "midea.turbo": "Turbo",
+  "midea.eco": "Eco",
+  "midea.device.outdoor": "Outdoor",
   "midea.device.online": "Online",
   "portal.midea.title": "Air conditioning",
   "portal.midea.login_to_control": "Log in to control",
@@ -2130,5 +2137,12 @@
   "portal.midea.mode_dry": "Dry",
   "portal.midea.mode_fan": "Fan",
   "portal.midea.power_on": "On",
-  "portal.midea.power_off": "Off"
+  "portal.midea.power_off": "Off",
+  "portal.midea.fan": "Fan",
+  "portal.midea.fan_auto": "Auto",
+  "portal.midea.fan_silent": "Silent",
+  "portal.midea.extras": "Extras",
+  "portal.midea.turbo": "Turbo",
+  "portal.midea.eco": "Eco",
+  "portal.midea.outdoor": "Outdoor"
 }
