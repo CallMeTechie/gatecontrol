@@ -13,3 +13,10 @@ test('admin + portal midea extra keys exist in de and en', () => {
     assert.ok(en[k] && en[k].trim(), `en missing ${k}`);
   }
 });
+
+test('admin midea.js renders fan slider + auto/turbo/eco chips + outdoor', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../public/js/midea.js'), 'utf8');
+  for (const m of ['data-act="fan"', 'data-act="fan-auto"', 'data-act="turbo"', 'data-act="eco"', 'ac-ring-wrap', 'ac-outdoor']) {
+    assert.ok(src.includes(m), `admin midea.js missing marker ${m}`);
+  }
+});
