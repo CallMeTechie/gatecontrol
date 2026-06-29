@@ -44,7 +44,8 @@ router.post('/gateways', wrap(async (req, res) => {
 }));
 
 router.put('/gateways/:id', wrap(async (req, res) => {
-  res.json({ gateway: smarthome.updateGateway(Number(req.params.id), req.body || {}) });
+  const g = smarthome.updateGateway(Number(req.params.id), req.body || {});
+  res.json({ gateway: { id: g.id, name: g.name, route_id: g.route_id, enabled: g.enabled, last_seen_at: g.last_seen_at } });
 }));
 
 router.delete('/gateways/:id', wrap(async (req, res) => {
