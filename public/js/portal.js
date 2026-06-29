@@ -678,6 +678,52 @@
     if (patch) mideaControl(cardEl, patch);
   }
 
+  // ─── Smart Home widget ──────────────────────────────────────────────────────
+  function shControl(id, patch, card) {
+    fetch('/api/v1/portal/smarthome/' + Number(id) + '/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patch: patch })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.reason === 'login_required') { showSmarthomeLogin(card); }
+    }).catch(function () {});
+  }
+  function showSmarthomeLogin(card) {
+    var msg = document.getElementById('smarthomeMsg');
+    if (msg) { msg.style.display = 'block'; msg.textContent = PT.smarthomeLoginToControl || 'Login required'; }
+  }
+  function renderSmarthomeCard(d) {
+    var el = document.createElement('div'); el.className = 'c-sh-card';
+    var st = d.state || {}, caps = d.capabilities || {};
+    var name = document.createElement('div'); name.className = 'c-sh-name'; name.textContent = d.name || ''; el.appendChild(name);
+    if (d.kind === 'scene') {
+      var b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = PT.smarthomeActivate || 'Activate';
+      b.addEventListener('click', function () { shControl(d.id, {}, el); });
+      el.appendChild(b); return el;
+    }
+    var sw = document.createElement('button'); sw.className = 'c-sh-sw' + (st.on ? ' on' : '');
+    sw.textContent = PT.smarthomePower || 'Power';
+    sw.addEventListener('click', function () { var on = !sw.classList.contains('on'); sw.classList.toggle('on', on); shControl(d.id, { on: on }, el); });
+    el.appendChild(sw);
+    if (caps.bri) {
+      var range = document.createElement('input'); range.type = 'range'; range.min = 0; range.max = 100; range.value = (st.bri != null ? st.bri : 0); range.className = 'c-sh-bri';
+      range.addEventListener('change', function () { shControl(d.id, { bri: Number(range.value) }, el); });
+      el.appendChild(range);
+    }
+    return el;
+  }
+  function hydrateSmarthome() {
+    var card = document.querySelector('.c-smarthome');
+    if (!card) return;
+    fetch('/api/v1/portal/smarthome').then(function (r) { return r.json(); }).then(function (j) {
+      var list = document.getElementById('smarthome-list'); if (!list) return;
+      list.innerHTML = '';
+      if (!j || !j.data || !j.data.devices || !j.data.devices.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      j.data.devices.forEach(function (d) { list.appendChild(renderSmarthomeCard(d)); });
+    }).catch(function () { card.style.display = 'none'; });
+  }
+
   function hydrateMidea() {
     var card = document.querySelector('.c-midea');
     if (!card) return;
@@ -737,5 +783,6 @@
   hydrateServices();
   hydratePihole();
   hydrateMidea();
+  hydrateSmarthome();
 
 })();

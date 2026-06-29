@@ -2207,5 +2207,10 @@
   "portal.midea.extras": "Extras",
   "portal.midea.turbo": "Turbo",
   "portal.midea.eco": "Eco",
-  "portal.midea.outdoor": "Outdoor"
+  "portal.midea.outdoor": "Outdoor",
+  "portal.smarthome.title": "Smart Home",
+  "portal.smarthome.power": "Power",
+  "portal.smarthome.brightness": "Brightness",
+  "portal.smarthome.activate": "Activate",
+  "portal.smarthome.login_to_control": "Log in to control"
 }

@@ -57,7 +57,11 @@
   mideaExtras:           t('portal.midea.extras'),
   mideaTurbo:            t('portal.midea.turbo'),
   mideaEco:              t('portal.midea.eco'),
-  mideaOutdoor:          t('portal.midea.outdoor')
+  mideaOutdoor:          t('portal.midea.outdoor'),
+  smarthomePower:          t('portal.smarthome.power'),
+  smarthomeBrightness:     t('portal.smarthome.brightness'),
+  smarthomeActivate:       t('portal.smarthome.activate'),
+  smarthomeLoginToControl: t('portal.smarthome.login_to_control')
 } | dump | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
@@ -182,6 +186,15 @@
       <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.midea.title') }}</h2>
       <div id="midea-list" class="midea-list"></div>
       <div class="midea-msg" id="mideaMsg" style="display:none"></div>
+    </section>
+    {% endif %}
+
+    {% if widgets.smarthome %}
+    <!-- Smart Home — eigene Geräte -->
+    <section class="card c-smarthome">
+      <div class="card-head"><h2>{{ t('portal.smarthome.title') }}</h2></div>
+      <div id="smarthome-list" class="c-sh-list"></div>
+      <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
     </section>
     {% endif %}
 

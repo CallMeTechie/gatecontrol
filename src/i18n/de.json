@@ -2151,5 +2151,10 @@
   "portal.midea.extras": "Extras",
   "portal.midea.turbo": "Turbo",
   "portal.midea.eco": "Eco",
-  "portal.midea.outdoor": "Außen"
+  "portal.midea.outdoor": "Außen",
+  "portal.smarthome.title": "Smart Home",
+  "portal.smarthome.power": "Ein/Aus",
+  "portal.smarthome.brightness": "Helligkeit",
+  "portal.smarthome.activate": "Aktivieren",
+  "portal.smarthome.login_to_control": "Zum Steuern bitte anmelden"
 }
