@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.7] — 2026-06-29
+
+### Fixes
+- expose service-bundle actions in Aurora table view
+
+---
+
 ## [1.108.6] — 2026-06-29
 
 ### Änderungen
