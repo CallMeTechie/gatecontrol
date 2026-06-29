@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.109.1] — 2026-06-29
+
+### Fixes
+- CSP-safe modal wiring + client i18n keys (#205)
+
+---
+
 ## [1.109.0] — 2026-06-29
 
 ### Features
