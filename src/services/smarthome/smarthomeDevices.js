@@ -73,8 +73,12 @@ function resolveTransport(routeId) {
 
 function rowToResource(row) {
   if (!row) return null;
-  const { capabilities_json, ...rest } = row;
-  return { ...rest, capabilities: capabilities_json ? JSON.parse(capabilities_json) : {} };
+  const { capabilities_json, state_json, ...rest } = row;
+  return {
+    ...rest,
+    capabilities: capabilities_json ? JSON.parse(capabilities_json) : {},
+    state: state_json ? JSON.parse(state_json) : {},
+  };
 }
 
 function listResources(gatewayId) {
@@ -89,7 +93,7 @@ function getResource(id) {
   return rowToResource(getDb().prepare('SELECT * FROM smarthome_resources WHERE id=?').get(id));
 }
 
-function upsertResource({ gateway_id, deconz_id, deconz_type, uniqueid = null, kind, name, capabilities }) {
+function upsertResource({ gateway_id, deconz_id, deconz_type, uniqueid = null, kind, name, capabilities, state }) {
   const db = getDb();
   // Lights/sensors match by stable uniqueid (survives Conbee ID reassignment).
   // Groups/scenes match by deconz_id (no stable MAC-like identifier).
@@ -102,15 +106,22 @@ function upsertResource({ gateway_id, deconz_id, deconz_type, uniqueid = null, k
       .get(gateway_id, deconz_type, String(deconz_id));
   }
   const caps = JSON.stringify(capabilities || {});
+  // state omitted (undefined) → keep existing cached state; explicit value → overwrite.
+  const stateJson = state === undefined ? undefined : JSON.stringify(state || {});
   if (existing) {
-    db.prepare(`UPDATE smarthome_resources SET deconz_id=?, uniqueid=?, kind=?, name=?, capabilities_json=?, enabled=1, updated_at=datetime('now') WHERE id=?`)
-      .run(String(deconz_id), uniqueid, kind, name, caps, existing.id);
+    if (stateJson === undefined) {
+      db.prepare(`UPDATE smarthome_resources SET deconz_id=?, uniqueid=?, kind=?, name=?, capabilities_json=?, enabled=1, updated_at=datetime('now') WHERE id=?`)
+        .run(String(deconz_id), uniqueid, kind, name, caps, existing.id);
+    } else {
+      db.prepare(`UPDATE smarthome_resources SET deconz_id=?, uniqueid=?, kind=?, name=?, capabilities_json=?, state_json=?, enabled=1, updated_at=datetime('now') WHERE id=?`)
+        .run(String(deconz_id), uniqueid, kind, name, caps, stateJson, existing.id);
+    }
     return existing.id;
   }
   const info = db.prepare(`
-    INSERT INTO smarthome_resources (gateway_id, deconz_id, deconz_type, uniqueid, kind, name, capabilities_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(gateway_id, String(deconz_id), deconz_type, uniqueid, kind, name, caps);
+    INSERT INTO smarthome_resources (gateway_id, deconz_id, deconz_type, uniqueid, kind, name, capabilities_json, state_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(gateway_id, String(deconz_id), deconz_type, uniqueid, kind, name, caps, stateJson === undefined ? null : stateJson);
   return Number(info.lastInsertRowid);
 }
 

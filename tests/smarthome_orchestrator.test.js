@@ -86,6 +86,28 @@ test('syncGateway classifies plugs/switches and skips virtuals', async () => {
   }
 });
 
+test('syncGateway caches normalized live state', async () => {
+  const gw = dev.createGateway({ name: 'GW', route_id: null, apiKey: 'KEY', enabled: true });
+  const origResolve = dev.resolveTransport;
+  dev.resolveTransport = () => ({ baseUrl: 'http://gw', domain: 'gw' });
+  global.fetch = async (url) => {
+    if (url.endsWith('/lights')) return jsonRes({ '5': { name: 'Lamp', type: 'Dimmable light', uniqueid: 'l', state: { on: true, bri: 254, reachable: true } } });
+    if (url.endsWith('/groups')) return jsonRes({});
+    if (url.endsWith('/sensors')) return jsonRes({ '10': { name: 'Temp', type: 'ZHATemperature', uniqueid: 't', state: { temperature: 2150 } } });
+    return jsonRes({});
+  };
+  try {
+    await sh.syncGateway(gw.id);
+    const res = dev.listResources(gw.id);
+    const lamp = res.find((r) => r.kind === 'light');
+    assert.equal(lamp.state.on, true);
+    assert.equal(lamp.state.bri, 100);
+    const temp = res.find((r) => r.kind === 'sensor');
+    assert.equal(temp.state.type, 'temperature');
+    assert.equal(temp.state.value, 21.5);
+  } finally { dev.resolveTransport = origResolve; }
+});
+
 test('syncGateway upserts lights and sensors (best-effort)', async () => {
   const gw = dev.createGateway({ name: 'GW', route_id: null, apiKey: 'KEY', enabled: true });
   const origResolve = dev.resolveTransport;
