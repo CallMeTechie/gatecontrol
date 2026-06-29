@@ -26,10 +26,40 @@
   }
   function send(id, body) { return api(`/resources/${id}/state`, { method: 'POST', body: JSON.stringify(body) }); }
 
+  // Category key: sensors get a subtype (caps.reading), everything else is its kind.
+  function catKey(r) {
+    if (r.kind === 'sensor') return 'sensor.' + ((r.capabilities && r.capabilities.reading) || 'unknown');
+    return r.kind;
+  }
+  function subLabel(r) {
+    return r.kind === 'sensor' ? T('smarthome.sensor.' + ((r.capabilities && r.capabilities.reading) || 'unknown'))
+                               : T('smarthome.kind.' + r.kind);
+  }
+  // Minimal inline SVG icon per category (stroke-based, theme color).
+  const ICONS = {
+    light: '<circle cx="12" cy="9" r="5"/><path d="M9 18h6M10 21h4"/>',
+    plug: '<path d="M9 2v5M15 2v5"/><path d="M7 7h10v3a5 5 0 0 1-10 0z"/><path d="M12 15v7"/>',
+    group: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><circle cx="12" cy="16" r="3"/>',
+    scene: '<path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 8.7l5.4-.8z"/>',
+    switch: '<rect x="6" y="3" width="12" height="18" rx="2"/><circle cx="12" cy="8" r="1.6"/><path d="M10 14h4"/>',
+    'sensor.presence': '<circle cx="12" cy="12" r="2"/><path d="M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4.5 4.5a11 11 0 0 0 0 15M19.5 4.5a11 11 0 0 1 0 15"/>',
+    'sensor.open': '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M14 3v18"/><circle cx="11.5" cy="12" r="1"/>',
+    'sensor.water': '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+    'sensor.temperature': '<path d="M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z"/>',
+    'sensor.humidity': '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 14a3 3 0 0 0 3 3"/>',
+    'sensor.lightlevel': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
+    'sensor.button': '<rect x="6" y="3" width="12" height="18" rx="2"/><circle cx="12" cy="8" r="1.6"/>',
+    'sensor.unknown': '<circle cx="12" cy="12" r="8"/><path d="M12 8v4M12 16h.01"/>',
+  };
+  function iconSvg(r) {
+    const body = ICONS[catKey(r)] || ICONS['sensor.unknown'];
+    return `<svg class="sh-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  }
+
   function cardShell(r) {
     const el = document.createElement('div');
     el.className = 'sh-card';
-    el.innerHTML = `<div class="sh-name">${esc(r.name || '')}</div><div class="sh-sub">${esc(r.kind)}</div>`;
+    el.innerHTML = `<div class="sh-name">${iconSvg(r)}<span>${esc(r.name || '')}</span></div><div class="sh-sub">${esc(subLabel(r))}</div>`;
     return el;
   }
 
@@ -90,6 +120,11 @@
     return el;
   }
 
+  // Switches/button remotes are inputs (read-only here). Button→action binding = TP3.
+  function renderSwitch(r) {
+    return cardShell(r);
+  }
+
   function renderKpis(resources) {
     const host = $('#smarthome-kpis'); if (!host) return;
     const by = (k) => resources.filter((r) => r.kind === k).length;
@@ -121,7 +156,9 @@
     renderKpis(res);
     const blocks = [
       section(T('smarthome.section.lights'), res.filter((r) => r.kind === 'light'), renderControllable),
+      section(T('smarthome.section.plugs'), res.filter((r) => r.kind === 'plug'), renderControllable),
       section(T('smarthome.section.groups'), res.filter((r) => r.kind === 'group' || r.kind === 'scene'), (r) => r.kind === 'scene' ? renderScene(r) : renderControllable(r)),
+      section(T('smarthome.section.switches'), res.filter((r) => r.kind === 'switch'), renderSwitch),
       section(T('smarthome.section.sensors'), res.filter((r) => r.kind === 'sensor'), renderSensor),
     ].filter(Boolean);
     if (!blocks.length) { host.innerHTML = `<div class="sh-empty">${T('smarthome.empty')}</div>`; return; }

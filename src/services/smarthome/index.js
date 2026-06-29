@@ -28,10 +28,28 @@ function capsFromLight(light) {
 function sensorReading(sensor) {
   const s = sensor.state || {};
   if ('presence' in s) return { type: 'presence', value: s.presence };
-  if ('temperature' in s) return { type: 'temperature', value: s.temperature / 100 };
   if ('open' in s) return { type: 'open', value: s.open };
+  if ('water' in s) return { type: 'water', value: s.water };
+  if ('temperature' in s) return { type: 'temperature', value: s.temperature / 100 };
+  if ('humidity' in s) return { type: 'humidity', value: s.humidity / 100 };
+  if ('lightlevel' in s) return { type: 'lightlevel', value: s.lux != null ? s.lux : s.lightlevel };
   if ('buttonevent' in s) return { type: 'button', value: s.buttonevent };
   return { type: 'unknown', value: null };
+}
+
+// deCONZ /lights also carries plugs + the virtual "Configuration tool".
+// null = skip (not a real device).
+function lightKind(light) {
+  if ((light.type || '') === 'Configuration tool') return null;
+  return /plug/i.test(light.type || '') ? 'plug' : 'light';
+}
+
+// deCONZ /sensors mixes passive sensors, button remotes (ZHASwitch) and virtuals.
+// null = skip.
+function sensorKind(sensor) {
+  const t = sensor.type || '';
+  if (t.startsWith('CLIP') || t === 'Daylight') return null; // virtual
+  return /switch/i.test(t) ? 'switch' : 'sensor';
 }
 
 async function connectGateway({ name, route_id, apiKey }) {
@@ -49,14 +67,16 @@ async function syncGateway(gatewayId) {
   const gw = dev.getGateway(gatewayId);
   if (!gw) { const e = new Error('gateway not found'); e.code = 'SMARTHOME_GATEWAY_NOT_FOUND'; throw e; }
   const client = clientForGateway(gw);
-  const counts = { lights: 0, groups: 0, scenes: 0, sensors: 0 };
+  const counts = { lights: 0, plugs: 0, groups: 0, scenes: 0, sensors: 0, switches: 0 };
   const seen = [];
 
   try {
     const lights = await client.getLights();
     for (const [id, l] of Object.entries(lights)) {
-      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind: 'light', name: l.name, capabilities: capsFromLight(l) });
-      seen.push(`lights:${id}`); counts.lights++;
+      const kind = lightKind(l);
+      if (!kind) continue; // skip Configuration tool (virtual)
+      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l) });
+      seen.push(`lights:${id}`); counts[kind === 'plug' ? 'plugs' : 'lights']++;
     }
   } catch (_) { /* best-effort */ }
 
@@ -76,9 +96,10 @@ async function syncGateway(gatewayId) {
   try {
     const sensors = await client.getSensors();
     for (const [id, s] of Object.entries(sensors)) {
-      if (s.type && s.type.startsWith('CLIP')) continue; // ponytail: virtual sensors hidden; expose via config if needed
-      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind: 'sensor', name: s.name, capabilities: { reading: sensorReading(s).type } });
-      seen.push(`sensors:${id}`); counts.sensors++;
+      const kind = sensorKind(s);
+      if (!kind) continue; // skip CLIP*/Daylight (virtual)
+      dev.upsertResource({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: sensorReading(s).type } });
+      seen.push(`sensors:${id}`); counts[kind === 'switch' ? 'switches' : 'sensors']++;
     }
   } catch (_) { /* best-effort */ }
 
@@ -108,6 +129,9 @@ async function setResourceState(resourceId, raw) {
   if (resource.kind === 'scene') {
     const [groupId, sceneId] = String(resource.deconz_id).split('/');
     return client.recallScene(groupId, sceneId);
+  }
+  if (resource.kind === 'sensor' || resource.kind === 'switch') {
+    const e = new Error(`resource ${resourceId} is not controllable`); e.code = 'SMARTHOME_NOT_CONTROLLABLE'; throw e;
   }
   const patch = validatePatch(resource, raw);
   if (resource.kind === 'group') return client.setGroupState(resource.deconz_id, patch);
@@ -153,7 +177,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 
 module.exports = {
   connectGateway, syncGateway, getResources, setResourceState, testGateway,
-  startPolling, stopPolling, pollTick, capsFromLight, sensorReading,
+  startPolling, stopPolling, pollTick, capsFromLight, sensorReading, lightKind, sensorKind,
   listGateways: dev.listGateways, getGateway: dev.getGateway,
   updateGateway: dev.updateGateway, removeGateway: dev.removeGateway,
 };

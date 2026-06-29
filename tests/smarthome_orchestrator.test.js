@@ -25,6 +25,67 @@ test('capsFromLight derives color capability', () => {
   assert.equal(sh.capsFromLight({ state: { on: true, bri: 5 } }).bri, true);
 });
 
+test('lightKind classifies plugs/lights and skips Configuration tool', () => {
+  assert.equal(sh.lightKind({ type: 'On/Off plug-in unit' }), 'plug');
+  assert.equal(sh.lightKind({ type: 'Smart plug' }), 'plug');
+  assert.equal(sh.lightKind({ type: 'Dimmable light' }), 'light');
+  assert.equal(sh.lightKind({ type: 'Extended color light' }), 'light');
+  assert.equal(sh.lightKind({ type: 'Configuration tool' }), null);
+});
+
+test('sensorKind classifies switches/sensors and skips virtuals', () => {
+  assert.equal(sh.sensorKind({ type: 'ZHASwitch' }), 'switch');
+  assert.equal(sh.sensorKind({ type: 'ZHAPresence' }), 'sensor');
+  assert.equal(sh.sensorKind({ type: 'ZHAOpenClose' }), 'sensor');
+  assert.equal(sh.sensorKind({ type: 'ZHAWater' }), 'sensor');
+  assert.equal(sh.sensorKind({ type: 'CLIPPresence' }), null);
+  assert.equal(sh.sensorKind({ type: 'Daylight' }), null);
+});
+
+test('sensorReading covers open/water/temperature/lightlevel/button', () => {
+  assert.equal(sh.sensorReading({ state: { open: true } }).type, 'open');
+  assert.equal(sh.sensorReading({ state: { water: false } }).type, 'water');
+  assert.equal(sh.sensorReading({ state: { temperature: 2150 } }).value, 21.5);
+  const ll = sh.sensorReading({ state: { lightlevel: 12000, lux: 25 } });
+  assert.equal(ll.type, 'lightlevel'); assert.equal(ll.value, 25);
+  assert.equal(sh.sensorReading({ state: { buttonevent: 1002 } }).type, 'button');
+});
+
+test('syncGateway classifies plugs/switches and skips virtuals', async () => {
+  const gw = dev.createGateway({ name: 'GW', route_id: null, apiKey: 'KEY', enabled: true });
+  const origResolve = dev.resolveTransport;
+  dev.resolveTransport = () => ({ baseUrl: 'http://gw', domain: 'gw' });
+  global.fetch = async (url) => {
+    if (url.endsWith('/lights')) return jsonRes({
+      '1': { name: 'Configuration tool 1', type: 'Configuration tool', state: { reachable: true } },
+      '2': { name: 'Poolpumpe', type: 'On/Off plug-in unit', uniqueid: 'p1', state: { on: false } },
+      '3': { name: 'Wintergarten', type: 'Color temperature light', uniqueid: 'l1', state: { on: true, bri: 100, ct: 300 } },
+    });
+    if (url.endsWith('/groups')) return jsonRes({});
+    if (url.endsWith('/sensors')) return jsonRes({
+      '1': { name: 'Daylight', type: 'Daylight', state: {} },
+      '14': { name: 'Fensterkontakt', type: 'ZHAOpenClose', uniqueid: 's1', state: { open: true } },
+      '16': { name: 'Smart Switch', type: 'ZHASwitch', uniqueid: 'sw1', state: { buttonevent: 1002 } },
+    });
+    return jsonRes({});
+  };
+  try {
+    const out = await sh.syncGateway(gw.id);
+    assert.equal(out.counts.lights, 1);
+    assert.equal(out.counts.plugs, 1);
+    assert.equal(out.counts.sensors, 1);
+    assert.equal(out.counts.switches, 1);
+    const res = dev.listResources(gw.id);
+    assert.ok(res.find((r) => r.kind === 'plug' && r.name === 'Poolpumpe'));
+    assert.ok(res.find((r) => r.kind === 'switch' && r.name === 'Smart Switch'));
+    assert.ok(res.find((r) => r.kind === 'sensor' && r.capabilities.reading === 'open'));
+    assert.ok(!res.find((r) => r.name === 'Configuration tool 1'));
+    assert.ok(!res.find((r) => r.name === 'Daylight'));
+  } finally {
+    dev.resolveTransport = origResolve;
+  }
+});
+
 test('syncGateway upserts lights and sensors (best-effort)', async () => {
   const gw = dev.createGateway({ name: 'GW', route_id: null, apiKey: 'KEY', enabled: true });
   const origResolve = dev.resolveTransport;
