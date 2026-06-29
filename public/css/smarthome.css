@@ -8,7 +8,8 @@
 .sh-section-title .ln{flex:1;height:1px;background:var(--line,rgba(255,255,255,.08))}
 .sh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:26px}
 .sh-card{background:var(--surface,#111a24);border:1px solid var(--line,rgba(255,255,255,.08));border-radius:14px;padding:16px}
-.sh-name{font-weight:700;font-size:15px}
+.sh-name{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
+.sh-ico{flex:none;color:var(--accent,#8b9cff);opacity:.92}
 .sh-sub{font-size:12px;color:var(--muted,#90a1b3);margin-top:2px}
 .sh-body{margin-top:14px;display:flex;flex-direction:column;gap:13px}
 .sh-pwr{display:flex;align-items:center;justify-content:space-between;gap:12px}
