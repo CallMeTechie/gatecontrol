@@ -366,6 +366,28 @@ body::before{
 /* zweistufig: ungeloggt/offline → Steuerelemente gesperrt */
 .midea-card [disabled]{opacity:.4;cursor:not-allowed;pointer-events:none}
 
+/* Ring + Außentemp gestapelt */
+.midea-card .ring-wrap{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 auto}
+.midea-card .ac-outdoor{font-size:11px;color:var(--muted);font-weight:600;font-family:var(--font-mono)}
+
+/* Toggle-Chips (Turbo/Eco/Auto) */
+.midea-card .chip-row{display:flex;gap:9px}
+.midea-card .chip-tgl{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1px solid var(--line-2);border-radius:999px;background:var(--chip);color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;transition:.12s}
+.midea-card .chip-tgl:hover:not([disabled]){color:var(--text)}
+.midea-card .chip-tgl.active{background:var(--surface-3);color:var(--teal);border-color:var(--teal)}
+
+/* Lüfter-Slider */
+.midea-card .fan-row{display:flex;flex-direction:column}
+.midea-card .fan-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.midea-card .fan-head .set-lbl{margin-bottom:0}
+.midea-card .fan-head .chip-tgl{margin-left:auto}
+.midea-card .fan-slider{width:100%;min-width:0}
+.midea-card .fan-slider input[type=range]{width:100%;accent-color:var(--teal);cursor:pointer}
+.midea-card .fan-ticks{display:flex;justify-content:space-between;margin-top:5px}
+.midea-card .fan-ticks span{font-size:9.5px;color:var(--faint);font-weight:700}
+.midea-card .fan-val{font-family:var(--font-mono);font-weight:700;font-size:12.5px;color:var(--text);text-align:right}
+.midea-card .fan-row.fan-auto .fan-slider{opacity:.55}
+
 .midea-login-hint{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);
   background:var(--chip);border:1px dashed var(--line-2);border-radius:10px;padding:9px 12px}
 .midea-login-hint a{margin-left:auto;color:var(--btn-text);text-decoration:none;font-weight:600;font-size:12px;

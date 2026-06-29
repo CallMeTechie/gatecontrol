@@ -19,3 +19,9 @@ test('portal.css defines .c-midea styles', () => {
   const css = fs.readFileSync('public/css/portal.css', 'utf8');
   assert.ok(css.includes('.c-midea'), 'portal.css missing .c-midea');
 });
+test('portal.js midea card renders fan slider + auto/turbo/eco chips + outdoor', () => {
+  const src = fs.readFileSync('public/js/portal.js', 'utf8');
+  for (const m of ['data-act="fan"', 'data-act="fan-auto"', 'data-act="turbo"', 'data-act="eco"', 'fan-slider', 'ac-outdoor']) {
+    assert.ok(src.includes(m), `portal.js missing marker ${m}`);
+  }
+});

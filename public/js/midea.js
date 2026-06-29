@@ -35,6 +35,11 @@
 
   const $ = (sel) => document.querySelector(sel);
 
+  // Lüfter: benannte Geräte-Codes (silent=20, low=40, medium=60, high=80). Auto = 102 (außerhalb der Skala).
+  const FAN_STEPS = [20, 40, 60, 80];
+  // Geräte-Rückgabewert eindeutig auf eine Raste abbilden (Fremdsteuerung/Alt-State können off-grid sein).
+  const fanIndex = (v) => FAN_STEPS.reduce((b, val, i, a) => Math.abs(val - v) < Math.abs(a[b] - v) ? i : b, 0);
+
   // Mode segment: icons instead of text labels (label kept as title/aria-label for i18n + a11y).
   const MODE_ICONS = {
     auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
@@ -111,7 +116,10 @@
           <span class="tag tag-grey device-status"><span class="tag-dot"></span>—</span>
         </div>
         <div class="ac-climate">
-          <div class="ac-ring"><div class="ac-ring-in"><span class="ac-ring-v">—</span><span class="ac-ring-l">${T('midea.device.current')}</span></div></div>
+          <div class="ac-ring-wrap">
+            <div class="ac-ring"><div class="ac-ring-in"><span class="ac-ring-v">—</span><span class="ac-ring-l">${T('midea.device.current')}</span></div></div>
+            <div class="ac-outdoor" hidden><span class="ac-outdoor-v">—</span></div>
+          </div>
           <div class="ac-set">
             <div>
               <div class="ac-set-lbl">${T('midea.device.target')}</div>
@@ -126,6 +134,26 @@
               <div class="ac-set-lbl">${T('midea.device.mode')}</div>
               <div class="toggle-group mode-group">
                 ${['auto', 'cool', 'heat', 'dry', 'fan'].map((m) => `<button type="button" class="toggle-btn mode-btn" data-act="mode" data-mode="${m}" title="${esc(T('midea.mode.' + m))}" aria-label="${esc(T('midea.mode.' + m))}">${MODE_ICONS[m]}</button>`).join('')}
+              </div>
+            </div>
+            <div>
+              <div class="fan-row">
+                <div class="fan-head">
+                  <div class="ac-set-lbl">${T('midea.fan.label')}</div>
+                  <button type="button" class="chip-tgl" data-act="fan-auto">${T('midea.fan.auto')}</button>
+                  <span class="fan-val">—</span>
+                </div>
+                <div class="fan-slider">
+                  <input type="range" min="0" max="3" step="1" value="2" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
+                  <div class="fan-ticks"><span>${T('midea.fan.silent')}</span><span>40</span><span>60</span><span>80</span></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="ac-set-lbl">${T('midea.extras.label')}</div>
+              <div class="chip-row">
+                <button type="button" class="chip-tgl" data-act="turbo">${T('midea.turbo')}</button>
+                <button type="button" class="chip-tgl" data-act="eco">${T('midea.eco')}</button>
               </div>
             </div>
           </div>
@@ -204,6 +232,8 @@
       if (ringV) ringV.textContent = '—';
       if (status) status.innerHTML = `<span class="tag-dot"></span>${T('midea.device.offline')}`;
       if (stepper) stepper.classList.remove('pending', 'confirmed');
+      const outdoorOff = card.querySelector('.ac-outdoor');
+      if (outdoorOff) outdoorOff.hidden = true;
       updateOnlineKpi();
       return;
     }
@@ -221,6 +251,36 @@
     if (stepper) { stepper.classList.remove('pending'); stepper.classList.toggle('confirmed', !isNaN(targetNum)); }
     card.querySelectorAll('.mode-group .toggle-btn').forEach((b) =>
       b.classList.toggle('active', b.dataset.mode === state.mode));
+    // Außentemperatur (read-only): Zeile nur zeigen, wenn das Gerät einen Wert liefert.
+    const outdoor = card.querySelector('.ac-outdoor');
+    const outdoorV = card.querySelector('.ac-outdoor-v');
+    const outNum = Number(state.outdoorTemp);
+    if (outdoor) {
+      if (state.outdoorTemp == null || isNaN(outNum)) { outdoor.hidden = true; }
+      else { outdoor.hidden = false; if (outdoorV) outdoorV.textContent = `${T('midea.device.outdoor')} ${Math.round(outNum)}°`; }
+    }
+    // Lüfter: Auto (102) → Chip aktiv, Slider gedimmt; sonst Slider auf nächste Raste snappen.
+    const fanAuto = card.querySelector('.chip-tgl[data-act="fan-auto"]');
+    const fanSlider = card.querySelector('input[data-act="fan"]');
+    const fanRow = card.querySelector('.fan-row');
+    const fanVal = card.querySelector('.fan-val');
+    const fs = Number(state.fanSpeed);
+    if (state.fanSpeed === 102) {
+      if (fanAuto) fanAuto.classList.add('active');
+      if (fanRow) fanRow.classList.add('fan-auto');
+      if (fanVal) fanVal.textContent = T('midea.fan.auto');
+    } else if (state.fanSpeed != null && !isNaN(fs)) { // ponytail: null UND undefined fallen durch → Slider unangetastet bei „kein Wert"
+      if (fanAuto) fanAuto.classList.remove('active');
+      if (fanRow) fanRow.classList.remove('fan-auto');
+      const idx = fanIndex(fs);
+      if (fanSlider) fanSlider.value = String(idx);
+      if (fanVal) fanVal.textContent = idx === 0 ? T('midea.fan.silent') : `${FAN_STEPS[idx]}%`;
+    }
+    // Turbo / Eco spiegeln ausschließlich den zurückgemeldeten Zustand (kein lokales Erzwingen).
+    const turbo = card.querySelector('.chip-tgl[data-act="turbo"]');
+    const eco = card.querySelector('.chip-tgl[data-act="eco"]');
+    if (turbo) turbo.classList.toggle('active', !!state.turbo);
+    if (eco) eco.classList.toggle('active', !!state.eco);
     updateOnlineKpi();
   }
 
@@ -287,6 +347,15 @@
         await api('POST', `/devices/${id}/state`, { patch: { mode: btn.dataset.mode } });
         await refreshState(id, card);
       }
+      if (btn.dataset.act === 'fan-auto') {
+        await api('POST', `/devices/${id}/state`, { patch: { fanSpeed: 102 } });
+        await refreshState(id, card);
+      }
+      if (btn.dataset.act === 'turbo' || btn.dataset.act === 'eco') {
+        const { state } = await api('GET', `/devices/${id}/state`);
+        await api('POST', `/devices/${id}/state`, { patch: { [btn.dataset.act]: !(state && state[btn.dataset.act]) } });
+        await refreshState(id, card);
+      }
     } catch (e) { alert(e.message); }
   });
 
@@ -317,6 +386,20 @@
     const v = wrap.querySelector('.v'); if (v) v.textContent = next + ' °C';
     wrap.classList.add('pending'); wrap.classList.remove('confirmed'); // optimistic feedback
     commitTargetTemp(card, id, next);
+  });
+
+  // Lüfter-Slider: bei Loslassen den fanSpeed-Wert der gewählten Raste senden.
+  document.addEventListener('change', async (ev) => {
+    const slider = ev.target.closest('input[data-act="fan"]');
+    if (!slider) return;
+    const card = slider.closest('.ac-card'); const id = Number(card.dataset.id);
+    const val = FAN_STEPS[Number(slider.value)] || FAN_STEPS[2];
+    const fanVal = card.querySelector('.fan-val');
+    if (fanVal) fanVal.textContent = Number(slider.value) === 0 ? T('midea.fan.silent') : `${val}%`;
+    try {
+      await api('POST', `/devices/${id}/state`, { patch: { fanSpeed: val } });
+      await refreshState(id, card);
+    } catch (e) { alert(e.message); }
   });
 
   $('#midea-cloud-form').addEventListener('submit', async (ev) => {
