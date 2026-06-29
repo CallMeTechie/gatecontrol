@@ -16,6 +16,12 @@
 
 ## [Unreleased]
 
+### Neu
+- Midea-Klimaanlage — zusätzliche Steuerungen auf der Admin-Seite `/midea` UND im Portal-Klima-Widget
+  (volle Karten-Parität, Steuern nur eingeloggt): Lüftergeschwindigkeit als Slider mit den echten Geräte-Codes
+  (Silent=20 · Low=40 · Medium=60 · High=80) plus Auto-Chip (102), Turbo- und Eco-Toggle sowie eine
+  read-only Außentemperatur-Anzeige. i18n de+en (inkl. Client-`GC.t`-Bridge in allen 3 Themes).
+
 ### Fixes
 - Gateway-Watchdog wird beim Graceful-Shutdown nun sauber gestoppt (`stopWatchdog` ins Shutdown-`stoppers`-Array
   eingehängt). Vorher lief das 30-Sekunden-`setInterval` beim Herunterfahren weiter (Timer-Leak); jetzt wird es
