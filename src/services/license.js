@@ -48,6 +48,7 @@ const COMMUNITY_FALLBACK = {
   internal_dns: false,
   pihole_integration: false,
   midea_integration: false,
+  smarthome: false,
   gateway_peers: 1,
   gateway_http_targets: 3,
   gateway_tcp_routing: false,
