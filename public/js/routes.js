@@ -524,12 +524,43 @@
       ? '<span class="tag tag-blue aurora-group-badge">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>'
       : '';
     var countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
+
+    // Bundle/group container actions — the card-view (default theme) renders
+    // these in renderGroupCard; Aurora is table-only with no card view, so
+    // mirror them into the group-header row. Same data-gaction attributes →
+    // reuse the existing delegated handleGroupAction (gaction is matched before
+    // gtoggle, so a button click never collapses the group). Aurora .icon-action
+    // styling to match the per-route action buttons in the same table.
+    var routeIds = g.routes.map(function (r) { return r.id; }).join(',');
+    var actions = '';
+    if (g.isBundle) {
+      actions =
+        '<button type="button" class="icon-action" data-gaction="bundle-add-route" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.add_route'] || 'Add route') + '">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>'
+        + '<button type="button" class="icon-action" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
+        + '<button type="button" class="icon-action" data-gaction="bundle-ungroup" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(t['service_bundle.ungroup'] || 'Ungroup') + '">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>'
+        + '<button type="button" class="icon-action danger" data-gaction="bundle-delete" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.delete'] || 'Delete service') + '">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>';
+    } else if (g.key !== view.NO_DOMAIN_KEY) {
+      actions =
+        '<button type="button" class="icon-action" data-gaction="group-domain" data-route-ids="' + routeIds + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.group_selected'] || 'Group as service') + '">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>';
+    }
+    var actionsCell = actions
+      ? '<span class="row-actions aurora-group-actions">' + actions + '</span>'
+      : '';
+
     return '<tr class="aurora-group-row' + (collapsed ? ' collapsed' : '') + '" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '"><td colspan="' + (batchMode ? 7 : 6) + '">'
+      + '<div class="aurora-group-inner">'
       + AURORA_GROUP_CHEVRON
       + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
       + '<span class="aurora-group-label">' + label + '</span>'
       + bundleTag
       + '<span class="aurora-group-count">' + escapeHtml(countTxt) + '</span>'
+      + actionsCell
+      + '</div>'
       + '</td></tr>';
   }
 

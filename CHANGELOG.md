@@ -1,5 +1,155 @@
 # Changelog
 
+## [1.108.8] — 2026-06-29
+
+### Änderungen
+- Merge pull request #203 from CallMeTechie/fix/midea-fan-percent-scale
+
+---
+
+## [1.108.7] — 2026-06-29
+
+### Fixes
+- expose service-bundle actions in Aurora table view
+
+---
+
+## [1.108.6] — 2026-06-29
+
+### Änderungen
+- Merge pull request #202 from CallMeTechie/feat/midea-ac-extra-controls
+
+---
+
+## [1.108.5] — 2026-06-29
+
+### Änderungen
+- cover addRoutesToBundle branch (route joins existing domain bundle)
+
+---
+
+## [Unreleased]
+
+### Fixed
+- Services auf der Routen-Seite: Routen, die eine Domain teilen, werden jetzt automatisch als ein Service zusammengefasst. Das Löschen der HTTP-Route lässt den Service (mit seiner L4-Route) bestehen, statt die L4-Route zu verwaisen. Bestandsdaten werden per Migration nachgezogen.
+- Aurora-Theme, Routen-Seite: Service-Aktionen (Route hinzufügen, alle umschalten, Gruppierung aufheben, Service löschen) erscheinen jetzt direkt in der Service-Kopfzeile der Tabellenansicht. Bisher waren sie nur in der Card-Ansicht des alten Themes vorhanden, sodass im Aurora-Theme keine Möglichkeit bestand, einem Service eine Route hinzuzufügen oder ihn zu löschen.
+
+---
+
+## [1.108.4] — 2026-06-28
+
+### Änderungen
+- Portal auto-open on connect (server: portalUrl+autoOpenPortal on /permissions, portal.autoappear admin toggle)
+
+---
+
+## [1.108.3] — 2026-06-28
+
+### Fixes
+- stop watchdog interval on graceful shutdown (timer leak)
+
+---
+
+## [Unreleased]
+
+### Neu
+- Midea-Klimaanlage — zusätzliche Steuerungen auf der Admin-Seite `/midea` UND im Portal-Klima-Widget
+  (volle Karten-Parität, Steuern nur eingeloggt): Lüftergeschwindigkeit als Prozent-Slider wie die Midea-App
+  (1 · 20 · 40 · 60 · 80 · 100 %, 100 % = Maximum) plus Auto-Chip (102), Turbo- und Eco-Toggle sowie eine
+  read-only Außentemperatur-Anzeige. i18n de+en (inkl. Client-`GC.t`-Bridge in allen 3 Themes).
+
+### Fixes
+- Gateway-Watchdog wird beim Graceful-Shutdown nun sauber gestoppt (`stopWatchdog` ins Shutdown-`stoppers`-Array
+  eingehängt). Vorher lief das 30-Sekunden-`setInterval` beim Herunterfahren weiter (Timer-Leak); jetzt wird es
+  wie alle anderen Hintergrund-Intervalle beim Stop gecleart.
+
+---
+
+## [1.108.2] — 2026-06-28
+
+### Änderungen
+- remove dead functions + unused exports (3-agent verified)
+
+---
+
+## [Unreleased]
+
+### Änderungen
+- Toten Code entfernt (per 3-fach-Subagent-Verifikation einstimmig bestätigt): ungenutzte Funktionen
+  `users.getByUsername`/`getByIdWithHash`/`getByUsernameWithHash` (Login nutzt direkte DB-Abfragen),
+  `tokens.getBoundPeerId`, `wireguard.getConfig` (+ ungenutzter `readFile`-Import), `crypto.privateKeyDecrypt`,
+  `ip.isInSubnet`, `gatewayHealth.stopWatchdog` sowie die toten Test-Alias-Exporte `tags._splitCsv`/`_validateName`.
+  Keine Verhaltensänderung.
+
+---
+
+## [1.108.1] — 2026-06-28
+
+### Änderungen
+- remove dead Phase-2a guac smoke page (_guac-smoke.html)
+
+---
+
+## [1.108.0] — 2026-06-28
+
+### Features
+- login/logout as bordered icon-buttons (drop white-on-teal text button)
+
+---
+
+## [1.107.0] — 2026-06-28
+
+### Features
+- align AC mode-segment look + icons with admin /midea (padded track, active pill, same icons)
+
+---
+
+## [1.106.0] — 2026-06-28
+
+### Features
+- align AC stepper with admin (1° steps, optimistic + debounced, pending/confirmed)
+
+---
+
+## [1.105.0] — 2026-06-28
+
+### Features
+- tint AC ring by mode (cool→teal, heat→coral)
+
+---
+
+## [1.104.0] — 2026-06-28
+
+### Features
+- redesign AC widget (temp-ring + stepper + icon mode-segment)
+
+---
+
+## [Unreleased]
+
+### Änderungen
+- Klima-Widget im Portal neu gestaltet: Geräte als Karten-Grid mit Temperatur-Ring (Ist-Temp),
+  Zieltemperatur-Stepper, 5-Icon-Modus-Segment (Auto/Kühlen/Heizen/Entfeuchten/Lüften) und farbiger
+  Status-Pille — angelehnt an die Admin-/midea-Karte, in der Portal-Designsprache (Dark + Light). Reines
+  Frontend; APIs/Datenfluss/Owner-Scope unverändert.
+- Klima-Widget Zieltemperatur: ganze 1°-Schritte (das Gerät rundet auf ganze Grad) mit optimistischer
+  Anzeige — der Wert ändert sich sofort (amber = Befehl unterwegs), schnelle +/−-Klicks werden debounced
+  zu einem Befehl mit dem Endwert zusammengefasst, und nach Geräte-Quittung wird der Sollwert grün.
+  Angeglichen an das Verhalten der Admin-/midea-Steuerung.
+- Klima-Widget Modus-Segment optisch an die Admin-/midea-Karte angeglichen: gepolsterter Inset-Track mit
+  Lücken statt Trennlinien, abgesetzte aktive Pille, gleiche Icons und Dimensionen.
+- Portal-Header: Anmelden/Abmelden sind jetzt umrandete Icon-Buttons (wie der Theme-Umschalter) statt
+  Textbuttons — kein randloser Weiß-auf-Teal-Abmelden-Button mehr; Hover-Akzent (Anmelden teal, Abmelden coral).
+
+---
+
+## [1.103.11] — 2026-06-28
+
+### Änderungen
+- Merge origin/master into master (parallel work)
+
+---
+
 ## [1.103.10] — 2026-06-28
 
 ### Fixes

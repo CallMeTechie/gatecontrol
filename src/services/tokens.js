@@ -261,15 +261,6 @@ function bindPeer(tokenId, peerId) {
 }
 
 /**
- * Get the bound peer ID for a token (null if unbound)
- */
-function getBoundPeerId(tokenId) {
-  const db = getDb();
-  const row = db.prepare('SELECT peer_id FROM api_tokens WHERE id = ?').get(tokenId);
-  return row ? row.peer_id : null;
-}
-
-/**
  * Store a machine fingerprint on a token (one-time binding)
  * Returns true if bound, false if already bound to a different machine
  */
@@ -387,9 +378,7 @@ module.exports = {
   getById,
   authenticate,
   revoke,
-  bindPeer,
-  getBoundPeerId,
-  bindMachineFingerprint,
+  bindPeer,  bindMachineFingerprint,
   resetMachineBinding,
   setMachineBindingEnabled,
   validateFingerprint,

@@ -40,6 +40,8 @@
   mideaLoginLink:        t('portal.midea.login_link'),
   mideaOffline:          t('portal.midea.offline'),
   mideaCurrent:          t('portal.midea.current'),
+  mideaTarget:           t('portal.midea.target'),
+  mideaMode:             t('portal.midea.mode'),
   mideaPower:            t('portal.midea.power'),
   mideaError:            t('portal.midea.error'),
   mideaModeAuto:         t('portal.midea.mode_auto'),
@@ -48,7 +50,14 @@
   mideaModeDry:          t('portal.midea.mode_dry'),
   mideaModeFan:          t('portal.midea.mode_fan'),
   mideaPowerOn:          t('portal.midea.power_on'),
-  mideaPowerOff:         t('portal.midea.power_off')
+  mideaPowerOff:         t('portal.midea.power_off'),
+  mideaFan:              t('portal.midea.fan'),
+  mideaFanAuto:          t('portal.midea.fan_auto'),
+  mideaFanSilent:        t('portal.midea.fan_silent'),
+  mideaExtras:           t('portal.midea.extras'),
+  mideaTurbo:            t('portal.midea.turbo'),
+  mideaEco:              t('portal.midea.eco'),
+  mideaOutdoor:          t('portal.midea.outdoor')
 } | dump | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
@@ -74,17 +83,15 @@
     </div>
     {% endif %}
     {% if loggedIn %}
-    <form action="/logout" method="POST" class="btn-login" style="margin:0;padding:0;background:none;border:none">
+    <form action="/logout" method="POST" style="margin:0;padding:0;display:inline-flex">
       <input type="hidden" name="_csrf" value="{{ csrfToken }}">
-      <button type="submit" class="btn-login" style="background:none;border:none;cursor:pointer;font:inherit;color:inherit;display:inline-flex;align-items:center;gap:6px">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        {{ t('portal.logout') }}
+      <button type="submit" class="icon-btn is-logout" title="{{ t('portal.logout') }}" aria-label="{{ t('portal.logout') }}">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </form>
     {% else %}
-    <a href="/login?returnTo=/portal" class="btn-login">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      {{ t('portal.login') }}
+    <a href="/login?returnTo=/portal" class="icon-btn is-login" title="{{ t('portal.login') }}" aria-label="{{ t('portal.login') }}">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
     {% endif %}
   </header>

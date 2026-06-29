@@ -1100,7 +1100,7 @@ const migrations = [
     detect: (db) => tableExists(db, 'midea_device_owners'),
   },
   {
-    version: 63,
+    version: 64,
     name: 'create_smarthome',
     sql: `CREATE TABLE IF NOT EXISTS smarthome_gateways (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1147,6 +1147,28 @@ const migrations = [
       updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
     );`,
     detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='smarthome_gateways'").get(),
+  },
+  {
+    version: 63,
+    name: 'backfill_domain_service_bundles',
+    // One-time tidy: turn pre-existing loose domain groups (>=2 routes sharing a
+    // domain, none yet bundled, RDP-linked L4s excluded) into service bundles so
+    // they gain the same container behaviour as auto-promoted ones.
+    sql: `
+      INSERT INTO service_bundles (name, domain)
+      SELECT domain, domain FROM routes
+      WHERE domain IS NOT NULL AND domain != ''
+        AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL)
+      GROUP BY domain
+      HAVING COUNT(*) >= 2 AND SUM(CASE WHEN bundle_id IS NOT NULL THEN 1 ELSE 0 END) = 0;
+
+      UPDATE routes SET bundle_id = (
+        SELECT sb.id FROM service_bundles sb WHERE sb.domain = routes.domain
+      )
+      WHERE bundle_id IS NULL
+        AND domain IS NOT NULL AND domain != ''
+        AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL)
+        AND (SELECT COUNT(*) FROM service_bundles sb2 WHERE sb2.domain = routes.domain) = 1;`,
   },
 ];
 

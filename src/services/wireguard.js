@@ -1,7 +1,6 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
-const { readFile } = require('node:fs/promises');
 const { promisify } = require('node:util');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
@@ -139,23 +138,6 @@ async function stop() {
 }
 
 /**
- * Read the raw wg0.conf
- */
-async function getConfig() {
-  try {
-    const content = await readFile(config.wireguard.configPath, 'utf-8');
-    // Mask private key
-    return content.replace(
-      /(PrivateKey\s*=\s*).+/g,
-      '$1••••••••••••••••••••••••••••••••••••••••••••'
-    );
-  } catch (err) {
-    logger.error({ error: err.message }, 'Failed to read WG config');
-    return null;
-  }
-}
-
-/**
  * Sync config with running interface.
  * wg syncconf only accepts pure wg directives, so we strip wg-quick lines
  * (Address, DNS, MTU, Table, PreUp, PostUp, PreDown, PostDown, SaveConfig).
@@ -242,9 +224,7 @@ module.exports = {
   getTransferTotals,
   isInterfaceUp,
   restart,
-  stop,
-  getConfig,
-  syncConfig,
+  stop,  syncConfig,
   getAverageLatency,
   removePeer,
 };

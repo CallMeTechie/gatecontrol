@@ -287,15 +287,6 @@ function publicKeyEncrypt(plaintext, publicKeyPem) {
   return encrypted.toString('base64');
 }
 
-function privateKeyDecrypt(ciphertext) {
-  const { privateKey } = getOrCreateKeypair();
-  const decrypted = crypto.privateDecrypt(
-    { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-    Buffer.from(ciphertext, 'base64')
-  );
-  return decrypted.toString('utf8');
-}
-
 /**
  * Mark every gateway as needing re-pairing. Intended to be called by the
  * operator AFTER manually rotating GC_ENCRYPTION_KEY — `push_token_encrypted`
@@ -333,9 +324,7 @@ module.exports = {
   ecdhEncrypt,
   ecdhDecrypt,
   getServerPublicKey,
-  publicKeyEncrypt,
-  privateKeyDecrypt,
-  getOrCreateKeypair,
+  publicKeyEncrypt,  getOrCreateKeypair,
   rotateMasterKey,
   markGatewaysForRepair,
 };

@@ -489,31 +489,86 @@
   var _mideaPollGen = 0;    // generation guard against stale 429 callbacks
   var _mideaLoggedIn = false;
   var _mideaDevices = [];
+  var _mideaSendTimers = {}; // id → debounce timer for target-temp commits
 
   var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
+  var FAN_STEPS = [1, 20, 40, 60, 80, 100]; // Prozent-Stufen wie Midea-App (1–100, 100=Max); Auto=102 außerhalb der Skala
+  function fanIndex(v) { return FAN_STEPS.reduce(function (b, val, i, a) { return Math.abs(val - v) < Math.abs(a[b] - v) ? i : b; }, 0); }
+  // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
+  var MIDEA_MODE_ICONS = { // same icon set as the admin /midea card
+    auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
+    cool: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
+    heat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4"/></svg>',
+    dry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>',
+    fan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></svg>',
+  };
+  var MIDEA_AC_ICON = '<svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  var MIDEA_POWER_ICON = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v9M6.5 6.5a8 8 0 1011 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   function mideaModeLabel(m) { return PT['mideaMode' + m.charAt(0).toUpperCase() + m.slice(1)] || m; }
 
+  // Redesign: card grid with conic-gradient temp-ring + stepper + icon mode-segment + status pill
+  // (modeled on the admin /midea card, in the portal design system). Data contract unchanged:
+  // .midea-card[data-id], .midea-status[data-power], button[data-act=power]/[data-step]/[data-mode], .midea-target[data-val].
   function renderMideaCard(d) {
     var st = d.state || {};
     var offline = !d.state || !!d.state.offline;
     var powered = !offline && !!st.power;
-    var temp = offline ? '—' : Math.round(st.indoorTemp) + '°';
+    var indoor = Number(st.indoorTemp);
+    var hasIndoor = !offline && !isNaN(indoor);
+    var pct = hasIndoor ? Math.max(0, Math.min(100, ((indoor - 16) / 14) * 100)) : 0; // ring fill, 16–30 °C span
+    var ringC = (!offline && st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)';     // heat → coral, else teal
+    var temp = hasIndoor ? Math.round(indoor) + '°' : '—';
+    var tgt = Number(st.targetTemp);
+    var hasTgt = !offline && !isNaN(tgt);
+    var tgtVal = hasTgt ? String(tgt) : '';                               // dot-decimal → stepper math
+    var tgtDisp = hasTgt ? (String(tgt).replace('.', ',') + ' °C') : '—'; // comma → display
+    var statusCls = offline ? 'off-line' : (powered ? 'on' : 'off');
     var statusTxt = offline ? (PT.mideaOffline || 'Offline') : (powered ? (PT.mideaPowerOn || 'On') : (PT.mideaPowerOff || 'Off'));
     var dis = (_mideaLoggedIn && !offline) ? '' : ' disabled';
+    var outdoor = (!offline && st.outdoorTemp != null && !isNaN(Number(st.outdoorTemp)))
+      ? '<div class="ac-outdoor"><span class="ac-outdoor-v">' + escHtml((PT.mideaOutdoor || 'Outdoor') + ' ' + Math.round(Number(st.outdoorTemp)) + '°') + '</span></div>' : '';
+    var isAuto = (!offline && st.fanSpeed === 102);
+    var fanIdx = (offline || isNaN(Number(st.fanSpeed))) ? 3 : fanIndex(Number(st.fanSpeed));
+    var fanValTxt = isAuto ? (PT.mideaFanAuto || 'Auto') : (FAN_STEPS[fanIdx] + '%');
+    var fan =
+      '<div><div class="fan-row' + (isAuto ? ' fan-auto' : '') + '">' +
+        '<div class="fan-head"><div class="set-lbl">' + escHtml(PT.mideaFan || 'Fan') + '</div>' +
+          '<button type="button" class="chip-tgl' + (isAuto ? ' active' : '') + '" data-act="fan-auto"' + dis + '>' + escHtml(PT.mideaFanAuto || 'Auto') + '</button>' +
+          '<span class="fan-val">' + escHtml(fanValTxt) + '</span></div>' +
+        '<div class="fan-slider"><input type="range" min="0" max="5" step="1" value="' + fanIdx + '" data-act="fan"' + dis + ' aria-label="' + escHtml(PT.mideaFan || 'Fan') + '">' +
+          '<div class="fan-ticks"><span>1%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div></div>' +
+      '</div></div>';
+    var extras =
+      '<div><div class="set-lbl">' + escHtml(PT.mideaExtras || 'Extras') + '</div><div class="chip-row">' +
+        '<button type="button" class="chip-tgl' + ((!offline && st.turbo) ? ' active' : '') + '" data-act="turbo"' + dis + '>' + escHtml(PT.mideaTurbo || 'Turbo') + '</button>' +
+        '<button type="button" class="chip-tgl' + ((!offline && st.eco) ? ' active' : '') + '" data-act="eco"' + dis + '>' + escHtml(PT.mideaEco || 'Eco') + '</button>' +
+      '</div></div>';
     var modeBtns = MIDEA_MODES.map(function (m) {
-      var on = (!offline && st.mode === m) ? ' on' : '';
-      return '<button class="midea-mode' + on + '" data-mode="' + m + '"' + dis + '>' + escHtml(mideaModeLabel(m)) + '</button>';
+      var active = (!offline && st.mode === m) ? ' active' : '';
+      var lbl = escHtml(mideaModeLabel(m));
+      return '<button type="button" class="m midea-mode' + active + '" data-mode="' + m + '" title="' + lbl + '" aria-label="' + lbl + '"' + dis + '>' + MIDEA_MODE_ICONS[m] + '</button>';
     }).join('');
-    var login = _mideaLoggedIn ? '' :
-      '<div class="midea-login-hint"><span>' + escHtml(PT.mideaLoginToControl || '') + '</span> <a href="/login">' + escHtml(PT.mideaLoginLink || 'Log in') + '</a></div>';
-    return '<div class="midea-card" data-id="' + Number(d.id) + '">' +
-      '<div class="midea-head"><b>' + escHtml(d.name) + '</b><span class="midea-status" data-power="' + (powered ? 'true' : 'false') + '">' + escHtml(statusTxt) + '</span></div>' +
-      '<div class="midea-temp">' + escHtml(temp) + ' <small>' + escHtml(PT.mideaCurrent || '') + '</small></div>' +
-      '<div class="midea-controls">' +
-        '<button class="midea-power" data-act="power"' + dis + '>' + escHtml(PT.mideaPower || '') + '</button>' +
-        '<span class="midea-stepper"><button data-step="-1"' + dis + '>−</button><span class="midea-target">' + escHtml(String(offline ? '—' : st.targetTemp)) + '°</span><button data-step="1"' + dis + '>+</button></span>' +
-        '<span class="midea-modes">' + modeBtns + '</span>' +
-      '</div>' + login +
+    var meta = d.transport ? '<div class="ac-meta">' + escHtml(d.transport === 'cloud' ? 'Cloud' : 'LAN') + '</div>' : '';
+    var powerBtn = offline
+      ? '<button type="button" class="btn-power" data-act="power" disabled>' + escHtml(PT.mideaOffline || 'Offline') + '</button>'
+      : '<button type="button" class="btn-power' + (powered ? ' is-on' : '') + '" data-act="power"' + dis + '>' + MIDEA_POWER_ICON + '<span>' + escHtml(PT.mideaPower || '') + '</span></button>';
+    var login = (_mideaLoggedIn || offline) ? '' :
+      '<div class="midea-login-hint"><span>' + escHtml(PT.mideaLoginToControl || '') + '</span><a href="/login">' + escHtml(PT.mideaLoginLink || 'Log in') + '</a></div>';
+    return '<div class="ac midea-card' + (offline ? ' offline' : '') + '" data-id="' + Number(d.id) + '">' +
+      '<div class="ac-head">' +
+        '<span class="ac-ic">' + MIDEA_AC_ICON + '</span>' +
+        '<div class="ac-headtext"><div class="ac-name">' + escHtml(d.name) + '</div>' + meta + '</div>' +
+        '<span class="ac-status midea-status ' + statusCls + '" data-power="' + (powered ? 'true' : 'false') + '"><span class="sdot"></span>' + escHtml(statusTxt) + '</span>' +
+      '</div>' +
+      '<div class="ac-climate">' +
+        '<div class="ring-wrap"><div class="ring" style="--ring-val:' + pct + '%;--ring-c:' + ringC + '"><div class="ring-in"><span class="ring-v">' + escHtml(temp) + '</span><span class="ring-l">' + escHtml(PT.mideaCurrent || '') + '</span></div></div>' + outdoor + '</div>' +
+        '<div class="ac-set">' +
+          '<div><div class="set-lbl">' + escHtml(PT.mideaTarget || '') + '</div>' +
+            '<div class="stepper"><button type="button" data-step="-1"' + dis + '>−</button><span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span><button type="button" data-step="1"' + dis + '>+</button></div></div>' +
+          '<div><div class="set-lbl">' + escHtml(PT.mideaMode || '') + '</div><div class="modes">' + modeBtns + '</div></div>' + fan + extras +
+        '</div>' +
+      '</div>' +
+      '<div class="ac-foot">' + powerBtn + '</div>' + login +
     '</div>';
   }
 
@@ -523,9 +578,31 @@
     list.innerHTML = devices.map(renderMideaCard).join('');
   }
 
-  function patchMideaCard(id, state) {
+  function mideaSetDevice(id, state) {
     _mideaDevices = _mideaDevices.map(function (d) { return d.id === id ? Object.assign({}, d, { state: state }) : d; });
-    renderMidea(_mideaDevices);
+  }
+
+  // Re-render a single card in place (keeps other cards' optimistic/pending state intact).
+  // confirmed=true marks the target green (device confirmed the setpoint).
+  function mideaRenderCard(id, confirmed) {
+    var dev = null;
+    _mideaDevices.forEach(function (d) { if (d.id === id) dev = d; });
+    var old = document.querySelector('.midea-card[data-id="' + id + '"]');
+    if (!dev || !old) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = renderMideaCard(dev);
+    var fresh = tmp.firstElementChild;
+    if (confirmed) { var s = fresh.querySelector('.stepper'); if (s) s.classList.add('confirmed'); }
+    old.parentNode.replaceChild(fresh, old);
+  }
+
+  function patchMideaCard(id, state) {
+    mideaSetDevice(id, state);
+    // Nicht neu rendern, während der Nutzer den Lüfter-Slider dieser Karte aktiv hat (Drag/Fokus).
+    var a = document.activeElement;
+    if (a && a.matches && a.matches('input[data-act="fan"]') &&
+        a.closest('.midea-card') && Number(a.closest('.midea-card').dataset.id) === id) return;
+    mideaRenderCard(id, false);
   }
 
   function mideaControl(cardEl, patch) {
@@ -539,22 +616,64 @@
     }).catch(function () { var m = document.getElementById('mideaMsg'); if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; } });
   }
 
+  // Target-temp stepper: 1° steps (this AC rounds to whole degrees) + optimistic UI.
+  // The displayed value changes immediately (amber = pending); the command is sent
+  // debounced so rapid +/- clicks coalesce into one command with the final value;
+  // the device's confirmed setpoint turns it green.
+  function mideaStep(cardEl, delta) {
+    var tEl = cardEl.querySelector('.midea-target');
+    var cur = parseFloat(tEl.dataset.val);
+    if (!Number.isFinite(cur)) return; // no state yet → don't send a default
+    var next = Math.min(30, Math.max(16, Math.round(cur) + delta)); // whole-degree steps
+    tEl.dataset.val = String(next);
+    tEl.textContent = String(next) + ' °C';
+    var stepper = cardEl.querySelector('.stepper');
+    if (stepper) { stepper.classList.add('pending'); stepper.classList.remove('confirmed'); } // optimistic feedback
+    mideaCommitTarget(Number(cardEl.dataset.id), next);
+  }
+
+  function mideaCommitTarget(id, value) {
+    if (_mideaSendTimers[id]) clearTimeout(_mideaSendTimers[id]);
+    _mideaSendTimers[id] = setTimeout(function () {
+      delete _mideaSendTimers[id];
+      fetch('/api/v1/portal/midea/' + id + '/state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { targetTemp: value } }),
+      }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (body) {
+        if (body && body.ok && body.data && body.data.state) {
+          mideaSetDevice(id, body.data.state); mideaRenderCard(id, true); // confirmed → green
+        } else { mideaTargetError(id); }
+      }).catch(function () { mideaTargetError(id); });
+    }, 500); // coalesce rapid +/- clicks into one command with the final value
+  }
+
+  function mideaTargetError(id) {
+    var stepper = document.querySelector('.midea-card[data-id="' + id + '"] .stepper');
+    if (stepper) stepper.classList.remove('pending');
+    var m = document.getElementById('mideaMsg');
+    if (m) { m.textContent = PT.mideaError || ''; m.style.display = 'block'; }
+  }
+
   function onMideaClick(ev) {
     var cardEl = ev.target.closest('.midea-card');
     if (!cardEl) return;
+    var stepBtn = ev.target.closest('button[data-step]');
+    if (stepBtn) { mideaStep(cardEl, Number(stepBtn.dataset.step)); return; } // optimistic + debounced
     var patch = null;
     var powerBtn = ev.target.closest('button[data-act="power"]');
-    var stepBtn = ev.target.closest('button[data-step]');
     var modeBtn = ev.target.closest('button[data-mode]');
+    var fanAutoBtn = ev.target.closest('button[data-act="fan-auto"]');
+    var toggleBtn = ev.target.closest('button[data-act="turbo"],button[data-act="eco"]');
     if (powerBtn) {
       var powered = cardEl.querySelector('.midea-status').dataset.power === 'true';
       patch = { power: !powered };
-    } else if (stepBtn) {
-      var cur = parseFloat(cardEl.querySelector('.midea-target').textContent);
-      if (!Number.isFinite(cur)) return;
-      patch = { targetTemp: Math.min(30, Math.max(16, cur + Number(stepBtn.dataset.step) * 0.5)) };
     } else if (modeBtn) {
       patch = { mode: modeBtn.dataset.mode };
+    } else if (fanAutoBtn) {
+      patch = { fanSpeed: 102 };
+    } else if (toggleBtn) {
+      var act = toggleBtn.dataset.act;
+      var cur = null; _mideaDevices.forEach(function (x) { if (x.id === Number(cardEl.dataset.id)) cur = x; });
+      patch = {}; patch[act] = !(cur && cur.state && cur.state[act]);
     }
     if (patch) mideaControl(cardEl, patch);
   }
@@ -563,6 +682,16 @@
     var card = document.querySelector('.c-midea');
     if (!card) return;
     if (!card.dataset.wired) { card.dataset.wired = '1'; card.addEventListener('click', onMideaClick); } // scoped, once
+    if (!card.dataset.wiredChange) {
+      card.dataset.wiredChange = '1';
+      card.addEventListener('change', function (ev) {
+        var slider = ev.target.closest('input[data-act="fan"]');
+        if (!slider) return;
+        var cardEl = slider.closest('.midea-card');
+        if (!cardEl || slider.disabled) return;
+        mideaControl(cardEl, { fanSpeed: FAN_STEPS[Number(slider.value)] });
+      });
+    }
     setLoading(card, true);
     fetch('/api/v1/portal/midea')
       .then(function (r) { if (!r.ok) { if (r.status === 404) card.style.display = 'none'; throw new Error('HTTP ' + r.status); } return r.json(); })

@@ -225,7 +225,4 @@ module.exports = {
   remove,
   ensureRegistered,
   backfillFromPeers,
-  // Exported for tests; not part of the service's normal surface.
-  _splitCsv: splitCsv,
-  _validateName: validateName,
 };

@@ -62,31 +62,6 @@ function getById(id) {
 }
 
 /**
- * Get a user by username (without password_hash).
- */
-function getByUsername(username) {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  return row ? stripSensitive(row) : null;
-}
-
-/**
- * Get a user by ID with password_hash (for auth).
- */
-function getByIdWithHash(id) {
-  const db = getDb();
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
-}
-
-/**
- * Get a user by username with password_hash (for auth).
- */
-function getByUsernameWithHash(username) {
-  const db = getDb();
-  return db.prepare('SELECT * FROM users WHERE username = ?').get(username) || null;
-}
-
-/**
  * Create a new user.
  * Admin users require a password. Client users get NO_PASSWORD_SENTINEL.
  */
@@ -360,11 +335,7 @@ module.exports = {
   filterScopesForRole,
   stripSensitive,
   list,
-  getById,
-  getByUsername,
-  getByIdWithHash,
-  getByUsernameWithHash,
-  create,
+  getById,  create,
   createClientUser,
   update,
   toggle,

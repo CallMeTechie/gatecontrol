@@ -72,6 +72,37 @@ function cleanupEmptyBundles(db, bundleIds) {
   }
 }
 
+// Auto-bundle: a domain shared by >=2 non-RDP-linked routes is a "service".
+// Metadata-only (bundle_id) and best-effort — runs AFTER the Caddy sync so a
+// sync rollback can never strand a half-formed bundle, and any failure here is
+// logged, never propagated (it must not roll back an already-synced route).
+// Asymmetric by design: forms at >=2, dissolves only at 0 members
+// (cleanupEmptyBundles in remove()/batch()). A 1-member bundle is intentional —
+// it is the "HTTP route deleted, service lives on via its L4" state.
+function autoPromoteDomain(db, domain) {
+  if (!domain) return;
+  try {
+    const candidates = db.prepare(
+      `SELECT id, bundle_id FROM routes
+       WHERE domain = ?
+         AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes
+                        WHERE gateway_l4_route_id IS NOT NULL)`
+    ).all(domain);
+    if (candidates.length < 2) return;
+    const unbundled = candidates.filter((r) => r.bundle_id == null).map((r) => r.id);
+    if (unbundled.length === 0) return;
+    const serviceBundle = require('./serviceBundle');
+    const existing = candidates.find((r) => r.bundle_id != null);
+    if (existing) {
+      serviceBundle.addRoutesToBundle({ bundle_id: existing.bundle_id, route_ids: unbundled });
+    } else {
+      serviceBundle.groupExisting({ name: domain, route_ids: candidates.map((r) => r.id) });
+    }
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err), domain }, 'Auto-bundle promotion failed');
+  }
+}
+
 // ─── CRUD Operations ────────────────────────────────────
 
 /**
@@ -368,6 +399,10 @@ async function create(data, opts = {}) {
       gateways.notifyConfigChanged(targetPeerId).catch(() => {});
     } catch { /* fallback when module load fails */ }
   }
+
+  // Auto-bundle sibling routes that share this domain into a service.
+  // Skipped for orchestrators (service-bundle create) — they own their bundling.
+  if (!opts.skipSync) autoPromoteDomain(db, domain);
 
   return getById(routeId);
 }
@@ -727,7 +762,12 @@ async function update(id, data) {
 
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route update failed'); }
 
-  return finalRoute;
+  // Auto-bundle if this update put the route onto a domain now shared by a
+  // sibling. bundle_id is never touched by an update, so this only ever ADDS
+  // (no shrink/demotion). Re-fetch so the returned row reflects a new bundle_id.
+  autoPromoteDomain(db, finalRoute && finalRoute.domain);
+
+  return getById(id);
 }
 
 /**
