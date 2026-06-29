@@ -100,12 +100,6 @@
       wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { ct: Number(e.target.value) }).catch(() => {}));
       body.appendChild(wrap);
     }
-    if (r.kind === 'scene' && r.owners && r.owners.length) {
-      // §17: scenes show inherited (group) owners read-only — no picker.
-      const chip = document.createElement('div'); chip.className = 'sh-owner-chips';
-      chip.textContent = r.owners.map((o) => o.username).join(', ');
-      body.appendChild(chip);
-    }
     if (r.kind === 'light' || r.kind === 'plug' || r.kind === 'group') {
       const own = document.createElement('div');
       const names = (r.owners || []).map((o) => o.username);
@@ -126,6 +120,11 @@
     btn.textContent = T('smarthome.activate');
     btn.addEventListener('click', () => send(r.id, {}).catch(() => {}));
     el.appendChild(btn);
+    if (r.owners && r.owners.length) {
+      const chip = document.createElement('div'); chip.className = 'sh-owner-chips';
+      chip.textContent = r.owners.map((o) => o.username).join(', ');
+      el.appendChild(chip);
+    }
     return el;
   }
 
