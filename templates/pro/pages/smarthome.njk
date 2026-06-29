@@ -20,6 +20,25 @@
 <div id="smarthome-kpis" class="sh-kpis"></div>
 <div id="smarthome-devices"></div>
 {% include theme + "/partials/modals/smarthome-connect.njk" %}
+<div class="modal-overlay" id="sh-owner-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">{{ t('smarthome.owners.title') }}</div>
+      <button class="modal-close" data-sh-close-owner>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="sh-owner-sub" id="sh-owner-sub"></div>
+      <input class="form-input" id="sh-owner-search" type="text" placeholder="{{ t('smarthome.owners.search') }}">
+      <div class="sh-owner-list" id="sh-owner-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-sh-close-owner>{{ t('common.cancel') }}</button>
+      <button class="btn btn-primary" id="sh-owner-save">{{ t('smarthome.owners.save') }}</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

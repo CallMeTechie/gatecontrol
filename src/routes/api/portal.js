@@ -12,6 +12,8 @@ const license = require('../../services/license');
 const mideaOwners = require('../../services/midea/mideaOwners');
 const midea = require('../../services/midea');
 const mideaDevices = require('../../services/midea/mideaDevices');
+const smarthomeOwners = require('../../services/smarthome/smarthomeOwners');
+const smarthome = require('../../services/smarthome');
 
 const router = Router();
 
@@ -293,6 +295,68 @@ router.post('/midea/:id/state', async (req, res) => {
     res.json({ ok: true, data: { state } });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /midea control failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+function smarthomeUnavailable() {
+  return !license.hasFeature('smarthome');
+}
+const SH_STATE_KEYS = new Set(['on', 'bri', 'reachable']);
+function redactState(s) {
+  if (!s || typeof s !== 'object') return {};
+  return Object.fromEntries(Object.entries(s).filter(([k]) => SH_STATE_KEYS.has(k)));
+}
+// Portal redaction: only controllable surface + resource id. NEVER gateway/route/deconz internals.
+function redactSmarthomeResource(r) {
+  return { id: r.id, kind: r.kind, name: r.name, capabilities: r.capabilities || {}, state: redactState(r.state) };
+}
+function validateSmarthomePatch(raw, caps) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {}; // scene/empty = ok
+  const c = caps || {}; const patch = {};
+  if ('on' in raw) { if (typeof raw.on !== 'boolean') return null; patch.on = raw.on; }
+  if ('bri' in raw && c.bri) { const b = Number(raw.bri); if (!Number.isFinite(b) || b < 0 || b > 100) return null; patch.bri = b; }
+  return patch;
+}
+
+// GET /smarthome — owner-scoped controllable resources (trust allowed, view). Owner id from middleware only.
+router.get('/smarthome', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.smarthome) return res.status(404).json({ ok: false });
+    if (smarthomeUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
+    const ids = new Set(smarthomeOwners.resourcesOwnedBy(req.portalOwnerId));
+    if (!ids.size) return res.json({ ok: true, data: null, reason: 'no_data' });
+    const all = await smarthome.getResources();
+    const devices = all
+      .filter((r) => r.enabled && ids.has(r.id) && r.kind !== 'sensor' && r.kind !== 'switch')
+      .map(redactSmarthomeResource);
+    if (!devices.length) return res.json({ ok: true, data: null, reason: 'no_data' });
+    res.json({ ok: true, data: { devices, loggedIn: req.portalLoggedIn } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /smarthome failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// POST /smarthome/:id/state — control. Login required (trust does NOT control) + ownership.
+// ponytail: canAccess not isOwner — scene control inherits group-owner access
+router.post('/smarthome/:id/state', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.smarthome) return res.status(404).json({ ok: false });
+    if (smarthomeUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
+    const id = Number(req.params.id);
+    if (!smarthomeOwners.canAccess(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'SMARTHOME_NOT_OWNER' });
+    const all = await smarthome.getResources();
+    const resource = all.find((r) => r.id === id);
+    if (!resource || !resource.enabled) return res.status(404).json({ ok: false, error: 'SMARTHOME_RESOURCE_NOT_FOUND' });
+    const patch = validateSmarthomePatch(req.body && req.body.patch, resource.capabilities);
+    if (patch === null) return res.status(400).json({ ok: false, error: 'SMARTHOME_INVALID_PATCH' });
+    await smarthome.setResourceState(id, patch);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /smarthome control failed');
     return res.json({ ok: true, data: null, reason: 'unavailable' });
   }
 });

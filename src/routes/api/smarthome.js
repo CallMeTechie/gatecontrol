@@ -4,6 +4,7 @@ const { Router } = require('express');
 const { requireFeature } = require('../../middleware/license');
 const users = require('../../services/users');
 const smarthome = require('../../services/smarthome');
+const smarthomeOwners = require('../../services/smarthome/smarthomeOwners');
 
 const router = Router();
 
@@ -62,7 +63,27 @@ router.post('/gateways/:id/test', wrap(async (req, res) => {
 
 router.get('/resources', wrap(async (req, res) => {
   const gatewayId = req.query.gateway_id ? Number(req.query.gateway_id) : undefined;
-  res.json({ resources: await smarthome.getResources(gatewayId) });
+  const resources = (await smarthome.getResources(gatewayId)).map((r) => ({
+    ...r,
+    owners: r.kind === 'scene' ? smarthomeOwners.inheritedOwnersOf(r) : smarthomeOwners.ownersOf(r.id),
+  }));
+  res.json({ resources });
+}));
+
+router.put('/resources/:id/owners', wrap(async (req, res) => {
+  const rawIds = req.body && req.body.userIds;
+  if (!Array.isArray(rawIds)) {
+    return res.status(400).json({ ok: false, error: req.t('error.smarthome.user_ids_required'), code: 'SMARTHOME_USER_IDS_REQUIRED' });
+  }
+  try {
+    const owners = smarthomeOwners.setOwners(Number(req.params.id), rawIds);
+    res.json({ resource_id: Number(req.params.id), owners });
+  } catch (e) {
+    if (e.code === 'SMARTHOME_OWNER_UNKNOWN_USER') return res.status(400).json({ ok: false, error: req.t('error.smarthome.owner_unknown_user'), code: e.code });
+    if (e.code === 'SMARTHOME_NOT_ASSIGNABLE') return res.status(400).json({ ok: false, error: req.t('error.smarthome.not_assignable'), code: e.code });
+    if (e.code === 'SMARTHOME_RESOURCE_NOT_FOUND') return res.status(404).json({ ok: false, error: req.t('error.smarthome.resource_not_found'), code: e.code });
+    throw e;
+  }
 }));
 
 router.post('/resources/:id/state', wrap(async (req, res) => {
