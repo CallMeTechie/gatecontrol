@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.8] — 2026-06-29
+
+### Änderungen
+- Merge pull request #203 from CallMeTechie/fix/midea-fan-percent-scale
+
+---
+
 ## [1.108.7] — 2026-06-29
 
 ### Fixes
