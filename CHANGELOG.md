@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.111.0] — 2026-06-29
+
+### Features
+- live state values for devices and sensors (#207)
+
+---
+
 ## [1.110.0] — 2026-06-29
 
 ### Features
