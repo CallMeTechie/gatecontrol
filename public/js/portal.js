@@ -531,12 +531,13 @@
     var fanIdx = (offline || isNaN(Number(st.fanSpeed))) ? 2 : fanIndex(Number(st.fanSpeed));
     var fanValTxt = isAuto ? (PT.mideaFanAuto || 'Auto') : (fanIdx === 0 ? (PT.mideaFanSilent || 'Silent') : FAN_STEPS[fanIdx] + '%');
     var fan =
-      '<div><div class="set-lbl">' + escHtml(PT.mideaFan || 'Fan') + '</div>' +
-      '<div class="fan-row' + (isAuto ? ' fan-auto' : '') + '">' +
-        '<button type="button" class="chip-tgl' + (isAuto ? ' active' : '') + '" data-act="fan-auto"' + dis + '>' + escHtml(PT.mideaFanAuto || 'Auto') + '</button>' +
+      '<div><div class="fan-row' + (isAuto ? ' fan-auto' : '') + '">' +
+        '<div class="fan-head"><div class="set-lbl">' + escHtml(PT.mideaFan || 'Fan') + '</div>' +
+          '<button type="button" class="chip-tgl' + (isAuto ? ' active' : '') + '" data-act="fan-auto"' + dis + '>' + escHtml(PT.mideaFanAuto || 'Auto') + '</button>' +
+          '<span class="fan-val">' + escHtml(fanValTxt) + '</span></div>' +
         '<div class="fan-slider"><input type="range" min="0" max="4" step="1" value="' + fanIdx + '" data-act="fan"' + dis + ' aria-label="' + escHtml(PT.mideaFan || 'Fan') + '">' +
           '<div class="fan-ticks"><span>' + escHtml(PT.mideaFanSilent || 'Silent') + '</span><span>40</span><span>60</span><span>80</span><span>100</span></div></div>' +
-        '<span class="fan-val">' + escHtml(fanValTxt) + '</span></div></div>';
+      '</div></div>';
     var extras =
       '<div><div class="set-lbl">' + escHtml(PT.mideaExtras || 'Extras') + '</div><div class="chip-row">' +
         '<button type="button" class="chip-tgl' + ((!offline && st.turbo) ? ' active' : '') + '" data-act="turbo"' + dis + '>' + escHtml(PT.mideaTurbo || 'Turbo') + '</button>' +

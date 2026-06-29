@@ -94,12 +94,15 @@
 .midea-page .chip-tgl.active{background:var(--accent-lt);color:var(--accent);border-color:var(--accent)}
 
 /* Lüfter-Slider */
-.midea-page .fan-row{display:flex;align-items:center;gap:10px}
-.midea-page .fan-slider{flex:1;min-width:0}
+.midea-page .fan-row{display:flex;flex-direction:column}
+.midea-page .fan-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.midea-page .fan-head .ac-set-lbl{margin-bottom:0}
+.midea-page .fan-head .chip-tgl{margin-left:auto}
+.midea-page .fan-slider{width:100%;min-width:0}
 .midea-page .fan-slider input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
 .midea-page .fan-ticks{display:flex;justify-content:space-between;margin-top:5px}
 .midea-page .fan-ticks span{font-size:9.5px;color:var(--text-3);font-weight:700}
-.midea-page .fan-val{font-family:var(--font-mono);font-weight:700;font-size:12.5px;color:var(--text-1);min-width:42px;text-align:right}
+.midea-page .fan-val{font-family:var(--font-mono);font-weight:700;font-size:12.5px;color:var(--text-1);text-align:right}
 .midea-page .fan-row.fan-auto .fan-slider{opacity:.55}
 
 /* Hinzufügen-Formulare: ein Feld je Zeile (app.css definiert .form-grid nicht → <label> default inline → Umbruch) */

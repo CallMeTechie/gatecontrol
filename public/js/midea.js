@@ -137,14 +137,16 @@
               </div>
             </div>
             <div>
-              <div class="ac-set-lbl">${T('midea.fan.label')}</div>
               <div class="fan-row">
-                <button type="button" class="chip-tgl" data-act="fan-auto">${T('midea.fan.auto')}</button>
+                <div class="fan-head">
+                  <div class="ac-set-lbl">${T('midea.fan.label')}</div>
+                  <button type="button" class="chip-tgl" data-act="fan-auto">${T('midea.fan.auto')}</button>
+                  <span class="fan-val">—</span>
+                </div>
                 <div class="fan-slider">
                   <input type="range" min="0" max="4" step="1" value="2" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
                   <div class="fan-ticks"><span>${T('midea.fan.silent')}</span><span>40</span><span>60</span><span>80</span><span>100</span></div>
                 </div>
-                <span class="fan-val">—</span>
               </div>
             </div>
             <div>

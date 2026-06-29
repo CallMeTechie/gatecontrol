@@ -377,12 +377,15 @@ body::before{
 .midea-card .chip-tgl.active{background:var(--surface-3);color:var(--teal);border-color:var(--teal)}
 
 /* Lüfter-Slider */
-.midea-card .fan-row{display:flex;align-items:center;gap:10px}
-.midea-card .fan-slider{flex:1;min-width:0}
+.midea-card .fan-row{display:flex;flex-direction:column}
+.midea-card .fan-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.midea-card .fan-head .set-lbl{margin-bottom:0}
+.midea-card .fan-head .chip-tgl{margin-left:auto}
+.midea-card .fan-slider{width:100%;min-width:0}
 .midea-card .fan-slider input[type=range]{width:100%;accent-color:var(--teal);cursor:pointer}
 .midea-card .fan-ticks{display:flex;justify-content:space-between;margin-top:5px}
 .midea-card .fan-ticks span{font-size:9.5px;color:var(--faint);font-weight:700}
-.midea-card .fan-val{font-family:var(--font-mono);font-weight:700;font-size:12.5px;color:var(--text);min-width:42px;text-align:right}
+.midea-card .fan-val{font-family:var(--font-mono);font-weight:700;font-size:12.5px;color:var(--text);text-align:right}
 .midea-card .fan-row.fan-auto .fan-slider{opacity:.55}
 
 .midea-login-hint{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);

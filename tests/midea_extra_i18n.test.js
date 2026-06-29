@@ -20,3 +20,12 @@ test('admin midea.js renders fan slider + auto/turbo/eco chips + outdoor', () =>
     assert.ok(src.includes(m), `admin midea.js missing marker ${m}`);
   }
 });
+
+test('admin layouts register the new midea keys in client GC.t bridge', () => {
+  const fs = require('fs'), path = require('path');
+  const KEYS = ['midea.fan.label', 'midea.fan.auto', 'midea.fan.silent', 'midea.extras.label', 'midea.turbo', 'midea.eco', 'midea.device.outdoor'];
+  for (const layout of ['aurora', 'default', 'pro']) {
+    const src = fs.readFileSync(path.join(__dirname, `../templates/${layout}/layout.njk`), 'utf8');
+    for (const k of KEYS) assert.ok(src.includes(`'${k}'`), `${layout}/layout.njk missing client i18n key ${k}`);
+  }
+});
