@@ -1,6 +1,8 @@
 'use strict';
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const nodeCrypto = require('node:crypto');
+process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || nodeCrypto.randomBytes(32).toString('hex');
 const { setup, teardown } = require('./helpers/setup');
 const { getDb } = require('../src/db/connection');
 
