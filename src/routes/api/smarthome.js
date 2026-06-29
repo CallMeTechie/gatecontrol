@@ -70,7 +70,7 @@ router.get('/resources', wrap(async (req, res) => {
   res.json({ resources });
 }));
 
-router.put('/resources/:id/owners', async (req, res) => {
+router.put('/resources/:id/owners', wrap(async (req, res) => {
   const rawIds = req.body && req.body.userIds;
   if (!Array.isArray(rawIds)) {
     return res.status(400).json({ ok: false, error: req.t('error.smarthome.user_ids_required'), code: 'SMARTHOME_USER_IDS_REQUIRED' });
@@ -84,7 +84,7 @@ router.put('/resources/:id/owners', async (req, res) => {
     if (e.code === 'SMARTHOME_RESOURCE_NOT_FOUND') return res.status(404).json({ ok: false, error: req.t('error.smarthome.resource_not_found'), code: e.code });
     throw e;
   }
-});
+}));
 
 router.post('/resources/:id/state', wrap(async (req, res) => {
   const patch = (req.body && req.body.patch) || req.body || {};
