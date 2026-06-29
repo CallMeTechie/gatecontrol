@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.112.0] — 2026-06-29
+
+### Features
+- TP2 — owner mapping + portal widget (#208)
+
+---
+
 ## [1.111.0] — 2026-06-29
 
 ### Features
