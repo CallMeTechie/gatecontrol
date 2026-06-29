@@ -7,7 +7,7 @@ const settings = require('./settings');
  * All values default to enabled ('1') unless explicitly set to '0'.
  * Note: trustOwnerMapping defaults to disabled ('0') — unlike the widgets.
  *
- * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean, midea: boolean }, trustOwnerMapping: boolean }}
+ * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean, midea: boolean, smarthome: boolean }, trustOwnerMapping: boolean }}
  */
 const on = (key) => settings.get(key, '1') !== '0';
 
@@ -20,6 +20,7 @@ function portalConfig() {
       services: on('portal.widget.services'),
       pihole:   on('portal.widget.pihole'),
       midea:    on('portal.widget.midea'),
+      smarthome: on('portal.widget.smarthome'),
     },
     trustOwnerMapping: settings.get('portal.trust_owner_mapping', '0') !== '0',
   };

@@ -1984,6 +1984,7 @@
   "settings.portal.widget_services": "Services",
   "settings.portal.widget_pihole": "Pi-hole widget",
   "settings.portal.widget_midea": "Climate widget",
+  "settings.portal.widget_smarthome": "Smart Home",
   "settings.portal.autoappear": "Auto-open portal on connect",
   "settings.portal.autoappear_help": "When enabled, VPN clients automatically open the portal after connecting. Disable to keep the portal accessible but not auto-opened.",
   "settings.portal.trust_owner_mapping": "Trust device→owner mapping (zero-login per-owner)",
