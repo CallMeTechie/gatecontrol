@@ -90,6 +90,17 @@ describe('routes auto-bundle promotion', () => {
     assert.equal(aa.bundle_id, bb.bundle_id, 'both share one bundle');
   });
 
+  it('adds a 3rd route on a domain to the EXISTING bundle (no 2nd bundle)', async () => {
+    const r1 = await http('trio.example.com');
+    const r2 = await l4('trio.example.com', 2240); // 2nd route → forms the bundle (groupExisting)
+    const bundleId = routesService.getById(r1.id).bundle_id;
+    assert.ok(bundleId);
+    const r3 = await l4('trio.example.com', 2241); // 3rd route → MUST hit addRoutesToBundle
+    assert.equal(routesService.getById(r3.id).bundle_id, bundleId, '3rd route joined the existing bundle');
+    const count = db.prepare("SELECT COUNT(*) c FROM service_bundles WHERE domain = 'trio.example.com'").get().c;
+    assert.equal(count, 1, 'still exactly one bundle for the domain');
+  });
+
   it('does NOT auto-bundle an RDP-linked l4 sharing a domain', async () => {
     // Seed the l4 WITHOUT promotion (skipSync), mark it RDP-linked, THEN add the
     // http — so promotion runs while the l4 is already RDP-owned and excluded.
