@@ -2126,5 +2126,9 @@
   "portal.midea.mode_dry": "Dry",
   "portal.midea.mode_fan": "Fan",
   "portal.midea.power_on": "On",
-  "portal.midea.power_off": "Off"
+  "portal.midea.power_off": "Off",
+  "error.smarthome.gateway_not_found": "Smart Home gateway not found",
+  "error.smarthome.link_button": "Phoscon link window expired — press \"Authenticate app\" again",
+  "error.smarthome.no_route": "Selected route cannot be resolved",
+  "error.smarthome.no_api_key": "Gateway has no API key — connect again"
 }
