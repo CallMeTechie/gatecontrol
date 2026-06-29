@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.108.5] — 2026-06-29
+
+### Änderungen
+- cover addRoutesToBundle branch (route joins existing domain bundle)
+
+---
+
 ## [Unreleased]
 
 ### Fixed
