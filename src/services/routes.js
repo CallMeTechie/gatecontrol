@@ -762,7 +762,12 @@ async function update(id, data) {
 
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route update failed'); }
 
-  return finalRoute;
+  // Auto-bundle if this update put the route onto a domain now shared by a
+  // sibling. bundle_id is never touched by an update, so this only ever ADDS
+  // (no shrink/demotion). Re-fetch so the returned row reflects a new bundle_id.
+  autoPromoteDomain(db, finalRoute && finalRoute.domain);
+
+  return getById(id);
 }
 
 /**

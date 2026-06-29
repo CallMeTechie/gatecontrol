@@ -79,6 +79,17 @@ describe('routes auto-bundle promotion', () => {
     assert.equal(bundle, undefined, 'empty bundle cleaned up');
   });
 
+  it('joins routes into a bundle when update() moves one onto a shared domain', async () => {
+    const a = await http('join.example.com');
+    const b = await l4('other.example.com', 2230); // different domain → unbundled
+    assert.equal(routesService.getById(b.id).bundle_id, null);
+    await routesService.update(b.id, { domain: 'join.example.com' });
+    const aa = routesService.getById(a.id);
+    const bb = routesService.getById(b.id);
+    assert.ok(bb.bundle_id, 'moved route joined a bundle');
+    assert.equal(aa.bundle_id, bb.bundle_id, 'both share one bundle');
+  });
+
   it('does NOT auto-bundle an RDP-linked l4 sharing a domain', async () => {
     // Seed the l4 WITHOUT promotion (skipSync), mark it RDP-linked, THEN add the
     // http — so promotion runs while the l4 is already RDP-owned and excluded.
