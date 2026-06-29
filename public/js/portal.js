@@ -492,7 +492,7 @@
   var _mideaSendTimers = {}; // id → debounce timer for target-temp commits
 
   var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
-  var FAN_STEPS = [20, 40, 60, 80, 100]; // Slider-Stufen, Silent=20; Auto=102 außerhalb der Skala
+  var FAN_STEPS = [20, 40, 60, 80]; // benannte Geräte-Codes silent/low/medium/high; Auto=102 außerhalb der Skala
   function fanIndex(v) { return FAN_STEPS.reduce(function (b, val, i, a) { return Math.abs(val - v) < Math.abs(a[b] - v) ? i : b; }, 0); }
   // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
   var MIDEA_MODE_ICONS = { // same icon set as the admin /midea card
@@ -535,8 +535,8 @@
         '<div class="fan-head"><div class="set-lbl">' + escHtml(PT.mideaFan || 'Fan') + '</div>' +
           '<button type="button" class="chip-tgl' + (isAuto ? ' active' : '') + '" data-act="fan-auto"' + dis + '>' + escHtml(PT.mideaFanAuto || 'Auto') + '</button>' +
           '<span class="fan-val">' + escHtml(fanValTxt) + '</span></div>' +
-        '<div class="fan-slider"><input type="range" min="0" max="4" step="1" value="' + fanIdx + '" data-act="fan"' + dis + ' aria-label="' + escHtml(PT.mideaFan || 'Fan') + '">' +
-          '<div class="fan-ticks"><span>' + escHtml(PT.mideaFanSilent || 'Silent') + '</span><span>40</span><span>60</span><span>80</span><span>100</span></div></div>' +
+        '<div class="fan-slider"><input type="range" min="0" max="3" step="1" value="' + fanIdx + '" data-act="fan"' + dis + ' aria-label="' + escHtml(PT.mideaFan || 'Fan') + '">' +
+          '<div class="fan-ticks"><span>' + escHtml(PT.mideaFanSilent || 'Silent') + '</span><span>40</span><span>60</span><span>80</span></div></div>' +
       '</div></div>';
     var extras =
       '<div><div class="set-lbl">' + escHtml(PT.mideaExtras || 'Extras') + '</div><div class="chip-row">' +

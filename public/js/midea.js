@@ -35,8 +35,8 @@
 
   const $ = (sel) => document.querySelector(sel);
 
-  // Lüfter: 5 Slider-Stufen → fanSpeed-Werte (Silent=20). Auto = 102 (außerhalb der Skala).
-  const FAN_STEPS = [20, 40, 60, 80, 100];
+  // Lüfter: benannte Geräte-Codes (silent=20, low=40, medium=60, high=80). Auto = 102 (außerhalb der Skala).
+  const FAN_STEPS = [20, 40, 60, 80];
   // Geräte-Rückgabewert eindeutig auf eine Raste abbilden (Fremdsteuerung/Alt-State können off-grid sein).
   const fanIndex = (v) => FAN_STEPS.reduce((b, val, i, a) => Math.abs(val - v) < Math.abs(a[b] - v) ? i : b, 0);
 
@@ -144,8 +144,8 @@
                   <span class="fan-val">—</span>
                 </div>
                 <div class="fan-slider">
-                  <input type="range" min="0" max="4" step="1" value="2" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
-                  <div class="fan-ticks"><span>${T('midea.fan.silent')}</span><span>40</span><span>60</span><span>80</span><span>100</span></div>
+                  <input type="range" min="0" max="3" step="1" value="2" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
+                  <div class="fan-ticks"><span>${T('midea.fan.silent')}</span><span>40</span><span>60</span><span>80</span></div>
                 </div>
               </div>
             </div>

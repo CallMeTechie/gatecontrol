@@ -89,6 +89,14 @@ test('fanSpeed off-grid (1) → 400', async () => {
 test('fanSpeed out of set (999) → 400', async () => {
   await getAgent().post(`/api/v1/portal/midea/${dA}/state`).send({ patch: { fanSpeed: 999 } }).expect(400);
 });
+test('fanSpeed high (80, named device code) → forwarded', async () => {
+  await getAgent().post(`/api/v1/portal/midea/${dA}/state`).send({ patch: { fanSpeed: 80 } }).expect(200);
+  assert.deepEqual(lastSet.patch, { fanSpeed: 80 });
+});
+test('fanSpeed 100 (no named device code, dropped) → 400', async () => {
+  await getAgent().post(`/api/v1/portal/midea/${dA}/state`).send({ patch: { fanSpeed: 100 } }).expect(400);
+  assert.equal(lastSet, null);
+});
 test('turbo non-boolean → 400', async () => {
   await getAgent().post(`/api/v1/portal/midea/${dA}/state`).send({ patch: { turbo: 'yes' } }).expect(400);
 });
