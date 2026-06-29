@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Services auf der Routen-Seite: Routen, die eine Domain teilen, werden jetzt automatisch als ein Service zusammengefasst. Das Löschen der HTTP-Route lässt den Service (mit seiner L4-Route) bestehen, statt die L4-Route zu verwaisen. Bestandsdaten werden per Migration nachgezogen.
+
+---
+
 ## [1.108.4] — 2026-06-28
 
 ### Änderungen
