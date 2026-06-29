@@ -100,6 +100,22 @@
       wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { ct: Number(e.target.value) }).catch(() => {}));
       body.appendChild(wrap);
     }
+    if (r.kind === 'scene' && r.owners && r.owners.length) {
+      // §17: scenes show inherited (group) owners read-only — no picker.
+      const chip = document.createElement('div'); chip.className = 'sh-owner-chips';
+      chip.textContent = r.owners.map((o) => o.username).join(', ');
+      body.appendChild(chip);
+    }
+    if (r.kind === 'light' || r.kind === 'plug' || r.kind === 'group') {
+      const own = document.createElement('div');
+      const names = (r.owners || []).map((o) => o.username);
+      own.innerHTML = `<div class="sh-owner-chips">${names.length ? esc(names.join(', ')) : esc(T('smarthome.owners.none'))}</div>`;
+      const btn = document.createElement('button'); btn.className = 'sh-owner-btn'; btn.type = 'button';
+      btn.textContent = T('smarthome.owners.manage');
+      btn.addEventListener('click', () => openOwners(r));
+      own.appendChild(btn);
+      body.appendChild(own);
+    }
     el.appendChild(body);
     return el;
   }
@@ -201,6 +217,7 @@
       const ae = document.activeElement;
       if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
       if ($('#sh-connect-modal') && $('#sh-connect-modal').style.display === 'flex') return;
+      if ($('#sh-owner-modal') && $('#sh-owner-modal').style.display === 'flex') return;
       const sel = $('#sh-gateway-select');
       loadResources(sel && sel.value ? Number(sel.value) : undefined);
     }, 30000);
@@ -266,6 +283,55 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => { wireModal(); fillRoutes(); wireConnect(); wireTest(); loadGateways(); startAutoPoll(); });
+  let allUsers = null;
+  async function fetchUsers() {
+    if (allUsers) return allUsers;
+    try {
+      // /api/v1/users returns { ok:true, users:[...] }
+      const r = await (await fetch('/api/v1/users')).json(); allUsers = (r.users || []).map((u) => ({ id: u.id, username: u.username }));
+    } catch (_) { allUsers = []; }
+    return allUsers;
+  }
+  let ownerTarget = null;
+  async function openOwners(r) {
+    ownerTarget = r;
+    const modal = $('#sh-owner-modal'); if (!modal) return;
+    $('#sh-owner-sub').textContent = r.name || '';
+    $('#sh-owner-search').value = '';
+    const users = await fetchUsers();
+    const ownedIds = new Set((r.owners || []).map((o) => o.id));
+    const list = $('#sh-owner-list');
+    list.innerHTML = '';
+    users.forEach((u) => {
+      const row = document.createElement('label'); row.className = 'sh-owner-row'; row.dataset.name = (u.username || '').toLowerCase();
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = String(u.id); cb.checked = ownedIds.has(u.id);
+      const span = document.createElement('span'); span.textContent = u.username;
+      row.appendChild(cb); row.appendChild(span); list.appendChild(row);
+    });
+    modal.style.display = 'flex';
+  }
+  function wireOwners() {
+    const search = $('#sh-owner-search');
+    if (search) search.addEventListener('input', () => {
+      const q = search.value.toLowerCase();
+      document.querySelectorAll('#sh-owner-list .sh-owner-row').forEach((row) => {
+        row.style.display = row.dataset.name.includes(q) ? '' : 'none';
+      });
+    });
+    const save = $('#sh-owner-save');
+    if (save) save.addEventListener('click', async () => {
+      if (!ownerTarget) return;
+      const ids = [...document.querySelectorAll('#sh-owner-list input:checked')].map((c) => Number(c.value));
+      try {
+        await api(`/resources/${ownerTarget.id}/owners`, { method: 'PUT', body: JSON.stringify({ userIds: ids }) });
+        $('#sh-owner-modal').style.display = 'none';
+        const sel = $('#sh-gateway-select'); await loadResources(sel && sel.value ? Number(sel.value) : undefined);
+      } catch (e) { alert(e.message); }
+    });
+    document.querySelectorAll('[data-sh-close-owner]').forEach((el) =>
+      el.addEventListener('click', () => { const m = $('#sh-owner-modal'); if (m) m.style.display = 'none'; }));
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { wireModal(); fillRoutes(); wireConnect(); wireTest(); loadGateways(); startAutoPoll(); wireOwners(); });
   window.SmartHome = { loadGateways, loadResources, api };
 })();
