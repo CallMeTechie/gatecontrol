@@ -18,6 +18,7 @@
 
 ### Fixed
 - Services auf der Routen-Seite: Routen, die eine Domain teilen, werden jetzt automatisch als ein Service zusammengefasst. Das Löschen der HTTP-Route lässt den Service (mit seiner L4-Route) bestehen, statt die L4-Route zu verwaisen. Bestandsdaten werden per Migration nachgezogen.
+- Aurora-Theme, Routen-Seite: Service-Aktionen (Route hinzufügen, alle umschalten, Gruppierung aufheben, Service löschen) erscheinen jetzt direkt in der Service-Kopfzeile der Tabellenansicht. Bisher waren sie nur in der Card-Ansicht des alten Themes vorhanden, sodass im Aurora-Theme keine Möglichkeit bestand, einem Service eine Route hinzuzufügen oder ihn zu löschen.
 
 ---
 
