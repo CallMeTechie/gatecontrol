@@ -39,7 +39,7 @@ function redactMideaDevice(id) {
 }
 
 const MIDEA_MODES = new Set(['auto', 'cool', 'heat', 'dry', 'fan']);
-const MIDEA_FAN_SPEEDS = new Set([20, 40, 60, 80, 102]); // benannte Geräte-Codes silent/low/medium/high + Auto(102)
+const MIDEA_FAN_SPEEDS = new Set([1, 20, 40, 60, 80, 100, 102]); // Prozent-Stufen wie Midea-App (1–100, 100=Max) + Auto(102)
 // Whitelist + range/type-check; returns a clean patch or null (→ 400). At least one valid field required.
 function validateMideaPatch(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

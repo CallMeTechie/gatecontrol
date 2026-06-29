@@ -47,8 +47,8 @@
 
 ### Neu
 - Midea-Klimaanlage — zusätzliche Steuerungen auf der Admin-Seite `/midea` UND im Portal-Klima-Widget
-  (volle Karten-Parität, Steuern nur eingeloggt): Lüftergeschwindigkeit als Slider mit den echten Geräte-Codes
-  (Silent=20 · Low=40 · Medium=60 · High=80) plus Auto-Chip (102), Turbo- und Eco-Toggle sowie eine
+  (volle Karten-Parität, Steuern nur eingeloggt): Lüftergeschwindigkeit als Prozent-Slider wie die Midea-App
+  (1 · 20 · 40 · 60 · 80 · 100 %, 100 % = Maximum) plus Auto-Chip (102), Turbo- und Eco-Toggle sowie eine
   read-only Außentemperatur-Anzeige. i18n de+en (inkl. Client-`GC.t`-Bridge in allen 3 Themes).
 
 ### Fixes

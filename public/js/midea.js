@@ -35,8 +35,8 @@
 
   const $ = (sel) => document.querySelector(sel);
 
-  // Lüfter: benannte Geräte-Codes (silent=20, low=40, medium=60, high=80). Auto = 102 (außerhalb der Skala).
-  const FAN_STEPS = [20, 40, 60, 80];
+  // Lüfter: Prozent-Stufen wie die Midea-App (1·20·40·60·80·100; 100=Max). Auto = 102 (außerhalb der Skala).
+  const FAN_STEPS = [1, 20, 40, 60, 80, 100];
   // Geräte-Rückgabewert eindeutig auf eine Raste abbilden (Fremdsteuerung/Alt-State können off-grid sein).
   const fanIndex = (v) => FAN_STEPS.reduce((b, val, i, a) => Math.abs(val - v) < Math.abs(a[b] - v) ? i : b, 0);
 
@@ -144,8 +144,8 @@
                   <span class="fan-val">—</span>
                 </div>
                 <div class="fan-slider">
-                  <input type="range" min="0" max="3" step="1" value="2" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
-                  <div class="fan-ticks"><span>${T('midea.fan.silent')}</span><span>40</span><span>60</span><span>80</span></div>
+                  <input type="range" min="0" max="5" step="1" value="3" data-act="fan" aria-label="${esc(T('midea.fan.label'))}">
+                  <div class="fan-ticks"><span>1%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>
                 </div>
               </div>
             </div>
@@ -274,7 +274,7 @@
       if (fanRow) fanRow.classList.remove('fan-auto');
       const idx = fanIndex(fs);
       if (fanSlider) fanSlider.value = String(idx);
-      if (fanVal) fanVal.textContent = idx === 0 ? T('midea.fan.silent') : `${FAN_STEPS[idx]}%`;
+      if (fanVal) fanVal.textContent = `${FAN_STEPS[idx]}%`;
     }
     // Turbo / Eco spiegeln ausschließlich den zurückgemeldeten Zustand (kein lokales Erzwingen).
     const turbo = card.querySelector('.chip-tgl[data-act="turbo"]');
@@ -393,9 +393,9 @@
     const slider = ev.target.closest('input[data-act="fan"]');
     if (!slider) return;
     const card = slider.closest('.ac-card'); const id = Number(card.dataset.id);
-    const val = FAN_STEPS[Number(slider.value)] || FAN_STEPS[2];
+    const val = FAN_STEPS[Number(slider.value)];
     const fanVal = card.querySelector('.fan-val');
-    if (fanVal) fanVal.textContent = Number(slider.value) === 0 ? T('midea.fan.silent') : `${val}%`;
+    if (fanVal) fanVal.textContent = `${val}%`;
     try {
       await api('POST', `/devices/${id}/state`, { patch: { fanSpeed: val } });
       await refreshState(id, card);
