@@ -2046,6 +2046,7 @@
   "settings.domains.points_note": "Verified means: public DNS points to this server's IP. Existing routes/portal keep working regardless.",
   "settings.domains.in_use_portal": "Domain is in use by the portal — change the portal address first.",
   "nav.midea": "Air Conditioning",
+  "nav.smarthome": "Smart Home",
   "midea.title": "Air Conditioning",
   "midea.subtitle": "Control Midea climate devices on your LAN",
   "midea.cloud.title": "Midea account",

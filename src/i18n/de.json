@@ -1990,6 +1990,7 @@
   "settings.domains.points_note": "Verifiziert heißt: öffentliches DNS zeigt auf die Server-IP. Bestehende Routen/Portal laufen unabhängig weiter.",
   "settings.domains.in_use_portal": "Domain wird vom Portal genutzt — bitte zuerst die Portal-Adresse ändern.",
   "nav.midea": "Klimaanlage",
+  "nav.smarthome": "Smart Home",
   "midea.title": "Klimaanlage",
   "midea.subtitle": "Midea-Klimageräte im Heimnetz steuern",
   "midea.cloud.title": "Midea-Konto",
