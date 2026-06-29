@@ -39,6 +39,7 @@ function redactMideaDevice(id) {
 }
 
 const MIDEA_MODES = new Set(['auto', 'cool', 'heat', 'dry', 'fan']);
+const MIDEA_FAN_SPEEDS = new Set([20, 40, 60, 80, 100, 102]); // Slider-Stufen + Auto(102)
 // Whitelist + range/type-check; returns a clean patch or null (→ 400). At least one valid field required.
 function validateMideaPatch(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -46,6 +47,9 @@ function validateMideaPatch(raw) {
   if ('power' in raw) { if (typeof raw.power !== 'boolean') return null; patch.power = raw.power; }
   if ('targetTemp' in raw) { const t = Number(raw.targetTemp); if (!Number.isFinite(t) || t < 16 || t > 30) return null; patch.targetTemp = t; }
   if ('mode' in raw) { if (!MIDEA_MODES.has(raw.mode)) return null; patch.mode = raw.mode; }
+  if ('fanSpeed' in raw) { if (!MIDEA_FAN_SPEEDS.has(raw.fanSpeed)) return null; patch.fanSpeed = raw.fanSpeed; }
+  if ('turbo' in raw) { if (typeof raw.turbo !== 'boolean') return null; patch.turbo = raw.turbo; }
+  if ('eco' in raw) { if (typeof raw.eco !== 'boolean') return null; patch.eco = raw.eco; }
   return Object.keys(patch).length ? patch : null;
 }
 
