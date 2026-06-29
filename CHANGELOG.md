@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.109.0] — 2026-06-29
+
+### Features
+- Smart Home TP1 — Phoscon/deCONZ gateway connect, sync & control (#204)
+
+---
+
 ## [1.108.8] — 2026-06-29
 
 ### Änderungen
