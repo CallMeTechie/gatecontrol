@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.110.0] — 2026-06-29
+
+### Features
+- classify plugs/switches/sensor-subtypes (#206)
+
+---
+
 ## [1.109.1] — 2026-06-29
 
 ### Fixes
