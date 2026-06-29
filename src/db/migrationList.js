@@ -1099,6 +1099,55 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS idx_midea_owners_user ON midea_device_owners(user_id);`,
     detect: (db) => tableExists(db, 'midea_device_owners'),
   },
+  {
+    version: 63,
+    name: 'create_smarthome',
+    sql: `CREATE TABLE IF NOT EXISTS smarthome_gateways (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      route_id     INTEGER,
+      api_key_enc  TEXT,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      last_seen_at TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS smarthome_resources (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      gateway_id       INTEGER NOT NULL,
+      deconz_id        TEXT NOT NULL,
+      deconz_type      TEXT NOT NULL,
+      uniqueid         TEXT,
+      kind             TEXT NOT NULL,
+      name             TEXT,
+      capabilities_json TEXT,
+      enabled          INTEGER NOT NULL DEFAULT 1,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_smarthome_resources_gw ON smarthome_resources(gateway_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_smarthome_resources_uniq ON smarthome_resources(gateway_id, deconz_type, deconz_id);
+    CREATE TABLE IF NOT EXISTS smarthome_resource_owners (
+      resource_id INTEGER NOT NULL,
+      user_id     INTEGER NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (resource_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_smarthome_owners_user ON smarthome_resource_owners(user_id);
+    CREATE TABLE IF NOT EXISTS smarthome_rules (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      gateway_id           INTEGER NOT NULL,
+      name                 TEXT NOT NULL,
+      enabled              INTEGER NOT NULL DEFAULT 1,
+      definition_json      TEXT NOT NULL,
+      deconz_rule_id       TEXT,
+      deconz_schedule_id   TEXT,
+      deconz_clip_sensor_id TEXT,
+      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    );`,
+    detect: (db) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='smarthome_gateways'").get(),
+  },
 ];
 
 module.exports = { migrations };
