@@ -2,7 +2,7 @@
   <div class="modal">
     <div class="modal-head">
       <div class="modal-title">{{ t('smarthome.connect.title') }}</div>
-      <button class="modal-close" onclick="document.getElementById('sh-connect-modal').style.display='none'">
+      <button class="modal-close" data-sh-close>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -23,7 +23,7 @@
       </div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="document.getElementById('sh-connect-modal').style.display='none'">{{ t('common.cancel') }}</button>
+      <button class="btn btn-ghost" data-sh-close>{{ t('common.cancel') }}</button>
       <button class="btn btn-primary" id="sh-c-submit">{{ t('smarthome.connect.acquire') }}</button>
     </div>
   </div>

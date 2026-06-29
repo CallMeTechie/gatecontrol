@@ -149,6 +149,15 @@
     } catch (_) { /* leer lassen */ }
   }
 
+  // Modal open/close wired in JS (CSP blocks inline onclick: script-src-attr 'none').
+  function wireModal() {
+    const modal = $('#sh-connect-modal');
+    const open = $('#sh-connect-open');
+    if (open && modal) open.addEventListener('click', () => { modal.style.display = 'flex'; });
+    document.querySelectorAll('[data-sh-close]').forEach((el) =>
+      el.addEventListener('click', () => { if (modal) modal.style.display = 'none'; }));
+  }
+
   function wireConnect() {
     const btn = $('#sh-c-submit'); if (!btn) return;
     btn.addEventListener('click', async () => {
@@ -191,6 +200,6 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => { fillRoutes(); wireConnect(); wireTest(); loadGateways(); });
+  document.addEventListener('DOMContentLoaded', () => { wireModal(); fillRoutes(); wireConnect(); wireTest(); loadGateways(); });
   window.SmartHome = { loadGateways, loadResources, api };
 })();
