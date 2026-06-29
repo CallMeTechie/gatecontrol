@@ -2128,7 +2128,7 @@
   "portal.midea.power_on": "Ein",
   "portal.midea.power_off": "Aus",
   "error.smarthome.gateway_not_found": "Smart-Home-Gateway nicht gefunden",
-  "error.smarthome.link_button": "Phoscon-Link-Fenster abgelaufen — „App authentifizieren" erneut drücken",
+  "error.smarthome.link_button": "Phoscon-Link-Fenster abgelaufen — „App authentifizieren“ erneut drücken",
   "error.smarthome.no_route": "Gewählte Route ist nicht auflösbar",
   "error.smarthome.no_api_key": "Gateway hat keinen API-Key — erneut verbinden"
 }
