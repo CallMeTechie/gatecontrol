@@ -34,7 +34,6 @@
   "nav.access_control": "Zugriffskontrolle",
   "nav.users": "Benutzer",
   "nav.dns": "Interner DNS",
-
   "dns.eyebrow": "System",
   "dns.title": "Interner DNS",
   "dns.subtitle": "Auflösung von Peer-Hostnamen im VPN-Subnetz via dnsmasq",
@@ -60,7 +59,6 @@
   "dns.stat_stale": "Veraltet",
   "dns.record_type": "Typ",
   "dns.feature_pro": "Pro",
-
   "auth.login": "Anmelden",
   "auth.sign_in_subtitle": "Melden Sie sich an, um fortzufahren",
   "auth.username": "Benutzername",
@@ -70,7 +68,6 @@
   "auth.error_invalid": "Ungültiger Benutzername oder Passwort",
   "auth.error_locked": "Konto gesperrt. Versuchen Sie es in {{minutes}} Minute(n) erneut.",
   "auth.error_generic": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
-
   "dashboard.eyebrow": "Übersicht",
   "dashboard.title": "Dashboard",
   "dashboard.subtitle": "Echtzeitübersicht",
@@ -92,7 +89,6 @@
   "dashboard.stable": "stabil",
   "dashboard.restart_date": "Neustart: {{date}}",
   "dashboard.swap_used": "Swap: {{value}} belegt",
-
   "debug.auto_refresh": "Auto-Aktualisierung",
   "debug.badge": "Debug",
   "debug.clear": "Leeren",
@@ -104,7 +100,6 @@
   "debug.tab": "Debug",
   "debug.title": "Request-Tracing",
   "debug.toggle_desc": "Detaillierte Request/Response-Informationen für Debugging loggen",
-
   "peers.eyebrow": "WireGuard",
   "peers.title": "Peers & Clients",
   "peers.subtitle": "Verbindungen verwalten",
@@ -200,7 +195,6 @@
   "peers.expires_on": "Läuft ab am {{date}}",
   "peers.expires_soon": "Läuft bald ab",
   "peers.expired": "Abgelaufen",
-
   "routes.eyebrow": "Caddy Reverse Proxy",
   "routes.title": "Domains & Routen",
   "routes.subtitle": "{{count}} aktive Einträge",
@@ -390,7 +384,6 @@
   "routes.block_empty": "Leere Seite",
   "routes.block_body_ph": "<h1>Nicht gefunden</h1>",
   "routes.block_redirect_ph": "https://beispiel.de/seite",
-
   "config.eyebrow": "WireGuard Interface",
   "config.title": "Konfiguration",
   "config.subtitle": "Server-Interface {{iface}}",
@@ -415,7 +408,6 @@
   "config.password_placeholder": "Admin-Passwort",
   "config.confirm": "Bestätigen",
   "config.cancel": "Abbrechen",
-
   "logs.all": "Alle",
   "logs.success": "Erfolg",
   "logs.warning": "Warnung",
@@ -429,12 +421,10 @@
   "logs.last_24h": "Letzte 24 Stunden",
   "logs.last_7d": "Letzte 7 Tage",
   "logs.last_30d": "Letzte 30 Tage",
-
   "certs.title": "SSL / Zertifikate",
   "certs.auto_tls": "Auto-TLS",
   "certs.managed_by_caddy": "Automatisch verwaltet von Caddy",
   "certs.no_certs": "Keine HTTPS-Routen konfiguriert",
-
   "settings.subtitle": "Anwendungskonfiguration",
   "settings.tab_general": "Allgemein",
   "settings.tab_security": "Sicherheit",
@@ -443,7 +433,6 @@
   "settings.tab_monitoring": "Monitoring",
   "settings.tab_api": "API-Tokens",
   "settings.tab_advanced": "Erweitert",
-
   "profile.title": "Benutzerprofil",
   "profile.subtitle": "Konto und Einstellungen verwalten",
   "settings.profile": "Profil",
@@ -484,7 +473,6 @@
   "settings.restore_warning": "Dies ersetzt ALLE bestehenden Peers, Routen, Einstellungen und Webhooks. Diese Aktion kann nicht rückgängig gemacht werden.",
   "settings.danger_zone": "Gefahrenzone",
   "settings.clear_logs": "Aktivitätslog löschen",
-
   "common.delete": "Löschen",
   "common.save": "Speichern",
   "common.close": "Schließen",
@@ -508,7 +496,7 @@
   "routes.auth_basic_required": "Benutzername und Passwort sind erforderlich wenn Auth aktiviert ist",
   "routes.domain_required": "Domain ist ein Pflichtfeld",
   "routes.target_port_required": "Ziel-Port ist ein Pflichtfeld",
-  "routes.peer_required": "Bitte einen Ziel-Peer auswählen",
+  "routes.peer_required": "Peer erforderlich",
   "route_lan_port_required": "LAN-Port ist ein Pflichtfeld",
   "route_auth.method_email_password": "Email & Passwort",
   "route_auth.method_email_code": "Email & Code",
@@ -636,7 +624,6 @@
   "routes.wizard.next": "Weiter",
   "routes.wizard.review_title": "Überprüfen & Speichern",
   "routes.type": "Typ",
-  "routes.peer_required": "Peer erforderlich",
   "routes.l4_listen_port_required": "Listen-Port erforderlich",
   "route_gateway_peer_required": "Gateway-Peer erforderlich",
   "route_lan_host_required": "LAN-Host erforderlich",
@@ -697,19 +684,15 @@
   "rdp.ms_rdg_port": "RD-Gateway-Port",
   "rdp.feature.gateway_locked": "Home-Gateway-Routing für RDP erfordert eine Pro-Lizenz.",
   "rdp.feature.gateway_locked_upgrade": "Upgrade für RDP über Home-Gateway",
-
   "status.wg_active": "Tunnel aktiv",
   "status.wg_inactive": "WireGuard inaktiv",
-
   "time.now": "jetzt",
   "time.seconds_ago": "vor {{count}}s",
   "time.minutes_ago": "vor {{count}} Min",
   "time.hours_ago": "vor {{count}} Std",
   "time.days_ago": "vor {{count}}d",
-
   "error.not_found": "Seite nicht gefunden",
   "error.generic": "Etwas ist schiefgelaufen",
-
   "error.peers.list": "Peers konnten nicht geladen werden",
   "error.peers.get": "Peer konnte nicht geladen werden",
   "error.peers.name_invalid": "Peer-Name muss alphanumerisch sein (1-63 Zeichen)",
@@ -726,7 +709,6 @@
   "error.peers.failover_home_blocked": "Dieses Gateway ist aktuell das Zuhause failover-umgezogener Routen. Hole sie zuerst zurück oder ziehe sie dauerhaft um.",
   "error.peers.owner_invalid": "Ausgewählter Besitzer existiert nicht",
   "error.peers.bulk_invalid_ids": "Ungültige oder zu viele Geräte-IDs",
-
   "error.client.hostname_required": "Hostname ist erforderlich",
   "error.client.invalid_hostname": "Ungültiger Hostname für Peer-Name",
   "error.client.register_failed": "Client-Registrierung fehlgeschlagen",
@@ -737,7 +719,6 @@
   "error.client.binding_not_registered": "Token ist nicht gebunden. Zuerst registrieren.",
   "error.tokens.binding_reset_failed": "Maschinen-Binding konnte nicht zurückgesetzt werden",
   "error.settings.machine_binding_mode_invalid": "Modus muss aus, global oder individuell sein",
-
   "error.routes.list": "Routen konnten nicht geladen werden",
   "error.routes.get": "Route konnte nicht geladen werden",
   "error.routes.domain_invalid": "Ungültiges Domain-Format",
@@ -773,7 +754,6 @@
   "error.routes.relocate_lan_port_invalid": "Ungültiger LAN-Ziel-Port.",
   "error.routes.public_domain_use_verified": "Öffentliche Domains bitte aus der verifizierten Liste wählen — unter Einstellungen → Allgemein → Domains verifizieren",
   "error.routes.domain_collision": "Dieser Host kollidiert mit der GateControl- oder Portal-Adresse",
-
   "error.settings.profile_get": "Profil konnte nicht geladen werden",
   "error.settings.profile_update": "Profil konnte nicht aktualisiert werden",
   "error.settings.password_change": "Passwort konnte nicht geändert werden",
@@ -785,14 +765,12 @@
   "error.settings.app_get": "App-Einstellungen konnten nicht geladen werden",
   "error.settings.logs_clear": "Logs konnten nicht gelöscht werden",
   "error.settings.user_not_found": "Benutzer nicht gefunden",
-
   "error.backup.create": "Backup konnte nicht erstellt werden",
   "error.backup.preview": "Backup-Vorschau fehlgeschlagen",
   "error.backup.restore": "Backup konnte nicht wiederhergestellt werden",
   "error.backup.no_file": "Keine Datei hochgeladen",
   "error.backup.invalid_json": "Ungültige JSON-Datei",
   "error.backup.invalid": "Ungültiges Backup",
-
   "error.webhooks.list": "Webhooks konnten nicht geladen werden",
   "error.webhooks.create": "Webhook konnte nicht erstellt werden",
   "error.webhooks.update": "Webhook konnte nicht aktualisiert werden",
@@ -805,17 +783,14 @@
   "error.webhooks.url_protocol": "Webhook-URL muss http oder https verwenden",
   "error.webhooks.url_localhost": "Webhook-URL darf nicht auf localhost zeigen",
   "error.webhooks.url_private": "Webhook-URL darf nicht auf private oder reservierte IP-Adressen zeigen",
-
   "error.rate_limit.login": "Zu viele Anmeldeversuche, bitte versuchen Sie es später erneut",
   "error.rate_limit.api": "Zu viele Anfragen, bitte versuchen Sie es später erneut",
   "error.rate_limit.route_auth_login": "Zu viele Anmeldeversuche. Bitte später erneut versuchen.",
   "error.rate_limit.route_auth_code": "Zu viele Code-Anfragen. Bitte später erneut versuchen.",
   "error.rate_limit.hostname": "Zu viele Hostname-Meldungen. Bitte später erneut versuchen.",
-
   "error.dns.hostname_required": "Hostname ist erforderlich",
   "error.dns.hostname_invalid": "Hostname enthält ungültige Zeichen (nur a-z, 0-9, Bindestrich; max. 63 Zeichen)",
   "error.dns.hostname_reserved": "Hostname ist reserviert und kann nicht verwendet werden",
-
   "error.dashboard.stats": "Dashboard-Statistiken konnten nicht geladen werden",
   "error.dashboard.traffic": "Traffic-Daten konnten nicht geladen werden",
   "error.wireguard.status": "WireGuard-Status konnte nicht abgerufen werden",
@@ -831,7 +806,6 @@
   "error.logs.recent": "Letzte Aktivitäten konnten nicht geladen werden",
   "error.logs.access": "Zugriffslogs konnten nicht geladen werden",
   "error.logs.export": "Logs konnten nicht exportiert werden",
-
   "webhooks.title": "Webhooks",
   "webhooks.eyebrow": "Benachrichtigungen",
   "webhooks.subtitle": "Benachrichtigungen an externe Dienste senden",
@@ -848,7 +822,6 @@
   "webhooks.no_webhooks": "Keine Webhooks konfiguriert",
   "webhooks.enabled": "Aktiv",
   "webhooks.disabled": "Deaktiviert",
-
   "route_auth.verify_access": "Zugang verifizieren",
   "route_auth.access_to": "Zugriff auf",
   "route_auth.email": "E-Mail",
@@ -879,9 +852,6 @@
   "route_auth.auth_basic": "Basic Auth",
   "route_auth.auth_route": "Route Auth",
   "route_auth.method": "Methode",
-  "route_auth.method_email_password": "Email & Passwort",
-  "route_auth.method_email_code": "Email & Code",
-  "route_auth.method_totp": "TOTP",
   "route_auth.method_share": "Freigabe-Link",
   "route_auth.share_managed": "Wird über Freigabe-Links verwaltet",
   "route_auth.share_invite_title": "Privater Zugriff",
@@ -949,14 +919,11 @@
   "route_auth.badge_route_auth": "Route Auth",
   "route_auth.email_password_is_factor_1": "Email & Passwort ist bei 2FA immer Faktor 1",
   "route_auth.code_sent_to_same_email": "Bestätigungscode wird an die E-Mail-Adresse aus Faktor 1 gesendet.",
-
   "caddy_config.subtitle": "Live Caddy Reverse-Proxy Konfiguration (JSON)",
   "caddy_config.live_config": "Live Konfiguration",
   "caddy_config.export": "JSON exportieren",
-
   "sidebar.toggle_open": "Navigationsmenü öffnen",
   "sidebar.toggle_close": "Navigationsmenü schließen",
-
   "tokens.title": "API-Tokens",
   "tokens.subtitle": "Tokens für Automatisierung & API-Zugriff verwalten",
   "tokens.create_title": "Token erstellen",
@@ -1018,7 +985,6 @@
   "tokens.created_success": "Token erfolgreich erstellt. Jetzt kopieren — es wird nicht erneut angezeigt!",
   "tokens.copy_token": "Token kopieren",
   "tokens.token_copied": "Token in Zwischenablage kopiert",
-
   "error.tokens.list": "Tokens konnten nicht geladen werden",
   "error.tokens.create": "Token konnte nicht erstellt werden",
   "error.tokens.delete": "Token konnte nicht widerrufen werden",
@@ -1026,14 +992,12 @@
   "error.tokens.name_required": "Token-Name ist erforderlich",
   "error.tokens.scopes_required": "Mindestens eine Berechtigung ist erforderlich",
   "error.tokens.no_escalation": "Tokens können keine anderen Tokens verwalten",
-
   "acl.title": "Peer-Zugriffskontrolle",
   "acl.toggle_desc": "Zugriff auf bestimmte WireGuard-Peers beschränken",
   "acl.select_peers": "Erlaubte Peers",
   "acl.all_peers_allowed": "Alle Peers können auf diese Route zugreifen",
   "acl.no_peers_selected": "Keine Peers ausgewählt — bei aktivierter ACL wird sämtlicher Traffic blockiert",
   "acl.peers_selected": "{{count}} Peer(s) erlaubt",
-
   "autobackup.title": "Automatische Backups",
   "autobackup.subtitle": "Geplante automatische Backups mit Aufbewahrung",
   "autobackup.enabled": "Automatische Backups aktivieren",
@@ -1088,7 +1052,6 @@
   "error.autobackup.download": "Backup-Datei konnte nicht heruntergeladen werden",
   "error.autobackup.not_found": "Backup-Datei nicht gefunden",
   "error.autobackup.invalid_filename": "Ungültiger Dateiname",
-
   "routes.retry": "Wiederholung bei Fehler",
   "routes.retry_desc": "Automatisch wiederholen wenn Backend einen Fehlerstatus zurückgibt",
   "routes.retry_count": "Anzahl Wiederholungen",
@@ -1124,12 +1087,10 @@
   "routes.sticky_badge": "Sticky",
   "routes.visible_to_users": "Sichtbar für Benutzer",
   "routes.visible_to_users_hint": "Leer lassen für alle Benutzer sichtbar. Bestimmte Benutzer auswählen um Zugriff einzuschränken.",
-
   "metrics.title": "Prometheus Metriken",
   "metrics.subtitle": "Metriken-Endpunkt für Prometheus/Grafana-Abfragen bereitstellen",
   "metrics.enable": "Prometheus Metriken aktivieren",
   "metrics.path": "Metriken-Pfad",
-
   "headers.title": "Benutzerdefinierte Header",
   "headers.request_headers": "Request-Header",
   "headers.response_headers": "Response-Header",
@@ -1140,7 +1101,6 @@
   "headers.preset_cors": "CORS-Header",
   "headers.preset_security": "Sicherheits-Header",
   "headers.badge": "Headers",
-
   "circuit_breaker.title": "Circuit Breaker",
   "circuit_breaker.toggle_desc": "Anfragen an ausgefallene Backends temporaer blockieren (erfordert Monitoring)",
   "circuit_breaker.threshold": "Fehlerschwelle",
@@ -1157,7 +1117,6 @@
   "circuit_breaker.badge_open": "CB: Offen",
   "circuit_breaker.badge_half_open": "CB: Halb-Offen",
   "circuit_breaker.requires_monitoring": "Circuit Breaker erfordert aktiviertes Uptime-Monitoring",
-
   "bot_blocker.badge": "Bots geblockt",
   "bot_blocker.message": "Antwortnachricht",
   "bot_blocker.mode": "Modus",
@@ -1171,7 +1130,6 @@
   "bot_blocker.title": "AI-Bot-Blocker",
   "bot_blocker.toggle_desc": "AI-Crawler von bekannten IP-Bereichen blockieren",
   "bot_blocker.url": "Weiterleitungs-URL",
-
   "batch.select": "Auswählen",
   "batch.select_all": "Alle auswählen",
   "batch.cancel": "Abbrechen",
@@ -1186,7 +1144,6 @@
   "error.batch.no_ids": "Keine Elemente ausgewählt",
   "error.batch.not_found": "Einige Elemente wurden nicht gefunden",
   "error.batch.failed": "Batch-Operation fehlgeschlagen",
-
   "peer_groups.title": "Peer-Gruppen",
   "peer_groups.subtitle": "Peers in Gruppen organisieren",
   "peer_groups.add": "Gruppe hinzufügen",
@@ -1204,7 +1161,6 @@
   "peer_groups.select_group": "Gruppe wählen...",
   "peer_groups.none": "Keine Gruppe",
   "peer_groups.badge_groups": "Gruppen",
-
   "error.peer_groups.list": "Peer-Gruppen konnten nicht geladen werden",
   "error.peer_groups.create": "Peer-Gruppe konnte nicht erstellt werden",
   "error.peer_groups.update": "Peer-Gruppe konnte nicht aktualisiert werden",
@@ -1212,7 +1168,6 @@
   "error.peer_groups.not_found": "Peer-Gruppe nicht gefunden",
   "error.peer_groups.name_required": "Gruppenname ist erforderlich",
   "error.peer_groups.name_exists": "Eine Gruppe mit diesem Namen existiert bereits",
-
   "license.title": "Lizenz",
   "license.status": "Lizenzstatus",
   "license.plan": "Plan",
@@ -1258,7 +1213,6 @@
   "error.license.signing_key_required": "Signaturschlüssel ist erforderlich",
   "error.license.rate_limited": "Bitte warten Sie, bevor Sie es erneut versuchen",
   "settings.tab_license": "Lizenz",
-
   "rdp.eyebrow": "Remote Desktop",
   "rdp.title": "RDP Dashboard",
   "rdp.subtitle": "{{count}} RDP-Route(n) konfiguriert",
@@ -1419,7 +1373,6 @@
   "rdp.browser.gateway_blocked": "SFTP und Audio sind bei Gateway-/Extern-Zugriff nicht verfügbar (das Sekundärziel ist für guacd nicht erreichbar).",
   "rdp.browser.license_locked": "Browser-Sessions sind in deiner Lizenz nicht enthalten.",
   "rdp.browser.open": "Im Browser öffnen",
-
   "rdp.session.title": "Remote-Desktop-Sitzung",
   "rdp.session.status.connecting": "Verbinde…",
   "rdp.session.status.connected": "Verbunden",
@@ -1437,7 +1390,6 @@
   "rdp.session.reconnecting": "Verbindung wird wiederhergestellt…",
   "rdp.session.expired": "Sitzung abgelaufen",
   "rdp.session.not_authorized": "Nicht berechtigt",
-
   "rdp.kv.name": "Name",
   "rdp.kv.mode": "Modus",
   "rdp.kv.host": "Host",
@@ -1445,7 +1397,6 @@
   "rdp.kv.health": "Health",
   "rdp.health_reachable": "erreichbar",
   "rdp.health_checking": "prüft…",
-
   "error.rdp.list": "RDP-Routen konnten nicht geladen werden",
   "error.rdp.get": "RDP-Route konnte nicht geladen werden",
   "error.rdp.create": "RDP-Route konnte nicht erstellt werden",
@@ -1476,7 +1427,6 @@
   "error.rdp.pubkey": "Server-Schluessel konnte nicht abgerufen werden",
   "error.rdp.rotation": "Anmeldedaten-Rotation konnte nicht verwaltet werden",
   "error.rdp.maintenance": "Wartungsfenster konnte nicht verwaltet werden",
-
   "users.title": "Benutzer",
   "users.subtitle": "Benutzer und ihre API-Tokens verwalten",
   "users.add_user": "Benutzer anlegen",
@@ -1708,7 +1658,6 @@
   "activity.pool_outage_resolved": "Pool {name}: Mindestens ein Gateway wieder online",
   "pool_outage.title": "Service nicht verfügbar",
   "pool_outage.body": "Dieser Service ist vorübergehend nicht erreichbar — alle Gateways offline. Bitte versuchen Sie es später erneut.",
-
   "nav.gateways": "Gateways",
   "gateways.title": "Gateways",
   "gateways.subtitle": "Flotten-Übersicht aus Heartbeat-Telemetrie",
@@ -1788,7 +1737,6 @@
   "gateways.setup_lin_1": "Lege update.sh in den Ordner der docker-compose.yml deines Gateways.",
   "gateways.setup_lin_2": "Jede Minute ausführen (cron oder systemd-.path auf /state/pending-update) mit diesem Befehl:",
   "gateways.setup_legacy_hint": "Gateway vor Auto-Update angelegt? Dann zusätzlich '- ./gateway-state:/state' in die compose-volumes eintragen und den Container einmal neu erstellen.",
-
   "gateways.discovery.title": "LAN-Geräte-Erkennung",
   "gateways.discovery.subtitle": "Dienste im LAN dieses Gateways finden und als Routen anlegen.",
   "gateways.discovery.devices_title": "Erkannte Geräte",
@@ -1830,7 +1778,6 @@
   "routes.suggested.button": "LAN scannen / Vorschläge",
   "routes.suggested.adopt": "Übernehmen",
   "routes.suggested.unavailable": "Dieses Gateway unterstützt keine Discovery (zuerst aktualisieren).",
-
   "egress.section_title": "Scan-Ziele (Egress)",
   "egress.subtitle": "Ein LAN-Gerät (z. B. ein Drucker) erreicht über dieses Gateway eine NAS-Freigabe an einem entfernten Standort.",
   "egress.add": "Scan-Ziel hinzufügen",
@@ -1853,7 +1800,6 @@
   "egress.save_failed": "Speichern fehlgeschlagen",
   "egress.empty": "Noch keine Scan-Ziele.",
   "egress.unavailable": "Dieses Gateway unterstützt keinen Scan-Egress (zuerst aktualisieren).",
-
   "access.title": "Zeitfenster",
   "access.add_rule": "Regel hinzufügen",
   "access.mode_allow": "Erlauben",
@@ -1876,7 +1822,6 @@
   "access.err_date_order": "'Gültig ab' muss vor 'Gültig bis' liegen",
   "access.err_mode": "Ungültiger Modus — 'allow' oder 'block' verwenden",
   "access.target_not_found": "Route oder Peer nicht gefunden",
-
   "nav.pihole": "Pi-hole",
   "pihole.eyebrow": "System",
   "pihole.title": "Pi-hole",
@@ -1943,7 +1888,6 @@
   "pihole.cfg.confirm_delete": "Diese Instanz löschen?",
   "pihole.cfg.dns_not_reachable": "nicht erreichbar auf Port",
   "aurora.mode_toggle": "Hell/Dunkel umschalten",
-
   "portal.title": "Portal",
   "portal.welcome": "Willkommen",
   "portal.greeting_home": "Willkommen zu Hause",
@@ -2130,5 +2074,32 @@
   "error.smarthome.gateway_not_found": "Smart-Home-Gateway nicht gefunden",
   "error.smarthome.link_button": "Phoscon-Link-Fenster abgelaufen — „App authentifizieren“ erneut drücken",
   "error.smarthome.no_route": "Gewählte Route ist nicht auflösbar",
-  "error.smarthome.no_api_key": "Gateway hat keinen API-Key — erneut verbinden"
+  "error.smarthome.no_api_key": "Gateway hat keinen API-Key — erneut verbinden",
+  "smarthome.title": "Smart Home",
+  "smarthome.subtitle": "Phoscon/deCONZ-Lichter und -Sensoren einbinden, Haushaltsmitgliedern zuweisen und Logikketten erstellen.",
+  "smarthome.eyebrow": "System · Smart Home",
+  "smarthome.connect": "Gateway verbinden",
+  "smarthome.sync": "Synchronisieren",
+  "smarthome.test": "Verbindung testen",
+  "smarthome.test_ok": "Erreichbar",
+  "smarthome.test_fail": "Nicht erreichbar",
+  "smarthome.power": "Ein/Aus",
+  "smarthome.brightness": "Helligkeit",
+  "smarthome.color": "Farbe",
+  "smarthome.warmth": "Farbtemperatur",
+  "smarthome.activate": "Aktivieren",
+  "smarthome.load_error": "Geräte konnten nicht geladen werden",
+  "smarthome.empty": "Noch keine Geräte — Gateway verbinden und synchronisieren",
+  "smarthome.section.lights": "Lichter",
+  "smarthome.section.groups": "Gruppen & Szenen",
+  "smarthome.section.sensors": "Sensoren",
+  "smarthome.kpi.groups": "Gruppen/Szenen",
+  "smarthome.connect.title": "Phoscon-Gateway verbinden",
+  "smarthome.connect.name": "Name",
+  "smarthome.connect.route": "Interne Route",
+  "smarthome.connect.route_hint": "Nur VPN-interne Routen; darüber erreicht der Server den Gateway.",
+  "smarthome.connect.apikey_optional": "API-Key (optional)",
+  "smarthome.connect.apikey_ph": "leer lassen für Auto-Holen",
+  "smarthome.connect.apikey_hint": "Leer = GateControl holt den Key automatisch (vorher in Phoscon „App authentifizieren“).",
+  "smarthome.connect.acquire": "Verbinden & Key holen"
 }
