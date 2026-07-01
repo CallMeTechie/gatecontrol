@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- TP3 — logic chains → native deCONZ rules: admin-defined WENN/DANN rules translated to native `/rules` (+ `/schedules` + CLIP sensors on delay chains) that run autonomously on the bridge; delay modes ignore/reset/cancel, rule builder UI (3 themes), gateway rule-count + limit warning, boot-time re-sync of unsynced rules
+
+---
+
 ## [1.112.0] — 2026-06-29
 
 ### Features
