@@ -142,6 +142,8 @@ async function start() {
     // Smart Home (deCONZ) poll loop — best-effort; no-op without license or gateways.
     try { require('./services/smarthome').startPolling(); }
     catch (err) { logger.warn({ err: err.message }, 'smarthome start failed'); }
+    // Re-push any rules that lost their deconz_rule_id (e.g. gateway wiped between restarts).
+    require('./services/smarthome/smarthomeRules').resyncPending().catch((e) => logger.warn({ err: e.message }, 'smarthome rule resync failed'));
 
     // Internal DNS — rebuild the addn-hosts file on boot so route domains
     // resolve to the gateway immediately. Without this, the file only gets
