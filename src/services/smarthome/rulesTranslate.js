@@ -115,8 +115,8 @@ function buildRuleObjects(def, resolve, ruleLabel) {
 
   if (mode === 'ignore' || mode === 'reset') {
     const objects = [
-      { type: 'rule', payload: { name: ruleLabel, status: 'enabled', conditions, actions: [armSchedule] }, ref: 'arm' },
       schedule,
+      { type: 'rule', payload: { name: ruleLabel, status: 'enabled', conditions, actions: [armSchedule] }, ref: 'arm' },
     ];
     if (mode === 'reset') {
       objects.push({ type: 'rule', payload: { name: `${ruleLabel}#reset`, status: 'enabled', conditions, actions: [armSchedule] }, ref: 'reset' });

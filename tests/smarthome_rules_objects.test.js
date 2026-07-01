@@ -19,13 +19,13 @@ test('no delay → single rule object', () => {
 test('onRetrigger ignore → rule + schedule', () => {
   const def = { triggers: [{ kind: 'motion', resourceId: 12, event: 'ended' }], actions: [{ kind: 'group', resourceId: 30, set: { on: false } }], delay: { minutes: 5, onRetrigger: 'ignore' } };
   const { objects } = T.buildRuleObjects(def, resolve, 'GC:1:t');
-  assert.deepEqual(objects.map((o) => o.type), ['rule', 'schedule']);
+  assert.deepEqual(objects.map((o) => o.type), ['schedule', 'rule']);
 });
 
 test('onRetrigger reset → rule + schedule + reset-rule', () => {
   const def = { triggers: [{ kind: 'motion', resourceId: 12, event: 'ended' }], actions: [{ kind: 'group', resourceId: 30, set: { on: false } }], delay: { minutes: 5, onRetrigger: 'reset' } };
   const { objects } = T.buildRuleObjects(def, resolve, 'GC:1:t');
-  assert.deepEqual(objects.map((o) => o.type), ['rule', 'schedule', 'rule']);
+  assert.deepEqual(objects.map((o) => o.type), ['schedule', 'rule', 'rule']);
 });
 
 test('onRetrigger cancel → clip + rule + cancel-rule when supported', () => {
