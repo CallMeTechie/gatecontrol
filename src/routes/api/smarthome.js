@@ -5,6 +5,8 @@ const { requireFeature } = require('../../middleware/license');
 const users = require('../../services/users');
 const smarthome = require('../../services/smarthome');
 const smarthomeOwners = require('../../services/smarthome/smarthomeOwners');
+const smarthomeRules = require('../../services/smarthome/smarthomeRules');
+const deconzCaps = require('../../services/smarthome/deconzCapabilities');
 
 const router = Router();
 
@@ -28,6 +30,9 @@ function wrap(fn) {
         err.code === 'SMARTHOME_NO_ROUTE' ? 400 :
         err.code === 'SMARTHOME_NO_API_KEY' ? 409 :
         err.code === 'SMARTHOME_GATEWAY_NOT_FOUND' ? 404 :
+        err.code === 'SMARTHOME_RULE_INVALID' ? 400 :
+        err.code === 'DECONZ_RULE_LIMIT_REACHED' ? 409 :
+        err.code === 'SMARTHOME_RULE_NOT_FOUND' ? 404 :
         /not found/i.test(err.message) ? 404 : 502;
       res.status(status).json({ ok: false, error: err.message, code: err.code || null });
     }
@@ -90,6 +95,43 @@ router.post('/resources/:id/state', wrap(async (req, res) => {
   const patch = (req.body && req.body.patch) || req.body || {};
   await smarthome.setResourceState(Number(req.params.id), patch);
   res.json({ ok: true });
+}));
+
+function reqGatewayId(req) { const id = Number(req.query.gateway_id); if (!Number.isInteger(id) || id < 1) { const e = new Error('missing gateway_id'); e.code = 'SMARTHOME_RULE_INVALID'; throw e; } return id; }
+
+router.get('/rules', wrap(async (req, res) => {
+  const gatewayId = reqGatewayId(req);
+  const list = smarthomeRules.list(gatewayId);
+  res.json({
+    rules: list,
+    gc_rule_count: list.length,
+    limit_warn: smarthomeRules.limitWarn(list.length),
+    cancelSupported: deconzCaps.cancelSupported,
+  });
+}));
+
+router.get('/rules/gateway-count', wrap(async (req, res) => {
+  res.json(await smarthomeRules.gatewayRuleCount(reqGatewayId(req)));
+}));
+
+router.post('/rules', wrap(async (req, res) => {
+  const { gateway_id, name, definition } = req.body || {};
+  if (!gateway_id || !name || !definition) { const e = new Error('missing fields'); e.code = 'SMARTHOME_RULE_INVALID'; throw e; }
+  res.json({ rule: await smarthomeRules.create(Number(gateway_id), String(name), definition) });
+}));
+
+router.put('/rules/:id', wrap(async (req, res) => {
+  const { name, definition } = req.body || {};
+  res.json({ rule: await smarthomeRules.update(Number(req.params.id), String(name), definition) });
+}));
+
+router.delete('/rules/:id', wrap(async (req, res) => {
+  await smarthomeRules.remove(Number(req.params.id));
+  res.json({ ok: true });
+}));
+
+router.post('/rules/:id/enabled', wrap(async (req, res) => {
+  res.json({ rule: await smarthomeRules.setEnabled(Number(req.params.id), !!(req.body && req.body.enabled)) });
 }));
 
 module.exports = router;
