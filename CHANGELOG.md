@@ -24,6 +24,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Pi-hole page: the "Blockierung steuern" pause buttons now show a live countdown on the blocking badge (e.g. `Off · 0:29`) and update instantly — previously the click sent the request but nothing visible changed. The badge reflects the pause optimistically, ticks down once per second, and refreshes the real state when the timer expires.
 - Smart Home rules: rule-limit (409) now shows only the banner instead of banner + alert (double signal)
 - Smart Home rules: rule-name field enforces the 20-char cap client-side (`maxlength`) across all three themes
 - Smart Home rules: `limitWarn` now derives from `deconzCapabilities.ruleLimit.warnAtGcRules` (single source) instead of a duplicated magic threshold; corrected a stale comment on cancel-condition inversion

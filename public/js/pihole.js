@@ -57,6 +57,42 @@
 
   function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
 
+  // ── Blocking status badge + pause countdown ──────────────────
+  // Shared by both theme renderers and the 1s ticker below. The server sends
+  // blocking = { state, timer } where timer is the seconds left on a pause; we
+  // turn that into a local deadline and count it down between summary syncs.
+  var blockingState = null;   // 'enabled' | 'disabled' | 'partial' | null
+  var pauseEndsAt = null;     // epoch ms a timed pause ends, else null
+
+  function fmtCountdown(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function paintBlockingBadge() {
+    var badgeEl = document.getElementById('ph-blocking-badge');
+    if (!badgeEl) return;
+    var cls = 'tag-grey', txt = '—';
+    if (blockingState === 'enabled') { cls = 'tag-green'; txt = T('pihole.blocking_on', 'On'); }
+    else if (blockingState === 'disabled') {
+      cls = 'tag-red'; txt = T('pihole.blocking_off', 'Off');
+      if (pauseEndsAt) {
+        var rem = Math.ceil((pauseEndsAt - Date.now()) / 1000);
+        if (rem > 0) txt += ' · ' + fmtCountdown(rem);
+      }
+    } else if (blockingState === 'partial') { cls = 'tag-amber'; txt = T('pihole.blocking_partial', 'Partial'); }
+    replaceChildren(badgeEl, badge(cls, txt));
+  }
+
+  // Sync badge from a /summary blocking payload ({ state, timer }).
+  function updateBlocking(blocking) {
+    blocking = blocking || {};
+    blockingState = blocking.state || null;
+    var timer = Number(blocking.timer);
+    pauseEndsAt = (blockingState === 'disabled' && timer > 0) ? Date.now() + timer * 1000 : null;
+    paintBlockingBadge();
+  }
+
   // ── Aurora: Summary (donut + pi-stats) ───────────────────────
   function auroraRenderSummary(data) {
     const q = data.queries || {};
@@ -87,16 +123,7 @@
     const clActive = cl && typeof cl === 'object' ? cl.active : cl;
     setText('ph-stat-clients', fmtNum(clActive));
 
-    const blocking = data.blocking || {};
-    const badgeEl = document.getElementById('ph-blocking-badge');
-    if (badgeEl) {
-      const state = blocking.state;
-      let cls = 'tag-grey', txt = '—';
-      if (state === 'enabled')  { cls = 'tag-green';  txt = T('pihole.blocking_on',      'On'); }
-      else if (state === 'disabled') { cls = 'tag-red';   txt = T('pihole.blocking_off', 'Off'); }
-      else if (state === 'partial')  { cls = 'tag-amber'; txt = T('pihole.blocking_partial', 'Partial'); }
-      replaceChildren(badgeEl, badge(cls, txt));
-    }
+    updateBlocking(data.blocking || {});
 
     const warn = document.getElementById('ph-attribution-warn');
     if (warn) warn.style.display = data.attribution === 'collapsed' ? '' : 'none';
@@ -159,16 +186,7 @@
     const clActive = cl && typeof cl === 'object' ? cl.active : cl;
     setText('ph-stat-clients', fmtNum(clActive));
 
-    const blocking = data.blocking || {};
-    const badgeEl = document.getElementById('ph-blocking-badge');
-    if (badgeEl) {
-      const state = blocking.state;
-      let cls = 'tag-grey', txt = '—';
-      if (state === 'enabled')  { cls = 'tag-green';  txt = T('pihole.blocking_on',      'On'); }
-      else if (state === 'disabled') { cls = 'tag-red';   txt = T('pihole.blocking_off', 'Off'); }
-      else if (state === 'partial')  { cls = 'tag-amber'; txt = T('pihole.blocking_partial', 'Partial'); }
-      replaceChildren(badgeEl, badge(cls, txt));
-    }
+    updateBlocking(data.blocking || {});
 
     const warn = document.getElementById('ph-attribution-warn');
     if (warn) warn.style.display = data.attribution === 'collapsed' ? '' : 'none';
@@ -322,7 +340,11 @@
       const body = { enabled: enabled };
       if (timer) body.timer = timer;
       await api.post('/api/v1/pihole/blocking', body);
-      await load();
+      // Optimistic: show the new state (and start the countdown) instantly. The
+      // server applies the change asynchronously and then pushes ground truth via
+      // the 'pihole' SSE event — an immediate load() here would race ahead of that
+      // resync and read back the stale pre-toggle state.
+      updateBlocking(enabled ? { state: 'enabled' } : { state: 'disabled', timer: timer });
     } catch (err) {
       console.error('Pi-hole blocking change failed:', err.message);
     }
@@ -370,6 +392,14 @@
   document.addEventListener('gc:pihole', function () {
     load();
   });
+
+  // Tick the pause countdown once per second. When it reaches zero Pi-hole has
+  // re-enabled itself (its own timer), so pull the real state.
+  setInterval(function () {
+    if (!pauseEndsAt) return;
+    if (Date.now() >= pauseEndsAt) { pauseEndsAt = null; load(); return; }
+    paintBlockingBadge();
+  }, 1000);
 
   load();
 })();
