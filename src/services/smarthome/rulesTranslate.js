@@ -76,4 +76,64 @@ function buildActions(def, resolve) {
   });
 }
 
-module.exports = { buildConditions, buildActions };
+function relTime(mins) {
+  const h = String(Math.floor(mins / 60)).padStart(2, '0');
+  const m = String(mins % 60).padStart(2, '0');
+  return `PT${h}:${m}:00`;
+}
+
+// Cancel-condition = trigger back to its inverse binary state.
+// Only eq-conditions with 'true'/'false' values are binary-invertible.
+// button (numeric code) and daylight (non-eq) are excluded.
+function cancelConditionsFrom(conditions) {
+  return conditions
+    .filter((c) => c.operator === 'eq' && (c.value === 'true' || c.value === 'false'))
+    .map((c) => ({ address: c.address, operator: 'eq', value: c.value === 'true' ? 'false' : 'true' }));
+}
+
+// ruleLabel = "GC:<gcRuleId>:<name>" — prefix to identify GC-owned deCONZ objects.
+// Placeholders '__schedule__' and '__clip_state__' are resolved by Task-4 service after object creation.
+function buildRuleObjects(def, resolve, ruleLabel) {
+  const conditions = buildConditions(def, resolve);
+  const actions = buildActions(def, resolve);
+  const delay = def.delay && def.delay.minutes ? def.delay : null;
+
+  if (delay) {
+    if (!Number.isInteger(delay.minutes) || delay.minutes < 1 || delay.minutes > 1440) { const e = new Error('bad delay'); e.code = 'SMARTHOME_RULE_INVALID'; e.detail = 'bad_delay_minutes'; throw e; }
+    if (actions.length > 1) { const e = new Error('multi-action delay'); e.code = 'SMARTHOME_RULE_INVALID'; e.detail = 'delay_multi_action_not_supported'; throw e; }
+  }
+
+  if (!delay) {
+    return { objects: [{ type: 'rule', payload: { name: ruleLabel, status: 'enabled', conditions, actions } }], effectiveOnRetrigger: null };
+  }
+
+  let mode = delay.onRetrigger || 'ignore';
+  if (mode === 'cancel' && !caps.cancelSupported) mode = 'reset'; // ponytail: spike-gated downgrade
+
+  const schedule = { type: 'schedule', payload: { name: `${ruleLabel}#sched`, time: relTime(delay.minutes), status: 'disabled', autodelete: false, command: { address: actions[0].address, method: 'PUT', body: actions[0].body } } };
+  const armSchedule = { address: '__schedule__', method: 'PUT', body: { status: 'enabled' } };
+
+  if (mode === 'ignore' || mode === 'reset') {
+    const objects = [
+      { type: 'rule', payload: { name: ruleLabel, status: 'enabled', conditions, actions: [armSchedule] }, ref: 'arm' },
+      schedule,
+    ];
+    if (mode === 'reset') {
+      objects.push({ type: 'rule', payload: { name: `${ruleLabel}#reset`, status: 'enabled', conditions, actions: [armSchedule] }, ref: 'reset' });
+    }
+    return { objects, effectiveOnRetrigger: mode };
+  }
+
+  // cancel: CLIP flag + schedule + arm-rule (flag→true, arm schedule) + cancel-rule (flag→false, disable schedule).
+  const cancelConds = cancelConditionsFrom(conditions);
+  if (!cancelConds.length) { const e = new Error('cancel needs binary trigger'); e.code = 'SMARTHOME_RULE_INVALID'; e.detail = 'cancel_requires_binary_trigger'; throw e; }
+  const objects = [
+    { type: 'clip', payload: { name: `${ruleLabel}#flag`, type: 'CLIPGenericFlag', modelid: 'GC-Flag', manufacturername: 'GateControl', uniqueid: `${ruleLabel}#flag`, swversion: '1', state: { flag: false } } },
+    schedule,
+    { type: 'rule', payload: { name: ruleLabel, status: 'enabled', conditions, actions: [{ address: '__clip_state__', method: 'PUT', body: { flag: true } }, armSchedule] }, ref: 'arm' },
+    { type: 'rule', payload: { name: `${ruleLabel}#cancel`, status: 'enabled', conditions: cancelConds, actions: [{ address: '__clip_state__', method: 'PUT', body: { flag: false } }, { address: '__schedule__', method: 'PUT', body: { status: 'disabled' } }] }, ref: 'cancel' },
+  ];
+  return { objects, effectiveOnRetrigger: 'cancel' };
+}
+
+module.exports = { buildConditions, buildActions, buildRuleObjects, relTime, cancelConditionsFrom };
