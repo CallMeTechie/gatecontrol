@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.113.0] — 2026-07-01
+
+### Features
+- TP3 — Logikketten → native deCONZ-Regeln (#209)
+
+---
+
 ## [Unreleased]
 
 ### Features
