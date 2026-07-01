@@ -50,6 +50,11 @@ function createClient({ baseUrl, apiKey, headers: extraHeaders = {} } = {}) {
     return arr;
   }
 
+  function firstId(arr) {
+    const ok = Array.isArray(arr) ? arr.find((x) => x && x.success && x.success.id != null) : null;
+    return ok ? String(ok.success.id) : null;
+  }
+
   async function acquireApiKey() {
     const out = assertNoError(await raw('/api', { method: 'POST', body: { devicetype: 'GateControl' } }));
     const ok = Array.isArray(out) ? out.find((x) => x && x.success) : null;
@@ -69,6 +74,15 @@ function createClient({ baseUrl, apiKey, headers: extraHeaders = {} } = {}) {
     setLightState: (id, patch) => raw(api(`/lights/${id}/state`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     setGroupState: (id, patch) => raw(api(`/groups/${id}/action`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     recallScene: (groupId, sceneId) => raw(api(`/groups/${groupId}/scenes/${sceneId}/recall`), { method: 'PUT', body: {} }).then(assertNoError),
+    getRules: () => raw(api('/rules')),
+    createRule: (rule) => raw(api('/rules'), { method: 'POST', body: rule }).then(assertNoError).then(firstId),
+    updateRule: (id, rule) => raw(api(`/rules/${id}`), { method: 'PUT', body: rule }).then(assertNoError),
+    deleteRule: (id) => raw(api(`/rules/${id}`), { method: 'DELETE' }),
+    createSchedule: (sched) => raw(api('/schedules'), { method: 'POST', body: sched }).then(assertNoError).then(firstId),
+    deleteSchedule: (id) => raw(api(`/schedules/${id}`), { method: 'DELETE' }),
+    createClipSensor: (sensor) => raw(api('/sensors'), { method: 'POST', body: sensor }).then(assertNoError).then(firstId),
+    setClipSensorState: (id, state) => raw(api(`/sensors/${id}/state`), { method: 'PUT', body: state }).then(assertNoError),
+    deleteClipSensor: (id) => raw(api(`/sensors/${id}`), { method: 'DELETE' }), // CLIP-Sensoren leben unter /sensors
   };
 }
 

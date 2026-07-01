@@ -1,0 +1,65 @@
+<div class="modal-overlay" id="shr-modal" style="display:none">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-head">
+      <div class="modal-title">{{ t('smarthome.rules.builder_title') }}</div>
+      <button class="modal-close" data-shr-close>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="shr-name">{{ t('smarthome.rules.name_label') }}</label>
+        <input class="form-input" id="shr-name" type="text">
+      </div>
+
+      <!-- WENN -->
+      <div class="builder-block">
+        <div class="bb-head">
+          <span class="bb-badge bb-when">{{ t('smarthome.rules.when') }}</span>
+        </div>
+        <div id="shr-when"></div>
+        <button class="btn btn-ghost" id="shr-add-when">{{ t('smarthome.rules.add_condition') }}</button>
+      </div>
+
+      <!-- Multi-trigger hint -->
+      <div id="shr-multi-hint" class="form-hint" style="display:none">{{ t('smarthome.rules.multi_hint') }}</div>
+
+      <!-- Zeitfenster -->
+      <div class="form-group">
+        <label class="form-label">{{ t('smarthome.rules.time_window') }}</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input class="form-input" id="shr-from" type="time" style="width:120px">
+          <span>–</span>
+          <input class="form-input" id="shr-to" type="time" style="width:120px">
+        </div>
+      </div>
+
+      <!-- Delay + Retrigger -->
+      <div class="form-group">
+        <label class="form-label">{{ t('smarthome.rules.delay') }}</label>
+        <input class="form-input" id="shr-delay-min" type="number" min="0" style="width:120px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">{{ t('smarthome.rules.on_retrigger') }}</label>
+        <select class="form-select" id="shr-onretrigger">
+          <option value="ignore">{{ t('smarthome.rules.retrigger_ignore') }}</option>
+          <option value="reset">{{ t('smarthome.rules.retrigger_reset') }}</option>
+          <option value="cancel">{{ t('smarthome.rules.retrigger_cancel') }}</option>
+        </select>
+      </div>
+
+      <!-- DANN -->
+      <div class="builder-block">
+        <div class="bb-head">
+          <span class="bb-badge bb-then">{{ t('smarthome.rules.then') }}</span>
+        </div>
+        <div id="shr-then"></div>
+        <button class="btn btn-ghost" id="shr-add-then">{{ t('smarthome.rules.add_action') }}</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-shr-close>{{ t('smarthome.rules.back') }}</button>
+      <button class="btn btn-primary" id="shr-save">{{ t('smarthome.rules.save') }}</button>
+    </div>
+  </div>
+</div>

@@ -195,6 +195,7 @@ const pages = [
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/midea', template: 'midea', titleKey: 'midea.title' },
   { path: '/smarthome', template: 'smarthome', titleKey: 'smarthome.title' },
+  { path: '/smarthome/rules', template: 'smarthome-rules', titleKey: 'smarthome.rules.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
