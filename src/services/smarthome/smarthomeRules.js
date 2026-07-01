@@ -162,8 +162,12 @@ async function setEnabled(id, on) {
 }
 
 async function gatewayRuleCount(gatewayId) {
-  const total = Object.keys(await clientFactory(gatewayId).getRules() || {}).length;
-  const gc = getDb().prepare('SELECT COUNT(*) c FROM smarthome_rules WHERE gateway_id = ? AND deconz_rule_id IS NOT NULL').get(gatewayId).c;
+  const rules = await clientFactory(gatewayId).getRules() || {};
+  const total = Object.keys(rules).length;
+  // GC-owned rules carry the "GC:" name prefix (primary + #reset/#cancel secondary rules).
+  // Counting by prefix over the live response — not the DB deconz_rule_id column, which only holds
+  // the primary rule id — so cancel/reset chains are attributed to gc, not miscounted as external.
+  const gc = Object.values(rules).filter((r) => r && typeof r.name === 'string' && r.name.startsWith('GC:')).length;
   return { total_rules: total, gc_rules: gc, external_rules: Math.max(0, total - gc) };
 }
 

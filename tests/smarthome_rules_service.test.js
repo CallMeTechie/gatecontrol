@@ -88,3 +88,20 @@ test('DECONZ_RULE_LIMIT_REACHED mapped from 503/507', async () => {
   const def = { triggers: [{ kind: 'motion', resourceId: motion, event: 'detected' }], actions: [{ kind: 'group', resourceId: group, set: { on: true } }] };
   await assert.rejects(() => rules.create(gw.id, 'L', def), (e) => e.code === 'DECONZ_RULE_LIMIT_REACHED');
 });
+
+test('gatewayRuleCount attributes GC-named rules (incl #reset/#cancel) to gc, not external', async () => {
+  rules._setClientFactoryForTest(() => ({
+    getRules: async () => ({
+      '1': { name: 'GC:5:Flur' },        // primary GC rule
+      '2': { name: 'GC:5:Flur#reset' },  // secondary GC rule (reset chain)
+      '3': { name: 'GC:8:Bad#cancel' },  // secondary GC rule (cancel chain)
+      '4': { name: 'pir-fsm-reset' },    // external (Phoscon-created)
+      '5': { name: 'my hue rule' },      // external
+    }),
+  }));
+  const { gw } = mkGatewayAndMotionGroup();
+  const c = await rules.gatewayRuleCount(gw.id);
+  assert.equal(c.total_rules, 5);
+  assert.equal(c.gc_rules, 3);       // GC: prefix, incl #reset/#cancel — not the DB deconz_rule_id column
+  assert.equal(c.external_rules, 2); // only the two genuinely external rules
+});
