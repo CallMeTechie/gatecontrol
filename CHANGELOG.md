@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.113.2] — 2026-07-01
+
+### Fixes
+- tidy deferred TP3 rule minors + close coverage gaps (#211)
+
+---
+
 ## [Unreleased]
 
 ### Fixed
