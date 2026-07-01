@@ -3,7 +3,7 @@
 
 const { getDb } = require('../../db/connection');
 
-const ASSIGNABLE = new Set(['light', 'plug', 'group']);
+const ASSIGNABLE = new Set(['light', 'plug', 'group', 'sensor']);
 
 // Validate-before-write: resource must exist + be assignable; every userId must exist.
 // On any failure throw and write nothing. Then replace the owner set atomically.

@@ -146,6 +146,15 @@
     const v = document.createElement('div'); v.className = 'sh-sensorval'; v.id = `sv-${r.id}`;
     v.textContent = formatValue(r);
     el.appendChild(v);
+    // Owner-Zuweisung (read-only-Sensor, aber Admin kann Besitzer setzen — erscheinen im Portal read-only)
+    const own = document.createElement('div');
+    const names = (r.owners || []).map((o) => o.username);
+    own.innerHTML = `<div class="sh-owner-chips">${names.length ? esc(names.join(', ')) : esc(T('smarthome.owners.none'))}</div>`;
+    const btn = document.createElement('button'); btn.className = 'sh-owner-btn'; btn.type = 'button';
+    btn.textContent = T('smarthome.owners.manage');
+    btn.addEventListener('click', () => openOwners(r));
+    own.appendChild(btn);
+    el.appendChild(own);
     return el;
   }
 

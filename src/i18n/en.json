@@ -2252,5 +2252,12 @@
   "portal.smarthome.power": "Power",
   "portal.smarthome.brightness": "Brightness",
   "portal.smarthome.activate": "Activate",
-  "portal.smarthome.login_to_control": "Log in to control"
+  "portal.smarthome.login_to_control": "Log in to control",
+  "portal.smarthome.sensors": "Sensors",
+  "portal.smarthome.open": "Open",
+  "portal.smarthome.closed": "Closed",
+  "portal.smarthome.motion": "Motion",
+  "portal.smarthome.no_motion": "No motion",
+  "portal.smarthome.wet": "Wet",
+  "portal.smarthome.dry": "Dry"
 }

@@ -26,7 +26,7 @@ test('PUT /resources/:id/owners sets owners; unknown user → 400; non-assignabl
   const dev = require('../src/services/smarthome/smarthomeDevices');
   const gw = dev.createGateway({ name: 'GW2', route_id: null, apiKey: 'K', enabled: true });
   const rid = dev.upsertResource({ gateway_id: gw.id, deconz_id: '9', deconz_type: 'lights', kind: 'light', name: 'L9', capabilities: {} });
-  const sid = dev.upsertResource({ gateway_id: gw.id, deconz_id: '8', deconz_type: 'sensors', kind: 'sensor', name: 'S8', capabilities: {} });
+  const sid = dev.upsertResource({ gateway_id: gw.id, deconz_id: '8', deconz_type: 'sensors', kind: 'switch', name: 'S8', capabilities: {} });
   const uid = Number(getDb().prepare("INSERT INTO users (username, password_hash, role) VALUES ('owner1', 'x', 'user')").run().lastInsertRowid);
   const ok = await agent.put(`/api/v1/smarthome/resources/${rid}/owners`).set('x-csrf-token', csrfToken).send({ userIds: [uid] }).expect(200);
   assert.deepEqual(ok.body.owners.map((o) => o.username), ['owner1']);
