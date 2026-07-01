@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.113.1] — 2026-07-01
+
+### Fixes
+- count GC gateway rules by name prefix, not DB column (#210)
+
+---
+
 ## [Unreleased]
 
 ### Fixed
