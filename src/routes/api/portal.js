@@ -302,7 +302,7 @@ router.post('/midea/:id/state', async (req, res) => {
 function smarthomeUnavailable() {
   return !license.hasFeature('smarthome');
 }
-const SH_STATE_KEYS = new Set(['on', 'bri', 'reachable']);
+const SH_STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value']);
 function redactState(s) {
   if (!s || typeof s !== 'object') return {};
   return Object.fromEntries(Object.entries(s).filter(([k]) => SH_STATE_KEYS.has(k)));
@@ -328,11 +328,11 @@ router.get('/smarthome', async (req, res) => {
     const ids = new Set(smarthomeOwners.resourcesOwnedBy(req.portalOwnerId));
     if (!ids.size) return res.json({ ok: true, data: null, reason: 'no_data' });
     const all = await smarthome.getResources();
-    const devices = all
-      .filter((r) => r.enabled && ids.has(r.id) && r.kind !== 'sensor' && r.kind !== 'switch')
-      .map(redactSmarthomeResource);
-    if (!devices.length) return res.json({ ok: true, data: null, reason: 'no_data' });
-    res.json({ ok: true, data: { devices, loggedIn: req.portalLoggedIn } });
+    const owned = all.filter((r) => r.enabled && ids.has(r.id));
+    const devices = owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(redactSmarthomeResource);
+    const sensors = owned.filter((r) => r.kind === 'sensor').map(redactSmarthomeResource); // switch bleibt draußen
+    if (!devices.length && !sensors.length) return res.json({ ok: true, data: null, reason: 'no_data' });
+    res.json({ ok: true, data: { devices, sensors, loggedIn: req.portalLoggedIn } });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /smarthome failed');
     return res.json({ ok: true, data: null, reason: 'unavailable' });
@@ -351,6 +351,7 @@ router.post('/smarthome/:id/state', async (req, res) => {
     const all = await smarthome.getResources();
     const resource = all.find((r) => r.id === id);
     if (!resource || !resource.enabled) return res.status(404).json({ ok: false, error: 'SMARTHOME_RESOURCE_NOT_FOUND' });
+    if (resource.kind === 'sensor' || resource.kind === 'switch') return res.status(400).json({ ok: false, error: 'SMARTHOME_NOT_CONTROLLABLE' });
     const patch = validateSmarthomePatch(req.body && req.body.patch, resource.capabilities);
     if (patch === null) return res.status(400).json({ ok: false, error: 'SMARTHOME_INVALID_PATCH' });
     await smarthome.setResourceState(id, patch);
