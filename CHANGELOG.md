@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Smart Home: `GET /rules/gateway-count` no longer miscounts GateControl's own secondary rules (`#reset`/`#cancel` chains) as external — GC-owned rules are now counted by the `GC:` name prefix over the live gateway response instead of the DB `deconz_rule_id` column
+
+---
+
 ## [1.113.0] — 2026-07-01
 
 ### Features
