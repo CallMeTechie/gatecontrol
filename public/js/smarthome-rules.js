@@ -299,7 +299,7 @@
       else await api('/rules', { method: 'POST', body: JSON.stringify({ gateway_id: gatewayId, name, definition }) });
       closeBuilder(); await loadRules();
     } catch (e) {
-      if (e.status === 409) showLimit(e.message); // rule-limit / no-api-key
+      if (e.status === 409) { showLimit(e.message); return; } // rule-limit / no-api-key → banner only
       alert(e.message); // 400 = validation detail from the server
     }
   }

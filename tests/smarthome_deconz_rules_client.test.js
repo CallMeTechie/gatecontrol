@@ -61,3 +61,8 @@ test('deleteClipSensor DELETEs /sensors/:id', async () => {
   mockFetch((url, opts) => { assert.equal(url, 'http://gw/api/KEY/sensors/c3'); assert.equal(opts.method, 'DELETE'); return jsonRes([{ success: {} }]); });
   await client().deleteClipSensor('c3');
 });
+
+test('deleteSchedule DELETEs /schedules/:id', async () => {
+  mockFetch((url, opts) => { assert.equal(url, 'http://gw/api/KEY/schedules/s2'); assert.equal(opts.method, 'DELETE'); return jsonRes([{ success: '/schedules/s2 deleted.' }]); });
+  await client().deleteSchedule('s2');
+});

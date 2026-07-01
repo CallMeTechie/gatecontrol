@@ -7,6 +7,7 @@ const vectors = require('./fixtures/deconz_spike_vectors');
 
 // Stub-resolve: bildet resourceId → deCONZ-Koordinaten ab.
 const R = {
+  1:  { deconz_id: '1',  deconz_type: 'sensors', kind: 'sensor', capabilities: {} }, // Daylight sensor
   12: { deconz_id: '12', deconz_type: 'sensors', kind: 'sensor', capabilities: {} }, // motion (presence)
   5:  { deconz_id: '5',  deconz_type: 'sensors', kind: 'sensor', capabilities: {} }, // temperature
   20: { deconz_id: '20', deconz_type: 'lights',  kind: 'light',  capabilities: { on: true, bri: true } },
@@ -60,6 +61,22 @@ test('actions: light set on+bri, group on, scene recall body, plug rejects bri',
 test('unknown resource throws SMARTHOME_RULE_INVALID', () => {
   assert.throws(() => T.buildActions({ actions: [{ kind: 'light', resourceId: 999, set: { on: true } }] }, resolve),
     (e) => e.code === 'SMARTHOME_RULE_INVALID');
+});
+
+test('daylight trigger → daylight eq false (sunset) + lastupdated dx', () => {
+  // daylight needs the Daylight sensor's resourceId (the §3 no-resourceId shorthand is UI-latent; the API resolves it).
+  const def = { triggers: [{ kind: 'daylight', resourceId: 1, event: 'sunset' }], actions: [{ kind: 'group', resourceId: 30, set: { on: false } }] };
+  const c = T.buildConditions(def, resolve);
+  assert.deepEqual(c, [
+    { address: '/sensors/1/state/daylight', operator: 'eq', value: 'false' }, // sunset = daylight false
+    { address: '/sensors/1/state/lastupdated', operator: 'dx' },
+  ]);
+});
+
+test('button with unknown action throws unknown_button_action', () => {
+  const def = { triggers: [{ kind: 'button', resourceId: 12, button: 1, action: 'triple' }], actions: [{ kind: 'group', resourceId: 30, set: { on: false } }] };
+  assert.throws(() => T.buildConditions(def, resolve),
+    (e) => e.code === 'SMARTHOME_RULE_INVALID' && e.detail === 'unknown_button_action');
 });
 
 // Step 4b: spike-vector-grounded assertions to anchor the live contract.
