@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.114.0] — 2026-07-01
+
+### Features
+- Sensoren read-only im Portal (#212)
+
+---
+
 ## [1.113.2] — 2026-07-01
 
 ### Fixes
