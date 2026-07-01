@@ -40,7 +40,7 @@ test('setOwners works for plug kind (assignable)', () => {
 
 test('setOwners refuses non-assignable kinds and missing resource', () => {
   const gw = dev.createGateway({ name: 'GW', route_id: null, apiKey: 'K', enabled: true });
-  const sid = dev.upsertResource({ gateway_id: gw.id, deconz_id: '2', deconz_type: 'sensors', kind: 'sensor', name: 'S', capabilities: {} });
+  const sid = dev.upsertResource({ gateway_id: gw.id, deconz_id: '2', deconz_type: 'sensors', kind: 'switch', name: 'S', capabilities: {} });
   assert.throws(() => owners.setOwners(sid, []), (e) => e.code === 'SMARTHOME_NOT_ASSIGNABLE');
   assert.throws(() => owners.setOwners(99999, []), (e) => e.code === 'SMARTHOME_RESOURCE_NOT_FOUND');
 });
@@ -58,6 +58,17 @@ test('resourcesOwnedBy includes scenes of owned groups; isOwner is direct-only',
   assert.equal(owners.canAccess(scn, u), true);  // inherited access
   assert.deepEqual(owners.inheritedOwnersOf(dev.getResource(scn)).map((o) => o.username), ['u']);
   assert.equal(owners.isOwner(grp, u), true);
+});
+
+test('setOwners accepts sensor kind; switch stays non-assignable; resourcesOwnedBy includes owned sensor', () => {
+  const gw = dev.createGateway({ name: 'GWs', route_id: null, apiKey: 'K', enabled: true });
+  const sensor = dev.upsertResource({ gateway_id: gw.id, deconz_id: '2', deconz_type: 'sensors', kind: 'sensor', name: 'Temp', capabilities: {} });
+  const sw = dev.upsertResource({ gateway_id: gw.id, deconz_id: '3', deconz_type: 'sensors', kind: 'switch', name: 'Btn', capabilities: {} });
+  const u = mkUser('s');
+  owners.setOwners(sensor, [u]);
+  assert.deepEqual(owners.ownersOf(sensor).map((o) => o.username), ['s']);
+  assert.ok(owners.resourcesOwnedBy(u).includes(sensor));
+  assert.throws(() => owners.setOwners(sw, [u]), (e) => e.code === 'SMARTHOME_NOT_ASSIGNABLE');
 });
 
 test('removeAllForUser and removeAllForResource clear rows', () => {
