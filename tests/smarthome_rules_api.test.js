@@ -60,6 +60,23 @@ test('POST /rules with invalid resource → 400', async () => {
   await agent.post('/api/v1/smarthome/rules').set('x-csrf-token', csrfToken).send({ gateway_id: gw.id, name: 'bad', definition: def }).expect(400);
 });
 
+test('PUT /rules/:id without definition → 400 (guard before delete)', async () => {
+  const gw = dev.createGateway({ name: 'GWPG', route_id: null, apiKey: 'K', enabled: true });
+  const m = dev.upsertResource({ gateway_id: gw.id, deconz_id: '12', deconz_type: 'sensors', kind: 'sensor', name: 'M', capabilities: {} });
+  const g = dev.upsertResource({ gateway_id: gw.id, deconz_id: '30', deconz_type: 'groups', kind: 'group', name: 'G', capabilities: { on: true } });
+  const def = { triggers: [{ kind: 'motion', resourceId: m, event: 'detected' }], actions: [{ kind: 'group', resourceId: g, set: { on: true } }] };
+  const created = await agent.post('/api/v1/smarthome/rules').set('x-csrf-token', csrfToken).send({ gateway_id: gw.id, name: 'R', definition: def }).expect(200);
+  await agent.put(`/api/v1/smarthome/rules/${created.body.rule.id}`).set('x-csrf-token', csrfToken).send({ name: 'X' }).expect(400);
+});
+
+test('POST /rules with invalid resource → 400 with localized error message', async () => {
+  const gw = dev.createGateway({ name: 'GW5', route_id: null, apiKey: 'K', enabled: true });
+  const def = { triggers: [{ kind: 'motion', resourceId: 99999, event: 'detected' }], actions: [{ kind: 'group', resourceId: 99999, set: { on: true } }] };
+  const res = await agent.post('/api/v1/smarthome/rules').set('x-csrf-token', csrfToken).send({ gateway_id: gw.id, name: 'bad', definition: def }).expect(400);
+  assert.equal(res.body.error, 'Invalid rule definition');
+  assert.equal(res.body.code, 'SMARTHOME_RULE_INVALID');
+});
+
 test('DELETE and enabled toggle work', async () => {
   const gw = dev.createGateway({ name: 'GW4', route_id: null, apiKey: 'K', enabled: true });
   const g = dev.upsertResource({ gateway_id: gw.id, deconz_id: '30', deconz_type: 'groups', kind: 'group', name: 'G', capabilities: { on: true } });

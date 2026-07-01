@@ -10,6 +10,12 @@ const deconzCaps = require('../../services/smarthome/deconzCapabilities');
 
 const router = Router();
 
+const RULE_ERR_I18N = {
+  SMARTHOME_RULE_INVALID: 'error.smarthome.rule_invalid',
+  SMARTHOME_RULE_NOT_FOUND: 'error.smarthome.rule_not_found',
+  DECONZ_RULE_LIMIT_REACHED: 'error.smarthome.rule_limit_reached',
+};
+
 // Admin-only: reject token auth, require an admin session.
 router.use((req, res, next) => {
   if (req.tokenAuth) return res.status(403).json({ ok: false, error: req.t('error.users.session_required') });
@@ -34,7 +40,8 @@ function wrap(fn) {
         err.code === 'DECONZ_RULE_LIMIT_REACHED' ? 409 :
         err.code === 'SMARTHOME_RULE_NOT_FOUND' ? 404 :
         /not found/i.test(err.message) ? 404 : 502;
-      res.status(status).json({ ok: false, error: err.message, code: err.code || null });
+      const key = RULE_ERR_I18N[err.code];
+      res.status(status).json({ ok: false, error: key && req.t ? req.t(key) : err.message, code: err.code || null });
     }
   };
 }
@@ -122,6 +129,7 @@ router.post('/rules', wrap(async (req, res) => {
 
 router.put('/rules/:id', wrap(async (req, res) => {
   const { name, definition } = req.body || {};
+  if (!name || !definition) { const e = new Error('missing fields'); e.code = 'SMARTHOME_RULE_INVALID'; throw e; }
   res.json({ rule: await smarthomeRules.update(Number(req.params.id), String(name), definition) });
 }));
 
