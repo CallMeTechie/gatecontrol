@@ -9,7 +9,7 @@ const caps = require('./deconzCapabilities');
 const LIMIT_CODES = new Set(caps.ruleLimit.errorCodes); // deckt HTTP-Status UND 200-Body-Error-Codes ab (Spike Step 6)
 function isLimit(e) { return !!(e && LIMIT_CODES.has(e.code)); }
 function ruleLimitError() { const e = new Error('deconz rule limit reached'); e.code = 'DECONZ_RULE_LIMIT_REACHED'; return e; }
-function limitWarn(gcRuleCount) { return gcRuleCount * 4 > 150; } // Worst-Case-Slot-Multiplikator (§8/§10)
+function limitWarn(gcRuleCount) { return gcRuleCount >= caps.ruleLimit.warnAtGcRules; } // §8/§10: gc rules × Worst-Case-4-Slots > 150 ⇒ ≥ warnAtGcRules (=38)
 
 // Default-Factory: lokaler Gateway-Client wie index.js' privates clientForGateway (kein index-Import → kein Zirkularbezug).
 function defaultClientFactory(gatewayId) {

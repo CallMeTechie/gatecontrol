@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Smart Home rules: rule-limit (409) now shows only the banner instead of banner + alert (double signal)
+- Smart Home rules: rule-name field enforces the 20-char cap client-side (`maxlength`) across all three themes
+- Smart Home rules: `limitWarn` now derives from `deconzCapabilities.ruleLimit.warnAtGcRules` (single source) instead of a duplicated magic threshold; corrected a stale comment on cancel-condition inversion
+
+### Tests
+- Added coverage for the daylight trigger translation, the unknown-button-action rejection, and `deconzClient.deleteSchedule`
+
+---
+
 ## [1.113.1] — 2026-07-01
 
 ### Fixes

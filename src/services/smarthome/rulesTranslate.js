@@ -83,8 +83,8 @@ function relTime(mins) {
 }
 
 // Cancel-condition = trigger back to its inverse binary state.
-// Only eq-conditions with 'true'/'false' values are binary-invertible.
-// button (numeric code) and daylight (non-eq) are excluded.
+// Only eq-conditions with 'true'/'false' values are binary-invertible (presence/open/water/daylight).
+// button conditions (numeric buttonevent code) are excluded — not invertible.
 function cancelConditionsFrom(conditions) {
   return conditions
     .filter((c) => c.operator === 'eq' && (c.value === 'true' || c.value === 'false'))
