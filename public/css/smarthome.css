@@ -33,3 +33,35 @@ input[type=range].sh-bri::-webkit-slider-thumb{-webkit-appearance:none;width:19p
 .sh-owner-row input{width:16px;height:16px}
 .sh-owner-btn{margin-top:10px;font-size:12px;color:var(--accent,#8b9cff);background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:6px}
 .sh-owner-chips{font-size:12px;color:var(--muted,#90a1b3);margin-top:6px}
+
+/* ── Logikketten (rules subpage) — client-rendered, theme-agnostic via tokens ── */
+.banner{padding:11px 15px;margin-bottom:16px;border-radius:12px;font-size:13px;font-weight:600;background:var(--surface-2,#16212e);border:1px solid var(--line,rgba(255,255,255,.08));color:var(--muted,#90a1b3)}
+.banner-warn{background:rgba(245,196,81,.12);border-color:rgba(245,196,81,.35);color:var(--amber,#f5c451)}
+.rule-list{display:flex;flex-direction:column;gap:12px}
+.rule-card{display:flex;align-items:center;gap:14px;padding:15px 16px}
+.rule-orphaned{opacity:.65}
+.rule-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;background:var(--surface-3,#1b2836);color:var(--accent,#8b9cff)}
+.rule-main{flex:1;min-width:0}
+.rule-name{font-weight:700;font-size:15px}
+.rule-flow{font-size:12.5px;color:var(--muted,#90a1b3);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rule-warn{font-size:11.5px;font-weight:600;color:var(--amber,#f5c451);margin-top:6px}
+.rule-acts{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600}
+.pill-when{background:rgba(139,156,255,.14);color:var(--accent,#8b9cff)}
+.pill-then{background:rgba(245,196,81,.14);color:var(--amber,#f5c451)}
+.pill-time{background:var(--surface-3,#1b2836);color:var(--muted,#90a1b3);border:1px solid var(--line,rgba(255,255,255,.08))}
+.arrow{color:var(--faint,#5f6f7e)}
+
+/* Builder modal blocks */
+.builder-block{border:1px solid var(--line,rgba(255,255,255,.08));border-radius:14px;padding:14px;margin-bottom:14px;background:var(--surface,#111a24)}
+.bb-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.bb-badge{font-weight:700;font-size:11px;letter-spacing:.06em;padding:3px 10px;border-radius:7px}
+.bb-when{background:rgba(139,156,255,.14);color:var(--accent,#8b9cff)}
+.bb-then{background:rgba(245,196,81,.14);color:var(--amber,#f5c451)}
+.shr-row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.shr-row .shr-res{flex:1 1 40%;min-width:0}
+.shr-fields{flex:1 1 55%;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.shr-fields .form-select,.shr-fields .form-input{margin:0;flex:1 1 auto;min-width:80px}
+.shr-fields input[type=color]{width:44px;height:36px;padding:2px;border:1px solid var(--line-2,rgba(255,255,255,.14));border-radius:9px;background:var(--surface,#111a24);cursor:pointer;flex:0 0 auto}
+.row-x{width:34px;height:34px;border-radius:9px;border:1px solid var(--line,rgba(255,255,255,.08));background:var(--surface-3,#1b2836);color:var(--faint,#5f6f7e);font-size:18px;line-height:1;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+.row-x:hover{color:var(--coral,#ff7a59);border-color:var(--coral,#ff7a59)}
