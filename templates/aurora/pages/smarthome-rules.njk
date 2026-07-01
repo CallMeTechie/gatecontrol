@@ -1,0 +1,25 @@
+{% extends theme + "/layout.njk" %}
+
+{% block head %}<link rel="stylesheet" href="/css/smarthome.css?v={{ appVersion }}">{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('smarthome.eyebrow') }}</div>
+    <h1 class="page-title">{{ t('smarthome.rules.title') }}</h1>
+    <div class="page-sub">{{ t('smarthome.rules.subtitle') }}</div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="/smarthome">{{ t('smarthome.rules.back') }}</a>
+    <button class="btn btn-ghost" id="shr-gateway-count">{{ t('smarthome.rules.load_count') }}</button>
+    <button class="btn btn-primary" id="shr-new">{{ t('smarthome.rules.new') }}</button>
+  </div>
+</div>
+<div id="shr-limit" class="banner banner-warn" style="display:none"></div>
+<div id="shr-list" class="rule-list"></div>
+{% include theme + "/partials/modals/smarthome-rule-builder.njk" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/smarthome-rules.js?v={{ appVersion }}" defer></script>
+{% endblock %}
