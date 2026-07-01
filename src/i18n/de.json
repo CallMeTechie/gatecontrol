@@ -2196,5 +2196,12 @@
   "portal.smarthome.power": "Ein/Aus",
   "portal.smarthome.brightness": "Helligkeit",
   "portal.smarthome.activate": "Aktivieren",
-  "portal.smarthome.login_to_control": "Zum Steuern bitte anmelden"
+  "portal.smarthome.login_to_control": "Zum Steuern bitte anmelden",
+  "portal.smarthome.sensors": "Sensoren",
+  "portal.smarthome.open": "offen",
+  "portal.smarthome.closed": "zu",
+  "portal.smarthome.motion": "Bewegung",
+  "portal.smarthome.no_motion": "keine Bewegung",
+  "portal.smarthome.wet": "nass",
+  "portal.smarthome.dry": "trocken"
 }

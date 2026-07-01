@@ -405,6 +405,11 @@ body::before{
 .c-sh-sw.on{background:linear-gradient(145deg,var(--green,#4ade80),#15924f);border-color:transparent;color:#fff}
 .c-sh-bri{width:100%;margin-top:10px}
 .c-sh-msg{margin-top:10px;font-size:13px;color:var(--muted,#90a1b3)}
+.c-sh-sensors{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.c-sh-sensor-head{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--muted,#90a1b3);margin-top:6px}
+.c-sh-sensor-card{background:var(--surface-2,#16212e);border:1px solid var(--line,rgba(255,255,255,.08));border-radius:10px;padding:10px}
+.c-sh-sensor-name{font-size:13px;margin-bottom:4px}
+.c-sh-sensor-val{font-size:16px;font-weight:600}
 
 /* ============================================================
    REDUCED MOTION

@@ -712,15 +712,49 @@
     }
     return el;
   }
+  // type-strings EXACTLY as sensorReading() in src/services/smarthome/index.js emits:
+  // presence|open|water (boolean) · temperature|humidity|lightlevel (number, already /100 normalised) · button|unknown → "—"
+  function formatSensor(type, value) {
+    if (value === null || value === undefined || value === '') return '—';
+    switch (type) {
+      case 'temperature': return Number(value).toFixed(1) + ' °C';
+      case 'humidity':    return Number(value) + ' %';
+      case 'lightlevel':  return Number(value) + ' lux';
+      case 'open':        return value ? (PT.smarthomeOpen || 'Open') : (PT.smarthomeClosed || 'Closed');
+      case 'presence':    return value ? (PT.smarthomeMotion || 'Motion') : (PT.smarthomeNoMotion || 'No motion');
+      case 'water':       return value ? (PT.smarthomeWet || 'Wet') : (PT.smarthomeDry || 'Dry');
+      default:            return '—'; // ponytail: button/unknown/future types → safe fallback, no raw value render
+    }
+  }
+  function renderSensorCard(s) {
+    var el = document.createElement('div'); el.className = 'c-sh-sensor-card';
+    var st = s.state || {};
+    var name = document.createElement('div'); name.className = 'c-sh-sensor-name'; name.textContent = s.name || ''; el.appendChild(name);
+    var val = document.createElement('div'); val.className = 'c-sh-sensor-val'; val.textContent = formatSensor(st.type, st.value); el.appendChild(val);
+    return el;
+  }
   function hydrateSmarthome() {
     var card = document.querySelector('.c-smarthome');
     if (!card) return;
     fetch('/api/v1/portal/smarthome').then(function (r) { return r.json(); }).then(function (j) {
       var list = document.getElementById('smarthome-list'); if (!list) return;
       list.innerHTML = '';
-      if (!j || !j.data || !j.data.devices || !j.data.devices.length) { card.style.display = 'none'; return; }
+      if (!j || !j.data) { card.style.display = 'none'; return; }
       card.style.display = '';
-      j.data.devices.forEach(function (d) { list.appendChild(renderSmarthomeCard(d)); });
+      (j.data.devices || []).forEach(function (d) { list.appendChild(renderSmarthomeCard(d)); });
+      var sensorBox = document.getElementById('smarthome-sensors');
+      if (sensorBox) {
+        sensorBox.innerHTML = '';
+        var sensors = (j && j.data && j.data.sensors) || [];
+        if (sensors.length) {
+          var head = document.createElement('div'); head.className = 'c-sh-sensor-head'; head.textContent = PT.smarthomeSensors || 'Sensors';
+          sensorBox.appendChild(head);
+          sensors.forEach(function (s) { sensorBox.appendChild(renderSensorCard(s)); });
+          sensorBox.style.display = '';
+        } else {
+          sensorBox.style.display = 'none';
+        }
+      }
     }).catch(function () { card.style.display = 'none'; });
   }
 
