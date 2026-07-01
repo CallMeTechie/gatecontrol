@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.114.1] — 2026-07-01
+
+### Änderungen
+- re-trigger release after Docker Hub registry flake
+
+---
+
 ## [1.114.0] — 2026-07-01
 
 ### Features
