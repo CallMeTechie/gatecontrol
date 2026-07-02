@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.114.2] — 2026-07-02
+
+### Fixes
+- live pause countdown on blocking badge (#213)
+
+---
+
 ## [1.114.1] — 2026-07-01
 
 ### Änderungen
