@@ -34,3 +34,13 @@ test('portal.css uses full-width wrapper 1560', async () => {
   const res = await supertest(app).get('/css/portal.css').expect(200);
   assert.ok(res.text.includes('max-width:1560px') || res.text.includes('max-width: 1560px'), '.wrap widened to 1560');
 });
+
+test('pi-hole widget renders a donut svg with piDonut id and keeps scope IDs', async () => {
+  const h = await portalHtml();
+  assert.match(h, /class="[^"]*\bdonut\b[^"]*"/, '.donut present');
+  assert.ok(h.includes('id="piDonut"'), 'donut arc has id piDonut');
+  for (const id of ['piPct', 'piTotal', 'piBlocked', 'piAllowed', 'piAllowedWrap', 'piOwnerExtra', 'piholeSeg']) {
+    assert.ok(h.includes('id="' + id + '"') || h.includes(id), 'kept ' + id);
+  }
+  assert.match(h, /class="[^"]*\bpihole-widget\b[^"]*"/, '.pihole-widget retained');
+});

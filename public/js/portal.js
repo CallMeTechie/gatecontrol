@@ -400,8 +400,13 @@
       // ── Stats common to all scopes ──────────────────────────────────────
       var pctEl = document.getElementById('piPct');
       if (pctEl) pctEl.textContent = String(d.blockedPct);
-      var bar = document.getElementById('piBar');
-      if (bar) bar.style.width = d.blockedPct + '%';
+      var arc = document.getElementById('piDonut');
+      if (arc) {
+        var r = 50, C = 2 * Math.PI * r;           // r MUSS zum <circle r="50"> im Donut-Markup passen
+        var frac = Math.max(0, Math.min(1, (Number(d.blockedPct) || 0) / 100));  // d.blockedPct = dieselbe Block-Rate, die auch #piPct setzt
+        arc.setAttribute('stroke-dasharray', C.toFixed(1));
+        arc.setAttribute('stroke-dashoffset', (C - frac * C).toFixed(1));
+      }
       var totalEl = document.getElementById('piTotal');
       if (totalEl) totalEl.textContent = String(d.total);
       var blockedEl = document.getElementById('piBlocked');

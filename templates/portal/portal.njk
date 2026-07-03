@@ -157,8 +157,10 @@
         </span>
       </h2>
       <div class="pihole-body">
-        <div class="pihole-rate"><b id="piPct">–</b><span>%</span></div>
-        <div class="pihole-bar"><i id="piBar"></i></div>
+        <div class="donut">
+          <svg viewBox="0 0 120 120" width="132" height="132"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--track)" stroke-width="13"/><circle id="piDonut" cx="60" cy="60" r="50" fill="none" stroke="var(--coral)" stroke-width="13" stroke-linecap="round"/></svg>
+          <div class="dc"><div><b id="piPct">–</b><span>%</span></div></div>
+        </div>
         <div class="pihole-nums">
           <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
           <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>

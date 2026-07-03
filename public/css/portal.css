@@ -296,14 +296,13 @@ body::before{
 /* ============================================================
    PI-HOLE WIDGET
    ============================================================ */
-.c-pihole .pihole-body{display:flex;flex-direction:column;gap:10px}
-.pihole-rate{display:flex;align-items:baseline;gap:3px}
-.pihole-rate b{font-size:2.2rem;font-weight:700;color:var(--teal, #3ec8b0);line-height:1}
-.pihole-rate span{font-size:1.1rem;color:var(--muted)}
-.pihole-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
-.pihole-bar i{display:block;height:100%;border-radius:3px;background:var(--teal, #3ec8b0);
-  transition:width .4s ease;width:0}
-.pihole-nums{display:flex;gap:12px;flex-wrap:wrap}
+.c-pihole .pihole-body{display:flex;align-items:center;gap:20px}
+.donut{position:relative;width:132px;height:132px;flex:0 0 auto}
+.donut svg{transform:rotate(-90deg)}
+.donut .dc{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.donut .dc b{font-size:1.9rem;font-weight:700;color:var(--coral);line-height:1;font-family:var(--font-mono, inherit)}
+.donut .dc span{font-size:1rem;color:var(--muted)}
+.pihole-nums{display:flex;flex-direction:column;gap:12px;flex:1}
 .pihole-nums>div{display:flex;flex-direction:column;gap:2px;min-width:60px}
 .pihole-nums b{font-size:1.1rem;font-weight:600;color:var(--text)}
 .pihole-nums span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
