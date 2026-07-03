@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.116.0] — 2026-07-03
+
+### Features
+- serve cloud AC state from cache (stale-while-revalidate) (#215)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
