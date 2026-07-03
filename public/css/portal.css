@@ -113,7 +113,7 @@ body::before{
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:var(--grain);
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.wrap{position:relative; z-index:1; max-width:1120px; margin:0 auto; padding:22px 24px 56px}
+.wrap{position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:22px 24px 56px}
 
 /* ============================================================
    TOP BAR
@@ -164,16 +164,32 @@ body::before{
 .card::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,var(--line-2),transparent)}
 @keyframes rise{to{opacity:1;transform:none}}
 
-/* 3-widget layout (Pi-hole removed) */
+/* control-first order: Klima → SmartHome → Pi-hole → Traffic → Dienste */
 .c-device{grid-column:span 4; animation-delay:.04s}
-.c-traffic{grid-column:span 8; animation-delay:.12s}
-.c-services{grid-column:span 12; animation-delay:.20s}
+.c-midea{grid-column:span 7; animation-delay:.04s}
+.c-smarthome{grid-column:span 5; animation-delay:.10s}
+.c-pihole{grid-column:span 5; animation-delay:.16s}
+.c-traffic{grid-column:span 7; animation-delay:.22s}
+.c-services{grid-column:span 12; animation-delay:.28s}
 
 .card h2{margin:0; font-family:var(--font-display); font-weight:700; letter-spacing:-.01em; font-size:15px;
   display:flex; align-items:center; gap:9px; color:var(--text)}
 .card h2 .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--surface-3);color:var(--teal)}
 .card h2 .ic svg{width:15px;height:15px}
 .card .sub{color:var(--faint); font-size:12px; margin-left:auto; font-weight:500}
+
+/* ============================================================
+   STATUS STRIP (.strip.c-device)
+   ============================================================ */
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:13px 18px;margin:18px 0;
+  border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,var(--surface),var(--surface-2));
+  box-shadow:var(--shadow)}
+.strip .s{display:flex;align-items:center;gap:9px;font-size:13px}
+.strip .s .lbl{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.strip .s .ip{font-family:var(--font-mono);color:var(--muted);font-size:12.5px}
+
+/* global focus-visible ring, ported from mockup */
+:where(button,a,[role="switch"],.seg button):focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
 /* ============================================================
    DEVICE STATUS CARD (.c-device)
@@ -232,11 +248,18 @@ body::before{
 /* ============================================================
    RESPONSIVE
    ============================================================ */
-@media (max-width:880px){
+@media (max-width:1040px){
   .grid > .card{grid-column:span 12 !important}
   .devpill .ip{display:none}
   /* Keep service tiles 2-up on narrow screens (thumb-friendly) */
   .tiles{grid-template-columns:1fr 1fr}
+}
+
+@media (max-width:620px){
+  .wrap{padding:16px 16px 46px}
+  .ac-grid{grid-template-columns:1fr}
+  .sh-tiles{grid-template-columns:1fr}
+  .pihole-body{flex-direction:column;text-align:center}
 }
 
 /* ============================================================
