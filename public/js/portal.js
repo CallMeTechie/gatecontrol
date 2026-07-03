@@ -705,22 +705,54 @@
     var msg = document.getElementById('smarthomeMsg');
     if (msg) { msg.style.display = 'block'; msg.textContent = PT.smarthomeLoginToControl || 'Login required'; }
   }
+  // Static, hard-coded SVG per device kind — no user data interpolated, safe as innerHTML.
+  var SH_ICONS = {
+    light:  '<svg viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    group:  '<svg viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    plug:   '<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M15 12h.01" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+    switch: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 8l2-4h12l2 4M6 8v11a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    scene:  '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 8l2-4h12l2 4M6 8v11a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>'
+  };
+  function shStatusText(st, caps) {
+    var onLabel = st.on ? (PT.smarthomeOn || 'On') : (PT.smarthomeOff || 'Off');
+    if (st.on && caps.bri && st.bri != null) return onLabel + ' · ' + Math.round(Number(st.bri)) + ' %';
+    return onLabel;
+  }
   function renderSmarthomeCard(d) {
-    var el = document.createElement('div'); el.className = 'c-sh-card';
+    var el = document.createElement('div'); el.className = 'sh-tile';
     var st = d.state || {}, caps = d.capabilities || {};
-    var name = document.createElement('div'); name.className = 'c-sh-name'; name.textContent = d.name || ''; el.appendChild(name);
+    var ic = document.createElement('span'); ic.className = 'sh-ic'; ic.innerHTML = SH_ICONS[d.kind] || SH_ICONS.light; el.appendChild(ic);
+    var nm = document.createElement('div'); nm.className = 'nm';
+    var b = document.createElement('b'); b.textContent = d.name || ''; nm.appendChild(b);
+    var sub = document.createElement('span'); nm.appendChild(sub);
+    el.appendChild(nm);
     if (d.kind === 'scene') {
-      var b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = PT.smarthomeActivate || 'Activate';
-      b.addEventListener('click', function () { shControl(d.id, {}, el); });
-      el.appendChild(b); return el;
+      var btn = document.createElement('button'); btn.className = 'btn btn-sm'; btn.textContent = PT.smarthomeActivate || 'Activate';
+      btn.addEventListener('click', function () { shControl(d.id, {}, el); });
+      el.appendChild(btn);
+      return el;
     }
-    var sw = document.createElement('button'); sw.className = 'c-sh-sw' + (st.on ? ' on' : '');
-    sw.textContent = PT.smarthomePower || 'Power';
-    sw.addEventListener('click', function () { var on = !sw.classList.contains('on'); sw.classList.toggle('on', on); shControl(d.id, { on: on }, el); });
+    sub.textContent = shStatusText(st, caps);
+    el.classList.toggle('on', !!st.on);
+    // a11y: toggle pill exposes role="switch" + aria-pressed reflecting on/off state (WAI-ARIA switch pattern)
+    var sw = document.createElement('span');
+    sw.className = 'toggle';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('tabindex', '0');
+    sw.setAttribute('aria-pressed', st.on ? 'true' : 'false');
     el.appendChild(sw);
+    var flip = function () {
+      var on = !el.classList.contains('on');
+      el.classList.toggle('on', on);
+      sw.setAttribute('aria-pressed', on ? 'true' : 'false');
+      sub.textContent = shStatusText({ on: on, bri: st.bri }, caps);
+      shControl(d.id, { on: on }, el);
+    };
+    sw.addEventListener('click', flip);
+    sw.addEventListener('keydown', function (ev) { if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); flip(); } });
     if (caps.bri) {
       var range = document.createElement('input'); range.type = 'range'; range.min = 0; range.max = 100; range.value = (st.bri != null ? st.bri : 0); range.className = 'c-sh-bri';
-      range.addEventListener('change', function () { shControl(d.id, { bri: Number(range.value) }, el); });
+      range.addEventListener('change', function () { st.bri = Number(range.value); sub.textContent = shStatusText({ on: el.classList.contains('on'), bri: st.bri }, caps); shControl(d.id, { bri: Number(range.value) }, el); });
       el.appendChild(range);
     }
     return el;
@@ -740,10 +772,10 @@
     }
   }
   function renderSensorCard(s) {
-    var el = document.createElement('div'); el.className = 'c-sh-sensor-card';
+    var el = document.createElement('div'); el.className = 'sensor';
     var st = s.state || {};
-    var name = document.createElement('div'); name.className = 'c-sh-sensor-name'; name.textContent = s.name || ''; el.appendChild(name);
-    var val = document.createElement('div'); val.className = 'c-sh-sensor-val'; val.textContent = formatSensor(st.type, st.value); el.appendChild(val);
+    var val = document.createElement('div'); val.className = 'v'; val.textContent = formatSensor(st.type, st.value); el.appendChild(val);
+    var lbl = document.createElement('div'); lbl.className = 'l'; lbl.textContent = s.name || ''; el.appendChild(lbl);
     return el;
   }
   function hydrateSmarthome() {
@@ -759,9 +791,8 @@
       if (sensorBox) {
         sensorBox.innerHTML = '';
         var sensors = (j && j.data && j.data.sensors) || [];
+        sensorBox.setAttribute('aria-label', PT.smarthomeSensors || 'Sensors');
         if (sensors.length) {
-          var head = document.createElement('div'); head.className = 'c-sh-sensor-head'; head.textContent = PT.smarthomeSensors || 'Sensors';
-          sensorBox.appendChild(head);
           sensors.forEach(function (s) { sensorBox.appendChild(renderSensorCard(s)); });
           sensorBox.style.display = '';
         } else {

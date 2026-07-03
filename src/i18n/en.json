@@ -2264,5 +2264,7 @@
   "portal.smarthome.motion": "Motion",
   "portal.smarthome.no_motion": "No motion",
   "portal.smarthome.wet": "Wet",
-  "portal.smarthome.dry": "Dry"
+  "portal.smarthome.dry": "Dry",
+  "portal.smarthome.on": "On",
+  "portal.smarthome.off": "Off"
 }

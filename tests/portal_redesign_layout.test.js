@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('fs');
 const crypto = require('crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 const { test, beforeEach, afterEach } = require('node:test');
@@ -43,4 +44,13 @@ test('pi-hole widget renders a donut svg with piDonut id and keeps scope IDs', a
     assert.ok(h.includes('id="' + id + '"') || h.includes(id), 'kept ' + id);
   }
   assert.match(h, /class="[^"]*\bpihole-widget\b[^"]*"/, '.pihole-widget retained');
+});
+
+test('smarthome renders toggle tiles + sensor row (css + a11y switch role)', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  assert.ok(res.text.includes('.sh-tile'), '.sh-tile styling present');
+  assert.ok(res.text.includes('.toggle'), '.toggle styling present');
+  assert.ok(res.text.includes('.sh-sensors'), '.sh-sensors row present');
+  const js = fs.readFileSync('public/js/portal.js', 'utf8');
+  assert.ok(js.includes('role="switch"') || js.includes("role='switch'"), 'smart-home toggle exposes role=switch');
 });

@@ -70,7 +70,9 @@
   smarthomeMotion:         t('portal.smarthome.motion'),
   smarthomeNoMotion:       t('portal.smarthome.no_motion'),
   smarthomeWet:            t('portal.smarthome.wet'),
-  smarthomeDry:            t('portal.smarthome.dry')
+  smarthomeDry:            t('portal.smarthome.dry'),
+  smarthomeOn:             t('portal.smarthome.on'),
+  smarthomeOff:            t('portal.smarthome.off')
 } | dump | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
@@ -142,8 +144,8 @@
     <!-- Smart Home — eigene Geräte -->
     <section class="card c-smarthome">
       <div class="card-head"><h2>{{ t('portal.smarthome.title') }}</h2></div>
-      <div id="smarthome-list" class="c-sh-list"></div>
-      <div id="smarthome-sensors" class="c-sh-sensors" style="display:none"></div>
+      <div id="smarthome-list" class="sh-tiles"></div>
+      <div id="smarthome-sensors" class="sh-sensors" style="display:none"></div>
       <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
     </section>
     {% endif %}
