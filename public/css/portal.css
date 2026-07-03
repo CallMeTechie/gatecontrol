@@ -259,7 +259,6 @@ body::before{
   .wrap{padding:16px 16px 46px}
   .ac-grid{grid-template-columns:1fr}
   .sh-tiles{grid-template-columns:1fr}
-  .pihole-body{flex-direction:column;text-align:center}
 }
 
 /* ============================================================
