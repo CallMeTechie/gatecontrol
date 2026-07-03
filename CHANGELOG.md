@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Midea: Cloud-Gerätezustand wird bis zu 90 s aus dem Cache ausgeliefert (sofortiges Laden von `/midea` und Portal-Widget, Aktualisierung im Hintergrund) statt bei jedem Aufruf einen Cloud-Roundtrip/Re-Login auszulösen
+
+---
+
 ## [1.115.0] — 2026-07-03
 
 ### Features

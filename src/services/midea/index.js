@@ -10,6 +10,10 @@ const logger = require('../../utils/logger');
 
 const FEATURE = 'midea_integration';
 const POLL_INTERVAL_MS = 30000;
+// Cloud state is served from cache within this window (instant page/widget load,
+// no cloud round-trip, no re-login); beyond it the cached state is still served
+// but a background refresh is kicked off. LAN devices are local/fast and unaffected.
+const CLOUD_STATE_TTL_MS = 90000;
 
 const cache = new Map();          // deviceId -> { state, online, lastAt }
 const locks = new Map();          // deviceId -> Promise chain tail
@@ -17,6 +21,7 @@ const lockDepth = new Map();      // deviceId -> active operation count
 let pollTimer = null;
 let lastPollAt = null;
 let cloudNeedsReauth = false;     // set true on 2FA error, cleared on successful cloud command
+const cloudRefreshInFlight = new Set(); // device ids with a background cloud refresh running (dedupe)
 
 // ── Per-device mutex ──────────────────────────────────────────────────────────
 
@@ -48,25 +53,50 @@ function lanFor(d) {
 
 // ── Device state operations ───────────────────────────────────────────────────
 
+// Fetch live cloud state, update the cache, and return the parsed state (or
+// {offline:true} on failure). This is the ONLY place that hits the cloud for state.
+function fetchCloudState(id, d) {
+  return withDeviceLock(id, async () => {
+    try {
+      const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildQuery()));
+      const state = mideaAc.parseState(resp);
+      cloudNeedsReauth = false;
+      cache.set(id, { state, online: true, lastAt: Date.now() });
+      return state;
+    } catch (err) {
+      if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') cloudNeedsReauth = true;
+      logger.debug({ err: err.message, id }, 'midea getState (cloud) failed (offline)');
+      cache.set(id, { state: null, online: false, lastAt: Date.now() });
+      return { offline: true };
+    }
+  });
+}
+
+// Kick a single background refresh for a stale-but-usable cache entry. Deduped
+// per device so overlapping page/widget loads don't stack cloud calls.
+function refreshCloudState(id, d) {
+  if (cloudRefreshInFlight.has(id)) return;
+  cloudRefreshInFlight.add(id);
+  Promise.resolve()
+    .then(() => fetchCloudState(id, d))
+    .catch(() => {})
+    .finally(() => cloudRefreshInFlight.delete(id));
+}
+
 async function getState(id) {
   const d = devices.getDevice(id);
   if (!d) throw new Error('device not found');
 
   if (d.transport === 'cloud') {
-    return withDeviceLock(id, async () => {
-      try {
-        const resp = await withCloud((c) => c.sendCommand(d.cloud_appliance_id, mideaAc.buildQuery()));
-        const state = mideaAc.parseState(resp);
-        cloudNeedsReauth = false;
-        cache.set(id, { state, online: true, lastAt: Date.now() });
-        return state;
-      } catch (err) {
-        if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') cloudNeedsReauth = true;
-        logger.debug({ err: err.message, id }, 'midea getState (cloud) failed (offline)');
-        cache.set(id, { state: null, online: false, lastAt: Date.now() });
-        return { offline: true };
-      }
-    });
+    const cached = cache.get(id);
+    // Serve a known-online cached state instantly — no cloud round-trip, no
+    // re-login. Beyond the TTL still serve it, but refresh in the background.
+    if (cached && cached.online && cached.state) {
+      if (Date.now() - cached.lastAt >= CLOUD_STATE_TTL_MS) refreshCloudState(id, d);
+      return cached.state;
+    }
+    // No usable cache (first load / last known offline) → fetch synchronously.
+    return fetchCloudState(id, d);
   }
 
   return withDeviceLock(id, async () => {
