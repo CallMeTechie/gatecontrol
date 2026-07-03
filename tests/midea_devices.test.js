@@ -173,6 +173,25 @@ test('getState for a cloud device routes through mideaCloud.sendCommand, not Lan
   }
 });
 
+test('getState for a cloud device serves cached state within TTL (no second cloud round-trip / re-login)', async () => {
+  const midea = require('../src/services/midea');
+  const cloud = require('../src/services/midea/mideaCloud');
+  preconfigureCloudSession();
+  const d = devices.createDevice({ name: 'C3', device_sn: 'c-3', transport: 'cloud', cloud_appliance_id: '555' });
+  let calls = 0;
+  const orig = cloud.MideaCloud.prototype.sendCommand;
+  cloud.MideaCloud.prototype.sendCommand = async function () { calls += 1; return CLOUD_SAMPLE; };
+  try {
+    const a = await midea.getState(d.id);   // cold → one cloud round-trip, populates cache
+    const b = await midea.getState(d.id);   // warm → served from cache, no cloud call
+    assert.equal(calls, 1, 'second getState within TTL must not hit the cloud');
+    assert.deepEqual(b, a);                 // identical state returned from cache
+  } finally {
+    cloud.MideaCloud.prototype.sendCommand = orig;
+    midea.stopPolling();
+  }
+});
+
 test('setState for a cloud device does inline read-modify-write via sendCommand, not LanDevice', async () => {
   const midea = require('../src/services/midea');
   const cloud = require('../src/services/midea/mideaCloud');
