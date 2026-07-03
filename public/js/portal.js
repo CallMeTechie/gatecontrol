@@ -500,19 +500,12 @@
   var FAN_STEPS = [1, 20, 40, 60, 80, 100]; // Prozent-Stufen wie Midea-App (1–100, 100=Max); Auto=102 außerhalb der Skala
   function fanIndex(v) { return FAN_STEPS.reduce(function (b, val, i, a) { return Math.abs(val - v) < Math.abs(a[b] - v) ? i : b; }, 0); }
   // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
-  var MIDEA_MODE_ICONS = { // same icon set as the admin /midea card
-    auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
-    cool: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
-    heat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4"/></svg>',
-    dry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>',
-    fan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></svg>',
-  };
   var MIDEA_AC_ICON = '<svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var MIDEA_POWER_ICON = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v9M6.5 6.5a8 8 0 1011 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   function mideaModeLabel(m) { return PT['mideaMode' + m.charAt(0).toUpperCase() + m.slice(1)] || m; }
 
-  // Redesign: card grid with conic-gradient temp-ring + stepper + icon mode-segment + status pill
-  // (modeled on the admin /midea card, in the portal design system). Data contract unchanged:
+  // Redesign: card grid with SVG target-temp ring (r=52, 16–30 °C arc) + stepper + text mode-segment + status pill
+  // (mirrors the portal-redesign mockup's .ac/.ac-ring/.stepper/.modeseg). Data contract unchanged:
   // .midea-card[data-id], .midea-status[data-power], button[data-act=power]/[data-step]/[data-mode], .midea-target[data-val].
   function renderMideaCard(d) {
     var st = d.state || {};
@@ -520,8 +513,6 @@
     var powered = !offline && !!st.power;
     var indoor = Number(st.indoorTemp);
     var hasIndoor = !offline && !isNaN(indoor);
-    var pct = hasIndoor ? Math.max(0, Math.min(100, ((indoor - 16) / 14) * 100)) : 0; // ring fill, 16–30 °C span
-    var ringC = (!offline && st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)';     // heat → coral, else teal
     var temp = hasIndoor ? Math.round(indoor) + '°' : '—';
     var tgt = Number(st.targetTemp);
     var hasTgt = !offline && !isNaN(tgt);
@@ -548,10 +539,19 @@
         '<button type="button" class="chip-tgl' + ((!offline && st.turbo) ? ' active' : '') + '" data-act="turbo"' + dis + '>' + escHtml(PT.mideaTurbo || 'Turbo') + '</button>' +
         '<button type="button" class="chip-tgl' + ((!offline && st.eco) ? ' active' : '') + '" data-act="eco"' + dis + '>' + escHtml(PT.mideaEco || 'Eco') + '</button>' +
       '</div></div>';
+    // Temperature ring (target-based, NOT a 0–100% gauge): r=52 circle, 16–30 °C mapped to the arc.
+    var r = 52, C = 2 * Math.PI * r;
+    var MIN = 16, MAX = 30;
+    var frac = hasTgt ? Math.max(0, Math.min(1, (tgt - MIN) / (MAX - MIN))) : 0;
+    var dash = C.toFixed(1);
+    var dashOff = (C - frac * C).toFixed(1);
+    var ringC = offline ? 'var(--faint)' : ((st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)'); // heat → coral, else teal
+    var ringBig = hasTgt ? String(Math.round(tgt)) : '—';
     var modeBtns = MIDEA_MODES.map(function (m) {
-      var active = (!offline && st.mode === m) ? ' active' : '';
+      var active = !offline && st.mode === m;
+      var cls = 'modeseg-opt' + (active ? ' on' : '') + (active && m === 'heat' ? ' heat' : '');
       var lbl = escHtml(mideaModeLabel(m));
-      return '<button type="button" class="m midea-mode' + active + '" data-mode="' + m + '" title="' + lbl + '" aria-label="' + lbl + '"' + dis + '>' + MIDEA_MODE_ICONS[m] + '</button>';
+      return '<button type="button" class="' + cls + '" data-mode="' + m + '" aria-pressed="' + (active ? 'true' : 'false') + '"' + dis + '>' + lbl + '</button>';
     }).join('');
     var meta = d.transport ? '<div class="ac-meta">' + escHtml(d.transport === 'cloud' ? 'Cloud' : 'LAN') + '</div>' : '';
     var powerBtn = offline
@@ -565,14 +565,22 @@
         '<div class="ac-headtext"><div class="ac-name">' + escHtml(d.name) + '</div>' + meta + '</div>' +
         '<span class="ac-status midea-status ' + statusCls + '" data-power="' + (powered ? 'true' : 'false') + '"><span class="sdot"></span>' + escHtml(statusTxt) + '</span>' +
       '</div>' +
-      '<div class="ac-climate">' +
-        '<div class="ring-wrap"><div class="ring" style="--ring-val:' + pct + '%;--ring-c:' + ringC + '"><div class="ring-in"><span class="ring-v">' + escHtml(temp) + '</span><span class="ring-l">' + escHtml(PT.mideaCurrent || '') + '</span></div></div>' + outdoor + '</div>' +
-        '<div class="ac-set">' +
-          '<div><div class="set-lbl">' + escHtml(PT.mideaTarget || '') + '</div>' +
-            '<div class="stepper"><button type="button" data-step="-1"' + dis + '>−</button><span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span><button type="button" data-step="1"' + dis + '>+</button></div></div>' +
-          '<div><div class="set-lbl">' + escHtml(PT.mideaMode || '') + '</div><div class="modes">' + modeBtns + '</div></div>' + fan + extras +
+      '<div class="ac-climate ac-ring">' +
+        '<div class="ring"><svg viewBox="0 0 120 120" width="106" height="106">' +
+          '<circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="11"/>' +
+          '<circle cx="60" cy="60" r="52" fill="none" stroke="' + ringC + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + dash + '" stroke-dashoffset="' + dashOff + '"/>' +
+        '</svg><div class="rc"><div><div class="t">' + escHtml(ringBig) + '<sup>°</sup></div><div class="c">' + escHtml(PT.mideaTarget || '') + '</div></div></div></div>' +
+        '<div class="ac-side">' +
+          '<div class="ac-row"><span>' + escHtml(PT.mideaCurrent || '') + '</span><b>' + escHtml(temp) + '</b></div>' +
+          outdoor +
+          '<div class="ac-row"><span>' + escHtml(PT.mideaTarget || '') + '</span>' +
+            '<div class="stepper"><button type="button" data-step="-1" aria-label="' + escHtml(PT.mideaCooler || '') + '"' + dis + '>−</button>' +
+              '<span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span>' +
+              '<button type="button" data-step="1" aria-label="' + escHtml(PT.mideaWarmer || '') + '"' + dis + '>+</button></div></div>' +
+          '<div class="modeseg">' + modeBtns + '</div>' +
         '</div>' +
       '</div>' +
+      '<div class="ac-set">' + fan + extras + '</div>' +
       '<div class="ac-foot">' + powerBtn + '</div>' + login +
     '</div>';
   }

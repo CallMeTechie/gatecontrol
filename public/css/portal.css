@@ -344,16 +344,21 @@ body::before{
 .midea-card .ac-status.off{color:var(--muted);background:var(--chip);border:1px solid var(--line)}
 .midea-card .ac-status.off-line{color:var(--coral);background:var(--chip);border:1px solid var(--line-2)}
 
-/* Klima-Block: Ring-Gauge + Stell-Spalte */
-.midea-card .ac-climate{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
+/* Klima-Block: Temperatur-Ring (SVG, Soll-basiert) + Stell-Spalte */
+.midea-card .ac-climate.ac-ring{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
   border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.midea-card .ring{width:92px;height:92px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
-  background:conic-gradient(var(--ring-c,var(--teal)) var(--ring-val,0%), var(--line-2) 0)} /* full-circle gauge; fill color per mode (heat→coral) */
-.midea-card .ring-in{width:72px;height:72px;border-radius:50%;background:var(--surface);display:flex;
-  flex-direction:column;align-items:center;justify-content:center;gap:1px}
-.midea-card .ring-v{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}
-.midea-card .ring-l{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700}
-.midea-card .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.midea-card .ring{position:relative;width:106px;height:106px;flex:0 0 auto}
+.midea-card .ring svg{transform:rotate(-90deg)}                       /* start the arc at 12 o'clock */
+.midea-card .ring svg circle{transition:stroke-dashoffset .3s, stroke .15s} /* fill color per mode (heat→coral) */
+.midea-card .ring .rc{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.midea-card .ring .rc .t{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}
+.midea-card .ring .rc .t sup{font-size:12px;position:relative;top:-.6em}
+.midea-card .ring .rc .c{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
+  font-weight:700;margin-top:3px}
+.midea-card .ac-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.midea-card .ac-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.midea-card .ac-row b{color:var(--text);font-weight:600;font-family:var(--font-mono)}
+.midea-card .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px;margin-top:13px}
 .midea-card .set-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
   font-weight:700;margin-bottom:7px}
 
@@ -368,14 +373,13 @@ body::before{
 .midea-card .stepper.pending .v{color:var(--amber)}     /* command in flight (optimistic) */
 .midea-card .stepper.confirmed .v{color:var(--green)}   /* device confirmed the setpoint */
 
-/* Modus-Segment: an die Admin-/midea-Karte angeglichen (.toggle-group/.mode-group):
-   gepolsterter Inset-Track mit Lücken statt Trennlinien, abgesetzte aktive Pille. */
-.midea-card .modes{display:flex;width:100%;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-2)}
-.midea-card .modes .m{flex:1 1 0;min-width:0;padding:7px 0;display:flex;align-items:center;justify-content:center;
-  border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;transition:.12s}
-.midea-card .modes .m svg{width:16px;height:16px}
-.midea-card .modes .m:hover:not([disabled]):not(.active){color:var(--text)}
-.midea-card .modes .m.active{background:var(--surface-3);color:var(--text);box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
+/* Modus-Segment: Text-Chips wie im Redesign-Mockup (.modeseg), aktiv = Teal-Tönung, Heizen = Coral. */
+.midea-card .modeseg{display:flex;gap:5px;flex-wrap:wrap}
+.midea-card .modeseg-opt{font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);
+  color:var(--muted);background:var(--chip);font-family:var(--font-body);font-weight:600;cursor:pointer;transition:.12s}
+.midea-card .modeseg-opt:hover:not([disabled]):not(.on){color:var(--text)}
+.midea-card .modeseg-opt.on{background:rgba(52,220,198,.14);color:var(--teal);border-color:transparent}
+.midea-card .modeseg-opt.on.heat{background:rgba(255,157,108,.16);color:var(--coral)}
 
 /* Power-Aktion */
 .midea-card .ac-foot{display:flex;gap:9px;align-items:center}
@@ -389,8 +393,6 @@ body::before{
 /* zweistufig: ungeloggt/offline → Steuerelemente gesperrt */
 .midea-card [disabled]{opacity:.4;cursor:not-allowed;pointer-events:none}
 
-/* Ring + Außentemp gestapelt */
-.midea-card .ring-wrap{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 auto}
 .midea-card .ac-outdoor{font-size:11px;color:var(--muted);font-weight:600;font-family:var(--font-mono)}
 
 /* Toggle-Chips (Turbo/Eco/Auto) */
