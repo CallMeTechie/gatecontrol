@@ -726,17 +726,18 @@
     }
     sub.textContent = shStatusText(st, caps);
     el.classList.toggle('on', !!st.on);
-    // a11y: toggle pill exposes role="switch" + aria-pressed reflecting on/off state (WAI-ARIA switch pattern)
+    // a11y: toggle pill exposes role="switch" + aria-checked reflecting on/off state (WAI-ARIA switch pattern)
     var sw = document.createElement('span');
     sw.className = 'toggle';
     sw.setAttribute('role', 'switch');
     sw.setAttribute('tabindex', '0');
-    sw.setAttribute('aria-pressed', st.on ? 'true' : 'false');
+    sw.setAttribute('aria-checked', st.on ? 'true' : 'false');
+    sw.setAttribute('aria-label', d.name || '');
     el.appendChild(sw);
     var flip = function () {
       var on = !el.classList.contains('on');
       el.classList.toggle('on', on);
-      sw.setAttribute('aria-pressed', on ? 'true' : 'false');
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
       sub.textContent = shStatusText({ on: on, bri: st.bri }, caps);
       shControl(d.id, { on: on }, el);
     };
