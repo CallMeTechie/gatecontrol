@@ -7,7 +7,12 @@
     <div class="page-title">{{ t('pihole.title') }}</div>
     <div class="page-sub">{{ t('pihole.subtitle') }}</div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center" role="group" aria-label="{{ t('pihole.control') }}">
+    <span id="ph-blocking-badge" class="tag tag-grey">—</span>
+    <button class="btn btn-ghost" id="btn-ph-pause-30s" title="{{ t('pihole.pause_30s') }}" aria-label="{{ t('pihole.pause_30s') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_30s') }}</button>
+    <button class="btn btn-ghost" id="btn-ph-pause-5m" title="{{ t('pihole.pause_5m') }}" aria-label="{{ t('pihole.pause_5m') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_5m') }}</button>
+    <button class="btn btn-ghost" id="btn-ph-pause-30m" title="{{ t('pihole.pause_30m') }}" aria-label="{{ t('pihole.pause_30m') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_30m') }}</button>
+    <button class="btn btn-primary" id="btn-ph-enable" title="{{ t('pihole.enable_blocking') }}" aria-label="{{ t('pihole.enable_blocking') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></button>
     <button class="btn btn-ghost" id="btn-pihole-reload">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       {{ t('common.reload') }}
@@ -77,7 +82,7 @@
 </div>
 
 {# ── Grid-3: Top Clients / Query Types / Steuerung ────── #}
-<div class="grid-3" style="margin-bottom:16px">
+<div class="content-grid" style="margin-bottom:16px">
   <div class="card">
     <div class="card-head">
       <span class="card-title">{{ t('pihole.top_clients') }}</span>
@@ -102,20 +107,6 @@
     </div>
     <div class="card-body" id="ph-query-types-list">
       <div style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">{{ t('pihole.control') }}</span>
-      <span id="ph-blocking-badge" class="tag tag-grey" style="margin-left:auto">—</span>
-    </div>
-    <div class="card-body">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-ghost" id="btn-ph-pause-30s">{{ t('pihole.pause_30s') }}</button>
-        <button class="btn btn-ghost" id="btn-ph-pause-5m">{{ t('pihole.pause_5m') }}</button>
-        <button class="btn btn-ghost" id="btn-ph-pause-30m">{{ t('pihole.pause_30m') }}</button>
-        <button class="btn btn-primary" id="btn-ph-enable">{{ t('pihole.enable_blocking') }}</button>
-      </div>
     </div>
   </div>
 </div>

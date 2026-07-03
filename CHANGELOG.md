@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Pi-hole: Pause-/Aktivieren-Steuerung als Timer-Icons in die Pi-hole-Karte verlegt; separate „Blockierung steuern"-Karte entfernt
+
+---
+
 ## [1.114.2] — 2026-07-02
 
 ### Fixes
