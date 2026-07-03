@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.115.0] — 2026-07-03
+
+### Features
+- timer-icon controls in Pi-hole card, drop separate control card (#214)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
