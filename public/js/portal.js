@@ -292,18 +292,11 @@
   }
 
   // ─── Services widget ────────────────────────────────────────────────────────
-  const TILE_COLORS = [
-    'linear-gradient(145deg,#ffb27a,#e8763f)',
-    'linear-gradient(145deg,#7ae0d2,#28b3a2)',
-    'linear-gradient(145deg,#9db8ff,#5b76d6)',
-    'linear-gradient(145deg,var(--teal),var(--teal-dim))',
-  ];
-  const TILE_ICON =
-    '<svg viewBox="0 0 24 24" fill="none">' +
-    '<rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/>' +
-    '<rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/>' +
-    '<path d="M7 7h.01M7 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-    '</svg>';
+  // Two-letter monogram derived from the service name for the compact launcher tile.
+  function serviceMonogram(name) {
+    const trimmed = String(name || '').trim();
+    return (trimmed.slice(0, 1).toUpperCase() + trimmed.slice(1, 2).toLowerCase()) || '?';
+  }
 
   function hydrateServices() {
     const card    = document.querySelector('.c-services');
@@ -330,13 +323,12 @@
           tilesEl.replaceChildren(emptyDiv);
           return;
         }
-        tilesEl.innerHTML = services.map(function (s, i) {
-          const color = TILE_COLORS[i % TILE_COLORS.length];
-          return '<a class="tile" href="https://' + escHtml(s.domain) +
+        tilesEl.innerHTML = services.map(function (s) {
+          return '<a class="svc" href="https://' + escHtml(s.domain) +
             '" target="_blank" rel="noopener noreferrer">' +
-            '<span class="ti" style="background:' + color + '">' + TILE_ICON + '</span>' +
-            '<span class="tn">' + escHtml(s.name) + '</span>' +
-            '<span class="td">' + escHtml(s.domain) + '</span>' +
+            '<span class="si">' + escHtml(serviceMonogram(s.name)) + '</span>' +
+            '<span class="st"><b>' + escHtml(s.name) + '</b><span>' + escHtml(s.domain) + '</span></span>' +
+            '<span class="live"></span>' +
             '</a>';
         }).join('');
       })

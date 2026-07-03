@@ -227,19 +227,19 @@ body::before{
 .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
 
 /* ============================================================
-   SERVICES CARD (.c-services — now full-width span 12)
-   Tiles use auto-fill / minmax(200px) so they don't render as 2 giant tiles
-   at full 12-column width. Still collapses to 2-up on narrow screens.
+   SERVICES CARD (.c-services — full-width span 12, compact launcher strip)
    ============================================================ */
-.tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:11px; margin-top:18px}
-.tile{display:flex; flex-direction:column; gap:10px; padding:14px; border-radius:var(--r-sm); cursor:pointer;
-  background:var(--surface-3); border:1px solid var(--line); text-decoration:none; color:var(--text); transition:.16s}
-.tile:hover{transform:translateY(-2px); border-color:var(--line-2); background:var(--surface-2)}
-.tile .ti{width:34px;height:34px;border-radius:10px;display:grid;place-items:center; color:#fff}
-.tile .ti svg{width:18px;height:18px}
-.tile .tn{font-weight:600; font-size:13.5px}
-.tile .td{font-size:11.5px; color:var(--faint); font-family:var(--font-mono)}
-.tile.add{align-items:center; justify-content:center; border-style:dashed; color:var(--faint); background:transparent}
+.svc-strip{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:11px; margin-top:18px}
+.svc{display:flex; align-items:center; gap:11px; padding:11px 13px; border:1px solid var(--line); border-radius:12px;
+  background:var(--chip); text-decoration:none; color:inherit; transition:.15s; cursor:pointer}
+.svc:hover{border-color:var(--teal); transform:translateY(-2px)}
+.svc .si{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--surface-3); color:var(--teal); font-family:var(--font-mono); font-weight:700; font-size:13px}
+.svc .st{min-width:0}
+.svc .st b{display:block; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.svc .st span{color:var(--faint); font-size:11px}
+.svc .live{width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:auto;flex:0 0 auto}
+.svc:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 
 /* ============================================================
    FOOTER
@@ -254,7 +254,7 @@ body::before{
   .grid > .card{grid-column:span 12 !important}
   .devpill .ip{display:none}
   /* Keep service tiles 2-up on narrow screens (thumb-friendly) */
-  .tiles{grid-template-columns:1fr 1fr}
+  .svc-strip{grid-template-columns:1fr 1fr}
   .sh-sensors{grid-template-columns:repeat(4,1fr)}
 }
 
@@ -295,7 +295,7 @@ body::before{
 .portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}
 
 /* Reserve height for services card while tiles load */
-.c-services.loading{min-height:200px}
+.c-services.loading{min-height:110px}
 
 /* ============================================================
    PI-HOLE WIDGET

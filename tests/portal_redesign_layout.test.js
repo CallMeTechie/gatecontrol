@@ -54,3 +54,9 @@ test('smarthome renders toggle tiles + sensor row (css + a11y switch role)', asy
   const js = fs.readFileSync('public/js/portal.js', 'utf8');
   assert.ok(js.includes('role="switch"') || js.includes("role='switch'"), 'smart-home toggle exposes role=switch');
 });
+
+test('services render as compact launcher (svc-strip + svc styling in css)', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  assert.ok(res.text.includes('.svc-strip'), '.svc-strip grid present');
+  assert.ok(res.text.includes('.svc{') || res.text.includes('.svc '), '.svc tile styling present');
+});
