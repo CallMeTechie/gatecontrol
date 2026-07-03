@@ -30,6 +30,12 @@
       {{ t('pihole.title') }}
       <span id="ph-blocking-badge" class="tag tag-grey" style="margin-left:auto">—</span>
     </div>
+    <div class="ph-controls" role="group" aria-label="{{ t('pihole.control') }}" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 16px">
+      <button class="btn btn-ghost btn-sm" id="btn-ph-pause-30s" title="{{ t('pihole.pause_30s') }}" aria-label="{{ t('pihole.pause_30s') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_30s') }}</button>
+      <button class="btn btn-ghost btn-sm" id="btn-ph-pause-5m" title="{{ t('pihole.pause_5m') }}" aria-label="{{ t('pihole.pause_5m') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_5m') }}</button>
+      <button class="btn btn-ghost btn-sm" id="btn-ph-pause-30m" title="{{ t('pihole.pause_30m') }}" aria-label="{{ t('pihole.pause_30m') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5"/><path d="M9.5 2h5"/></svg>{{ t('pihole.dur_30m') }}</button>
+      <button class="btn btn-primary btn-sm" id="btn-ph-enable" title="{{ t('pihole.enable_blocking') }}" aria-label="{{ t('pihole.enable_blocking') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></button>
+    </div>
     <div class="pi-wrap">
       <div class="donut-host">
         <svg class="donut" viewBox="0 0 120 120">
@@ -103,29 +109,15 @@
   </div>
 </div>
 
-{# ── Row 3: Query Types (span6) + Blocking Control (span6) #}
+{# ── Row 3: Query Types (full width; pause controls moved into the Pi-hole card) #}
 <div class="grid" style="margin-bottom:18px">
-  <div class="card span6">
+  <div class="card span12">
     <div class="card-title">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="2"/></svg></span>
       {{ t('pihole.query_types') }}
     </div>
     <div class="card-body" id="ph-query-types-list">
       <div style="text-align:center;color:var(--text-3);padding:20px">{{ t('common.loading') }}</div>
-    </div>
-  </div>
-  <div class="card span6">
-    <div class="card-title">
-      <span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="6" y="5" width="4" height="14" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="5" width="4" height="14" rx="1" stroke="currentColor" stroke-width="2"/></svg></span>
-      {{ t('pihole.control') }}
-    </div>
-    <div class="card-body">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-ghost" id="btn-ph-pause-30s">{{ t('pihole.pause_30s') }}</button>
-        <button class="btn btn-ghost" id="btn-ph-pause-5m">{{ t('pihole.pause_5m') }}</button>
-        <button class="btn btn-ghost" id="btn-ph-pause-30m">{{ t('pihole.pause_30m') }}</button>
-        <button class="btn btn-primary" id="btn-ph-enable">{{ t('pihole.enable_blocking') }}</button>
-      </div>
     </div>
   </div>
 </div>
