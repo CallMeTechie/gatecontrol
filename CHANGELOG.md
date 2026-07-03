@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Portal: vollbreites Dashboard-Layout (Klima & SmartHome oben, Pi-hole mit Donut, Dienste als kompakte Startleiste)
+
+---
+
 ## [1.116.0] — 2026-07-03
 
 ### Features
