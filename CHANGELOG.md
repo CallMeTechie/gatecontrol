@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.3] — 2026-07-04
+
+### Fixes
+- only tick private-nets box when both CIDRs present
+
+---
+
 ## [Unreleased]
 
 ### Fixes
