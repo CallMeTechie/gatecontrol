@@ -808,6 +808,7 @@
       <div style="padding:0;margin-top:14px">
         <div class="feature-grid">
         {% for key, value in license.features %}
+        {% if value is number or value == true or value == false %}
         <div class="feature-cell">
           <span style="font-size:13px;color:var(--text-1)">{{ key | replace("_", " ") | capitalize }}</span>
           {% if value is number and value == -1 %}
@@ -822,6 +823,7 @@
             <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
           {% endif %}
         </div>
+        {% endif %}
         {% endfor %}
         </div>
       </div>

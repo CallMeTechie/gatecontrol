@@ -10,6 +10,7 @@
 ## [Unreleased]
 
 ### Änderungen
+- Settings/Lizenz: leere Feature-Zeilen für unbekannte Lizenzserver-Keys (nicht-boolescher Wert, z. B. `pihole`) werden ausgeblendet
 - Portal: vollbreites Dashboard-Layout (Klima & SmartHome oben, Pi-hole mit Donut, Dienste als kompakte Startleiste)
 
 ---
