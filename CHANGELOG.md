@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.0] — 2026-07-04
+
+### Features
+- full-width smart-home dashboard redesign (#216)
+
+---
+
 ## [Unreleased]
 
 ### Änderungen
