@@ -58,6 +58,8 @@
   mideaTurbo:            t('portal.midea.turbo'),
   mideaEco:              t('portal.midea.eco'),
   mideaOutdoor:          t('portal.midea.outdoor'),
+  mideaWarmer:           t('portal.midea.warmer'),
+  mideaCooler:           t('portal.midea.cooler'),
   smarthomePower:          t('portal.smarthome.power'),
   smarthomeBrightness:     t('portal.smarthome.brightness'),
   smarthomeActivate:       t('portal.smarthome.activate'),
@@ -68,7 +70,9 @@
   smarthomeMotion:         t('portal.smarthome.motion'),
   smarthomeNoMotion:       t('portal.smarthome.no_motion'),
   smarthomeWet:            t('portal.smarthome.wet'),
-  smarthomeDry:            t('portal.smarthome.dry')
+  smarthomeDry:            t('portal.smarthome.dry'),
+  smarthomeOn:             t('portal.smarthome.on'),
+  smarthomeOff:            t('portal.smarthome.off')
 } | dump | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
@@ -113,23 +117,64 @@
     <p>{{ t('portal.greeting_sub') }}</p>
   </section>
 
+  {% if widgets.device %}
+  <!-- device status strip -->
+  <div class="strip c-device">
+    <span id="deviceStatus"></span>
+    <span class="s"><span class="lbl">{{ t('portal.device.vpn_address') }}</span><span class="ip" id="deviceAddress"></span></span>
+    <span class="s"><span class="lbl">{{ t('portal.device.dns') }}</span><span class="ip" id="deviceDns"></span></span>
+    <span class="s"><span class="lbl">{{ t('portal.device.last_handshake') }}</span><span id="deviceHandshake"></span></span>
+    <span id="deviceKv"></span>
+  </div>
+  {% endif %}
+
   <!-- widget grid -->
   <main class="grid">
 
-    {% if widgets.device %}
-    <!-- device status -->
-    <section class="card c-device">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" stroke-width="2"/><path d="M11 18h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.device.title') }}</h2>
-      <div class="kv" id="deviceKv">
-        <div class="row"><span class="k">{{ t('portal.device.status') }}</span><span class="v" id="deviceStatus"></span></div>
-        <div class="row"><span class="k">{{ t('portal.device.last_handshake') }}</span><span class="v" id="deviceHandshake"></span></div>
-        <div class="row"><span class="k">{{ t('portal.device.vpn_address') }}</span><span class="v" id="deviceAddress"></span></div>
-        <div class="row"><span class="k">{{ t('portal.device.dns') }}</span><span class="v" id="deviceDns"></span></div>
+    {% if widgets.midea %}
+    <!-- Klimaanlage — eigene Geräte -->
+    <section class="card c-midea midea-widget">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.midea.title') }}</h2>
+      <div id="midea-list" class="midea-list"></div>
+      <div class="midea-msg" id="mideaMsg" style="display:none"></div>
+    </section>
+    {% endif %}
+
+    {% if widgets.smarthome %}
+    <!-- Smart Home — eigene Geräte -->
+    <section class="card c-smarthome">
+      <div class="card-head"><h2>{{ t('portal.smarthome.title') }}</h2></div>
+      <div id="smarthome-list" class="sh-tiles"></div>
+      <div id="smarthome-sensors" class="sh-sensors" style="display:none"></div>
+      <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
+    </section>
+    {% endif %}
+
+    {% if widgets.pihole %}
+    <!-- pi-hole / DNS protection -->
+    <section class="card c-pihole pihole-widget">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}
+        <span class="seg pihole-seg" id="piholeSeg">
+          <button data-scope="device" class="on">{{ t('portal.pihole.scope_device') }}</button>
+          <button data-scope="owner">{{ t('portal.pihole.scope_owner') }}</button>
+          <button data-scope="household">{{ t('portal.pihole.scope_household') }}</button>
+        </span>
+      </h2>
+      <div class="pihole-body">
+        <div class="donut">
+          <svg viewBox="0 0 120 120" width="132" height="132"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--track)" stroke-width="13"/><circle id="piDonut" cx="60" cy="60" r="50" fill="none" stroke="var(--coral)" stroke-width="13" stroke-linecap="round"/></svg>
+          <div class="dc"><div><b id="piPct">–</b><span>%</span></div></div>
+        </div>
+        <div class="pihole-nums">
+          <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
+          <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>
+          <div id="piAllowedWrap"><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
+        </div>
+        <div id="piOwnerExtra" style="display:none"><b id="piOwnerDevices"></b> <span class="pihole-hint" id="piOwnerDevicesHint"></span></div>
+        <div id="piHouseholdExtra" style="display:none"><b id="piActiveClients">–</b></div>
+        <div class="pihole-foot">{{ t('portal.pihole.foot') }}</div>
       </div>
-      <div class="xfer">
-        <div class="b down"><div class="lab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M6 13l6 6 6-6" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('portal.device.received') }}</div><div class="num" id="deviceRx"></div></div>
-        <div class="b up"><div class="lab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="var(--coral)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('portal.device.sent') }}</div><div class="num" id="deviceTx"></div></div>
-      </div>
+      <div class="pihole-msg" id="piMsg" style="display:none"></div>
     </section>
     {% endif %}
 
@@ -157,52 +202,7 @@
     <!-- services -->
     <section class="card c-services">
       <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="13" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 7.5h.01M7 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>{{ t('portal.services.title') }}<span class="sub">{{ t('portal.services.sub') }}</span></h2>
-      <div class="tiles" id="servicesTiles"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.pihole %}
-    <!-- pi-hole / DNS protection -->
-    <section class="card c-pihole pihole-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}
-        <span class="seg pihole-seg" id="piholeSeg">
-          <button data-scope="device" class="on">{{ t('portal.pihole.scope_device') }}</button>
-          <button data-scope="owner">{{ t('portal.pihole.scope_owner') }}</button>
-          <button data-scope="household">{{ t('portal.pihole.scope_household') }}</button>
-        </span>
-      </h2>
-      <div class="pihole-body">
-        <div class="pihole-rate"><b id="piPct">–</b><span>%</span></div>
-        <div class="pihole-bar"><i id="piBar"></i></div>
-        <div class="pihole-nums">
-          <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
-          <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>
-          <div id="piAllowedWrap"><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
-        </div>
-        <div id="piOwnerExtra" style="display:none"><b id="piOwnerDevices"></b> <span class="pihole-hint" id="piOwnerDevicesHint"></span></div>
-        <div id="piHouseholdExtra" style="display:none"><b id="piActiveClients">–</b></div>
-        <div class="pihole-foot">{{ t('portal.pihole.foot') }}</div>
-      </div>
-      <div class="pihole-msg" id="piMsg" style="display:none"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.midea %}
-    <!-- Klimaanlage — eigene Geräte -->
-    <section class="card c-midea midea-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.midea.title') }}</h2>
-      <div id="midea-list" class="midea-list"></div>
-      <div class="midea-msg" id="mideaMsg" style="display:none"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.smarthome %}
-    <!-- Smart Home — eigene Geräte -->
-    <section class="card c-smarthome">
-      <div class="card-head"><h2>{{ t('portal.smarthome.title') }}</h2></div>
-      <div id="smarthome-list" class="c-sh-list"></div>
-      <div id="smarthome-sensors" class="c-sh-sensors" style="display:none"></div>
-      <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
+      <div class="svc-strip" id="servicesTiles"></div>
     </section>
     {% endif %}
 

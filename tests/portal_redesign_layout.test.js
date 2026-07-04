@@ -1,0 +1,62 @@
+'use strict';
+const fs = require('fs');
+const crypto = require('crypto');
+process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const { test, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const supertest = require('supertest');
+const { setup, teardown } = require('./helpers/setup');
+
+let app;
+beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
+afterEach(teardown);
+
+async function portalHtml() {
+  const res = await supertest(app).get('/portal').expect(200);
+  return res.text;
+}
+
+test('status strip keeps .c-device class (portal.js hydrateDevice guard) + device IDs', async () => {
+  const h = await portalHtml();
+  assert.match(h, /class="[^"]*\bstrip\b[^"]*"/, 'status .strip present');
+  assert.match(h, /class="[^"]*\bc-device\b[^"]*"/, '.c-device class retained for JS guard');
+  for (const id of ['deviceStatus', 'deviceAddress', 'deviceDns', 'deviceHandshake', 'deviceKv']) {
+    assert.ok(h.includes('id="' + id + '"'), 'kept id ' + id);
+  }
+});
+
+test('control-first order: Klima (c-midea) appears before Dienste (c-services)', async () => {
+  const h = await portalHtml();
+  assert.ok(h.indexOf('c-midea') < h.indexOf('c-services'), 'Klima before Dienste');
+  assert.ok(h.indexOf('c-smarthome') < h.indexOf('c-services'), 'SmartHome before Dienste');
+});
+
+test('portal.css uses full-width wrapper 1560', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  assert.ok(res.text.includes('max-width:1560px') || res.text.includes('max-width: 1560px'), '.wrap widened to 1560');
+});
+
+test('pi-hole widget renders a donut svg with piDonut id and keeps scope IDs', async () => {
+  const h = await portalHtml();
+  assert.match(h, /class="[^"]*\bdonut\b[^"]*"/, '.donut present');
+  assert.ok(h.includes('id="piDonut"'), 'donut arc has id piDonut');
+  for (const id of ['piPct', 'piTotal', 'piBlocked', 'piAllowed', 'piAllowedWrap', 'piOwnerExtra', 'piholeSeg']) {
+    assert.ok(h.includes('id="' + id + '"') || h.includes(id), 'kept ' + id);
+  }
+  assert.match(h, /class="[^"]*\bpihole-widget\b[^"]*"/, '.pihole-widget retained');
+});
+
+test('smarthome renders toggle tiles + sensor row (css + a11y switch role)', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  assert.ok(res.text.includes('.sh-tile'), '.sh-tile styling present');
+  assert.ok(res.text.includes('.toggle'), '.toggle styling present');
+  assert.ok(res.text.includes('.sh-sensors'), '.sh-sensors row present');
+  const js = fs.readFileSync('public/js/portal.js', 'utf8');
+  assert.ok(js.includes('role="switch"') || js.includes("role='switch'"), 'smart-home toggle exposes role=switch');
+});
+
+test('services render as compact launcher (svc-strip + svc styling in css)', async () => {
+  const res = await supertest(app).get('/css/portal.css').expect(200);
+  assert.ok(res.text.includes('.svc-strip'), '.svc-strip grid present');
+  assert.ok(res.text.includes('.svc{') || res.text.includes('.svc '), '.svc tile styling present');
+});

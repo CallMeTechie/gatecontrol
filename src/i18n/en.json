@@ -2251,6 +2251,8 @@
   "portal.midea.turbo": "Turbo",
   "portal.midea.eco": "Eco",
   "portal.midea.outdoor": "Outdoor",
+  "portal.midea.warmer": "warmer",
+  "portal.midea.cooler": "cooler",
   "portal.smarthome.title": "Smart Home",
   "portal.smarthome.power": "Power",
   "portal.smarthome.brightness": "Brightness",
@@ -2262,5 +2264,7 @@
   "portal.smarthome.motion": "Motion",
   "portal.smarthome.no_motion": "No motion",
   "portal.smarthome.wet": "Wet",
-  "portal.smarthome.dry": "Dry"
+  "portal.smarthome.dry": "Dry",
+  "portal.smarthome.on": "On",
+  "portal.smarthome.off": "Off"
 }

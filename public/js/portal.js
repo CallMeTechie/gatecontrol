@@ -292,18 +292,11 @@
   }
 
   // ─── Services widget ────────────────────────────────────────────────────────
-  const TILE_COLORS = [
-    'linear-gradient(145deg,#ffb27a,#e8763f)',
-    'linear-gradient(145deg,#7ae0d2,#28b3a2)',
-    'linear-gradient(145deg,#9db8ff,#5b76d6)',
-    'linear-gradient(145deg,var(--teal),var(--teal-dim))',
-  ];
-  const TILE_ICON =
-    '<svg viewBox="0 0 24 24" fill="none">' +
-    '<rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/>' +
-    '<rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/>' +
-    '<path d="M7 7h.01M7 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-    '</svg>';
+  // Two-letter monogram derived from the service name for the compact launcher tile.
+  function serviceMonogram(name) {
+    const trimmed = String(name || '').trim();
+    return (trimmed.slice(0, 1).toUpperCase() + trimmed.slice(1, 2).toLowerCase()) || '?';
+  }
 
   function hydrateServices() {
     const card    = document.querySelector('.c-services');
@@ -330,13 +323,12 @@
           tilesEl.replaceChildren(emptyDiv);
           return;
         }
-        tilesEl.innerHTML = services.map(function (s, i) {
-          const color = TILE_COLORS[i % TILE_COLORS.length];
-          return '<a class="tile" href="https://' + escHtml(s.domain) +
+        tilesEl.innerHTML = services.map(function (s) {
+          return '<a class="svc" href="https://' + escHtml(s.domain) +
             '" target="_blank" rel="noopener noreferrer">' +
-            '<span class="ti" style="background:' + color + '">' + TILE_ICON + '</span>' +
-            '<span class="tn">' + escHtml(s.name) + '</span>' +
-            '<span class="td">' + escHtml(s.domain) + '</span>' +
+            '<span class="si">' + escHtml(serviceMonogram(s.name)) + '</span>' +
+            '<span class="st"><b>' + escHtml(s.name) + '</b><span>' + escHtml(s.domain) + '</span></span>' +
+            '<span class="live"></span>' +
             '</a>';
         }).join('');
       })
@@ -400,8 +392,13 @@
       // ── Stats common to all scopes ──────────────────────────────────────
       var pctEl = document.getElementById('piPct');
       if (pctEl) pctEl.textContent = String(d.blockedPct);
-      var bar = document.getElementById('piBar');
-      if (bar) bar.style.width = d.blockedPct + '%';
+      var arc = document.getElementById('piDonut');
+      if (arc) {
+        var r = 50, C = 2 * Math.PI * r;           // r MUSS zum <circle r="50"> im Donut-Markup passen
+        var frac = Math.max(0, Math.min(1, (Number(d.blockedPct) || 0) / 100));  // d.blockedPct = dieselbe Block-Rate, die auch #piPct setzt
+        arc.setAttribute('stroke-dasharray', C.toFixed(1));
+        arc.setAttribute('stroke-dashoffset', (C - frac * C).toFixed(1));
+      }
       var totalEl = document.getElementById('piTotal');
       if (totalEl) totalEl.textContent = String(d.total);
       var blockedEl = document.getElementById('piBlocked');
@@ -495,19 +492,12 @@
   var FAN_STEPS = [1, 20, 40, 60, 80, 100]; // Prozent-Stufen wie Midea-App (1–100, 100=Max); Auto=102 außerhalb der Skala
   function fanIndex(v) { return FAN_STEPS.reduce(function (b, val, i, a) { return Math.abs(val - v) < Math.abs(a[b] - v) ? i : b; }, 0); }
   // Static icon strings (no user data → safe to inline). Mirrors the admin /midea card.
-  var MIDEA_MODE_ICONS = { // same icon set as the admin /midea card
-    auto: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>',
-    cool: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
-    heat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4"/></svg>',
-    dry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>',
-    fan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></svg>',
-  };
   var MIDEA_AC_ICON = '<svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var MIDEA_POWER_ICON = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v9M6.5 6.5a8 8 0 1011 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   function mideaModeLabel(m) { return PT['mideaMode' + m.charAt(0).toUpperCase() + m.slice(1)] || m; }
 
-  // Redesign: card grid with conic-gradient temp-ring + stepper + icon mode-segment + status pill
-  // (modeled on the admin /midea card, in the portal design system). Data contract unchanged:
+  // Redesign: card grid with SVG target-temp ring (r=52, 16–30 °C arc) + stepper + text mode-segment + status pill
+  // (mirrors the portal-redesign mockup's .ac/.ac-ring/.stepper/.modeseg). Data contract unchanged:
   // .midea-card[data-id], .midea-status[data-power], button[data-act=power]/[data-step]/[data-mode], .midea-target[data-val].
   function renderMideaCard(d) {
     var st = d.state || {};
@@ -515,8 +505,6 @@
     var powered = !offline && !!st.power;
     var indoor = Number(st.indoorTemp);
     var hasIndoor = !offline && !isNaN(indoor);
-    var pct = hasIndoor ? Math.max(0, Math.min(100, ((indoor - 16) / 14) * 100)) : 0; // ring fill, 16–30 °C span
-    var ringC = (!offline && st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)';     // heat → coral, else teal
     var temp = hasIndoor ? Math.round(indoor) + '°' : '—';
     var tgt = Number(st.targetTemp);
     var hasTgt = !offline && !isNaN(tgt);
@@ -543,10 +531,19 @@
         '<button type="button" class="chip-tgl' + ((!offline && st.turbo) ? ' active' : '') + '" data-act="turbo"' + dis + '>' + escHtml(PT.mideaTurbo || 'Turbo') + '</button>' +
         '<button type="button" class="chip-tgl' + ((!offline && st.eco) ? ' active' : '') + '" data-act="eco"' + dis + '>' + escHtml(PT.mideaEco || 'Eco') + '</button>' +
       '</div></div>';
+    // Temperature ring (target-based, NOT a 0–100% gauge): r=52 circle, 16–30 °C mapped to the arc.
+    var r = 52, C = 2 * Math.PI * r;
+    var MIN = 16, MAX = 30;
+    var frac = hasTgt ? Math.max(0, Math.min(1, (tgt - MIN) / (MAX - MIN))) : 0;
+    var dash = C.toFixed(1);
+    var dashOff = (C - frac * C).toFixed(1);
+    var ringC = offline ? 'var(--faint)' : ((st.mode === 'heat') ? 'var(--coral)' : 'var(--teal)'); // heat → coral, else teal
+    var ringBig = hasTgt ? String(Math.round(tgt)) : '—';
     var modeBtns = MIDEA_MODES.map(function (m) {
-      var active = (!offline && st.mode === m) ? ' active' : '';
+      var active = !offline && st.mode === m;
+      var cls = 'modeseg-opt' + (active ? ' on' : '') + (active && m === 'heat' ? ' heat' : '');
       var lbl = escHtml(mideaModeLabel(m));
-      return '<button type="button" class="m midea-mode' + active + '" data-mode="' + m + '" title="' + lbl + '" aria-label="' + lbl + '"' + dis + '>' + MIDEA_MODE_ICONS[m] + '</button>';
+      return '<button type="button" class="' + cls + '" data-mode="' + m + '" aria-pressed="' + (active ? 'true' : 'false') + '"' + dis + '>' + lbl + '</button>';
     }).join('');
     var meta = d.transport ? '<div class="ac-meta">' + escHtml(d.transport === 'cloud' ? 'Cloud' : 'LAN') + '</div>' : '';
     var powerBtn = offline
@@ -560,14 +557,22 @@
         '<div class="ac-headtext"><div class="ac-name">' + escHtml(d.name) + '</div>' + meta + '</div>' +
         '<span class="ac-status midea-status ' + statusCls + '" data-power="' + (powered ? 'true' : 'false') + '"><span class="sdot"></span>' + escHtml(statusTxt) + '</span>' +
       '</div>' +
-      '<div class="ac-climate">' +
-        '<div class="ring-wrap"><div class="ring" style="--ring-val:' + pct + '%;--ring-c:' + ringC + '"><div class="ring-in"><span class="ring-v">' + escHtml(temp) + '</span><span class="ring-l">' + escHtml(PT.mideaCurrent || '') + '</span></div></div>' + outdoor + '</div>' +
-        '<div class="ac-set">' +
-          '<div><div class="set-lbl">' + escHtml(PT.mideaTarget || '') + '</div>' +
-            '<div class="stepper"><button type="button" data-step="-1"' + dis + '>−</button><span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span><button type="button" data-step="1"' + dis + '>+</button></div></div>' +
-          '<div><div class="set-lbl">' + escHtml(PT.mideaMode || '') + '</div><div class="modes">' + modeBtns + '</div></div>' + fan + extras +
+      '<div class="ac-climate ac-ring">' +
+        '<div class="ring"><svg viewBox="0 0 120 120" width="106" height="106">' +
+          '<circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="11"/>' +
+          '<circle cx="60" cy="60" r="52" fill="none" stroke="' + ringC + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + dash + '" stroke-dashoffset="' + dashOff + '"/>' +
+        '</svg><div class="rc"><div><div class="t">' + escHtml(ringBig) + '<sup>°</sup></div><div class="c">' + escHtml(PT.mideaTarget || '') + '</div></div></div></div>' +
+        '<div class="ac-side">' +
+          '<div class="ac-row"><span>' + escHtml(PT.mideaCurrent || '') + '</span><b>' + escHtml(temp) + '</b></div>' +
+          outdoor +
+          '<div class="ac-row"><span>' + escHtml(PT.mideaTarget || '') + '</span>' +
+            '<div class="stepper"><button type="button" data-step="-1" aria-label="' + escHtml(PT.mideaCooler || '') + '"' + dis + '>−</button>' +
+              '<span class="v midea-target" data-val="' + tgtVal + '">' + escHtml(tgtDisp) + '</span>' +
+              '<button type="button" data-step="1" aria-label="' + escHtml(PT.mideaWarmer || '') + '"' + dis + '>+</button></div></div>' +
+          '<div class="modeseg">' + modeBtns + '</div>' +
         '</div>' +
       '</div>' +
+      '<div class="ac-set">' + fan + extras + '</div>' +
       '<div class="ac-foot">' + powerBtn + '</div>' + login +
     '</div>';
   }
@@ -692,22 +697,55 @@
     var msg = document.getElementById('smarthomeMsg');
     if (msg) { msg.style.display = 'block'; msg.textContent = PT.smarthomeLoginToControl || 'Login required'; }
   }
+  // Static, hard-coded SVG per device kind — no user data interpolated, safe as innerHTML.
+  var SH_ICONS = {
+    light:  '<svg viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    group:  '<svg viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    plug:   '<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M15 12h.01" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+    switch: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 8l2-4h12l2 4M6 8v11a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    scene:  '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 8l2-4h12l2 4M6 8v11a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>'
+  };
+  function shStatusText(st, caps) {
+    var onLabel = st.on ? (PT.smarthomeOn || 'On') : (PT.smarthomeOff || 'Off');
+    if (st.on && caps.bri && st.bri != null) return onLabel + ' · ' + Math.round(Number(st.bri)) + ' %';
+    return onLabel;
+  }
   function renderSmarthomeCard(d) {
-    var el = document.createElement('div'); el.className = 'c-sh-card';
+    var el = document.createElement('div'); el.className = 'sh-tile';
     var st = d.state || {}, caps = d.capabilities || {};
-    var name = document.createElement('div'); name.className = 'c-sh-name'; name.textContent = d.name || ''; el.appendChild(name);
+    var ic = document.createElement('span'); ic.className = 'sh-ic'; ic.innerHTML = SH_ICONS[d.kind] || SH_ICONS.light; el.appendChild(ic);
+    var nm = document.createElement('div'); nm.className = 'nm';
+    var b = document.createElement('b'); b.textContent = d.name || ''; nm.appendChild(b);
+    var sub = document.createElement('span'); nm.appendChild(sub);
+    el.appendChild(nm);
     if (d.kind === 'scene') {
-      var b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = PT.smarthomeActivate || 'Activate';
-      b.addEventListener('click', function () { shControl(d.id, {}, el); });
-      el.appendChild(b); return el;
+      var btn = document.createElement('button'); btn.className = 'btn btn-sm'; btn.textContent = PT.smarthomeActivate || 'Activate';
+      btn.addEventListener('click', function () { shControl(d.id, {}, el); });
+      el.appendChild(btn);
+      return el;
     }
-    var sw = document.createElement('button'); sw.className = 'c-sh-sw' + (st.on ? ' on' : '');
-    sw.textContent = PT.smarthomePower || 'Power';
-    sw.addEventListener('click', function () { var on = !sw.classList.contains('on'); sw.classList.toggle('on', on); shControl(d.id, { on: on }, el); });
+    sub.textContent = shStatusText(st, caps);
+    el.classList.toggle('on', !!st.on);
+    // a11y: toggle pill exposes role="switch" + aria-checked reflecting on/off state (WAI-ARIA switch pattern)
+    var sw = document.createElement('span');
+    sw.className = 'toggle';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('tabindex', '0');
+    sw.setAttribute('aria-checked', st.on ? 'true' : 'false');
+    sw.setAttribute('aria-label', d.name || '');
     el.appendChild(sw);
+    var flip = function () {
+      var on = !el.classList.contains('on');
+      el.classList.toggle('on', on);
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      sub.textContent = shStatusText({ on: on, bri: st.bri }, caps);
+      shControl(d.id, { on: on }, el);
+    };
+    sw.addEventListener('click', flip);
+    sw.addEventListener('keydown', function (ev) { if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); flip(); } });
     if (caps.bri) {
       var range = document.createElement('input'); range.type = 'range'; range.min = 0; range.max = 100; range.value = (st.bri != null ? st.bri : 0); range.className = 'c-sh-bri';
-      range.addEventListener('change', function () { shControl(d.id, { bri: Number(range.value) }, el); });
+      range.addEventListener('change', function () { st.bri = Number(range.value); sub.textContent = shStatusText({ on: el.classList.contains('on'), bri: st.bri }, caps); shControl(d.id, { bri: Number(range.value) }, el); });
       el.appendChild(range);
     }
     return el;
@@ -727,10 +765,10 @@
     }
   }
   function renderSensorCard(s) {
-    var el = document.createElement('div'); el.className = 'c-sh-sensor-card';
+    var el = document.createElement('div'); el.className = 'sensor';
     var st = s.state || {};
-    var name = document.createElement('div'); name.className = 'c-sh-sensor-name'; name.textContent = s.name || ''; el.appendChild(name);
-    var val = document.createElement('div'); val.className = 'c-sh-sensor-val'; val.textContent = formatSensor(st.type, st.value); el.appendChild(val);
+    var val = document.createElement('div'); val.className = 'v'; val.textContent = formatSensor(st.type, st.value); el.appendChild(val);
+    var lbl = document.createElement('div'); lbl.className = 'l'; lbl.textContent = s.name || ''; el.appendChild(lbl);
     return el;
   }
   function hydrateSmarthome() {
@@ -746,9 +784,8 @@
       if (sensorBox) {
         sensorBox.innerHTML = '';
         var sensors = (j && j.data && j.data.sensors) || [];
+        sensorBox.setAttribute('aria-label', PT.smarthomeSensors || 'Sensors');
         if (sensors.length) {
-          var head = document.createElement('div'); head.className = 'c-sh-sensor-head'; head.textContent = PT.smarthomeSensors || 'Sensors';
-          sensorBox.appendChild(head);
           sensors.forEach(function (s) { sensorBox.appendChild(renderSensorCard(s)); });
           sensorBox.style.display = '';
         } else {

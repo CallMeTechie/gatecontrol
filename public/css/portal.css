@@ -74,6 +74,7 @@
   --surface:#111a24; --surface-2:#16212e; --surface-3:#1b2836;
   --chip:rgba(255,255,255,.03);
   --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.12);
+  --track:rgba(255,255,255,.08);
   --text:#e9eff6; --muted:#90a1b3; --faint:#5f6f7e;
   --teal:#34dcc6; --teal-dim:#1f9c8e; --coral:#ff9d6c; --coral-dim:#cf6f45;
   --amber:#f5c451; --green:#4ade80; --green-bg:rgba(74,222,128,.10); --green-bd:rgba(74,222,128,.25);
@@ -86,6 +87,7 @@
   --surface:#fffdf8; --surface-2:#f8f3ea; --surface-3:#f0e9db;
   --chip:rgba(60,45,25,.04);
   --line:rgba(60,45,25,.10); --line-2:rgba(60,45,25,.17);
+  --track:rgba(60,45,25,.10);
   --text:#2c2720; --muted:#6e6456; --faint:#766b59;
   --teal:#0e9b8a; --teal-dim:#0b7d70; --coral:#d9602f; --coral-dim:#b14d24;
   --amber:#b5811f; --green:#15924f; --green-bg:rgba(21,146,79,.10); --green-bd:rgba(21,146,79,.28);
@@ -113,7 +115,7 @@ body::before{
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:var(--grain);
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.wrap{position:relative; z-index:1; max-width:1120px; margin:0 auto; padding:22px 24px 56px}
+.wrap{position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:22px 24px 56px}
 
 /* ============================================================
    TOP BAR
@@ -164,16 +166,32 @@ body::before{
 .card::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,var(--line-2),transparent)}
 @keyframes rise{to{opacity:1;transform:none}}
 
-/* 3-widget layout (Pi-hole removed) */
+/* control-first order: Klima → SmartHome → Pi-hole → Traffic → Dienste */
 .c-device{grid-column:span 4; animation-delay:.04s}
-.c-traffic{grid-column:span 8; animation-delay:.12s}
-.c-services{grid-column:span 12; animation-delay:.20s}
+.c-midea{grid-column:span 7; animation-delay:.04s}
+.c-smarthome{grid-column:span 5; animation-delay:.10s}
+.c-pihole{grid-column:span 5; animation-delay:.16s}
+.c-traffic{grid-column:span 7; animation-delay:.22s}
+.c-services{grid-column:span 12; animation-delay:.28s}
 
 .card h2{margin:0; font-family:var(--font-display); font-weight:700; letter-spacing:-.01em; font-size:15px;
   display:flex; align-items:center; gap:9px; color:var(--text)}
 .card h2 .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--surface-3);color:var(--teal)}
 .card h2 .ic svg{width:15px;height:15px}
 .card .sub{color:var(--faint); font-size:12px; margin-left:auto; font-weight:500}
+
+/* ============================================================
+   STATUS STRIP (.strip.c-device)
+   ============================================================ */
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:13px 18px;margin:18px 0;
+  border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,var(--surface),var(--surface-2));
+  box-shadow:var(--shadow)}
+.strip .s{display:flex;align-items:center;gap:9px;font-size:13px}
+.strip .s .lbl{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.strip .s .ip{font-family:var(--font-mono);color:var(--muted);font-size:12.5px}
+
+/* global focus-visible ring, ported from mockup */
+:where(button,a,[role="switch"],.seg button):focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
 /* ============================================================
    DEVICE STATUS CARD (.c-device)
@@ -209,19 +227,19 @@ body::before{
 .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
 
 /* ============================================================
-   SERVICES CARD (.c-services — now full-width span 12)
-   Tiles use auto-fill / minmax(200px) so they don't render as 2 giant tiles
-   at full 12-column width. Still collapses to 2-up on narrow screens.
+   SERVICES CARD (.c-services — full-width span 12, compact launcher strip)
    ============================================================ */
-.tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:11px; margin-top:18px}
-.tile{display:flex; flex-direction:column; gap:10px; padding:14px; border-radius:var(--r-sm); cursor:pointer;
-  background:var(--surface-3); border:1px solid var(--line); text-decoration:none; color:var(--text); transition:.16s}
-.tile:hover{transform:translateY(-2px); border-color:var(--line-2); background:var(--surface-2)}
-.tile .ti{width:34px;height:34px;border-radius:10px;display:grid;place-items:center; color:#fff}
-.tile .ti svg{width:18px;height:18px}
-.tile .tn{font-weight:600; font-size:13.5px}
-.tile .td{font-size:11.5px; color:var(--faint); font-family:var(--font-mono)}
-.tile.add{align-items:center; justify-content:center; border-style:dashed; color:var(--faint); background:transparent}
+.svc-strip{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:11px; margin-top:18px}
+.svc{display:flex; align-items:center; gap:11px; padding:11px 13px; border:1px solid var(--line); border-radius:12px;
+  background:var(--chip); text-decoration:none; color:inherit; transition:.15s; cursor:pointer}
+.svc:hover{border-color:var(--teal); transform:translateY(-2px)}
+.svc .si{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--surface-3); color:var(--teal); font-family:var(--font-mono); font-weight:700; font-size:13px}
+.svc .st{min-width:0}
+.svc .st b{display:block; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.svc .st span{color:var(--faint); font-size:11px}
+.svc .live{width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:auto;flex:0 0 auto}
+.svc:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 
 /* ============================================================
    FOOTER
@@ -232,11 +250,19 @@ body::before{
 /* ============================================================
    RESPONSIVE
    ============================================================ */
-@media (max-width:880px){
+@media (max-width:1040px){
   .grid > .card{grid-column:span 12 !important}
   .devpill .ip{display:none}
   /* Keep service tiles 2-up on narrow screens (thumb-friendly) */
-  .tiles{grid-template-columns:1fr 1fr}
+  .svc-strip{grid-template-columns:1fr 1fr}
+  .sh-sensors{grid-template-columns:repeat(4,1fr)}
+}
+
+@media (max-width:620px){
+  .wrap{padding:16px 16px 46px}
+  .c-midea .midea-list{grid-template-columns:1fr}
+  .sh-tiles{grid-template-columns:1fr}
+  .sh-sensors{grid-template-columns:1fr 1fr}
 }
 
 /* ============================================================
@@ -269,19 +295,18 @@ body::before{
 .portal-empty{padding:24px 0;color:var(--faint);font-size:13px;text-align:center;grid-column:1/-1}
 
 /* Reserve height for services card while tiles load */
-.c-services.loading{min-height:200px}
+.c-services.loading{min-height:110px}
 
 /* ============================================================
    PI-HOLE WIDGET
    ============================================================ */
-.c-pihole .pihole-body{display:flex;flex-direction:column;gap:10px}
-.pihole-rate{display:flex;align-items:baseline;gap:3px}
-.pihole-rate b{font-size:2.2rem;font-weight:700;color:var(--teal, #3ec8b0);line-height:1}
-.pihole-rate span{font-size:1.1rem;color:var(--muted)}
-.pihole-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
-.pihole-bar i{display:block;height:100%;border-radius:3px;background:var(--teal, #3ec8b0);
-  transition:width .4s ease;width:0}
-.pihole-nums{display:flex;gap:12px;flex-wrap:wrap}
+.c-pihole .pihole-body{display:flex;align-items:center;gap:20px}
+.donut{position:relative;width:132px;height:132px;flex:0 0 auto}
+.donut svg{transform:rotate(-90deg)}
+.donut .dc{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.donut .dc b{font-size:1.9rem;font-weight:700;color:var(--coral);line-height:1;font-family:var(--font-mono, inherit)}
+.donut .dc span{font-size:1rem;color:var(--muted)}
+.pihole-nums{display:flex;flex-direction:column;gap:12px;flex:1}
 .pihole-nums>div{display:flex;flex-direction:column;gap:2px;min-width:60px}
 .pihole-nums b{font-size:1.1rem;font-weight:600;color:var(--text)}
 .pihole-nums span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
@@ -321,16 +346,21 @@ body::before{
 .midea-card .ac-status.off{color:var(--muted);background:var(--chip);border:1px solid var(--line)}
 .midea-card .ac-status.off-line{color:var(--coral);background:var(--chip);border:1px solid var(--line-2)}
 
-/* Klima-Block: Ring-Gauge + Stell-Spalte */
-.midea-card .ac-climate{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
+/* Klima-Block: Temperatur-Ring (SVG, Soll-basiert) + Stell-Spalte */
+.midea-card .ac-climate.ac-ring{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px 0;
   border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.midea-card .ring{width:92px;height:92px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
-  background:conic-gradient(var(--ring-c,var(--teal)) var(--ring-val,0%), var(--line-2) 0)} /* full-circle gauge; fill color per mode (heat→coral) */
-.midea-card .ring-in{width:72px;height:72px;border-radius:50%;background:var(--surface);display:flex;
-  flex-direction:column;align-items:center;justify-content:center;gap:1px}
-.midea-card .ring-v{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}
-.midea-card .ring-l{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700}
-.midea-card .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.midea-card .ring{position:relative;width:106px;height:106px;flex:0 0 auto}
+.midea-card .ring svg{transform:rotate(-90deg)}                       /* start the arc at 12 o'clock */
+.midea-card .ring svg circle{transition:stroke-dashoffset .3s, stroke .15s} /* fill color per mode (heat→coral) */
+.midea-card .ring .rc{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.midea-card .ring .rc .t{font-family:var(--font-display);font-weight:800;font-size:25px;line-height:1;color:var(--text)}
+.midea-card .ring .rc .t sup{font-size:12px;position:relative;top:-.6em}
+.midea-card .ring .rc .c{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
+  font-weight:700;margin-top:3px}
+.midea-card .ac-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.midea-card .ac-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.midea-card .ac-row b{color:var(--text);font-weight:600;font-family:var(--font-mono)}
+.midea-card .ac-set{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px;margin-top:13px}
 .midea-card .set-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
   font-weight:700;margin-bottom:7px}
 
@@ -345,14 +375,13 @@ body::before{
 .midea-card .stepper.pending .v{color:var(--amber)}     /* command in flight (optimistic) */
 .midea-card .stepper.confirmed .v{color:var(--green)}   /* device confirmed the setpoint */
 
-/* Modus-Segment: an die Admin-/midea-Karte angeglichen (.toggle-group/.mode-group):
-   gepolsterter Inset-Track mit Lücken statt Trennlinien, abgesetzte aktive Pille. */
-.midea-card .modes{display:flex;width:100%;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg-2)}
-.midea-card .modes .m{flex:1 1 0;min-width:0;padding:7px 0;display:flex;align-items:center;justify-content:center;
-  border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;transition:.12s}
-.midea-card .modes .m svg{width:16px;height:16px}
-.midea-card .modes .m:hover:not([disabled]):not(.active){color:var(--text)}
-.midea-card .modes .m.active{background:var(--surface-3);color:var(--text);box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
+/* Modus-Segment: Text-Chips wie im Redesign-Mockup (.modeseg), aktiv = Teal-Tönung, Heizen = Coral. */
+.midea-card .modeseg{display:flex;gap:5px;flex-wrap:wrap}
+.midea-card .modeseg-opt{font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);
+  color:var(--muted);background:var(--chip);font-family:var(--font-body);font-weight:600;cursor:pointer;transition:.12s}
+.midea-card .modeseg-opt:hover:not([disabled]):not(.on){color:var(--text)}
+.midea-card .modeseg-opt.on{background:rgba(52,220,198,.14);color:var(--teal);border-color:transparent}
+.midea-card .modeseg-opt.on.heat{background:rgba(255,157,108,.16);color:var(--coral)}
 
 /* Power-Aktion */
 .midea-card .ac-foot{display:flex;gap:9px;align-items:center}
@@ -366,8 +395,6 @@ body::before{
 /* zweistufig: ungeloggt/offline → Steuerelemente gesperrt */
 .midea-card [disabled]{opacity:.4;cursor:not-allowed;pointer-events:none}
 
-/* Ring + Außentemp gestapelt */
-.midea-card .ring-wrap{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 auto}
 .midea-card .ac-outdoor{font-size:11px;color:var(--muted);font-weight:600;font-family:var(--font-mono)}
 
 /* Toggle-Chips (Turbo/Eco/Auto) */
@@ -398,18 +425,26 @@ body::before{
 /* ============================================================
    SMART HOME WIDGET
    ============================================================ */
-.c-sh-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
-.c-sh-card{background:var(--surface-2,#16212e);border:1px solid var(--line,rgba(255,255,255,.08));border-radius:12px;padding:12px}
-.c-sh-name{font-weight:600;font-size:14px;margin-bottom:10px}
-.c-sh-sw{border:1px solid var(--line-2,rgba(255,255,255,.14));border-radius:8px;padding:6px 12px;cursor:pointer;background:var(--surface-3,#1b2836);color:inherit}
-.c-sh-sw.on{background:linear-gradient(145deg,var(--green,#4ade80),#15924f);border-color:transparent;color:#fff}
-.c-sh-bri{width:100%;margin-top:10px}
+.sh-tiles{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.sh-tile{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--chip)}
+.sh-ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--surface-3,rgba(255,255,255,.06));color:var(--muted)}
+.sh-ic svg{width:19px;height:19px}
+.sh-tile.on .sh-ic{background:rgba(245,196,81,.16);color:var(--amber)}
+.sh-tile .nm{flex:1;min-width:0}
+.sh-tile .nm b{display:block;font-size:13px;font-weight:600}
+.sh-tile .nm span{color:var(--faint);font-size:11.5px}
+.toggle{width:42px;height:24px;border-radius:999px;background:var(--track);position:relative;flex:0 0 auto;cursor:pointer;transition:.18s;border:0;padding:0}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.18s}
+.sh-tile.on .toggle{background:var(--teal)}
+.sh-tile.on .toggle::after{left:21px}
+.sh-tile .c-sh-bri{flex:0 0 100%;margin:2px 0 0}
+.sh-tile .btn-sm{flex:0 0 auto}
+.sh-sensors{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+.sensor{padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--chip);text-align:center}
+.sensor .v{font-family:var(--font-mono);font-size:19px;font-weight:700}
+.sensor .l{color:var(--faint);font-size:11px;margin-top:3px}
 .c-sh-msg{margin-top:10px;font-size:13px;color:var(--muted,#90a1b3)}
-.c-sh-sensors{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
-.c-sh-sensor-head{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--muted,#90a1b3);margin-top:6px}
-.c-sh-sensor-card{background:var(--surface-2,#16212e);border:1px solid var(--line,rgba(255,255,255,.08));border-radius:10px;padding:10px}
-.c-sh-sensor-name{font-size:13px;margin-bottom:4px}
-.c-sh-sensor-val{font-size:16px;font-weight:600}
 
 /* ============================================================
    REDUCED MOTION
