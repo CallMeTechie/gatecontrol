@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Split-Tunnel-Einstellungen: „Private Netze"-Checkbox wird nur noch gehäkelt, wenn beide CIDRs (172/192) vorhanden sind — eine teilweise vorhandene private Route bleibt als Custom-Eintrag erhalten und wird beim Speichern nicht mehr still verdoppelt
+
+---
+
 ## [1.117.2] — 2026-07-04
 
 ### Änderungen

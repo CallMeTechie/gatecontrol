@@ -1353,9 +1353,19 @@
       lockedCb.checked = !!data.locked;
       var nets = data.networks || [];
       var pCidrs = PRIVATE_CIDRS.map(function (p) { return p.cidr; });
-      privateNets.checked = nets.some(function (n) { return pCidrs.indexOf(n.cidr) >= 0; });
-      linkLocal.checked = nets.some(function (n) { return n.cidr === LINK_LOCAL.cidr; });
-      customNets = nets.filter(function (n) { return pCidrs.indexOf(n.cidr) < 0 && n.cidr !== LINK_LOCAL.cidr; });
+      // The private-nets preset is an all-or-nothing bundle: only tick the box
+      // when BOTH CIDRs are present, otherwise stSave would silently re-add the
+      // missing one. A partially-present private CIDR is kept as a custom entry
+      // so it round-trips faithfully.
+      var hasAllPrivate = pCidrs.every(function (c) { return nets.some(function (n) { return n.cidr === c; }); });
+      var hasLinkLocal = nets.some(function (n) { return n.cidr === LINK_LOCAL.cidr; });
+      privateNets.checked = hasAllPrivate;
+      linkLocal.checked = hasLinkLocal;
+      customNets = nets.filter(function (n) {
+        if (hasAllPrivate && pCidrs.indexOf(n.cidr) >= 0) return false; // consumed by the private bundle
+        if (hasLinkLocal && n.cidr === LINK_LOCAL.cidr) return false;   // consumed by the link-local box
+        return true;
+      });
       renderCustom();
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('split-tunnel');
     } catch {}
