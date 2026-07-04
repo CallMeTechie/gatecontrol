@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.2] — 2026-07-04
+
+### Änderungen
+- verify preset saves, persists, and reaches clients
+
+---
+
 ## [1.117.1] — 2026-07-04
 
 ### Fixes
