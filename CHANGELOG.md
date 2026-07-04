@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.1] — 2026-07-04
+
+### Fixes
+- hide empty license feature rows for unknown non-boolean keys
+
+---
+
 ## [1.117.0] — 2026-07-04
 
 ### Features
