@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.4] — 2026-07-14
+
+### Änderungen
+- drop dead table CSS, whitelist collapse/bundle-action i18n keys, fix stale comment
+
+---
+
 ## [1.117.3] — 2026-07-04
 
 ### Fixes
