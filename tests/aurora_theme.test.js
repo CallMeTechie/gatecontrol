@@ -419,9 +419,9 @@ describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
     assert.match(res.text, /class="search-box"/, '.search-box present');
     // Toggle-group type filter (Aurora replaces filter-chips)
     assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
-    // Routes list card (full-width, no card-head)
-    assert.match(res.text, /class="card span12"/, '.card.span12 present');
-    // data-table is emitted by JS at runtime; the card wrapper (span12) is in template
+    // Karten-Grid-Redesign: KPI-Container + Exposure-Toggle statt Card-Hülle
+    assert.match(res.text, /id="routes-kpis"/, '#routes-kpis present');
+    assert.match(res.text, /id="aurora-exposure-toggle"/, '#aurora-exposure-toggle present');
   });
 
   it('renders all phase0 static contract IDs on /routes under aurora', async () => {
