@@ -104,6 +104,7 @@
   --text:#e9eff6; --muted:#90a1b3; --faint:#5f6f7e;
   --teal:#34dcc6; --teal-dim:#1f9c8e; --teal-soft:rgba(52,220,198,.12);
   --coral:#ff9d6c; --coral-dim:#cf6f45;
+  --coral-bg:rgba(255,157,108,.10); --coral-bd:rgba(255,157,108,.30);
   --amber:#f5c451; --amber-bg:rgba(245,196,81,.10); --amber-bd:rgba(245,196,81,.30);
   --green:#4ade80; --green-bg:rgba(74,222,128,.10); --green-bd:rgba(74,222,128,.25);
   --red:#ff6b6b;   --red-bg:rgba(255,107,107,.10);  --red-bd:rgba(255,107,107,.28);
@@ -122,6 +123,7 @@
   --text:#2c2720; --muted:#6e6456; --faint:#766b59;
   --teal:#0e9b8a; --teal-dim:#0b7d70; --teal-soft:rgba(14,155,138,.12);
   --coral:#d9602f; --coral-dim:#b14d24;
+  --coral-bg:rgba(217,96,47,.10); --coral-bd:rgba(217,96,47,.30);
   --amber:#b5811f; --amber-bg:rgba(181,129,31,.10); --amber-bd:rgba(181,129,31,.30);
   --green:#15924f; --green-bg:rgba(21,146,79,.10); --green-bd:rgba(21,146,79,.28);
   --red:#d23b3b;   --red-bg:rgba(210,59,59,.08);   --red-bd:rgba(210,59,59,.28);
@@ -842,3 +844,52 @@ input[type=date]:focus, select:focus {
   .settings-tabs > .tab{display:none}
   .settings-tab-toggle{display:flex}
 }
+
+/* --- D2 · ROUTES CARD GRID — NEW (aurora routes redesign) --- */
+.tag-coral{background:var(--coral-bg); color:var(--coral); border:1px solid var(--coral-bd)}
+
+.aurora-routes-kpis{display:flex; gap:10px; flex-wrap:wrap; margin:0 0 18px}
+.aurora-routes-kpi{display:flex; align-items:baseline; gap:7px; background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius-sm); padding:8px 14px}
+.aurora-routes-kpi b{font-family:var(--font-display); font-weight:800; font-size:18px; letter-spacing:-.02em}
+.aurora-routes-kpi span{font-size:11.5px; color:var(--muted)}
+.aurora-routes-kpi.warn b{color:var(--coral)}
+.aurora-routes-kpi.dim b{color:var(--faint)}
+
+.aurora-routes-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(460px,1fr));
+  gap:16px; align-items:start}
+@media (max-width:540px){ .aurora-routes-grid{grid-template-columns:1fr} }
+
+.aurora-routes-card{padding:0; overflow:hidden}
+.aurora-routes-head{display:flex; align-items:center; gap:10px; padding:12px 16px;
+  cursor:pointer; user-select:none; border-bottom:1px solid var(--line); background:var(--surface-2)}
+.aurora-routes-card.collapsed .aurora-routes-head{border-bottom:0}
+.aurora-routes-card.collapsed .aurora-routes-body{display:none}
+.aurora-routes-card.collapsed .aurora-group-chevron{transform:rotate(-90deg)}
+.aurora-routes-name{font-family:var(--font-display); font-weight:700; font-size:15px;
+  letter-spacing:-.01em; white-space:nowrap; flex:none}
+.aurora-routes-meta{font-family:var(--font-mono); font-size:11px; color:var(--faint);
+  white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis}
+.aurora-routes-head .aurora-group-count{margin-left:auto}
+.aurora-routes-head .aurora-group-chevron{flex:none; transition:transform .15s}
+
+.aurora-routes-row{display:grid; grid-template-columns:minmax(0,1fr) auto auto auto;
+  align-items:center; gap:12px; padding:11px 16px}
+.aurora-routes-grid.batch-mode .aurora-routes-row{grid-template-columns:auto minmax(0,1fr) auto auto auto}
+.aurora-routes-row + .aurora-routes-row{border-top:1px solid var(--line)}
+.aurora-routes-row.off{opacity:.55}
+.aurora-routes-id{min-width:0}
+.aurora-routes-title{font-weight:600; font-size:13.5px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.aurora-routes-title a{color:inherit; text-decoration:none}
+.aurora-routes-title a:hover{color:var(--teal)}
+.aurora-routes-sub{font-family:var(--font-mono); font-size:11.5px; color:var(--faint);
+  margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.aurora-routes-tags{display:flex; gap:6px; justify-content:flex-end}
+.aurora-routes-tags .tag svg{width:10px; height:10px; flex:none}
+.aurora-routes-row .row-actions{opacity:0; transition:opacity .12s}
+.aurora-routes-row:hover .row-actions{opacity:1}
+.aurora-routes-row:focus-within .row-actions{opacity:1}
+@media (hover:none){ .aurora-routes-row .row-actions{opacity:1} }
+.aurora-routes-row .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer}
+.aurora-routes-grid.batch-mode .aurora-routes-row{cursor:pointer}
