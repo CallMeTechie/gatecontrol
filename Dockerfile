@@ -41,7 +41,7 @@ RUN apk upgrade --no-cache && \
     iptables ip6tables \
     supervisor curl procps openssl \
     dnsmasq && \
-    npm install -g npm@latest
+    npm install -g npm@11
 
 COPY --from=caddy-builder /usr/bin/caddy /usr/local/bin/caddy
 
