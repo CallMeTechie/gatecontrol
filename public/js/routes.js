@@ -29,6 +29,7 @@
     typeFilter: null,
     statusFilter: null,
     targetFilter: null,
+    exposureFilter: null,
   };
   // Aurora always uses the table view (no view-toggle in Aurora toolbar).
   if (isAurora()) viewState.view = 'table';
@@ -445,75 +446,83 @@
   // These functions are ADDITIVE: renderTableRow/renderTable guard into them
   // when isAurora() is true. Default/pro paths are never modified.
 
+  // Icons der Sichtbarkeits-Tags (Mockup: Globus = extern, Schloss = intern).
+  var AURORA_GLOBE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg>';
+  var AURORA_LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>';
+
+  // Eine Routen-Zeile (identisch in Gruppen- und Einzel-Karten).
+  // opts.omitHost: Gruppen-Karte zeigt den gemeinsamen Host im Kopf.
   function auroraRenderTableRow(r, opts) {
     opts = opts || {};
-    const isGw = r.target_kind === 'gateway';
-    const targetTxt = isGw
-      ? ((r.target_lan_host || '?') + ':' + (r.target_lan_port || r.target_port || '?') + (r.target_peer_name ? ' · ' + r.target_peer_name : ''))
-      : (((r.peer_ip ? r.peer_ip.split('/')[0] : r.target_ip) || '') + ':' + r.target_port + (r.peer_name ? ' · ' + r.peer_name : ''));
+    var t = GC.t;
+    var title = view.routeTitle(r);
+    // Domain-Links nur bei HTTP-Routen (L4-Domains als Text — Spec) und nie
+    // im Batch-Modus (Zeilen-Klick = Selektion; ein <a> würde beides feuern).
+    var titleHtml = (r.domain && r.route_type !== 'l4' && !batchMode)
+      ? '<a href="https://' + escapeHtml(r.domain) + '" target="_blank" rel="noopener">' + escapeHtml(title) + '</a>'
+      : escapeHtml(title);
+    var sub = view.routeSubtitle(r, { omitHost: !!opts.omitHost });
 
-    // Type tag: HTTP → tag-blue, L4 → tag-amber
-    var typeTag;
-    if (r.route_type === 'l4') {
-      typeTag = '<span class="tag tag-amber">' + escapeHtml(r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + escapeHtml(String(r.l4_listen_port || '')) + '</span>';
-    } else {
-      typeTag = '<span class="tag tag-blue">' + escapeHtml(GC.t['routes.type_http'] || 'HTTP') + '</span>';
+    var typeTag = r.route_type === 'l4'
+      ? '<span class="tag tag-amber">' + escapeHtml((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || '')) + '</span>'
+      : '<span class="tag tag-blue">' + escapeHtml(t['routes.type_http'] || 'HTTP') + '</span>';
+    var expTag = r.external_enabled
+      ? '<span class="tag tag-coral">' + AURORA_GLOBE + escapeHtml(t['routes.tag_external'] || 'EXTERNAL') + '</span>'
+      : '<span class="tag tag-grey">' + AURORA_LOCK + escapeHtml(t['routes.tag_internal'] || 'INTERNAL') + '</span>';
+    // Auth-Tag nur wenn Auth aktiv (kein "None"-Rauschen — Spec).
+    var authTag = '';
+    if (r.route_type !== 'l4' && r.route_auth_enabled && !r.basic_auth_enabled) {
+      authTag = '<span class="tag tag-green">' + escapeHtml(t['route_auth.auth_route'] || 'Route Auth') + '</span>';
+    } else if (r.route_type !== 'l4' && r.basic_auth_enabled) {
+      authTag = '<span class="tag tag-green">' + escapeHtml(t['route_auth.auth_basic'] || 'Basic Auth') + '</span>';
     }
 
-    // Auth tag: route-auth → tag-green, basic → tag-green, none / L4 → tag-grey
-    var authTag;
-    if (r.route_type === 'l4') {
-      authTag = '<span class="tag tag-grey">—</span>';
-    } else if (r.route_auth_enabled && !r.basic_auth_enabled) {
-      authTag = '<span class="tag tag-green">' + escapeHtml(GC.t['route_auth.auth_route'] || 'Route Auth') + '</span>';
-    } else if (r.basic_auth_enabled) {
-      authTag = '<span class="tag tag-green">' + escapeHtml(GC.t['route_auth.auth_basic'] || 'Basic Auth') + '</span>';
-    } else {
-      authTag = '<span class="tag tag-grey">' + escapeHtml(GC.t['route_auth.auth_none'] || 'None') + '</span>';
-    }
-
-    // Status: CSS toggle widget (clickable via data-action delegation)
     var status = view.routeStatus(r);
-    var toggleEl = '<div class="toggle' + (status !== 'disabled' ? ' on' : '') + '" data-action="toggle" data-id="' + r.id + '" style="cursor:pointer" title="Toggle"></div>';
-
-    // Domain display. Grouped members are visually nested via the
-    // .aurora-route-sub class (indent + left rail in aurora.css) so they read
-    // as belonging to the group header above, distinct from standalone routes.
-    var domainTxt = (r.domain ? escapeHtml(r.domain) : '—');
-
-    var delDomain = r.domain ? escapeHtml(r.domain) : ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || ''));
-
-    // Batch-select checkbox (first column) — only while batch mode is active.
+    var toggleEl = '<div class="toggle' + (status !== 'disabled' ? ' on' : '')
+      + '" data-action="toggle" data-id="' + r.id + '" role="switch" aria-checked="'
+      + (status !== 'disabled' ? 'true' : 'false') + '" style="cursor:pointer" title="Toggle"></div>';
+    var delDomain = escapeHtml(r.domain
+      || ((r.l4_protocol === 'udp' ? 'UDP' : 'TCP') + ' :' + (r.l4_listen_port || '')));
     var batchCell = batchMode
-      ? '<td class="td-batch"><input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"' + (batchSelected.has(String(r.id)) ? ' checked' : '') + '></td>'
+      ? '<input type="checkbox" class="batch-checkbox" data-batch-id="' + r.id + '"'
+        + (batchSelected.has(String(r.id)) ? ' checked' : '') + '>'
       : '';
-    var rowCls = opts.grouped ? ' class="aurora-route-sub"' : '';
-    return '<tr data-route-id="' + r.id + '"' + rowCls + '>'
+
+    return '<div class="aurora-routes-row' + (status === 'disabled' ? ' off' : '') + '" data-route-id="' + r.id + '">'
       + batchCell
-      + '<td class="cell-name">' + domainTxt + '</td>'
-      + '<td>' + typeTag + '</td>'
-      + '<td class="mono">' + escapeHtml(targetTxt) + '</td>'
-      + '<td>' + authTag + '</td>'
-      + '<td>' + toggleEl + '</td>'
-      + '<td><div class="row-actions">'
+      + '<div class="aurora-routes-id">'
+      + '<div class="aurora-routes-title">' + titleHtml + '</div>'
+      + '<div class="aurora-routes-sub">' + escapeHtml(sub) + '</div>'
+      + '</div>'
+      + '<div class="aurora-routes-tags">' + typeTag + expTag + authTag + '</div>'
+      + toggleEl
+      + '<div class="row-actions">'
       + '<button class="icon-action" title="Edit" data-action="edit" data-id="' + r.id + '">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z"/></svg>'
       + '</button>'
       + '<button class="icon-action danger" title="Delete" data-action="delete" data-id="' + r.id + '" data-domain="' + delDomain + '">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'
       + '</button>'
-      + '</div></td></tr>';
+      + '</div></div>';
   }
 
   // Chevron for collapsible Aurora group headers (rotates via CSS .collapsed).
   var AURORA_GROUP_CHEVRON = '<svg class="aurora-group-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
-  // Aurora group-header row: shown for every multi-route group (service
-  // bundle or shared domain) so related routes read as a unit, not just a
-  // hinted-at indent. Collapsible — clicking the row toggles its members via
-  // the shared [data-gtoggle] handler + collapsedGroups set (same persisted
-  // localStorage state the default/pro card view uses). Mirrors the default
-  // theme's .routes-table-group row.
+  // Gemeinsamer Ziel-Host einer Gruppe — nur wenn ALLE Mitglieder denselben
+  // haben (sonst null; Kopf zeigt dann keinen Host, Zeilen den vollen).
+  function auroraGroupHost(g) {
+    var first = view.routeTargetHost(g.routes[0]);
+    if (!first || first === '?') return null;
+    for (var i = 1; i < g.routes.length; i++) {
+      if (view.routeTargetHost(g.routes[i]) !== first) return null;
+    }
+    return first;
+  }
+
+  // Gruppen-Karte: Kopf (Status-Punkt, Label, optional Host, Zähler,
+  // Chevron) + Zeilen. Einklappen via .collapsed-Klasse (CSS versteckt den
+  // Body); Toggle läuft über den bestehenden [data-gtoggle]-Handler.
   function auroraRenderGroupHead(g) {
     var t = GC.t;
     var collapsed = collapsedGroups.has(g.key);
@@ -523,45 +532,22 @@
     var bundleTag = g.isBundle
       ? '<span class="tag tag-blue aurora-group-badge">' + escapeHtml(t['service_bundle.badge'] || 'SERVICE') + '</span>'
       : '';
+    var host = auroraGroupHost(g);
     var countTxt = (t['routes.group_count'] || '{{count}} routes').replace('{{count}}', g.routes.length);
-
-    // Bundle/group container actions — the card-view (default theme) renders
-    // these in renderGroupCard; Aurora is table-only with no card view, so
-    // mirror them into the group-header row. Same data-gaction attributes →
-    // reuse the existing delegated handleGroupAction (gaction is matched before
-    // gtoggle, so a button click never collapses the group). Aurora .icon-action
-    // styling to match the per-route action buttons in the same table.
-    var routeIds = g.routes.map(function (r) { return r.id; }).join(',');
-    var actions = '';
-    if (g.isBundle) {
-      actions =
-        '<button type="button" class="icon-action" data-gaction="bundle-add-route" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.add_route'] || 'Add route') + '">'
-        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>'
-        + '<button type="button" class="icon-action" data-gaction="bundle-toggle" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(t['service_bundle.toggle_all'] || 'Enable/disable all routes') + '">'
-        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>'
-        + '<button type="button" class="icon-action" data-gaction="bundle-ungroup" data-bundle-id="' + g.bundleId + '" title="' + escapeHtml(t['service_bundle.ungroup'] || 'Ungroup') + '">'
-        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>'
-        + '<button type="button" class="icon-action danger" data-gaction="bundle-delete" data-bundle-id="' + g.bundleId + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.delete'] || 'Delete service') + '">'
-        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>';
-    } else if (g.key !== view.NO_DOMAIN_KEY) {
-      actions =
-        '<button type="button" class="icon-action" data-gaction="group-domain" data-route-ids="' + routeIds + '" data-name="' + label + '" title="' + escapeHtml(t['service_bundle.group_selected'] || 'Group as service') + '">'
-        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></button>';
-    }
-    var actionsCell = actions
-      ? '<span class="row-actions aurora-group-actions">' + actions + '</span>'
-      : '';
-
-    return '<tr class="aurora-group-row' + (collapsed ? ' collapsed' : '') + '" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '"><td colspan="' + (batchMode ? 7 : 6) + '">'
-      + '<div class="aurora-group-inner">'
-      + AURORA_GROUP_CHEVRON
+    var rows = g.routes.map(function (r) {
+      return auroraRenderTableRow(r, { omitHost: !!host });
+    }).join('');
+    return '<div class="card aurora-routes-card' + (collapsed ? ' collapsed' : '') + '">'
+      + '<header class="aurora-routes-head" data-gtoggle="' + escapeHtml(g.key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '">'
       + '<span class="group-status-dot ' + statusDotClass(g.status) + '"></span>'
-      + '<span class="aurora-group-label">' + label + '</span>'
+      + '<span class="aurora-routes-name">' + label + '</span>'
       + bundleTag
+      + (host ? '<span class="aurora-routes-meta">' + escapeHtml(host) + '</span>' : '')
       + '<span class="aurora-group-count">' + escapeHtml(countTxt) + '</span>'
-      + actionsCell
-      + '</div>'
-      + '</td></tr>';
+      + AURORA_GROUP_CHEVRON
+      + '</header>'
+      + '<div class="aurora-routes-body">' + rows + '</div>'
+      + '</div>';
   }
 
   // Keys of the multi-route groups in the last Aurora render — drives the
@@ -570,37 +556,27 @@
 
   function auroraRenderTable(groups) {
     var t = GC.t;
-    var rows = '';
+    var cards = '';
     auroraGroupKeys = [];
-    // Aurora: group-headed table. Multi-route groups get a collapsible header
-    // row + indented sub-rows; collapsed groups hide their members. Standalone
-    // routes render bare. A batch-select checkbox column is prepended in batch mode.
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
-      var grouped = !g.single && g.routes.length > 1;
+      var grouped = g.key !== view.NO_DOMAIN_KEY && !g.single && g.routes.length > 1;
       if (grouped) {
         auroraGroupKeys.push(g.key);
-        rows += auroraRenderGroupHead(g);
-        if (collapsedGroups.has(g.key)) continue; // collapsed → members hidden
+        cards += auroraRenderGroupHead(g);
+        continue;
       }
+      // Einzel-Karten: singles + jedes Mitglied des NO_DOMAIN-Buckets einzeln
       for (var ri = 0; ri < g.routes.length; ri++) {
-        rows += auroraRenderTableRow(g.routes[ri], { grouped: grouped });
+        cards += '<div class="card aurora-routes-card">' + auroraRenderTableRow(g.routes[ri], {}) + '</div>';
       }
     }
     auroraUpdateCollapseAll();
-    if (!rows) {
+    if (!cards) {
       return '<div style="font-size:13px;color:var(--faint);padding:20px 0;text-align:center">'
         + escapeHtml(t['routes.no_routes'] || 'No routes configured') + '</div>';
     }
-    return '<table class="data-table' + (batchMode ? ' batch-mode' : '') + '"><thead><tr>'
-      + (batchMode ? '<th class="td-batch"></th>' : '')
-      + '<th>' + escapeHtml(t['routes.table_domain'] || 'Domain') + '</th>'
-      + '<th>' + escapeHtml(t['routes.table_type'] || 'Type') + '</th>'
-      + '<th>' + escapeHtml(t['routes.table_target'] || 'Target') + '</th>'
-      + '<th>' + escapeHtml(t['route_auth.auth_type'] || 'Auth') + '</th>'
-      + '<th>' + escapeHtml(t['routes.table_status'] || 'Status') + '</th>'
-      + '<th></th>'
-      + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<div class="aurora-routes-grid' + (batchMode ? ' batch-mode' : '') + '">' + cards + '</div>';
   }
 
   function auroraInitTypeToggle() {
@@ -612,7 +588,51 @@
       if (btn.dataset.nav) { window.location.href = btn.dataset.nav; return; }
       typeToggle.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
       btn.classList.add('on');
+      auroraSyncToggleAria(typeToggle);
       viewState.typeFilter = btn.dataset.value || null;
+      render();
+    });
+  }
+
+  // KPI-Streifen über der Toolbar — immer aus dem UNGEFILTERTEN Bestand.
+  function auroraRenderKpis() {
+    var el = document.getElementById('routes-kpis');
+    if (!el) return;
+    var t = GC.t;
+    var http = 0, l4 = 0, ext = 0, off = 0;
+    for (var i = 0; i < allRoutes.length; i++) {
+      var r = allRoutes[i];
+      if (r.route_type === 'l4') l4++; else http++;
+      if (r.external_enabled) ext++;
+      if (!r.enabled) off++;
+    }
+    function chip(n, key, fallback, cls) {
+      return '<div class="aurora-routes-kpi' + (cls ? ' ' + cls : '') + '"><b>' + n + '</b><span>'
+        + escapeHtml(t[key] || fallback) + '</span></div>';
+    }
+    el.innerHTML = chip(allRoutes.length, 'routes.kpi.total', 'routes')
+      + chip(http, 'routes.kpi.http', 'HTTP')
+      + chip(l4, 'routes.kpi.l4', 'port forwards')
+      + chip(ext, 'routes.kpi.external', 'externally reachable', 'warn')
+      + (off ? chip(off, 'routes.kpi.disabled', 'disabled', 'dim') : '');
+  }
+
+  function auroraSyncToggleAria(group) {
+    group.querySelectorAll('.toggle-btn[data-value]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.classList.contains('on') ? 'true' : 'false');
+    });
+  }
+
+  function auroraInitExposureToggle() {
+    var el = document.getElementById('aurora-exposure-toggle');
+    if (!el) return;
+    el.addEventListener('click', function (e) {
+      var btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      el.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
+      btn.classList.add('on');
+      auroraSyncToggleAria(el);
+      viewState.exposureFilter = btn.dataset.value || null;
       render();
     });
   }
@@ -741,18 +761,20 @@
 
   function render() {
     const q = routeSearch ? routeSearch.value : '';
-    const hasFilter = !!(q.trim() || viewState.typeFilter || viewState.statusFilter || viewState.targetFilter);
+    const hasFilter = !!(q.trim() || viewState.typeFilter || viewState.statusFilter || viewState.targetFilter || viewState.exposureFilter);
     const filtered = view.filterRoutes(allRoutes, {
       q,
       type: viewState.typeFilter,
       status: viewState.statusFilter,
       target: viewState.targetFilter,
+      exposure: viewState.exposureFilter,
     });
     if (!filtered.length) {
       const msg = hasFilter
         ? (GC.t['routes.no_match'] || 'No routes match the filter')
         : (GC.t['routes.no_routes'] || 'No routes configured');
       routesList.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">' + escapeHtml(msg) + '</div>';
+      if (isAurora()) auroraRenderKpis();
       return;
     }
     const groups = sortGroups(view.buildGroups(filtered), viewState.sort);
@@ -763,6 +785,7 @@
         return g.single ? renderRouteEntry(g.routes[0], {}) : renderGroupCard(g);
       }).join('');
     }
+    if (isAurora()) auroraRenderKpis();
   }
 
   // Kept as the historical entry point — every caller funnels into render().
@@ -4328,6 +4351,7 @@
 
   // Aurora-only: wire the type toggle-group in the Aurora toolbar
   if (isAurora()) auroraInitTypeToggle();
+  if (isAurora()) auroraInitExposureToggle();
   if (isAurora()) auroraInitCollapseAll();
 
   // ─── Init ────────────────────────────────────────────────

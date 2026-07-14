@@ -18,3 +18,9 @@ test('aurora routes template has kpi container + exposure toggle + aria-pressed'
     assert.ok(tpl.includes(`id="${id}"`), `lost #${id}`);
   }
 });
+
+// Marker: Aurora-JS-Pfad rendert das Grid (fängt Zurückfallen auf die Tabelle).
+test('routes.js aurora path renders card grid', () => {
+  const js = fs.readFileSync('public/js/routes.js', 'utf8');
+  assert.ok(js.includes('aurora-routes-grid'), 'routes.js missing aurora-routes-grid marker');
+});
