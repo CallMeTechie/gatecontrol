@@ -31,7 +31,8 @@
     targetFilter: null,
     exposureFilter: null,
   };
-  // Aurora always uses the table view (no view-toggle in Aurora toolbar).
+  // Aurora always uses the 'table' view slot — rendered as the card grid by
+  // auroraRenderTable (no view-toggle in Aurora toolbar).
   if (isAurora()) viewState.view = 'table';
   const collapsedGroups = lsGetSet('gc_routes_groups_collapsed_v1');
   const expandedBadges = new Set();

@@ -292,18 +292,9 @@ a{color:inherit}
 .data-table .mono{font-family:var(--font-mono); font-size:12.5px; color:var(--muted)}
 .data-table .cell-name{font-weight:600}
 /* Routes table — service/domain group header rows (related routes read as a unit) */
-.data-table tr.aurora-group-row{cursor:pointer; user-select:none}
-.data-table tr.aurora-group-row td{background:var(--surface-2); padding:9px 14px; border-bottom:1px solid var(--line)}
-.data-table tr.aurora-group-row:hover td{background:var(--surface-3)}
-.data-table tr.aurora-group-row .group-status-dot{display:inline-block; vertical-align:middle}
 .aurora-group-chevron{vertical-align:middle; margin-right:5px; color:var(--muted); transition:transform .2s ease}
-.data-table tr.aurora-group-row.collapsed .aurora-group-chevron{transform:rotate(-90deg)}
-.aurora-group-label{font-weight:700; font-size:12.5px; color:var(--text); margin-left:5px; vertical-align:middle}
 .aurora-group-count{margin-left:10px; font-size:11px; color:var(--faint); font-family:var(--font-mono); vertical-align:middle}
 .aurora-group-badge{margin-left:8px; vertical-align:middle; font-size:10.5px; padding:1px 7px}
-/* Group-header row: flex so container actions (add/toggle/ungroup/delete) sit
-   right-aligned and vertically centred next to the label, not on a new line. */
-.aurora-group-inner{display:flex; align-items:center}
 .aurora-group-actions{margin-left:auto}
 /* "Collapse all" toolbar toggle */
 #aurora-collapse-all{color:var(--muted)}
@@ -318,10 +309,6 @@ a{color:inherit}
 .data-table .td-batch{width:34px; text-align:center; padding-right:0}
 .data-table .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer; vertical-align:middle}
 .data-table.batch-mode tbody tr[data-route-id]{cursor:pointer}
-/* Grouped member rows — nested under their group header via indent + a left
-   rail, so they're clearly set off from standalone routes (which sit flush). */
-.data-table tr.aurora-route-sub td.cell-name{position:relative; padding-left:34px; color:var(--muted)}
-.data-table tr.aurora-route-sub td.cell-name::before{content:""; position:absolute; left:17px; top:0; bottom:0; width:2px; background:var(--line-2); border-radius:1px}
 .row-actions{display:flex; gap:6px; justify-content:flex-end}
 .icon-action{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--chip);color:var(--muted);
   display:grid;place-items:center;cursor:pointer;transition:.15s}
