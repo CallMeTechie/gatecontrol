@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.5] — 2026-07-14
+
+### Fixes
+- pin global npm to v11 — npm@12 requires node >=22, base image is node 20
+
+---
+
 ## [1.117.4] — 2026-07-14
 
 ### Änderungen
