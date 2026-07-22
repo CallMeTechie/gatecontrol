@@ -1176,6 +1176,43 @@ const migrations = [
     sql: `ALTER TABLE smarthome_resources ADD COLUMN state_json TEXT;`,
     detect: (db) => hasColumn(db, 'smarthome_resources', 'state_json'),
   },
+  {
+    version: 66,
+    name: 'skoda_integration',
+    sql: `CREATE TABLE IF NOT EXISTS skoda_accounts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT NOT NULL UNIQUE,
+      password_enc  TEXT NOT NULL,
+      session_enc   TEXT,
+      status        TEXT NOT NULL DEFAULT 'ok',
+      status_detail TEXT,
+      backoff_min   INTEGER NOT NULL DEFAULT 0,
+      next_retry_at TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS skoda_vehicles (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id  INTEGER NOT NULL,
+      vin         TEXT NOT NULL UNIQUE,
+      name        TEXT,
+      model       TEXT,
+      state_json  TEXT,
+      image       BLOB,
+      image_url   TEXT,
+      fetched_at  TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_skoda_vehicles_account ON skoda_vehicles(account_id);
+    CREATE TABLE IF NOT EXISTS skoda_vehicle_owners (
+      skoda_vehicle_id INTEGER NOT NULL,
+      user_id          INTEGER NOT NULL,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (skoda_vehicle_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skoda_owners_user ON skoda_vehicle_owners(user_id);`,
+    detect: (db) => tableExists(db, 'skoda_accounts'),
+  },
 ];
 
 module.exports = { migrations };
