@@ -7,6 +7,7 @@ const logger = require('../utils/logger');
 const argon2Options = require('../utils/argon2Options');
 const mideaOwners = require('./midea/mideaOwners');
 const smarthomeOwners = require('./smarthome/smarthomeOwners');
+const skodaOwners = require('./skoda/skodaOwners');
 
 const NO_PASSWORD_SENTINEL = '!';
 
@@ -267,6 +268,7 @@ function remove(id) {
     db.prepare('UPDATE peers SET user_id = NULL WHERE user_id = ?').run(id);
     mideaOwners.removeAllForUser(id);                 // clear AC ownership (no own tx)
     smarthomeOwners.removeAllForUser(id);             // clear smarthome ownership (no own tx)
+    skodaOwners.removeAllForUser(id);                 // clear Skoda vehicle ownership (no own tx)
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   })();
 
