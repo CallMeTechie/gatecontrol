@@ -934,15 +934,20 @@
   function renderSkoda(vehicles) {
     var el = skodaEl(); if (!el) return;
     // Preserve which cards had their <details> expanded across the full rebuild,
-    // so a 120s poll never collapses what the user opened.
-    var open = {};
-    el.querySelectorAll('.skoda-card').forEach(function (c) {
-      var d = c.querySelector('details'); if (d && d.open) open[c.getAttribute('data-id')] = 1;
-    });
+    // so a 120s poll never collapses what the user opened. Tracked by position
+    // (card order is stable — server returns vehicles ORDER BY id) using only
+    // the boolean `details.open`, so no DOM text ever feeds back into innerHTML.
+    var wasOpen = [];
+    var oldCards = el.querySelectorAll('.skoda-card');
+    for (var i = 0; i < oldCards.length; i++) {
+      var od = oldCards[i].querySelector('details');
+      wasOpen[i] = !!(od && od.open);
+    }
     el.innerHTML = vehicles.map(renderSkodaCard).join('');
-    Object.keys(open).forEach(function (id) {
-      var d = el.querySelector('.skoda-card[data-id="' + id + '"] details'); if (d) d.open = true;
-    });
+    var newCards = el.querySelectorAll('.skoda-card');
+    for (var j = 0; j < newCards.length; j++) {
+      if (wasOpen[j]) { var nd = newCards[j].querySelector('details'); if (nd) nd.open = true; }
+    }
   }
 
   function hydrateSkoda() {
