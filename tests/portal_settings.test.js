@@ -22,7 +22,7 @@ after(teardown);
 test('defaults: enabled, all widgets on', () => {
   const c = portalCfg();
   assert.equal(c.enabled, true);
-  assert.deepEqual(c.widgets, { device: true, traffic: true, services: true, pihole: true, midea: true, smarthome: true });
+  assert.deepEqual(c.widgets, { device: true, traffic: true, services: true, pihole: true, midea: true, smarthome: true, skoda: true });
 });
 
 test('a disabled widget is reflected', () => {
