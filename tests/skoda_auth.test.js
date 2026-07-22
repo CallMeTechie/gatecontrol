@@ -24,10 +24,16 @@ test('parseIdk throws SKODA_AUTH_FLOW_CHANGED on unexpected html', () => {
   assert.throws(() => auth.parseIdk('<html>maintenance</html>'), (e) => e.code === 'SKODA_AUTH_FLOW_CHANGED');
 });
 
-test('parseFragment reads code from myskoda redirect', () => {
+test('parseFragment reads code from myskoda redirect (fragment)', () => {
   const params = auth.parseFragment('myskoda://redirect/login/#code=THECODE&token_type=bearer&id_token=IDT');
   assert.equal(params.code, 'THECODE');
   assert.equal(params.id_token, 'IDT');
+});
+
+test('parseFragment reads code from query (response_type=code)', () => {
+  // Real Skoda behaviour: response_type=code returns the code as a query param.
+  const params = auth.parseFragment('myskoda://redirect/login/?state=x&code=QCODE');
+  assert.equal(params.code, 'QCODE');
 });
 
 function htmlRes(body) {
@@ -49,7 +55,8 @@ test('login walks the full flow and exchanges the code', async () => {
     if (url.startsWith(auth.IDENT_BASE + '/oidc/v1/authorize')) return htmlRes(emailPage);
     if (url.includes('/login/identifier')) return htmlRes(passwordPage);
     if (url.includes('/login/authenticate')) return redirectRes(auth.IDENT_BASE + '/oidc/v1/oauth/sso?x=1', ['SESSION=s1']);
-    if (url.includes('/oidc/v1/oauth/sso')) return redirectRes('myskoda://redirect/login/#code=THECODE&id_token=IDT');
+    // response_type=code → code comes back as a QUERY param on the redirect
+    if (url.includes('/oidc/v1/oauth/sso')) return redirectRes('myskoda://redirect/login/?code=THECODE');
     if (url.startsWith(auth.API_BASE + '/api/v1/authentication/exchange-authorization-code')) {
       return jsonRes({ accessToken: 'AT', refreshToken: 'RT', idToken: 'IDT' });
     }
@@ -57,6 +64,11 @@ test('login walks the full flow and exchanges the code', async () => {
   };
   const tokens = await auth.login('a@b.c', 'pw', { fetchImpl });
   assert.deepEqual(tokens, { accessToken: 'AT', refreshToken: 'RT', idToken: 'IDT' });
+  // authorize request must use the real Skoda params
+  const authorize = seen.find((s) => s.url.includes('/oidc/v1/authorize'));
+  assert.match(authorize.url, /response_type=code(&|$)/);
+  assert.match(authorize.url, /code_challenge_method=s256/);
+  assert.match(authorize.url, /prompt=login/);
   const exchange = seen.find((s) => s.url.includes('exchange-authorization-code'));
   const body = JSON.parse(exchange.body);
   assert.equal(body.code, 'THECODE');
