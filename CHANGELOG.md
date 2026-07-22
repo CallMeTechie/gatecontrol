@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.8] — 2026-07-22
+
+### Fixes
+- escape i18n labels in portal card markup (CodeQL js/xss-through-dom, match midea)
+
+---
+
 ## [Unreleased]
 
 ### Added
