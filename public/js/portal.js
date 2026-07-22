@@ -909,25 +909,25 @@
       + '<div><strong>' + skodaConnDot(v.fetched_at) + escHtml(v.name || v.model || '') + '</strong>'
       + '<div class="skoda-sub">' + escHtml(minutesAgo(v.fetched_at)) + '</div></div></div>'
       + '<div class="skoda-batt">' + skodaRingSvg(s.soc, up(ch.state) === 'CHARGING')
-      + '<div class="skoda-batt-info"><div>' + PT.skodaSoc + ': ' + numOr(s.soc, '%') + '</div>'
-      + '<div>' + PT.skodaRange + ': ' + numOr(s.rangeKm, ' km') + '</div>'
-      + (up(ch.state) === 'CHARGING' ? '<div>' + PT.skodaCharging + ': ' + numOr(ch.powerKw, ' kW')
+      + '<div class="skoda-batt-info"><div>' + escHtml(PT.skodaSoc) + ': ' + numOr(s.soc, '%') + '</div>'
+      + '<div>' + escHtml(PT.skodaRange) + ': ' + numOr(s.rangeKm, ' km') + '</div>'
+      + (up(ch.state) === 'CHARGING' ? '<div>' + escHtml(PT.skodaCharging) + ': ' + numOr(ch.powerKw, ' kW')
           + (ch.remainingMin != null ? ' · ' + numOr(ch.remainingMin, ' min') : '')
           + (ch.targetPercent != null ? ' · ' + numOr(ch.targetPercent, '%') : '') + '</div>' : '')
-      + (ch.cableConnected ? '<div>' + PT.skodaCableConnected + '</div>' : '') + '</div></div>'
+      + (ch.cableConnected ? '<div>' + escHtml(PT.skodaCableConnected) + '</div>' : '') + '</div></div>'
       + '<div class="skoda-row"><span class="skoda-lock">' + escHtml(lock) + '</span>'
       + '<span class="skoda-chips">' + chips + '</span></div>'
-      + '<div class="skoda-row">' + PT.skodaClimate + ': ' + (cl.state == null ? '—' : (up(cl.state) === 'OFF' ? PT.skodaClimateOff : PT.skodaClimateOn))
-      + (cl.targetC != null ? ' · ' + PT.skodaTargetTemp + ' ' + numOr(cl.targetC, '°C') : '')
-      + (cl.remainingMin != null ? ' · ' + PT.skodaClimateRemaining + ' ' + numOr(cl.remainingMin, ' min') : '')
-      + (cl.windowHeating === true ? ' · ' + PT.skodaWindowHeating : '') + '</div>'
-      + '<details class="skoda-details"><summary>' + PT.skodaPosition + ' · ' + PT.skodaMileage + '</summary>'
-      + '<div>' + PT.skodaPosition + ': ' + posLink + '</div>'
-      + '<div>' + PT.skodaMileage + ': ' + numOr(hl.mileageKm, ' km') + '</div>'
-      + '<div>' + PT.skodaInspection + ': ' + numOr(mt.dueInDays, ' d')
+      + '<div class="skoda-row">' + escHtml(PT.skodaClimate) + ': ' + escHtml(cl.state == null ? '—' : (up(cl.state) === 'OFF' ? PT.skodaClimateOff : PT.skodaClimateOn))
+      + (cl.targetC != null ? ' · ' + escHtml(PT.skodaTargetTemp) + ' ' + numOr(cl.targetC, '°C') : '')
+      + (cl.remainingMin != null ? ' · ' + escHtml(PT.skodaClimateRemaining) + ' ' + numOr(cl.remainingMin, ' min') : '')
+      + (cl.windowHeating === true ? ' · ' + escHtml(PT.skodaWindowHeating) : '') + '</div>'
+      + '<details class="skoda-details"><summary>' + escHtml(PT.skodaPosition) + ' · ' + escHtml(PT.skodaMileage) + '</summary>'
+      + '<div>' + escHtml(PT.skodaPosition) + ': ' + posLink + '</div>'
+      + '<div>' + escHtml(PT.skodaMileage) + ': ' + numOr(hl.mileageKm, ' km') + '</div>'
+      + '<div>' + escHtml(PT.skodaInspection) + ': ' + numOr(mt.dueInDays, ' d')
       + (mt.dueInKm != null ? ' · ' + numOr(mt.dueInKm, ' km') : '') + '</div>'
-      + (mt.partner ? '<div>' + PT.skodaPartner + ': ' + escHtml(mt.partner) + '</div>' : '')
-      + (hl.warnings && hl.warnings.length ? '<div>' + PT.skodaWarnings + ': ' + escHtml(hl.warnings.join(', ')) + '</div>' : '')
+      + (mt.partner ? '<div>' + escHtml(PT.skodaPartner) + ': ' + escHtml(mt.partner) + '</div>' : '')
+      + (hl.warnings && hl.warnings.length ? '<div>' + escHtml(PT.skodaWarnings) + ': ' + escHtml(hl.warnings.join(', ')) + '</div>' : '')
       + '</details></div>';
   }
 
