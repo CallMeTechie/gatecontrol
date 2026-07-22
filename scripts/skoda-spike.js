@@ -20,8 +20,9 @@ async function get(tokens, path) {
   });
   const body = await res.text();
   console.log(`\n=== GET ${path} -> ${res.status} ===`);
-  try { console.log(JSON.stringify(JSON.parse(body), null, 2)); } catch { console.log(body.slice(0, 2000)); }
-  return res;
+  let json = null;
+  try { json = JSON.parse(body); console.log(JSON.stringify(json, null, 2)); } catch { console.log(body.slice(0, 2000)); }
+  return { res, json };
 }
 
 (async () => {
@@ -33,8 +34,7 @@ async function get(tokens, path) {
   const refreshed = await auth.refresh(tokens.refreshToken);
   console.log('refresh OK');
 
-  const garageRes = await get(refreshed, '/api/v2/garage?connectivityGenerations=MOD1&connectivityGenerations=MOD2&connectivityGenerations=MOD3&connectivityGenerations=MOD4');
-  const garage = await garageRes.clone?.().json?.() ?? null;
+  const garage = (await get(refreshed, '/api/v2/garage?connectivityGenerations=MOD1&connectivityGenerations=MOD2&connectivityGenerations=MOD3&connectivityGenerations=MOD4')).json;
   const vin = process.argv[2] || (garage && garage.vehicles && garage.vehicles[0] && garage.vehicles[0].vin);
   if (!vin) { console.error('no vin found — check garage output above'); process.exit(1); }
 
