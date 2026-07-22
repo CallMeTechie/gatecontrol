@@ -139,6 +139,10 @@ async function start() {
     try { require('./services/midea').startPolling(); }
     catch (err) { logger.warn({ err: err.message }, 'midea start failed'); }
 
+    // Skoda Connect poll loop — best-effort; no-op without license or enrolled accounts.
+    try { require('./services/skoda').startPolling(); }
+    catch (err) { logger.warn({ err: err.message }, 'skoda start failed'); }
+
     // Smart Home (deCONZ) poll loop — best-effort; no-op without license or gateways.
     try { require('./services/smarthome').startPolling(); }
     catch (err) { logger.warn({ err: err.message }, 'smarthome start failed'); }
