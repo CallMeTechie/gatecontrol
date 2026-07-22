@@ -14,12 +14,14 @@ const I18N_KEYS = [
   'portal.skoda.position', 'portal.skoda.as_of',
   'portal.skoda.doors', 'portal.skoda.windows', 'portal.skoda.cable_connected', 'portal.skoda.warnings',
   'portal.skoda.bonnet', 'portal.skoda.trunk', 'portal.skoda.sunroof', 'portal.skoda.lights_on',
+  'portal.skoda.climate_on', 'portal.skoda.climate_off',
 ];
 // PT_CAMEL must cover every client-used key so a forgotten PT entry fails the test.
 const PT_CAMEL = ['skodaTitle', 'skodaSoc', 'skodaRange', 'skodaLocked', 'skodaUnlocked', 'skodaCharging',
   'skodaClimate', 'skodaTargetTemp', 'skodaClimateRemaining', 'skodaWindowHeating', 'skodaMileage',
   'skodaInspection', 'skodaPartner', 'skodaPosition', 'skodaAsOf', 'skodaWindows', 'skodaDoors',
-  'skodaCableConnected', 'skodaWarnings', 'skodaBonnet', 'skodaTrunk', 'skodaSunroof', 'skodaLightsOn'];
+  'skodaCableConnected', 'skodaWarnings', 'skodaBonnet', 'skodaTrunk', 'skodaSunroof', 'skodaLightsOn',
+  'skodaClimateOn', 'skodaClimateOff'];
 
 test('portal.skoda.* keys exist in de and en', () => {
   for (const k of I18N_KEYS) {

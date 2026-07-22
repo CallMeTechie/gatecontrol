@@ -917,7 +917,7 @@
       + (ch.cableConnected ? '<div>' + PT.skodaCableConnected + '</div>' : '') + '</div></div>'
       + '<div class="skoda-row"><span class="skoda-lock">' + escHtml(lock) + '</span>'
       + '<span class="skoda-chips">' + chips + '</span></div>'
-      + '<div class="skoda-row">' + PT.skodaClimate + ': ' + escHtml(cl.state || '—')
+      + '<div class="skoda-row">' + PT.skodaClimate + ': ' + (cl.state == null ? '—' : (up(cl.state) === 'OFF' ? PT.skodaClimateOff : PT.skodaClimateOn))
       + (cl.targetC != null ? ' · ' + PT.skodaTargetTemp + ' ' + numOr(cl.targetC, '°C') : '')
       + (cl.remainingMin != null ? ' · ' + PT.skodaClimateRemaining + ' ' + numOr(cl.remainingMin, ' min') : '')
       + (cl.windowHeating === true ? ' · ' + PT.skodaWindowHeating : '') + '</div>'
