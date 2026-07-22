@@ -2257,6 +2257,8 @@
   "portal.skoda.trunk": "Kofferraum",
   "portal.skoda.sunroof": "Schiebedach",
   "portal.skoda.lights_on": "Licht an",
+  "portal.skoda.climate_on": "An",
+  "portal.skoda.climate_off": "Aus",
   "portal.smarthome.title": "Smart Home",
   "portal.smarthome.power": "Ein/Aus",
   "portal.smarthome.brightness": "Helligkeit",

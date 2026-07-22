@@ -2313,6 +2313,8 @@
   "portal.skoda.trunk": "Trunk",
   "portal.skoda.sunroof": "Sunroof",
   "portal.skoda.lights_on": "Lights on",
+  "portal.skoda.climate_on": "On",
+  "portal.skoda.climate_off": "Off",
   "portal.smarthome.title": "Smart Home",
   "portal.smarthome.power": "Power",
   "portal.smarthome.brightness": "Brightness",

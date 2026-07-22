@@ -10,7 +10,7 @@
 const NOMINATIM_HOST = 'nominatim.openstreetmap.org';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 4000;
-const USER_AGENT = 'GateControl/1.0 (self-hosted; vehicle address lookup)';
+const USER_AGENT = 'GateControl/1.0 (self-hosted vehicle address lookup; +https://github.com/CallMeTechie/gatecontrol)';
 
 // ponytail: cache never proactively evicts expired entries — fine for a
 // two-car household's bounded set of visited ~110m buckets; add periodic
