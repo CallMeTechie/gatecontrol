@@ -897,15 +897,20 @@
       + (dt.sunroof != null && up(dt.sunroof) !== 'UNSUPPORTED' ? lockChip(PT.skodaSunroof, up(dt.sunroof) === 'OPEN') : '')
       + (s.lightsOn === true ? lockChip(PT.skodaLightsOn, true) : '');
     var pos = s.position;
-    var posText = pos ? (pos.address || (pos.lat.toFixed(4) + ', ' + pos.lon.toFixed(4))) : '—';
-    var posLink = pos ? '<a href="https://www.openstreetmap.org/?mlat=' + pos.lat + '&mlon=' + pos.lon + '" target="_blank" rel="noopener" title="' + escHtml(pos.lat + ', ' + pos.lon) + '">' + escHtml(posText) + '</a>' : '—';
-    return '<div class="skoda-card" data-id="' + v.id + '">'
+    var plat = pos ? Number(pos.lat) : NaN, plon = pos ? Number(pos.lon) : NaN;
+    var posOk = isFinite(plat) && isFinite(plon);
+    var posText = posOk ? (pos.address || (plat.toFixed(4) + ', ' + plon.toFixed(4))) : (pos && pos.address ? pos.address : '—');
+    var posLink = posOk
+      ? '<a href="https://www.openstreetmap.org/?mlat=' + plat + '&mlon=' + plon + '" target="_blank" rel="noopener" title="' + escHtml(plat + ', ' + plon) + '">' + escHtml(posText) + '</a>'
+      : escHtml(posText);
+    return '<div class="skoda-card" data-id="' + escHtml(v.id) + '">'
       + '<div class="skoda-head">'
-      + (v.has_image ? '<img class="skoda-img" src="/api/v1/portal/skoda/vehicles/' + v.id + '/image" alt="">' : '')
+      + (v.has_image ? '<img class="skoda-img" src="/api/v1/portal/skoda/vehicles/' + encodeURIComponent(v.id) + '/image" alt="">' : '')
       + '<div><strong>' + skodaConnDot(v.fetched_at) + escHtml(v.name || v.model || '') + '</strong>'
       + '<div class="skoda-sub">' + escHtml(minutesAgo(v.fetched_at)) + '</div></div></div>'
       + '<div class="skoda-batt">' + skodaRingSvg(s.soc, up(ch.state) === 'CHARGING')
-      + '<div class="skoda-batt-info"><div>' + PT.skodaRange + ': ' + numOr(s.rangeKm, ' km') + '</div>'
+      + '<div class="skoda-batt-info"><div>' + PT.skodaSoc + ': ' + numOr(s.soc, '%') + '</div>'
+      + '<div>' + PT.skodaRange + ': ' + numOr(s.rangeKm, ' km') + '</div>'
       + (up(ch.state) === 'CHARGING' ? '<div>' + PT.skodaCharging + ': ' + numOr(ch.powerKw, ' kW')
           + (ch.remainingMin != null ? ' · ' + numOr(ch.remainingMin, ' min') : '')
           + (ch.targetPercent != null ? ' · ' + numOr(ch.targetPercent, '%') : '') + '</div>' : '')
@@ -913,7 +918,7 @@
       + '<div class="skoda-row"><span class="skoda-lock">' + escHtml(lock) + '</span>'
       + '<span class="skoda-chips">' + chips + '</span></div>'
       + '<div class="skoda-row">' + PT.skodaClimate + ': ' + escHtml(cl.state || '—')
-      + (cl.targetC != null ? ' · ' + numOr(cl.targetC, '°C') : '')
+      + (cl.targetC != null ? ' · ' + PT.skodaTargetTemp + ' ' + numOr(cl.targetC, '°C') : '')
       + (cl.remainingMin != null ? ' · ' + PT.skodaClimateRemaining + ' ' + numOr(cl.remainingMin, ' min') : '')
       + (cl.windowHeating === true ? ' · ' + PT.skodaWindowHeating : '') + '</div>'
       + '<details class="skoda-details"><summary>' + PT.skodaPosition + ' · ' + PT.skodaMileage + '</summary>'
