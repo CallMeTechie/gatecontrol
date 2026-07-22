@@ -19,7 +19,7 @@ function makeClient(routes, { session = { accessToken: 'AT', refreshToken: 'RT' 
     }
     throw new Error('unexpected url ' + url);
   };
-  const client = new SkodaClient({ getSession: () => session, saveSession: (s) => saved.push(s), fetchImpl });
+  const client = new SkodaClient({ getSession: () => session, saveSession: (s) => { saved.push(s); session = s; }, fetchImpl });
   return { client, saved, calls };
 }
 
@@ -32,7 +32,7 @@ test('garage sends bearer token and returns json', async () => {
 
 test('401 triggers exactly one refresh then retry', async () => {
   let statusCalls = 0;
-  const { client, saved } = makeClient([
+  const { client, saved, calls } = makeClient([
     ['/api/v2/vehicle-status/TMBTESTVIN000001', () => (statusCalls++ === 0 ? jsonRes({}, 401) : jsonRes(fx.status))],
     ['/api/v1/authentication/refresh-token', jsonRes({ accessToken: 'AT2', refreshToken: 'RT2', idToken: 'ID2' })],
   ]);
@@ -40,6 +40,7 @@ test('401 triggers exactly one refresh then retry', async () => {
   assert.equal(status.overall.locked, 'YES');
   assert.equal(statusCalls, 2);
   assert.equal(saved[0].accessToken, 'AT2'); // refreshed session persisted
+  assert.equal(calls[calls.length - 1].auth, 'Bearer AT2'); // retried request uses refreshed token
 });
 
 test('second 401 after refresh raises SKODA_UNAUTHORIZED', async () => {
@@ -48,6 +49,14 @@ test('second 401 after refresh raises SKODA_UNAUTHORIZED', async () => {
     ['/api/v1/authentication/refresh-token', jsonRes({ accessToken: 'AT2', refreshToken: 'RT2', idToken: 'ID2' })],
   ]);
   await assert.rejects(client.vehicleStatus('X'), (e) => e.code === 'SKODA_UNAUTHORIZED');
+});
+
+test('failing refresh maps to SKODA_UNAUTHORIZED (no foreign error class)', async () => {
+  const { client } = makeClient([
+    ['/api/v2/vehicle-status/', jsonRes({}, 401)],
+    ['/api/v1/authentication/refresh-token', jsonRes({}, 403)],
+  ]);
+  await assert.rejects(client.vehicleStatus('X'), (e) => e.code === 'SKODA_UNAUTHORIZED' && e.name === 'SkodaApiError');
 });
 
 test('429 raises SKODA_RATE_LIMITED', async () => {
@@ -94,6 +103,17 @@ test('normalizeVehicleState tolerates missing parts with nulls', () => {
   assert.equal(state.soc, null);
   assert.deepEqual(state.health.warnings, []);
   assert.equal(state.position, null);
+});
+
+test('climate remainingMin derives from minutes field or estimated datetime', () => {
+  const base = { state: 'HEATING', targetTemperature: { temperatureValue: 22 } };
+  let state = normalizeVehicleState({ airConditioning: { ...base, remainingTimeToReachTargetTemperatureInMinutes: 12 } });
+  assert.equal(state.climate.remainingMin, 12);
+  const eta = new Date(Date.now() + 30 * 60000).toISOString();
+  state = normalizeVehicleState({ airConditioning: { ...base, estimatedDateTimeToReachTargetTemperature: eta } });
+  assert.ok(state.climate.remainingMin >= 29 && state.climate.remainingMin <= 31);
+  state = normalizeVehicleState({ airConditioning: base });
+  assert.equal(state.climate.remainingMin, null);
 });
 
 test('fetchFullState survives one failing endpoint', async () => {

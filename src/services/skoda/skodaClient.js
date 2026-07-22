@@ -23,7 +23,13 @@ class SkodaClient {
       headers: { authorization: `Bearer ${session.accessToken}`, accept: 'application/json' },
     });
     if (res.status === 401 && !retried) {
-      const tokens = await skodaAuth.refresh(session.refreshToken, { fetchImpl: this.fetchImpl });
+      let tokens;
+      try {
+        tokens = await skodaAuth.refresh(session.refreshToken, { fetchImpl: this.fetchImpl });
+      } catch (e) {
+        if (e.code === 'SKODA_RATE_LIMITED') throw e; // account-level, abort as-is
+        throw new SkodaApiError('token refresh failed', 'SKODA_UNAUTHORIZED', 401);
+      }
       this.saveSession(tokens);
       return this._get(path, { retried: true });
     }
@@ -117,7 +123,13 @@ function normalizeVehicleState({ status, drivingRange, charging, airConditioning
     climate: {
       state: (airConditioning && airConditioning.state) || null,
       targetC: airConditioning && airConditioning.targetTemperature ? num(airConditioning.targetTemperature.temperatureValue) : null,
-      remainingMin: airConditioning ? num(airConditioning.estimatedDateTimeToReachTargetTemperature) : null,
+      remainingMin: (() => {
+        if (!airConditioning) return null;
+        const direct = num(airConditioning.remainingTimeToReachTargetTemperatureInMinutes);
+        if (direct != null) return direct;
+        const ts = Date.parse(airConditioning.estimatedDateTimeToReachTargetTemperature || '');
+        return Number.isFinite(ts) ? Math.max(0, Math.round((ts - Date.now()) / 60000)) : null;
+      })(),
       windowHeating: windowHeating ? (ON(windowHeating.front) || ON(windowHeating.rear)) : null,
     },
     position: pos && pos.gpsCoordinates
