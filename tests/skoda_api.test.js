@@ -114,11 +114,15 @@ test('refresh cooldown maps to 429', async () => {
 });
 
 test('settings PUT validates range and persists', async () => {
+  const { mock } = require('node:test');
   let res = await ctx.agent.put('/api/v1/skoda/settings').set('x-csrf-token', ctx.csrfToken).send({ poll_interval_min: 3 });
   assert.equal(res.status, 400);
+  const m = mock.method(skoda, 'syncAccount', async () => ({ ok: true, vehicles: 0 }));
   res = await ctx.agent.put('/api/v1/skoda/settings').set('x-csrf-token', ctx.csrfToken).send({ poll_interval_min: 30 });
   assert.equal(res.status, 200);
   assert.equal(require('../src/services/settings').get('skoda_poll_interval_min'), '30');
+  assert.equal(m.mock.callCount(), 0);
+  m.mock.restore();
 });
 
 test('unauthenticated request is rejected', async () => {
