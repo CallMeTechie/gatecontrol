@@ -78,6 +78,7 @@ async function setup() {
     share_links: true,
     access_windows: true,
     midea_integration: true,
+    skoda_integration: true,
   });
 
   app = createApp();
