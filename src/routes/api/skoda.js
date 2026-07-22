@@ -46,7 +46,8 @@ router.post('/accounts', wrap(async (req, res) => {
   // No implicit sync here: the UI calls POST /accounts/:id/sync afterwards.
   // Keeps unit tests free of real network login attempts.
   const acc = accounts.createAccount({ email: req.body.email, password: req.body.password });
-  res.status(201).json({ ok: true, account: acc });
+  const { password, password_enc, session_enc, ...safe } = acc || {};
+  res.status(201).json({ ok: true, account: safe });
 }));
 
 router.post('/accounts/:id/sync', wrap(async (req, res) => {

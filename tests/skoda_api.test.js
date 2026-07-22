@@ -43,6 +43,10 @@ test('POST /accounts validates and creates', async () => {
   res = await ctx.agent.post('/api/v1/skoda/accounts').set('x-csrf-token', ctx.csrfToken).send({ email: 'n@x.y', password: 'pw' });
   assert.equal(res.status, 201);
   assert.equal(res.body.ok, true);
+  assert.equal('password' in res.body.account, false);
+  assert.equal('password_enc' in res.body.account, false);
+  assert.equal('session_enc' in res.body.account, false);
+  assert.equal(res.body.account.has_credentials, true);
   res = await ctx.agent.post('/api/v1/skoda/accounts').set('x-csrf-token', ctx.csrfToken).send({ email: 'n@x.y', password: 'pw' });
   assert.equal(res.status, 409);
 });
