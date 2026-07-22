@@ -163,12 +163,12 @@ function pollTick() {
     .finally(() => { pollRunning = false; });
 }
 
-function startPolling() {
+function startPolling({ immediate = true } = {}) {
   if (pollTimer) return;
   if (!license.hasFeature(FEATURE)) return;
   pollTimer = setInterval(pollTick, pollIntervalMs());
   pollTimer.unref();
-  pollTick();
+  if (immediate) pollTick();
 }
 
 function stopPolling() {

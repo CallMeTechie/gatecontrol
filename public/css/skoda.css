@@ -16,3 +16,4 @@
 .skoda-card-meta { font-size: 0.8em; opacity: 0.7; margin-bottom: 10px; }
 .skoda-card-actions { display: flex; gap: 8px; }
 .skoda-owner-item { display: block; padding: 4px 0; }
+.skoda-page .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:9px} /* app.css lacks .btn-sm */

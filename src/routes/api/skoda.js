@@ -92,7 +92,7 @@ router.put('/settings', wrap(async (req, res) => {
   }
   settings.set('skoda_poll_interval_min', String(val));
   skoda.stopPolling();
-  skoda.startPolling();
+  skoda.startPolling({ immediate: false });
   res.json({ ok: true });
 }));
 

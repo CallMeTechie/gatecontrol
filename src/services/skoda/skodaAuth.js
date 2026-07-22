@@ -4,7 +4,7 @@
 // The API is unofficial; scripts/skoda-spike.js is the live ground truth.
 
 const crypto = require('node:crypto');
-const { CookieJar, requestWithJar, followRedirects } = require('./skodaHttp');
+const { CookieJar, followRedirects } = require('./skodaHttp');
 
 const CLIENT_ID = '7f045eee-7003-4379-9968-9355ed2adb06@apps_vw-dilab_com';
 const REDIRECT_URI = 'myskoda://redirect/login/';
