@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Skoda Connect portal widget (TP2): logged-in portal users see their own
+  vehicles (lock, battery/charging, climate, position with address, health/
+  maintenance) read-only, owner-gated, with reverse-geocoded location.
+
+---
+
 ## [1.117.7] — 2026-07-22
 
 ### Fixes
