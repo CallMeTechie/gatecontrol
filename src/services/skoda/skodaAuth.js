@@ -35,8 +35,16 @@ function parseIdk(html) {
 }
 
 function parseFragment(location) {
-  const hash = location.split('#')[1] || '';
-  return Object.fromEntries(new URLSearchParams(hash));
+  // response_type=code returns the auth code as a QUERY param on the
+  // myskoda:// redirect; older hybrid flows used the #fragment. Read both,
+  // query first (the real Skoda behaviour), fragment as fallback.
+  const params = {};
+  const afterScheme = location.split('://')[1] || location;
+  const query = (afterScheme.split('?')[1] || '').split('#')[0];
+  const fragment = location.split('#')[1] || '';
+  for (const [k, v] of new URLSearchParams(fragment)) params[k] = v;
+  for (const [k, v] of new URLSearchParams(query)) params[k] = v;
+  return params;
 }
 
 function formBody(fields) { return new URLSearchParams(fields).toString(); }
@@ -62,10 +70,11 @@ async function login(email, password, { fetchImpl = fetch } = {}) {
     client_id: CLIENT_ID,
     nonce,
     redirect_uri: REDIRECT_URI,
-    response_type: 'code id_token',
+    response_type: 'code',
     scope: SCOPES,
     code_challenge: challenge,
-    code_challenge_method: 'S256',
+    code_challenge_method: 's256',
+    prompt: 'login',
   }).toString();
 
   const start = await followRedirects(jar, authorizeUrl, { method: 'GET', headers: { accept: 'text/html' } }, { fetchImpl });
