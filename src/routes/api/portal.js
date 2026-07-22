@@ -14,6 +14,10 @@ const midea = require('../../services/midea');
 const mideaDevices = require('../../services/midea/mideaDevices');
 const smarthomeOwners = require('../../services/smarthome/smarthomeOwners');
 const smarthome = require('../../services/smarthome');
+const skoda = require('../../services/skoda');
+const skodaOwners = require('../../services/skoda/skodaOwners');
+const skodaVehicles = require('../../services/skoda/skodaVehicles');
+const skodaPortal = require('../../services/skoda/skodaPortal');
 
 const router = Router();
 
@@ -33,6 +37,10 @@ function piholeUnavailable(cache) {
 
 function mideaUnavailable() {
   return !license.hasFeature('midea_integration') || mideaDevices.listDevices().length === 0;
+}
+
+function skodaUnavailable() {
+  return !license.hasFeature('skoda_integration') || skodaVehicles.listRedacted().length === 0;
 }
 // Redact to portal-safe fields only (drop cloud_appliance_id / any secrets).
 function redactMideaDevice(id) {
@@ -296,6 +304,42 @@ router.post('/midea/:id/state', async (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'portal /midea control failed');
     return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// GET /skoda — owner-scoped vehicle list, read-only. Owner id from middleware only.
+router.get('/skoda', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.skoda) return res.status(404).json({ ok: false });
+    if (skodaUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
+    // GPS + home address is more sensitive than AC/lock status: reveal it only
+    // to a truly logged-in user, never via device-trust (mirrors the
+    // /pihole/household precedent — "trust never relaxes the sensitive bit").
+    const vehicles = await skodaPortal.portalVehiclesFor(req.portalOwnerId, { includePosition: req.portalLoggedIn });
+    if (!vehicles.length) return res.json({ ok: true, data: null, reason: 'no_data' });
+    res.json({ ok: true, data: { vehicles, loggedIn: req.portalLoggedIn } });
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /skoda failed');
+    return res.json({ ok: true, data: null, reason: 'unavailable' });
+  }
+});
+
+// GET /skoda/vehicles/:id/image — owner-gated binary. No access via id guessing.
+router.get('/skoda/vehicles/:id/image', (req, res) => {
+  try {
+    if (!portalConfig().widgets.skoda) return res.status(404).json({ ok: false });
+    if (skodaUnavailable()) return res.status(404).json({ ok: false });
+    const id = Number(req.params.id);
+    if (req.portalOwnerId == null || !skodaOwners.isOwner(id, req.portalOwnerId)) {
+      return res.status(403).json({ ok: false, error: 'SKODA_NOT_OWNER' });
+    }
+    const img = skoda.getVehicleImage(id);
+    if (!img) return res.status(404).json({ ok: false, error: 'no image' });
+    res.set('content-type', 'image/png').set('cache-control', 'private, max-age=86400').send(img.image);
+  } catch (err) {
+    logger.error({ error: err.message }, 'portal /skoda image failed');
+    return res.status(404).json({ ok: false });
   }
 });
 
