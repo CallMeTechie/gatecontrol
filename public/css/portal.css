@@ -423,6 +423,33 @@ body::before{
 .midea-msg{font-size:13px;color:var(--muted);padding:10px 0;line-height:1.5}
 
 /* ============================================================
+   SKODA CONNECT WIDGET
+   ============================================================ */
+.c-skoda { grid-column: span 7; }
+@media (max-width: 900px) { .c-skoda { grid-column: 1 / -1; } }
+.c-skoda .skoda-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.skoda-card { background: var(--surface-3); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.skoda-head { display: flex; align-items: center; gap: 12px; }
+.skoda-img { width: 96px; height: 60px; object-fit: contain; }
+.skoda-sub { font-size: .8em; color: var(--faint); }
+.skoda-batt { display: flex; align-items: center; gap: 16px; margin: 14px 0; }
+.skoda-batt .ring { position: relative; width: 106px; height: 106px; flex: 0 0 auto; }
+.skoda-batt .ring svg { transform: rotate(-90deg); }
+.skoda-batt .ring svg circle { transition: stroke-dashoffset .3s, stroke .15s; }
+.skoda-batt .ring .rc { position: absolute; inset: 0; display: grid; place-items: center; }
+.skoda-batt-info { font-size: .9em; display: grid; gap: 4px; }
+.skoda-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 6px 0; font-size: .92em; }
+.skoda-lock { font-weight: 600; }
+.skoda-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.skoda-chip { font-size: .78em; padding: 2px 8px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--line); color: var(--faint); }
+.skoda-chip.open { background: color-mix(in srgb, var(--amber) 18%, transparent); border-color: var(--amber); color: var(--amber); }
+.skoda-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--faint); }
+.skoda-dot.on { background: var(--green); }
+.skoda-dot.off { background: var(--faint); }
+.skoda-details { margin-top: 10px; font-size: .88em; color: var(--muted); }
+.skoda-details summary { cursor: pointer; }
+
+/* ============================================================
    SMART HOME WIDGET
    ============================================================ */
 .sh-tiles{display:grid;grid-template-columns:1fr 1fr;gap:11px}

@@ -60,6 +60,29 @@
   mideaOutdoor:          t('portal.midea.outdoor'),
   mideaWarmer:           t('portal.midea.warmer'),
   mideaCooler:           t('portal.midea.cooler'),
+  skodaTitle: t('portal.skoda.title'),
+  skodaSoc: t('portal.skoda.soc'),
+  skodaRange: t('portal.skoda.range'),
+  skodaLocked: t('portal.skoda.locked'),
+  skodaUnlocked: t('portal.skoda.unlocked'),
+  skodaCharging: t('portal.skoda.charging'),
+  skodaClimate: t('portal.skoda.climate'),
+  skodaTargetTemp: t('portal.skoda.target_temp'),
+  skodaClimateRemaining: t('portal.skoda.climate_remaining'),
+  skodaWindowHeating: t('portal.skoda.window_heating'),
+  skodaMileage: t('portal.skoda.mileage'),
+  skodaInspection: t('portal.skoda.inspection'),
+  skodaPartner: t('portal.skoda.partner'),
+  skodaPosition: t('portal.skoda.position'),
+  skodaAsOf: t('portal.skoda.as_of'),
+  skodaDoors: t('portal.skoda.doors'),
+  skodaWindows: t('portal.skoda.windows'),
+  skodaCableConnected: t('portal.skoda.cable_connected'),
+  skodaWarnings: t('portal.skoda.warnings'),
+  skodaBonnet: t('portal.skoda.bonnet'),
+  skodaTrunk: t('portal.skoda.trunk'),
+  skodaSunroof: t('portal.skoda.sunroof'),
+  skodaLightsOn: t('portal.skoda.lights_on'),
   smarthomePower:          t('portal.smarthome.power'),
   smarthomeBrightness:     t('portal.smarthome.brightness'),
   smarthomeActivate:       t('portal.smarthome.activate'),
@@ -147,6 +170,15 @@
       <div id="smarthome-list" class="sh-tiles"></div>
       <div id="smarthome-sensors" class="sh-sensors" style="display:none"></div>
       <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
+    </section>
+    {% endif %}
+
+    {% if widgets.skoda %}
+    <!-- Fahrzeuge — eigene Skoda-Connect-Fahrzeuge -->
+    <section class="card c-skoda skoda-widget">
+      <h2><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z"/><circle cx="7.5" cy="17.5" r="1"/><circle cx="16.5" cy="17.5" r="1"/></svg></span>{{ t('portal.skoda.title') }}</h2>
+      <div id="skoda-list" class="skoda-list"></div>
+      <div class="skoda-msg" id="skodaMsg" style="display:none"></div>
     </section>
     {% endif %}
 

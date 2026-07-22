@@ -848,6 +848,120 @@
     window.addEventListener('online', run, { signal: _mideaCtl.signal });
   }
 
+  function skodaEl() { return document.getElementById('skoda-list'); }
+
+  function skodaRingSvg(soc, charging) {
+    var r = 52, C = 2 * Math.PI * r;
+    var frac = (typeof soc === 'number') ? Math.max(0, Math.min(1, soc / 100)) : 0;
+    var dashOff = (C - frac * C).toFixed(1);
+    var col = charging ? 'var(--teal)' : (frac <= 0.15 ? 'var(--coral)' : 'var(--green)');
+    return '<div class="ring"><svg viewBox="0 0 120 120" width="106" height="106">'
+      + '<circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="10"/>'
+      + '<circle cx="60" cy="60" r="52" fill="none" stroke="' + col + '" stroke-width="10" stroke-linecap="round"'
+      + ' stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + dashOff + '"/></svg>'
+      + '<div class="rc"><strong>' + (typeof soc === 'number' ? soc + '%' : '—') + '</strong></div></div>';
+  }
+
+  function minutesAgo(iso) {
+    if (!iso) return '';
+    var t = Date.parse(String(iso).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? '' : 'Z'));
+    if (!isFinite(t)) return '';
+    var m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    return PT.skodaAsOf + ': ' + (m < 60 ? m + ' min' : Math.round(m / 60) + ' h');
+  }
+
+  // Derived connection dot: TP1 has no true online flag, so a fresh last-sync
+  // (< 60 min) is treated as "reachable". Purely indicative, paired with "as of".
+  function skodaConnDot(fetchedAt) {
+    var t = fetchedAt ? Date.parse(String(fetchedAt).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(fetchedAt) ? '' : 'Z')) : NaN;
+    var on = isFinite(t) && (Date.now() - t) < 3600000;
+    return '<span class="skoda-dot ' + (on ? 'on' : 'off') + '"></span>';
+  }
+  // Every value below ultimately comes from the external Skoda cloud, so escape
+  // each one before it hits innerHTML — even the "always numeric" display fields.
+  function numOr(v, unit) { return v != null ? escHtml(v + (unit || '')) : '—'; }
+  function lockChip(label, active) {
+    return '<span class="skoda-chip' + (active ? ' open' : '') + '">' + escHtml(label) + '</span>';
+  }
+
+  function renderSkodaCard(v) {
+    var s = v.state || {};
+    var ch = s.charging || {}, cl = s.climate || {}, hl = s.health || {}, mt = s.maintenance || {}, dt = s.detail || {};
+    var up = function (x) { return String(x || '').toUpperCase(); };
+    var lock = s.locked === true ? PT.skodaLocked : (s.locked === false ? PT.skodaUnlocked : '—');
+    // Icon grid: each element shown individually, open/on ones highlighted.
+    var chips = lockChip(PT.skodaDoors, s.doorsOpen === true)
+      + lockChip(PT.skodaWindows, s.windowsOpen === true)
+      + lockChip(PT.skodaBonnet, up(dt.bonnet) === 'OPEN')
+      + lockChip(PT.skodaTrunk, up(dt.trunk) === 'OPEN')
+      + (dt.sunroof != null && up(dt.sunroof) !== 'UNSUPPORTED' ? lockChip(PT.skodaSunroof, up(dt.sunroof) === 'OPEN') : '')
+      + (s.lightsOn === true ? lockChip(PT.skodaLightsOn, true) : '');
+    var pos = s.position;
+    var posText = pos ? (pos.address || (pos.lat.toFixed(4) + ', ' + pos.lon.toFixed(4))) : '—';
+    var posLink = pos ? '<a href="https://www.openstreetmap.org/?mlat=' + pos.lat + '&mlon=' + pos.lon + '" target="_blank" rel="noopener" title="' + escHtml(pos.lat + ', ' + pos.lon) + '">' + escHtml(posText) + '</a>' : '—';
+    return '<div class="skoda-card" data-id="' + v.id + '">'
+      + '<div class="skoda-head">'
+      + (v.has_image ? '<img class="skoda-img" src="/api/v1/portal/skoda/vehicles/' + v.id + '/image" alt="">' : '')
+      + '<div><strong>' + skodaConnDot(v.fetched_at) + escHtml(v.name || v.model || '') + '</strong>'
+      + '<div class="skoda-sub">' + escHtml(minutesAgo(v.fetched_at)) + '</div></div></div>'
+      + '<div class="skoda-batt">' + skodaRingSvg(s.soc, up(ch.state) === 'CHARGING')
+      + '<div class="skoda-batt-info"><div>' + PT.skodaRange + ': ' + numOr(s.rangeKm, ' km') + '</div>'
+      + (up(ch.state) === 'CHARGING' ? '<div>' + PT.skodaCharging + ': ' + numOr(ch.powerKw, ' kW')
+          + (ch.remainingMin != null ? ' · ' + numOr(ch.remainingMin, ' min') : '')
+          + (ch.targetPercent != null ? ' · ' + numOr(ch.targetPercent, '%') : '') + '</div>' : '')
+      + (ch.cableConnected ? '<div>' + PT.skodaCableConnected + '</div>' : '') + '</div></div>'
+      + '<div class="skoda-row"><span class="skoda-lock">' + escHtml(lock) + '</span>'
+      + '<span class="skoda-chips">' + chips + '</span></div>'
+      + '<div class="skoda-row">' + PT.skodaClimate + ': ' + escHtml(cl.state || '—')
+      + (cl.targetC != null ? ' · ' + numOr(cl.targetC, '°C') : '')
+      + (cl.remainingMin != null ? ' · ' + PT.skodaClimateRemaining + ' ' + numOr(cl.remainingMin, ' min') : '')
+      + (cl.windowHeating === true ? ' · ' + PT.skodaWindowHeating : '') + '</div>'
+      + '<details class="skoda-details"><summary>' + PT.skodaPosition + ' · ' + PT.skodaMileage + '</summary>'
+      + '<div>' + PT.skodaPosition + ': ' + posLink + '</div>'
+      + '<div>' + PT.skodaMileage + ': ' + numOr(hl.mileageKm, ' km') + '</div>'
+      + '<div>' + PT.skodaInspection + ': ' + numOr(mt.dueInDays, ' d')
+      + (mt.dueInKm != null ? ' · ' + numOr(mt.dueInKm, ' km') : '') + '</div>'
+      + (mt.partner ? '<div>' + PT.skodaPartner + ': ' + escHtml(mt.partner) + '</div>' : '')
+      + (hl.warnings && hl.warnings.length ? '<div>' + PT.skodaWarnings + ': ' + escHtml(hl.warnings.join(', ')) + '</div>' : '')
+      + '</details></div>';
+  }
+
+  function renderSkoda(vehicles) {
+    var el = skodaEl(); if (!el) return;
+    // Preserve which cards had their <details> expanded across the full rebuild,
+    // so a 120s poll never collapses what the user opened.
+    var open = {};
+    el.querySelectorAll('.skoda-card').forEach(function (c) {
+      var d = c.querySelector('details'); if (d && d.open) open[c.getAttribute('data-id')] = 1;
+    });
+    el.innerHTML = vehicles.map(renderSkodaCard).join('');
+    Object.keys(open).forEach(function (id) {
+      var d = el.querySelector('.skoda-card[data-id="' + id + '"] details'); if (d) d.open = true;
+    });
+  }
+
+  function hydrateSkoda() {
+    var card = document.querySelector('.c-skoda'); if (!card) return;
+    fetch('/api/v1/portal/skoda').then(function (r) { return r.status === 404 ? null : r.json(); }).then(function (body) {
+      if (!body || !body.ok || body.data === null) { card.style.display = 'none'; return; }
+      renderSkoda(body.data.vehicles);
+      startSkodaPoll(); // start polling only once we have data (mirrors hydrateMidea)
+    }).catch(function () { card.style.display = 'none'; });
+  }
+
+  var _skodaTimer = null;
+  function startSkodaPoll() {
+    if (_skodaTimer) clearInterval(_skodaTimer);
+    _skodaTimer = setInterval(function () {
+      if (document.hidden) return;
+      // Poll refresh: render on success, keep the last good cards on any
+      // failure/null — a transient hiccup must never blank the whole section.
+      fetch('/api/v1/portal/skoda').then(function (r) { return r.json(); }).then(function (body) {
+        if (body && body.ok && body.data) renderSkoda(body.data.vehicles);
+      }).catch(function () {});
+    }, 120000);
+  }
+
   // ─── Boot ───────────────────────────────────────────────────────────────────
   hydrateDevice();
   hydrateTraffic();
@@ -855,5 +969,6 @@
   hydratePihole();
   hydrateMidea();
   hydrateSmarthome();
+  hydrateSkoda();
 
 })();
