@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.6] — 2026-07-22
+
+### Fixes
+- replace ReDoS-prone email regex with linear index check
+
+---
+
 ## [1.117.5] — 2026-07-14
 
 ### Fixes
