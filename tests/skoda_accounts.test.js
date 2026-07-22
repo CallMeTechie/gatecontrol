@@ -33,6 +33,8 @@ test('empty or malformed fields raise SKODA_VALIDATION', () => {
   assert.throws(() => accounts.createAccount({ email: '', password: 'x' }), (e) => e.code === 'SKODA_VALIDATION');
   assert.throws(() => accounts.createAccount({ email: 'keine-mail', password: 'x' }), (e) => e.code === 'SKODA_VALIDATION');
   assert.throws(() => accounts.createAccount({ email: 'a@b.c', password: '' }), (e) => e.code === 'SKODA_VALIDATION');
+  // ReDoS guard: an overlong string must be rejected in bounded time (RFC 5321 cap)
+  assert.throws(() => accounts.createAccount({ email: `${'a'.repeat(9000)}@x`, password: 'x' }), (e) => e.code === 'SKODA_VALIDATION');
 });
 
 test('setStatus caps status_detail length at 300 chars', () => {
