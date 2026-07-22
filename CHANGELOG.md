@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.117.7] — 2026-07-22
+
+### Fixes
+- correct VW authorize params and code extraction
+
+---
+
 ## [1.117.6] — 2026-07-22
 
 ### Fixes
