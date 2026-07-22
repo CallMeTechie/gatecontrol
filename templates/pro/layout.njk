@@ -52,7 +52,8 @@
       l4_routes: {{ license.features.l4_routes | default(0) }},
       http_routes: {{ license.features.http_routes | default(0) }},
       browser_sessions: {{ ('true' if license.hasFeature('browser_sessions') else 'false') | safe }},
-      midea_integration: {{ ('true' if license.features.midea_integration else 'false') | safe }}
+      midea_integration: {{ ('true' if license.features.midea_integration else 'false') | safe }},
+      skoda_integration: {{ ('true' if license.features.skoda_integration else 'false') | safe }}
     },
     t: {
       'smarthome.power': {{ t('smarthome.power') | dump | safe }},
@@ -529,7 +530,33 @@
       'midea.extras.label': {{ t('midea.extras.label') | dump | safe }},
       'midea.turbo': {{ t('midea.turbo') | dump | safe }},
       'midea.eco': {{ t('midea.eco') | dump | safe }},
-      'midea.device.outdoor': {{ t('midea.device.outdoor') | dump | safe }}
+      'midea.device.outdoor': {{ t('midea.device.outdoor') | dump | safe }},
+      'skoda.title': {{ t('skoda.title') | dump | safe }},
+      'skoda.accounts.title': {{ t('skoda.accounts.title') | dump | safe }},
+      'skoda.accounts.add': {{ t('skoda.accounts.add') | dump | safe }},
+      'skoda.accounts.email': {{ t('skoda.accounts.email') | dump | safe }},
+      'skoda.accounts.password': {{ t('skoda.accounts.password') | dump | safe }},
+      'skoda.accounts.status.ok': {{ t('skoda.accounts.status.ok') | dump | safe }},
+      'skoda.accounts.status.login_failed': {{ t('skoda.accounts.status.login_failed') | dump | safe }},
+      'skoda.accounts.status.rate_limited': {{ t('skoda.accounts.status.rate_limited') | dump | safe }},
+      'skoda.accounts.status.error': {{ t('skoda.accounts.status.error') | dump | safe }},
+      'skoda.accounts.remove': {{ t('skoda.accounts.remove') | dump | safe }},
+      'skoda.accounts.change_password': {{ t('skoda.accounts.change_password') | dump | safe }},
+      'skoda.vehicles.title': {{ t('skoda.vehicles.title') | dump | safe }},
+      'skoda.vehicles.empty': {{ t('skoda.vehicles.empty') | dump | safe }},
+      'skoda.vehicle.soc': {{ t('skoda.vehicle.soc') | dump | safe }},
+      'skoda.vehicle.range': {{ t('skoda.vehicle.range') | dump | safe }},
+      'skoda.vehicle.locked': {{ t('skoda.vehicle.locked') | dump | safe }},
+      'skoda.vehicle.unlocked': {{ t('skoda.vehicle.unlocked') | dump | safe }},
+      'skoda.vehicle.refresh': {{ t('skoda.vehicle.refresh') | dump | safe }},
+      'skoda.vehicle.owners': {{ t('skoda.vehicle.owners') | dump | safe }},
+      'skoda.vehicle.fetched': {{ t('skoda.vehicle.fetched') | dump | safe }},
+      'skoda.vehicle.mileage': {{ t('skoda.vehicle.mileage') | dump | safe }},
+      'skoda.settings.poll_interval': {{ t('skoda.settings.poll_interval') | dump | safe }},
+      'skoda.owner.save': {{ t('skoda.owner.save') | dump | safe }},
+      'skoda.owner.title': {{ t('skoda.owner.title') | dump | safe }},
+      'skoda.error.cooldown': {{ t('skoda.error.cooldown') | dump | safe }},
+      'skoda.error.generic': {{ t('skoda.error.generic') | dump | safe }}
     }
   };
 </script>

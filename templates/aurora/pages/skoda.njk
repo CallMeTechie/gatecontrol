@@ -1,0 +1,57 @@
+{% extends theme + "/layout.njk" %}
+{% block head %}<link rel="stylesheet" href="/css/skoda.css">{% endblock %}
+{% block content %}
+<div class="skoda-page">
+  <div class="page-header">
+    <h1 class="page-title">{{ t('skoda.title') }}</h1>
+    <div class="page-actions">
+      <label class="skoda-poll">{{ t('skoda.settings.poll_interval') }}
+        <input type="number" id="skoda-poll-interval" min="5" max="1440" step="1">
+      </label>
+      <button class="btn btn-primary" id="skoda-account-add-open">{{ t('skoda.accounts.add') }}</button>
+    </div>
+  </div>
+  <h2>{{ t('skoda.accounts.title') }}</h2>
+  <div id="skoda-accounts"></div>
+  <h2>{{ t('skoda.vehicles.title') }}</h2>
+  <div class="skoda-grid" id="skoda-vehicles"></div>
+</div>
+
+<div class="modal-overlay" id="skoda-account-modal" style="display:none">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <div class="modal-title">{{ t('skoda.accounts.add') }}</div>
+      <button class="modal-close" id="skoda-acc-cancel" aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">{{ t('skoda.accounts.email') }}</label>
+        <input class="form-input" type="email" id="skoda-acc-email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">{{ t('skoda.accounts.password') }}</label>
+        <input class="form-input" type="password" id="skoda-acc-password">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" id="skoda-acc-save">{{ t('skoda.owner.save') }}</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="skoda-owner-modal" style="display:none">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <div class="modal-title">{{ t('skoda.owner.title') }}</div>
+      <button class="modal-close" id="skoda-owner-cancel" aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="skoda-owner-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" id="skoda-owner-save">{{ t('skoda.owner.save') }}</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/js/skoda.js" defer></script>{% endblock %}

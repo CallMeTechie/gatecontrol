@@ -194,6 +194,7 @@ const pages = [
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/midea', template: 'midea', titleKey: 'midea.title' },
+  { path: '/skoda', template: 'skoda', titleKey: 'skoda.title' },
   { path: '/smarthome', template: 'smarthome', titleKey: 'smarthome.title' },
   { path: '/smarthome/rules', template: 'smarthome-rules', titleKey: 'smarthome.rules.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },

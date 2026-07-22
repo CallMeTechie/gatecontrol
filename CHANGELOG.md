@@ -23,6 +23,11 @@
 
 ## [Unreleased]
 
+### Added
+- Skoda Connect integration (TP1): MySkoda account linking, vehicle sync with
+  state cache and rate-limit backoff, admin page `/skoda` with owner mapping
+  (feature flag `skoda_integration`).
+
 ### Changed
 - Routes page (Aurora): flat table replaced by a card grid — group cards for service bundles/shared domains, slim single-route cards elsewhere; domainless L4 forwards get derived names (SSH, RDP, IPP, …); new EXTERNAL/INTERNAL badge + filter and a KPI strip (total/HTTP/forwards/external/disabled).
 
