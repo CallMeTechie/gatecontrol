@@ -22,7 +22,7 @@ test('startAc POSTs the correct path and body with bearer + content-type', async
   await client.startAc('V', 21.4);
   const c = calls[0];
   assert.equal(c.method, 'POST');
-  assert.match(c.url, new RegExp(API_BASE.replace(/[.]/g, '\\.') + '/api/v2/air-conditioning/V/start$'));
+  assert.equal(c.url, API_BASE + '/api/v2/air-conditioning/V/start');
   assert.equal(c.auth, 'Bearer AT');
   assert.equal(c.ct, 'application/json');
   const body = JSON.parse(c.body);
