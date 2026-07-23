@@ -27,8 +27,14 @@ test('startAc POSTs the correct path and body with bearer + content-type', async
   assert.equal(c.ct, 'application/json');
   const body = JSON.parse(c.body);
   assert.equal(body.heaterSource, 'ELECTRIC');
-  assert.equal(body.targetTemperature.temperatureValue, 21); // rounded
+  assert.equal(body.targetTemperature.temperatureValue, 21.5); // rounded to nearest 0.5
   assert.equal(body.targetTemperature.unitInCar, 'CELSIUS');
+});
+
+test('setAcTemp rounds to nearest 0.5 (16.3 -> 16.5)', async () => {
+  const { client, calls } = makeClient([['/settings/target-temperature', okRes()]]);
+  await client.setAcTemp('V', 16.3);
+  assert.equal(JSON.parse(calls[0].body).temperatureValue, 16.5);
 });
 
 test('stopAc and window heating POST with no body', async () => {
