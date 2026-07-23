@@ -14,7 +14,7 @@ test('skoda tables exist with expected columns', () => {
   const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
   assert.deepEqual(
     cols('skoda_accounts').sort(),
-    ['backoff_min', 'created_at', 'email', 'id', 'next_retry_at', 'password_enc', 'session_enc', 'status', 'status_detail', 'updated_at']
+    ['backoff_min', 'created_at', 'email', 'id', 'next_retry_at', 'password_enc', 'session_enc', 'spin_enc', 'status', 'status_detail', 'updated_at']
   );
   assert.deepEqual(
     cols('skoda_vehicles').sort(),
