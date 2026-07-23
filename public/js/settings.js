@@ -1781,11 +1781,12 @@
   var widgetPihole = document.getElementById('portal-widget-pihole');
   var widgetMidea = document.getElementById('portal-widget-midea');
   var widgetSmarthome = document.getElementById('portal-widget-smarthome');
+  var widgetSkoda = document.getElementById('portal-widget-skoda');
   var trustToggle = document.getElementById('portal-trust-owner-mapping');
   var autoappearToggle = document.getElementById('portal-autoappear');
   if (!enabledToggle) return;
 
-  [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, trustToggle, autoappearToggle].forEach(function (el) {
+  [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, widgetSkoda, trustToggle, autoappearToggle].forEach(function (el) {
     if (el) el.addEventListener('click', function () {
       el.classList.toggle('on');
       el.dispatchEvent(new Event('change'));
@@ -1807,6 +1808,7 @@
     setToggle(widgetPihole, d.widgets && d.widgets.pihole);
     setToggle(widgetMidea, d.widgets && d.widgets.midea);
     setToggle(widgetSmarthome, d.widgets && d.widgets.smarthome);
+    setToggle(widgetSkoda, d.widgets && d.widgets.skoda);
     setToggle(trustToggle, d.trustOwnerMapping);
     setToggle(autoappearToggle, d.autoappear !== false);
     if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('portal');
@@ -1814,7 +1816,7 @@
     console.error('Failed to load portal settings:', err);
   });
 
-  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, trustToggle, autoappearToggle].filter(Boolean);
+  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, widgetSkoda, trustToggle, autoappearToggle].filter(Boolean);
   SettingsAutosave.bind({
     cluster: 'portal',
     fields: portalFields,
@@ -1828,6 +1830,7 @@
         'portal-widget-pihole': widgetPihole ? widgetPihole.classList.contains('on') : true,
         'portal-widget-midea': widgetMidea ? widgetMidea.classList.contains('on') : true,
         'portal-widget-smarthome': widgetSmarthome ? widgetSmarthome.classList.contains('on') : true,
+        'portal-widget-skoda': widgetSkoda ? widgetSkoda.classList.contains('on') : true,
         'portal-trust-owner-mapping': trustToggle ? trustToggle.classList.contains('on') : false,
         'portal-autoappear': autoappearToggle ? autoappearToggle.classList.contains('on') : true,
       };
@@ -1842,6 +1845,7 @@
           pihole: widgetPihole ? widgetPihole.classList.contains('on') : true,
           midea: widgetMidea ? widgetMidea.classList.contains('on') : true,
           smarthome: widgetSmarthome ? widgetSmarthome.classList.contains('on') : true,
+          skoda: widgetSkoda ? widgetSkoda.classList.contains('on') : true,
         },
         trust_owner_mapping: trustToggle ? trustToggle.classList.contains('on') : false,
         autoappear: autoappearToggle ? autoappearToggle.classList.contains('on') : true,

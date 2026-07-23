@@ -63,6 +63,9 @@ router.put('/portal', (req, res) => {
     if (widgets.smarthome !== undefined) {
       settings.set('portal.widget.smarthome', widgets.smarthome ? '1' : '0');
     }
+    if (widgets.skoda !== undefined) {
+      settings.set('portal.widget.skoda', widgets.skoda ? '1' : '0');
+    }
 
     if (body.trust_owner_mapping !== undefined) {
       settings.set('portal.trust_owner_mapping', body.trust_owner_mapping ? '1' : '0');
