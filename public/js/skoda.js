@@ -27,6 +27,8 @@
   let current = { accounts: [], vehicles: [] };
   let ownerVehicleId = null;
   let spinAccountId = null;
+  const skodaEnrich = {}; // vehId -> rendered details HTML, cached only on success
+  const skodaPending = new Set(); // vehId currently being fetched (in-flight guard)
 
   function accountRow(a) {
     const statusKey = `skoda.accounts.status.${a.status}`;
@@ -74,7 +76,73 @@
         <button class="btn btn-sm btn-danger" data-cmd="unlock">${T('skoda.cmd.unlock')}</button>
         <label>${T('skoda.cmd.set_limit')} <select data-cmd="charge_limit"><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></label>
       </div>
+      <details class="skoda-details-block"><summary>${T('skoda.details.title')}</summary><div class="skoda-enrich" data-veh="${v.id}"></div></details>
     </div>`;
+  }
+
+  // Read-only enrichment (meta/equipment/connection/drivingScore) — fetched once
+  // per vehicle on first <details> open, cached in skodaEnrich so re-opening or a
+  // subsequent load() rebuild never re-fetches.
+  function detailsHtml(d) {
+    const meta = d.meta || {};
+    const rows = [];
+    const title = meta.title || meta.model;
+    if (title != null) rows.push(`<div>${T('skoda.details.model')}: ${esc(title)}</div>`);
+    if (meta.modelYear != null) rows.push(`<div>${T('skoda.details.year')}: ${esc(meta.modelYear)}</div>`);
+    if (meta.manufacturingDate != null) rows.push(`<div>${T('skoda.details.made')}: ${esc(meta.manufacturingDate)}</div>`);
+    if (meta.body != null) rows.push(`<div>${T('skoda.details.body')}: ${esc(meta.body)}</div>`);
+    if (meta.trimLevel != null) rows.push(`<div>${T('skoda.details.trim')}: ${esc(meta.trimLevel)}</div>`);
+    if (meta.powerKw != null) rows.push(`<div>${T('skoda.details.power')}: ${esc(meta.powerKw)} kW</div>`);
+    if (meta.batteryKwh != null) rows.push(`<div>${T('skoda.details.battery')}: ${esc(meta.batteryKwh)} kWh</div>`);
+    if (meta.maxChargingKw != null) rows.push(`<div>${T('skoda.details.max_charging')}: ${esc(meta.maxChargingKw)} kW</div>`);
+    let html = rows.length ? `<div class="skoda-details-meta">${rows.join('')}</div>` : '';
+
+    const equipment = Array.isArray(d.equipment) ? d.equipment : [];
+    if (equipment.length) {
+      html += `<div class="skoda-details-equipment"><strong>${T('skoda.details.equipment')}</strong> `
+        + equipment.map((e) => `<span class="skoda-chip">${esc(e)}</span>`).join('') + `</div>`;
+    }
+
+    const conn = d.connection;
+    if (conn) {
+      const parts = [];
+      if (conn.online != null) parts.push(conn.online ? T('skoda.details.online') : T('skoda.details.offline'));
+      if (conn.ignitionOn != null) parts.push(conn.ignitionOn ? T('skoda.details.ignition_on') : T('skoda.details.ignition_off'));
+      if (conn.inMotion) parts.push(T('skoda.details.in_motion'));
+      if (parts.length) html += `<div class="skoda-details-connection"><strong>${T('skoda.details.connection')}</strong>: ${esc(parts.join(', '))}</div>`;
+    }
+
+    const score = d.drivingScore;
+    if (score) {
+      const parts = [];
+      if (score.weekly != null) parts.push(`${T('skoda.details.score_weekly')}: ${esc(score.weekly)}`);
+      if (score.monthly != null) parts.push(`${T('skoda.details.score_monthly')}: ${esc(score.monthly)}`);
+      if (score.lastCalculationDate != null) parts.push(`${T('skoda.details.score_as_of')}: ${esc(score.lastCalculationDate)}`);
+      if (parts.length) html += `<div class="skoda-details-score"><strong>${T('skoda.details.score')}</strong>: ${parts.join(' · ')}</div>`;
+    }
+    return html;
+  }
+
+  async function loadDetails(vehId, container) {
+    if (skodaEnrich[vehId] != null) { container.innerHTML = skodaEnrich[vehId]; return; }
+    if (skodaPending.has(vehId)) return; // a fetch is already in flight for this vehicle
+    skodaPending.add(vehId);
+    try {
+      const res = await fetch(`/api/v1/skoda/vehicles/${vehId}/details`, { headers });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.ok) {
+        const html = detailsHtml(json.details || {});
+        skodaEnrich[vehId] = html; // cache success only
+        container.innerHTML = html;
+      } else {
+        // Error (esp. 429) is transient — show it but do NOT cache, so reopening retries.
+        container.innerHTML = `<p class="skoda-details-error">${esc(res.status === 429 ? T('skoda.details.rate_limited') : T('skoda.details.load_error'))}</p>`;
+      }
+    } catch (e) {
+      container.innerHTML = `<p class="skoda-details-error">${esc(T('skoda.details.load_error'))}</p>`;
+    } finally {
+      skodaPending.delete(vehId);
+    }
   }
 
   async function command(vehicleId, action, args, el) {
@@ -97,10 +165,22 @@
   }
 
   async function load() {
+    const vehiclesEl = el('skoda-vehicles');
+    // Preserve open <details> across the rebuild (position-keyed, same order as
+    // current.vehicles) and reinject any already-fetched enrichment so an
+    // in-flight refresh never blanks a block the user has open.
+    const wasOpen = [...vehiclesEl.querySelectorAll('.skoda-details-block')].map((d) => d.open);
     current = await api('GET', '');
     el('skoda-poll-interval').value = current.poll_interval_min;
     el('skoda-accounts').innerHTML = current.accounts.map(accountRow).join('') || '';
-    el('skoda-vehicles').innerHTML = current.vehicles.map(vehicleCard).join('') || `<p>${T('skoda.vehicles.empty')}</p>`;
+    vehiclesEl.innerHTML = current.vehicles.map(vehicleCard).join('') || `<p>${T('skoda.vehicles.empty')}</p>`;
+    vehiclesEl.querySelectorAll('.skoda-details-block').forEach((d, i) => {
+      if (!wasOpen[i]) return;
+      d.open = true;
+      const box = d.querySelector('.skoda-enrich');
+      const vehId = Number(box.dataset.veh);
+      if (skodaEnrich[vehId] != null) box.innerHTML = skodaEnrich[vehId];
+    });
   }
 
   function fail(e) { alert(e.code === 'SKODA_REFRESH_COOLDOWN' ? T('skoda.error.cooldown') : (e.message || T('skoda.error.generic'))); }
@@ -161,6 +241,15 @@
       }
     } catch (e) { fail(e); }
   });
+
+  // 'toggle' does not bubble, so bind on the capture phase to catch it from any
+  // <details class="skoda-details-block"> inside the container.
+  el('skoda-vehicles').addEventListener('toggle', (ev) => {
+    const d = ev.target;
+    if (!d.classList || !d.classList.contains('skoda-details-block') || !d.open) return;
+    const box = d.querySelector('.skoda-enrich');
+    loadDetails(Number(box.dataset.veh), box);
+  }, true);
 
   el('skoda-vehicles').addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-cmd]'); if (!b) return;

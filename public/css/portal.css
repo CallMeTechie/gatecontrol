@@ -448,6 +448,9 @@ body::before{
 .skoda-dot.off { background: var(--faint); }
 .skoda-details { margin-top: 10px; font-size: .88em; color: var(--muted); }
 .skoda-details summary { cursor: pointer; }
+.skoda-enrich { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.skoda-details-equipment { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.skoda-details-error { opacity: .7; font-style: italic; color: var(--muted); }
 
 /* ============================================================
    SMART HOME WIDGET
