@@ -26,6 +26,7 @@
   const hideModal = (id) => { el(id).style.display = 'none'; };
   let current = { accounts: [], vehicles: [] };
   let ownerVehicleId = null;
+  let spinAccountId = null;
 
   function accountRow(a) {
     const statusKey = `skoda.accounts.status.${a.status}`;
@@ -36,6 +37,7 @@
       <span class="skoda-account-email">${esc(a.email)}</span>
       <span class="skoda-badge skoda-badge-${esc(a.status)}" title="${esc(a.status_detail || '')}">${esc(statusText)}</span>
       <button class="btn btn-sm" data-action="password">${T('skoda.accounts.change_password')}</button>
+      <button class="btn btn-sm" data-action="spin">${T('skoda.cmd.spin')}</button>
       <button class="btn btn-sm btn-danger" data-action="remove">${T('skoda.accounts.remove')}</button>
     </div>`;
   }
@@ -59,7 +61,35 @@
         <button class="btn btn-sm" data-action="owners">${T('skoda.vehicle.owners')}</button>
         <button class="btn btn-sm" data-action="refresh">${T('skoda.vehicle.refresh')}</button>
       </div>
+      <div class="skoda-cmds" data-veh="${v.id}">
+        <button class="btn btn-sm" data-cmd="ac_start" data-temp="21">${T('skoda.cmd.ac_on')}</button>
+        <button class="btn btn-sm" data-cmd="ac_stop">${T('skoda.cmd.ac_off')}</button>
+        <label>${T('skoda.cmd.set_temp')} <input type="number" min="16" max="30" step="1" value="21" data-temp-input></label>
+        <button class="btn btn-sm" data-cmd="ac_temp">${T('skoda.cmd.set_temp')}</button>
+        <button class="btn btn-sm" data-cmd="charge_start">${T('skoda.cmd.charge_on')}</button>
+        <button class="btn btn-sm" data-cmd="charge_stop">${T('skoda.cmd.charge_off')}</button>
+        <button class="btn btn-sm" data-cmd="window_heat_start">${T('skoda.cmd.window_heat_on')}</button>
+        <button class="btn btn-sm" data-cmd="window_heat_stop">${T('skoda.cmd.window_heat_off')}</button>
+        <button class="btn btn-sm" data-cmd="lock">${T('skoda.cmd.lock')}</button>
+        <button class="btn btn-sm btn-danger" data-cmd="unlock">${T('skoda.cmd.unlock')}</button>
+        <label>${T('skoda.cmd.set_limit')} <select data-cmd="charge_limit"><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></label>
+      </div>
     </div>`;
+  }
+
+  async function command(vehicleId, action, args, el) {
+    if (action === 'unlock' && !confirm(T('skoda.cmd.confirm_unlock'))) return;
+    if (el && el.disabled) return; // already in flight → no command storm
+    const restore = el ? el.textContent : null;
+    if (el) { el.disabled = true; el.textContent = T('skoda.cmd.running'); }
+    try {
+      await api('POST', `/vehicles/${vehicleId}/command`, { action, args: args || {} });
+      setTimeout(load, 3000); // let the 30s post-command refresh begin; reload state
+    } catch (e) {
+      alert(e.code === 'SKODA_SPIN_REQUIRED' ? T('skoda.cmd.spin') + '?' : (e.message || T('skoda.cmd.failed')));
+    } finally {
+      if (el) setTimeout(() => { el.disabled = false; if (restore != null) el.textContent = restore; }, 3000);
+    }
   }
 
   async function load() {
@@ -96,6 +126,19 @@
           await load();
         }
       }
+      if (btn.dataset.action === 'spin') {
+        spinAccountId = id;
+        el('skoda-spin-input').value = '';
+        showModal('skoda-spin-modal');
+      }
+    } catch (e) { fail(e); }
+  });
+
+  el('skoda-spin-cancel').addEventListener('click', () => hideModal('skoda-spin-modal'));
+  el('skoda-spin-save').addEventListener('click', async () => {
+    try {
+      await api('PUT', `/accounts/${spinAccountId}/spin`, { spin: el('skoda-spin-input').value });
+      hideModal('skoda-spin-modal');
     } catch (e) { fail(e); }
   });
 
@@ -113,6 +156,19 @@
         showModal('skoda-owner-modal');
       }
     } catch (e) { fail(e); }
+  });
+
+  el('skoda-vehicles').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-cmd]'); if (!b) return;
+    const box = b.closest('.skoda-cmds'); const veh = Number(box.dataset.veh);
+    let args = {};
+    if (b.dataset.temp) args = { temp: Number(b.dataset.temp) };
+    else if (b.dataset.cmd === 'ac_temp') { const inp = box.querySelector('[data-temp-input]'); args = { temp: Number(inp && inp.value) }; }
+    command(veh, b.dataset.cmd, args, b);
+  });
+  el('skoda-vehicles').addEventListener('change', (ev) => {
+    const s = ev.target.closest('select[data-cmd="charge_limit"]'); if (!s) return;
+    command(Number(s.closest('.skoda-cmds').dataset.veh), 'charge_limit', { limit: Number(s.value) }, s);
   });
 
   el('skoda-owner-cancel').addEventListener('click', () => hideModal('skoda-owner-modal'));
