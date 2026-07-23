@@ -94,7 +94,19 @@ test('renderImage rejects non-allowlisted or non-https hosts', async () => {
   const { client } = makeClient([]);
   await assert.rejects(client.renderImage('https://evil.example/x.png'), (e) => e.code === 'SKODA_API_ERROR');
   await assert.rejects(client.renderImage('http://ip-modcwp.azureedge.net/x.png'), (e) => e.code === 'SKODA_API_ERROR');
+  await assert.rejects(client.renderImage('https://evil.blob.core.windows.net/x.png'), (e) => e.code === 'SKODA_API_ERROR');
   await assert.rejects(client.renderImage('nicht-mal-eine-url'), (e) => e.code === 'SKODA_API_ERROR');
+});
+
+test('renderImage fetches the real Skoda blob host WITHOUT sending the auth token', async () => {
+  const png = new TextEncoder().encode('PNG').buffer;
+  const { client, calls } = makeClient([
+    ['iprenders.blob.core.windows.net', { status: 200, ok: true, headers: new Headers(), arrayBuffer: async () => png }],
+  ]);
+  const buf = await client.renderImage('https://iprenders.blob.core.windows.net/renders/car.png');
+  assert.ok(Buffer.isBuffer(buf));
+  // the Skoda access token must never be sent to the third-party CDN
+  assert.equal(calls[calls.length - 1].auth, undefined);
 });
 
 test('normalizeVehicleState tolerates missing parts with nulls', () => {

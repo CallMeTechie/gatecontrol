@@ -8,7 +8,10 @@ class SkodaApiError extends Error {
 }
 
 // Hosts observed serving compositeRenders images; confirm/extend via Task-3 spike.
-const RENDER_HOST_ALLOWLIST = [/\.azureedge\.net$/, /\.skoda-auto\.cz$/];
+// Hosts observed serving compositeRenders images (live-confirmed). iprenders is
+// Skoda's public Azure blob bucket — pinned to the exact host (not all of
+// *.blob.core.windows.net, which any Azure tenant can use).
+const RENDER_HOST_ALLOWLIST = [/\.azureedge\.net$/, /\.skoda-auto\.cz$/, /^iprenders\.blob\.core\.windows\.net$/];
 
 class SkodaClient {
   constructor({ getSession, saveSession, fetchImpl = fetch }) {
@@ -52,15 +55,14 @@ class SkodaClient {
   async renderImage(url) {
     // The url comes from the Skoda API response — never fetch it unvalidated,
     // and never send our bearer token to an arbitrary host (SSRF/token leak).
-    // Confirm/extend the allowlist from the Task-3 live spike; if the spike
-    // shows the CDN serves images unauthenticated, drop the auth header here.
     let parsed;
     try { parsed = new URL(url); } catch { throw new SkodaApiError('invalid render url', 'SKODA_API_ERROR', 0); }
     if (parsed.protocol !== 'https:' || !RENDER_HOST_ALLOWLIST.some((re) => re.test(parsed.hostname))) {
       throw new SkodaApiError(`render url host not allowed: ${parsed.hostname}`, 'SKODA_API_ERROR', 0);
     }
-    const session = this.getSession();
-    const res = await this.fetchImpl(parsed.toString(), { headers: { authorization: `Bearer ${session.accessToken}` } });
+    // No auth header: the render is a public blob (live-confirmed 200 without
+    // it), and sending the Skoda access token to a third-party CDN would leak it.
+    const res = await this.fetchImpl(parsed.toString());
     if (res.status >= 400) throw new SkodaApiError(`image fetch failed ${res.status}`, 'SKODA_API_ERROR', res.status);
     return Buffer.from(await res.arrayBuffer());
   }
