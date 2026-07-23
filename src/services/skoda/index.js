@@ -20,6 +20,7 @@ let lastSyncAt = null;
 // ponytail: both maps grow one entry per vehicle/account ever touched — fine
 // for a two-car household, add cleanup if the fleet ever grows.
 const refreshCooldown = new Map(); // vehicleId -> ts
+const cmdRefreshCooldown = new Map(); // vehicleId -> ts (nach Kommando, 30s-Fenster)
 const accountLocks = new Map(); // accountId -> promise chain tail
 
 // Serializes poller, manual refresh and account removal per account —
@@ -125,17 +126,21 @@ async function syncAll({ fetchImpl, ignoreRetryAt = false } = {}) {
   }
 }
 
-async function refreshVehicle(vehicleId, { fetchImpl } = {}) {
-  const last = refreshCooldown.get(vehicleId) || 0;
-  if (Date.now() - last < REFRESH_COOLDOWN_MS) {
-    const e = new Error('refresh cooldown active');
-    e.code = 'SKODA_REFRESH_COOLDOWN';
-    throw e;
+async function refreshVehicle(vehicleId, { fetchImpl, afterCommand = false } = {}) {
+  const map = afterCommand ? cmdRefreshCooldown : refreshCooldown;
+  const cooldown = afterCommand ? 30000 : REFRESH_COOLDOWN_MS;
+  const last = map.get(vehicleId) || 0;
+  if (Date.now() - last < cooldown) {
+    const e = new Error('refresh cooldown active'); e.code = 'SKODA_REFRESH_COOLDOWN'; throw e;
   }
   const accountId = vehicles.accountIdOf(vehicleId);
   if (!accountId) { const e = new Error('vehicle not found'); e.code = 'SKODA_VEHICLE_NOT_FOUND'; throw e; }
-  refreshCooldown.set(vehicleId, Date.now());
+  map.set(vehicleId, Date.now());
   return syncAccount(accountId, { fetchImpl });
+}
+
+function clientForAccount(accountId, fetchImpl) {
+  return clientFor({ id: accountId }, fetchImpl); // clientFor liest nur account.id (getSession/saveSession je Account)
 }
 
 function removeAccount(accountId) {
@@ -175,9 +180,10 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-function _resetForTest() { stopPolling(); refreshCooldown.clear(); accountLocks.clear(); pollRunning = false; lastSyncAt = null; }
+function _resetForTest() { stopPolling(); refreshCooldown.clear(); cmdRefreshCooldown.clear(); accountLocks.clear(); pollRunning = false; lastSyncAt = null; }
 
 module.exports = {
   syncAccount, syncAll, refreshVehicle, removeAccount, getStatus, getVehicleImage,
   startPolling, stopPolling, pollTick, pollIntervalMs, _resetForTest,
+  clientForAccount, withAccountLock,
 };
