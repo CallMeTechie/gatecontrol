@@ -18,6 +18,7 @@ const skoda = require('../../services/skoda');
 const skodaOwners = require('../../services/skoda/skodaOwners');
 const skodaVehicles = require('../../services/skoda/skodaVehicles');
 const skodaPortal = require('../../services/skoda/skodaPortal');
+const skodaControl = require('../../services/skoda/skodaControl');
 
 const router = Router();
 
@@ -340,6 +341,24 @@ router.get('/skoda/vehicles/:id/image', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'portal /skoda image failed');
     return res.status(404).json({ ok: false });
+  }
+});
+
+// POST /skoda/vehicles/:id/command — control, login-required + owner-gated.
+const SKODA_CMD_STATUS = { SKODA_UNKNOWN_COMMAND: 400, SKODA_VALIDATION: 400, SKODA_SPIN_REQUIRED: 409, SKODA_NO_SESSION: 409, SKODA_COMMAND_RATE_LIMIT: 429, SKODA_RATE_LIMITED: 429, SKODA_VEHICLE_NOT_FOUND: 404 };
+router.post('/skoda/vehicles/:id/command', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.skoda) return res.status(404).json({ ok: false });
+    if (skodaUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    // Not logged in → 200 + reason (exakt wie POST /midea/:id/state), NICHT 401.
+    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
+    const id = Number(req.params.id);
+    if (!skodaOwners.isOwner(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'SKODA_NOT_OWNER' });
+    await skodaControl.runCommand(id, req.body.action, req.body.args || {});
+    res.json({ ok: true });
+  } catch (err) {
+    const status = SKODA_CMD_STATUS[err.code] || 502;
+    res.status(status).json({ ok: false, error: err.code || 'command failed' });
   }
 });
 
