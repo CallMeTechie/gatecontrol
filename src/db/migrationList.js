@@ -1213,6 +1213,12 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS idx_skoda_owners_user ON skoda_vehicle_owners(user_id);`,
     detect: (db) => tableExists(db, 'skoda_accounts'),
   },
+  {
+    version: 67,
+    name: 'skoda_account_spin',
+    sql: `ALTER TABLE skoda_accounts ADD COLUMN spin_enc TEXT;`,
+    detect: (db) => hasColumn(db, 'skoda_accounts', 'spin_enc'),
+  },
 ];
 
 module.exports = { migrations };
