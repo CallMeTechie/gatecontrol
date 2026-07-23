@@ -849,6 +849,8 @@
   }
 
   function skodaEl() { return document.getElementById('skoda-list'); }
+  var skodaEnrich = {}; // vehId -> rendered details HTML, cached only on success/unavailable
+  var skodaPending = {}; // vehId currently being fetched (in-flight guard)
 
   function skodaRingSvg(soc, charging) {
     var r = 52, C = 2 * Math.PI * r;
@@ -910,6 +912,70 @@
       })
       .catch(function () { skodaMsg(PT.skodaCmdFailed); })
       .then(function () { clearTimeout(watchdog); setTimeout(reset, 3000); });
+  }
+
+  // Read-only enrichment (meta/equipment/connection/drivingScore) — same four
+  // groups as the admin side, redacted (masked VIN). Every value is escHtml'd
+  // before it reaches innerHTML, including numbers, per the XSS guard convention
+  // already used throughout this file (see numOr above).
+  function skodaDetailsHtml(d) {
+    var meta = d.meta || {};
+    var rows = [];
+    var title = meta.title || meta.model;
+    if (title != null) rows.push('<div>' + escHtml(PT.skodaDetailsModel) + ': ' + escHtml(title) + '</div>');
+    if (meta.modelYear != null) rows.push('<div>' + escHtml(PT.skodaDetailsYear) + ': ' + escHtml(meta.modelYear) + '</div>');
+    if (meta.manufacturingDate != null) rows.push('<div>' + escHtml(PT.skodaDetailsMade) + ': ' + escHtml(meta.manufacturingDate) + '</div>');
+    if (meta.body != null) rows.push('<div>' + escHtml(PT.skodaDetailsBody) + ': ' + escHtml(meta.body) + '</div>');
+    if (meta.trimLevel != null) rows.push('<div>' + escHtml(PT.skodaDetailsTrim) + ': ' + escHtml(meta.trimLevel) + '</div>');
+    if (meta.powerKw != null) rows.push('<div>' + escHtml(PT.skodaDetailsPower) + ': ' + numOr(meta.powerKw, ' kW') + '</div>');
+    if (meta.batteryKwh != null) rows.push('<div>' + escHtml(PT.skodaDetailsBattery) + ': ' + numOr(meta.batteryKwh, ' kWh') + '</div>');
+    if (meta.maxChargingKw != null) rows.push('<div>' + escHtml(PT.skodaDetailsMaxCharging) + ': ' + numOr(meta.maxChargingKw, ' kW') + '</div>');
+    if (meta.vin) rows.push('<div class="skoda-details-vin">' + escHtml(meta.vin) + '</div>');
+    var html = rows.length ? '<div class="skoda-details-meta">' + rows.join('') + '</div>' : '';
+
+    var equipment = Array.isArray(d.equipment) ? d.equipment : [];
+    if (equipment.length) {
+      html += '<div class="skoda-details-equipment"><strong>' + escHtml(PT.skodaDetailsEquipment) + '</strong> '
+        + equipment.map(function (e) { return '<span class="skoda-chip">' + escHtml(e) + '</span>'; }).join('') + '</div>';
+    }
+
+    var conn = d.connection;
+    if (conn) {
+      var parts = [];
+      if (conn.online != null) parts.push(conn.online ? PT.skodaDetailsOnline : PT.skodaDetailsOffline);
+      if (conn.ignitionOn != null) parts.push(conn.ignitionOn ? PT.skodaDetailsIgnitionOn : PT.skodaDetailsIgnitionOff);
+      if (conn.inMotion) parts.push(PT.skodaDetailsInMotion);
+      if (parts.length) html += '<div class="skoda-details-connection"><strong>' + escHtml(PT.skodaDetailsConnection) + '</strong>: ' + escHtml(parts.join(', ')) + '</div>';
+    }
+
+    var score = d.drivingScore;
+    if (score) {
+      var sparts = [];
+      if (score.weekly != null) sparts.push(escHtml(PT.skodaDetailsScoreWeekly) + ': ' + numOr(score.weekly));
+      if (score.monthly != null) sparts.push(escHtml(PT.skodaDetailsScoreMonthly) + ': ' + numOr(score.monthly));
+      if (score.lastCalculationDate != null) sparts.push(escHtml(PT.skodaDetailsScoreAsOf) + ': ' + escHtml(score.lastCalculationDate));
+      if (sparts.length) html += '<div class="skoda-details-score"><strong>' + escHtml(PT.skodaDetailsScore) + '</strong>: ' + sparts.join(' · ') + '</div>';
+    }
+    return html;
+  }
+
+  function loadSkodaDetails(vehId, container) {
+    if (skodaEnrich[vehId] != null) { container.innerHTML = skodaEnrich[vehId]; return; }
+    if (skodaPending[vehId]) return; // a fetch is already in flight for this vehicle
+    skodaPending[vehId] = true;
+    fetch('/api/v1/portal/skoda/vehicles/' + vehId + '/details')
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (body) { return { status: r.status, body: body }; }); })
+      .then(function (res) {
+        var body = res.body;
+        if (body && body.ok && body.data === null) { skodaEnrich[vehId] = ''; container.innerHTML = ''; return; } // unavailable → stable, cache empty
+        if (body && body.ok && body.data) { var html = skodaDetailsHtml(body.data); skodaEnrich[vehId] = html; container.innerHTML = html; return; }
+        // Error (esp. 429) is transient — show it but do NOT cache, so reopening retries.
+        container.innerHTML = '<p class="skoda-details-error">' + escHtml(res.status === 429 ? PT.skodaDetailsRateLimited : PT.skodaDetailsLoadError) + '</p>';
+      })
+      .catch(function () {
+        container.innerHTML = '<p class="skoda-details-error">' + escHtml(PT.skodaDetailsLoadError) + '</p>';
+      })
+      .finally(function () { delete skodaPending[vehId]; });
   }
 
   var _skodaCmdBound = false;
@@ -977,6 +1043,7 @@
       + (mt.dueInKm != null ? ' · ' + numOr(mt.dueInKm, ' km') : '') + '</div>'
       + (mt.partner ? '<div>' + escHtml(PT.skodaPartner) + ': ' + escHtml(mt.partner) + '</div>' : '')
       + (hl.warnings && hl.warnings.length ? '<div>' + escHtml(PT.skodaWarnings) + ': ' + escHtml(hl.warnings.join(', ')) + '</div>' : '')
+      + '<div class="skoda-enrich" data-veh="' + escHtml(v.id) + '"></div>'
       + '</details>'
       + (loggedIn ? '<div class="skoda-cmds" data-veh="' + escHtml(v.id) + '">'
         + '<button data-cmd="ac_start" data-temp="21">' + escHtml(PT.skodaCmdAcOn) + '</button>'
@@ -1009,7 +1076,20 @@
     el.innerHTML = vehicles.map(function (v) { return renderSkodaCard(v, loggedIn); }).join('');
     var newCards = el.querySelectorAll('.skoda-card');
     for (var j = 0; j < newCards.length; j++) {
-      if (wasOpen[j]) { var nd = newCards[j].querySelector('details'); if (nd) nd.open = true; }
+      var nd = newCards[j].querySelector('details'); if (!nd) continue;
+      // toggle never bubbles — (re)bind on every rebuilt <details> instance.
+      nd.addEventListener('toggle', function (ev) {
+        if (!ev.target.open) return;
+        var box = ev.target.querySelector('.skoda-enrich'); if (!box) return;
+        loadSkodaDetails(Number(box.dataset.veh), box);
+      });
+      if (wasOpen[j]) {
+        nd.open = true;
+        // 120s poll rebuild would otherwise blank an already-fetched block.
+        var box = nd.querySelector('.skoda-enrich');
+        var vehId = box ? Number(box.dataset.veh) : NaN;
+        if (box && skodaEnrich[vehId] != null) box.innerHTML = skodaEnrich[vehId];
+      }
     }
   }
 

@@ -15,6 +15,13 @@ const KEYS = [
   'skoda.vehicle.refresh', 'skoda.vehicle.owners', 'skoda.vehicle.fetched', 'skoda.vehicle.mileage',
   'skoda.settings.poll_interval', 'skoda.owner.save', 'skoda.owner.title',
   'nav.skoda', 'skoda.error.cooldown', 'skoda.error.generic',
+  'skoda.details.title', 'skoda.details.model', 'skoda.details.year', 'skoda.details.made',
+  'skoda.details.body', 'skoda.details.trim', 'skoda.details.power', 'skoda.details.battery',
+  'skoda.details.max_charging', 'skoda.details.equipment', 'skoda.details.connection',
+  'skoda.details.online', 'skoda.details.offline', 'skoda.details.ignition_on',
+  'skoda.details.ignition_off', 'skoda.details.in_motion', 'skoda.details.score',
+  'skoda.details.score_weekly', 'skoda.details.score_monthly', 'skoda.details.score_as_of',
+  'skoda.details.load_error', 'skoda.details.rate_limited',
 ];
 
 test('all skoda keys exist in de and en', () => {

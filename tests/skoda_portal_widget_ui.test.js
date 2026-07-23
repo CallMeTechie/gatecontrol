@@ -15,13 +15,27 @@ const I18N_KEYS = [
   'portal.skoda.doors', 'portal.skoda.windows', 'portal.skoda.cable_connected', 'portal.skoda.warnings',
   'portal.skoda.bonnet', 'portal.skoda.trunk', 'portal.skoda.sunroof', 'portal.skoda.lights_on',
   'portal.skoda.climate_on', 'portal.skoda.climate_off',
+  'portal.skoda.details.title', 'portal.skoda.details.model', 'portal.skoda.details.year',
+  'portal.skoda.details.made', 'portal.skoda.details.body', 'portal.skoda.details.trim',
+  'portal.skoda.details.power', 'portal.skoda.details.battery', 'portal.skoda.details.max_charging',
+  'portal.skoda.details.equipment', 'portal.skoda.details.connection', 'portal.skoda.details.online',
+  'portal.skoda.details.offline', 'portal.skoda.details.ignition_on', 'portal.skoda.details.ignition_off',
+  'portal.skoda.details.in_motion', 'portal.skoda.details.score', 'portal.skoda.details.score_weekly',
+  'portal.skoda.details.score_monthly', 'portal.skoda.details.score_as_of',
+  'portal.skoda.details.load_error', 'portal.skoda.details.rate_limited',
 ];
 // PT_CAMEL must cover every client-used key so a forgotten PT entry fails the test.
 const PT_CAMEL = ['skodaTitle', 'skodaSoc', 'skodaRange', 'skodaLocked', 'skodaUnlocked', 'skodaCharging',
   'skodaClimate', 'skodaTargetTemp', 'skodaClimateRemaining', 'skodaWindowHeating', 'skodaMileage',
   'skodaInspection', 'skodaPartner', 'skodaPosition', 'skodaAsOf', 'skodaWindows', 'skodaDoors',
   'skodaCableConnected', 'skodaWarnings', 'skodaBonnet', 'skodaTrunk', 'skodaSunroof', 'skodaLightsOn',
-  'skodaClimateOn', 'skodaClimateOff'];
+  'skodaClimateOn', 'skodaClimateOff',
+  'skodaDetailsTitle', 'skodaDetailsModel', 'skodaDetailsYear', 'skodaDetailsMade', 'skodaDetailsBody',
+  'skodaDetailsTrim', 'skodaDetailsPower', 'skodaDetailsBattery', 'skodaDetailsMaxCharging',
+  'skodaDetailsEquipment', 'skodaDetailsConnection', 'skodaDetailsOnline', 'skodaDetailsOffline',
+  'skodaDetailsIgnitionOn', 'skodaDetailsIgnitionOff', 'skodaDetailsInMotion', 'skodaDetailsScore',
+  'skodaDetailsScoreWeekly', 'skodaDetailsScoreMonthly', 'skodaDetailsScoreAsOf',
+  'skodaDetailsLoadError', 'skodaDetailsRateLimited'];
 
 test('portal.skoda.* keys exist in de and en', () => {
   for (const k of I18N_KEYS) {
