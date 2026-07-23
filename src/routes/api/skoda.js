@@ -7,6 +7,7 @@ const skoda = require('../../services/skoda');
 const accounts = require('../../services/skoda/skodaAccounts');
 const owners = require('../../services/skoda/skodaOwners');
 const settings = require('../../services/settings');
+const control = require('../../services/skoda/skodaControl');
 
 const router = Router();
 
@@ -22,9 +23,13 @@ router.use(requireFeature('skoda_integration'));
 const STATUS_BY_CODE = {
   SKODA_VALIDATION: 400,
   SKODA_OWNER_UNKNOWN_USER: 400,
+  SKODA_UNKNOWN_COMMAND: 400,
   SKODA_ACCOUNT_EXISTS: 409,
+  SKODA_SPIN_REQUIRED: 409,
+  SKODA_NO_SESSION: 409,
   SKODA_REFRESH_COOLDOWN: 429,
   SKODA_RATE_LIMITED: 429,
+  SKODA_COMMAND_RATE_LIMIT: 429,
   SKODA_VEHICLE_NOT_FOUND: 404,
   SKODA_ACCOUNT_NOT_FOUND: 404,
 };
@@ -93,6 +98,16 @@ router.put('/settings', wrap(async (req, res) => {
   settings.set('skoda_poll_interval_min', String(val));
   skoda.stopPolling();
   skoda.startPolling({ immediate: false });
+  res.json({ ok: true });
+}));
+
+router.post('/vehicles/:id/command', wrap(async (req, res) => {
+  await control.runCommand(Number(req.params.id), req.body.action, req.body.args || {});
+  res.json({ ok: true });
+}));
+
+router.put('/accounts/:id/spin', wrap(async (req, res) => {
+  accounts.setSpin(Number(req.params.id), req.body.spin);
   res.json({ ok: true });
 }));
 
