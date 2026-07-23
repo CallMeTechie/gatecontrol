@@ -56,6 +56,14 @@ class SkodaClient {
   health(vin) { return this._get(`/api/v1/vehicle-health-report/warning-lights/${vin}`); }
   maintenance(vin) { return this._get(`/api/v3/vehicle-maintenance/vehicles/${vin}`); }
 
+  // TP4a read-only enrichment. Live-verified against both real cars (2026-07-23).
+  // NOTE: software-version/update-status, charging/history and trip-statistics
+  // return 500/403 for these vehicles — deliberately not wired up.
+  vehicleInformation(vin) { return this._get(`/api/v1/vehicle-information/${vin}`); }
+  equipment(vin) { return this._get(`/api/v1/vehicle-information/${vin}/equipment`); }
+  connectionStatus(vin) { return this._get(`/api/v2/connection-status/${vin}/readiness`); }
+  drivingScore(vin) { return this._get(`/api/v2/vehicle-status/${vin}/driving-score`); }
+
   async renderImage(url) {
     // The url comes from the Skoda API response — never fetch it unvalidated,
     // and never send our bearer token to an arbitrary host (SSRF/token leak).
