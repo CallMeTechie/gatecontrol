@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.1] — 2026-07-23
+
+### Änderungen
+- assert exact control URL instead of regex (CodeQL js/incomplete-sanitization)
+
+---
+
 ## [1.118.0] — 2026-07-23
 
 ### Features
