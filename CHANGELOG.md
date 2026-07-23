@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.0] — 2026-07-23
+
+### Features
+- admin toggle to show/hide the portal vehicles widget
+
+---
+
 ## [1.117.8] — 2026-07-22
 
 ### Fixes
