@@ -28,6 +28,12 @@
   meldet eine Untergrenze von 15,5 °C, die die bisherige Validierung ablehnte).
 
 ### Added
+- Skoda: read-only Details-Block (TP4a) in Admin und Portal — Stammdaten
+  (Modell, Baujahr, Leistung, Batterie, max. Ladeleistung), Ausstattung,
+  Verbindungs-/Zündungsstatus und Fahrstil-Score (Woche/Monat), lazy beim
+  Aufklappen geladen, owner-gegatet, VIN im Portal maskiert. (Ladehistorie,
+  Fahrstatistiken und OTA-Status liefert die Skoda-API für diese Fahrzeuge
+  derzeit nicht — 500/403 — und sind bewusst nicht enthalten.)
 - Skoda Connect portal widget (TP2): logged-in portal users see their own
   vehicles (lock, battery/charging, climate, position with address, health/
   maintenance) read-only, owner-gated, with reverse-geocoded location.
