@@ -30,11 +30,12 @@ function createAccount({ email, password }) {
 }
 
 function listAccounts() {
-  return getDb().prepare('SELECT id, email, status, status_detail, next_retry_at, updated_at, password_enc FROM skoda_accounts ORDER BY id').all()
+  return getDb().prepare('SELECT id, email, status, status_detail, next_retry_at, updated_at, password_enc, spin_enc FROM skoda_accounts ORDER BY id').all()
     .map((r) => ({
       id: r.id, email: r.email, status: r.status, status_detail: r.status_detail,
       next_retry_at: r.next_retry_at, updated_at: r.updated_at,
       has_credentials: Boolean(r.password_enc),
+      has_spin: Boolean(r.spin_enc),
     }));
 }
 
@@ -77,4 +78,16 @@ function removeAccount(id) {
   tx(id);
 }
 
-module.exports = { createAccount, listAccounts, getAccountWithSecrets, updatePassword, saveSession, setStatus, removeAccount };
+function setSpin(id, spin) {
+  if (!/^[0-9]{4,10}$/.test(String(spin || ''))) throw err('spin must be 4-10 digits', 'SKODA_VALIDATION');
+  const info = getDb().prepare("UPDATE skoda_accounts SET spin_enc = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(encrypt(String(spin)), id);
+  if (!info.changes) throw err('account not found', 'SKODA_ACCOUNT_NOT_FOUND');
+}
+
+function getSpin(id) {
+  const r = getDb().prepare('SELECT spin_enc FROM skoda_accounts WHERE id = ?').get(id);
+  return r && r.spin_enc ? decrypt(r.spin_enc) : null;
+}
+
+module.exports = { createAccount, listAccounts, getAccountWithSecrets, updatePassword, saveSession, setStatus, removeAccount, setSpin, getSpin };
