@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.2] — 2026-07-23
+
+### Dokumentation
+- changelog for TP4a details enrichment
+
+---
+
 ## [1.118.1] — 2026-07-23
 
 ### Änderungen
