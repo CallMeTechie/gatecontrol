@@ -884,7 +884,53 @@
     return '<span class="skoda-chip' + (active ? ' open' : '') + '">' + escHtml(label) + '</span>';
   }
 
-  function renderSkodaCard(v) {
+  // ponytail: watchdog matches skodaCommand's own 3s settle path; 30s only
+  // guards against a fetch that never resolves (dropped connection etc).
+  function skodaMsg(text) { var m = document.getElementById('skodaMsg'); if (m) { m.textContent = text; m.style.display = 'block'; } }
+  function skodaCommand(vehicleId, action, args, el) {
+    if (action === 'unlock' && !window.confirm(PT.skodaCmdConfirmUnlock)) return;
+    if (el && el.disabled) return; // in-flight → no command storm
+    var isBtn = el && el.tagName === 'BUTTON';
+    var restore = isBtn ? el.textContent : null;
+    var watchdog = null;
+    var reset = function () {
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+      if (el) { el.disabled = false; if (isBtn && restore != null) el.textContent = restore; }
+    };
+    if (el) { el.disabled = true; if (isBtn) el.textContent = PT.skodaCmdRunning; }
+    watchdog = setTimeout(reset, 30000);
+    fetch('/api/v1/portal/skoda/vehicles/' + vehicleId + '/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, args: args || {} }),
+    }).then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (body) {
+        // reason (login_required/unavailable) comes as data:null,reason WITH ok:true → also a failure
+        if (!body || !body.ok || body.reason) skodaMsg(PT.skodaCmdFailed);
+        else setTimeout(hydrateSkoda, 3000);
+      })
+      .catch(function () { skodaMsg(PT.skodaCmdFailed); })
+      .then(function () { clearTimeout(watchdog); setTimeout(reset, 3000); });
+  }
+
+  var _skodaCmdBound = false;
+  function bindSkodaCommands() {
+    if (_skodaCmdBound) return; _skodaCmdBound = true;
+    var el = skodaEl(); if (!el) return;
+    el.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button[data-cmd]'); if (!b) return;
+      var box = b.closest('.skoda-cmds'); if (!box) return;
+      var args = {};
+      if (b.dataset.temp) args = { temp: Number(b.dataset.temp) };
+      else if (b.dataset.cmd === 'ac_temp') { var inp = box.querySelector('[data-temp-input]'); args = { temp: Number(inp && inp.value) }; }
+      skodaCommand(Number(box.dataset.veh), b.dataset.cmd, args, b);
+    });
+    el.addEventListener('change', function (ev) {
+      var s = ev.target.closest('select[data-cmd="charge_limit"]'); if (!s) return;
+      skodaCommand(Number(s.closest('.skoda-cmds').dataset.veh), 'charge_limit', { limit: Number(s.value) }, s);
+    });
+  }
+
+  function renderSkodaCard(v, loggedIn) {
     var s = v.state || {};
     var ch = s.charging || {}, cl = s.climate || {}, hl = s.health || {}, mt = s.maintenance || {}, dt = s.detail || {};
     var up = function (x) { return String(x || '').toUpperCase(); };
@@ -928,10 +974,24 @@
       + (mt.dueInKm != null ? ' · ' + numOr(mt.dueInKm, ' km') : '') + '</div>'
       + (mt.partner ? '<div>' + escHtml(PT.skodaPartner) + ': ' + escHtml(mt.partner) + '</div>' : '')
       + (hl.warnings && hl.warnings.length ? '<div>' + escHtml(PT.skodaWarnings) + ': ' + escHtml(hl.warnings.join(', ')) + '</div>' : '')
-      + '</details></div>';
+      + '</details>'
+      + (loggedIn ? '<div class="skoda-cmds" data-veh="' + escHtml(v.id) + '">'
+        + '<button data-cmd="ac_start" data-temp="21">' + escHtml(PT.skodaCmdAcOn) + '</button>'
+        + '<button data-cmd="ac_stop">' + escHtml(PT.skodaCmdAcOff) + '</button>'
+        + '<label>' + escHtml(PT.skodaCmdSetTemp) + ' <input type="number" min="16" max="30" step="1" value="21" data-temp-input></label>'
+        + '<button data-cmd="ac_temp">' + escHtml(PT.skodaCmdSetTemp) + '</button>'
+        + '<button data-cmd="charge_start">' + escHtml(PT.skodaCmdChargeOn) + '</button>'
+        + '<button data-cmd="charge_stop">' + escHtml(PT.skodaCmdChargeOff) + '</button>'
+        + '<label>' + escHtml(PT.skodaCmdChargeLimit) + ' <select data-cmd="charge_limit"><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></label>'
+        + '<button data-cmd="window_heat_start">' + escHtml(PT.skodaCmdWindowHeat) + '</button>'
+        + '<button data-cmd="window_heat_stop">' + escHtml(PT.skodaCmdWindowHeatOff) + '</button>'
+        + '<button data-cmd="lock">' + escHtml(PT.skodaCmdLock) + '</button>'
+        + '<button data-cmd="unlock" class="danger">' + escHtml(PT.skodaCmdUnlock) + '</button>'
+        + '</div>' : '')
+      + '</div>';
   }
 
-  function renderSkoda(vehicles) {
+  function renderSkoda(vehicles, loggedIn) {
     var el = skodaEl(); if (!el) return;
     // Preserve which cards had their <details> expanded across the full rebuild,
     // so a 120s poll never collapses what the user opened. Tracked by position
@@ -943,7 +1003,7 @@
       var od = oldCards[i].querySelector('details');
       wasOpen[i] = !!(od && od.open);
     }
-    el.innerHTML = vehicles.map(renderSkodaCard).join('');
+    el.innerHTML = vehicles.map(function (v) { return renderSkodaCard(v, loggedIn); }).join('');
     var newCards = el.querySelectorAll('.skoda-card');
     for (var j = 0; j < newCards.length; j++) {
       if (wasOpen[j]) { var nd = newCards[j].querySelector('details'); if (nd) nd.open = true; }
@@ -954,7 +1014,8 @@
     var card = document.querySelector('.c-skoda'); if (!card) return;
     fetch('/api/v1/portal/skoda').then(function (r) { return r.status === 404 ? null : r.json(); }).then(function (body) {
       if (!body || !body.ok || body.data === null) { card.style.display = 'none'; return; }
-      renderSkoda(body.data.vehicles);
+      renderSkoda(body.data.vehicles, body.data.loggedIn);
+      bindSkodaCommands();
       startSkodaPoll(); // start polling only once we have data (mirrors hydrateMidea)
     }).catch(function () { card.style.display = 'none'; });
   }
@@ -967,7 +1028,7 @@
       // Poll refresh: render on success, keep the last good cards on any
       // failure/null — a transient hiccup must never blank the whole section.
       fetch('/api/v1/portal/skoda').then(function (r) { return r.json(); }).then(function (body) {
-        if (body && body.ok && body.data) renderSkoda(body.data.vehicles);
+        if (body && body.ok && body.data) renderSkoda(body.data.vehicles, body.data.loggedIn);
       }).catch(function () {});
     }, 120000);
   }

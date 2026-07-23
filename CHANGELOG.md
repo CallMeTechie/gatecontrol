@@ -20,6 +20,9 @@
 - Skoda Connect portal widget (TP2): logged-in portal users see their own
   vehicles (lock, battery/charging, climate, position with address, health/
   maintenance) read-only, owner-gated, with reverse-geocoded location.
+- Skoda Connect vehicle control (TP3): climate, charging, charge limit, window
+  heating and lock/unlock (S-PIN) from the admin page and the portal (logged-in
+  owners only), with command validation, S-PIN gate and lock rate-limiting.
 
 ---
 
