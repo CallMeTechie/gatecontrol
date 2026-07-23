@@ -17,3 +17,7 @@
 .skoda-card-actions { display: flex; gap: 8px; }
 .skoda-owner-item { display: block; padding: 4px 0; }
 .skoda-page .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:9px} /* app.css lacks .btn-sm */
+.skoda-cmds { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.skoda-cmds label { display: inline-flex; align-items: center; gap: 4px; font-size: .85em; }
+.skoda-cmds input[type="number"] { width: 60px; }
+.skoda-cmds .btn-danger, .skoda-cmds button.btn-danger { background: var(--danger, #da3633); color: #fff; border-color: var(--danger, #da3633); }

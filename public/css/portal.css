@@ -472,6 +472,12 @@ body::before{
 .sensor .v{font-family:var(--font-mono);font-size:19px;font-weight:700}
 .sensor .l{color:var(--faint);font-size:11px;margin-top:3px}
 .c-sh-msg{margin-top:10px;font-size:13px;color:var(--muted,#90a1b3)}
+.skoda-cmds { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.skoda-cmds label { display: inline-flex; align-items: center; gap: 4px; font-size: .85em; color: var(--faint); }
+.skoda-cmds button { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-3); color: inherit; cursor: pointer; font-size: .85em; }
+.skoda-cmds input[type="number"] { width: 58px; }
+.skoda-cmds button.danger { background: color-mix(in srgb, var(--coral) 20%, transparent); border-color: var(--coral); color: var(--coral); }
+.skoda-msg { color: var(--coral); margin-top: 8px; }
 
 /* ============================================================
    REDUCED MOTION

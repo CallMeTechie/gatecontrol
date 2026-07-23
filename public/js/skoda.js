@@ -166,8 +166,11 @@
     const b = ev.target.closest('button[data-cmd]'); if (!b) return;
     const box = b.closest('.skoda-cmds'); const veh = Number(box.dataset.veh);
     let args = {};
-    if (b.dataset.temp) args = { temp: Number(b.dataset.temp) };
-    else if (b.dataset.cmd === 'ac_temp') { const inp = box.querySelector('[data-temp-input]'); args = { temp: Number(inp && inp.value) }; }
+    if (b.dataset.cmd === 'ac_start' || b.dataset.cmd === 'ac_temp') {
+      var inp = box.querySelector('[data-temp-input]');
+      var tv = Number(inp && inp.value);
+      args = { temp: (isFinite(tv) && tv) ? tv : 21 };
+    } else if (b.dataset.temp) args = { temp: Number(b.dataset.temp) };
     command(veh, b.dataset.cmd, args, b);
   });
   el('skoda-vehicles').addEventListener('change', (ev) => {
