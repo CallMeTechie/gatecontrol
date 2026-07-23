@@ -20,11 +20,11 @@ class SkodaClient {
     this.fetchImpl = fetchImpl;
   }
 
-  async _get(path, { retried = false } = {}) {
+  async _request(method, path, body, { retried = false } = {}) {
     const session = this.getSession();
-    const res = await this.fetchImpl(`${API_BASE}${path}`, {
-      headers: { authorization: `Bearer ${session.accessToken}`, accept: 'application/json' },
-    });
+    const opts = { method, headers: { authorization: `Bearer ${session.accessToken}`, accept: 'application/json' } };
+    if (body !== undefined) { opts.headers['content-type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    const res = await this.fetchImpl(`${API_BASE}${path}`, opts);
     if (res.status === 401 && !retried) {
       let tokens;
       try {
@@ -34,12 +34,16 @@ class SkodaClient {
         throw new SkodaApiError('token refresh failed', 'SKODA_UNAUTHORIZED', 401);
       }
       this.saveSession(tokens);
-      return this._get(path, { retried: true });
+      return this._request(method, path, body, { retried: true });
     }
     if (res.status === 401) throw new SkodaApiError('unauthorized', 'SKODA_UNAUTHORIZED', 401);
     if (res.status === 429) throw new SkodaApiError('rate limited', 'SKODA_RATE_LIMITED', 429);
     if (res.status >= 400) throw new SkodaApiError(`api error ${res.status} for ${path}`, 'SKODA_API_ERROR', res.status);
-    return res.json();
+    return res;
+  }
+
+  async _get(path) {
+    return (await this._request('GET', path)).json();
   }
 
   garage() { return this._get('/api/v2/garage?connectivityGenerations=MOD1&connectivityGenerations=MOD2&connectivityGenerations=MOD3&connectivityGenerations=MOD4'); }
@@ -86,6 +90,23 @@ class SkodaClient {
     }
     return { parts, state: normalizeVehicleState(parts) };
   }
+
+  startAc(vin, temp) {
+    return this._request('POST', `/api/v2/air-conditioning/${vin}/start`,
+      { heaterSource: 'ELECTRIC', targetTemperature: { temperatureValue: Math.round(temp), unitInCar: 'CELSIUS' } });
+  }
+  stopAc(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/stop`); }
+  setAcTemp(vin, temp) {
+    return this._request('POST', `/api/v2/air-conditioning/${vin}/settings/target-temperature`,
+      { temperatureValue: Math.round(temp), unitInCar: 'CELSIUS' });
+  }
+  startWindowHeating(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/start-window-heating`); }
+  stopWindowHeating(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/stop-window-heating`); }
+  startCharging(vin) { return this._request('POST', `/api/v1/charging/${vin}/start`); }
+  stopCharging(vin) { return this._request('POST', `/api/v1/charging/${vin}/stop`); }
+  setChargeLimit(vin, pct) { return this._request('PUT', `/api/v1/charging/${vin}/set-charge-limit`, { targetSOCInPercent: pct }); }
+  lock(vin, spin) { return this._request('POST', `/api/v1/vehicle-access/${vin}/lock`, { currentSpin: spin }); }
+  unlock(vin, spin) { return this._request('POST', `/api/v1/vehicle-access/${vin}/unlock`, { currentSpin: spin }); }
 }
 
 const YES = (v) => (v == null ? null : String(v).toUpperCase() === 'YES');
