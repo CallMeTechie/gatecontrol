@@ -4,7 +4,7 @@ const accounts = require('./skodaAccounts');
 const vehicles = require('./skodaVehicles');
 const skoda = require('./index');
 
-const TEMP_MIN = 16, TEMP_MAX = 30;
+const TEMP_MIN = 15.5, TEMP_MAX = 30;
 const CHARGE_STEPS = [50, 60, 70, 80, 90, 100];
 const LOCK_LIMIT = 5, LOCK_WINDOW_MS = 15 * 60 * 1000;
 

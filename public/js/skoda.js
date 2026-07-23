@@ -64,7 +64,7 @@
       <div class="skoda-cmds" data-veh="${v.id}">
         <button class="btn btn-sm" data-cmd="ac_start" data-temp="21">${T('skoda.cmd.ac_on')}</button>
         <button class="btn btn-sm" data-cmd="ac_stop">${T('skoda.cmd.ac_off')}</button>
-        <label>${T('skoda.cmd.set_temp')} <input type="number" min="16" max="30" step="1" value="21" data-temp-input></label>
+        <label>${T('skoda.cmd.set_temp')} <input type="number" min="15.5" max="30" step="0.5" value="21" data-temp-input></label>
         <button class="btn btn-sm" data-cmd="ac_temp">${T('skoda.cmd.set_temp')}</button>
         <button class="btn btn-sm" data-cmd="charge_start">${T('skoda.cmd.charge_on')}</button>
         <button class="btn btn-sm" data-cmd="charge_stop">${T('skoda.cmd.charge_off')}</button>

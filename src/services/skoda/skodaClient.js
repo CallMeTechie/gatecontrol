@@ -93,12 +93,12 @@ class SkodaClient {
 
   startAc(vin, temp) {
     return this._request('POST', `/api/v2/air-conditioning/${vin}/start`,
-      { heaterSource: 'ELECTRIC', targetTemperature: { temperatureValue: Math.round(temp), unitInCar: 'CELSIUS' } });
+      { heaterSource: 'ELECTRIC', targetTemperature: { temperatureValue: Math.round(temp * 2) / 2, unitInCar: 'CELSIUS' } });
   }
   stopAc(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/stop`); }
   setAcTemp(vin, temp) {
     return this._request('POST', `/api/v2/air-conditioning/${vin}/settings/target-temperature`,
-      { temperatureValue: Math.round(temp), unitInCar: 'CELSIUS' });
+      { temperatureValue: Math.round(temp * 2) / 2, unitInCar: 'CELSIUS' });
   }
   startWindowHeating(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/start-window-heating`); }
   stopWindowHeating(vin) { return this._request('POST', `/api/v2/air-conditioning/${vin}/stop-window-heating`); }

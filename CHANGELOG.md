@@ -23,6 +23,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Skoda: AC-Zieltemperatur ab 15,5 °C in 0,5°-Schritten wählbar (der Elroq
+  meldet eine Untergrenze von 15,5 °C, die die bisherige Validierung ablehnte).
+
 ### Added
 - Skoda Connect portal widget (TP2): logged-in portal users see their own
   vehicles (lock, battery/charging, climate, position with address, health/

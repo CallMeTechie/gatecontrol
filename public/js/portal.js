@@ -981,7 +981,7 @@
       + (loggedIn ? '<div class="skoda-cmds" data-veh="' + escHtml(v.id) + '">'
         + '<button data-cmd="ac_start" data-temp="21">' + escHtml(PT.skodaCmdAcOn) + '</button>'
         + '<button data-cmd="ac_stop">' + escHtml(PT.skodaCmdAcOff) + '</button>'
-        + '<label>' + escHtml(PT.skodaCmdSetTemp) + ' <input type="number" min="16" max="30" step="1" value="21" data-temp-input></label>'
+        + '<label>' + escHtml(PT.skodaCmdSetTemp) + ' <input type="number" min="15.5" max="30" step="0.5" value="21" data-temp-input></label>'
         + '<button data-cmd="ac_temp">' + escHtml(PT.skodaCmdSetTemp) + '</button>'
         + '<button data-cmd="charge_start">' + escHtml(PT.skodaCmdChargeOn) + '</button>'
         + '<button data-cmd="charge_stop">' + escHtml(PT.skodaCmdChargeOff) + '</button>'

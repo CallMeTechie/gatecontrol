@@ -72,7 +72,15 @@ test('ac_start reaches the cloud with rounded temp', async () => {
   const r = await control.runCommand(vehId, 'ac_start', { temp: 21.6 }, { fetchImpl: apiFetch(spy) });
   assert.equal(r.ok, true);
   assert.match(spy[0].url, /\/air-conditioning\/VINCTL\/start$/);
-  assert.equal(JSON.parse(spy[0].body).targetTemperature.temperatureValue, 22);
+  assert.equal(JSON.parse(spy[0].body).targetTemperature.temperatureValue, 21.5); // rounded to nearest 0.5
+});
+
+test('ac_temp accepts 15.5 and rejects 15.0 (widened range)', async () => {
+  const spy = [];
+  await assert.rejects(control.runCommand(vehId, 'ac_temp', { temp: 15.0 }, { fetchImpl: apiFetch(spy) }),
+    (e) => e.code === 'SKODA_VALIDATION');
+  const r = await control.runCommand(vehId, 'ac_temp', { temp: 15.5 }, { fetchImpl: apiFetch(spy) });
+  assert.equal(r.ok, true); // 15.5 is now in range
 });
 
 test('lock without a set S-PIN is rejected before any cloud call', async () => {
