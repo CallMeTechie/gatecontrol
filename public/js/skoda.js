@@ -80,15 +80,19 @@
   async function command(vehicleId, action, args, el) {
     if (action === 'unlock' && !confirm(T('skoda.cmd.confirm_unlock'))) return;
     if (el && el.disabled) return; // already in flight → no command storm
-    const restore = el ? el.textContent : null;
-    if (el) { el.disabled = true; el.textContent = T('skoda.cmd.running'); }
+    var isBtn = el && el.tagName === 'BUTTON';
+    var restore = isBtn ? el.textContent : null;
+    var reset = function () { if (el) { el.disabled = false; if (isBtn && restore != null) el.textContent = restore; } };
+    if (el) { el.disabled = true; if (isBtn) el.textContent = T('skoda.cmd.running'); }
+    var watchdog = setTimeout(reset, 30000); // hard fallback if the request never settles
     try {
       await api('POST', `/vehicles/${vehicleId}/command`, { action, args: args || {} });
       setTimeout(load, 3000); // let the 30s post-command refresh begin; reload state
     } catch (e) {
       alert(e.code === 'SKODA_SPIN_REQUIRED' ? T('skoda.cmd.spin') + '?' : (e.message || T('skoda.cmd.failed')));
     } finally {
-      if (el) setTimeout(() => { el.disabled = false; if (restore != null) el.textContent = restore; }, 3000);
+      clearTimeout(watchdog);
+      setTimeout(reset, 3000);
     }
   }
 
