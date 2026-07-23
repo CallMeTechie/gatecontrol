@@ -19,6 +19,7 @@ const skodaOwners = require('../../services/skoda/skodaOwners');
 const skodaVehicles = require('../../services/skoda/skodaVehicles');
 const skodaPortal = require('../../services/skoda/skodaPortal');
 const skodaControl = require('../../services/skoda/skodaControl');
+const skodaDetails = require('../../services/skoda/skodaDetails');
 
 const router = Router();
 
@@ -341,6 +342,24 @@ router.get('/skoda/vehicles/:id/image', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'portal /skoda image failed');
     return res.status(404).json({ ok: false });
+  }
+});
+
+// GET /skoda/vehicles/:id/details — owner-gated, redacted (masked VIN), lazy.
+const SKODA_DETAILS_STATUS = { SKODA_NO_SESSION: 409, SKODA_RATE_LIMITED: 429, SKODA_VEHICLE_NOT_FOUND: 404 };
+router.get('/skoda/vehicles/:id/details', async (req, res) => {
+  try {
+    if (!portalConfig().widgets.skoda) return res.status(404).json({ ok: false });
+    if (skodaUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    const id = Number(req.params.id);
+    if (req.portalOwnerId == null || !skodaOwners.isOwner(id, req.portalOwnerId)) {
+      return res.status(403).json({ ok: false, error: 'SKODA_NOT_OWNER' });
+    }
+    const d = await skodaDetails.getDetails(id, { forAdmin: false });
+    res.json({ ok: true, data: d });
+  } catch (err) {
+    const status = SKODA_DETAILS_STATUS[err.code] || 502;
+    res.status(status).json({ ok: false, error: err.code || 'details failed' }); // kein Secret, nur Code
   }
 });
 

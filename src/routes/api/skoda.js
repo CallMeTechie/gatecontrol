@@ -8,6 +8,7 @@ const accounts = require('../../services/skoda/skodaAccounts');
 const owners = require('../../services/skoda/skodaOwners');
 const settings = require('../../services/settings');
 const control = require('../../services/skoda/skodaControl');
+const details = require('../../services/skoda/skodaDetails');
 
 const router = Router();
 
@@ -45,6 +46,12 @@ function wrap(fn) {
 
 router.get('/', wrap(async (req, res) => {
   res.json({ ok: true, ...skoda.getStatus(), poll_interval_min: skoda.pollIntervalMs() / 60000 });
+}));
+
+// Lazy read-only enrichment (loaded when the card's details block is opened).
+router.get('/vehicles/:id/details', wrap(async (req, res) => {
+  const d = await details.getDetails(Number(req.params.id), { forAdmin: true });
+  res.json({ ok: true, details: d });
 }));
 
 router.post('/accounts', wrap(async (req, res) => {
