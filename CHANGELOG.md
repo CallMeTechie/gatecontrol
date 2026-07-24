@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Skoda: Abfahrtstimer (Klima-Timer) je Fahrzeug lesen und setzen — An/Aus, Uhrzeit und Wochentage, in der Admin-Seite `/skoda` und im Portal-Widget. Neuer Command `timer_set` über `POST /api/v2/air-conditioning/{vin}/timers`. Einmal-Timer (`ONE_OFF`) werden nur angezeigt, nicht geschrieben.
+- Skoda: Im Portal sind die Abfahrtszeiten nur für eingeloggte Besitzer sichtbar — sie sind ein Anwesenheitsprofil und werden wie die GPS-Position behandelt, nicht wie der Klimastatus.
+
+### Changed
+- Skoda: `state.climate.timers` wird aus dem ohnehin geholten Klima-Payload übernommen — kein zusätzlicher Cloud-Abruf.
+
+### Notes
+- Die Skoda-Cloud übernimmt Timer-Änderungen asynchron (gemessen rund 55 Sekunden). Bis zum nächsten vollständigen Sync kann die Anzeige noch die alten Werte zeigen, ohne dass etwas fehlgeschlagen wäre.
+- Direkt nach dem Update zeigen die Karten bis zum nächsten Poll „Keine Timer konfiguriert", weil der gespeicherte Fahrzeugzustand das Feld noch nicht kennt.
+
+---
+
 ## [1.118.2] — 2026-07-23
 
 ### Dokumentation
