@@ -364,7 +364,7 @@ router.get('/skoda/vehicles/:id/details', async (req, res) => {
 });
 
 // POST /skoda/vehicles/:id/command — control, login-required + owner-gated.
-const SKODA_CMD_STATUS = { SKODA_UNKNOWN_COMMAND: 400, SKODA_VALIDATION: 400, SKODA_SPIN_REQUIRED: 409, SKODA_NO_SESSION: 409, SKODA_COMMAND_RATE_LIMIT: 429, SKODA_RATE_LIMITED: 429, SKODA_VEHICLE_NOT_FOUND: 404 };
+const SKODA_CMD_STATUS = { SKODA_UNKNOWN_COMMAND: 400, SKODA_VALIDATION: 400, SKODA_SPIN_REQUIRED: 409, SKODA_NO_SESSION: 409, SKODA_TIMER_READONLY: 409, SKODA_COMMAND_RATE_LIMIT: 429, SKODA_RATE_LIMITED: 429, SKODA_VEHICLE_NOT_FOUND: 404, SKODA_TIMER_NOT_FOUND: 404 };
 router.post('/skoda/vehicles/:id/command', async (req, res) => {
   try {
     if (!portalConfig().widgets.skoda) return res.status(404).json({ ok: false });

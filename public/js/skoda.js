@@ -44,6 +44,36 @@
     </div>`;
   }
 
+  const DAY_KEYS = [['MONDAY', 'mon'], ['TUESDAY', 'tue'], ['WEDNESDAY', 'wed'], ['THURSDAY', 'thu'], ['FRIDAY', 'fri'], ['SATURDAY', 'sat'], ['SUNDAY', 'sun']];
+
+  function timerRow(vehId, t) {
+    const days = Array.isArray(t.days) ? t.days : [];
+    // Nur RECURRING ist schreibbar — der Server lehnt alles andere mit
+    // SKODA_TIMER_READONLY ab. Werte werden trotzdem angezeigt, nur gesperrt.
+    const editable = t.type === 'RECURRING';
+    const dis = editable ? '' : ' disabled';
+    const chips = DAY_KEYS.map(([code, k]) =>
+      `<button type="button" class="skoda-timer-day" data-day="${code}" aria-pressed="${days.includes(code) ? 'true' : 'false'}"${dis}>${T('skoda.timers.day.' + k)}</button>`).join('');
+    return `<div class="skoda-timer" data-veh="${vehId}" data-timer="${t.id}">
+      <div class="skoda-timer-head">
+        <strong>${T('skoda.timers.timer', { n: Number(t.id) })}</strong>
+        <label><input type="checkbox" data-timer-enabled${t.enabled ? ' checked' : ''}${dis}> ${T('skoda.timers.active')}</label>
+        <label>${T('skoda.timers.time')} <input type="time" data-timer-time value="${esc(t.time || '')}"${dis}></label>
+      </div>
+      <div class="skoda-timer-days" role="group" aria-label="${T('skoda.timers.days')}">${chips}</div>
+      <div class="skoda-timer-foot">
+        ${editable ? `<button class="btn btn-sm" data-timer-save>${T('skoda.timers.save')}</button>` : ''}
+        <span class="skoda-timer-msg">${t.type === 'ONE_OFF' ? T('skoda.timers.readonly') : ''}</span>
+      </div>
+    </div>`;
+  }
+
+  function timersBlock(v) {
+    const timers = (v.state && v.state.climate && v.state.climate.timers) || [];
+    const body = timers.length ? timers.map((t) => timerRow(v.id, t)).join('') : `<p>${T('skoda.timers.none')}</p>`;
+    return `<details class="skoda-timers-block"><summary>${T('skoda.timers.title')}</summary>${body}</details>`;
+  }
+
   function vehicleCard(v) {
     const s = v.state || {};
     const lock = s.locked === true ? T('skoda.vehicle.locked') : s.locked === false ? T('skoda.vehicle.unlocked') : '—';
@@ -77,6 +107,7 @@
         <label>${T('skoda.cmd.set_limit')} <select data-cmd="charge_limit"><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></label>
       </div>
       <details class="skoda-details-block"><summary>${T('skoda.details.title')}</summary><div class="skoda-enrich" data-veh="${v.id}"></div></details>
+      ${timersBlock(v)}
     </div>`;
   }
 
@@ -164,20 +195,87 @@
     }
   }
 
+  // Notbremse wie im Portal: Gesetzt wird `dirty` bei jeder Eingabe, entfernt nur
+  // beim erfolgreichen Speichern. Ohne Ablauf blockierte eine nie gespeicherte
+  // Zeile JEDEN load()-Aufrufer dauerhaft — und das sind fast alle Aktionen der
+  // Seite (Konto anlegen/löschen, Passwort, Fahrzeug-Refresh, Besitzer speichern).
+  // Der Admin pollt nicht, es gäbe also keine Selbstheilung außer F5.
+  let _timerDirtyTimeout = null;
+  function markTimerDirty(row) {
+    if (!row) return;
+    row.dataset.dirty = '1';
+    if (_timerDirtyTimeout) clearTimeout(_timerDirtyTimeout);
+    _timerDirtyTimeout = setTimeout(() => {
+      el('skoda-vehicles').querySelectorAll('.skoda-timer[data-dirty]').forEach((r) => { delete r.dataset.dirty; });
+      _timerDirtyTimeout = null;
+    }, 600000);
+  }
+
+  async function saveTimer(row, btn) {
+    if (!row || btn.disabled) return;
+    const msg = row.querySelector('.skoda-timer-msg');
+    const time = row.querySelector('[data-timer-time]').value;
+    const days = [...row.querySelectorAll('.skoda-timer-day[aria-pressed="true"]')].map((b) => b.dataset.day);
+    if (!time || !days.length) { msg.textContent = T('skoda.timers.invalid'); return; }
+    const args = { id: Number(row.dataset.timer), enabled: row.querySelector('[data-timer-enabled]').checked, time, days };
+    // Ganze Zeile einfrieren: sonst quittiert das grüne "Gespeichert" auch
+    // Änderungen, die nach dem Absenden getippt und nie gesendet wurden.
+    const fields = [...row.querySelectorAll('input, .skoda-timer-day')];
+    const release = () => { btn.disabled = false; fields.forEach((f) => { f.disabled = false; }); };
+    btn.disabled = true;
+    fields.forEach((f) => { f.disabled = true; });
+    msg.textContent = '';
+    msg.classList.remove('skoda-timer-ok');
+    // fetch hat kein eigenes Timeout — ohne Watchdog bliebe die Zeile nach einem
+    // hängenden Request bis zum Reload gesperrt.
+    const watchdog = setTimeout(() => { release(); msg.textContent = T('skoda.timers.save_failed'); }, 30000);
+    try {
+      await api('POST', `/vehicles/${row.dataset.veh}/command`, { action: 'timer_set', args });
+      delete row.dataset.dirty;
+      msg.textContent = T('skoda.timers.saved');
+      msg.classList.add('skoda-timer-ok');
+      setTimeout(() => { msg.textContent = ''; msg.classList.remove('skoda-timer-ok'); }, 3000);
+    } catch (e) {
+      // Nur übersetzte Texte — e.message wären rohe englische Serverstrings.
+      msg.textContent = e.code === 'SKODA_TIMER_NOT_FOUND' ? T('skoda.timers.not_found')
+        : e.code === 'SKODA_TIMER_READONLY' ? T('skoda.timers.readonly')
+        : e.code === 'SKODA_VALIDATION' ? T('skoda.timers.invalid')
+        : T('skoda.timers.save_failed');
+    } finally {
+      clearTimeout(watchdog);
+      release();
+    }
+  }
+
   async function load() {
     const vehiclesEl = el('skoda-vehicles');
-    // Preserve open <details> across the rebuild (position-keyed, same order as
-    // current.vehicles) and reinject any already-fetched enrichment so an
-    // in-flight refresh never blanks a block the user has open.
-    const wasOpen = [...vehiclesEl.querySelectorAll('.skoda-details-block')].map((d) => d.open);
+    // Ungespeicherte Timer-Eingabe schlägt jeden Rebuild — auch den, den
+    // command() 3s nach einem Klima-/Lade-/Sperrbefehl auslöst.
+    if (vehiclesEl.querySelector('.skoda-timer[data-dirty]')) return;
+    // Offen-Zustand je Fahrzeug-ID merken (nicht positionsindiziert: ein
+    // entferntes oder neues Fahrzeug würde sonst den falschen Block öffnen)
+    // und den bereits geladenen Enrich-Inhalt wieder einsetzen.
+    const wasOpen = {};
+    vehiclesEl.querySelectorAll('.skoda-card').forEach((c) => {
+      wasOpen[c.dataset.id] = {
+        details: !!(c.querySelector('.skoda-details-block') || {}).open,
+        timers: !!(c.querySelector('.skoda-timers-block') || {}).open,
+      };
+    });
     current = await api('GET', '');
     el('skoda-poll-interval').value = current.poll_interval_min;
     el('skoda-accounts').innerHTML = current.accounts.map(accountRow).join('') || '';
     vehiclesEl.innerHTML = current.vehicles.map(vehicleCard).join('') || `<p>${T('skoda.vehicles.empty')}</p>`;
-    vehiclesEl.querySelectorAll('.skoda-details-block').forEach((d, i) => {
-      if (!wasOpen[i]) return;
+    vehiclesEl.querySelectorAll('.skoda-card').forEach((c) => {
+      const st = wasOpen[c.dataset.id];
+      if (!st) return;
+      const timers = c.querySelector('.skoda-timers-block');
+      if (timers && st.timers) timers.open = true;
+      const d = c.querySelector('.skoda-details-block');
+      if (!d || !st.details) return;
       d.open = true;
       const box = d.querySelector('.skoda-enrich');
+      if (!box) return;
       const vehId = Number(box.dataset.veh);
       if (skodaEnrich[vehId] != null) box.innerHTML = skodaEnrich[vehId];
     });
@@ -248,10 +346,19 @@
     const d = ev.target;
     if (!d.classList || !d.classList.contains('skoda-details-block') || !d.open) return;
     const box = d.querySelector('.skoda-enrich');
+    if (!box) return;
     loadDetails(Number(box.dataset.veh), box);
   }, true);
 
   el('skoda-vehicles').addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.skoda-timer-day');
+    if (chip && !chip.disabled) {
+      chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      markTimerDirty(chip.closest('.skoda-timer'));
+      return;
+    }
+    const save = ev.target.closest('[data-timer-save]');
+    if (save) { saveTimer(save.closest('.skoda-timer'), save); return; }
     const b = ev.target.closest('button[data-cmd]'); if (!b) return;
     const box = b.closest('.skoda-cmds'); const veh = Number(box.dataset.veh);
     let args = {};
@@ -265,6 +372,9 @@
   el('skoda-vehicles').addEventListener('change', (ev) => {
     const s = ev.target.closest('select[data-cmd="charge_limit"]'); if (!s) return;
     command(Number(s.closest('.skoda-cmds').dataset.veh), 'charge_limit', { limit: Number(s.value) }, s);
+  });
+  ['input', 'change'].forEach((evt) => {
+    el('skoda-vehicles').addEventListener(evt, (ev) => markTimerDirty(ev.target.closest('.skoda-timer')));
   });
 
   el('skoda-owner-cancel').addEventListener('click', () => hideModal('skoda-owner-modal'));
