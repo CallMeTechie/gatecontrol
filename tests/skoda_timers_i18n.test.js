@@ -49,3 +49,34 @@ test('skoda.js guards every enrich lookup and never shows raw server messages', 
   assert.ok(guards >= lookups, `every enrich lookup needs a null-guard (${guards} guards for ${lookups} lookups)`);
   assert.doesNotMatch(js, /skoda-timer-msg[\s\S]{0,400}e\.message/);
 });
+
+test('portal.js renders the timer block and wires timer_set', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  assert.match(js, /skoda-timers/);
+  assert.match(js, /timer_set/);
+  assert.match(js, /data-dirty/);
+});
+
+test('portal.js escapes every value inside the timer renderer', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  const from = js.indexOf('function skodaTimerRow');
+  const to = js.indexOf('function renderSkodaCard');
+  assert.ok(from > 0 && to > from, 'timer renderer block not found');
+  const body = js.slice(from, to);
+  // CodeQL js/xss-through-dom: PT stammt aus #portal-i18n.textContent, ist also
+  // eine DOM-Text-Quelle. Jeder PT-Zugriff im Renderer muss in escHtml( stehen.
+  for (const m of body.matchAll(/PT[.[]/g)) {
+    assert.ok(/escHtml\($/.test(body.slice(0, m.index)),
+      'unescaped PT value: …' + body.slice(Math.max(0, m.index - 60), m.index + 30));
+  }
+  assert.match(body, /data-timer="' \+ escHtml\(t\.id/);
+  assert.match(body, /value="' \+ escHtml\(t\.time/);
+  assert.equal((body.match(/innerHTML/g) || []).length, 0, 'renderer builds strings, never assigns innerHTML');
+});
+
+test('portal.js narrows the details selectors so the timer block is not mistaken for it', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  assert.doesNotMatch(js, /querySelector\('details'\)/);
+  assert.match(js, /querySelector\('details\.skoda-details'\)/);
+  assert.match(js, /querySelector\('details\.skoda-timers'\)/);
+});
