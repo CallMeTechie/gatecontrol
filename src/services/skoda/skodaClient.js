@@ -162,6 +162,17 @@ function normalizeVehicleState({ status, drivingRange, charging, airConditioning
         return Number.isFinite(ts) ? Math.max(0, Math.round((ts - Date.now()) / 60000)) : null;
       })(),
       windowHeating: windowHeating ? (ON(windowHeating.front) || ON(windowHeating.rear)) : null,
+      // Abfahrtstimer (MEB: Klima-Timer). Kommen bei jedem Sync im
+      // air-conditioning-Payload mit — kein eigener Call nötig.
+      timers: (Array.isArray(airConditioning && airConditioning.timers) ? airConditioning.timers : [])
+        .map((t) => ({
+          id: num(t && t.id),
+          enabled: t && t.enabled != null ? !!t.enabled : null,
+          time: t && typeof t.time === 'string' ? t.time : null,
+          type: (t && t.type) || null,
+          days: Array.isArray(t && t.selectedDays) ? t.selectedDays.map(String) : [],
+        }))
+        .filter((t) => t.id != null),
     },
     position: pos && pos.gpsCoordinates
       ? { lat: num(pos.gpsCoordinates.latitude), lon: num(pos.gpsCoordinates.longitude) } : null,
