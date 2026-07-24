@@ -83,3 +83,14 @@ test('control 4xx maps to SKODA_API_ERROR with status', async () => {
   const { client } = makeClient([['/vehicle-access/V/lock', okRes(400)]]);
   await assert.rejects(client.lock('V', '0000'), (e) => e.code === 'SKODA_API_ERROR' && e.status === 400);
 });
+
+test('setAcTimer POSTs the timer wrapped in a timers array', async () => {
+  const { client, calls } = makeClient([['/air-conditioning/V/timers', okRes(202)]]);
+  await client.setAcTimer('V', { id: 1, enabled: true, time: '07:30', type: 'RECURRING', selectedDays: ['MONDAY'] });
+  const c = calls[0];
+  assert.equal(c.method, 'POST');
+  assert.equal(c.url, API_BASE + '/api/v2/air-conditioning/V/timers');
+  assert.deepEqual(JSON.parse(c.body), {
+    timers: [{ id: 1, enabled: true, time: '07:30', type: 'RECURRING', selectedDays: ['MONDAY'] }],
+  });
+});

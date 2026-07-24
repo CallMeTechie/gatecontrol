@@ -97,3 +97,74 @@ test('unlock uses the stored S-PIN and rate-limits after 5 attempts', async () =
   await assert.rejects(control.runCommand(vehId, 'unlock', {}, { fetchImpl: apiFetch(spy) }), (e) => e.code === 'SKODA_COMMAND_RATE_LIMIT');
   assert.equal(spy.length, 5); // 6th blocked before cloud
 });
+
+// GET air-conditioning liefert die Slots, POST .../timers quittiert mit 202.
+function timerFetch(spy, { timers = [{ id: 1, enabled: false, time: '05:15', type: 'RECURRING', selectedDays: ['MONDAY'] }], getStatus = 200 } = {}) {
+  return async (url, opts = {}) => {
+    spy.push({ url, method: opts.method || 'GET', body: opts.body });
+    if (!opts.method || opts.method === 'GET') {
+      if (getStatus !== 200) return { status: getStatus, ok: false, headers: new Headers(), json: async () => ({}), text: async () => '' };
+      return { status: 200, ok: true, headers: new Headers(), json: async () => ({ state: 'OFF', timers }), text: async () => '' };
+    }
+    return { status: 202, ok: true, headers: new Headers(), json: async () => ({}), text: async () => '' };
+  };
+}
+const OK_ARGS = { id: 1, enabled: true, time: '07:30', days: ['FRIDAY', 'MONDAY', 'MONDAY'] };
+
+test('timer_set rejects malformed arguments before touching the cloud', async () => {
+  const bad = [
+    { id: 0, enabled: true, time: '07:30', days: ['MONDAY'] },
+    { id: 1.5, enabled: true, time: '07:30', days: ['MONDAY'] },
+    { id: '1', enabled: true, time: '07:30', days: ['MONDAY'] },
+    { id: 1, enabled: 'true', time: '07:30', days: ['MONDAY'] },
+    { id: 1, enabled: true, time: '7:30', days: ['MONDAY'] },
+    { id: 1, enabled: true, time: '24:00', days: ['MONDAY'] },
+    { id: 1, enabled: true, time: '07:60', days: ['MONDAY'] },
+    { id: 1, enabled: true, time: '07:30', days: [] },
+    { id: 1, enabled: true, time: '07:30', days: ['FUNDAY'] },
+    { id: 1, enabled: true, time: '07:30', days: '__proto__' },
+    { id: 1, enabled: true, time: '07:30', days: ['__proto__'] },
+  ];
+  for (const args of bad) {
+    const spy = [];
+    await assert.rejects(control.runCommand(vehId, 'timer_set', args, { fetchImpl: timerFetch(spy) }), (e) => e.code === 'SKODA_VALIDATION', JSON.stringify(args));
+    assert.equal(spy.length, 0, `reached the cloud with ${JSON.stringify(args)}`);
+  }
+});
+
+test('timer_set writes the slot back with deduped, sorted days', async () => {
+  const spy = [];
+  const r = await control.runCommand(vehId, 'timer_set', OK_ARGS, { fetchImpl: timerFetch(spy) });
+  assert.equal(r.ok, true);
+  const post = spy.find((c) => c.method === 'POST');
+  assert.match(post.url, /\/api\/v2\/air-conditioning\/VINCTL\/timers$/);
+  assert.deepEqual(JSON.parse(post.body), {
+    timers: [{ id: 1, enabled: true, time: '07:30', type: 'RECURRING', selectedDays: ['MONDAY', 'FRIDAY'] }],
+  });
+});
+
+test('timer_set ignores a type supplied by the client', async () => {
+  const spy = [];
+  await control.runCommand(vehId, 'timer_set', { ...OK_ARGS, type: 'ONE_OFF' }, { fetchImpl: timerFetch(spy) });
+  const post = spy.find((c) => c.method === 'POST');
+  assert.equal(JSON.parse(post.body).timers[0].type, 'RECURRING'); // aus der Cloud-Antwort, nicht aus dem Request
+});
+
+test('timer_set on an unknown slot fails without writing', async () => {
+  const spy = [];
+  await assert.rejects(control.runCommand(vehId, 'timer_set', { ...OK_ARGS, id: 9 }, { fetchImpl: timerFetch(spy) }), (e) => e.code === 'SKODA_TIMER_NOT_FOUND');
+  assert.equal(spy.filter((c) => c.method === 'POST').length, 0);
+});
+
+test('timer_set refuses ONE_OFF slots without writing', async () => {
+  const spy = [];
+  const timers = [{ id: 1, enabled: false, time: '05:15', type: 'ONE_OFF', selectedDays: [] }];
+  await assert.rejects(control.runCommand(vehId, 'timer_set', OK_ARGS, { fetchImpl: timerFetch(spy, { timers }) }), (e) => e.code === 'SKODA_TIMER_READONLY');
+  assert.equal(spy.filter((c) => c.method === 'POST').length, 0);
+});
+
+test('a failing air-conditioning read propagates and writes nothing', async () => {
+  const spy = [];
+  await assert.rejects(control.runCommand(vehId, 'timer_set', OK_ARGS, { fetchImpl: timerFetch(spy, { getStatus: 429 }) }), (e) => e.code === 'SKODA_RATE_LIMITED');
+  assert.equal(spy.filter((c) => c.method === 'POST').length, 0);
+});
