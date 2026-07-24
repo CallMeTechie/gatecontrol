@@ -89,3 +89,37 @@ test('includePosition:false nulls position and skips geocoding', async () => {
   });
   assert.equal(list[0].state.position, null);
 });
+
+test('portal redaction passes timers through with only the five allowed fields', async () => {
+  const withTimers = JSON.parse(JSON.stringify(STATE));
+  withTimers.climate.timers = [
+    { id: 1, enabled: true, time: '12:00', type: 'RECURRING', days: ['MONDAY'], secretVin: 'TMBLEAK' },
+  ];
+  const id = seedVehicle('TMBTIMER', 'Elroq', withTimers);
+  owners.setOwners(id, [adminId]);
+
+  const list = await portal.portalVehiclesFor(adminId, { includePosition: true });
+  assert.deepEqual(list[0].state.climate.timers, [
+    { id: 1, enabled: true, time: '12:00', type: 'RECURRING', days: ['MONDAY'] },
+  ]);
+});
+
+test('portal redaction hides timers from a device-trust reader without a login', async () => {
+  const withTimers = JSON.parse(JSON.stringify(STATE));
+  withTimers.climate.timers = [{ id: 1, enabled: true, time: '12:00', type: 'RECURRING', days: ['MONDAY'] }];
+  const id = seedVehicle('TMBNOLOGIN', 'Elroq', withTimers);
+  owners.setOwners(id, [adminId]);
+
+  const list = await portal.portalVehiclesFor(adminId, { includePosition: false });
+  assert.deepEqual(list[0].state.climate.timers, []);
+});
+
+test('portal redaction yields an empty timer list when state has none', async () => {
+  const noTimers = JSON.parse(JSON.stringify(STATE));
+  delete noTimers.climate.timers;
+  const id = seedVehicle('TMBNOTIMER', 'Enyaq', noTimers);
+  owners.setOwners(id, [adminId]);
+
+  const list = await portal.portalVehiclesFor(adminId, { includePosition: true });
+  assert.deepEqual(list[0].state.climate.timers, []);
+});
