@@ -29,3 +29,23 @@ test('the portal PT block carries every timer key', () => {
   const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'portal', 'portal.njk'), 'utf8');
   for (const k of PORTAL_KEYS) assert.ok(njk.includes(`t('${k}')`), `PT block ${k}`);
 });
+
+test('skoda.js renders the timer block and wires timer_set', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'skoda.js'), 'utf8');
+  assert.match(js, /skoda-timers-block/);
+  assert.match(js, /timer_set/);
+  assert.match(js, /type="time"/);
+  // Der Timer-Block darf NICHT die Details-Klasse tragen — sonst laufen der
+  // Rebuild-Erhalt und der Toggle-Handler auf einen fehlenden .skoda-enrich.
+  // Zeilenweise prüfen: im selben Markup-Fragment dürfen beide nicht stehen.
+  assert.doesNotMatch(js, /skoda-timers-block[^\n]*skoda-enrich/);
+});
+
+test('skoda.js guards every enrich lookup and never shows raw server messages', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'skoda.js'), 'utf8');
+  const lookups = (js.match(/querySelector\('\.skoda-enrich'\)/g) || []).length;
+  const guards = (js.match(/if \(!box\) return;/g) || []).length;
+  assert.ok(lookups >= 2, `expected at least two enrich lookups, found ${lookups}`);
+  assert.ok(guards >= lookups, `every enrich lookup needs a null-guard (${guards} guards for ${lookups} lookups)`);
+  assert.doesNotMatch(js, /skoda-timer-msg[\s\S]{0,400}e\.message/);
+});
