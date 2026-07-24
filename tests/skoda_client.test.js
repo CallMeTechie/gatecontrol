@@ -143,3 +143,28 @@ test('fetchFullState survives one failing endpoint', async () => {
   assert.equal(state.soc, 74);            // from drivingRange
   assert.equal(state.charging.state, null); // failed part -> nulls
 });
+
+test('normalizeVehicleState maps air-conditioning timers to climate.timers', () => {
+  const state = normalizeVehicleState({
+    status: null, drivingRange: null, charging: null, position: null, health: null, maintenance: null,
+    airConditioning: {
+      state: 'OFF',
+      timers: [
+        { id: 1, enabled: true, time: '12:00', type: 'RECURRING', selectedDays: ['MONDAY', 'FRIDAY'] },
+        { id: 2, enabled: false, time: '05:15', type: 'ONE_OFF', selectedDays: [] },
+        { enabled: true, time: '09:00' },
+      ],
+    },
+  });
+  assert.deepEqual(state.climate.timers, [
+    { id: 1, enabled: true, time: '12:00', type: 'RECURRING', days: ['MONDAY', 'FRIDAY'] },
+    { id: 2, enabled: false, time: '05:15', type: 'ONE_OFF', days: [] },
+  ]);
+});
+
+test('climate.timers is an empty array when the cloud sends none', () => {
+  const noAc = normalizeVehicleState({ status: null, drivingRange: null, charging: null, airConditioning: null, position: null, health: null, maintenance: null });
+  assert.deepEqual(noAc.climate.timers, []);
+  const noList = normalizeVehicleState({ status: null, drivingRange: null, charging: null, airConditioning: { state: 'OFF' }, position: null, health: null, maintenance: null });
+  assert.deepEqual(noList.climate.timers, []);
+});

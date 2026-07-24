@@ -130,3 +130,14 @@ test('unauthenticated request is rejected', async () => {
   const res = await supertest(ctx.app).get('/api/v1/skoda');
   assert.equal(res.status, 401);
 });
+
+test('GET /api/v1/skoda exposes the departure timers of a vehicle', async () => {
+  const acc = accounts.createAccount({ email: 'timers@x.y', password: 'pw' });
+  const state = JSON.stringify({ climate: { state: 'OFF', timers: [{ id: 1, enabled: true, time: '07:30', type: 'RECURRING', days: ['MONDAY'] }] } });
+  getDb().prepare("INSERT INTO skoda_vehicles (account_id, vin, name, model, state_json, fetched_at) VALUES (?, 'TMBTIM', 'Enyaq', 'Enyaq', ?, datetime('now'))").run(acc.id, state);
+
+  const res = await ctx.agent.get('/api/v1/skoda');
+  assert.equal(res.status, 200);
+  const v = res.body.vehicles.find((x) => x.vin === 'TMBTIM');
+  assert.deepEqual(v.state.climate.timers, [{ id: 1, enabled: true, time: '07:30', type: 'RECURRING', days: ['MONDAY'] }]);
+});
