@@ -34,11 +34,11 @@ async function portalVehiclesFor(ownerId, { fetchImpl, includePosition = true } 
   );
 }
 
-async function redactState(state, fetchImpl, includePosition) {
+async function redactState(state, fetchImpl, loggedIn) {
   if (!state) return null;
   let position = null;
   // GPS + home address only for a real login; device-trust reads never see it.
-  if (includePosition && state.position && typeof state.position.lat === 'number' && typeof state.position.lon === 'number') {
+  if (loggedIn && state.position && typeof state.position.lat === 'number' && typeof state.position.lon === 'number') {
     const address = await geocode.reverseGeocode(state.position.lat, state.position.lon, { fetchImpl });
     position = { lat: state.position.lat, lon: state.position.lon, address };
   }
@@ -53,7 +53,17 @@ async function redactState(state, fetchImpl, includePosition) {
     lightsOn: state.lightsOn,
     soc: state.soc, rangeKm: state.rangeKm,
     charging: pick(state.charging, ['state', 'powerKw', 'remainingMin', 'targetPercent', 'mode', 'cableConnected']),
-    climate: pick(state.climate, ['state', 'targetC', 'remainingMin', 'windowHeating']),
+    // pick() ist eine Leaf-Allowlist und greift nicht in Arrays — die Timer
+    // werden deshalb einzeln durch dieselbe Allowlist geschickt, damit ein
+    // künftig von Skoda ergänztes Feld das Portal nicht ungeprüft erreicht.
+    // Abfahrtszeiten sind ein Anwesenheitsprofil: dieselbe Sensitivitätsklasse
+    // wie GPS, also nur bei echtem Login (routes/api/portal.js:318).
+    climate: {
+      ...pick(state.climate, ['state', 'targetC', 'remainingMin', 'windowHeating']),
+      timers: loggedIn && state.climate && Array.isArray(state.climate.timers)
+        ? state.climate.timers.map((t) => pick(t, ['id', 'enabled', 'time', 'type', 'days']))
+        : [],
+    },
     position,
     health: { mileageKm: h.mileageKm, warnings: Array.isArray(h.warnings) ? h.warnings : [] },
     maintenance: pick(state.maintenance, ['dueInDays', 'dueInKm', 'partner']),
