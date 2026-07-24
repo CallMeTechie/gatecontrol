@@ -60,7 +60,7 @@
         <label><input type="checkbox" data-timer-enabled${t.enabled ? ' checked' : ''}${dis}> ${T('skoda.timers.active')}</label>
         <label>${T('skoda.timers.time')} <input type="time" data-timer-time value="${esc(t.time || '')}"${dis}></label>
       </div>
-      <div class="skoda-timer-days" aria-label="${T('skoda.timers.days')}">${chips}</div>
+      <div class="skoda-timer-days" role="group" aria-label="${T('skoda.timers.days')}">${chips}</div>
       <div class="skoda-timer-foot">
         ${editable ? `<button class="btn btn-sm" data-timer-save>${T('skoda.timers.save')}</button>` : ''}
         <span class="skoda-timer-msg">${t.type === 'ONE_OFF' ? T('skoda.timers.readonly') : ''}</span>

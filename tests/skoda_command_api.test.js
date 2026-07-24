@@ -45,6 +45,24 @@ test('spin required maps to 409', async () => {
   m.mock.restore();
 });
 
+test('timer not found maps to 404', async () => {
+  const err = Object.assign(new Error('x'), { code: 'SKODA_TIMER_NOT_FOUND' });
+  const m = mock.method(control, 'runCommand', async () => { throw err; });
+  const res = await ctx.agent.post(`/api/v1/skoda/vehicles/${vehId}/command`).set('x-csrf-token', ctx.csrfToken).send({ action: 'set_timer' });
+  assert.equal(res.status, 404);
+  assert.equal(res.body.code, 'SKODA_TIMER_NOT_FOUND');
+  m.mock.restore();
+});
+
+test('timer readonly maps to 409', async () => {
+  const err = Object.assign(new Error('x'), { code: 'SKODA_TIMER_READONLY' });
+  const m = mock.method(control, 'runCommand', async () => { throw err; });
+  const res = await ctx.agent.post(`/api/v1/skoda/vehicles/${vehId}/command`).set('x-csrf-token', ctx.csrfToken).send({ action: 'set_timer' });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, 'SKODA_TIMER_READONLY');
+  m.mock.restore();
+});
+
 test('PUT spin sets it (validated) and never echoes it', async () => {
   const accId = accounts.listAccounts()[0].id;
   const res = await ctx.agent.put(`/api/v1/skoda/accounts/${accId}/spin`).set('x-csrf-token', ctx.csrfToken).send({ spin: '1234' });

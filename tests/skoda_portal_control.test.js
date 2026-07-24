@@ -69,6 +69,30 @@ test('portal timer_set without a login answers login_required instead of acting'
   m.mock.restore();
 });
 
+test('portal timer_set with unknown timer id maps to 404', async () => {
+  const err = Object.assign(new Error('x'), { code: 'SKODA_TIMER_NOT_FOUND' });
+  const m = mock.method(control, 'runCommand', async () => { throw err; });
+  const agent = await getAgent();
+  const res = await agent.post(`/api/v1/portal/skoda/vehicles/${mineId}/command`)
+    .set('Host', HOME_HOST)
+    .send({ action: 'timer_set', args: { id: 99, enabled: true, time: '07:30', days: ['MONDAY'] } });
+  assert.equal(res.status, 404);
+  assert.equal(res.body.error, 'SKODA_TIMER_NOT_FOUND');
+  m.mock.restore();
+});
+
+test('portal timer_set on a non-recurring (readonly) timer maps to 409', async () => {
+  const err = Object.assign(new Error('x'), { code: 'SKODA_TIMER_READONLY' });
+  const m = mock.method(control, 'runCommand', async () => { throw err; });
+  const agent = await getAgent();
+  const res = await agent.post(`/api/v1/portal/skoda/vehicles/${mineId}/command`)
+    .set('Host', HOME_HOST)
+    .send({ action: 'timer_set', args: { id: 1, enabled: true, time: '07:30', days: ['MONDAY'] } });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.error, 'SKODA_TIMER_READONLY');
+  m.mock.restore();
+});
+
 test('portal timer_set on a foreign vehicle is rejected with 403', async () => {
   const m = mock.method(control, 'runCommand', async () => ({ ok: true }));
   const agent = await getAgent();

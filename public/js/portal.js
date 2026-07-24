@@ -1108,7 +1108,7 @@
       + '<div class="skoda-timer-head"><strong>' + escHtml(PT.skodaTimersTimer) + ' ' + escHtml(t.id) + '</strong>'
       + '<label><input type="checkbox" data-timer-enabled' + (t.enabled ? ' checked' : '') + dis + '> ' + escHtml(PT.skodaTimersActive) + '</label>'
       + '<label>' + escHtml(PT.skodaTimersTime) + ' <input type="time" data-timer-time value="' + escHtml(t.time || '') + '"' + dis + '></label></div>'
-      + '<div class="skoda-timer-days" aria-label="' + escHtml(PT.skodaTimersDays) + '">' + chips + '</div>'
+      + '<div class="skoda-timer-days" role="group" aria-label="' + escHtml(PT.skodaTimersDays) + '">' + chips + '</div>'
       + '<div class="skoda-timer-foot">'
       + (editable ? '<button data-timer-save>' + escHtml(PT.skodaTimersSave) + '</button>' : '')
       + '<span class="skoda-timer-msg">' + (t.type === 'ONE_OFF' ? escHtml(PT.skodaTimersReadonly) : '') + '</span>'
