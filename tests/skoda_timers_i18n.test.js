@@ -74,6 +74,15 @@ test('portal.js escapes every value inside the timer renderer', () => {
   assert.equal((body.match(/innerHTML/g) || []).length, 0, 'renderer builds strings, never assigns innerHTML');
 });
 
+test('skodaTimersBlock bails out early without a login', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  const from = js.indexOf('function skodaTimersBlock');
+  const to = js.indexOf('function', from + 1);
+  assert.ok(from > 0 && to > from, 'skodaTimersBlock not found');
+  const body = js.slice(from, to);
+  assert.match(body, /if \(!loggedIn\) return '';/);
+});
+
 test('portal.js narrows the details selectors so the timer block is not mistaken for it', () => {
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
   assert.doesNotMatch(js, /querySelector\('details'\)/);
