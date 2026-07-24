@@ -115,6 +115,11 @@ class SkodaClient {
   setChargeLimit(vin, pct) { return this._request('PUT', `/api/v1/charging/${vin}/set-charge-limit`, { targetSOCInPercent: pct }); }
   lock(vin, spin) { return this._request('POST', `/api/v1/vehicle-access/${vin}/lock`, { currentSpin: spin }); }
   unlock(vin, spin) { return this._request('POST', `/api/v1/vehicle-access/${vin}/unlock`, { currentSpin: spin }); }
+  // Abfahrtstimer. Live-verifiziert: 202 auf beiden Fahrzeugen, und ein einzeln
+  // geschriebener Slot lässt die übrigen unangetastet (Spike 2026-07-24).
+  // Schreibform aus python-myskoda set_ac_timer. Der departure/timers-Endpunkt
+  // aus vehicle-automatization antwortet für diese Autos 500 — nicht benutzen.
+  setAcTimer(vin, timer) { return this._request('POST', `/api/v2/air-conditioning/${vin}/timers`, { timers: [timer] }); }
 }
 
 const YES = (v) => (v == null ? null : String(v).toUpperCase() === 'YES');
