@@ -489,3 +489,16 @@ body::before{
   *,*::before{transition:none !important; animation:none !important}
   .card{opacity:1; transform:none}
 }
+
+.skoda-timers { margin-top: 10px; font-size: .88em; color: var(--muted); }
+.skoda-timers summary { cursor: pointer; }
+.skoda-timer { border-top: 1px solid var(--line); padding: 8px 0; }
+.skoda-timer-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.skoda-timer-days { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.skoda-timer-day { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; font-size: .85em; }
+.skoda-timer-day[aria-pressed="true"] { background: color-mix(in srgb, var(--teal) 20%, transparent); border-color: var(--teal); color: var(--teal); }
+.skoda-timer-day[disabled] { opacity: .5; cursor: default; }
+.skoda-timer-foot { display: flex; gap: 8px; align-items: center; }
+.skoda-timer-foot button { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-3); color: inherit; cursor: pointer; font-size: .85em; }
+.skoda-timer-msg { font-size: .85em; }
+.skoda-timer-msg.skoda-timer-ok { color: var(--green); }
