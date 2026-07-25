@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.5] — 2026-07-25
+
+### Fixes
+- bind loopback by default and stop ACME attempts for the ownership marker
+
+---
+
 ## [1.118.4] — 2026-07-25
 
 ### Fixes
