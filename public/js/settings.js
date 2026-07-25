@@ -1428,6 +1428,34 @@
   });
 })();
 
+// ─── ACME contact email ───────────────────────────────
+(function () {
+  var el = document.getElementById('acme-email');
+  if (!el) return;
+  var t = (window.GC && window.GC.t) || {};
+  SettingsAutosave.bind({
+    cluster: 'acme-email',
+    fields: [el],
+    statusEl: document.getElementById('acme-email-status'),
+    valuesById: function () { return { 'acme-email': el.value }; },
+    save: function () {
+      return api.put('/api/v1/settings/acme-email', { email: el.value }).then(function (data) {
+        // Der Server speichert auch dann, wenn der Caddy-Push scheitert. Die
+        // Warnung MUSS als ok:false zurückgegeben werden — gäbe man data
+        // unverändert zurück, überschriebe settingsAutosave.js:90 mit flash()
+        // jeden selbst gesetzten Text durch "Gespeichert". Als ok:false greift
+        // showError(), und der Snapshot bleibt alt → das nächste Verlassen des
+        // Feldes wiederholt den Push.
+        // ponytail: Retry ohne Extra-Code; der Wert liegt serverseitig bereits.
+        if (data && data.warning) {
+          return { ok: false, error: t[data.warning] || t['settings.acme_email.push_failed'] };
+        }
+        return data;
+      });
+    },
+  });
+})();
+
 (function () {
   var sliderEl = document.getElementById('gw-down-threshold');
   var sliderOut = document.getElementById('gw-down-threshold-value');
