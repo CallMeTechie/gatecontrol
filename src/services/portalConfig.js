@@ -55,7 +55,7 @@ function collidesWithPeer(host) {
   const rows = getDb().prepare("SELECT hostname FROM peers WHERE hostname IS NOT NULL AND hostname != ''").all();
   return rows.some(r => `${String(r.hostname).trim().toLowerCase()}.${config.dns.domain}` === host);
 }
-function validatePortalHost(base, prefix) {
+async function validatePortalHost(base, prefix) {
   base = String(base || '').trim().toLowerCase();
   prefix = String(prefix == null ? 'home' : prefix).trim().toLowerCase();
   if (!base) return { ok: true };                          // internal default
@@ -65,6 +65,15 @@ function validatePortalHost(base, prefix) {
   const host = prefix ? `${prefix}.${base}` : base;
   if (collidesWithGateControl(host) || collidesWithRoute(host) || collidesWithPeer(host)) {
     return { ok: false, error: 'collision' };
+  }
+  // The apex being verified says NOTHING about <prefix>.<apex>. Committing an
+  // unresolvable host hands it to buildTlsAutomation, and Caddy then retries ACME
+  // against the production CA for max_duration = 30 days (burning Let's Encrypt's
+  // 5 failed-validations/hour/hostname budget). So resolve the composed host too.
+  if (host !== base) {
+    const v = await domains.verify(host);
+    // 'pending' = our resolver is unreachable — can't decide, so don't block.
+    if (v.status === 'failed') return { ok: false, error: 'unresolved' };
   }
   return { ok: true };
 }

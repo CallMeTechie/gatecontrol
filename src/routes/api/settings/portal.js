@@ -37,7 +37,7 @@ router.get('/portal', (req, res) => {
  *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool, pihole: bool },
  *     trust_owner_mapping: bool, base_domain: string, prefix: string }
  */
-router.put('/portal', (req, res) => {
+router.put('/portal', async (req, res) => {
   try {
     const body = req.body || {};
     const widgets = body.widgets || {};
@@ -78,7 +78,7 @@ router.put('/portal', (req, res) => {
     if (body.base_domain !== undefined || body.prefix !== undefined) {
       const base = String(body.base_domain !== undefined ? body.base_domain : settings.get('portal.base_domain', '') || '').trim().toLowerCase();
       const prefix = String(body.prefix !== undefined ? (body.prefix == null ? '' : body.prefix) : settings.get('portal.prefix', 'home')).trim().toLowerCase();
-      const v = validatePortalHost(base, prefix);
+      const v = await validatePortalHost(base, prefix);
       if (!v.ok) return res.status(400).json({ ok: false, error: req.t('settings.portal.host_' + v.error) });
       // NOTE: GC_CADDY_EMAIL is intentionally NOT required. ACME issuance (Let's Encrypt)
       // does not need an account email; when GC_CADDY_EMAIL is empty, buildTlsAutomation

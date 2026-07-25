@@ -677,16 +677,20 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // split a single `.test`/`.local`/`.internal` route would hammer the
   // Let's Encrypt rate-limit endpoint with retries every hour and
   // pollute acme logs.
-  // homeHost is passed explicitly because it is added to caddyRoutes below,
-  // AFTER this call, so it would otherwise be absent from the TLS policy.
+  // homeHost and gcHost are passed explicitly because both are added to
+  // caddyRoutes below, AFTER this call, so they would otherwise be absent from
+  // the TLS policy. For gcHost that meant the management UI fell through to
+  // Caddy's DEFAULT automation — an ACME account with no contact email, i.e. no
+  // expiry notices, even with GC_CADDY_EMAIL set.
+  let gcHost = '';
+  try { gcHost = new URL(config.app.baseUrl || '').hostname.toLowerCase(); } catch { /* unset/invalid baseUrl */ }
   const forceInternal = portal.public ? [] : [homeHost];
-  const tlsConfig = buildTlsAutomation([...Object.keys(caddyRoutes), homeHost], config.caddy, forceInternal);
+  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), homeHost, gcHost].filter(Boolean))];
+  const tlsConfig = buildTlsAutomation(tlsDomains, config.caddy, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
-  const baseUrl = config.app.baseUrl || '';
   try {
-    const gcHost = new URL(baseUrl).hostname;
     if (gcHost && !caddyRoutes[gcHost]) {
       caddyRoutes[gcHost] = {
         listen: [':443', ':80'],

@@ -8,8 +8,17 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
 
-let getDb;
-beforeEach(async () => { await setup(); getDb = require('../src/db/connection').getDb; });
+let getDb, domains;
+// The composed portal host is DNS-checked before it is committed. Pin the server IP and
+// the resolver so these tests never touch the network: default = the host points at us.
+const SERVER_IP = '198.51.100.7';
+beforeEach(async () => {
+  await setup();
+  getDb = require('../src/db/connection').getDb;
+  domains = require('../src/services/domains');
+  require('../src/services/settings').set('server.public_ip', SERVER_IP);
+  domains._setResolverForTest(async (host, family) => (family === 4 ? [SERVER_IP] : []));
+});
 afterEach(teardown);
 
 test('PUT accepts a verified base domain + prefix and GET reflects it', async () => {
@@ -37,6 +46,20 @@ test('PUT rejects an unverified base domain (400)', async () => {
   const agent = getAgent(); const csrf = getCsrf();
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
     .send({ base_domain: 'unverified.com', prefix: 'home' }).expect(400);
+});
+
+// Regression: a verified apex says nothing about <prefix>.<apex>. Committing an
+// unresolvable portal host started a 30-day production-ACME retry loop in Caddy.
+test('PUT rejects a verified base whose composed host has no DNS record (400)', async () => {
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  domains._setResolverForTest(async () => []);            // NXDOMAIN for home.domaincaster.com
+  const agent = getAgent(); const csrf = getCsrf();
+  await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
+    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(400);
+  // and nothing was persisted — the ACME policy must never see the bad host
+  const get = await agent.get('/api/v1/settings/portal').expect(200);
+  assert.equal(get.body.data.base_domain, '');
+  assert.equal(get.body.data.isPublic, false);
 });
 
 test('widget toggles still work (no regression)', async () => {
