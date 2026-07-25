@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.6] — 2026-07-25
+
+### Fixes
+- DNS-Prüfung des zusammengesetzten Portal-Hosts + Verwaltungs-Host in TLS-Automation (#231)
+
+---
+
 ## [1.118.5] — 2026-07-25
 
 ### Fixes
