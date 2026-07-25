@@ -208,6 +208,40 @@ function validatePasswordComplexity(password) {
   return errors.length > 0 ? errors : null;
 }
 
+function validateEmail(email) {
+  if (typeof email !== 'string') return 'Email is required';
+  const trimmed = email.trim();
+  if (!trimmed) return 'Email is required';
+  // Lineare Prüfungen statt Regex über die Nutzereingabe: /.+@.+/ ist ein
+  // polynomial-ReDoS-Risiko (CodeQL js/polynomial-redos) — genau dieser Befund
+  // trat in skodaAccounts.createAccount auf. Streng, weil der Wert in eine
+  // ACME-Kontoregistrierung wandert: was Let's Encrypt ablehnt, blockiert die
+  // Ausstellung für ALLE öffentlichen Domains.
+  if (trimmed.length > 254) return 'Email too long (max 254 chars)';
+  for (let i = 0; i < trimmed.length; i++) {
+    const c = trimmed.charCodeAt(i);
+    // nur druckbares ASCII → keine Steuerzeichen, kein inneres Whitespace,
+    // keine Unicode-Tricks (RTL-Override, Homoglyphen)
+    if (c < 0x21 || c > 0x7e) return 'Invalid email format';
+  }
+  const at = trimmed.indexOf('@');
+  if (at <= 0 || at !== trimmed.lastIndexOf('@') || at === trimmed.length - 1) return 'Invalid email format';
+  if (at > 64) return 'Invalid email format';                    // RFC 5321 local part
+  const domain = trimmed.slice(at + 1);
+  if (domain.length > 253) return 'Invalid email format';
+  if (!domain.includes('.') || domain.includes('..')) return 'Invalid email format';
+  if (domain.startsWith('.') || domain.startsWith('-') || domain.endsWith('.') || domain.endsWith('-')) {
+    return 'Invalid email format';
+  }
+  for (let i = 0; i < domain.length; i++) {
+    const c = domain.charCodeAt(i);
+    const ldh = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a)
+      || (c >= 0x61 && c <= 0x7a) || c === 0x2d || c === 0x2e;
+    if (!ldh) return 'Invalid email format';
+  }
+  return null;
+}
+
 module.exports = {
   validatePeerName,
   validateDomain,
@@ -228,4 +262,5 @@ module.exports = {
   parsePortRange,
   isPrivateIpv4,
   isLoopbackHost,
+  validateEmail,
 };
