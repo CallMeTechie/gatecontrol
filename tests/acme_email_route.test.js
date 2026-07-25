@@ -102,3 +102,18 @@ test('an API token cannot write the ACME contact address', async () => {
   assert.equal(res.status, 403);
   assert.equal(settings.get('caddy.acme_email'), 'keep@example.com');
 });
+
+test('a token cannot slip past the guard with a trailing slash or different casing', async () => {
+  // Express: strict:false/caseSensitive:false — diese Pfade treffen dieselbe Route.
+  const tokens = require('../src/services/tokens');
+  const { rawToken } = tokens.create({ name: 'acme-tok-variants', scopes: ['settings'] }, '127.0.0.1');
+  for (const path of ['/api/v1/settings/acme-email/', '/api/v1/settings/ACME-EMAIL']) {
+    settings.set('caddy.acme_email', 'keep@example.com');
+    const res = await supertest(ctx.app)
+      .put(path)
+      .set('X-Api-Token', rawToken)
+      .send({ email: 'attacker@example.com' });
+    assert.equal(res.status, 403, `${path} ergab ${res.status}`);
+    assert.equal(settings.get('caddy.acme_email'), 'keep@example.com', `${path} hat geschrieben`);
+  }
+});
