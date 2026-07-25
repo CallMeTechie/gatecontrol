@@ -46,7 +46,7 @@ const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubro
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
-const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision } = require('./caddyOwner');
+const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision, MARKER_HOST } = require('./caddyOwner');
 const {
   caddyApi,
   _caddyApi,
@@ -843,6 +843,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     caddyConfig.apps.http.servers.srv0 = {
       listen: [':443', ':80'],
       routes: serverRoutes,
+      // The marker host is an RFC 6761 reserved name that can never be issued a
+      // public certificate. It is appended AFTER buildTlsAutomation() has run,
+      // so it never reaches the TLD classification there and would otherwise
+      // fall through to Caddy's automatic HTTPS — producing a permanent stream
+      // of failing ACME attempts in the log.
+      automatic_https: { skip: [MARKER_HOST] },
       logs: {
         default_logger_name: 'access',
       },

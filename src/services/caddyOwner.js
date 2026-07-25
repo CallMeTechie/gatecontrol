@@ -159,6 +159,7 @@ function _resetOwnerCache() {
 
 module.exports = {
   OWNER_ID_PREFIX,
+  MARKER_HOST,
   getOwnerId,
   ownerMarkerRoute,
   extractOwner,
