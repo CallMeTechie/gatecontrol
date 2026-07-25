@@ -188,6 +188,19 @@ function buildExternalBlockHandler(route) {
   return [{ handler: 'static_response', status_code: 404 }];
 }
 
+// Die Einstellung schlägt die Umgebungsvariable; ist sie leer, gilt weiter
+// GC_CADDY_EMAIL. Gleiche Bauform wie effectivePortalHost() (portalConfig.js:33).
+// Der Auflöser lebt hier und nicht in caddyTlsAutomation.js — jenes Modul ist
+// bewusst importfrei und seine Tests kommen ohne Datenbank aus.
+function effectiveAcmeEmail() {
+  // settings ist in dieser Datei NICHT auf Modulebene importiert — lokal
+  // requiren, genau wie in buildExternalBlockHandler (:167).
+  const settings = require('./settings');
+  const fromDb = String(settings.get('caddy.acme_email', '') || '').trim();
+  if (fromDb) return fromDb;
+  return String((config.caddy && config.caddy.email) || '').trim();
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
  * Build Caddy configuration JSON. Overloaded:
@@ -686,7 +699,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   try { gcHost = new URL(config.app.baseUrl || '').hostname.toLowerCase(); } catch { /* unset/invalid baseUrl */ }
   const forceInternal = portal.public ? [] : [homeHost];
   const tlsDomains = [...new Set([...Object.keys(caddyRoutes), homeHost, gcHost].filter(Boolean))];
-  const tlsConfig = buildTlsAutomation(tlsDomains, config.caddy, forceInternal);
+  const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
   // GateControl management UI route
@@ -1037,6 +1050,7 @@ async function _syncToCaddyInner() {
 module.exports = {
   caddyApi,
   buildCaddyConfig,
+  effectiveAcmeEmail,
   syncToCaddy,
   getAclPeers,
   setAclPeers,
