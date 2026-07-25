@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.3] — 2026-07-25
+
+### Änderungen
+- trivyignore CVE-2026-14257 (brace-expansion in npm's own bundle, not in runtime path)
+
+---
+
 ## [Unreleased]
 
 ### Added
