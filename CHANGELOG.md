@@ -1,13 +1,13 @@
 # Changelog
 
-## [1.118.3] — 2026-07-25
+## [Unreleased]
 
-### Änderungen
-- trivyignore CVE-2026-14257 (brace-expansion in npm's own bundle, not in runtime path)
+### Fixed
+- Einstellungen → Allgemein: Das Standard-Design ließ sich in den Themes Classic und Pro nicht auf Aurora stellen — der Aurora-Knopf fehlte dort, obwohl der Server den Wert längst akzeptiert. Beide Templates bieten jetzt alle drei Designs an, ein Paritätstest hält die Auswahl über alle Themes und beide Seiten (Profil + Einstellungen) synchron.
 
 ---
 
-## [Unreleased]
+## [1.118.3] — 2026-07-25
 
 ### Added
 - Skoda: Abfahrtstimer (Klima-Timer) je Fahrzeug lesen und setzen — An/Aus, Uhrzeit und Wochentage, in der Admin-Seite `/skoda` und im Portal-Widget. Neuer Command `timer_set` über `POST /api/v2/air-conditioning/{vin}/timers`. Einmal-Timer (`ONE_OFF`) werden nur angezeigt, nicht geschrieben.
@@ -19,6 +19,9 @@
 ### Notes
 - Die Skoda-Cloud übernimmt Timer-Änderungen asynchron (gemessen rund 55 Sekunden). Bis zum nächsten vollständigen Sync kann die Anzeige noch die alten Werte zeigen, ohne dass etwas fehlgeschlagen wäre.
 - Direkt nach dem Update zeigen die Karten bis zum nächsten Poll „Keine Timer konfiguriert", weil der gespeicherte Fahrzeugzustand das Feld noch nicht kennt.
+
+### Änderungen
+- trivyignore CVE-2026-14257 (brace-expansion in npm's own bundle, not in runtime path)
 
 ---
 
