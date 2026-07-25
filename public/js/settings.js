@@ -1448,7 +1448,7 @@
         // Feldes wiederholt den Push.
         // ponytail: Retry ohne Extra-Code; der Wert liegt serverseitig bereits.
         if (data && data.warning) {
-          return { ok: false, error: t[data.warning] || t['settings.acme_email.push_failed'] };
+          return { ok: false, error: t[data.warning] || undefined };
         }
         return data;
       });
