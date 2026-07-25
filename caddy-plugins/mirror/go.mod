@@ -8,5 +8,8 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/smallstep/certificates v0.30.0
-	google.golang.org/grpc v1.79.3
+	// Mindestversion erzwingt den Fix für GHSA-hrxh-6v49-42gf (gRPC-Go: xDS RBAC
+	// und HTTP/2). Der Plugin-Graph zog sonst v1.81.0 herein, was Trivy als HIGH
+	// meldet; behoben in v1.82.1.
+	google.golang.org/grpc v1.82.1
 )
