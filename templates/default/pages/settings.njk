@@ -291,7 +291,7 @@
           <span class="card-title">{{ t('settings.acme_email') }}</span>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-          <input type="text" id="acme-email" value="{{ settingsAcmeEmail or '' }}" placeholder="{{ t('settings.acme_email.inherited') if acmeEmailInherited else '' }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="254" autocomplete="off">
+          <input type="text" id="acme-email" value="{{ settingsAcmeEmail or '' }}" placeholder="{{ t('settings.acme_email.inherited') if acmeEmailInherited else '' }}" aria-label="{{ t('settings.acme_email') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="254" autocomplete="off">
           <div style="font-size:11px;color:var(--text-3)">{{ t('settings.acme_email_hint') }}</div>
           <div id="acme-email-status" class="autosave-status"></div>
         </div>
