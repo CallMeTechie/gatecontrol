@@ -8,6 +8,8 @@ const { getDb } = require('../../../db/connection');
 const settings = require('../../../services/settings');
 const config = require('../../../../config/default');
 const logger = require('../../../utils/logger');
+const { validateEmail } = require('../../../utils/validate');
+const activity = require('../../../services/activity');
 
 const router = Router();
 
@@ -57,6 +59,62 @@ router.put('/default-theme', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to set default theme');
     res.status(500).json({ ok: false, error: 'Failed to save theme setting' });
+  }
+});
+
+/**
+ * PUT /api/settings/acme-email — Kontaktadresse für Let's Encrypt.
+ *
+ * Zugriffsschutz: requireAuth vom API-Router plus der TOKEN_FORBIDDEN-Eintrag
+ * in settings/index.js. Das ist KEINE Administratorprüfung — der gesamte
+ * Settings-Baum hat heute keine Rollenprüfung (middleware/auth.js:33).
+ * Bewusst Status quo; ein einzelner Rollen-Guard hier würde Schutz suggerieren,
+ * den die Nachbarrouten nicht haben.
+ */
+router.put('/acme-email', async (req, res) => {
+  try {
+    const raw = req.body ? req.body.email : undefined;
+    // Ein fehlendes Feld ist ein Client-Fehler, KEIN Löschbefehl. Der Rohwert
+    // darf deshalb nicht über String(raw || '') normalisiert werden — das ließe
+    // {} still eine gültige Konfiguration löschen.
+    if (typeof raw !== 'string') {
+      return res.status(400).json({ ok: false, error: req.t('error.settings.acme_email_invalid') });
+    }
+    const trimmed = raw.trim();
+    if (trimmed && validateEmail(trimmed)) {
+      return res.status(400).json({ ok: false, error: req.t('error.settings.acme_email_invalid') });
+    }
+
+    if (settings.get('caddy.acme_email', '') !== trimmed) {
+      settings.set('caddy.acme_email', trimmed);
+      activity.log('acme_email_updated',
+        trimmed ? 'ACME contact email updated' : 'ACME contact email cleared (falls back to .env)',
+        { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    }
+
+    // Der Push läuft AUCH bei unverändertem Wert — bewusst anders als der
+    // changed-Guard in network.js:176. Nach einem gescheiterten Push liegt der
+    // Wert schon in der DB; ein Retry mit derselben Adresse muss ihn erneut
+    // ausliefern, sonst quittiert die Oberfläche einen Erfolg, den es nie gab.
+    //
+    // syncToCaddy signalisiert Misserfolg auf ZWEI Wegen: es wirft (Caddy nicht
+    // erreichbar) oder liefert false, wenn der Ownership-Guard das /load
+    // verweigert (caddyConfig.js:962/:969). Unter NODE_ENV=test kehrt es sofort
+    // zurück und liefert undefined — das zählt als Erfolg, weil es nicht false ist.
+    // Nebenläufigkeit ist gedeckt: syncToCaddy serialisiert global über _syncChain
+    // (:925-929) und baut die Config erst beim Ausführen des Kettenglieds, liest
+    // also immer den dann aktuellen DB-Wert.
+    let pushed = true;
+    try {
+      pushed = (await require('../../../services/caddyConfig').syncToCaddy()) !== false;
+    } catch (e) {
+      logger.error({ error: e.message }, 'ACME email saved but Caddy push failed');
+      pushed = false;
+    }
+    res.json(pushed ? { ok: true } : { ok: true, warning: 'settings.acme_email.push_failed' });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to set ACME contact email');
+    res.status(500).json({ ok: false, error: req.t('error.settings.acme_email_save') });
   }
 });
 
