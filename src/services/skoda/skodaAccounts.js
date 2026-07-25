@@ -2,21 +2,13 @@
 
 const { getDb } = require('../../db/connection');
 const { encrypt, decrypt } = require('../../utils/crypto');
+const { validateEmail } = require('../../utils/validate');
 
 function err(message, code) { const e = new Error(message); e.code = code; return e; }
 
-function isValidEmail(email) {
-  // Linear index checks instead of a regex: /.+@.+/ on user input is a
-  // polynomial-ReDoS risk (CodeQL js/polynomial-redos). indexOf is O(n) and
-  // the length cap is the RFC 5321 maximum.
-  if (email.length > 254) return false;
-  const at = email.indexOf('@');
-  return at > 0 && at < email.length - 1;
-}
-
 function createAccount({ email, password }) {
   const trimmed = typeof email === 'string' ? email.trim() : '';
-  if (!trimmed || !isValidEmail(trimmed)) throw err('valid email required', 'SKODA_VALIDATION');
+  if (validateEmail(trimmed)) throw err('valid email required', 'SKODA_VALIDATION');
   if (!password || typeof password !== 'string') throw err('password required', 'SKODA_VALIDATION');
   const db = getDb();
   try {
