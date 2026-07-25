@@ -227,6 +227,8 @@ function validateEmail(email) {
   const at = trimmed.indexOf('@');
   if (at <= 0 || at !== trimmed.lastIndexOf('@') || at === trimmed.length - 1) return 'Invalid email format';
   if (at > 64) return 'Invalid email format';                    // RFC 5321 local part
+  const local = trimmed.slice(0, at);
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return 'Invalid email format';
   const domain = trimmed.slice(at + 1);
   if (domain.length > 253) return 'Invalid email format';
   if (!domain.includes('.') || domain.includes('..')) return 'Invalid email format';
