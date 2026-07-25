@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.4] — 2026-07-25
+
+### Fixes
+- offer Aurora as system default theme in the Classic and Pro templates
+
+---
+
 ## [Unreleased]
 
 ### Fixed
