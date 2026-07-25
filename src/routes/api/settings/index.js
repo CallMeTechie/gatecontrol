@@ -29,6 +29,10 @@ const TOKEN_FORBIDDEN = [
   /^\/profile$/,
   /^\/route-block-default$/,
   /^\/domains(\/|$)/,
+  // TLS-steuernd: die ACME-Kontaktadresse entscheidet, unter welchem
+  // Let's-Encrypt-Konto ALLE öffentlichen Zertifikate ausgestellt werden,
+  // und jedes Schreiben löst ein Caddy /load aus. Session-only, wie /dns.
+  /^\/acme-email$/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
