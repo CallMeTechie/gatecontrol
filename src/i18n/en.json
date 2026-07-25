@@ -2006,6 +2006,7 @@
   "settings.portal.saved": "Portal settings saved",
   "settings.portal.host_not_verified": "Domain is not verified",
   "settings.portal.host_invalid_prefix": "Invalid subdomain prefix",
+  "settings.portal.host_unresolved": "The portal host has no DNS record pointing at this server — create an A/AAAA record for it first",
   "settings.portal.host_collision": "Host collides with the GateControl address, a route domain, or a peer hostname",
   "settings.portal.address": "Portal address",
   "settings.portal.base_domain": "Base domain",

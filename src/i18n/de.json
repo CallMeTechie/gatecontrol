@@ -1950,6 +1950,7 @@
   "settings.portal.saved": "Portal-Einstellungen gespeichert",
   "settings.portal.host_not_verified": "Domain ist nicht verifiziert",
   "settings.portal.host_invalid_prefix": "Ungültiges Subdomain-Präfix",
+  "settings.portal.host_unresolved": "Der Portal-Host hat keinen DNS-Eintrag, der auf diesen Server zeigt \u2014 bitte zuerst einen A/AAAA-Eintrag anlegen",
   "settings.portal.host_collision": "Host kollidiert mit der GateControl-Adresse, einer Route-Domain oder einem Peer-Hostnamen",
   "settings.portal.address": "Portal-Adresse",
   "settings.portal.base_domain": "Basis-Domain",
