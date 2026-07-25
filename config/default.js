@@ -25,7 +25,12 @@ function envList(key, fallback) {
 const config = {
   app: {
     name: env('GC_APP_NAME', 'GateControl'),
-    host: env('GC_HOST', '0.0.0.0'),
+    // Loopback by default: the shipped compose runs with `network_mode: host`,
+    // so binding 0.0.0.0 would put the admin UI on every interface in plain
+    // HTTP — past Caddy, TLS and HSTS. Caddy reaches the app on 127.0.0.1
+    // (see caddyConfig.js upstreams). Deployments that publish the port from a
+    // bridge network must set GC_HOST=0.0.0.0 explicitly.
+    host: env('GC_HOST', '127.0.0.1'),
     port: envInt('GC_PORT', 3000),
     baseUrl: env('GC_BASE_URL', 'http://localhost:3000'),
     secret: env('GC_SECRET', ''),

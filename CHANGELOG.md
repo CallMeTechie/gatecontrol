@@ -9,8 +9,13 @@
 
 ## [Unreleased]
 
+### Security
+- **Das Admin-UI war standardmäßig unverschlüsselt aus dem Internet erreichbar.** Die ausgelieferte Compose-Datei nutzt `network_mode: host`; zusammen mit dem bisherigen Default `GC_HOST=0.0.0.0` lauschte der Node-Prozess damit auf allen Interfaces des Hosts — an Caddy, TLS und HSTS vorbei. Der Default bindet jetzt `127.0.0.1`, in `config/default.js` **und** in beiden `.env.example`. Caddy erreicht die App unverändert über `127.0.0.1:3000`.
+  **Achtung beim Update:** Wer den Port aus einem Bridge-Netzwerk veröffentlicht statt Host-Networking zu nutzen, muss `GC_HOST=0.0.0.0` künftig ausdrücklich setzen. Bestehende Installationen übernehmen die Änderung erst nach Anpassung der `.env` und einem Neustart des Containers.
+
 ### Fixed
 - Einstellungen → Allgemein: Das Standard-Design ließ sich in den Themes Classic und Pro nicht auf Aurora stellen — der Aurora-Knopf fehlte dort, obwohl der Server den Wert längst akzeptiert. Beide Templates bieten jetzt alle drei Designs an, ein Paritätstest hält die Auswahl über alle Themes und beide Seiten (Profil + Einstellungen) synchron.
+- Caddy versuchte dauerhaft, für den internen Ownership-Marker `gc-owner.invalid` ein öffentliches Zertifikat zu beziehen, was den Log mit fehlschlagenden ACME-Versuchen füllte. Die Marker-Route wird erst nach dem Aufbau der TLS-Automation angehängt und erreichte deren TLD-Klassifizierung nie; sie ist jetzt ausdrücklich vom automatischen HTTPS ausgenommen.
 
 ---
 
