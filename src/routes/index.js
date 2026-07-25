@@ -242,7 +242,16 @@ pages.forEach(({ path, template, titleKey }) => {
         extraLocals.settings = {
           gateway_down_threshold_s: require('../services/settings').get('gateway_down_threshold_s'),
         };
-      } catch { extraLocals.settings = {}; }
+        extraLocals.settingsAcmeEmail = String(require('../services/settings').get('caddy.acme_email', '') || '').trim();
+      } catch { extraLocals.settings = {}; extraLocals.settingsAcmeEmail = ''; }
+      // Ob eine Adresse aus der .env geerbt wird — als BOOLEAN, nicht als Wert.
+      // config.caddy.email steht heute in KEINER API-Antwort (GET /settings/app
+      // liefert settings.getAll() plus einen festen config-Ausschnitt ohne caddy,
+      // appearance.js:21-29), und /settings ist nur durch requireAuth geschützt.
+      // Den Klartext auszuliefern wäre also eine neue Preisgabe an jede Session
+      // inklusive role='user'; der Hinweis "Aus der .env übernommen" trägt
+      // dieselbe Information ohne den Wert.
+      extraLocals.acmeEmailInherited = Boolean(String((config.caddy || {}).email || '').trim());
     }
 
     // Dashboard-only: gateways that need re-pairing after master-key rotation

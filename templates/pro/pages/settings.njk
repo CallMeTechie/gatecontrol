@@ -164,6 +164,18 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg>
+          <span class="card-title">{{ t('settings.acme_email') }}</span>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+          <input type="text" id="acme-email" value="{{ settingsAcmeEmail or '' }}" placeholder="{{ t('settings.acme_email.inherited') if acmeEmailInherited else '' }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="254" autocomplete="off">
+          <div style="font-size:11px;color:var(--text-3)">{{ t('settings.acme_email_hint') }}</div>
+          <div id="acme-email-status" class="autosave-status"></div>
+        </div>
+      </div>
+
       {# ─── Peer-Gruppen + Tags: nebeneinander in einem Sub-Grid ─── #}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
         <div class="card">
