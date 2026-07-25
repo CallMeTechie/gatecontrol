@@ -36,7 +36,11 @@ const TOKEN_FORBIDDEN = [
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
-  if (TOKEN_FORBIDDEN.some(rx => rx.test(req.path))) {
+  // Express läuft mit strict:false/caseSensitive:false — `/security/` und
+  // `/SECURITY` erreichen dieselbe Route. Vor dem Abgleich normalisieren,
+  // sonst umgeht jede Schreibweise die Liste.
+  const p = req.path.toLowerCase().replace(/\/+$/, '') || '/';
+  if (TOKEN_FORBIDDEN.some(rx => rx.test(p))) {
     return res.status(403).json({ ok: false, error: 'Forbidden for token auth' });
   }
   next();
