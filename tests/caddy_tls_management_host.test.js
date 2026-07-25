@@ -30,7 +30,8 @@ test('management host gets an explicit ACME policy carrying the account email', 
   const cfg = await buildCaddyConfig();
   const mgmt = policies(cfg)
     .filter(p => (p.issuers || []).some(i => i.module === 'acme'))
-    .find(p => (p.subjects || []).includes(GC_HOST));
+    // exact subject equality — Array#includes here reads to CodeQL as URL substring matching
+    .find(p => (p.subjects || []).some(s => s === GC_HOST));
   assert.ok(mgmt, `${GC_HOST} must have an explicit ACME policy, not fall through to the default`);
   assert.equal(mgmt.issuers.find(i => i.module === 'acme').email, 'admin@example.com');
 });
