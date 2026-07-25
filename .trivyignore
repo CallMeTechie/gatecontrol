@@ -12,6 +12,15 @@ CVE-2026-33671
 # our deployment. Will be removed once upstream Caddy pulls otel >= 1.43.0.
 CVE-2026-39883
 
+# brace-expansion 5.0.7 in npm's OWN bundled node_modules (usr/local/lib/
+# node_modules/npm/node_modules/brace-expansion) — used only by npm itself for
+# glob expansion during CLI operations, NOT reachable from gatecontrol runtime.
+# Our own brace-expansion (5.0.6) is a devDependency and never enters the image:
+# the Dockerfile builds with `npm ci --production`. No fix available without npm
+# shipping a patched bundle — npm is pinned to @11 because @12 broke the build
+# on Node 20. Will be removed once npm@11 bundles brace-expansion >= 5.0.8.
+CVE-2026-14257
+
 # undici in npm's OWN bundled node_modules (usr/local/lib/node_modules/npm/
 # node_modules/undici) — pulled in by `npm install -g npm@latest` in the image,
 # used only by npm itself for registry fetches, NOT reachable from gatecontrol
