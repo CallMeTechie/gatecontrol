@@ -115,42 +115,15 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new }}
-          BUMP_TYPE: ${{ steps.bump.outputs.bump }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
-          DATE=$(date +%Y-%m-%d)
-
-          if echo "$FIRST_LINE" | grep -qE "^feat"; then
-            SECTION="Features"
-            ENTRY=$(echo "$FIRST_LINE" | sed 's/^feat[^:]*: //')
-          elif echo "$FIRST_LINE" | grep -qE "^fix"; then
-            SECTION="Fixes"
-            ENTRY=$(echo "$FIRST_LINE" | sed 's/^fix[^:]*: //')
-          elif echo "$FIRST_LINE" | grep -qE "^docs"; then
-            SECTION="Dokumentation"
-            ENTRY=$(echo "$FIRST_LINE" | sed 's/^docs[^:]*: //')
-          else
-            SECTION="Änderungen"
-            ENTRY=$(echo "$FIRST_LINE" | sed 's/^[a-z]*[^:]*: //')
-          fi
-
-          NEW_BLOCK="## [$NEW_VERSION] — $DATE
-
-          ### $SECTION
-          - $ENTRY"
-
-          # Remove leading whitespace from heredoc
-          NEW_BLOCK=$(echo "$NEW_BLOCK" | sed 's/^          //')
-
-          if [ -f CHANGELOG.md ]; then
-            TEMP=$(mktemp)
-            awk -v block="$NEW_BLOCK" '
-              /^# Changelog/ { print; print ""; print block; print ""; print "---"; next }
-              { print }
-            ' CHANGELOG.md > "$TEMP"
-            mv "$TEMP" CHANGELOG.md
-          fi
+          # Logik in scripts/changelog-release.js, damit sie testbar ist
+          # (tests/changelog_release.test.js). Der frühere awk-Einzeiler schob
+          # den erzeugten Block blind hinter "# Changelog" und ließ einen
+          # handgepflegten [Unreleased]-Abschnitt darunter liegen — dessen
+          # Beschreibungen erschienen dadurch in keinem Release.
+          node scripts/changelog-release.js \
+            "$NEW_VERSION" "$(date +%Y-%m-%d)" "$(echo "$COMMIT_MSG" | head -1)"
 
       - name: Commit version bump
         if: steps.check_tag.outputs.exists == 'false'

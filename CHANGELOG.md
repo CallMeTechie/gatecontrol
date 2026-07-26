@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Der Release-Workflow übernahm den handgeschriebenen `[Unreleased]`-Abschnitt nicht: er schob seinen aus der letzten Commit-Message erzeugten Versionsblock blind hinter die Kopfzeile und ließ den vorhandenen Abschnitt darunter liegen. Ausführliche Beschreibungen landeten dadurch in keinem Release, und die Datei sammelte über 24 Releases hinweg `[Unreleased]`-Überschriften an, die längst ausgeliefert waren. Der Abschnitt wird jetzt zur Version befördert; die Commit-Zeile dient nur noch als Rückfall, wenn niemand etwas geschrieben hat.
+  Die Logik liegt dafür in `scripts/changelog-release.js` statt als awk-Einzeiler im Workflow — sie ist damit erstmals durch Tests abgedeckt.
+  **Hinweis:** Die 24 bereits verwaisten Blöcke bleiben unangetastet. Welche Version sie ausgeliefert hat, lässt sich nicht zuverlässig rekonstruieren; eine geratene Zuordnung würde den Verlauf unwahr machen.
+
 ## [1.118.8] — 2026-07-26
 
 ### Fixes
