@@ -85,11 +85,20 @@ if (require.main === module) {
     console.error('usage: changelog-release.js <version> <date> <commit-subject> [file]');
     process.exit(2);
   }
-  if (!fs.existsSync(file)) {
-    console.error(`${file} not found — nothing to do`);
-    process.exit(0);
+  // Lesen und den Fehlerfall abfangen, statt vorher auf Existenz zu prüfen:
+  // existsSync + readFileSync ist Check-then-Use (CodeQL js/file-system-race)
+  // — und der Versuch ist ohnehin die kürzere Fassung.
+  let current;
+  try {
+    current = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      console.error(`${file} not found — nothing to do`);
+      process.exit(0);
+    }
+    throw e;
   }
-  const { text, promoted } = prepare(fs.readFileSync(file, 'utf8'), version, date, subject.split('\n')[0]);
+  const { text, promoted } = prepare(current, version, date, subject.split('\n')[0]);
   fs.writeFileSync(file, text);
   console.log(promoted
     ? `promoted the hand-written [Unreleased] block to [${version}]`
