@@ -4,6 +4,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const supertest = require('supertest');
+// Räumt die temp-Verzeichnisse ALLER Testdateien auf, nicht nur das gc-test-
+// dieser Datei. Wird zusätzlich über --require aus dem test-Skript vorgeladen;
+// hier nochmals, damit auch ein direkter Einzeldatei-Lauf ohne npm aufräumt.
+// Der require-Cache sorgt dafür, dass die Umhüllung nur einmal greift.
+require('./tmp-cleanup');
 
 // Set test env before any imports
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-'));

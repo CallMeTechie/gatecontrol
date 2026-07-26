@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test --test-force-exit tests/"
+    "test": "node --require ./tests/helpers/tmp-cleanup.js --test --test-force-exit tests/"
   },
   "dependencies": {
     "@callmetechie/gatecontrol-config-hash": "^1.2.0",
