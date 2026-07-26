@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.8] — 2026-07-26
+
+### Fixes
+- serve only an allowlisted subset of settings from GET /settings/app
+
+---
+
 ## [Unreleased]
 
 ### Security
