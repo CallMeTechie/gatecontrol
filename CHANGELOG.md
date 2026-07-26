@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.7] — 2026-07-26
+
+### Fixes
+- escape control bytes in email test fixture, reject dotted local part
+
+---
+
 ## [1.118.6] — 2026-07-25
 
 ### Fixes
