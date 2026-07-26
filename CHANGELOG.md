@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+- **`GET /api/v1/settings/app` gab den gesamten Einstellungsspeicher ungefiltert aus** — darunter der ip2location-API-Schlüssel im Klartext, der Lizenzschlüssel, die Sicherheitsrichtlinie (Sperrdauer, maximale Fehlversuche, Passwortregeln), die Kontaktadressen des Betreibers, der interne DNS-Server und die öffentliche Server-IP. Erreichbar für jede Sitzung und für jedes API-Token mit `settings`-Scope. Besonders widersprüchlich beim API-Schlüssel: die dafür zuständige Route `GET /api/v1/settings/ip2location` liefert bewusst nur `has_api_key`, nie den Wert.
+  Die Route liefert jetzt ausschließlich eine ausdrücklich freigegebene Auswahl (`settings.getPublic()`). Bewusst eine Positivliste: eine künftig ergänzte Einstellung bleibt unsichtbar, bis sie jemand einordnet — eine Sperrliste hat dieses Leck überhaupt erst entstehen lassen. Nicht enthalten sind Secrets, Sicherheitsrichtlinie, Betreiberadressen, Infrastrukturangaben und die Portal-Basisdomain.
+  **Hinweis:** Wer den Endpunkt in eigenen Skripten ausliest, bekommt dort künftig weniger Schlüssel. Die Oberfläche ist nicht betroffen — sie liest ihn nirgends.
+
+---
+
 ## [1.118.7] — 2026-07-26
 
 ### Fixes

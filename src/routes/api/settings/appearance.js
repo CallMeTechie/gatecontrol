@@ -18,7 +18,9 @@ const router = Router();
  */
 router.get('/app', (req, res) => {
   try {
-    const appSettings = settings.getAll();
+    // getPublic(), nicht getAll(): letzteres enthält Secrets, die
+    // Sicherheitsrichtlinie und Betreiber-Adressen (services/settings.js).
+    const appSettings = settings.getPublic();
     res.json({
       ok: true,
       settings: appSettings,
