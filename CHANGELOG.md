@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.118.9] — 2026-07-26
 
 ### Fixed
 - Der Release-Workflow übernahm den handgeschriebenen `[Unreleased]`-Abschnitt nicht: er schob seinen aus der letzten Commit-Message erzeugten Versionsblock blind hinter die Kopfzeile und ließ den vorhandenen Abschnitt darunter liegen. Ausführliche Beschreibungen landeten dadurch in keinem Release, und die Datei sammelte über 24 Releases hinweg `[Unreleased]`-Überschriften an, die längst ausgeliefert waren. Der Abschnitt wird jetzt zur Version befördert; die Commit-Zeile dient nur noch als Rückfall, wenn niemand etwas geschrieben hat.
