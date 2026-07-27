@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.118.10] — 2026-07-27
 
 ### Fixed
 - Die Testsuite ließ pro Lauf 65 temporäre Verzeichnisse in `/tmp` zurück. 59 von 70 Testdateien legen mit `fs.mkdtempSync` ein eigenes Verzeichnis an und entfernen es nie; der vorhandene Aufräummechanismus in `tests/helpers/setup.js` deckte nur dessen eigenes Präfix `gc-test-` ab. Nach genügend Läufen lief `/tmp` voll — und das äußerte sich in Symptomen ohne jeden Bezug zu Tests, bis hin zu Prozessen, die ihre Ausgabe nicht mehr schreiben konnten.
