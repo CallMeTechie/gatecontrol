@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.11] — 2026-07-29
+
+### Fixes
+- import isBindingActive/FINGERPRINT_RE so /client/register stops 500ing
+
+---
+
 ## [1.118.10] — 2026-07-27
 
 ### Fixed
