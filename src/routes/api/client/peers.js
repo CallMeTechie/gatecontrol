@@ -14,7 +14,9 @@ const {
   clientLabel,
   requirePeerOwnership,
   verifyMachineBinding,
+  isBindingActive,
   hashConfig,
+  FINGERPRINT_RE,
 } = require('./helpers');
 
 const router = Router();

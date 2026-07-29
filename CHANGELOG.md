@@ -24,6 +24,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Desktop- und Mobil-Clients konnten sich nicht mehr registrieren: `POST /api/v1/client/register` antwortete für jede token-authentifizierte Anfrage mit `500`.** `src/routes/api/client/peers.js` verwendet `isBindingActive` und `FINGERPRINT_RE` aus `./helpers`, importiert beide aber nicht — beim Router-Split (PR #41) übersehen. Beide Registrierungspfade laufen darüber: der erste bindet ein Token an einen neuen Peer, der zweite ist die Neuanmeldung eines bereits gebundenen Tokens. Der Handler fängt alles in einem `try/catch` ab, weshalb der `ReferenceError` nach außen als gewöhnlicher Serverfehler erschien statt als Absturz.
+  Der vorhandene Regressionstest für genau diese Bugklasse (`tests/client_api_smoke.test.js`) deckte `/register` nicht ab und hatte zwei blinde Flecken, die jetzt mit behoben sind: seine Token-Anfragen liefen über einen eingeloggten Agenten, und `requireAuth` bevorzugt die Sitzung — die Token-Pfade wurden also nie erreicht, sondern von CSRF mit `403` abgewiesen. Und seine Zusicherung wertete nur „unbehandelte" `500` (Body ohne `ok`) als Fehler, wodurch ein im `try/catch` gefangener `ReferenceError` unbemerkt durchging.
+
+### Changed
+- Die CI prüft `src/` jetzt zusätzlich mit ESLint auf `no-undef`. Fehlende oder umbenannte Importe fallen damit beim Build auf statt erst zur Laufzeit als `500`; der bisherige ESLint-Lauf war auf Sicherheitsregeln beschränkt und hätte beide Router-Splits durchgelassen. Nur `src/` — die Skripte unter `public/` teilen sich Globals bewusst über `<script>`-Tags.
+
 ### Security
 - **`GET /api/v1/settings/app` gab den gesamten Einstellungsspeicher ungefiltert aus** — darunter der ip2location-API-Schlüssel im Klartext, der Lizenzschlüssel, die Sicherheitsrichtlinie (Sperrdauer, maximale Fehlversuche, Passwortregeln), die Kontaktadressen des Betreibers, der interne DNS-Server und die öffentliche Server-IP. Erreichbar für jede Sitzung und für jedes API-Token mit `settings`-Scope. Besonders widersprüchlich beim API-Schlüssel: die dafür zuständige Route `GET /api/v1/settings/ip2location` liefert bewusst nur `has_api_key`, nie den Wert.
   Die Route liefert jetzt ausschließlich eine ausdrücklich freigegebene Auswahl (`settings.getPublic()`). Bewusst eine Positivliste: eine künftig ergänzte Einstellung bleibt unsichtbar, bis sie jemand einordnet — eine Sperrliste hat dieses Leck überhaupt erst entstehen lassen. Nicht enthalten sind Secrets, Sicherheitsrichtlinie, Betreiberadressen, Infrastrukturangaben und die Portal-Basisdomain.

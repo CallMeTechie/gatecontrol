@@ -20,11 +20,23 @@
 // exception and returned a specific message). Only the former
 // indicates an import regression.
 
+const nodeCrypto = require('node:crypto');
+// Must be set before helpers/setup pulls in the app modules — /client/register
+// stores an encrypted peer key and throws without it.
+process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || nodeCrypto.randomBytes(32).toString('hex');
+
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const supertest = require('supertest');
 const { setup, teardown } = require('./helpers/setup');
 
-let agent, apiToken;
+let agent, apiToken, app;
+
+// requireAuth prefers session auth (src/middleware/auth.js) — an agent that
+// carries a login cookie never reaches the token branch, so `req.tokenAuth`
+// stays false and CSRF rejects the POST before the handler runs. Token-auth
+// paths must therefore be exercised session-less, straight against the app.
+const tokenReq = () => supertest(app);
 
 function assertNoUnhandled500(res, label) {
   if (res.status === 500 && !('ok' in res.body)) {
@@ -37,6 +49,7 @@ function assertNoUnhandled500(res, label) {
 before(async () => {
   const ctx = await setup();
   agent = ctx.agent;
+  app = ctx.app;
   const tokens = require('../src/services/tokens');
   const license = require('../src/services/license');
   license._overrideForTest && license._overrideForTest({ api_tokens: true });
@@ -109,5 +122,29 @@ describe('Client API router — no unhandled-500 from split-affected paths', () 
   it('GET /client/rdp', async () => {
     const res = await agent.get('/api/v1/client/rdp');
     assertNoUnhandled500(res, 'rdp list');
+  });
+
+  // Same split, two symbols missed: peers.js uses isBindingActive/FINGERPRINT_RE
+  // from helpers without importing them. Both register paths reach them under
+  // token auth — first call binds the token to a new peer, second call takes
+  // the already-bound branch.
+  it('POST /client/register with token auth (new peer → token binding path)', async () => {
+    const res = await tokenReq()
+      .post('/api/v1/client/register')
+      .set('X-Api-Token', apiToken)
+      .send({ hostname: 'smoke-desktop', platform: 'win32', clientVersion: '1.19.6' });
+    assert.notEqual(res.status, 403, `token auth did not take effect: ${JSON.stringify(res.body)}`);
+    // Not assertNoUnhandled500: this handler wraps everything in try/catch, so a
+    // ReferenceError surfaces as a *handled* 500. Any 500 here is a defect.
+    assert.notEqual(res.status, 500, `register failed: ${JSON.stringify(res.body)}`);
+  });
+
+  it('POST /client/register again (already-bound token path)', async () => {
+    const res = await tokenReq()
+      .post('/api/v1/client/register')
+      .set('X-Api-Token', apiToken)
+      .send({ hostname: 'smoke-desktop', platform: 'win32', clientVersion: '1.19.6' });
+    assert.notEqual(res.status, 403, `token auth did not take effect: ${JSON.stringify(res.body)}`);
+    assert.notEqual(res.status, 500, `re-register failed: ${JSON.stringify(res.body)}`);
   });
 });

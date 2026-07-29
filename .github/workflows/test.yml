@@ -79,6 +79,22 @@ jobs:
       - name: Run ESLint security scan
         run: npx eslint -c .eslintrc.security.json "src/**/*.js" "public/**/*.js" --no-eslintrc --format stylish
 
+      # Catches missing/renamed imports that only blow up at request time
+      # (ReferenceError → 500). Two router splits shipped exactly that bug.
+      # src/ only: public/ scripts share globals across <script> tags by design.
+      - name: Create no-undef ESLint config
+        run: |
+          cat > .eslintrc.noundef.json << 'ESLINTEOF'
+          {
+            "env": { "node": true, "es2022": true },
+            "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+            "rules": { "no-undef": "error" }
+          }
+          ESLINTEOF
+
+      - name: Run ESLint no-undef scan (src)
+        run: npx eslint -c .eslintrc.noundef.json "src/**/*.js" --no-eslintrc --format stylish
+
   mutation:
     name: Mutation tests (gateway)
     runs-on: ubuntu-latest
