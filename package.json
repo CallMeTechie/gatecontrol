@@ -20,7 +20,7 @@
     "express-session": "^1.18.1",
     "guacamole-lite": "1.2.0",
     "helmet": "^8.0.0",
-    "ipaddr.js": "1.9.1",
+    "ipaddr.js": "2.4.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.1",
