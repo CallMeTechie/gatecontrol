@@ -125,7 +125,6 @@ im Stil der bestehenden Endpunkte. Portkonflikte: HTTP 409 mit
 | Methode | Pfad | Body | Antwort |
 |---|---|---|---|
 | GET | `/zones` | – | `{ zones, unassigned, gateways, pools }` |
-| PUT | `/zones/ui-mode` | `{ mode: 'zones'\|'legacy' }` | `{ mode }` (Setting `ui_zones_page`) |
 | PUT | `/domains/:id/gateway` | `{ kind, peer_id?, pool_id? }` | `{ zone }` |
 | PUT | `/domains/:id/defaults` | `{ default_external_enabled }` | `{ zone }` |
 | POST | `/domains/:id/hosts` | `HostInput` | `{ host }` (201) |
@@ -190,14 +189,14 @@ type ScanInput = { vip_ip: string; target: { mode: 'existing'; route_id: number 
 Neue Einträge erben `external_enabled` von `zone.default_external_enabled`
 und das Ziel von der Zone; `https_enabled` = 1 bei `type: 'http'`.
 
-## Seite und Umschaltung
+## Seite
 
-- Setting `ui_zones_page` (String `'true'`/`'false'`, Standard `'true'`).
-- `/routes` rendert `zones.njk`, wenn aktiv, sonst `routes.njk` (alt).
-  `/routes/legacy` rendert immer `routes.njk`. Beide mit `activeNav: 'routes'`
-  und denselben Zusatz-Locals (`gatewayPools`, `l4BlockedPorts`).
-- Beide Seiten zeigen einen Link zur jeweils anderen Ansicht, der
-  `PUT /api/v1/zones/ui-mode` aufruft.
+- `/routes` rendert `zones.njk` mit `activeNav: 'routes'` und den Zusatz-Locals
+  `gatewayPools` und `l4BlockedPorts`.
+- Die frühere Routen-Liste (`routes.njk`, `routes.js`), ihre drei Wizards
+  (Route, Service, Drucker) und die API-Aliase `/api/v1/service-bundles` und
+  `/api/v1/printer-presets` sind entfernt. Die Services `serviceBundle.js` und
+  `printerPreset.js` bleiben als Unterbau von `hosts.js`/`hostTemplates.js`.
 
 ## Frontend-Schnittstellen
 
@@ -222,8 +221,7 @@ Reine Funktionen, UMD wie `routes-view.js` (in Node testbar):
 - Voraussetzungen auf der Seite: Partials `modals/route-edit.njk` und
   `modals/confirm.njk`, Skripte in dieser Reihenfolge:
   `/js/vendor/qrcode.min.js`, `routes-view.js`, `routeDomain.js`, `entry-editor.js`.
-- Die alte Seite (`routes.js`) nutzt denselben Editor; ihr eigener
-  `showEditModal` entfällt.
+- `GCEntryEditor` exportiert nur `open` und `close`.
 
 ### Neue Seite
 
@@ -287,8 +285,6 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
 - **`gateways` in `GET /zones`:** `{id, name, ip, online}`.
 - **Token-Scopes:** `/zones`, `/domains`, `/hosts` und `/host-templates` gehören
   zum Scope `routes`.
-- **`/routes` ohne neues Template:** Fehlt `zones.njk` in einem Theme, fällt
-  `/routes` auf `routes.njk` zurück.
 
 ### Frontend
 
@@ -301,7 +297,6 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   - `open()` gibt ein Promise zurück.
   - Es gibt zusätzlich die Option `onChanged`. `onDeleted` wird angenommen, aber
     der Editor hat keinen Löschen-Knopf.
-  - `_shared` enthält die Helfer, die der alte Anlege-Wizard mitbenutzt.
   - Der Editor bindet den seitenweiten Tooltip-Handler, geschützt durch
     `window.__gcTipsBound`.
 - **Filter:** Typ, Zugriff und „deaktiviert“ müssen auf denselben Eintrag
