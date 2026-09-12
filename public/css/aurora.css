@@ -881,3 +881,34 @@ input[type=date]:focus, select:focus {
 @media (hover:none){ .aurora-routes-row .row-actions{opacity:1} }
 .aurora-routes-row .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer}
 .aurora-routes-grid.batch-mode .aurora-routes-row{cursor:pointer}
+
+/* ─── Domain zones (zn-) ─── */
+/* Aurora overrides for the zones page. The base zn- block comes from pro.css
+   (loaded first); here only surfaces, radii and the Aurora card padding. */
+.card.zn-zone { padding: 0; }
+.card.zn-zone::after { content: none; }
+.zn-zone-head, .zn-hhead { background: var(--surface-2); }
+.zn-zone-head:hover, .zn-host:hover, .zn-addline:hover, .zn-more:hover { background: var(--surface-3); }
+.zn-zone-body, .zn-hrow, .zn-pline, .zn-hextra, .zn-hhead { border-color: var(--line); }
+.zn-hcard { background: var(--surface); border-color: var(--line); border-radius: var(--r-sm); }
+.zn-hcard.zn-newcard { background: var(--chip); border-color: var(--line-2); }
+.zn-pline-th, .zn-addline, .zn-addform { background: var(--chip); }
+.zn-panel { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.zn-chip, .zn-tsel, .zn-gw-pill, .zn-affix-sfx { background: var(--chip); border-color: var(--line); }
+.zn-ibtn { width: 30px; height: 30px; border-radius: 8px; background: var(--chip); border-color: var(--line); color: var(--muted); box-shadow: none; }
+.zn-ibtn:hover, .zn-ibtn[aria-expanded="true"] { color: var(--text); border-color: var(--line-2); background: var(--chip); }
+.zn-ibtn svg { width: 15px; height: 15px; }
+.zn-menu { background: var(--surface); border-color: var(--line-2); border-radius: var(--r-sm); box-shadow: var(--modal-shadow); }
+.zn-menu-item:hover { background: var(--surface-3); }
+.zn-name, .zn-dm-domain, .zn-preview { color: var(--teal); }
+.zn-gw-pill.off { color: var(--amber); border-color: var(--amber-bd); background: var(--amber-bg); }
+.toolbar.zn-toolbar { margin-bottom: 0; }
+.toolbar.zn-toolbar .zn-search { flex: 1 1 240px; min-width: 200px; }
+.toolbar.zn-toolbar .search-box input[type=search] { padding: 0; box-shadow: none; }
+.zn-kpis:empty { display: none; }
+.modal.zn-dm .modal-body { max-height: 70vh; }
+.page-actions .zn-legacy-link { color: var(--faint); }
+.page-actions .zn-legacy-link:hover { color: var(--text); }
+@media (max-width: 900px) {
+  .modal.zn-dm .modal-body { max-height: none; }
+}
