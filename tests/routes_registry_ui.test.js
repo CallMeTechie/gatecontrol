@@ -4,31 +4,19 @@ process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBy
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'); const path = require('node:path');
-const supertest = require('supertest');
 const { setup, teardown, getAgent } = require('./helpers/setup');
 
-let app;
-beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
+beforeEach(async () => { await setup(); });
 afterEach(teardown);
 
-test('create wizard has prefix + base-domain dropdown + free-text carve-out (served, no raw keys)', async () => {
-  const res = await getAgent().get('/routes/legacy').expect(200);
-  assert.match(res.text, /create-route-prefix/);
-  assert.match(res.text, /create-route-base-domain/);
-  assert.match(res.text, /create-route-domain-freetext/);
-  // routes.other_domain and routes.no_verified_domains_hint are intentionally in GC.t (for JS);
-  // the following keys must NOT appear as unrendered template artefacts:
+test('served routes page carries the edit modal registry ids (rendered, no raw keys)', async () => {
+  const res = await getAgent().get('/routes').expect(200);
+  assert.match(res.text, /id="edit-route-prefix"/);
+  assert.match(res.text, /id="edit-route-base-domain"/);
+  assert.match(res.text, /id="edit-route-domain-freetext"/);
+  // routes.prefix / routes.prefix_hint must be server-rendered (Nunjucks), not leaked as raw keys
   assert.doesNotMatch(res.text, /routes\.(prefix|prefix_hint|base_domain)\b/);
-  // prefix_hint must be server-rendered (Nunjucks), not leaked as a raw key
   assert.match(res.text, /empty = directly on the domain|leer = direkt auf der Domain/);
-});
-
-test('all three themes carry the create-route registry ids', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'pages', 'routes.njk'), 'utf8');
-    ['create-route-prefix', 'create-route-base-domain', 'create-route-domain-freetext']
-      .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));
-  }
 });
 
 test('edit modal carries registry ids in all three themes', () => {
@@ -37,10 +25,4 @@ test('edit modal carries registry ids in all three themes', () => {
     ['edit-route-prefix', 'edit-route-base-domain', 'edit-route-domain-freetext']
       .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));
   }
-});
-
-test('routes.js renders an unverified-base badge from baseUnverified', async () => {
-  const js = await supertest(app).get('/js/routes.js').expect(200);
-  assert.match(js.text, /baseUnverified/);
-  assert.match(js.text, /routes\.unverified_base_badge|unverified-base/);
 });

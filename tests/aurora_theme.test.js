@@ -398,78 +398,50 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
   });
 });
 
-// ── Task P2-4a: Routes page structure + toolbar + table (Split A+B) ──────────
-describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
-  it('renders /routes under aurora (200, aurora shell)', async () => {
+// ── Routes page (domain zones, zones.njk) ────────────────────────────────────
+describe('aurora theme — routes page (domain zones)', () => {
+  it('renders /routes under aurora as the zones page (200, aurora shell)', async () => {
     selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
+    const res = await agent.get('/routes').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
     assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /id="zn-zones"/, '#zn-zones present');
   });
 
-  it('renders Aurora page-header, toolbar, toggle-group, and data-table shell on /routes', async () => {
+  it('renders Aurora page-header, toolbar, KPI strip and zone contract IDs on /routes', async () => {
     selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    // Page header Aurora structure
-    assert.match(res.text, /class="page-header"/, '.page-header present');
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /class="page-header zn-page-header"/, '.page-header present');
     assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
     assert.match(res.text, /class="page-actions"/, '.page-actions present');
-    // Toolbar
-    assert.match(res.text, /class="toolbar"/, '.toolbar present');
-    assert.match(res.text, /class="search-box"/, '.search-box present');
-    // Toggle-group type filter (Aurora replaces filter-chips)
-    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
-    // Karten-Grid-Redesign: KPI-Container + Exposure-Toggle statt Card-Hülle
-    assert.match(res.text, /id="routes-kpis"/, '#routes-kpis present');
-    assert.match(res.text, /id="aurora-exposure-toggle"/, '#aurora-exposure-toggle present');
+    assert.match(res.text, /class="toolbar zn-toolbar"/, '.toolbar present');
+    assert.match(res.text, /class="search-box zn-search"/, '.search-box present');
+    for (const id of ['zn-kpis', 'zn-summary', 'zn-add-domain', 'zn-search', 'zn-chips', 'zn-gateway-filter',
+      'zn-collapse-all', 'zn-domain-modal']) {
+      assert.match(res.text, new RegExp('id="' + id + '"'), '#' + id + ' present');
+    }
   });
 
-  it('renders all phase0 static contract IDs on /routes under aurora', async () => {
+  it('Aurora routes page has no limit-badge section and no legacy list markup', async () => {
     selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    // JS-contract IDs that must exist in the template (not JS-generated)
-    assert.match(res.text, /id="routes-subtitle"/, '#routes-subtitle present');
-    assert.match(res.text, /id="routes-count"/, '#routes-count present (hidden span)');
-    assert.match(res.text, /id="route-search"/, '#route-search present');
-    assert.match(res.text, /id="btn-add-route"/, '#btn-add-route present');
-    assert.match(res.text, /id="routes-list"/, '#routes-list present');
-    assert.match(res.text, /id="aurora-type-toggle"/, '#aurora-type-toggle present');
-    // Wizard modal IDs (Split C-F, untouched — still in DOM)
-    assert.match(res.text, /id="route-modal-overlay"/, '#route-modal-overlay present');
-    assert.match(res.text, /id="service-modal-overlay"/, '#service-modal-overlay present');
-    // Batch bar IDs (Split F, untouched)
-    assert.match(res.text, /id="batch-bar-routes"/, '#batch-bar-routes present');
-    assert.match(res.text, /id="batch-cancel-routes"/, '#batch-cancel-routes present');
-  });
-
-  it('toggle-group has All/HTTP/L4 filter buttons and RDP nav button', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /data-value=""/, 'All toggle-btn (data-value="") present');
-    assert.match(res.text, /data-value="http"/, 'HTTP toggle-btn present');
-    assert.match(res.text, /data-value="l4"/, 'L4 toggle-btn present');
-    assert.match(res.text, /data-nav="\/rdp"/, 'RDP toggle-btn present');
-  });
-
-  it('Aurora layout omits limit-badge section and old routes-toolbar class', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
+    const res = await agent.get('/routes').expect(200);
     assert.doesNotMatch(res.text, /class="limit-badge"/, 'limit-badge absent in Aurora routes header');
     assert.doesNotMatch(res.text, /class="routes-toolbar"/, 'old .routes-toolbar class absent in Aurora');
-    assert.doesNotMatch(res.text, /class="card-head"/, '.card-head absent in Aurora routes card');
+    assert.doesNotMatch(res.text, /id="routes-list"|id="route-modal-overlay"|id="service-modal-overlay"|id="batch-bar-routes"/,
+      'legacy list, wizards and batch bar are gone');
   });
 
-  it('routes.js contains isAurora() detector and aurora sibling functions', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'routes.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in routes.js');
-    assert.match(js, /function auroraRenderTableRow\(/, 'auroraRenderTableRow() present');
-    assert.match(js, /function auroraRenderTable\(/, 'auroraRenderTable() present');
-    assert.match(js, /function auroraInitTypeToggle\(/, 'auroraInitTypeToggle() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTableRow/, 'renderTableRow() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTable/, 'renderTable() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) viewState\.view = 'table'/, 'viewState.view forced to table in Aurora');
-    assert.match(js, /if \(isAurora\(\)\) auroraInitTypeToggle/, 'auroraInitTypeToggle() called in init');
+  it('includes the entry editor and confirm modals', async () => {
+    selectAurora();
+    const res = await agent.get('/routes').expect(200);
+    assert.match(res.text, /id="modal-edit-route"/, '#modal-edit-route present (via include)');
+    assert.match(res.text, /id="modal-confirm"/, '#modal-confirm present (via include)');
+    assert.match(res.text, /data-edit-tab="general"/, 'data-edit-tab="general" present');
+    assert.match(res.text, /data-edit-tab="auth"/, 'data-edit-tab="auth" present');
+    assert.match(res.text, /data-edit-tab="security"/, 'data-edit-tab="security" present');
+    assert.match(res.text, /class="edit-route-panel"/, '.edit-route-panel present');
+    assert.match(res.text, /data-panel="general"/, 'data-panel="general" present');
+    assert.match(res.text, /id="btn-edit-route-submit"/, '#btn-edit-route-submit present');
   });
 
   it('aurora.css carries toggle, data-table, row-actions, icon-action rules', () => {
@@ -480,63 +452,6 @@ describe('aurora theme — routes layout Part A (Task P2-4a)', () => {
     assert.match(css, /\.icon-action\b/, '.icon-action rule present in aurora.css');
     assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in aurora.css');
   });
-});
-
-// ── Task P2-4b: Routes wizards + modals ──────────────────────────────────────
-describe('aurora theme — routes wizards + modals (Task P2-4b)', () => {
-  it('renders wizard modal overlay ids on /routes under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /id="route-modal-overlay"/, '#route-modal-overlay present');
-    assert.match(res.text, /id="service-modal-overlay"/, '#service-modal-overlay present');
-    assert.match(res.text, /id="modal-edit-route"/, '#modal-edit-route present (via include)');
-    assert.match(res.text, /id="modal-confirm"/, '#modal-confirm present (via include)');
-  });
-
-  it('route-edit modal has data-edit-tab tabs and edit-route-panel sections', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /data-edit-tab="general"/, 'data-edit-tab="general" present');
-    assert.match(res.text, /data-edit-tab="auth"/, 'data-edit-tab="auth" present');
-    assert.match(res.text, /data-edit-tab="security"/, 'data-edit-tab="security" present');
-    assert.match(res.text, /class="edit-route-panel"/, '.edit-route-panel present');
-    assert.match(res.text, /data-panel="general"/, 'data-panel="general" present');
-  });
-
-  it('route-edit modal has all required submit/action button ids', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /id="btn-edit-route-submit"/, '#btn-edit-route-submit present');
-    assert.match(res.text, /id="route-wizard-save"/, '#route-wizard-save present');
-    assert.match(res.text, /id="route-wizard-next"/, '#route-wizard-next present');
-    assert.match(res.text, /id="route-wizard-prev"/, '#route-wizard-prev present');
-    assert.match(res.text, /id="service-next"/, '#service-next present');
-    assert.match(res.text, /id="service-back"/, '#service-back present');
-  });
-
-  it('create-route wizard uses Aurora modal shell classes', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /class="modal modal-xl modal-wizard"/, '.modal.modal-xl.modal-wizard present');
-    assert.match(res.text, /class="modal-head wiz-head"/, '.modal-head.wiz-head present in route wizard');
-    assert.match(res.text, /class="modal-foot wiz-foot"/, '.modal-foot.wiz-foot present');
-  });
-
-  it('create-service wizard uses Aurora modal shell classes', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /class="modal modal-wide modal-wizard"/, '.modal.modal-wide.modal-wizard present');
-    assert.match(res.text, /class="service-step-pill on"/, '.service-step-pill.on present');
-    assert.match(res.text, /id="service-wizard-steps"/, '#service-wizard-steps present');
-  });
-
-  it('wizard step progress dots are present with data-pill attributes', async () => {
-    selectAurora();
-    const res = await agent.get('/routes/legacy').expect(200);
-    assert.match(res.text, /class="route-step-dot" data-pill="1"/, 'route-step-dot 1 present');
-    assert.match(res.text, /class="route-step-line"/, '.route-step-line present');
-    assert.match(res.text, /id="route-wizard-steps"/, '#route-wizard-steps present');
-  });
 
   it('aurora.css carries wizard modal shell + step dots + service pills rules', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
@@ -545,12 +460,6 @@ describe('aurora theme — routes wizards + modals (Task P2-4b)', () => {
     assert.match(css, /\.modal-foot\.wiz-foot/, '.modal-foot.wiz-foot present in aurora.css');
     assert.match(css, /\.route-step-dot/, '.route-step-dot present in aurora.css');
     assert.match(css, /\.service-step-pill/, '.service-step-pill present in aurora.css');
-  });
-
-  it('wizard <style nonce> block has been removed from routes.njk (styles moved to aurora.css)', () => {
-    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'routes.njk'), 'utf8');
-    assert.doesNotMatch(njk, /\.route-step-dot\s*\{/, '.route-step-dot inline style block absent (moved to aurora.css)');
-    assert.doesNotMatch(njk, /\.wiz-row-2\s*\{/, '.wiz-row-2 inline style block absent (moved to aurora.css)');
   });
 });
 

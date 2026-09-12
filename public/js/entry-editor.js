@@ -2,14 +2,11 @@
 
 // ─── GateControl entry editor ("Route bearbeiten") ─────────────────────────
 // Standalone module behind the edit-route modal (partials/modals/route-edit.njk).
-// Used by the legacy routes page (routes.js) and by the zones page. It keeps no
-// dependency on routes.js: peers, users and domains are fetched here.
+// Used by the domain-zones page (zones-page.js / domain-modal.js). Peers,
+// users and domains are fetched here.
 //
 //   window.GCEntryEditor.open(routeOrId, { lockTarget, onSaved, onDeleted, onChanged })
 //   window.GCEntryEditor.close()
-//
-// window.GCEntryEditor._shared holds DOM helpers the create wizard in routes.js
-// reuses. It is internal — not part of the page contract.
 //
 // Page requirements: app.js globals (api, openModal, closeModal, showError,
 // hideError, showFieldErrors, clearFieldErrors, btnLoading, btnReset,
@@ -73,7 +70,7 @@
     return p.allowed_ips ? String(p.allowed_ips).split('/')[0] : '';
   }
 
-  // ═══ Shared helpers (edit modal + create wizard) ═══════════════════════════
+  // ═══ Form helpers ═══════════════════════════════════════════════════════════
 
   function setToggleGroup(groupId, hiddenId, value) {
     var group = byId(groupId);
@@ -94,8 +91,6 @@
       if (row) row.classList.add('gc-row-collapsed');
       input.required = false;
       input.value = '';
-      var ftClear = byId('create-route-domain-freetext');
-      if (ftClear) ftClear.value = '';
       if (ctxHint) ctxHint.style.display = 'none';
     } else {
       if (wrap) wrap.style.display = '';
@@ -178,8 +173,7 @@
   // ─── DNS check ──────────────────────────────────────────
   async function checkDns(domain, hintEl, inputEl) {
     if (!domain || !hintEl || !inputEl) return;
-    var routeTypeId = inputEl.id === 'create-route-domain-freetext' ? 'route-type' : 'edit-route-type';
-    var routeType = (byId(routeTypeId) || {}).value || 'http';
+    var routeType = (byId('edit-route-type') || {}).value || 'http';
     if (routeType === 'l4') {
       hintEl.style.display = 'none';
       return;
@@ -413,8 +407,7 @@
     return dayCodes.map(function (d) { return d + ' ' + from + '-' + to; }).join('; ');
   }
 
-  // Shared access-rule builder used by BOTH the edit modal and the create
-  // wizard. Renders labelled controls (mode toggle, day multi-select, time +
+  // Access-rule builder of the edit modal's access-window section. Renders labelled controls (mode toggle, day multi-select, time +
   // date pickers, optional label), validates, builds the schedule string and
   // invokes onAdd({ mode, schedule, valid_from, valid_until, label }). On a
   // successful add (onAdd returns a non-false value) the day/time/date/label
@@ -522,8 +515,8 @@
   }
 
   // ─── Inline-Help Tooltips (gc-tip) ───────────────────────
-  // Page-wide: serves the edit modal's tips and the create wizard's. Bound
-  // once per page even if another script tries the same.
+  // Page-wide: serves the edit modal's tips. Bound once per page even if the
+  // script is loaded twice.
   (function setupGcTips() {
     if (window.__gcTipsBound) return;
     window.__gcTipsBound = true;
@@ -1107,7 +1100,7 @@
       byId('edit-route-domain-label'),
       byId('edit-route-domain-ctx-hint')
     );
-    // Also clear edit-side freetext on L4-none (applyDomainContext only clears create-side freetext)
+    // Also clear the freetext domain on L4-none (applyDomainContext clears the select only)
     if (isL4 && editTlsMode === 'none') {
       var eftClear = byId('edit-route-domain-freetext');
       if (eftClear) eftClear.value = '';
@@ -2436,27 +2429,5 @@
   window.GCEntryEditor = {
     open: open,
     close: close,
-    // Internal: helpers the legacy create wizard (routes.js) reuses.
-    _shared: {
-      el: el,
-      t: T,
-      shareFetch: shareFetch,
-      setToggleGroup: setToggleGroup,
-      applyDomainContext: applyDomainContext,
-      updateTlsHint: updateTlsHint,
-      checkListenPortBlocked: checkListenPortBlocked,
-      setupPortAutofill: setupPortAutofill,
-      checkDns: checkDns,
-      renderUserCheckboxes: renderUserCheckboxes,
-      renderAclPeerChecklist: renderAclPeerChecklist,
-      getSelectedAclPeers: getSelectedAclPeers,
-      setupAclToggle: setupAclToggle,
-      setupIpFilter: setupIpFilter,
-      renderIpFilterRules: renderIpFilterRules,
-      syncBlockVisibility: syncBlockVisibility,
-      updateBotBlockerFields: updateBotBlockerFields,
-      accessFmtBounds: accessFmtBounds,
-      renderAccessRuleForm: renderAccessRuleForm,
-    },
   };
 })();

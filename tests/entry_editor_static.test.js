@@ -1,6 +1,6 @@
 'use strict';
 
-// Static guarantees for the entry editor extracted from routes.js
+// Static guarantees for the entry editor
 // (public/js/entry-editor.js, window.GCEntryEditor). No DOM library is
 // available in the test environment, so the checks read the sources and
 // templates; one test loads the module in a vm with a stub document.
@@ -16,7 +16,6 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const THEMES = ['default', 'pro', 'aurora'];
 
 const editorJs = read('public', 'js', 'entry-editor.js');
-const routesJs = read('public', 'js', 'routes.js');
 const de = JSON.parse(read('src', 'i18n', 'de.json'));
 const en = JSON.parse(read('src', 'i18n', 'en.json'));
 
@@ -25,7 +24,7 @@ function modalTpl(theme) {
     + read('templates', theme, 'partials', 'modals', 'confirm.njk');
 }
 function pageTpl(theme) {
-  return read('templates', theme, 'pages', 'routes.njk') + modalTpl(theme);
+  return read('templates', theme, 'pages', 'zones.njk') + modalTpl(theme);
 }
 function hasId(html, id) {
   return html.includes('id="' + id + '"');
@@ -62,15 +61,13 @@ test('entry-editor.js loads without a modal and exports the API (vm, stub DOM)',
   const ed = window.GCEntryEditor;
   assert.equal(typeof ed.open, 'function');
   assert.equal(typeof ed.close, 'function');
-  for (const k of ['el', 'setToggleGroup', 'checkListenPortBlocked', 'renderAccessRuleForm', 'setupAclToggle', 'renderUserCheckboxes']) {
-    assert.equal(typeof ed._shared[k], 'function', '_shared.' + k);
-  }
+  assert.deepEqual(Object.keys(ed), ['open', 'close'], 'no internal helpers exported');
   // A second load must not replace the first instance.
   vm.runInContext(editorJs, ctx);
   assert.equal(window.GCEntryEditor, ed);
 });
 
-test('entry-editor.js does not depend on routes.js closure state', () => {
+test('entry-editor.js does not depend on the removed routes.js closure state', () => {
   for (const name of ['allRoutes', 'allPeers', 'allUsers', 'loadRoutes', 'batchMode', 'renderPeerOptions']) {
     assert.doesNotMatch(editorJs, new RegExp('\\b' + name + '\\b'), 'entry-editor.js references ' + name);
   }
@@ -84,26 +81,9 @@ test('entry-editor.js builds DOM without innerHTML', () => {
   assert.doesNotMatch(editorJs, /\.innerHTML\b/);
 });
 
-test('routes.js no longer carries the edit modal and delegates to GCEntryEditor.open', () => {
-  assert.doesNotMatch(routesJs, /function showEditModal\b/);
-  assert.doesNotMatch(routesJs, /btn-edit-route-submit/);
-  assert.match(routesJs, /GCEntryEditor\.open\(/);
-  assert.match(routesJs, /case 'edit': openEditor\(id\)/);
-  assert.match(routesJs, /onSaved:\s*\(\)\s*=>\s*loadRoutes\(\)/);
-});
-
-test('routes.js create wizard uses the shared helpers from entry-editor.js', () => {
-  assert.match(routesJs, /const S = window\.GCEntryEditor\._shared;/);
-  for (const fn of ['renderAclPeerChecklist', 'setupIpFilter', 'checkDns', 'renderAccessRuleForm', 'setToggleGroup', 'checkListenPortBlocked']) {
-    assert.doesNotMatch(routesJs, new RegExp('function ' + fn + '\\('), 'routes.js still defines ' + fn);
-  }
-});
-
-// Ids that entry-editor.js creates itself, or create-form ids the shared
-// helpers touch (null-safe) when the legacy wizard calls them.
+// Ids that entry-editor.js creates itself.
 const EDITOR_DYNAMIC_IDS = new Set([
   'gc-tip-bubble', 'edit-ra-share-managed-note', 'share-link-create-form', 'share-link-url-once',
-  'create-route-domain-freetext',
 ]);
 // Ids built as prefix + suffix with prefix 'edit' (setupAclToggle, setupIpFilter, …).
 const EDITOR_PREFIXED_IDS = [
@@ -134,33 +114,18 @@ for (const theme of THEMES) {
     assert.match(html, /id="modal-edit-route"[^>]*data-load-failed="\{\{ t\('entry_editor\.load_failed'\) \}\}"/);
   });
 
-  test(`[${theme}] routes.njk loads entry-editor.js before routes.js and has the zones switch`, () => {
-    const tpl = read('templates', theme, 'pages', 'routes.njk');
-    const ee = tpl.indexOf('<script src="/js/entry-editor.js?v={{ appVersion }}"></script>');
-    const rj = tpl.indexOf('<script src="/js/routes.js?v={{ appVersion }}"></script>');
-    const dom = tpl.indexOf('<script src="/js/routeDomain.js?v={{ appVersion }}"></script>');
-    const qr = tpl.indexOf('<script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>');
-    assert.ok(ee > -1 && rj > -1, 'both scripts present');
-    assert.ok(qr < ee && dom < ee && ee < rj, 'order: qrcode, routeDomain, entry-editor, routes');
-    assert.ok(hasId(tpl, 'btn-routes-zones-view'), 'zones view switch button');
-    assert.match(tpl, /t\('entry_editor\.switch_to_zones'\)/);
+  test(`[${theme}] zones.njk includes the editor partials and loads entry-editor.js after its prerequisites`, () => {
+    const tpl = read('templates', theme, 'pages', 'zones.njk');
+    for (const partial of ['route-edit.njk', 'confirm.njk']) {
+      assert.ok(tpl.includes('{% include theme + "/partials/modals/' + partial + '" %}'), partial + ' included');
+    }
+    const at = (file) => tpl.indexOf('<script src="/js/' + file + '?v={{ appVersion }}"></script>');
+    const order = ['vendor/qrcode.min.js', 'routes-view.js', 'routeDomain.js', 'entry-editor.js', 'domain-modal.js'].map(at);
+    order.forEach((i, n) => assert.ok(i > -1, 'script ' + n + ' present'));
+    for (let n = 1; n < order.length; n++) assert.ok(order[n] > order[n - 1], 'script order ' + n);
+    assert.ok(!tpl.includes('/js/routes.js'), 'legacy routes.js not loaded');
   });
 }
-
-// Ids routes.js still reads must exist in at least one theme's routes page
-// (some are theme-specific: aurora-* only in aurora, chips/sort/view toggle
-// only in default/pro). Catches dangling references left by the move.
-test('every id routes.js still references exists in a routes page template', () => {
-  const all = THEMES.map(pageTpl).join('\n');
-  const missing = [...literalIds(routesJs)].filter((id) => !hasId(all, id));
-  assert.deepEqual(missing, []);
-});
-
-test('routes.js wires the zones view switch to PUT /api/v1/zones/ui-mode', () => {
-  assert.match(routesJs, /getElementById\('btn-routes-zones-view'\)/);
-  assert.match(routesJs, /api\.put\('\/api\/v1\/zones\/ui-mode', \{ mode: 'zones' \}\)/);
-  assert.match(routesJs, /location\.href = '\/routes'/);
-});
 
 test('entry_editor.* i18n keys exist in de and en with identical key sets', () => {
   const deKeys = Object.keys(de).filter((k) => k.startsWith('entry_editor.')).sort();

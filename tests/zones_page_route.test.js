@@ -69,8 +69,10 @@ test('/routes serves the zones page without legacy markup or scripts in every th
   }
 });
 
-test('the legacy page path and the page switch API are gone', async () => {
+test('the legacy page, its scripts and the page switch API are gone', async () => {
   await agent.get('/routes/legacy').expect(404);
+  await agent.get('/js/routes.js').expect(404);
+  await agent.get('/js/printerPresetForm.js').expect(404);
   const res = await agent.put('/api/v1/zones/ui-mode').set('X-CSRF-Token', csrf).send({ mode: 'legacy' });
   assert.equal(res.status, 404);
 });

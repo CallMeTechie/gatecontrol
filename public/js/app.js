@@ -506,8 +506,8 @@ window.showMessage = function(containerId, message, type) {
       e.preventDefault();
       closeFab();
       if (window.location.pathname === '/routes') {
-        // Legacy list: create-route wizard; zones page: add-domain dialog.
-        var btn = document.getElementById('btn-add-route') || document.getElementById('zn-add-domain');
+        // Zones page: open the add-domain dialog.
+        var btn = document.getElementById('zn-add-domain');
         if (btn) btn.click();
       } else {
         window.location.href = '/routes?action=add';
@@ -520,7 +520,7 @@ window.showMessage = function(containerId, message, type) {
   if (params.get('action') === 'add') {
     setTimeout(function () {
       var peerBtn = document.getElementById('btn-add-peer');
-      var routeBtn = document.getElementById('btn-add-route') || document.getElementById('zn-add-domain');
+      var routeBtn = document.getElementById('zn-add-domain');
       if (peerBtn && window.location.pathname === '/peers') peerBtn.click();
       if (routeBtn && window.location.pathname === '/routes') routeBtn.click();
     }, 500);

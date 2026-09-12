@@ -8,7 +8,7 @@ const de = require('../src/i18n/de.json');
 // translate() does a flat locale[key] lookup, so each key must exist as a
 // top-level entry. This is the FULL set the feature actually uses (Tasks 11
 // and 12 introduced more keys than the plan's original list), discovered by
-// grepping public/js/routes.js + the share login/route-edit templates.
+// grepping public/js/entry-editor.js + the share login/route-edit templates.
 const keys = [
   'route_auth.method_share',
   'route_auth.share_managed',
@@ -34,7 +34,7 @@ test('all share-link i18n keys exist in en + de', () => {
   }
 });
 
-test('common.copy (read by routes.js for the share URL Copy button) exists', () => {
+test('common.copy (read by entry-editor.js for the share URL Copy button) exists', () => {
   assert.ok('common.copy' in en, 'en missing common.copy');
   assert.ok('common.copy' in de, 'de missing common.copy');
 });

@@ -123,13 +123,11 @@ describe('zones.njk renders in every theme', () => {
     });
   }
 
-  it('the vendor QR script path matches the legacy routes page', () => {
+  it('the vendor QR script the page loads exists', () => {
     for (const theme of THEMES) {
-      const legacy = fs.readFileSync(path.join(ROOT, `templates/${theme}/pages/routes.njk`), 'utf8');
-      const qr = /<script src="([^"?]*qrcode[^"?]*)\?/.exec(legacy);
-      assert.ok(qr, `${theme}/routes.njk loads qrcode`);
+      const qr = /<script src="([^"?]*qrcode[^"?]*)\?/.exec(render(theme));
+      assert.ok(qr, `${theme}/zones.njk loads qrcode`);
       assert.ok(fs.existsSync(path.join(ROOT, 'public', qr[1])), 'vendor file exists');
-      assert.ok(render(theme).includes(`<script src="${qr[1]}?v=9.9.9"`), `${theme}: same qrcode path`);
     }
   });
 
