@@ -93,13 +93,17 @@ function assignHost(routeId, opts) {
 function hostRefs(db, bundleIds) {
   const refs = [];
   const seen = new Set();
-  for (const id of bundleIds) {
-    const key = id == null ? 'null' : String(id);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (id == null) { refs.push({ domain_id: null, host_id: null }); continue; }
-    const row = db.prepare('SELECT domain_id FROM service_bundles WHERE id = ?').get(id);
-    refs.push({ domain_id: row ? row.domain_id : null, host_id: id });
+  try {
+    for (const id of bundleIds) {
+      const key = id == null ? 'null' : String(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (id == null) { refs.push({ domain_id: null, host_id: null }); continue; }
+      const row = db.prepare('SELECT domain_id FROM service_bundles WHERE id = ?').get(id);
+      refs.push({ domain_id: row ? row.domain_id : null, host_id: id });
+    }
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err) }, 'routes event refs failed');
   }
   return refs;
 }

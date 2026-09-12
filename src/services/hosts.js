@@ -56,7 +56,7 @@ function membersOf(db, hostId) {
 }
 
 function hostFqdn(host, zone) {
-  return zone ? fqdnOf(host.subdomain || '@', zone.domain) : (host.domain || null);
+  return zone && host.subdomain ? fqdnOf(host.subdomain, zone.domain) : (host.domain || null);
 }
 
 function lanHostOf(members) {
@@ -377,8 +377,8 @@ async function create(domainId, input = {}) {
     target: bundleTarget(target, lanHost),
     http,
     l4,
-    domain_id: zone.id,
-    subdomain,
+  }, {
+    zone: { domain_id: zone.id, subdomain },
     template: input.template || null,
     external_enabled: !!zone.default_external_enabled,
   });

@@ -354,7 +354,7 @@ function buildHost(bundle, entries, zone, ctx) {
     id: bundle ? bundle.id : null,
     domain_id: zone ? zone.id : null,
     subdomain: zone && bundle ? bundle.subdomain : null,
-    fqdn: zone && bundle ? fqdnOf(bundle.subdomain, zone.domain) : ((bundle && bundle.domain) || null),
+    fqdn: zone && bundle && bundle.subdomain ? fqdnOf(bundle.subdomain, zone.domain) : ((bundle && bundle.domain) || null),
     name: bundle ? bundle.name : (lead ? (lead.description || 'Remote Desktop') : 'Remote Desktop'),
     description: bundle ? (bundle.description || null) : null,
     template: bundle ? (bundle.template || null) : 'rdp',

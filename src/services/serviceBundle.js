@@ -45,7 +45,7 @@ function portConflict(listenPort, conflictRouteId, suggestedPort) {
 
 // ─── Validation ─────────────────────────────────────────
 
-function normalizeInput({ name, domain, description, target, http, l4, domain_id, subdomain, template, external_enabled }) {
+function normalizeInput({ name, domain, description, target, http, l4 }) {
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw badRequest('Bundle name is required');
   }
@@ -136,13 +136,6 @@ function normalizeInput({ name, domain, description, target, http, l4, domain_id
     if (httpDescErr) throw badRequest(httpDescErr);
   }
 
-  // Domain-zone fields (hosts.js). Optional: legacy callers (service-bundle
-  // API, printer preset) omit them and get their zone attached afterwards.
-  const zone = domain_id != null
-    ? { domain_id: parseInt(domain_id, 10), subdomain: subdomain || null }
-    : null;
-  if (zone && !Number.isInteger(zone.domain_id)) throw badRequest('Invalid domain_id');
-
   return {
     name: sanitize(name.trim()),
     domain: cleanDomain,
@@ -150,9 +143,6 @@ function normalizeInput({ name, domain, description, target, http, l4, domain_id
     target: { ...target, target_kind: targetKind },
     http: httpExp,
     l4: l4List,
-    zone,
-    template: template || null,
-    external_enabled: external_enabled === undefined ? undefined : !!external_enabled,
   };
 }
 
@@ -228,9 +218,18 @@ function dropHosts(db, ids) {
 
 // ─── CRUD ───────────────────────────────────────────────
 
-async function createBundle(input) {
+// opts (internal callers only — never taken from a request body, the legacy
+// POST /service-bundles passes req.body as `input`):
+//   zone:             { domain_id, subdomain } — hosts.js; legacy callers
+//                     omit it and get their zone attached after the sync
+//   template:         host template id
+//   external_enabled: access mode of every member (zone default)
+async function createBundle(input, opts = {}) {
   const db = getDb();
-  const { name, domain, description, target, http, l4, zone, template, external_enabled } = normalizeInput(input || {});
+  const { name, domain, description, target, http, l4 } = normalizeInput(input || {});
+  const zone = opts.zone || null;
+  const template = opts.template || null;
+  const external_enabled = opts.external_enabled;
 
   assertNoExistingConflicts(l4);
 
