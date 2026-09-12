@@ -1,14 +1,10 @@
 # Stage 1: Caddy with L4 + ratelimit + mirror plugins
 #
-# OpenTelemetry pin: Caddy v2.11.2 (latest tagged release, March 2026)
-# transitively pulls go.opentelemetry.io/otel v1.40.0 — vulnerable to
-# CVE-2026-29181 (multi-value baggage header → remote DoS amplification,
-# fixed upstream in v1.41.0). Caddy master has already bumped its otel
-# stack to v1.43.0 (commit fb32433, 2026-05-07) but no tagged release
-# yet. We --replace the entire otel module set with v1.43.0 / matching
-# satellite versions so the built binary contains the fix without
-# waiting on a Caddy point release. Drop the --replace flags once
-# caddy:2-builder ships a release that pulls otel >= v1.41.0.
+# No OpenTelemetry --replace pin anymore: Caddy v2.11.4 requires otel
+# v1.43.0 itself (CVE-2026-29181 fixed since v1.41.0), so MVS already
+# guarantees the fix. The old hard pin to v1.43.0 blocked newer otel that
+# grpc >= v1.83 needs (semconv/v1.41.0 missing → build failure).
+# Security minimums for transitive Go deps live in caddy-plugins/mirror/go.mod.
 FROM caddy:2-builder AS caddy-builder
 COPY caddy-plugins/mirror /tmp/caddy-mirror
 RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
@@ -19,9 +15,7 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
     --with github.com/mholt/caddy-ratelimit \
     --with github.com/ueffel/caddy-brotli \
     --with github.com/greenpau/caddy-trace \
-    --with github.com/custom/caddy-mirror=/tmp/caddy-mirror \
-    --replace go.opentelemetry.io/otel=go.opentelemetry.io/otel@v1.43.0 \
-    --replace go.opentelemetry.io/otel/sdk=go.opentelemetry.io/otel/sdk@v1.43.0
+    --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies
 FROM node:20-alpine AS builder

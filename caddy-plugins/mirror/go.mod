@@ -8,8 +8,13 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/smallstep/certificates v0.30.0
-	// Mindestversion erzwingt den Fix für GHSA-hrxh-6v49-42gf (gRPC-Go: xDS RBAC
-	// und HTTP/2). Der Plugin-Graph zog sonst v1.81.0 herein, was Trivy als HIGH
-	// meldet; behoben in v1.82.1.
-	google.golang.org/grpc v1.82.1
+	// Mindestversionen erzwingen Fixes, die der Plugin-Graph sonst nicht
+	// hereinzieht (Trivy HIGH im Caddy-Binary). MVS übernimmt sie in den
+	// xcaddy-Build.
+	// gRPC-Go: GHSA-hrxh-6v49-42gf (v1.82.1), CVE-2026-84304 (v1.83.1),
+	// CVE-2026-84445 (v1.83.2).
+	google.golang.org/grpc v1.83.2
+	golang.org/x/crypto v0.55.0 // CVE-2026-56854
+	golang.org/x/net v0.56.0 // CVE-2026-46600
+	golang.org/x/text v0.39.0 // CVE-2026-56852
 )
