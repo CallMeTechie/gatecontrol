@@ -299,7 +299,7 @@
     }, [
       el('div', { class: 'zn-col-name' }, [nameLine, desc.length ? el('div', { class: 'zn-desc', text: desc.join(' · ') }) : null]),
       el('div', { class: 'zn-col-target' }, [
-        icon(host.gateway_override || !zone.gateway || !zone.gateway.kind ? 'gateway' : UI.gatewayIconName(zone.gateway.kind), 13),
+        icon(UI.gatewayIconName((V.parseGatewayKey(V.hostGatewayKey(host, zone)) || {}).kind), 13),
         el('span', { class: 'zn-mono', text: target ? (port ? target + ' : ' + port : target) : '—' }),
       ]),
       el('div', { class: 'zn-col-entries' }, V.sortEntries(host.entries).map((e) => (e.rdp_owned

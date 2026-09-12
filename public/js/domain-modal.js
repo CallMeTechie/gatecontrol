@@ -714,7 +714,7 @@
         type: 'button', class: 'zn-addline',
         on: { click: () => {
           const hasHttp = (host.entries || []).some((x) => !V.isL4(x));
-          ui.add[host.id] = { type: hasHttp ? 'tcp' : 'http', target: '', listen: '', bhttps: false, conflict: null, error: null };
+          ui.add[host.id] = { type: hasHttp && l4Allowed(zone) ? 'tcp' : 'http', target: '', listen: '', bhttps: false, conflict: null, error: null };
           render();
           const n = bodyEl.querySelector('[data-zn-key="add' + host.id + 'target"]');
           if (n) n.focus();
