@@ -44,6 +44,10 @@ const config = {
     sessionMaxAge: envInt('GC_SESSION_MAX_AGE', 86400000),
     rateLimitLogin: envInt('GC_RATE_LIMIT_LOGIN', 5),
     rateLimitApi: envInt('GC_RATE_LIMIT_API', 100),
+    // Per-gateway budget for /api/v1/gateway/* (keyed by peer, not IP, so
+    // gateways behind the admin's NAT don't share the dashboard's bucket).
+    // Idle load is ~33 req/15 min per gateway at GC_HEARTBEAT_INTERVAL_S=30.
+    rateLimitGateway: envInt('GC_RATE_LIMIT_GATEWAY', 300),
   },
 
   wireguard: {

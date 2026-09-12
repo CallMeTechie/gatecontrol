@@ -393,6 +393,7 @@ Alle Konfiguration erfolgt über Umgebungsvariablen in der `.env`-Datei.
 | `GC_SESSION_MAX_AGE` | `86400000` | Session-Lebensdauer in ms (24h) |
 | `GC_RATE_LIMIT_LOGIN` | `5` | Max. Login-Versuche pro 15 Min |
 | `GC_RATE_LIMIT_API` | `100` | Max. API-Requests pro 15 Min |
+| `GC_RATE_LIMIT_GATEWAY` | `300` | Max. Gateway-API-Requests (Heartbeat, Config-Check, …) pro 15 Min, je Gateway |
 
 ### WireGuard
 

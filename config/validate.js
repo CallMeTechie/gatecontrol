@@ -79,6 +79,9 @@ function validateConfig() {
   if (config.auth.rateLimitApi < 1) {
     errors.push(`GC_RATE_LIMIT_API: must be at least 1`);
   }
+  if (config.auth.rateLimitGateway < 1) {
+    errors.push(`GC_RATE_LIMIT_GATEWAY: must be at least 1`);
+  }
   if (config.auth.sessionMaxAge < 60000) {
     errors.push(`GC_SESSION_MAX_AGE: must be at least 60000 (1 minute)`);
   }

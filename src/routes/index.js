@@ -304,7 +304,10 @@ const clientRoutes = require('./api/client');
 router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Router());
 
 // ─── Gateway API (uses own Bearer-token auth, not admin/session auth) ──
-router.use('/api/v1/gateway', apiLimiter, require('./api/gateway'));
+// No apiLimiter here: it is keyed by IP and would make gateways behind the
+// admin's NAT share the dashboard's bucket. The router applies its own
+// per-gateway limiter after auth (and gatewayPairLimiter on /pair).
+router.use('/api/v1/gateway', require('./api/gateway'));
 
 // ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
 router.get('/api/v1/events', requireAuth, require('./api/events'));

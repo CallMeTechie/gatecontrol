@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { requireGateway } = require('../../middleware/gatewayAuth');
-const { gatewayPairLimiter } = require('../../middleware/rateLimit');
+const { gatewayApiLimiter, gatewayPairLimiter } = require('../../middleware/rateLimit');
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
@@ -21,8 +21,7 @@ const router = express.Router();
  * On success: 200 + { ok: true, envContent: "<full gateway.env>" }
  * On invalid/expired/consumed: 400 + { ok: false, error: 'invalid_or_expired' }
  *
- * Rate-limited by gatewayPairLimiter (10/IP/5min) on top of the apiLimiter
- * the parent router already applies.
+ * Rate-limited by gatewayPairLimiter (10/IP/5min).
  */
 router.post('/pair', gatewayPairLimiter, express.json({ limit: '1kb' }), (req, res) => {
   const code = req.body && typeof req.body.code === 'string' ? req.body.code.trim().toUpperCase() : '';
@@ -39,6 +38,7 @@ router.post('/pair', gatewayPairLimiter, express.json({ limit: '1kb' }), (req, r
 });
 
 router.use(requireGateway);
+router.use(gatewayApiLimiter);
 
 /** GET /api/v1/gateway/config */
 router.get('/config', (req, res) => {

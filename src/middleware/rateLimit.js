@@ -82,6 +82,25 @@ const hostnameReportLimiter = rateLimit({
   },
 });
 
+// Authenticated gateway API (heartbeat, config check, status, discovery).
+// Mounted AFTER requireGateway and keyed by peer, so every gateway gets its
+// own budget. Gateways used to share the per-IP apiLimiter bucket with the
+// admin's browser behind the same NAT: dashboard use spent the gateways'
+// (lower, session-less) budget, heartbeats got 429, and the gateway was
+// declared offline → 502 on all its routes.
+const gatewayApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitGateway,
+  standardHeaders: true,
+  legacyHeaders: true,
+  // Same reasoning as apiLimiter: a 429 streak must not pin the window.
+  skipFailedRequests: true,
+  keyGenerator: (req) => `gw:${req.gateway.peer_id}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many gateway API requests. Try again later.' });
+  },
+});
+
 // Public gateway-pairing redemption: 64-bit codes with 10-min TTL plus
 // one-shot semantics already make brute-force impractical, but a tight
 // per-IP limit (10 per 5 min) keeps log noise down and discourages
@@ -109,4 +128,4 @@ const shareRedeemLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayPairLimiter, shareRedeemLimiter };
+module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, shareRedeemLimiter };
