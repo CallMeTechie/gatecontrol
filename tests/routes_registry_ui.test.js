@@ -12,7 +12,7 @@ beforeEach(async () => { await setup(); app = require('../src/app').createApp();
 afterEach(teardown);
 
 test('create wizard has prefix + base-domain dropdown + free-text carve-out (served, no raw keys)', async () => {
-  const res = await getAgent().get('/routes').expect(200);
+  const res = await getAgent().get('/routes/legacy').expect(200);
   assert.match(res.text, /create-route-prefix/);
   assert.match(res.text, /create-route-base-domain/);
   assert.match(res.text, /create-route-domain-freetext/);
