@@ -66,11 +66,26 @@ function requireLimit(featureKey, countFn) {
   };
 }
 
+// A value that leaves the feature off (false, 0, '', empty list, custom_headers
+// with empty lists) needs no license. Without this, every full-form save from
+// the route editor 403'd on plans lacking e.g. compression, because the form
+// always sends compress_enabled: false.
+function isEnabling(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return value !== '' && value !== '0' && value !== 'false';
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.values(value).some(isEnabling);
+  return true;
+}
+
 function requireFeatureField(bodyField, featureKey, opts = {}) {
   return (req, res, next) => {
     const value = req.body && req.body[bodyField];
     if (value === undefined || value === null) return next();
     if (opts.onlyValue !== undefined && value !== opts.onlyValue) return next();
+    if (opts.onlyValue === undefined && !isEnabling(value)) return next();
     if (!hasFeature(featureKey)) {
       return res.status(403).json({
         ok: false,
