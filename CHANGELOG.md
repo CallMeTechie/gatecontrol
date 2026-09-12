@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Domains & Routen neu aufgebaut: Die Seite `/routes` listet jetzt Domains als aufklappbare Zonen mit einer Zeile pro Host. HTTPS- und TCP/UDP-Einträge desselben Hosts stehen als Chips in einer Zeile, statt als lose Einzelrouten. Suche, Filter (HTTPS, TCP/UDP, extern, intern, deaktiviert, Probleme) und ein Gateway-Filter wirken über alle Zonen.
+- Domain-Dialog statt drei Wizards: „Domain bearbeiten“ zeigt alle Hosts einer Domain als Karten mit ihren Einträgen. Dort lassen sich Hosts anlegen (frei oder aus den Vorlagen Drucker, Synology NAS, Proxmox, Nur SSH), Einträge hinzufügen, schalten, bearbeiten und löschen, Subdomains umbenennen und die LAN-Adresse ändern. Jede Aktion wird sofort gespeichert. Die Hauptdomain erscheint als `@`.
+- Gateway pro Domain: Das Gateway (oder der Pool bzw. Ziel-Peer) wird einmal pro Domain gewählt und auf alle Hosts übertragen, mit einem einzigen Caddy-Reload. Hosts, die aus älteren Konfigurationen ein anderes Gateway nutzen, bleiben unverändert und werden als „abweichendes Gateway“ markiert; ein Klick stellt sie auf das Domain-Gateway um.
+- Scan-zu-Ordner für Drucker ist jetzt ein eigener Dialog an der Host-Karte des Druckers.
+- Routen bearbeiten: Der Bearbeiten-Dialog ist ein eigenständiges Modul und wird von beiden Ansichten genutzt. Aus dem Domain-Dialog geöffnet, sind Domain und Ziel gesperrt, weil sie dort festgelegt werden.
+- Neue API unter `/api/v1`: `zones`, `domains/:id/gateway|defaults|hosts`, `hosts/:id` (inkl. `entries`, `toggle`, `gateway-override`, `scan-to-folder`) und `host-templates`, erreichbar mit API-Tokens im Scope `routes`. Änderungen an Routen lösen das SSE-Ereignis `routes` aus.
+- Migration: Beim Update bekommt jede Route einen Host und jeder Host seine Domain; pro Domain wird das häufigste Gateway übernommen. Die bisherige Liste bleibt über „Alte Ansicht“ (`/routes/legacy`) erreichbar.
+
+### Fixes
+- L4-Routen ohne TLS (reine Port-Weiterleitungen wie SSH oder Drucker-Ports) ließen sich nicht bearbeiten: Der Server lehnte die leere Domain ab, der Fehler landete unsichtbar an einem ausgeblendeten Feld.
+- Auf Lizenzen ohne Komprimierung, Request-Debugging oder Bot-Blocker schlug jedes Speichern im Routen-Dialog mit 403 fehl, weil auch ausgeschaltete Felder als Feature-Nutzung galten.
+- Mobil: Der Knopf „Route hinzufügen“ öffnet auf der neuen Seite „Domain hinzufügen“.
+
+---
+
 ## [1.118.13] — 2026-09-12
 
 ### Fixes
