@@ -312,7 +312,9 @@ describe('service bundles', () => {
   });
 
   it('rejects grouping an already-bundled route', async () => {
-    const existing = bundles.listBundles().find((b) => b.route_count > 0);
+    // Domain zones: a route alone in its host counts as loose (may be grouped);
+    // only members of a real multi-member service are protected.
+    const existing = bundles.listBundles().find((b) => b.route_count > 1);
     const memberId = bundles.getBundle(existing.id).routes[0].id;
     assert.throws(
       () => bundles.groupExisting({ name: 'doppelt', route_ids: [memberId] }),
@@ -366,7 +368,8 @@ describe('service bundles', () => {
   });
 
   it('rejects adding an already-bundled route', async () => {
-    const existing = bundles.listBundles().find((b) => b.route_count > 0);
+    // Domain zones: see 'rejects grouping an already-bundled route'.
+    const existing = bundles.listBundles().find((b) => b.route_count > 1);
     const memberId = bundles.getBundle(existing.id).routes[0].id;
     const other = await routesService.create({ domain: 'add-other.example.com', target_ip: '10.8.0.72', target_port: 80 });
     const target = bundles.groupExisting({ name: 'AddDupTarget', route_ids: [other.id] });

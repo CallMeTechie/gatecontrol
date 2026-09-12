@@ -72,35 +72,83 @@ function cleanupEmptyBundles(db, bundleIds) {
   }
 }
 
-// Auto-bundle: a domain shared by >=2 non-RDP-linked routes is a "service".
+// Every route has a host (domain zones): after a route was created, or its
+// domain changed, it joins the host of the same fqdn in its zone, otherwise a
+// host of its own is created (hosts.assignRoute). RDP-owned L4 routes stay out.
 // Metadata-only (bundle_id) and best-effort — runs AFTER the Caddy sync so a
-// sync rollback can never strand a half-formed bundle, and any failure here is
+// sync rollback can never strand a half-formed host, and any failure here is
 // logged, never propagated (it must not roll back an already-synced route).
-// Asymmetric by design: forms at >=2, dissolves only at 0 members
-// (cleanupEmptyBundles in remove()/batch()). A 1-member bundle is intentional —
-// it is the "HTTP route deleted, service lives on via its L4" state.
-function autoPromoteDomain(db, domain) {
-  if (!domain) return;
+// Hosts dissolve only at 0 members (cleanupEmptyBundles in remove()/batch()).
+function assignHost(routeId, opts) {
   try {
-    const candidates = db.prepare(
-      `SELECT id, bundle_id FROM routes
-       WHERE domain = ?
-         AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes
-                        WHERE gateway_l4_route_id IS NOT NULL)`
-    ).all(domain);
-    if (candidates.length < 2) return;
-    const unbundled = candidates.filter((r) => r.bundle_id == null).map((r) => r.id);
-    if (unbundled.length === 0) return;
-    const serviceBundle = require('./serviceBundle');
-    const existing = candidates.find((r) => r.bundle_id != null);
-    if (existing) {
-      serviceBundle.addRoutesToBundle({ bundle_id: existing.bundle_id, route_ids: unbundled });
-    } else {
-      serviceBundle.groupExisting({ name: domain, route_ids: candidates.map((r) => r.id) });
+    require('./hosts').assignRoute(routeId, opts);
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err), routeId }, 'Host assignment failed');
+  }
+}
+
+// Realtime: one `routes` event per touched host so the zones page reloads
+// only what changed. Payload { domain_id, host_id }; host_id is null for
+// routes without a host (RDP-owned). Best-effort, never throws.
+function hostRefs(db, bundleIds) {
+  const refs = [];
+  const seen = new Set();
+  try {
+    for (const id of bundleIds) {
+      const key = id == null ? 'null' : String(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (id == null) { refs.push({ domain_id: null, host_id: null }); continue; }
+      const row = db.prepare('SELECT domain_id FROM service_bundles WHERE id = ?').get(id);
+      refs.push({ domain_id: row ? row.domain_id : null, host_id: id });
     }
   } catch (err) {
-    logger.warn({ err: err?.message ?? String(err), domain }, 'Auto-bundle promotion failed');
+    logger.warn({ err: err?.message ?? String(err) }, 'routes event refs failed');
   }
+  return refs;
+}
+
+function publishRoutesEvent(refs) {
+  try {
+    const eventBus = require('./eventBus');
+    for (const ref of refs) eventBus.publish('routes', ref);
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err) }, 'routes event publish failed');
+  }
+}
+
+function publishForRoutes(db, routeIds) {
+  try {
+    const placeholders = routeIds.map(() => '?').join(',');
+    const rows = routeIds.length
+      ? db.prepare(`SELECT bundle_id FROM routes WHERE id IN (${placeholders})`).all(...routeIds)
+      : [];
+    publishRoutesEvent(hostRefs(db, rows.map((r) => r.bundle_id)));
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err) }, 'routes event publish failed');
+  }
+}
+
+// GET /api/routes row shape, shared with GET /api/v1/zones (entries): strips
+// the basic-auth hash and adds the domain-registry flags. The registry read is
+// guarded — a better-sqlite3 throw must not turn the list into a 500; the
+// fallback (empty set) only suppresses the "base unverified" nudge.
+function toApiRows(list) {
+  const stripFields = require('../utils/stripFields');
+  const { isPublicDomain } = require('./caddyTlsAutomation');
+  const { baseDomain } = require('./domainSeed');
+  let verifiedSet;
+  try { verifiedSet = new Set(require('./domains').baseDomains()); }
+  catch (err) { logger.warn({ err: err.message }, 'routes list: baseDomains() failed; suppressing nudge'); verifiedSet = new Set(); }
+  return list.map((row) => {
+    const r = stripFields(row, ['basic_auth_password_hash']);
+    const isPub = !!(r.domain && isPublicDomain(r.domain));
+    return {
+      ...r,
+      domainIsPublic: isPub,                                   // drives edit-modal path detection
+      baseUnverified: !!(isPub && !verifiedSet.has(baseDomain(r.domain))),
+    };
+  });
 }
 
 // ─── CRUD Operations ────────────────────────────────────
@@ -400,9 +448,13 @@ async function create(data, opts = {}) {
     } catch { /* fallback when module load fails */ }
   }
 
-  // Auto-bundle sibling routes that share this domain into a service.
-  // Skipped for orchestrators (service-bundle create) — they own their bundling.
-  if (!opts.skipSync) autoPromoteDomain(db, domain);
+  // Give the route a host (join the host of its fqdn or create one).
+  // Skipped for orchestrators (hosts, service bundles) — they own their
+  // hosts and publish their own realtime event.
+  if (!opts.skipSync) {
+    assignHost(routeId);
+    publishForRoutes(db, [routeId]);
+  }
 
   return getById(routeId);
 }
@@ -718,16 +770,6 @@ async function update(id, data) {
   // silently reset to defaults when the rollback path fires.
   await withCaddySync(syncToCaddy, () => restoreRouteRow(db, id, snapshot), 'route update');
 
-  // Keep the bundle's display domain in step when the HTTP member's
-  // domain changes (the bundle domain is a pure label, no Caddy impact).
-  if (route.bundle_id && data.domain !== undefined && routeType !== 'l4') {
-    const newDomain = data.domain ? sanitize(data.domain).toLowerCase() : null;
-    if (newDomain && newDomain !== route.domain) {
-      db.prepare("UPDATE service_bundles SET domain = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(newDomain, route.bundle_id);
-    }
-  }
-
   activity.log('route_updated', `Route "${route.domain}" updated`, {
     source: 'admin',
     severity: 'info',
@@ -762,12 +804,22 @@ async function update(id, data) {
 
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route update failed'); }
 
-  // Auto-bundle if this update put the route onto a domain now shared by a
-  // sibling. bundle_id is never touched by an update, so this only ever ADDS
-  // (no shrink/demotion). Re-fetch so the returned row reflects a new bundle_id.
-  autoPromoteDomain(db, finalRoute && finalRoute.domain);
+  // Host bookkeeping (metadata only, after the sync): a route without a host
+  // gets one; a domain change lets the route follow its fqdn (join the host
+  // of the new fqdn, or the host follows its HTTP entry — the bundle domain
+  // was always kept in step with the HTTP member). Re-fetch so the returned
+  // row reflects a new bundle_id.
+  // Capture the old host's zone first: a move may delete the emptied host.
+  const refsBefore = route.bundle_id != null ? hostRefs(db, [route.bundle_id]) : [];
+  const domainChanged = finalRoute && (finalRoute.domain || null) !== (route.domain || null);
+  assignHost(id, domainChanged ? { previousDomain: route.domain || null } : undefined);
+  const after = getById(id);
+  const refsAfter = after && after.bundle_id != null && after.bundle_id !== route.bundle_id
+    ? hostRefs(db, [after.bundle_id]) : [];
+  const refs = [...refsBefore, ...refsAfter];
+  publishRoutesEvent(refs.length ? refs : [{ domain_id: null, host_id: null }]);
 
-  return getById(id);
+  return after;
 }
 
 /**
@@ -783,6 +835,8 @@ async function remove(id) {
   // but drops its time-based access windows — a route that was only protected
   // by a schedule would silently become reachable around the clock.
   const accessRulesSnapshot = require('./accessRules').listRules('route', id);
+  // Captured before the delete: the last entry takes its host with it.
+  const refs = hostRefs(db, [route.bundle_id]);
 
   // Delete the row and its access rules atomically.
   db.transaction(() => {
@@ -810,6 +864,7 @@ async function remove(id) {
 
   logger.info({ routeId: id, domain: route.domain }, 'Route deleted');
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route delete failed'); }
+  publishRoutesEvent(refs);
 }
 
 /**
@@ -846,6 +901,7 @@ async function toggle(id) {
   );
 
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route toggle failed'); }
+  publishRoutesEvent(hostRefs(db, [route.bundle_id]));
 
   return getById(id);
 }
@@ -893,6 +949,8 @@ async function batch(action, ids) {
   const accessRuleSnapshots = action === 'delete'
     ? db.prepare(`SELECT * FROM access_rules WHERE target_type = 'route' AND target_id IN (${placeholders})`).all(...ids)
     : [];
+  // Realtime refs captured before a delete can remove the hosts.
+  const refs = hostRefs(db, snapshots.map((r) => r.bundle_id));
 
   if (action === 'enable') {
     db.prepare(`UPDATE routes SET enabled = 1, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
@@ -941,6 +999,7 @@ async function batch(action, ids) {
   // One rebuild for the whole batch — never per-route (avoids N hosts-file
   // writes + N dnsmasq SIGHUPs). Best-effort.
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after batch route mutation failed'); }
+  publishRoutesEvent(refs);
 
   return ids.length;
 }
@@ -983,6 +1042,8 @@ function getForUser(userId) {
 
 module.exports = {
   assertDomainAvailable,
+  cleanupEmptyBundles,
+  toApiRows,
   getAll,
   getById,
   create,

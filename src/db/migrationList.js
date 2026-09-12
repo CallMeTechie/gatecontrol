@@ -1219,6 +1219,162 @@ const migrations = [
     sql: `ALTER TABLE skoda_accounts ADD COLUMN spin_enc TEXT;`,
     detect: (db) => hasColumn(db, 'skoda_accounts', 'spin_enc'),
   },
+  {
+    version: 68,
+    name: 'zones_hosts',
+    // Domain zones, step 1: every route gets a host (service_bundles row) and
+    // every host is linked to its zone (domains row) by LONGEST suffix match.
+    // No inline REFERENCES (see 'peer_owner_user_id'); no unique index on
+    // (domain_id, subdomain) either — a legacy duplicate would block the boot.
+    // Uniqueness is enforced in services/hosts.js, the boot reconcile
+    // (domainZones.reconcile) logs leftovers. Every statement is guarded so a
+    // second run is a no-op.
+    //
+    // Step 1 (host per unbundled, non-RDP route) uses the same fqdn semantics
+    // as the runtime (hosts.assignRoute), so no (zone, subdomain) duplicates
+    // appear: a route whose domain equals an existing host's domain joins it
+    // (L4 always; HTTP only if that host has no HTTP entry yet), remaining
+    // routes sharing a domain get ONE new host, routes without domain one each.
+    // New host ids are pre-computed in a temp table so the route → host link
+    // needs no name matching. The base id respects sqlite_sequence:
+    // service_bundles is AUTOINCREMENT, ids of deleted bundles are never reused.
+    sql: `
+      ALTER TABLE service_bundles ADD COLUMN domain_id INTEGER;
+      ALTER TABLE service_bundles ADD COLUMN subdomain TEXT;
+      ALTER TABLE service_bundles ADD COLUMN template TEXT;
+      ALTER TABLE service_bundles ADD COLUMN gateway_override INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_bundles_domain ON service_bundles(domain_id, subdomain);
+
+      UPDATE routes SET bundle_id = (
+        SELECT MIN(sb.id) FROM service_bundles sb WHERE lower(sb.domain) = lower(routes.domain)
+      )
+      WHERE bundle_id IS NULL AND domain IS NOT NULL AND domain != ''
+        AND id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM service_bundles sb WHERE lower(sb.domain) = lower(routes.domain))
+        AND (route_type = 'l4' OR NOT EXISTS (
+              SELECT 1 FROM routes h
+              WHERE h.route_type != 'l4'
+                AND h.bundle_id = (SELECT MIN(sb.id) FROM service_bundles sb WHERE lower(sb.domain) = lower(routes.domain))));
+
+      DROP TABLE IF EXISTS temp._zones_groups;
+      CREATE TEMP TABLE _zones_groups AS
+      SELECT r.id AS route_id,
+             CASE WHEN r.domain IS NOT NULL AND r.domain != '' THEN 'd:' || lower(r.domain)
+                  ELSE 'r:' || r.id END AS gkey
+      FROM routes r
+      WHERE r.bundle_id IS NULL
+        AND r.id NOT IN (SELECT gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL);
+
+      DROP TABLE IF EXISTS temp._zones_new_hosts;
+      CREATE TEMP TABLE _zones_new_hosts AS
+      SELECT gkey, MIN(route_id) AS lead_id,
+             max(COALESCE((SELECT MAX(id) FROM service_bundles), 0),
+                 COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'service_bundles'), 0))
+               + ROW_NUMBER() OVER (ORDER BY MIN(route_id)) AS host_id
+      FROM _zones_groups
+      GROUP BY gkey;
+
+      INSERT INTO service_bundles (id, name, domain)
+      SELECT n.host_id,
+             substr(COALESCE(NULLIF(TRIM(r.description), ''), NULLIF(r.domain, ''),
+                             'Port ' || r.l4_listen_port, 'Route ' || r.id), 1, 120),
+             NULLIF(lower(r.domain), '')
+      FROM _zones_new_hosts n JOIN routes r ON r.id = n.lead_id;
+
+      UPDATE routes SET bundle_id = (
+        SELECT n.host_id FROM _zones_groups g JOIN _zones_new_hosts n ON n.gkey = g.gkey
+        WHERE g.route_id = routes.id
+      )
+      WHERE id IN (SELECT route_id FROM _zones_groups);
+
+      DROP TABLE temp._zones_new_hosts;
+      DROP TABLE temp._zones_groups;
+
+      UPDATE service_bundles SET domain_id = (
+        SELECT d.id FROM domains d
+        WHERE lower(service_bundles.domain) = d.domain
+           OR (length(service_bundles.domain) > length(d.domain)
+               AND substr(lower(service_bundles.domain), -length(d.domain) - 1) = '.' || d.domain)
+        ORDER BY length(d.domain) DESC LIMIT 1
+      )
+      WHERE domain_id IS NULL AND domain IS NOT NULL AND domain != '';
+
+      UPDATE service_bundles SET subdomain = (
+        SELECT CASE WHEN lower(service_bundles.domain) = d.domain THEN '@'
+                    ELSE substr(lower(service_bundles.domain), 1,
+                                length(service_bundles.domain) - length(d.domain) - 1)
+               END
+        FROM domains d WHERE d.id = service_bundles.domain_id
+      )
+      WHERE domain_id IS NOT NULL AND subdomain IS NULL;`,
+    detect: (db) => hasColumn(db, 'service_bundles', 'domain_id'),
+  },
+  {
+    version: 69,
+    name: 'zones_gateway',
+    // Domain zones, step 2: one gateway (target triple) and one default
+    // access mode per zone, backfilled from the most common target of the
+    // zone's entries. Mapping routes → zone target:
+    //   target_kind='gateway' + target_pool_id  → ('pool', NULL, pool)
+    //   target_kind='gateway'                   → ('gateway', home peer, NULL)
+    //   target_kind='peer' / NULL               → ('peer', peer_id, NULL)
+    // "home peer" = COALESCE(original_peer_id, target_peer_id): a route that
+    // is mid-failover (gatewayHealth pivot) still belongs to its home gateway.
+    // Hosts whose entries use another target than their zone are flagged
+    // gateway_override = 1 (never silently re-targeted).
+    sql: `
+      ALTER TABLE domains ADD COLUMN gateway_kind TEXT;
+      ALTER TABLE domains ADD COLUMN gateway_peer_id INTEGER;
+      ALTER TABLE domains ADD COLUMN gateway_pool_id INTEGER;
+      ALTER TABLE domains ADD COLUMN default_external_enabled INTEGER NOT NULL DEFAULT 0;
+
+      DROP TABLE IF EXISTS temp._zones_targets;
+      CREATE TEMP TABLE _zones_targets AS
+      SELECT r.id AS route_id, sb.id AS host_id, sb.domain_id AS domain_id,
+             CASE WHEN r.target_kind = 'gateway' AND r.target_pool_id IS NOT NULL THEN 'pool'
+                  WHEN r.target_kind = 'gateway' THEN 'gateway'
+                  ELSE 'peer' END AS kind,
+             CASE WHEN r.target_kind = 'gateway' AND r.target_pool_id IS NOT NULL THEN NULL
+                  WHEN r.target_kind = 'gateway' THEN COALESCE(r.original_peer_id, r.target_peer_id)
+                  ELSE r.peer_id END AS peer_id,
+             CASE WHEN r.target_kind = 'gateway' THEN r.target_pool_id END AS pool_id,
+             r.external_enabled AS external_enabled
+      FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
+      WHERE sb.domain_id IS NOT NULL;
+
+      DROP TABLE IF EXISTS temp._zones_winner;
+      CREATE TEMP TABLE _zones_winner AS
+      SELECT domain_id, kind, peer_id, pool_id FROM (
+        SELECT domain_id, kind, peer_id, pool_id,
+               ROW_NUMBER() OVER (PARTITION BY domain_id ORDER BY COUNT(*) DESC, MIN(route_id)) AS rn
+        FROM _zones_targets
+        GROUP BY domain_id, kind, peer_id, pool_id
+      ) WHERE rn = 1;
+
+      UPDATE domains SET
+        gateway_kind    = (SELECT w.kind    FROM _zones_winner w WHERE w.domain_id = domains.id),
+        gateway_peer_id = (SELECT w.peer_id FROM _zones_winner w WHERE w.domain_id = domains.id),
+        gateway_pool_id = (SELECT w.pool_id FROM _zones_winner w WHERE w.domain_id = domains.id),
+        default_external_enabled = (
+          SELECT CASE WHEN 2 * SUM(CASE WHEN t.external_enabled = 1 THEN 1 ELSE 0 END) > COUNT(*)
+                      THEN 1 ELSE 0 END
+          FROM _zones_targets t WHERE t.domain_id = domains.id)
+      WHERE gateway_kind IS NULL AND id IN (SELECT domain_id FROM _zones_winner);
+
+      UPDATE service_bundles SET gateway_override = 1
+      WHERE domain_id IS NOT NULL AND gateway_override = 0 AND EXISTS (
+        SELECT 1 FROM _zones_targets t JOIN domains d ON d.id = t.domain_id
+        WHERE t.host_id = service_bundles.id
+          AND d.gateway_kind IS NOT NULL
+          AND NOT (t.kind = d.gateway_kind
+                   AND t.peer_id IS d.gateway_peer_id
+                   AND t.pool_id IS d.gateway_pool_id)
+      );
+
+      DROP TABLE temp._zones_winner;
+      DROP TABLE temp._zones_targets;`,
+    detect: (db) => hasColumn(db, 'domains', 'gateway_kind'),
+  },
 ];
 
 module.exports = { migrations };

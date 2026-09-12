@@ -13,9 +13,6 @@ const config = require('../../../config/default');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
 const { checkDomainPolicy } = require('../../services/routeDomainPolicy');
-const { isPublicDomain } = require('../../services/caddyTlsAutomation');
-const { baseDomain } = require('../../services/domainSeed');
-const domainsService = require('../../services/domains');
 const multer = require('multer');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -242,20 +239,9 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const { type } = req.query;
-    const list = routes.getAll({ limit, offset, type: type || null }).map(stripRoute);
-    // Guard the registry read: a better-sqlite3 throw must NOT turn the routes view
-    // into a 500. Fallback to an empty set → badges suppressed, routes stay functional.
-    let verifiedSet;
-    try { verifiedSet = new Set(domainsService.baseDomains()); }
-    catch (err) { logger.warn({ err: err.message }, 'routes list: baseDomains() failed; suppressing nudge'); verifiedSet = new Set(); }
-    const withFlags = list.map(r => {
-      const isPub = !!(r.domain && isPublicDomain(r.domain));
-      return {
-        ...r,
-        domainIsPublic: isPub,                                   // drives edit-modal path detection (Task 6)
-        baseUnverified: !!(isPub && !verifiedSet.has(baseDomain(r.domain))),
-      };
-    });
+    // Row shape (stripped hash + domainIsPublic/baseUnverified flags) is shared
+    // with GET /api/v1/zones via routes.toApiRows.
+    const withFlags = routes.toApiRows(routes.getAll({ limit, offset, type: type || null }));
     res.json({ ok: true, routes: withFlags, limit, offset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list routes');

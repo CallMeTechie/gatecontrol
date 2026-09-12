@@ -110,6 +110,11 @@ function normalizeInput({ name, domain, description, target, http, l4 }) {
     const portErr = validatePort(exp.target_port);
     if (portErr) throw badRequest(portErr);
 
+    if (exp.description) {
+      const expDescErr = validateDescription(exp.description);
+      if (expDescErr) throw badRequest(expDescErr);
+    }
+
     const range = parsePortRange(exp.l4_listen_port);
     for (let p = range.start; p <= range.end; p++) {
       if (isPortBlocked(p)) throw badRequest('Port ' + p + ' is reserved');
@@ -124,6 +129,11 @@ function normalizeInput({ name, domain, description, target, http, l4 }) {
       throw badRequest('Duplicate listen port ' + exp.l4_listen_port + ' in bundle');
     }
     seenNoTlsPorts[key] = true;
+  }
+
+  if (httpExp && httpExp.description) {
+    const httpDescErr = validateDescription(httpExp.description);
+    if (httpDescErr) throw badRequest(httpDescErr);
   }
 
   return {
@@ -175,18 +185,61 @@ function memberTargetFields(target, exposureTargetPort) {
   };
 }
 
+function attachZone(bundleId) {
+  try {
+    require('./hosts').attachZone(bundleId);
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err), bundleId }, 'Zone attach for bundle failed');
+  }
+}
+
+// Every route has a host now (domain zones). For the legacy grouping paths a
+// route that is the ONLY member of its host counts as "loose" — that is what
+// an unbundled route used to be. Returns the set of such single-member hosts
+// among the given routes (they are dropped once their route has moved);
+// throws for a route that belongs to a real multi-member service.
+function looseSourceHosts(db, members) {
+  const sources = new Set();
+  for (const r of members) {
+    if (r.bundle_id == null) continue;
+    const n = db.prepare('SELECT COUNT(*) AS n FROM routes WHERE bundle_id = ?').get(r.bundle_id).n;
+    if (n > 1) throw badRequest(`Route ${r.id} is already part of a service`);
+    sources.add(r.bundle_id);
+  }
+  return sources;
+}
+
+function dropHosts(db, ids) {
+  for (const id of ids) {
+    const member = db.prepare('SELECT id FROM routes WHERE bundle_id = ? LIMIT 1').get(id);
+    if (!member) db.prepare('DELETE FROM service_bundles WHERE id = ?').run(id);
+  }
+}
+
 // ─── CRUD ───────────────────────────────────────────────
 
-async function createBundle(input) {
+// opts (internal callers only — never taken from a request body, the legacy
+// POST /service-bundles passes req.body as `input`):
+//   zone:             { domain_id, subdomain } — hosts.js; legacy callers
+//                     omit it and get their zone attached after the sync
+//   template:         host template id
+//   external_enabled: access mode of every member (zone default)
+async function createBundle(input, opts = {}) {
   const db = getDb();
   const { name, domain, description, target, http, l4 } = normalizeInput(input || {});
+  const zone = opts.zone || null;
+  const template = opts.template || null;
+  const external_enabled = opts.external_enabled;
 
   assertNoExistingConflicts(l4);
 
   const bundleResult = db.prepare(
-    'INSERT INTO service_bundles (name, domain, description) VALUES (?, ?, ?)'
-  ).run(name, domain, description);
+    'INSERT INTO service_bundles (name, domain, description, domain_id, subdomain, template) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(name, domain, description, zone ? zone.domain_id : null, zone ? zone.subdomain : null, template);
   const bundleId = bundleResult.lastInsertRowid;
+  // Only passed through when the caller decided it (hosts.js: zone default);
+  // legacy callers keep today's routes.create default (internal-only).
+  const externalField = external_enabled === undefined ? {} : { external_enabled: external_enabled ? 1 : 0 };
 
   const createdIds = [];
   const removeCreated = () => {
@@ -206,9 +259,10 @@ async function createBundle(input) {
       const member = await routes.create({
         domain,
         route_type: 'http',
-        description,
+        description: http.description || description,
         https_enabled: http.https_enabled !== undefined ? http.https_enabled : true,
         backend_https: !!http.backend_https,
+        ...externalField,
         ...memberTargetFields(target, parseInt(http.target_port, 10)),
       }, { skipSync: true });
       createdIds.push(member.id);
@@ -222,10 +276,11 @@ async function createBundle(input) {
         // the bundle as a label (and on the HTTP member, if any).
         domain: tlsMode !== 'none' ? domain : null,
         route_type: 'l4',
-        description,
+        description: exp.description || description,
         l4_protocol: exp.l4_protocol,
         l4_listen_port: String(exp.l4_listen_port),
         l4_tls_mode: tlsMode,
+        ...externalField,
         ...memberTargetFields(target, parseInt(exp.target_port, 10)),
       }, { skipSync: true });
       createdIds.push(member.id);
@@ -244,6 +299,10 @@ async function createBundle(input) {
   // Member routes were created with skipSync; refresh internal DNS once for
   // the whole bundle now that the Caddy sync succeeded. Best-effort.
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after bundle create failed'); }
+
+  // Legacy callers don't pass a zone: link the new host to its zone now
+  // (metadata only, best-effort, after the sync like every host bookkeeping).
+  if (!zone) attachZone(bundleId);
 
   activity.log('service_bundle_created', `Service "${name}" created (${createdIds.length} routes)`, {
     source: 'admin',
@@ -381,8 +440,7 @@ function groupExisting({ name, route_ids }) {
   const members = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
   if (members.length !== ids.length) throw badRequest('One or more routes not found');
 
-  const bundled = members.find((r) => r.bundle_id != null);
-  if (bundled) throw badRequest(`Route ${bundled.id} is already part of a service`);
+  const sourceHosts = looseSourceHosts(db, members);
 
   const httpMembers = members.filter((r) => r.route_type !== 'l4');
   if (httpMembers.length > 1) throw badRequest('A service can contain at most one HTTP route');
@@ -405,7 +463,9 @@ function groupExisting({ name, route_ids }) {
     ).run(sanitize(String(name).trim()), domain);
     bundleId = res.lastInsertRowid;
     db.prepare(`UPDATE routes SET bundle_id = ? WHERE id IN (${placeholders})`).run(bundleId, ...ids);
+    dropHosts(db, sourceHosts);
   })();
+  attachZone(bundleId);
 
   activity.log('service_bundle_grouped', `Service "${name}" grouped from ${ids.length} existing routes`, {
     source: 'admin',
@@ -438,8 +498,9 @@ function addRoutesToBundle({ bundle_id, route_ids }) {
   const members = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
   if (members.length !== ids.length) throw badRequest('One or more routes not found');
 
-  const bundled = members.find((r) => r.bundle_id != null);
-  if (bundled) throw badRequest(`Route ${bundled.id} is already part of a service`);
+  const own = members.find((r) => r.bundle_id === bundleId);
+  if (own) throw badRequest(`Route ${own.id} is already part of a service`);
+  const sourceHosts = looseSourceHosts(db, members);
 
   const existingHttp = (bundle.routes || []).filter((r) => r.route_type !== 'l4').length;
   const newHttp = members.filter((r) => r.route_type !== 'l4').length;
@@ -452,7 +513,10 @@ function addRoutesToBundle({ bundle_id, route_ids }) {
     throw badRequest('RDP-linked L4 routes cannot be grouped into a service');
   }
 
-  db.prepare(`UPDATE routes SET bundle_id = ? WHERE id IN (${placeholders})`).run(bundleId, ...ids);
+  db.transaction(() => {
+    db.prepare(`UPDATE routes SET bundle_id = ? WHERE id IN (${placeholders})`).run(bundleId, ...ids);
+    dropHosts(db, sourceHosts);
+  })();
 
   activity.log('service_bundle_routes_added', `${ids.length} route(s) added to service "${bundle.name}"`, {
     source: 'admin',
@@ -465,6 +529,8 @@ function addRoutesToBundle({ bundle_id, route_ids }) {
 
 module.exports = {
   normalizeInput,
+  assertNoExistingConflicts,
+  memberTargetFields,
   createBundle,
   getBundle,
   listBundles,
