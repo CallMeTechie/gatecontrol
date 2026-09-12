@@ -37,6 +37,9 @@ router.use('/routes/:id/access-rules', require('./accessRules')('route'));
 router.use('/routes', require('./routes'));
 router.use('/service-bundles', require('./serviceBundles'));
 router.use('/printer-presets', require('./printerPresets'));
+// Domain zones: /zones, /zones/ui-mode, /domains/:id/…, /hosts/:id/…, /host-templates
+// (own top-level paths — no overlap with /settings/domains or /routes).
+router.use(require('./domainZones'));
 router.use('/settings', require('./settings'));
 router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));
