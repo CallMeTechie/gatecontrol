@@ -71,6 +71,9 @@ function validateConfig() {
   if (config.caddy.email && !config.caddy.email.includes('@')) {
     errors.push(`GC_CADDY_EMAIL: "${config.caddy.email}" is not a valid email`);
   }
+  if (!/^(0|(\d+(\.\d+)?(ns|us|µs|ms|s|m|h|d))+)$/.test(config.caddy.streamCloseDelay)) {
+    errors.push(`GC_CADDY_STREAM_CLOSE_DELAY: "${config.caddy.streamCloseDelay}" is not a valid duration (e.g. 1h, 30m, 0)`);
+  }
 
   // Auth
   if (config.auth.rateLimitLogin < 1) {

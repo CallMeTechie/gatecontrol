@@ -416,6 +416,7 @@ All configuration is done through environment variables in the `.env` file.
 | `GC_CADDY_DATA_DIR` | `/data/caddy` | Caddy data directory (certs, cache) |
 | `GC_CADDY_EMAIL` | (empty) | Email for Let's Encrypt registration |
 | `GC_CADDY_ACME_CA` | (empty) | Custom ACME CA URL (for internal PKI) |
+| `GC_CADDY_STREAM_CLOSE_DELAY` | `1h` | How long WebSockets (web terminal, RDP) survive a Caddy config reload; `0` closes them immediately |
 
 ### Localization
 

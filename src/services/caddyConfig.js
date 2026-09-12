@@ -67,6 +67,16 @@ const gatewayHealth = require('./gatewayHealth');
 // of truth. Default: VPN subnet only; GC_HUB_PUBLIC_IP appends a /32.
 const INTERNAL_ONLY_RANGES = config.wireguard.internalOnlyRanges;
 
+// Every sync is a full POST /load, and Caddy closes all upgraded connections
+// (WebSockets: web terminal, guacamole RDP tunnel) of the replaced config
+// immediately — so editing any route dropped every open session. With
+// stream_close_delay they live on until the delay expires. Caddy applies the
+// delay of the OLD config, so this must be set before the reload happens.
+function streamCloseDelay() {
+  const delay = config.caddy.streamCloseDelay;
+  return delay && delay !== '0' ? { stream_close_delay: delay } : {};
+}
+
 function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
 }
@@ -389,6 +399,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       reverseProxy = {
         handler: 'reverse_proxy',
         upstreams,
+        ...streamCloseDelay(),
       };
     }
 
@@ -711,6 +722,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           handle: [{
             handler: 'reverse_proxy',
             upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            // Carries the guacamole-lite WS tunnel (browser RDP/VNC/SSH).
+            ...streamCloseDelay(),
             // Belt-and-suspenders: strip the portal identity header on the
             // management-UI vhost so it cannot be used to forge peer identity
             // even if an external request somehow reaches Node via this path.
@@ -764,6 +777,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             {
               handler: 'reverse_proxy',
               upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+              ...streamCloseDelay(),
               headers: {
                 request: {
                   // SET ONLY — do NOT also `delete` this header here. Caddy's header

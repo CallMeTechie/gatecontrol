@@ -75,6 +75,12 @@ const config = {
     dataDir: env('GC_CADDY_DATA_DIR', '/data/caddy'),
     email: env('GC_CADDY_EMAIL', ''),
     acmeCa: env('GC_CADDY_ACME_CA', ''),
+    // How long upgraded connections (WebSockets: web terminal, RDP tunnel)
+    // survive a config reload before Caddy closes them. Without it, every
+    // POST /load drops all of them. Trade-off: a stream opened before a
+    // route was disabled or got auth keeps running on the old config until
+    // this delay expires. '0' restores Caddy's close-immediately default.
+    streamCloseDelay: env('GC_CADDY_STREAM_CLOSE_DELAY', '1h'),
   },
 
   // Internal DNS — dnsmasq-backed per-peer hostname resolution inside the
