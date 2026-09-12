@@ -2330,7 +2330,13 @@
         payload.l4_listen_port = target.l4_listen_port;
         payload.l4_tls_mode = target.l4_tls_mode;
       }
-      if (isL4None) payload.domain = '';
+      if (isL4None) {
+        // PUT /api/routes/:id validates any defined domain and rejects ''
+        // ("Invalid domain format"). Send '' only when it clears a stored SNI
+        // domain; otherwise leave the field out, i.e. unchanged.
+        if (state.lockTarget || !(state.route && state.route.domain)) delete payload.domain;
+        else payload.domain = '';
+      }
 
       payload.target_kind = target.target_kind;
       if (target.target_kind === 'gateway') {
@@ -2361,6 +2367,8 @@
             description: 'edit-route-desc',
             target_ip: 'edit-route-ip',
           });
+          // Locked target fields are hidden, so their field errors would be invisible.
+          if (state.lockTarget) window.showError('edit-route-error', data.error);
         } else {
           window.showError('edit-route-error', data.error);
         }
