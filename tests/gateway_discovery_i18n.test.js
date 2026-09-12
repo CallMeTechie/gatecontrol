@@ -15,7 +15,7 @@ const KEYS = [
   'gateways.discovery.mode_include', 'gateways.discovery.mode_exclude',
   'gateways.discovery.save', 'gateways.discovery.saved', 'gateways.discovery.multi_subnet_locked',
   'gateways.discovery.no_devices', 'gateways.discovery.last_seen_min', 'gateways.discovery.timed_out',
-  'routes.suggested.button', 'routes.suggested.adopt', 'routes.suggested.unavailable',
+  'routes.suggested.unavailable',
 ];
 
 test('discovery i18n keys present in en + de', () => {

@@ -10,7 +10,6 @@ const de = require('../src/i18n/de.json');
 // and 12 introduced more keys than the plan's original list), discovered by
 // grepping public/js/entry-editor.js + the share login/route-edit templates.
 const keys = [
-  'route_auth.method_share',
   'route_auth.share_managed',
   'route_auth.share_invite_title',
   'route_auth.share_invite_body',
