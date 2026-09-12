@@ -1,0 +1,133 @@
+{% extends theme + "/layout.njk" %}
+
+{#
+  Domains & Routen — zone view, Aurora variant (docs/feature-domain-zones.md).
+  Same element IDs as default/pro so zones-page.js / domain-modal.js need no
+  theme branch; Aurora adds the KPI strip (#zn-kpis, filled by zones-page.js).
+#}
+
+{% block content %}
+<div class="page-header zn-page-header">
+  <div>
+    <div class="page-eyebrow">{{ t('zones.eyebrow') }}</div>
+    <h1 class="page-title">{{ t('zones.title') }}</h1>
+    <p class="page-sub" id="zn-summary">{{ t('zones.summary_loading') }}</p>
+  </div>
+  <div class="page-actions">
+    <a href="/routes/legacy" class="zn-legacy-link" id="zn-legacy-link" title="{{ t('zones.legacy_hint') }}">{{ t('zones.legacy_link') }}</a>
+    <button type="button" class="btn btn-primary" id="zn-add-domain">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span>{{ t('zones.add_domain') }}</span>
+    </button>
+  </div>
+</div>
+
+{# KPI strip: static container, filled by zones-page.js from the unfiltered data #}
+<div class="aurora-routes-kpis zn-kpis" id="zn-kpis"></div>
+
+<div class="toolbar zn-toolbar" role="search">
+  <div class="search-box zn-search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="zn-search" placeholder="{{ t('zones.search_ph') }}" aria-label="{{ t('zones.search_label') }}" autocomplete="off">
+  </div>
+  <div class="filter-chips zn-chips" id="zn-chips" role="group" aria-label="{{ t('zones.filters_label') }}">
+    <button type="button" class="filter-chip on" data-dim="all" aria-pressed="true">{{ t('zones.filter_all') }} · <span id="zn-chip-all-count">0</span></button>
+    <button type="button" class="filter-chip" data-dim="type" data-value="http" aria-pressed="false">{{ t('zones.filter_https') }}</button>
+    <button type="button" class="filter-chip" data-dim="type" data-value="l4" aria-pressed="false">{{ t('zones.filter_l4') }}</button>
+    <span class="chip-sep" aria-hidden="true"></span>
+    <button type="button" class="filter-chip" data-dim="access" data-value="external" aria-pressed="false">{{ t('zones.filter_external') }}</button>
+    <button type="button" class="filter-chip" data-dim="access" data-value="internal" aria-pressed="false">{{ t('zones.filter_internal') }}</button>
+    <button type="button" class="filter-chip" data-dim="state" data-value="disabled" aria-pressed="false">{{ t('zones.filter_disabled') }}</button>
+    <button type="button" class="filter-chip" data-dim="state" data-value="problem" aria-pressed="false">{{ t('zones.filter_problems') }}</button>
+  </div>
+  <select class="sort-select zn-gw-select" id="zn-gateway-filter" aria-label="{{ t('zones.gateway_filter_label') }}">
+    <option value="">{{ t('zones.gateway_filter_all') }}</option>
+  </select>
+  <button type="button" class="btn btn-ghost zn-btn-sm" id="zn-collapse-all">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+    <span class="zn-collapse-lbl">{{ t('zones.collapse_all') }}</span>
+  </button>
+</div>
+
+<div class="zn-zones" id="zn-zones">
+  <div class="zn-empty">{{ t('common.loading') }}</div>
+</div>
+
+{# Domain modal shell. Placed BEFORE the editor/confirm partials so the entry
+   editor (opened from a host card) stacks above it. #}
+<div class="modal-overlay" id="zn-domain-modal" style="display:none">
+  <div class="modal zn-dm" role="dialog" aria-modal="true" aria-labelledby="zn-dm-title">
+    <div class="modal-head zn-dm-head">
+      <span class="modal-title" id="zn-dm-title">{{ t('zones.modal_title') }}</span>
+      <span class="zn-dm-domain" id="zn-dm-domain"></span>
+      <span class="zn-dm-tags" id="zn-dm-tags"></span>
+      <span class="zn-dm-counts" id="zn-dm-counts"></span>
+      <button type="button" class="modal-close zn-dm-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
+    </div>
+    <div class="modal-body zn-dm-body" id="zn-dm-body"></div>
+    <div class="modal-foot zn-dm-foot">
+      <span class="zn-dm-sync" id="zn-dm-sync"></span>
+      <span class="zn-spacer"></span>
+      <button type="button" class="btn btn-secondary" data-close-modal>{{ t('common.close') }}</button>
+    </div>
+  </div>
+</div>
+
+{% include theme + "/partials/modals/route-edit.njk" %}
+{% include theme + "/partials/modals/confirm.njk" %}
+
+{# Strings for zones-page.js / domain-modal.js (merged into GC.t on load).
+   Keep in sync with the scripts — tests/zones_templates.test.js checks it. #}
+{%- set zonesI18nKeys = [
+  'common.cancel', 'common.close', 'common.confirm', 'common.delete', 'common.loading', 'common.save', 'entry.add',
+  'entry.add_submit', 'entry.auth_tag', 'entry.backend_https', 'entry.backend_https_hint', 'entry.col_active',
+  'entry.col_listen', 'entry.col_options', 'entry.col_target', 'entry.col_type', 'entry.confirm_delete',
+  'entry.confirm_delete_last', 'entry.created', 'entry.delete', 'entry.deleted', 'entry.disable', 'entry.down_tag',
+  'entry.edit', 'entry.editor_missing', 'entry.enable', 'entry.err_listen_port', 'entry.err_target_port',
+  'entry.listen_port', 'entry.listen_port_ph', 'entry.port_conflict', 'entry.rdp_hint', 'entry.rdp_link',
+  'entry.rdp_tag', 'entry.target_port', 'entry.target_port_ph', 'entry.unverified_tag', 'entry.use_port',
+  'host.access_external', 'host.access_internal', 'host.change_lan', 'host.change_lan_hint', 'host.confirm_delete',
+  'host.confirm_delete_rdp', 'host.create', 'host.created', 'host.delete', 'host.deleted', 'host.description',
+  'host.description_ph', 'host.disable', 'host.edit_description', 'host.enable', 'host.err_lan_required',
+  'host.err_subdomain', 'host.fqdn_preview', 'host.lan_host', 'host.lan_ph', 'host.lan_saved', 'host.menu',
+  'host.new', 'host.open', 'host.override_clear', 'host.override_clear_ok', 'host.override_cleared',
+  'host.override_confirm', 'host.override_tag', 'host.rename', 'host.rename_hint', 'host.rename_ok', 'host.renamed',
+  'host.saved', 'host.scan_done', 'host.scan_err_gateway', 'host.scan_err_nas_ip', 'host.scan_err_route',
+  'host.scan_err_vip', 'host.scan_intro', 'host.scan_locked', 'host.scan_nas_gateway', 'host.scan_nas_ip',
+  'host.scan_no_smb', 'host.scan_setup', 'host.scan_submit', 'host.scan_target_existing', 'host.scan_target_new',
+  'host.scan_title', 'host.scan_vip', 'host.scan_vip_hint', 'host.status_degraded', 'host.status_disabled',
+  'host.status_down', 'host.status_gateway_offline', 'host.status_ok', 'host.subdomain', 'host.subdomain_ph',
+  'host.template_badge', 'template.hint', 'template.menu', 'template.nas', 'template.nas_hint', 'template.none',
+  'template.printer', 'template.printer_hint', 'template.proxmox', 'template.proxmox_hint', 'template.remove',
+  'template.ssh', 'template.ssh_hint', 'zones.add_domain', 'zones.add_domain_hint', 'zones.add_domain_submit',
+  'zones.col_access', 'zones.col_entries', 'zones.col_name', 'zones.col_status', 'zones.col_target',
+  'zones.collapse_all', 'zones.default_access', 'zones.default_access_hint', 'zones.default_external',
+  'zones.default_internal', 'zones.defaults_saved', 'zones.dns_failed', 'zones.dns_pending', 'zones.dns_verified',
+  'zones.domain_added_verified', 'zones.domain_failed_hint', 'zones.domain_gone', 'zones.domain_invalid',
+  'zones.domain_menu', 'zones.domain_name', 'zones.domain_pending_hint', 'zones.domain_resolves_to',
+  'zones.domain_settings', 'zones.edit_domain', 'zones.edit_host', 'zones.edit_hosts', 'zones.empty_text',
+  'zones.empty_title', 'zones.error_generic', 'zones.expand_all', 'zones.gateway_confirm',
+  'zones.gateway_confirm_ok', 'zones.gateway_confirm_overrides', 'zones.gateway_confirm_title',
+  'zones.gateway_filter_all', 'zones.gateway_hint', 'zones.gateway_label', 'zones.gateway_none',
+  'zones.gateway_offline_hint', 'zones.gateway_pool', 'zones.gateway_saved', 'zones.gw_group_gateways',
+  'zones.gw_group_peers', 'zones.gw_group_pools', 'zones.host_filter', 'zones.host_filter_ph', 'zones.hosts_section',
+  'zones.hosts_shown', 'zones.kpi_disabled', 'zones.kpi_domains', 'zones.kpi_hosts', 'zones.kpi_l4',
+  'zones.last_sync', 'zones.meta_disabled', 'zones.meta_hosts', 'zones.meta_hosts_one', 'zones.meta_l4',
+  'zones.meta_l4_one', 'zones.modal_counts', 'zones.modal_title', 'zones.more_hosts', 'zones.no_match',
+  'zones.offline', 'zones.reset_filters', 'zones.retry', 'zones.reverify', 'zones.reverify_ok',
+  'zones.reverify_pending', 'zones.sum_disabled', 'zones.sum_domains', 'zones.sum_domains_one', 'zones.sum_hosts',
+  'zones.sum_hosts_one', 'zones.sum_l4', 'zones.sum_l4_one', 'zones.target_peer_confirm_title',
+  'zones.target_peer_label', 'zones.unassigned', 'zones.zone_empty', 'zones.zone_empty_add'
+] -%}
+<script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
+<script src="/js/routes-view.js?v={{ appVersion }}"></script>
+<script src="/js/routeDomain.js?v={{ appVersion }}"></script>
+<script src="/js/entry-editor.js?v={{ appVersion }}"></script>
+<script src="/js/zones-view.js?v={{ appVersion }}"></script>
+<script src="/js/domain-modal.js?v={{ appVersion }}"></script>
+<script src="/js/zones-page.js?v={{ appVersion }}"></script>
+{% endblock %}
