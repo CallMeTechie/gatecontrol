@@ -291,14 +291,6 @@ a{color:inherit}
 .data-table tbody tr:hover td{background:var(--chip)}
 .data-table .mono{font-family:var(--font-mono); font-size:12.5px; color:var(--muted)}
 .data-table .cell-name{font-weight:600}
-/* Routes table — service/domain group header rows (related routes read as a unit) */
-.aurora-group-chevron{vertical-align:middle; margin-right:5px; color:var(--muted); transition:transform .2s ease}
-.aurora-group-count{margin-left:10px; font-size:11px; color:var(--faint); font-family:var(--font-mono); vertical-align:middle}
-.aurora-group-badge{margin-left:8px; vertical-align:middle; font-size:10.5px; padding:1px 7px}
-.aurora-group-actions{margin-left:auto}
-/* "Collapse all" toolbar toggle */
-#aurora-collapse-all{color:var(--muted)}
-#aurora-collapse-all:hover{color:var(--text)}
 /* RDP modal segmented selectors (protocol + SSH auth-mode) — styled like the
    .toggle-group segmented control; JS toggles .active on the chosen option. */
 .rdp-proto-seg, .rdp-auth-seg{display:inline-flex; gap:2px; background:var(--surface-3); border:1px solid var(--line); border-radius:10px; padding:3px; flex-wrap:wrap}
@@ -306,7 +298,6 @@ a{color:inherit}
 .rdp-proto-opt:hover, .rdp-auth-opt:hover{color:var(--text)}
 .rdp-proto-opt.active, .rdp-auth-opt.active{background:var(--surface); color:var(--text); box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
 /* Batch-select checkbox column (shown only in batch mode) */
-.data-table .td-batch{width:34px; text-align:center; padding-right:0}
 .data-table .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer; vertical-align:middle}
 .data-table.batch-mode tbody tr[data-route-id]{cursor:pointer}
 .row-actions{display:flex; gap:6px; justify-content:flex-end}
@@ -641,9 +632,7 @@ input[type=date]:focus, select:focus {
 .tag.tag-dot::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-left:5px}
 
 /* ----------------------------------------------------------------------------
-   D · ROUTES page — Wizard modal shells + step progress (Task P2-4b)
-   Service-bundle wizard + create-route wizard use Aurora .modal shell classes.
-   Styles previously in routes.njk <style nonce> block moved here.
+   D · Wizard modal shells (Task P2-4b) — used by the RDP wizard (rdp.njk).
    --------------------------------------------------------------------------- */
 
 /* Wizard modal size/scroll modifiers */
@@ -652,49 +641,11 @@ input[type=date]:focus, select:focus {
 /* Nested .modal-body must not create a second scroll container inside .modal-wizard */
 .modal.modal-wizard .modal-body{max-height:none; overflow-y:visible}
 
-/* Wizard head: two-row layout (title+close on top, step pills below) */
+/* Wizard head: two-row layout */
 .modal-head.wiz-head{flex-direction:column; align-items:stretch; padding-bottom:14px}
-.wiz-head-row{display:flex; align-items:flex-start; gap:12px}
-.wiz-head-row .modal-title{flex:1; font-size:20px}
 
 /* Wizard foot: prev/back on left, next/save on right */
 .modal-foot.wiz-foot{justify-content:space-between; align-items:center; background:var(--surface)}
-
-/* Route wizard step progress dots (moved from routes.njk inline <style nonce> block) */
-.route-step-dot{
-  width:28px; height:28px; border-radius:50%;
-  background:var(--surface-3); border:1.5px solid var(--line);
-  color:var(--faint); font-size:12px; font-weight:700;
-  display:flex; align-items:center; justify-content:center;
-  cursor:default; flex-shrink:0; font-family:var(--font-mono);
-  transition:all 120ms ease;
-}
-.route-step-dot.active{
-  background:var(--teal); border-color:var(--teal); color:var(--btn-text);
-  box-shadow:0 0 0 3px var(--teal-soft);
-}
-.route-step-dot.done{
-  background:var(--teal-soft); border-color:var(--teal); color:var(--teal); cursor:pointer;
-}
-.route-step-dot.done:hover{filter:brightness(1.1)}
-.route-step-line{
-  flex:1; height:1.5px; background:var(--line); margin:0 2px; transition:background 120ms ease;
-}
-.route-step-line.done{background:var(--teal)}
-
-/* Wizard two-column form layout (moved from routes.njk inline <style nonce> block) */
-.wiz-row-2{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; margin-bottom:14px; align-items:start}
-.wiz-row-2 > *{margin-bottom:0 !important}
-.wiz-step-body{padding:20px 24px; min-height:480px}
-.wiz-step-body .toggle-group{align-self:flex-start}
-@media(max-width:640px){.wiz-row-2{grid-template-columns:1fr}}
-
-/* Service wizard step pills */
-.service-step-pill{
-  padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600;
-  background:var(--surface-3); border:1px solid var(--line); color:var(--faint); cursor:default;
-}
-.service-step-pill.on{background:var(--teal-soft); border-color:var(--teal-dim); color:var(--teal)}
 
 /* ── Users page (Task P2-5) ─────────────────────────────────────────────────── */
 
@@ -832,9 +783,7 @@ input[type=date]:focus, select:focus {
   .settings-tab-toggle{display:flex}
 }
 
-/* --- D2 · ROUTES CARD GRID — NEW (aurora routes redesign) --- */
-.tag-coral{background:var(--coral-bg); color:var(--coral); border:1px solid var(--coral-bd)}
-
+/* --- D2 · Routes KPI strip (zones page, #zn-kpis) --- */
 .aurora-routes-kpis{display:flex; gap:10px; flex-wrap:wrap; margin:0 0 18px}
 .aurora-routes-kpi{display:flex; align-items:baseline; gap:7px; background:var(--surface);
   border:1px solid var(--line); border-radius:var(--radius-sm); padding:8px 14px}
@@ -842,45 +791,6 @@ input[type=date]:focus, select:focus {
 .aurora-routes-kpi span{font-size:11.5px; color:var(--muted)}
 .aurora-routes-kpi.warn b{color:var(--coral)}
 .aurora-routes-kpi.dim b{color:var(--faint)}
-
-.aurora-routes-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(460px,1fr));
-  gap:16px; align-items:start}
-@media (max-width:540px){ .aurora-routes-grid{grid-template-columns:1fr} }
-
-.aurora-routes-card{padding:0; overflow:hidden}
-.aurora-routes-head{display:flex; align-items:center; gap:10px; padding:12px 16px;
-  cursor:pointer; user-select:none; border-bottom:1px solid var(--line); background:var(--surface-2)}
-.aurora-routes-card.collapsed .aurora-routes-head{border-bottom:0}
-.aurora-routes-card.collapsed .aurora-routes-body{display:none}
-.aurora-routes-card.collapsed .aurora-group-chevron{transform:rotate(-90deg)}
-.aurora-routes-name{font-family:var(--font-display); font-weight:700; font-size:15px;
-  letter-spacing:-.01em; white-space:nowrap; flex:none}
-.aurora-routes-meta{font-family:var(--font-mono); font-size:11px; color:var(--faint);
-  white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis}
-.aurora-routes-head .aurora-group-count{margin-left:auto}
-.aurora-routes-head .aurora-group-chevron{flex:none; transition:transform .15s}
-.aurora-routes-head .aurora-group-actions{display:flex; gap:4px; margin-left:8px}
-
-.aurora-routes-row{display:grid; grid-template-columns:minmax(0,1fr) auto auto auto;
-  align-items:center; gap:12px; padding:11px 16px}
-.aurora-routes-grid.batch-mode .aurora-routes-row{grid-template-columns:auto minmax(0,1fr) auto auto auto}
-.aurora-routes-row + .aurora-routes-row{border-top:1px solid var(--line)}
-.aurora-routes-row.off{opacity:.55}
-.aurora-routes-id{min-width:0}
-.aurora-routes-title{font-weight:600; font-size:13.5px; white-space:nowrap;
-  overflow:hidden; text-overflow:ellipsis}
-.aurora-routes-title a{color:inherit; text-decoration:none}
-.aurora-routes-title a:hover{color:var(--teal)}
-.aurora-routes-sub{font-family:var(--font-mono); font-size:11.5px; color:var(--faint);
-  margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.aurora-routes-tags{display:flex; gap:6px; justify-content:flex-end}
-.aurora-routes-tags .tag svg{width:10px; height:10px; flex:none}
-.aurora-routes-row .row-actions{opacity:0; transition:opacity .12s}
-.aurora-routes-row:hover .row-actions{opacity:1}
-.aurora-routes-row:focus-within .row-actions{opacity:1}
-@media (hover:none){ .aurora-routes-row .row-actions{opacity:1} }
-.aurora-routes-row .batch-checkbox{width:16px; height:16px; accent-color:var(--teal); cursor:pointer}
-.aurora-routes-grid.batch-mode .aurora-routes-row{cursor:pointer}
 
 /* ─── Domain zones (zn-) ─── */
 /* Aurora overrides for the zones page. The base zn- block comes from pro.css

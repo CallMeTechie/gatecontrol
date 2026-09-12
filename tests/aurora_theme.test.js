@@ -453,13 +453,12 @@ describe('aurora theme — routes page (domain zones)', () => {
     assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in aurora.css');
   });
 
-  it('aurora.css carries wizard modal shell + step dots + service pills rules', () => {
+  it('aurora.css keeps the wizard modal shell (RDP wizard) and drops the legacy route wizard rules', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
     assert.match(css, /\.modal\.modal-xl/, '.modal.modal-xl present in aurora.css');
     assert.match(css, /\.modal\.modal-wizard/, '.modal.modal-wizard present in aurora.css');
     assert.match(css, /\.modal-foot\.wiz-foot/, '.modal-foot.wiz-foot present in aurora.css');
-    assert.match(css, /\.route-step-dot/, '.route-step-dot present in aurora.css');
-    assert.match(css, /\.service-step-pill/, '.service-step-pill present in aurora.css');
+    assert.doesNotMatch(css, /\.route-step-dot|\.service-step-pill|\.aurora-routes-grid/, 'legacy route wizard/grid rules removed');
   });
 });
 

@@ -5,9 +5,9 @@ const fs = require('node:fs');
 
 const aurora = fs.readFileSync('public/css/aurora.css', 'utf8');
 
-test('aurora.css defines coral tag + routes card grid classes', () => {
-  for (const cls of ['.tag-coral', '.aurora-routes-grid', '.aurora-routes-card',
-    '.aurora-routes-head', '.aurora-routes-row', '.aurora-routes-kpis', '.aurora-routes-kpi']) {
+// The zones page (aurora) fills #zn-kpis with .aurora-routes-kpi items.
+test('aurora.css defines the routes KPI strip classes', () => {
+  for (const cls of ['.aurora-routes-kpis', '.aurora-routes-kpi']) {
     assert.ok(aurora.includes(cls), `aurora.css missing ${cls}`);
   }
 });
