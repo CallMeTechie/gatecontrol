@@ -530,12 +530,17 @@ router.put('/:id',
 
     // Field-level validation
     const fields = {};
-    if (domain !== undefined) {
+    const cur = getDb().prepare('SELECT domain, route_type FROM routes WHERE id = ?').get(Number(req.params.id));
+    // An empty domain is valid for L4 routes (plain port forward, no SNI) —
+    // same rule as services/routes.update; "TLS needs a domain" is enforced
+    // there. Validating '' here made every edit of such a route fail.
+    const effectiveType = route_type || (cur && cur.route_type) || 'http';
+    const checkDomain = domain !== undefined && (effectiveType === 'http' || domain);
+    if (checkDomain) {
       const domErr = validateDomain(domain);
       if (domErr) fields.domain = req.t('error.routes.domain_invalid') || domErr;
     }
-    if (domain !== undefined && !fields.domain) {
-      const cur = getDb().prepare('SELECT domain, route_type FROM routes WHERE id = ?').get(Number(req.params.id));
+    if (checkDomain && !fields.domain) {
       const pol = checkDomainPolicy(domain, {
         currentDomain: cur ? cur.domain : null,
         routeType: req.body.route_type || (cur && cur.route_type) || 'http',
