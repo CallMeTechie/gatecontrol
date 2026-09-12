@@ -2525,7 +2525,7 @@
   "zones.gw_group_peers": "VPN peers",
   "zones.gateway_confirm_title": "Switch gateway?",
   "zones.target_peer_confirm_title": "Switch target peer?",
-  "zones.gateway_confirm": "All hosts of {{domain}} will be switched to “{{target}}” ({{hosts}} hosts, {{entries}} entries). Caddy reloads its configuration once.",
+  "zones.gateway_confirm": "All hosts of {{domain}} will be switched to {{target}} ({{hosts}} hosts, {{entries}} entries). Caddy reloads its configuration once.",
   "zones.gateway_confirm_overrides": "{{count}} host(s) with a different gateway stay unchanged.",
   "zones.gateway_confirm_ok": "Switch",
   "zones.gateway_saved": "Gateway for {{domain}} switched.",

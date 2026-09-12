@@ -2469,7 +2469,7 @@
   "zones.gw_group_peers": "VPN-Peers",
   "zones.gateway_confirm_title": "Gateway umstellen?",
   "zones.target_peer_confirm_title": "Ziel-Peer umstellen?",
-  "zones.gateway_confirm": "Alle Hosts von {{domain}} werden auf „{{target}}“ umgestellt ({{hosts}} Hosts, {{entries}} Einträge). Caddy lädt die Konfiguration dafür einmal neu.",
+  "zones.gateway_confirm": "Alle Hosts von {{domain}} werden auf {{target}} umgestellt ({{hosts}} Hosts, {{entries}} Einträge). Caddy lädt die Konfiguration dafür einmal neu.",
   "zones.gateway_confirm_overrides": "{{count}} Host(s) mit abweichendem Gateway bleiben unverändert.",
   "zones.gateway_confirm_ok": "Umstellen",
   "zones.gateway_saved": "Gateway für {{domain}} umgestellt.",
