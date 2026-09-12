@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.13] — 2026-09-12
+
+### Fixes
+- patch HIGH CVEs flagged by the Trivy container scan
+
+---
+
 ## [1.118.12] — 2026-09-12
 
 ### Fixes
