@@ -49,7 +49,7 @@ const SCRIPT_ORDER = [
 ];
 
 const REQUIRED_IDS = [
-  'zn-summary', 'zn-add-domain', 'zn-legacy-link', 'zn-search', 'zn-chips', 'zn-chip-all-count',
+  'zn-summary', 'zn-add-domain', 'zn-search', 'zn-chips', 'zn-chip-all-count',
   'zn-gateway-filter', 'zn-collapse-all', 'zn-zones', 'zn-domain-modal', 'zn-dm-title', 'zn-dm-domain',
   'zn-dm-tags', 'zn-dm-counts', 'zn-dm-body', 'zn-dm-sync', 'zones-i18n',
 ];
@@ -91,7 +91,7 @@ describe('zones.njk renders in every theme', () => {
         assert.match(html, /id="zn-kpis"/);
         assert.match(html, /class="app"/, 'aurora shell');
       }
-      assert.doesNotMatch(html, /id="routes-list"|id="btn-add-route"/, 'no legacy page markup');
+      assert.doesNotMatch(html, /id="routes-list"|id="btn-add-route"|zn-legacy-link|\/routes\/legacy/, 'no legacy page markup');
     });
 
     it(`${theme}: loads the scripts in contract order with cache busting`, () => {
@@ -136,7 +136,7 @@ describe('zones.njk renders in every theme', () => {
   it('English rendering uses en.json', () => {
     const html = render('default', 'en');
     assert.match(html, /id="zn-add-domain"[\s\S]*?Add domain/);
-    assert.match(html, /Classic view/);
+    assert.match(html, /Collapse all/);
   });
 
   it('license limit badges render only for limited tiers (default/pro)', () => {

@@ -461,19 +461,6 @@
     }
     const add = $('zn-add-domain');
     if (add) add.addEventListener('click', openAddDomain);
-
-    const legacy = $('zn-legacy-link');
-    if (legacy) {
-      legacy.addEventListener('click', async (e) => {
-        e.preventDefault();
-        try {
-          await UI.call(api.put('/api/v1/zones/ui-mode', { mode: 'legacy' }));
-          window.location.href = '/routes';
-        } catch (_) {
-          window.location.href = legacy.getAttribute('href') || '/routes/legacy';
-        }
-      });
-    }
   }
 
   // ─── Init ──────────────────────────────────────────────────────────────

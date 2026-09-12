@@ -2456,8 +2456,6 @@
   "zones.title": "Domains & Routes",
   "zones.summary_loading": "Loading domains …",
   "zones.add_domain": "Add domain",
-  "zones.legacy_link": "Classic view",
-  "zones.legacy_hint": "Switch back to the previous route list",
   "zones.search_label": "Search",
   "zones.search_ph": "Search domain, name, IP or port …",
   "zones.filters_label": "Filters",

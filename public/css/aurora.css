@@ -907,8 +907,6 @@ input[type=date]:focus, select:focus {
 .toolbar.zn-toolbar .search-box input[type=search] { padding: 0; box-shadow: none; }
 .zn-kpis:empty { display: none; }
 .modal.zn-dm .modal-body { max-height: 70vh; }
-.page-actions .zn-legacy-link { color: var(--faint); }
-.page-actions .zn-legacy-link:hover { color: var(--text); }
 @media (max-width: 900px) {
   .modal.zn-dm .modal-body { max-height: none; }
 }

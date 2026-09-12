@@ -2400,8 +2400,6 @@
   "zones.title": "Domains & Routen",
   "zones.summary_loading": "Lade Domains …",
   "zones.add_domain": "Domain hinzufügen",
-  "zones.legacy_link": "Alte Ansicht",
-  "zones.legacy_hint": "Zur bisherigen Routen-Liste wechseln",
   "zones.search_label": "Suchen",
   "zones.search_ph": "Domain, Name, IP oder Port suchen …",
   "zones.filters_label": "Filter",

@@ -1,8 +1,8 @@
 {% extends theme + "/layout.njk" %}
 
 {#
-  Domains & Routen — zone view (docs/feature-domain-zones.md). Rendered for
-  /routes when the setting ui_zones_page is on; /routes/legacy keeps routes.njk.
+  Domains & Routen — zone view (docs/feature-domain-zones.md), rendered for
+  /routes.
   Everything below #zn-zones and inside #zn-dm-body is built by
   zones-page.js / domain-modal.js with the el() builder (no innerHTML).
 #}
@@ -23,7 +23,6 @@
     </div>
   </div>
   <div class="zn-header-actions">
-    <a href="/routes/legacy" class="zn-legacy-link" id="zn-legacy-link" title="{{ t('zones.legacy_hint') }}">{{ t('zones.legacy_link') }}</a>
     <button type="button" class="btn btn-primary" id="zn-add-domain">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       {{ t('zones.add_domain') }}

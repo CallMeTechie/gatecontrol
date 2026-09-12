@@ -12,7 +12,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
 
-let agent, csrf, db, license, settings;
+let agent, csrf, db, license;
 let gw1, gw2, gw3, peerA, zoneId, peerZoneId, poolId;
 let syncCount = 0;
 let failNextSync = false;
@@ -41,7 +41,6 @@ before(async () => {
   csrf = getCsrf();
   db = require('../src/db/connection').getDb();
   license = require('../src/services/license');
-  settings = require('../src/services/settings');
   license._overrideForTest({ gateway_tcp_routing: true, gateway_scan_egress: true, gateway_http_targets: -1, gateway_peers: -1 });
 
   const caddy = require('../src/services/caddyConfig');
@@ -284,19 +283,8 @@ test('host endpoints: rename, toggle, override reset, delete, 404', async () => 
   assert.equal((await POST('/hosts/99999/entries', { type: 'http', target_port: 80 })).status, 404);
 });
 
-test('PUT /zones/ui-mode stores the page switch; GET /host-templates lists templates', async () => {
-  let res = await PUT('/zones/ui-mode', { mode: 'legacy' });
-  assert.equal(res.status, 200);
-  assert.deepEqual(res.body, { ok: true, mode: 'legacy' });
-  assert.equal(settings.get('ui_zones_page'), 'false');
-  res = await PUT('/zones/ui-mode', { mode: 'zones' });
-  assert.equal(settings.get('ui_zones_page'), 'true');
-  res = await PUT('/zones/ui-mode', { mode: 'other' });
-  assert.equal(res.status, 400);
-  res = await agent.put('/api/v1/zones/ui-mode').send({ mode: 'legacy' });
-  assert.equal(res.status, 403, 'CSRF protected');
-
-  res = await GET('/host-templates');
+test('GET /host-templates lists templates', async () => {
+  const res = await GET('/host-templates');
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.templates.map((t) => t.id), ['printer', 'nas', 'proxmox', 'ssh']);
 });

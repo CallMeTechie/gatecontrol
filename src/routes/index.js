@@ -181,33 +181,11 @@ router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
-// /routes renders the domain-zones page unless the admin switched back to the
-// legacy list (setting ui_zones_page, string 'true'/'false', default on).
-// /routes/legacy always renders the legacy list. Themes are migrated one by
-// one (default → pro → aurora): a theme without pages/zones.njk yet keeps
-// the legacy list instead of failing the render.
-const _zonesTemplateExists = new Map();
-function themeHasZonesPage(theme) {
-  if (!/^[a-z0-9_-]+$/i.test(String(theme || ''))) return false;
-  if (!_zonesTemplateExists.has(theme)) {
-    const file = path.join(__dirname, '..', '..', 'templates', String(theme), 'pages', 'zones.njk');
-    _zonesTemplateExists.set(theme, require('node:fs').existsSync(file));
-  }
-  return _zonesTemplateExists.get(theme);
-}
-
-function routesPageTemplate(theme) {
-  let enabled = 'true';
-  try { enabled = require('../services/settings').get('ui_zones_page', 'true'); } catch { /* default on */ }
-  if (enabled === 'false') return 'routes';
-  return themeHasZonesPage(theme) ? 'zones' : 'routes';
-}
-
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
-  { path: '/routes', template: routesPageTemplate, nav: 'routes', titleKey: 'nav.routes' },
-  { path: '/routes/legacy', template: 'routes', nav: 'routes', titleKey: 'nav.routes' },
+  // Domain zones page (docs/feature-domain-zones.md); the sidebar item stays 'routes'.
+  { path: '/routes', template: 'zones', nav: 'routes', titleKey: 'nav.routes' },
   { path: '/certificates', template: 'certificates', titleKey: 'nav.certificates' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },
@@ -224,9 +202,8 @@ const pages = [
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
-pages.forEach(({ path, template: templateOf, nav, titleKey }) => {
+pages.forEach(({ path, template, nav, titleKey }) => {
   router.get(path, requireAuth, (req, res) => {
-    const template = typeof templateOf === 'function' ? templateOf(res.locals.theme) : templateOf;
     const activeNav = nav || template;
     const extraLocals = {};
 
@@ -237,8 +214,7 @@ pages.forEach(({ path, template: templateOf, nav, titleKey }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch {}
 
-    // Both route pages (zones and legacy list) need the same locals.
-    if (activeNav === 'routes') {
+    if (template === 'zones') {
       try {
         extraLocals.gatewayPools = require('../services/gatewayPool').listPools();
       } catch { extraLocals.gatewayPools = []; }
@@ -360,11 +336,5 @@ router.get('/portal', portalIdentity, (req, res) => {
 
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));
-
-// Test seam: template choice without the zones templates on disk.
-router.__test = {
-  routesPageTemplate,
-  setZonesPageExists: (theme, exists) => _zonesTemplateExists.set(theme, !!exists),
-};
 
 module.exports = router;

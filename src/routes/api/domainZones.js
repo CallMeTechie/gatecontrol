@@ -1,7 +1,7 @@
 'use strict';
 
 // Domain zones API (docs/feature-domain-zones.md), mounted under /api/v1:
-//   GET  /zones                      PUT /zones/ui-mode
+//   GET  /zones
 //   PUT  /domains/:id/gateway        PUT /domains/:id/defaults
 //   POST /domains/:id/hosts
 //   PUT/DELETE /hosts/:id            PUT /hosts/:id/toggle
@@ -17,7 +17,6 @@ const logger = require('../../utils/logger');
 const domainZones = require('../../services/domainZones');
 const hosts = require('../../services/hosts');
 const hostTemplates = require('../../services/hostTemplates');
-const settings = require('../../services/settings');
 const license = require('../../services/license');
 const { evaluateRouteLicense } = require('../../services/routeLicense');
 const { requireLimit } = require('../../middleware/license');
@@ -139,19 +138,6 @@ function retargetLicenseOk(req, res, target, rows) {
 router.get('/zones', (req, res) => {
   try {
     res.json({ ok: true, ...domainZones.listZones() });
-  } catch (err) {
-    handleError(req, res, err);
-  }
-});
-
-router.put('/zones/ui-mode', (req, res) => {
-  const mode = req.body && req.body.mode;
-  if (mode !== 'zones' && mode !== 'legacy') {
-    return res.status(400).json({ ok: false, error: "mode must be 'zones' or 'legacy'" });
-  }
-  try {
-    settings.set('ui_zones_page', mode === 'zones' ? 'true' : 'false');
-    res.json({ ok: true, mode });
   } catch (err) {
     handleError(req, res, err);
   }

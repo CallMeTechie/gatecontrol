@@ -94,7 +94,6 @@ const PUBLIC_KEYS = new Set([
   'domains.server_ip_warning',
   'route_external_block_action',
   'route_external_block_redirect_url',
-  'ui_zones_page',
   'tls.max_attempts',
 ]);
 
