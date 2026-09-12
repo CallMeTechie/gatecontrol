@@ -5,6 +5,7 @@ const domains = require('./domains');
 const settings = require('./settings');
 const { extractBaseDomains, shouldFlagServerIp, normalizeHost } = require('./domainSeed');
 const { isPublicDomain } = require('./caddyTlsAutomation');
+const logger = require('../utils/logger');
 
 /**
  * Verify a set of domain names against the server IP, persist results, and
@@ -56,6 +57,15 @@ async function runDomainSeedAndVerify({ verifyEach = domains.verify } = {}) {
   const delStmt = getDb().prepare('DELETE FROM domains WHERE domain=?');
   for (const d of lingering) {
     if (!isPublicDomain(d)) delStmt.run(d);
+  }
+
+  // Domain zones: hosts ↔ zones reconcile (may seed further 'pending' bases,
+  // verified below). Must never break the boot pass — errors are only logged.
+  try {
+    const summary = require('./domainZones').reconcile();
+    logger.info(summary, 'Domain zones reconciled');
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err) }, 'Domain zones reconcile failed');
   }
 
   // verify only rows still pending (idempotent across boots)

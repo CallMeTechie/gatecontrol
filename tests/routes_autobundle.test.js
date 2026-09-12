@@ -41,9 +41,15 @@ describe('routes auto-bundle promotion', () => {
     target_ip: '192.168.1.50', target_port: 22, l4_tls_mode: 'none',
   });
 
-  it('does NOT bundle a lone route on a domain', async () => {
+  // Domain zones: every route has a host — a lone route gets a host of its own
+  // (was: stays unbundled until a 2nd route shares the domain).
+  it('gives a lone route a host of its own', async () => {
     const r = await http('solo.example.com');
-    assert.equal(r.bundle_id, null);
+    assert.ok(r.bundle_id, 'lone route got a host');
+    const host = db.prepare('SELECT name, domain FROM service_bundles WHERE id = ?').get(r.bundle_id);
+    assert.equal(host.domain, 'solo.example.com');
+    const members = db.prepare('SELECT COUNT(*) c FROM routes WHERE bundle_id = ?').get(r.bundle_id).c;
+    assert.equal(members, 1);
   });
 
   it('auto-bundles the 2nd route sharing a domain (http + l4)', async () => {
@@ -81,13 +87,17 @@ describe('routes auto-bundle promotion', () => {
 
   it('joins routes into a bundle when update() moves one onto a shared domain', async () => {
     const a = await http('join.example.com');
-    const b = await l4('other.example.com', 2230); // different domain → unbundled
-    assert.equal(routesService.getById(b.id).bundle_id, null);
+    const b = await l4('other.example.com', 2230); // different domain → own host
+    const ownHost = routesService.getById(b.id).bundle_id;
+    assert.ok(ownHost, 'every route has a host');
+    assert.notEqual(ownHost, routesService.getById(a.id).bundle_id);
     await routesService.update(b.id, { domain: 'join.example.com' });
     const aa = routesService.getById(a.id);
     const bb = routesService.getById(b.id);
     assert.ok(bb.bundle_id, 'moved route joined a bundle');
     assert.equal(aa.bundle_id, bb.bundle_id, 'both share one bundle');
+    assert.equal(db.prepare('SELECT id FROM service_bundles WHERE id = ?').get(ownHost), undefined,
+      'the emptied single-route host is dropped');
   });
 
   it('adds a 3rd route on a domain to the EXISTING bundle (no 2nd bundle)', async () => {
@@ -112,6 +122,10 @@ describe('routes auto-bundle promotion', () => {
       .run('rdp-test', 'localhost', x.id);
     const h = await http('rdp.example.com'); // create triggers promotion on this domain
     assert.equal(routesService.getById(x.id).bundle_id, null, 'rdp-linked l4 stays unbundled');
-    assert.equal(routesService.getById(h.id).bundle_id, null, 'only non-rdp route is the http → no bundle');
+    // Domain zones: the http route gets a host of its own; the RDP l4 never joins it.
+    const hostId = routesService.getById(h.id).bundle_id;
+    assert.ok(hostId, 'the http route has its own host');
+    const members = db.prepare('SELECT id FROM routes WHERE bundle_id = ?').all(hostId).map((r) => r.id);
+    assert.deepEqual(members, [h.id], 'only the non-rdp route is in the host');
   });
 });

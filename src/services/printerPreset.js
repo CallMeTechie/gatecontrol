@@ -49,26 +49,35 @@ function gatewayLanSubnets(db, peerId) {
 // Stage A: everything checkable WITHOUT an existing NAS route. The target-route
 // internal-only check is Stage B (Task 6) because egressRoutes.validate needs
 // the route to exist; in the 'new' path it doesn't yet.
+// R1-G1 / DA#9: the near peer must be an enabled gateway.
+function assertNearGateway(nearPeerId, db = getDb()) {
+  const peer = db.prepare('SELECT peer_type, enabled FROM peers WHERE id = ?').get(nearPeerId);
+  if (!peer || peer.peer_type !== 'gateway' || !peer.enabled) throw badRequest('near_peer_id must be an enabled gateway');
+}
+
+// Scan-to-folder checks (VIP inside the gateway's reported LAN subnets, NAS
+// target shape). Shared by the printer preset and hosts.setupScanToFolder.
+function validateScan(nearPeerId, scan, db = getDb()) {
+  const subnets = gatewayLanSubnets(db, nearPeerId);
+  if (!subnets.length) throw badRequest('gateway has not reported LAN subnets yet — wait for a health report');
+  if (!isIpv4(scan.vip_ip)) throw badRequest('scan.vip_ip must be IPv4');
+  if (!subnets.some((c) => ipInCidr(scan.vip_ip, c))) throw badRequest('scan.vip_ip must lie within the gateway LAN subnets');
+  const t = scan.target || {};
+  if (t.mode === 'new') { if (!isIpv4(t.nas_ip)) throw badRequest('scan.target.nas_ip must be IPv4'); if (!Number.isInteger(t.nas_peer_id)) throw badRequest('scan.target.nas_peer_id required'); }
+  else if (t.mode === 'existing') { if (!Number.isInteger(t.route_id)) throw badRequest('scan.target.route_id required'); }
+  else throw badRequest('scan.target.mode must be existing|new');
+}
+
 function validateStageA(input, db = getDb()) {
   if (!input || !Number.isInteger(input.near_peer_id)) throw badRequest('near_peer_id required');
   // R1-G1 / DA#9: validate the gateway itself (also covers the print-only path).
-  const peer = db.prepare('SELECT peer_type, enabled FROM peers WHERE id = ?').get(input.near_peer_id);
-  if (!peer || peer.peer_type !== 'gateway' || !peer.enabled) throw badRequest('near_peer_id must be an enabled gateway');
+  assertNearGateway(input.near_peer_id, db);
   if (!isIpv4(input.printer_ip)) throw badRequest('printer_ip must be IPv4');
   if (!input.name || !String(input.name).trim()) throw badRequest('name required');
   const ports = Array.isArray(input.print_ports) ? input.print_ports : [];
   if (!ports.length) throw badRequest('at least one print port required');
   if (input.ews && input.ews.enabled && !String(input.ews.domain || '').trim()) throw badRequest('EWS requires a domain');
-  if (input.scan && input.scan.enabled) {
-    const subnets = gatewayLanSubnets(db, input.near_peer_id);
-    if (!subnets.length) throw badRequest('gateway has not reported LAN subnets yet — wait for a health report');
-    if (!isIpv4(input.scan.vip_ip)) throw badRequest('scan.vip_ip must be IPv4');
-    if (!subnets.some((c) => ipInCidr(input.scan.vip_ip, c))) throw badRequest('scan.vip_ip must lie within the gateway LAN subnets');
-    const t = input.scan.target || {};
-    if (t.mode === 'new') { if (!isIpv4(t.nas_ip)) throw badRequest('scan.target.nas_ip must be IPv4'); if (!Number.isInteger(t.nas_peer_id)) throw badRequest('scan.target.nas_peer_id required'); }
-    else if (t.mode === 'existing') { if (!Number.isInteger(t.route_id)) throw badRequest('scan.target.route_id required'); }
-    else throw badRequest('scan.target.mode must be existing|new');
-  }
+  if (input.scan && input.scan.enabled) validateScan(input.near_peer_id, input.scan, db);
 }
 
 // Build createBundle input. listenPorts: Map(targetPort -> listenPort).
@@ -111,6 +120,23 @@ async function createPreset(input, db = getDb()) {
   // Pre-validate bundle shape (no DB writes) so we fail before creating the NAS route.
   serviceBundle.normalizeInput(buildBundleInput(input, listenPorts));
 
+  let scan = null;
+  try {
+    // 1.+2. optional scan-to-folder (NAS route + egress), DB-only.
+    if (input.scan && input.scan.enabled) scan = await createScanToFolder(input, db);
+    // 3. Bundle — the single Caddy sync (full rebuild picks up the NAS route).
+    const bundle = await serviceBundle.createBundle(buildBundleInput(input, listenPorts));
+    return { bundle_id: bundle.id, route_ids: bundle.routes.map((r) => r.id), listen_ports: Array.from(listenPorts.entries()), egress_id: scan ? scan.egressId : null, nas_route_id: scan ? scan.nasRouteId : null, warning: null };
+  } catch (err) { if (scan) scan.rollback(); throw err; }
+}
+
+// Scan-to-folder step (optional NAS route + egress route), DB-only: the NAS
+// route is created with skipSync and NO Caddy sync happens here — the caller
+// owns the sync (createPreset: the bundle's sync; hosts.setupScanToFolder: its
+// own withCaddySync). input: { name, near_peer_id, printer_ip, scan }.
+// Returns { egressId, nasRouteId, rollback }; on its own failure it rolls back
+// what it created and re-throws.
+async function createScanToFolder(input, db = getDb()) {
   let nasRouteId = null; let egressId = null;
   const rollback = () => {
     if (egressId) { try { egressRoutes.remove(egressId, db); } catch (_e) {} }
@@ -119,20 +145,16 @@ async function createPreset(input, db = getDb()) {
   try {
     // 1. optional NAS route — DB-only (skipSync), so a later failure rolls back sync-free.
     let targetRouteId;
-    if (input.scan && input.scan.enabled) {
-      if (input.scan.target.mode === 'new') {
-        const nas = await routes.create({ route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: String(allocatePrintListenPort(445, {})), l4_tls_mode: 'none', external_enabled: 0, target_kind: 'gateway', target_peer_id: input.scan.target.nas_peer_id, target_lan_host: input.scan.target.nas_ip, target_lan_port: 445, target_port: 445 }, { skipSync: true });
-        nasRouteId = nas.id; targetRouteId = nas.id;
-      } else { targetRouteId = input.scan.target.route_id; }
-      // 2. Egress — Stage B validate runs inside create(); allocate high-port immediately before (sync span).
-      const highPort = allocateEgressHighPort(input.near_peer_id, db);
-      const egress = egressRoutes.create(buildEgressInput(input, targetRouteId, highPort), db);
-      egressId = egress.id;
-    }
-    // 3. Bundle — the single Caddy sync (full rebuild picks up the NAS route).
-    const bundle = await serviceBundle.createBundle(buildBundleInput(input, listenPorts));
-    return { bundle_id: bundle.id, route_ids: bundle.routes.map((r) => r.id), listen_ports: Array.from(listenPorts.entries()), egress_id: egressId, nas_route_id: nasRouteId, warning: null };
+    if (input.scan.target.mode === 'new') {
+      const nas = await routes.create({ route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: String(allocatePrintListenPort(445, {})), l4_tls_mode: 'none', external_enabled: 0, target_kind: 'gateway', target_peer_id: input.scan.target.nas_peer_id, target_lan_host: input.scan.target.nas_ip, target_lan_port: 445, target_port: 445 }, { skipSync: true });
+      nasRouteId = nas.id; targetRouteId = nas.id;
+    } else { targetRouteId = input.scan.target.route_id; }
+    // 2. Egress — Stage B validate runs inside create(); allocate high-port immediately before (sync span).
+    const highPort = allocateEgressHighPort(input.near_peer_id, db);
+    const egress = egressRoutes.create(buildEgressInput(input, targetRouteId, highPort), db);
+    egressId = egress.id;
   } catch (err) { rollback(); throw err; }
+  return { egressId, nasRouteId, rollback };
 }
 
-module.exports = { allocatePrintListenPort, allocateEgressHighPort, validateStageA, buildBundleInput, buildEgressInput, createPreset };
+module.exports = { allocatePrintListenPort, allocateEgressHighPort, assertNearGateway, validateScan, validateStageA, buildBundleInput, buildEgressInput, createScanToFolder, createPreset };
