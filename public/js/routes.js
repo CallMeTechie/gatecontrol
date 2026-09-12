@@ -2517,6 +2517,27 @@
     }
   })();
 
+  // ─── "Neue Ansicht": switch to the domain-zones page ─────
+  (function initZonesViewSwitch() {
+    const btn = document.getElementById('btn-routes-zones-view');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      btnLoading(btn);
+      try {
+        const data = await api.put('/api/v1/zones/ui-mode', { mode: 'zones' });
+        if (data && data.ok === false) {
+          showToast(data.error || (GC.t['common.error'] || 'Error'), 'error');
+          btnReset(btn);
+          return;
+        }
+        location.href = '/routes';
+      } catch (err) {
+        showToast(err.message, 'error');
+        btnReset(btn);
+      }
+    });
+  })();
+
   // Aurora-only: wire the type toggle-group in the Aurora toolbar
   if (isAurora()) auroraInitTypeToggle();
   if (isAurora()) auroraInitExposureToggle();
