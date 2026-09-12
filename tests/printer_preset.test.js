@@ -120,4 +120,11 @@ describe('printerPreset orchestration', () => {
       assert.equal(db.prepare("SELECT COUNT(*) c FROM egress_routes").get().c, e0, 'egress rolled back');
     } finally { sb.createBundle = orig; }
   });
+  it('maps a duplicate EWS domain to a 409 DOMAIN_CONFLICT (R3-M3)', async () => {
+    const ews = { enabled: true, domain: 'dup-ews.example.com' };
+    await preset.createPreset({ near_peer_id: gwPeerId, printer_ip: '192.168.2.49', name: 'D1', print_ports: [9100], ews, scan: null });
+    await assert.rejects(
+      () => preset.createPreset({ near_peer_id: gwPeerId, printer_ip: '192.168.2.50', name: 'D2', print_ports: [9100], ews, scan: null }),
+      (err) => err.statusCode === 409 && err.code === 'DOMAIN_CONFLICT');
+  });
 });

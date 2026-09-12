@@ -35,8 +35,6 @@ router.use('/routes/:id/auth', require('./routeAuth'));
 router.use('/routes/:id/share-links', require('./shareLinks'));
 router.use('/routes/:id/access-rules', require('./accessRules')('route'));
 router.use('/routes', require('./routes'));
-router.use('/service-bundles', require('./serviceBundles'));
-router.use('/printer-presets', require('./printerPresets'));
 // Domain zones: /zones, /domains/:id/…, /hosts/:id/…, /host-templates
 // (own top-level paths — no overlap with /settings/domains or /routes).
 router.use(require('./domainZones'));

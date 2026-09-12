@@ -9,7 +9,7 @@
 //   POST /hosts/:id/scan-to-folder   GET /host-templates
 //
 // License limits are enforced HERE (and only here): services/hosts.js and
-// services/domainZones.js check none, exactly like the route and bundle APIs.
+// services/domainZones.js check none, exactly like the route API.
 
 const { Router } = require('express');
 const { getDb } = require('../../db/connection');
@@ -169,7 +169,7 @@ router.put('/domains/:id/defaults', (req, res) => {
   }
 });
 
-// Combined check before anything is inserted (like POST /service-bundles):
+// Combined check before anything is inserted:
 // the per-route requireLimit middleware can't see how many rows one host adds.
 router.post('/domains/:id/hosts', async (req, res) => {
   try {
@@ -283,7 +283,7 @@ router.post('/hosts/:id/scan-to-folder', async (req, res) => {
     if (!hostRow(req.params.id)) return notFound(res, 'Host');
     const body = req.body || {};
     const isNew = !!(body.target && body.target.mode === 'new');
-    // Same combined gate as POST /printer-presets for the scan step.
+    // Combined gate for the scan step (egress + optional new NAS route).
     const verdict = evaluateRouteLicense({ httpCount: 0, l4Count: isNew ? 1 : 0, targetKind: 'gateway', scanEgress: true });
     if (!verdict.ok) return deny(req, res, verdict.key, verdict.extra);
     const result = await hosts.setupScanToFolder(req.params.id, body);

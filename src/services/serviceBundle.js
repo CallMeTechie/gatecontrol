@@ -218,10 +218,9 @@ function dropHosts(db, ids) {
 
 // ─── CRUD ───────────────────────────────────────────────
 
-// opts (internal callers only — never taken from a request body, the legacy
-// POST /service-bundles passes req.body as `input`):
-//   zone:             { domain_id, subdomain } — hosts.js; legacy callers
-//                     omit it and get their zone attached after the sync
+// opts (internal callers only — never taken from a request body):
+//   zone:             { domain_id, subdomain } — hosts.js; callers that
+//                     omit it get their zone attached after the sync
 //   template:         host template id
 //   external_enabled: access mode of every member (zone default)
 async function createBundle(input, opts = {}) {
