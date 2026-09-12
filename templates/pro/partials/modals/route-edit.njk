@@ -1,5 +1,5 @@
 {% import theme + "/partials/_tip.njk" as ui with context %}
-<div class="modal-overlay" id="modal-edit-route" style="display:none">
+<div class="modal-overlay" id="modal-edit-route" style="display:none" data-load-failed="{{ t('entry_editor.load_failed') }}">
   <div class="modal modal-wide">
     <div class="modal-header">
       <span class="modal-title">{{ t('routes.edit_title') }}</span>
@@ -20,6 +20,13 @@
 
       {# ═══ TAB: General ═══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="general">
+        {# Read-only target line, shown instead of the domain/target fields when
+           GCEntryEditor.open() runs with lockTarget (zones page). #}
+        <div class="form-group" id="edit-route-locked-summary" style="display:none">
+          <label class="form-label">{{ t('entry_editor.locked_label') }}</label>
+          <div id="edit-route-locked-target" style="font-family:var(--font-mono);font-size:13px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);word-break:break-all"></div>
+          <small class="form-hint">{{ t('entry_editor.locked_hint') }}</small>
+        </div>
         <div class="form-row">
           <div class="form-group" id="edit-route-domain-wrap">
             <label class="form-label" id="edit-route-domain-label"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
