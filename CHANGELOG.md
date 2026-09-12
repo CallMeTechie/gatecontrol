@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.118.12] — 2026-09-12
+
+### Fixes
+- keep WebSockets alive across config reloads
+
+---
+
 ## [1.118.11] — 2026-07-29
 
 ### Fixes
