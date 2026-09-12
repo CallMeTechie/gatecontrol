@@ -1,6 +1,6 @@
 # Domain-Zonen: Schnittstellenvertrag
 
-Status: in Umsetzung (Branch `feat/domain-zones`). Dieses Dokument ist die
+Status: umgesetzt (Branch `feat/domain-zones`); Abschnitt „Stand nach der Umsetzung“ am Ende listet, wo die Implementierung vom ursprünglichen Entwurf abweicht. Dieses Dokument ist die
 verbindliche Schnittstelle zwischen Backend (`hosts`/`domainZones`), der neuen
 Seite (`zones.njk`, `zones-page.js`, `domain-modal.js`) und dem herausgelösten
 Eintrags-Editor (`entry-editor.js`). Wer davon abweicht, ändert zuerst dieses
@@ -221,7 +221,7 @@ Reine Funktionen, UMD wie `routes-view.js` (in Node testbar):
 - `close()`.
 - Voraussetzungen auf der Seite: Partials `modals/route-edit.njk` und
   `modals/confirm.njk`, Skripte in dieser Reihenfolge:
-  `vendor/qrcode.min.js`, `routes-view.js`, `routeDomain.js`, `entry-editor.js`.
+  `/js/vendor/qrcode.min.js`, `routes-view.js`, `routeDomain.js`, `entry-editor.js`.
 - Die alte Seite (`routes.js`) nutzt denselben Editor; ihr eigener
   `showEditModal` entfällt.
 
@@ -235,3 +235,84 @@ gesperrt). Globale Helfer aus `app.js`: `api.*`, `openModal`, `closeModal`,
 
 Sprachschlüssel: `zones.*`, `host.*`, `entry.*`, `template.*` in
 `src/i18n/de.json` und `en.json`.
+
+## Stand nach der Umsetzung
+
+Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code stehen.
+
+### Datenbank und Abgleich
+
+- **v68-Backfill:** Eine Route ohne Host tritt einem vorhandenen Host derselben
+  Domain bei (L4 immer, HTTP nur, wenn der Host noch keine HTTP-Route hat).
+  Mehrere hostlose Routen derselben Domain teilen sich einen neuen Host.
+- **Suffix-Vergleich:** `substr(lower(domain), -len-1) = '.' || d.domain` statt
+  `LIKE`. Damit zählen nur ganze Labels, und `_`/`%` wirken nicht als Platzhalter.
+- **Gateway-Mehrheit:** Grundlage ist `COALESCE(original_peer_id, target_peer_id)`.
+  Eine Route mitten im Failover zählt so für ihr eigentliches Gateway.
+- **`default_external_enabled`:** zählt nur bei echter Mehrheit, ein Gleichstand
+  ergibt 0.
+- **`reconcile()` erledigt zusätzlich:**
+  - RDP-eigene L4-Routen aus Hosts herauslösen;
+  - Hosts mit verwaistem `domain_id` lösen;
+  - fehlendes `subdomain` nachtragen;
+  - leere Zonen auf das Mehrheitsziel ihrer Einträge setzen.
+
+### API
+
+- **Fehlercodes:** `HOST_EXISTS`, `DOMAIN_CONFLICT`, `HOST_HAS_HTTP` und
+  `BUNDLE_PORT_CONFLICT` (409, mit `conflict`); `DOMAIN_UNVERIFIED`,
+  `DOMAIN_COLLISION`, `ZONE_NO_GATEWAY` und `LAN_HOST_REQUIRED` (400);
+  `NOT_FOUND` (404).
+- **`applyGateway`:** beendet laufende Failover (`original_peer_id` wird
+  geleert). Wechsel von Peer auf Gateway oder Pool verlangt, dass jeder Eintrag
+  eine LAN-Adresse hat.
+- **`PUT /hosts/:id`:**
+  - Eine neue Beschreibung ändert auch den Kartentitel (`name`).
+  - Beim Umbenennen wandern TLS-lose L4-Einträge mit, deren Domain der alte
+    FQDN war.
+  - Die Domain-Policy akzeptiert mehrstufige Basisdomains, wenn die Zone
+    verifiziert ist.
+- **`POST /hosts/:id/entries`:** Ein Host mit `gateway_override` oder ohne Zone
+  behält sein eigenes Ziel.
+- **`POST /hosts/:id/scan-to-folder`:** antwortet mit 200. Optional nimmt der
+  Endpunkt `vip_prefix` an, `nas_peer_id` gilt als Alias.
+- **`POST /domains/:id/hosts`:** Mit `template` und ohne `entries` erzeugt der
+  Server die Einträge (samt vorgeschlagenen Listen-Ports). Kommt beides, gilt
+  `entries`.
+- **Zusätzliche Felder:**
+  - `entry.health`;
+  - `host.target` (`{kind, peer_id, pool_id, name, ip, online}`);
+  - RDP-Einträge ohne passenden Host erscheinen in `unassigned` als Pseudo-Host
+    mit `id: null` und `template: 'rdp'`, ohne Host-Aktionen.
+- **`gateways` in `GET /zones`:** `{id, name, ip, online}`.
+- **Token-Scopes:** `/zones`, `/domains`, `/hosts` und `/host-templates` gehören
+  zum Scope `routes`.
+- **`/routes` ohne neues Template:** Fehlt `zones.njk` in einem Theme, fällt
+  `/routes` auf `routes.njk` zurück.
+
+### Frontend
+
+- **Übersetzungen:** Die Seite reicht ihre Strings als JSON-Block `#zones-i18n`
+  weiter und mischt sie in `GC.t`.
+- **Zusätzliche Globals:** `GCZonesPage` (`reload`, `openDomain`,
+  `openAddDomain`, `getData`), `GCDomainModal`, `GCZonesUI` (Dialog-, Menü- und
+  DOM-Helfer).
+- **`GCEntryEditor`:**
+  - `open()` gibt ein Promise zurück.
+  - Es gibt zusätzlich die Option `onChanged`. `onDeleted` wird angenommen, aber
+    der Editor hat keinen Löschen-Knopf.
+  - `_shared` enthält die Helfer, die der alte Anlege-Wizard mitbenutzt.
+  - Der Editor bindet den seitenweiten Tooltip-Handler, geschützt durch
+    `window.__gcTipsBound`.
+- **Filter:** Typ, Zugriff und „deaktiviert“ müssen auf denselben Eintrag
+  zutreffen.
+- **Mobil:** Der FAB „Route hinzufügen“ öffnet auf der Zonen-Seite „Domain
+  hinzufügen“.
+
+### Nebenbei behobene bestehende Fehler
+
+- **`PUT /api/v1/routes/:id`** lehnte die leere Domain einer L4-Route ohne TLS
+  ab. Dadurch ließ sich keine solche Route bearbeiten.
+- **`requireFeatureField`** blockte auch ausgeschaltete Felder. Auf Plänen ohne
+  Komprimierung, Request-Debugging oder Bot-Blocker schlug damit jedes Speichern
+  im Routen-Editor mit 403 fehl.
