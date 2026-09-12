@@ -37,6 +37,11 @@ const SCOPE_MAP = [
   // Server resource scopes
   ['/api/v1/peers', 'peers'],
   ['/api/v1/routes', 'routes'],
+  // Domain zones (routes page): zones, per-domain gateway, hosts, templates
+  ['/api/v1/zones', 'routes'],
+  ['/api/v1/domains', 'routes'],
+  ['/api/v1/hosts', 'routes'],
+  ['/api/v1/host-templates', 'routes'],
   ['/api/v1/settings', 'settings'],
   ['/api/v1/webhooks', 'webhooks'],
   ['/api/v1/logs', 'logs'],

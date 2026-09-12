@@ -147,6 +147,15 @@ describe('Token Scope Logic', () => {
       assert.equal(tokens.checkScope(['routes'], '/api/v1/peers', 'GET'), false);
     });
 
+    it('routes scope also covers the domain-zones endpoints', () => {
+      assert.equal(tokens.checkScope(['routes'], '/api/v1/zones', 'GET'), true);
+      assert.equal(tokens.checkScope(['routes'], '/api/v1/domains/2/gateway', 'PUT'), true);
+      assert.equal(tokens.checkScope(['routes'], '/api/v1/hosts/5/entries', 'POST'), true);
+      assert.equal(tokens.checkScope(['routes'], '/api/v1/host-templates', 'GET'), true);
+      assert.equal(tokens.checkScope(['peers'], '/api/v1/hosts/5', 'PUT'), false);
+      assert.equal(tokens.checkScope(['settings'], '/api/v1/settings/domains', 'GET'), true);
+    });
+
     it('system scope should cover /api/v1/system, /api/v1/wg, /api/v1/caddy', () => {
       assert.equal(tokens.checkScope(['system'], '/api/v1/system', 'GET'), true);
       assert.equal(tokens.checkScope(['system'], '/api/v1/wg', 'GET'), true);
