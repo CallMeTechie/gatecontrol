@@ -194,6 +194,9 @@ const pages = [
   // Domain zones page (docs/feature-domain-zones.md); the sidebar item stays 'routes'.
   { path: '/routes', template: 'zones', nav: 'routes', titleKey: 'nav.routes' },
   { path: '/certificates', template: 'certificates', titleKey: 'nav.certificates' },
+  // Web Application Firewall (docs/feature-waf.md); licensed only — the sidebar
+  // item needs license.features.waf, the page renders a locked notice without it.
+  { path: '/waf', template: 'waf', titleKey: 'nav.waf' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },

@@ -1,0 +1,34 @@
+{#
+  Web Application Firewall: strings for waf-ui.js / waf.js on the WAF page
+  (docs/feature-waf.md, "Oberfläche"), exposed as JSON island #waf-i18n and
+  merged into GC.t by waf-ui.js. Shared by all three themes; included inside
+  the content block of waf.njk before the scripts. The zones page ships the
+  waf.* keys it needs in its own island (#zones-i18n).
+  tests/waf_ui_static.test.js checks the key list.
+#}
+{%- set wafI18nKeys = [
+  'common.cancel', 'common.close', 'common.loading', 'common.refresh', 'common.error', 'waf.page_sub', 'waf.summary',
+  'waf.tile_events', 'waf.tile_blocked', 'waf.tile_routes', 'waf.filters_label', 'waf.filter_host',
+  'waf.filter_host_all', 'waf.filter_action', 'waf.filter_all', 'waf.filter_blocked', 'waf.filter_detected',
+  'waf.filter_range', 'waf.range_24h', 'waf.range_7d', 'waf.range_30d', 'waf.reset_filters', 'waf.events_title',
+  'waf.col_time', 'waf.col_host', 'waf.col_action', 'waf.col_rule', 'waf.col_message', 'waf.col_client',
+  'waf.col_request', 'waf.col_actions', 'waf.action_blocked', 'waf.action_detected', 'waf.severity', 'waf.raw_show',
+  'waf.raw_hide', 'waf.exclude_rule', 'waf.exclude_path', 'waf.exclude_rule_short', 'waf.excluded_tag',
+  'waf.exclude_rule_title', 'waf.exclude_rule_msg', 'waf.exclude_rule_detail', 'waf.exclude_path_title',
+  'waf.exclude_path_msg', 'waf.exclude_path_label', 'waf.exclude_path_detail', 'waf.exclude_ok', 'waf.excluded_rule',
+  'waf.excluded_path', 'waf.no_route', 'waf.no_rule', 'waf.load_more', 'waf.shown', 'waf.end', 'waf.new_events',
+  'waf.empty', 'waf.empty_hint', 'waf.engine_missing', 'waf.backend_missing', 'waf.load_error', 'waf.locked_title',
+  'waf.locked', 'waf.routes_title', 'waf.routes_empty', 'waf.col_mode', 'waf.col_paranoia', 'waf.col_events_24h',
+  'waf.col_blocked_24h', 'waf.show_events', 'waf.title', 'waf.editor_desc', 'waf.mode_label', 'waf.mode_detect',
+  'waf.mode_block', 'waf.mode_detect_hint', 'waf.mode_block_hint', 'waf.paranoia_label', 'waf.paranoia_level',
+  'waf.paranoia_1', 'waf.paranoia_2', 'waf.paranoia_3', 'waf.paranoia_4', 'waf.paranoia_1_hint',
+  'waf.paranoia_2_hint', 'waf.paranoia_3_hint', 'waf.paranoia_4_hint', 'waf.recommendation', 'waf.hint_http',
+  'waf.exclusions_label', 'waf.exclusions_empty', 'waf.exclusions_hint', 'waf.exclusion_rule', 'waf.exclusion_path',
+  'waf.exclusion_type_label', 'waf.exclusion_type_rule', 'waf.exclusion_type_path', 'waf.exclusion_ph_rule',
+  'waf.exclusion_ph_path', 'waf.exclusion_add', 'waf.exclusion_remove', 'waf.exclusion_added',
+  'waf.exclusion_removed', 'waf.events_link', 'waf.tag_block', 'waf.tag_detect', 'waf.tag_hint', 'waf.chip_block',
+  'waf.chip_detect', 'waf.dialog_title', 'waf.dialog_edit', 'waf.err.invalid_rule', 'waf.err.invalid_path',
+  'waf.err.duplicate', 'waf.err.exclusion_invalid', 'waf.err.mode_invalid', 'waf.err.paranoia_invalid',
+  'waf.err.requires_http', 'waf.err.license', 'waf.err.route_not_found'
+] -%}
+<script type="application/json" id="waf-i18n" nonce="{{ cspNonce }}">{ {% for k in wafI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
