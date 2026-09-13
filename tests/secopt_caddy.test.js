@@ -315,9 +315,10 @@ describe('caddyPemFiles: written from the DB, orphans removed', () => {
       assert.equal(srv0(cfg).tls_connection_policies[0].client_authentication.trusted_ca_certs_pem_files[0], mp);
       db.prepare('DELETE FROM routes WHERE id = ?').run(id);
       buildCaddyConfig();
-      // no PEM-bearing route left → nothing written; a later sync removes the orphans
-      const r = pemFiles.sync();
-      assert.deepEqual(r.removed.sort(), [bp, mp]);
+      // no PEM-bearing route left → the build itself removes the orphans
+      assert.equal(fs.existsSync(bp), false);
+      assert.equal(fs.existsSync(mp), false);
+      assert.deepEqual(pemFiles.sync().removed, []);
     } finally {
       db.prepare('DELETE FROM routes WHERE id = ?').run(id);
     }

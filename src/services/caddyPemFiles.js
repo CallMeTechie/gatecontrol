@@ -43,6 +43,18 @@ function mtlsCaPath(routeId, opts = {}) {
   return path.posix.join(dataDir(opts.dataDir), MTLS_DIR, `${Number(routeId)}.pem`);
 }
 
+/**
+ * True when a PEM directory still holds files. Lets the config build run a
+ * sync after the last PEM was cleared, so orphaned files are removed.
+ */
+function hasPemFiles(opts = {}) {
+  const base = dataDir(opts.dataDir);
+  for (const d of [BACKEND_CA_DIR, MTLS_DIR]) {
+    try { if (fs.readdirSync(path.join(base, d)).some((f) => FILE_RE.test(f))) return true; } catch { /* missing dir */ }
+  }
+  return false;
+}
+
 function writeAtomic(file, content) {
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, content, { mode: 0o644 });
@@ -122,6 +134,7 @@ function sync({ rows, dataDir: dirOverride } = {}) {
 }
 
 module.exports = {
+  hasPemFiles,
   BACKEND_CA_DIR,
   MTLS_DIR,
   backendCaPath,

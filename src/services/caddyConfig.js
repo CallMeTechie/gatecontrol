@@ -280,9 +280,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // Caddy reads them from disk, so they must exist before this config is
   // loaded — at sync time AND at boot (export-caddy-config.js builds the boot
   // config from the DB). Only when built from the DB and only when some
-  // route carries a PEM, so the config path of today's data has no side effect.
+  // route carries a PEM (or files are left over to be removed), so the config
+  // path of today's data has no side effect.
   if (!Array.isArray(injectedRoutes) && options.writePemFiles !== false
-      && routes.some(r => r.backend_tls_ca_pem || r.mtls_ca_pem)) {
+      && (routes.some(r => r.backend_tls_ca_pem || r.mtls_ca_pem) || require('./caddyPemFiles').hasPemFiles())) {
     try { require('./caddyPemFiles').sync(); } catch (err) { logger.warn({ err: err.message }, 'Caddy PEM files: sync failed'); }
   }
 
