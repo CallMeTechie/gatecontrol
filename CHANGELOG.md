@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.119.0] — 2026-09-13
 
 ### Features
 - Domains & Routen neu aufgebaut: Die Seite `/routes` listet jetzt Domains als aufklappbare Zonen mit einer Zeile pro Host. HTTPS- und TCP/UDP-Einträge desselben Hosts stehen als Chips in einer Zeile, statt als lose Einzelrouten. Suche, Filter (HTTPS, TCP/UDP, extern, intern, deaktiviert, Probleme) und ein Gateway-Filter wirken über alle Zonen.
