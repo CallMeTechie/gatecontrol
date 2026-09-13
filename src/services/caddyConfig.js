@@ -44,6 +44,7 @@ const { hstsHeaderValue, hstsOfRoute } = require('./routesValidation');
 const { resolveBackends } = require('./caddyBackends');
 const { buildTlsAutomation } = require('./caddyTlsAutomation');
 const { buildRouteAuthProxy, buildAuthHandlerChain, buildRequestBodyHandler } = require('./caddyAuthSubroute');
+const { appUpstream } = require('./caddyAppUpstream');
 const { backendCaPath, mtlsCaPath } = require('./caddyPemFiles');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
@@ -877,7 +878,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         routes: [{
           handle: [{
             handler: 'reverse_proxy',
-            upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+            ...appUpstream(config.app.port),
             // Carries the guacamole-lite WS tunnel (browser RDP/VNC/SSH).
             ...streamCloseDelay(),
             // Belt-and-suspenders: strip the portal identity header on the
@@ -932,7 +933,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             // Reverse proxy to local Node app with trusted-IP header handling.
             {
               handler: 'reverse_proxy',
-              upstreams: [{ dial: `127.0.0.1:${config.app.port}` }],
+              ...appUpstream(config.app.port),
               ...streamCloseDelay(),
               headers: {
                 request: {

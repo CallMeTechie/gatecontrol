@@ -4,6 +4,7 @@ const { buildDefenderConfig } = require('./caddyValidators');
 const { buildRequestHeadersHandler } = require('./caddyCustomHeaders');
 const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildMirrorHandler } = require('./caddyMirror');
+const { appUpstream } = require('./caddyAppUpstream');
 
 /**
  * Auth-subroute helpers for routes that delegate access checks to
@@ -37,7 +38,7 @@ function buildRouteAuthProxy() {
     match: [{ path: ['/route-auth/*'] }],
     handle: [{
       handler: 'reverse_proxy',
-      upstreams: [{ dial: '127.0.0.1:3000' }],
+      ...appUpstream(),
     }],
   };
 }
@@ -45,7 +46,7 @@ function buildRouteAuthProxy() {
 function buildForwardAuthSubrequest(domain) {
   return {
     handler: 'reverse_proxy',
-    upstreams: [{ dial: '127.0.0.1:3000' }],
+    ...appUpstream(),
     rewrite: { method: 'GET', uri: '/route-auth/verify' },
     headers: {
       request: {
