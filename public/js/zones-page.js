@@ -8,6 +8,7 @@
   const V = window.GCZonesView;
   const UI = window.GCZonesUI;
   const DM = window.GCDomainModal;
+  const TG = window.GCTlsUI || null;   // TLS guard markers (tls-ui.js), optional
   const root = document.getElementById('zn-zones');
   if (!V || !UI || !root) return;
   const { t, el, icon } = UI;
@@ -218,7 +219,7 @@
       el('span', { class: 'zn-chev' }, [icon('down', 16)]),
       UI.healthDot(full.health || V.worstHealth(full.hosts.map(V.hostHealth))),
       el('span', { class: 'zn-domain', text: zone.unassigned ? t('zones.unassigned') : zone.domain }),
-      zone.unassigned ? null : UI.verificationTag(zone),
+      zone.unassigned ? null : ((TG && TG.dnsTag(zone, { onChanged: load })) || UI.verificationTag(zone)),
       zone.unassigned ? null : el('span', { class: 'zn-gw-pill' + (g.online === false ? ' off' : ''), title: g.online === false ? t('zones.gateway_offline_hint') : null }, [
         icon(UI.gatewayIconName(g.kind), 12), UI.gatewayLabel(g),
       ]),
@@ -271,6 +272,8 @@
     const port = V.hostSinglePort(host);
     const target = V.hostTarget(host);
     const httpEntry = (host.entries || []).find((e) => !V.isL4(e));
+    // Certificate failed/paused: amber dot + reason text (docs/feature-tls-guard.md).
+    const tlsText = TG ? TG.hostProblemText(host) : null;
 
     const nameLine = el('div', { class: 'zn-name-line' }, [
       host.template === 'printer' ? icon('printer', 12) : null,
@@ -304,9 +307,12 @@
       ]),
       el('div', { class: 'zn-col-entries' }, V.sortEntries(host.entries).map((e) => (e.rdp_owned
         ? el('span', { class: 'zn-chip zn-chip-rdp', title: t('entry.rdp_hint') }, [icon('rdp', 11), el('span', { class: 'zn-chip-port', text: String(e.l4_listen_port || '') }), el('span', { class: 'zn-chip-note', text: t('entry.rdp_tag') })])
-        : UI.chipEl(e)))),
+        : (TG ? TG.decorateChip(UI.chipEl(e), e) : UI.chipEl(e))))),
       el('div', { class: 'zn-col-access' }, [UI.accessTag(V.hostAccess(host))]),
-      el('div', { class: 'zn-col-status' }, [UI.healthDot(health), el('span', { class: 'zn-status-text', text: UI.hostStatusText(host, zone) })]),
+      el('div', { class: 'zn-col-status' + (tlsText ? ' tg-host-problem' : '') }, [
+        UI.healthDot(tlsText && health === 'ok' ? 'degraded' : health),
+        el('span', { class: 'zn-status-text', text: tlsText || UI.hostStatusText(host, zone) }),
+      ]),
       actions,
     ]);
   }
@@ -474,9 +480,20 @@
   if (DM) DM.bind({ getData: () => state.data, reload: load, lastSync: () => state.lastSync });
   initToolbar();
   render();
-  load();
+  load().then(() => {
+    // Deep link from the certificates page: /routes?domain=<id>[&host=<id>]
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const domainId = q.get('domain');
+      if (domainId != null && domainId !== '' && state.data) {
+        const hostId = q.get('host');
+        openDomain(Number(domainId), hostId != null && hostId !== '' ? Number(hostId) : undefined);
+        history.replaceState(null, '', window.location.pathname);
+      }
+    } catch (_) { /* ignore */ }
+  });
 
-  ['gc:routes', 'gc:monitor', 'gc:reconnected'].forEach((ev) => document.addEventListener(ev, scheduleLoad));
+  ['gc:routes', 'gc:monitor', 'gc:reconnected', 'gc:tls'].forEach((ev) => document.addEventListener(ev, scheduleLoad));
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state.stale) { state.stale = false; scheduleLoad(); }
   });

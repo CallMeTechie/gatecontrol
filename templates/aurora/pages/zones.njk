@@ -128,6 +128,8 @@
   'zones.target_peer_label', 'zones.unassigned', 'zones.zone_empty', 'zones.zone_empty_add'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
+{# TLS guard strings (tls-ui.js) #}
+{% include "partials/tls-i18n.njk" %}
 {% endblock %}
 
 {% block scripts %}
@@ -136,6 +138,7 @@
 <script src="/js/routeDomain.js?v={{ appVersion }}"></script>
 <script src="/js/entry-editor.js?v={{ appVersion }}"></script>
 <script src="/js/zones-view.js?v={{ appVersion }}"></script>
+<script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/domain-modal.js?v={{ appVersion }}"></script>
 <script src="/js/zones-page.js?v={{ appVersion }}"></script>
 {% endblock %}

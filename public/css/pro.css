@@ -3895,4 +3895,114 @@ body.rdp-session-body {
   .zn-disc-row { grid-template-columns: minmax(0, 1fr) auto; }
   .zn-disc-row > .zn-disc-info { grid-column: 1 / -1; }
   .zn-disc-bar .zn-disc-scan { margin-left: 0; }
+/* ─── TLS guard (tg-) ─── */
+/* Certificates page (certificates.njk), the TLS dialogs of tls-ui.js and the
+   TLS markers on the zones page / domain dialog / settings. Uses only the
+   legacy tokens (--bg-*, --text-*, --border, --accent, --green/-lt/-bd …)
+   like the zn- block, so app.css and pro.css carry the same rules (aurora
+   loads pro.css plus its own override block). */
+.tg-banner[hidden], .tg-chips [hidden], .tg-dialog [hidden], .tg-table [hidden], .tg-notice [hidden], .tg-records[hidden], .tg-orig[hidden], .tg-dns-records[hidden] { display: none !important; }
+
+.tg-muted { color: var(--text-3); }
+.tg-mono { font-family: var(--font-mono); font-size: 11.5px; }
+.tg-small { font-size: 11px; }
+.tg-ic { flex-shrink: 0; }
+.tg-link { background: none; border: none; padding: 0; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.tg-link:hover { color: var(--text-1); }
+
+/* ── Tiles ── */
+.stats-grid.tg-tiles { grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+.tg-tile { cursor: pointer; user-select: none; }
+.tg-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tg-tile.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-lt, var(--bg-hover)); }
+.tg-tile.warn .stat-value, .tg-tile.warn .stat-card-value { font-weight: 700; }
+
+/* ── ACME e-mail banner ── */
+.tg-banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; margin-bottom: 14px; background: var(--amber-lt); border: 1px solid var(--amber-bd); border-left: 3px solid var(--amber); border-radius: var(--radius-sm); color: var(--text-1); font-size: 13px; line-height: 1.5; }
+.tg-banner .tg-ic { color: var(--amber); margin-top: 2px; }
+.tg-banner-link { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
+/* ── Card head with filter chips ── */
+.tg-card-head { flex-wrap: wrap; gap: 10px; }
+.tg-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; flex: 0 1 auto; }
+.tg-chips .filter-chip { white-space: nowrap; }
+.tg-count { margin-left: 5px; font-family: var(--font-mono); font-size: 10px; opacity: 0.75; }
+.tg-count:empty { display: none; }
+
+/* ── Table ── */
+.tg-table-wrap { overflow-x: auto; }
+.tg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tg-table th { text-align: left; padding: 9px 12px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tg-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tg-table tbody tr:last-child td { border-bottom: none; }
+.tg-table tbody tr:hover td { background: var(--bg-hover); }
+.tg-row-problem td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.tg-row[data-state="failed"] td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.tg-host { font-family: var(--font-mono); font-weight: 600; color: var(--text-1); text-decoration: none; overflow-wrap: anywhere; }
+.tg-host:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.tg-sub { display: block; margin-top: 4px; font-size: 11px; color: var(--text-3); max-width: 28ch; line-height: 1.4; }
+.tg-cell-status, .tg-cell-host { white-space: nowrap; }
+.tg-cell-error { min-width: 200px; max-width: 34ch; }
+.tg-err-short { color: var(--text-1); line-height: 1.4; }
+.tg-orig-toggle { display: inline-block; margin-top: 3px; }
+.tg-orig { margin: 6px 0 0; padding: 8px 10px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; color: var(--text-2); }
+.tg-actions { display: flex; gap: 6px; white-space: nowrap; }
+.tg-actions .btn { padding: 4px 9px; font-size: 11.5px; gap: 5px; }
+.tg-actions .btn svg { width: 12px; height: 12px; }
+.tg-actions:empty { display: none; }
+.tg-empty td { text-align: center; color: var(--text-3); padding: 24px 12px; }
+.tg-empty.tg-error td { color: var(--red); }
+.tg-backend-missing { display: inline-flex; gap: 8px; align-items: center; color: var(--amber); }
+
+/* ── Dialogs (certificate detail / preflight / DNS check) ── */
+.modal.tg-dialog-box { max-width: min(600px, calc(100vw - 32px)); }
+.tg-dialog-body { max-height: min(70vh, 640px); overflow-y: auto; }
+.tg-dialog-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.tg-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; color: var(--text-2); }
+.tg-fact-state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.tg-fact-err { margin-top: 4px; }
+.tg-fact-label { display: block; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); margin-bottom: 3px; }
+.tg-field-error { color: var(--red); font-size: 12px; margin-top: 10px; }
+.tg-preflight { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-base); }
+.tg-pf-ok { border-color: var(--green-bd); }
+.tg-pf-bad { border-color: var(--red-bd); }
+.tg-pf-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-weight: 600; color: var(--text-1); font-size: 13px; }
+.tg-pf-detail { margin-top: 6px; color: var(--text-2); word-break: break-all; }
+.tg-pf-hint { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.tg-pf-running { display: flex; gap: 8px; align-items: center; padding: 12px 0; font-size: 13px; }
+.tg-pf-running .tg-ic { animation: tg-spin 1s linear infinite; }
+@keyframes tg-spin { to { transform: rotate(360deg); } }
+.tg-records { margin-top: 12px; display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 12px; font-size: 12px; align-items: baseline; }
+.tg-rec { display: contents; }
+.tg-rec-title { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); margin-top: 6px; }
+.tg-rec-label { color: var(--text-2); }
+.tg-rec-vals { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.tg-records code { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
+.tg-records > .tg-small { grid-column: 1 / -1; margin-top: 4px; }
+
+/* ── Zones page / domain dialog markers ── */
+.zn-chip.tg-chip-warn { border-color: var(--amber-bd); background: var(--amber-lt); }
+.tg-warn-mark { display: inline-flex; color: var(--amber); margin-left: 3px; }
+.tag.tg-entry-tag, .tag.tg-dns-tag { cursor: pointer; line-height: inherit; }
+.tag.tg-entry-tag:hover, .tag.tg-dns-tag:hover { filter: brightness(0.93); }
+.tg-notice { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; background: var(--amber-lt); border: 1px solid var(--amber-bd); border-left: 3px solid var(--amber); border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5; color: var(--text-1); }
+.tg-notice .tg-ic { color: var(--amber); }
+.tg-notice-text { flex: 1 1 220px; }
+.tg-notice code { overflow-wrap: anywhere; }
+
+/* ── Settings: domains table ── */
+.tg-dns-reason { font-size: 11px; color: var(--red); margin-top: 2px; font-family: inherit; }
+.tg-dns-detail { font-size: 11px; color: var(--text-2); font-family: var(--font-mono); margin-top: 2px; overflow-wrap: anywhere; }
+.tg-dns-records { margin-top: 6px; }
+.tg-dns-records .tg-records { margin-top: 4px; }
+.tg-settings-field { display: flex; flex-direction: column; gap: 6px; }
+.tg-settings-field input[type=number] { width: 90px; padding: 8px 12px; font-size: 12px; }
+
+/* ── Toast variant ── */
+.toast-warning { background: var(--amber-lt); color: var(--amber); border: 1px solid var(--amber-bd); }
+
+@media (max-width: 900px) {
+  .stats-grid.tg-tiles { grid-template-columns: repeat(2, 1fr); }
+  .tg-records { grid-template-columns: 1fr; }
+  .tg-chips { margin-left: 0; }
 }

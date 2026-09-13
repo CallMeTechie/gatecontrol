@@ -1456,6 +1456,36 @@
   });
 })();
 
+// ─── TLS guard: attempts before a host is paused ──────
+// Same autosave pattern as the ACME e-mail above (docs/feature-tls-guard.md,
+// PUT /api/v1/settings/tls). The current value comes from GET /api/v1/tls/status;
+// while the backend is missing (404) the field keeps its default and saving
+// reports "Backend noch nicht verfügbar".
+(function () {
+  var el = document.getElementById('tls-max-attempts');
+  if (!el) return;
+  var TG = window.GCTlsUI;
+  var t = (window.GC && window.GC.t) || {};
+  function valid(v) { var s = String(v == null ? '' : v).trim(); return /^\d{1,2}$/.test(s) && +s >= 0 && +s <= 10; }
+  var ctl = SettingsAutosave.bind({
+    cluster: 'tls-guard',
+    fields: [el],
+    statusEl: document.getElementById('tls-max-attempts-status'),
+    valuesById: function () { return { 'tls-max-attempts': el.value }; },
+    save: function () {
+      if (!valid(el.value)) return Promise.resolve({ ok: false, error: t['settings.tls.max_attempts_invalid'] || undefined });
+      return api.put('/api/v1/settings/tls', { max_attempts: parseInt(el.value, 10) }).catch(function (err) {
+        if (TG && TG.isNotFound(err)) return { ok: false, error: t['settings.tls.backend_missing'] || undefined };
+        throw err;
+      });
+    },
+  });
+  api.get('/api/v1/tls/status').then(function (r) {
+    var s = r && r.settings;
+    if (s && s.max_attempts != null && valid(s.max_attempts)) { el.value = String(s.max_attempts); ctl.resync(); }
+  }).catch(function () { /* backend not merged yet → keep the default */ });
+})();
+
 (function () {
   var sliderEl = document.getElementById('gw-down-threshold');
   var sliderOut = document.getElementById('gw-down-threshold-value');
@@ -2010,9 +2040,13 @@
 
   var tbody = document.getElementById('domains-tbody');
   var serverIpEl = document.getElementById('domains-server-ip');
+  var serverIpv6El = document.getElementById('domains-server-ipv6');
   var warningEl = document.getElementById('domains-server-ip-warning');
   var ipInput = document.getElementById('domains-server-ip-input');
+  var ipv6Input = document.getElementById('domains-server-ipv6-input');
   var ipSaveBtn = document.getElementById('domains-server-ip-save');
+  var TG = window.GCTlsUI || null;   // tls-ui.js: dns_check texts + record renderer
+  var t = (window.GC && window.GC.t) || {};
   var addInput = document.getElementById('domains-add-input');
   var addBtn = document.getElementById('domains-add-btn');
   var addError = document.getElementById('domains-add-error');
@@ -2041,6 +2075,46 @@
     try { return new Date(iso).toLocaleDateString(); } catch (e) { return iso; }
   }
 
+  // Under the domain name: the DNS check reason (dns_check.<code> + detail)
+  // and an expandable block with the A/AAAA/CAA records and server addresses
+  // (check_json, docs/feature-tls-guard.md). Without tls-ui.js: last_error as before.
+  function appendDnsInfo(cell, d) {
+    var check = TG ? TG.parseCheck(d.check_json) : null;
+    var code = TG ? TG.dnsCode(d) : null;
+    var failed = d.status === 'failed';
+    if (failed && (code || d.last_error)) {
+      var reason = document.createElement('div');
+      reason.className = 'tg-dns-reason';
+      reason.textContent = code && TG ? TG.dnsCodeText(code) : d.last_error;
+      cell.appendChild(reason);
+      if (check && check.detail) {
+        var det = document.createElement('div');
+        det.className = 'tg-dns-detail';
+        det.textContent = String(check.detail);
+        cell.appendChild(det);
+      }
+    }
+    if (check && TG) {
+      var wrap = document.createElement('div');
+      wrap.className = 'tg-dns-records';
+      var box = TG.recordsEl(check);
+      box.hidden = true;
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'tg-link tg-dns-toggle';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.textContent = t['settings.tls.records_show'] || 'Records';
+      toggle.addEventListener('click', function () {
+        box.hidden = !box.hidden;
+        toggle.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+        toggle.textContent = box.hidden ? (t['settings.tls.records_show'] || 'Records') : (t['settings.tls.records_hide'] || 'Records');
+      });
+      wrap.appendChild(toggle);
+      wrap.appendChild(box);
+      cell.appendChild(wrap);
+    }
+  }
+
   function renderRows(domains) {
     tbody.textContent = '';
     if (!domains || domains.length === 0) return;
@@ -2052,12 +2126,7 @@
       var tdDomain = document.createElement('td');
       tdDomain.style.cssText = 'padding:8px;font-family:var(--font-mono);font-size:12px';
       tdDomain.textContent = d.domain;
-      if (d.last_error && d.status === 'failed') {
-        var errEl = document.createElement('div');
-        errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;font-family:inherit';
-        errEl.textContent = d.last_error;
-        tdDomain.appendChild(errEl);
-      }
+      appendDnsInfo(tdDomain, d);
       tr.appendChild(tdDomain);
 
       var tdStatus = document.createElement('td');
@@ -2102,6 +2171,7 @@
       if (!r.ok) return;
       renderRows(r.data.domains);
       if (serverIpEl) serverIpEl.textContent = r.data.serverIp || '—';
+      if (serverIpv6El) serverIpv6El.textContent = r.data.serverIpv6 || '—';
       if (warningEl) warningEl.style.display = r.data.serverIpWarning ? '' : 'none';
     } catch (err) {
       console.error('Failed to load domains:', err);
@@ -2115,12 +2185,7 @@
         var d = r.data;
         var domainCell = tr.cells[0];
         domainCell.textContent = d.domain;
-        if (d.last_error && d.status === 'failed') {
-          var errEl = document.createElement('div');
-          errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px';
-          errEl.textContent = d.last_error;
-          domainCell.appendChild(errEl);
-        }
+        appendDnsInfo(domainCell, d);
         var statusCell = tr.cells[1];
         statusCell.textContent = '';
         statusCell.appendChild(statusBadge(d.status));
@@ -2165,12 +2230,16 @@
   if (ipSaveBtn) {
     ipSaveBtn.addEventListener('click', async function () {
       var ip = ipInput ? ipInput.value.trim() : '';
+      var ipv6 = ipv6Input ? ipv6Input.value.trim() : '';
       if (addError) { addError.style.display = 'none'; addError.textContent = ''; }
       btnLoading(ipSaveBtn);
       try {
-        var r = await api.put('/api/v1/settings/domains/server-ip', { ip: ip });
+        // Both overrides in one call (docs/feature-tls-guard.md); a backend
+        // that rejects ipv6 answers 400 → shown via r.error below.
+        var r = await api.put('/api/v1/settings/domains/server-ip', { ip: ip, ipv6: ipv6 });
         if (r.ok) {
           if (ipInput) ipInput.value = '';
+          if (ipv6Input) ipv6Input.value = '';
           await loadDomains();
         } else {
           if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }

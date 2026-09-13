@@ -912,3 +912,30 @@ input[type=date]:focus, select:focus {
 @media (max-width: 900px) {
   .modal.zn-dm .modal-body { max-height: none; }
 }
+
+/* ─── TLS guard (tg-) ─── */
+/* Aurora overrides for the certificates page and the TLS dialogs. The base
+   tg- block comes from pro.css (loaded first); here only surfaces, the KPI
+   strip and the data-table integration. */
+.tg-tiles.aurora-routes-kpis { margin-bottom: 14px; }
+.aurora-routes-kpi.tg-tile { cursor: pointer; }
+.aurora-routes-kpi.tg-tile:hover { border-color: var(--line-2); }
+.aurora-routes-kpi.tg-tile.on { border-color: var(--teal); box-shadow: 0 0 0 3px var(--glow1); }
+.aurora-routes-kpi.tg-tile.warn b { color: var(--amber); }
+#tg-tile-failed.warn b { color: var(--coral); }
+.alert.tg-banner { display: flex; gap: 10px; margin-bottom: 14px; }
+.tg-banner-link { color: var(--teal); }
+.toolbar.tg-toolbar { margin-bottom: 14px; }
+#tg-card.card { padding: 0; }
+#tg-card .card-head { padding: 14px 16px 0; }
+#tg-card.card::after { content: none; }
+#tg-table.data-table th { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+#tg-table.data-table td { padding: 12px 14px; border-color: var(--line); }
+#tg-table.data-table tbody tr:hover td { background: var(--chip); }
+.tg-host { color: var(--teal); }
+.tg-orig, .tg-preflight { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.tg-records code { background: var(--surface); border-color: var(--line); }
+.tg-notice { background: var(--amber-bg); border-color: var(--amber-bd); border-radius: var(--r-sm); }
+.tg-link { color: var(--teal); }
+.tg-empty td { color: var(--muted); }
+.toast-warning { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-bd); }

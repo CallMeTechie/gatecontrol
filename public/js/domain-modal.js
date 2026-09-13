@@ -356,7 +356,19 @@
       q: '',
       add: {},                 // hostId → { type, target, listen, bhttps, conflict }
       nh: { sub: '', desc: '', lan: '', type: 'http', target: '', listen: '', bhttps: false, template: null, conflict: null, error: null },
+      tlsNotice: null,         // { host, tls, reason } after a create answered tls.state = 'paused'
     };
+  }
+
+  // TLS guard (tls-ui.js): a create response carrying tls.state = 'paused'
+  // means the host exists but its certificate is on hold — warn + inline notice.
+  function noteTlsPaused(res, host) {
+    const TG = window.GCTlsUI;
+    const tls = TG && TG.tlsFromResponse(res);
+    if (!tls || tls.state !== 'paused') return;
+    const reason = TG.pausedReason(tls);
+    ui.tlsNotice = { host, tls, reason };
+    if (window.showToast) window.showToast(TG.t('tls.created_paused', { host, reason }), 'warning');
   }
 
   function isOpen() { return overlay.style.display === 'flex'; }
@@ -399,6 +411,9 @@
 
     renderHead(zone);
     const nodes = [];
+    if (ui.tlsNotice && window.GCTlsUI) {
+      nodes.push(window.GCTlsUI.noticeEl(Object.assign({}, ui.tlsNotice, { onClose: () => { ui.tlsNotice = null; } })));
+    }
     if (!zone.unassigned) nodes.push(renderPanel(zone));
     const visible = ui.q ? (V.filterZones([zone], { q: ui.q })[0] || { hosts: [] }).hosts : zone.hosts;
     nodes.push(el('div', { class: 'zn-sec' }, [
@@ -438,7 +453,9 @@
     domainEl.textContent = zone.unassigned ? '' : zone.domain;
     domainEl.hidden = !!zone.unassigned;
     tagsEl.replaceChildren();
-    const vt = zone.unassigned ? null : verificationTag(zone);
+    // On 'failed' the TLS guard tag names the reason and opens the DNS dialog.
+    const vt = zone.unassigned ? null
+      : ((window.GCTlsUI && window.GCTlsUI.dnsTag(zone, { onChanged: afterMutation })) || verificationTag(zone));
     if (vt) tagsEl.appendChild(vt);
     const c = V.countEntries(zone);
     countsEl.textContent = t('zones.modal_counts', { hosts: c.hosts, entries: c.entries });
@@ -618,6 +635,8 @@
     if (!V.isL4(e) && (e.basic_auth_enabled || e.route_auth_enabled)) opts.push(tag('blue', t('entry.auth_tag'), false, 'zn-opt-tag'));
     if (e.enabled && V.entryHealth(e) === 'down') opts.push(tag('red', t('entry.down_tag'), false, 'zn-opt-tag'));
     if (e.baseUnverified) opts.push(tag('amber', t('entry.unverified_tag'), false, 'zn-opt-tag'));
+    const tlsTag = window.GCTlsUI && window.GCTlsUI.entryTag(e, { onChanged: afterMutation });
+    if (tlsTag) opts.push(tlsTag);
 
     const target = el('div', { class: 'zn-tgt' }, [
       icon(e.target_kind === 'gateway' ? (e.target_pool_id != null ? 'pool' : 'gateway') : 'peer', 12),
@@ -743,9 +762,10 @@
     if (r.error) { d.error = r.error; render(); return; }
     busy(btn, true);
     try {
-      await call(api.post('/api/v1/hosts/' + host.id + '/entries', r.entry));
+      const res = await call(api.post('/api/v1/hosts/' + host.id + '/entries', r.entry));
       delete ui.add[host.id];
       toastOk(t('entry.created', { host: fqdnOf(host, zone) }));
+      noteTlsPaused(res, fqdnOf(host, zone));
       await afterMutation();
     } catch (err) {
       const c = portConflict(err);
@@ -862,6 +882,7 @@
       const created = res.host || {};
       ui.nh = freshUi().nh;
       toastOk(t('host.created', { host: created.fqdn || V.previewFqdn(body.subdomain, zone.domain) }));
+      noteTlsPaused(res, created.fqdn || V.previewFqdn(body.subdomain, zone.domain));
       await afterMutation();
       if (created.id != null) render({ focusHostId: created.id });
     } catch (err) {

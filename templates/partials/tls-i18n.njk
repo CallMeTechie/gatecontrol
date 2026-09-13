@@ -1,0 +1,39 @@
+{#
+  TLS guard: strings for tls-ui.js / certificates.js / the zones + settings
+  scripts, exposed as JSON island #tls-i18n and merged into GC.t by tls-ui.js
+  (docs/feature-tls-guard.md, "Sprachschlüssel"). Shared by all three themes;
+  include it inside the content block of certificates.njk, zones.njk and
+  settings.njk. tests/tls_ui_static.test.js checks the key list.
+#}
+{%- set tlsI18nKeys = [
+  'common.cancel', 'common.close', 'common.loading', 'common.error', 'common.refresh',
+  'zones.dns_failed', 'zones.dns_pending', 'zones.dns_verified',
+  'tls.page_sub', 'tls.tile_issued',
+  'tls.tile_expiring', 'tls.tile_failed', 'tls.tile_paused', 'tls.email_missing', 'tls.email_missing_link',
+  'tls.filter_all', 'tls.filter_problems', 'tls.filter_expiring', 'tls.filter_valid', 'tls.col_host',
+  'tls.col_status', 'tls.col_issuer', 'tls.col_valid_until', 'tls.col_error', 'tls.col_next_retry',
+  'tls.col_actions', 'tls.state_issued', 'tls.state_expiring', 'tls.state_pending', 'tls.state_failed',
+  'tls.state_failed_nomax', 'tls.state_paused', 'tls.state_internal', 'tls.state_none', 'tls.state_unknown',
+  'tls.days_left', 'tls.days_left_one', 'tls.expired', 'tls.paused_attempts', 'tls.paused_preflight',
+  'tls.kind_internal_hint', 'tls.kind_none_hint', 'tls.err.dns', 'tls.err.caa', 'tls.err.rate_limited',
+  'tls.err.account', 'tls.err.preflight', 'tls.err.other', 'tls.err_original', 'tls.err_original_hide',
+  'tls.no_error', 'tls.check', 'tls.retry', 'tls.retry_ok', 'tls.retry_failed', 'tls.detail_title',
+  'tls.preflight_title', 'tls.preflight_ok', 'tls.preflight_failed', 'tls.preflight_running', 'tls.preflight_none',
+  'tls.records_a', 'tls.records_aaaa', 'tls.records_caa', 'tls.records_none', 'tls.server_v4', 'tls.server_v6',
+  'tls.server_unknown', 'tls.checked_at', 'tls.attempts', 'tls.attempts_unlimited', 'tls.last_attempt',
+  'tls.next_retry', 'tls.next_retry_none', 'tls.not_after', 'tls.issuer', 'tls.backend_missing', 'tls.empty',
+  'tls.no_match', 'tls.load_error', 'tls.zone_link', 'tls.summary', 'tls.host_problem_failed',
+  'tls.host_problem_paused', 'tls.chip_warn', 'tls.entry_tag', 'tls.entry_tag_hint', 'tls.created_paused',
+  'tls.created_paused_short', 'tls.notice_details', 'tls.dns_tag', 'tls.dns_tag_hint', 'tls.dns_title',
+  'tls.dns_recheck', 'tls.dns_verified_now', 'tls.dns_still_failed', 'tls.dns_no_check', 'dns_check.ok',
+  'dns_check.no_records', 'dns_check.a_mismatch', 'dns_check.aaaa_mismatch', 'dns_check.aaaa_without_ipv6',
+  'dns_check.caa_blocks', 'dns_check.resolver_unreachable', 'dns_check.server_ip_unknown', 'dns_check.not_public',
+  'dns_check.unknown', 'dns_check.ok_hint', 'dns_check.no_records_hint', 'dns_check.a_mismatch_hint',
+  'dns_check.aaaa_mismatch_hint', 'dns_check.aaaa_without_ipv6_hint', 'dns_check.caa_blocks_hint',
+  'dns_check.resolver_unreachable_hint', 'dns_check.server_ip_unknown_hint', 'dns_check.not_public_hint',
+  'dns_check.unknown_hint', 'dns_check.records_title', 'dns_check.server_title', 'dns_check.detail',
+  'settings.tls.max_attempts', 'settings.tls.max_attempts_hint', 'settings.tls.max_attempts_invalid',
+  'settings.tls.backend_missing', 'settings.tls.server_ipv6', 'settings.tls.server_ipv6_override',
+  'settings.tls.server_ipv6_hint', 'settings.tls.records_show', 'settings.tls.records_hide'
+] -%}
+<script type="application/json" id="tls-i18n" nonce="{{ cspNonce }}">{ {% for k in tlsI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
