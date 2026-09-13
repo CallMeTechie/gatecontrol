@@ -1,4 +1,10 @@
-# Stage 1: Caddy with L4 + ratelimit + mirror plugins
+# Stage 1: Caddy with L4 + ratelimit + mirror + WAF plugins
+#
+# WAF (docs/feature-waf.md): coraza-caddy registers http.handlers.waf and pulls
+# the OWASP CRS in as the embedded Go module corazawaf/coraza-coreruleset/v4
+# (no rule downloads at runtime). Pinned; CRS updates arrive with new
+# coraza-caddy / coraza-coreruleset versions. v2.6.1 needs Caddy v2.11.4 and
+# Go 1.26 — both given by caddy:2-builder.
 #
 # No OpenTelemetry --replace pin anymore: Caddy v2.11.4 requires otel
 # v1.43.0 itself (CVE-2026-29181 fixed since v1.41.0), so MVS already
@@ -15,6 +21,7 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
     --with github.com/mholt/caddy-ratelimit \
     --with github.com/ueffel/caddy-brotli \
     --with github.com/greenpau/caddy-trace \
+    --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
     --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies
