@@ -1375,6 +1375,32 @@ const migrations = [
       DROP TABLE temp._zones_targets;`,
     detect: (db) => hasColumn(db, 'domains', 'gateway_kind'),
   },
+  {
+    version: 70,
+    name: 'tls_guard',
+    // TLS guard (docs/feature-tls-guard.md): the strict DNS check stores its
+    // full result per domain; tls_status carries the per-hostname certificate
+    // state fed by the preflight, Caddy's tls.log and the storage inventory.
+    // Rows appear on the first event — a missing row means 'pending'.
+    sql: `
+      ALTER TABLE domains ADD COLUMN check_json TEXT;
+      CREATE TABLE IF NOT EXISTS tls_status (
+        host             TEXT PRIMARY KEY,
+        state            TEXT NOT NULL DEFAULT 'pending',
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        last_error       TEXT,
+        last_error_code  TEXT,
+        last_attempt_at  TEXT,
+        next_retry_at    TEXT,
+        paused_at        TEXT,
+        paused_reason    TEXT,
+        preflight_json   TEXT,
+        not_after        TEXT,
+        issuer           TEXT,
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );`,
+    detect: (db) => hasColumn(db, 'domains', 'check_json'),
+  },
 ];
 
 module.exports = { migrations };
