@@ -1,0 +1,60 @@
+name: WAF rule updates
+
+# Dependabot watches npm and GitHub Actions only. The Coraza WAF module and the
+# OWASP Core Rule Set it embeds are pinned in the Dockerfile (xcaddy --with …),
+# so this weekly job compares them with the Go module proxy and keeps one open
+# issue up to date while a newer version exists (scripts/check-waf-modules.js).
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Coraza / CRS versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Compare pinned versions with the Go module proxy
+        id: cmp
+        run: node scripts/check-waf-modules.js Dockerfile "$RUNNER_TEMP/waf-updates.md" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the tracking issue
+        if: steps.cmp.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.cmp.outputs.title }}
+          BODY_FILE: ${{ steps.cmp.outputs.body_file }}
+        run: |
+          num=$(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | select(.title == env.TITLE) | .number' | head -n1)
+          if [ -n "$num" ]; then
+            gh issue edit "$num" --body-file "$BODY_FILE"
+            echo "updated issue #$num"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi
+
+      - name: Close the tracking issue when everything is current
+        if: steps.cmp.outputs.outdated == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.cmp.outputs.title }}
+        run: |
+          for num in $(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | select(.title == env.TITLE) | .number'); do
+            gh issue close "$num" --comment "Coraza und CRS sind im Build wieder aktuell."
+          done
