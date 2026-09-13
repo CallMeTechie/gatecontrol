@@ -3731,6 +3731,7 @@ body.rdp-session-body {
   .zn-disc-row { grid-template-columns: minmax(0, 1fr) auto; }
   .zn-disc-row > .zn-disc-info { grid-column: 1 / -1; }
   .zn-disc-bar .zn-disc-scan { margin-left: 0; }
+}
 /* ─── TLS guard (tg-) ─── */
 /* Certificates page (certificates.njk), the TLS dialogs of tls-ui.js and the
    TLS markers on the zones page / domain dialog / settings. Uses only the
@@ -3841,4 +3842,76 @@ body.rdp-session-body {
   .stats-grid.tg-tiles { grid-template-columns: repeat(2, 1fr); }
   .tg-records { grid-template-columns: 1fr; }
   .tg-chips { margin-left: 0; }
+}
+/* ─── HSTS (hs-) ─── */
+/* HSTS per host (docs/feature-hsts.md): the default control in the domain
+   dialog head, the entry tag + dialog of hsts-ui.js and the block on the
+   entry editor's security tab. Legacy tokens only, like the zn-/tg- blocks,
+   so app.css and pro.css carry the same rules (aurora overrides surfaces). */
+.hs-dialog [hidden], .hs-defaults [hidden], .hs-editor-block [hidden] { display: none !important; }
+.hs-ic { flex-shrink: 0; }
+.hs-mono { font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+
+/* ── Domain dialog head: 4 fields (gateway · access · HSTS · filter) ── */
+.zn-panel.hs-panel4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.hs-fields { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: flex-end; min-width: 0; }
+.hs-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hs-f-label, .hs-editor-f .hs-f-label { font-size: 11px; color: var(--text-3); }
+.hs-fields .hs-age { min-width: 0; }
+.hs-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding-bottom: 6px; }
+.hs-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; user-select: none; }
+.hs-check input { accent-color: var(--accent); margin: 0; }
+.hs-check input:disabled { cursor: not-allowed; }
+.hs-check-off { opacity: 0.55; }
+.hs-fields-off .hs-checks, .hs-disabled .hs-checks { opacity: 0.55; }
+.hs-defaults .hs-fields { margin-bottom: 2px; }
+.hs-def-hint { overflow-wrap: anywhere; }
+
+/* ── Entry tag ── */
+.tag.hs-entry-tag { cursor: pointer; line-height: inherit; }
+.tag.hs-entry-tag:hover { filter: brightness(0.93); }
+.tag.hs-entry-tag.hs-off { color: var(--text-3); border-style: dashed; }
+
+/* ── Dialogs (entry / apply / preload) ── */
+.modal.hs-dialog-box { max-width: min(520px, calc(100vw - 32px)); }
+.hs-dialog-body { max-height: min(70vh, 640px); overflow-y: auto; }
+.hs-dialog-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.hs-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-bottom: 12px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.hs-switch-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.hs-switch-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.hs-dialog-body .hs-fields { padding: 0 2px; margin-bottom: 10px; }
+.hs-preview { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 6px 0 12px; font-size: 12px; color: var(--text-2); }
+.hs-preview-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
+.hs-preview code { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+.hs-hints { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.hs-hint { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.hs-hint .hs-ic { margin-top: 2px; color: var(--text-3); }
+.hs-hint-warn { color: var(--amber); }
+.hs-hint-warn .hs-ic { color: var(--amber); }
+.hs-warn { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin: 4px 0 12px; background: var(--amber-lt); border: 1px solid var(--amber-bd); border-left: 3px solid var(--amber); border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5; color: var(--text-1); }
+.hs-warn-text { display: flex; gap: 8px; align-items: flex-start; }
+.hs-warn-text .hs-ic { color: var(--amber); margin-top: 2px; }
+.hs-warn .hs-confirm { white-space: normal; font-weight: 600; color: var(--text-1); }
+.hs-radios { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.hs-radio-off { opacity: 0.55; }
+.hs-field-error { margin-top: 6px; font-size: 12px; color: var(--red); }
+.hs-dialog .zn-dialog-msg { margin: 0; }
+
+/* ── Entry editor block (security tab) ── */
+.hs-editor-block.hs-locked { opacity: 0.5; pointer-events: none; }
+.hs-editor-block.hs-locked .toggle { cursor: not-allowed; }
+.hs-editor-fields { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end; padding: 10px 12px 4px; }
+.hs-editor-fields.hs-fields-off { opacity: 0.55; }
+.hs-editor-f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.hs-editor-fields .form-select { padding: 5px 28px 5px 10px; font-size: 12px; min-width: 130px; }
+.hs-editor-fields .hs-check { padding-bottom: 7px; }
+.hs-editor-hint { line-height: 1.45; }
+.hs-editor-hint:empty { display: none; }
+
+@media (max-width: 1100px) {
+  .zn-panel.hs-panel4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .zn-panel.hs-panel4 { grid-template-columns: 1fr; }
+  .hs-check { white-space: normal; }
 }

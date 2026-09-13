@@ -130,7 +130,15 @@
   'zones.offline', 'zones.reset_filters', 'zones.retry', 'zones.reverify', 'zones.reverify_ok',
   'zones.reverify_pending', 'zones.sum_disabled', 'zones.sum_domains', 'zones.sum_domains_one', 'zones.sum_hosts',
   'zones.sum_hosts_one', 'zones.sum_l4', 'zones.sum_l4_one', 'zones.target_peer_confirm_title',
-  'zones.target_peer_label', 'zones.unassigned', 'zones.zone_empty', 'zones.zone_empty_add'
+  'zones.target_peer_label', 'zones.unassigned', 'zones.zone_empty', 'zones.zone_empty_add',
+  'hsts.title', 'hsts.tag_on', 'hsts.tag_off', 'hsts.tag_hint', 'hsts.default_label', 'hsts.default_hint',
+  'hsts.age_label', 'hsts.age_off', 'hsts.age_6m', 'hsts.age_1y', 'hsts.age_2y', 'hsts.age_custom',
+  'hsts.include_subdomains', 'hsts.preload', 'hsts.preload_hint', 'hsts.preload_warning', 'hsts.preload_confirm',
+  'hsts.preload_confirm_title', 'hsts.preload_confirm_ok', 'hsts.dialog_title', 'hsts.enabled', 'hsts.enabled_desc',
+  'hsts.header_preview', 'hsts.header_none', 'hsts.hint_cert', 'hsts.hint_custom_header', 'hsts.hint_https',
+  'hsts.saved', 'hsts.apply_title', 'hsts.apply_intro', 'hsts.apply_new_only', 'hsts.apply_existing',
+  'hsts.apply_existing_none', 'hsts.apply_ok', 'hsts.defaults_saved', 'hsts.defaults_applied', 'hsts.editor_desc',
+  'hsts.preset_hint', 'hsts.err.preload_requirements', 'hsts.err.requires_https', 'hsts.err.max_age_invalid'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
 {# TLS guard strings (tls-ui.js) #}
@@ -144,6 +152,7 @@
 <script src="/js/entry-editor.js?v={{ appVersion }}"></script>
 <script src="/js/zones-view.js?v={{ appVersion }}"></script>
 <script src="/js/tls-ui.js?v={{ appVersion }}"></script>
+<script src="/js/hsts-ui.js?v={{ appVersion }}"></script>
 <script src="/js/domain-modal.js?v={{ appVersion }}"></script>
 <script src="/js/zones-page.js?v={{ appVersion }}"></script>
 {% endblock %}

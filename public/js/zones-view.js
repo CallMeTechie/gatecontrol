@@ -76,7 +76,10 @@
   }
 
   // One exposure chip: HTTPS 443 → 8092 · TCP 2028 → 22 · UDP 5000-5010 → 5000-5010
-  function entryChip(e) {
+  // The HTTPS chip carries the note 'HSTS' when the entry has it active
+  // (docs/feature-hsts.md); opts.hsts === false leaves it out (the domain
+  // dialog shows its own HSTS tag instead).
+  function entryChip(e, opts) {
     if (isL4(e)) {
       const out = str(e.l4_listen_port);
       const chip = {
@@ -93,7 +96,13 @@
       in: entryTargetPort(e),
     };
     if (e && e.backend_https) chip.note = 'Backend HTTPS';
+    if (hstsActive(e) && !(opts && opts.hsts === false)) chip.note = chip.note ? chip.note + ' · HSTS' : 'HSTS';
     return chip;
+  }
+
+  // entry.hsts = { enabled, … } from GET /zones; unknown shape → off.
+  function hstsActive(e) {
+    return !!(e && e.https_enabled && e.hsts && typeof e.hsts === 'object' && e.hsts.enabled === true);
   }
 
   // Language-neutral protocol names derived from the TARGET port (same table
@@ -403,7 +412,7 @@
   return {
     UNASSIGNED_KEY,
     isApex, hostLabel, sortHosts, sortEntries, isL4,
-    entryTargetHost, entryTargetPort, entryListenPort, entryChip, entryPortLabel, entryHealth,
+    entryTargetHost, entryTargetPort, entryListenPort, entryChip, hstsActive, entryPortLabel, entryHealth,
     worstHealth, hostHealth, hostEnabled, hostAccess, hostTarget, hostSinglePort,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
     isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,
