@@ -192,7 +192,10 @@ test('GET /waf/events: filters, newest first, keyset cursor, rule_excluded', asy
   assert.deepEqual(r.body.events.map((e) => e.id), [...ids].reverse());
   assert.equal(r.body.next_cursor, null);
   const e = r.body.events[0];
-  assert.deepEqual(Object.keys(e).sort(), ['action', 'client_ip', 'host', 'id', 'message', 'method', 'route_id', 'rule_excluded', 'rule_id', 'severity', 'ts', 'tx_id', 'uri'].sort());
+  assert.deepEqual(Object.keys(e).sort(), ['action', 'client_ip', 'host', 'id', 'message', 'method', 'raw', 'route_id', 'rule_excluded', 'rule_id', 'severity', 'ts', 'tx_id', 'uri'].sort());
+  assert.equal(e.raw, null, 'raw is parsed JSON or null');
+  db.prepare('UPDATE waf_events SET raw = ? WHERE id = ?').run(JSON.stringify({ request: 'GET / HTTP/1.1', rule: { id: 941106 } }), ids[6]);
+  assert.deepEqual((await GET('/waf/events?limit=1')).body.events[0].raw, { request: 'GET / HTTP/1.1', rule: { id: 941106 } });
 
   r = await GET('/waf/events?limit=3');
   assert.deepEqual(r.body.events.map((x) => x.id), [ids[6], ids[5], ids[4]]);

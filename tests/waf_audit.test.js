@@ -2,10 +2,13 @@
 
 // WAF audit log (docs/feature-waf.md): parser against REAL Coraza JSON lines
 // (tests/fixtures/waf/coraza-audit.jsonl, captured from the built Caddy
-// v2.11.4 + coraza-caddy v2.6.1 + CRS 4.25.0 with the generated directives:
-// block.test = block/PL1, detect.test = detect/PL2), the transaction → rows
-// mapping, and the watcher (incremental offsets, partial lines, missing file,
-// restart state, external truncation, own size-based rotation).
+// v2.11.4 + coraza-caddy v2.6.1 + CRS 4.25.0 with the generated directives —
+// audit parts AHZ: no request headers, no bodies, no response part;
+// block.test = block/PL1, detect.test = detect/PL2; the requests carried a
+// Cookie and an Authorization header and a password in the POST body), the
+// transaction → rows mapping with the redacted raw record, and the watcher
+// (truncation after ingest, incremental offsets, partial lines, missing file,
+// restart state, external truncation, fallback rotation).
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -25,10 +28,11 @@ const L = {
   upstream403: LINES[2],    // upstream 403, no rule message
   sqliPost: LINES[3],       // POST /login body sqli, 942100 + 949110
   badJson: LINES[4],        // POST /api broken JSON → 200002 (status 400)
-  xssDetected: LINES[5],    // detect.test, DetectionOnly, 6 rules + 949110
-  sqliDetected: LINES[6],   // detect.test, 9 rules + 949110
-  noMsg1: LINES[7],         // DetectionOnly entries without messages (Coraza tx-pool
-  noMsg2: LINES[8],         //   reuse keeps a stale detection-only interruption)
+  cookieXss: LINES[5],      // GET / with <script> in a COOKIE value → 941xxx on REQUEST_COOKIES:q
+  xssDetected: LINES[6],    // detect.test, DetectionOnly, 6 rules + 949110
+  sqliDetected: LINES[7],   // detect.test, 9 rules + 949110
+  noMsg1: LINES[8],         // DetectionOnly entry without messages (Coraza tx-pool
+                            //   reuse keeps a stale detection-only interruption)
 };
 
 let waf, db, events;
@@ -46,8 +50,16 @@ beforeEach(async () => {
 });
 afterEach(() => { eventBus.unsubscribe(onEvent); waf.stopWatcher(); teardown(); });
 
-test('fixture has the 9 captured lines', () => {
+test('fixture has the 9 captured lines; AHZ keeps headers, bodies and secrets out', () => {
   assert.equal(LINES.length, 9);
+  const text = LINES.join('\n');
+  assert.equal(/SECRETCOOKIE123|SECRETTOKEN456|SECRETPASSWORD789/.test(text), false, 'no Cookie/Authorization header, no body');
+  for (const l of LINES) {
+    const t = JSON.parse(l).transaction;
+    assert.equal(t.request.headers, null);
+    assert.equal(t.request.body, '');
+    assert.equal(t.response, undefined, 'no response part');
+  }
 });
 
 test('parseAuditLine: blocked XSS (real line)', () => {
@@ -59,7 +71,7 @@ test('parseAuditLine: blocked XSS (real line)', () => {
   assert.equal(t.interrupted, true);
   assert.equal(t.rule_engine, 'On');
   assert.match(t.tx_id, /^[A-Za-z0-9]{16}$/);
-  assert.match(t.ts, /^2026-09-13T18:26:\d\d\.\d{3}Z$/);
+  assert.match(t.ts, /^2026-09-13T18:\d\d:\d\d\.\d{3}Z$/);
   assert.deepEqual(t.messages.map((m) => m.rule_id), [941100, 941110, 941160, 941390, 949110]);
   const m = t.messages[0];
   assert.equal(m.message, 'XSS Attack Detected via libinjection');
@@ -83,9 +95,12 @@ test('parseAuditLine: other real lines', () => {
   assert.equal(det.interrupted, false);
   assert.equal(det.rule_engine, 'DetectionOnly');
   assert.equal(det.host, 'detect.test');
-  assert.equal(det.status, 200);
+  assert.equal(det.status, null, 'no response part (F) any more');
   assert.ok(det.messages.some((m) => m.rule_id === 942131), 'PL2 rule fired on the paranoia-2 route');
   assert.equal(waf.parseAuditLine(L.noMsg1).messages.length, 0);
+  const ck = waf.parseAuditLine(L.cookieXss);
+  assert.equal(ck.uri, '/');
+  assert.ok(ck.messages.some((m) => /REQUEST_COOKIES:q/.test(m.data || '')));
   assert.equal(waf.parseAuditLine(L.upstream403).messages.length, 0);
 });
 
@@ -124,7 +139,7 @@ test('eventsFromTransaction: one row per detection rule, summary rules dropped, 
   const rows = waf.eventsFromTransaction(waf.parseAuditLine(L.xssBlocked), lookup);
   assert.deepEqual(rows.map((r) => r.rule_id), [941100, 941110, 941160, 941390]);
   assert.ok(rows.every((r) => r.action === 'blocked' && r.route_id === 1 && r.host === 'block.test' && r.tx_id === rows[0].tx_id));
-  assert.deepEqual(JSON.parse(rows[0].raw).tags.slice(0, 1), ['application-multi']);
+  assert.deepEqual(JSON.parse(rows[0].raw).rule.tags.slice(0, 1), ['application-multi']);
   const det = waf.eventsFromTransaction(waf.parseAuditLine(L.xssDetected), lookup);
   assert.equal(det.length, 6);
   assert.ok(det.every((r) => r.action === 'detected' && r.route_id === 2));
@@ -181,7 +196,7 @@ test('watcher: state survives a restart (no replay), truncation elsewhere is det
     fs.writeFileSync(file, L.badJson + '\n');
     assert.equal(await waf.pollOnce(), 1);
     assert.equal(count(), 9);
-  });
+  }, { truncateAfterIngest: false });
 });
 
 test('watcher: own rotation at the size limit keeps 3 files and loses nothing', async () => {
@@ -203,7 +218,8 @@ test('watcher: own rotation at the size limit keeps 3 files and loses nothing', 
     assert.deepEqual(files, ['waf-audit.log', 'waf-audit.log.1', 'waf-audit.log.2', 'waf-audit.log.3']);
     assert.equal(fs.readFileSync(file + '.1', 'utf8'), L.sqliDetected + '\n', 'newest rotated file is .1');
     assert.equal(count(), 25);
-  }, { rotateBytes: 10 });
+    for (const f of files) assert.equal(fs.statSync(path.join(path.dirname(file), f)).mode & 0o777, 0o600, f);
+  }, { rotateBytes: 10, truncateAfterIngest: false });
 });
 
 test('watcher: rotates only once the file passed the limit AND is fully read', async () => {
@@ -216,5 +232,58 @@ test('watcher: rotates only once the file passed the limit AND is fully read', a
     assert.equal(fs.statSync(file).size, 0);
     assert.equal(fs.readFileSync(file + '.1', 'utf8'), L.xssBlocked + '\n' + L.lfiBlocked + '\n');
     assert.equal(count(), 8);
-  }, { rotateBytes: L.xssBlocked.length + 10 });
+  }, { rotateBytes: L.xssBlocked.length + 10, truncateAfterIngest: false });
+});
+
+test('watcher (default): file is emptied right after ingest, mode 0600, nothing lost on the next write', async () => {
+  await withLog([L.xssBlocked, L.upstream403], async (file) => {
+    fs.chmodSync(file, 0o644);
+    assert.equal(await waf.pollOnce(), 4);
+    assert.equal(fs.statSync(file).size, 0, 'truncated after ingest');
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.equal(fs.existsSync(file + '.1'), false, 'no rotated copy');
+    // The writer continues at offset 0 (O_APPEND) — the next line is read in full.
+    fs.appendFileSync(file, L.lfiBlocked + '\n');
+    assert.equal(await waf.pollOnce(), 4);
+    assert.equal(fs.statSync(file).size, 0);
+    // A half-written line is not truncated away: the file stays until the line is complete.
+    const half = Math.floor(L.sqliPost.length / 2);
+    fs.appendFileSync(file, L.sqliPost.slice(0, half));
+    assert.equal(await waf.pollOnce(), 0);
+    assert.equal(fs.statSync(file).size, half);
+    fs.appendFileSync(file, L.sqliPost.slice(half) + '\n');
+    assert.equal(await waf.pollOnce(), 1);
+    assert.equal(fs.statSync(file).size, 0);
+    assert.equal(count(), 9);
+  });
+});
+
+test('raw: redacted JSON of request line + rule messages; cookie / authorization matches never stored', async () => {
+  const lookup = () => 1;
+  const row = waf.eventsFromTransaction(waf.parseAuditLine(L.xssBlocked), lookup)[0];
+  const raw = JSON.parse(row.raw);
+  assert.equal(raw.request, 'GET /?q=%3Cscript%3Ealert(1)%3C/script%3E HTTP/1.1');
+  // Real line with the attack in a cookie value: matched data redacted in every row.
+  const ckRows = waf.eventsFromTransaction(waf.parseAuditLine(L.cookieXss), lookup);
+  assert.ok(ckRows.length > 0);
+  assert.equal(ckRows.some((r) => JSON.stringify(r).includes('COOKIEPAYLOAD')), false);
+  assert.ok(ckRows.some((r) => JSON.parse(r.raw).rule.data === '[redacted: matched in REQUEST_COOKIES:q]'));
+  assert.equal(raw.interrupted, true);
+  assert.equal(raw.rule.id, 941100);
+  assert.match(raw.rule.data, /ARGS:q/);
+  assert.ok(raw.messages.some((m) => m.id === 949110), 'anomaly summary kept in the messages list');
+  assert.equal(JSON.stringify(raw).includes('headers'), false);
+
+  // A rule that fired on a cookie / credential header: value replaced.
+  for (const target of ['REQUEST_COOKIES:sid', 'REQUEST_COOKIES_NAMES:x', 'REQUEST_HEADERS:Cookie', 'REQUEST_HEADERS:authorization', 'REQUEST_HEADERS:Proxy-Authorization']) {
+    const data = `Matched Data: <script>SECRETVALUE found within ${target}: <script>SECRETVALUE</script>`;
+    const red = waf.redactMatchedData(data);
+    assert.equal(red.includes('SECRETVALUE'), false, target);
+    assert.match(red, /^\[redacted: matched in /, target);
+  }
+  assert.equal(waf.redactMatchedData('Matched Data: x found within ARGS:q: x'), 'Matched Data: x found within ARGS:q: x');
+  const tx = waf.parseAuditLine(L.xssBlocked);
+  tx.messages[0].data = 'Matched Data: <script> found within REQUEST_COOKIES:session: <script>TOPSECRET';
+  const rows = waf.eventsFromTransaction(tx, lookup);
+  assert.equal(rows.some((r) => r.raw.includes('TOPSECRET')), false);
 });

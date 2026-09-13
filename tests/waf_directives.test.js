@@ -73,7 +73,8 @@ describe('directivesFor', () => {
       'SecAuditLogRelevantStatus "^40[03]$"',
       'SecAuditLogFormat JSON',
       'SecAuditLog /data/caddy/waf-audit.log',
-      'SecAuditLogParts ABCFHZ',
+      'SecAuditLogParts AHZ',
+      'SecAuditLogFileMode 0600',
     ]);
   });
 

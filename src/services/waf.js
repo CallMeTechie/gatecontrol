@@ -9,7 +9,7 @@
 //   engineAvailable()         does the running Caddy binary carry the module?
 //   startWatcher/stopWatcher  audit log → waf_events (+ eventBus 'waf')
 //   parseAuditLine            one Coraza JSON audit line → transaction or null
-//   rotate                    size-based rotation (Coraza keeps its fd open)
+//   truncate after ingest     data minimisation; rotation (20 MB × 3) as fallback
 //   stats / status / listEvents / addExclusion / removeExclusion / cleanup
 
 const fs = require('node:fs');
@@ -159,7 +159,11 @@ function directivesFor(route, { auditLog } = {}) {
     'SecAuditLogRelevantStatus "^40[03]$"',
     'SecAuditLogFormat JSON',
     `SecAuditLog ${auditLog || auditLogPath()}`,
-    'SecAuditLogParts ABCFHZ',
+    // Data minimisation: A (always-on base: time, tx id, client ip, server
+    // name, method, uri, protocol) + H (rule messages, engine) + Z. No B
+    // (request headers: Cookie/Authorization), no C/F/E (bodies, response).
+    'SecAuditLogParts AHZ',
+    'SecAuditLogFileMode 0600',
   );
   for (const id of ex.rule_ids) lines.push(`SecRuleRemoveById ${id}`);
   return lines.join('\n');
@@ -391,7 +395,7 @@ function parseAuditLine(line) {
   for (const m of Array.isArray(obj.messages) ? obj.messages : []) {
     if (!m || typeof m !== 'object') continue;
     // Structured details exist with audit part K; with the parts used here
-    // (ABCFHZ) Coraza only writes the error-log string (part H).
+    // (AHZ) Coraza only writes the error-log string (part H).
     const d = m.data && typeof m.data === 'object' ? m.data : parseErrorLog(m.error_message || m.message || '');
     const id = Number(d.id);
     messages.push({
@@ -409,11 +413,44 @@ function parseAuditLine(line) {
     client_ip: t.client_ip ? String(t.client_ip) : null,
     method: req.method ? clip(req.method, 16) : null,
     uri: req.uri != null ? clip(req.uri, 2048) : null,
+    protocol: req.protocol ? clip(req.protocol, 16) : null,
     status: Number.isInteger(res.status) ? res.status : null,
     interrupted: t.is_interrupted === true,
     rule_engine: t.producer && t.producer.rule_engine ? String(t.producer.rule_engine) : null,
     messages,
   };
+}
+
+// Matched data of a rule that fired on a cookie or a credential header holds
+// that value ("Matched Data: … found within REQUEST_COOKIES:sid: <value>") —
+// never stored; only the variable name survives.
+const SENSITIVE_TARGET_RE = /(REQUEST_COOKIES(?:_NAMES)?(?::[^:\s]*)?|REQUEST_HEADERS(?:_NAMES)?:(?:cookie|authorization|proxy-authorization)\b)/i;
+
+function redactMatchedData(data) {
+  if (!data) return data || null;
+  const m = String(data).match(SENSITIVE_TARGET_RE);
+  return m ? `[redacted: matched in ${m[1]}]` : String(data);
+}
+
+const RAW_MAX_BYTES = 8192;
+
+/**
+ * Redacted raw record of one row (the UI shows it collapsible): request line,
+ * engine/interruption, the row's rule with its (redacted) matched data, and
+ * the other rule messages of the same request (id/msg/severity only — the
+ * anomaly-score summary 949110 included). No request headers, no bodies.
+ */
+function rawFor(tx, m) {
+  const raw = {
+    request: [tx.method, tx.uri, tx.protocol].filter(Boolean).join(' ') || null,
+    rule_engine: tx.rule_engine,
+    interrupted: tx.interrupted,
+    rule: { id: m.rule_id, msg: m.message || null, severity: m.severity, data: redactMatchedData(m.data), tags: m.tags },
+    messages: tx.messages.filter((x) => x.rule_id).slice(0, 30).map((x) => ({ id: x.rule_id, msg: x.message || null, severity: x.severity })),
+  };
+  let json = JSON.stringify(raw);
+  if (json.length > RAW_MAX_BYTES) { raw.messages = raw.messages.slice(0, 5); raw.request = clip(raw.request, 1024); json = JSON.stringify(raw); }
+  return json.length > RAW_MAX_BYTES ? JSON.stringify({ request: clip(raw.request, 512), rule: { id: m.rule_id } }) : json;
 }
 
 /**
@@ -445,7 +482,7 @@ function eventsFromTransaction(tx, routeLookup) {
     message: m.message,
     action,
     tx_id: tx.tx_id,
-    raw: JSON.stringify({ data: m.data || null, tags: m.tags, status: tx.status, rule_engine: tx.rule_engine }),
+    raw: rawFor(tx, m),
   }));
 }
 
@@ -510,7 +547,7 @@ function ingestLines(lines) {
 // `partial` holds the bytes of an unterminated last line (a Buffer, so a
 // multi-byte character split across two reads is decoded correctly).
 const EMPTY = Buffer.alloc(0);
-const _watch = { timer: null, file: null, ino: null, offset: 0, head: '', partial: EMPTY, busy: false, rotateBytes: ROTATE_BYTES };
+const _watch = { timer: null, file: null, ino: null, offset: 0, head: '', partial: EMPTY, busy: false, rotateBytes: ROTATE_BYTES, truncate: true };
 
 function loadWatchState() {
   try {
@@ -574,6 +611,7 @@ function rotate(file, fromOffset) {
   }
   const tmp = `${file}.1.tmp`;
   fs.copyFileSync(file, tmp);
+  try { fs.chmodSync(tmp, FILE_MODE); } catch { /* best-effort */ }
   fs.truncateSync(file, 0);
   fs.renameSync(tmp, `${file}.1`);
   const fd = fs.openSync(`${file}.1`, 'r');
@@ -583,42 +621,88 @@ function rotate(file, fromOffset) {
   } finally { fs.closeSync(fd); }
 }
 
-/** Read new lines since the last offset, ingest them, rotate when due. */
+// Data minimisation: the audit log is readable by root only and holds a
+// request (request line + rule messages) just until the watcher ingested it.
+const FILE_MODE = 0o600;
+
+function restrictMode(file, st) {
+  try { if (st && (st.mode & 0o077) !== 0) fs.chmodSync(file, FILE_MODE); } catch { /* best-effort */ }
+}
+
+/**
+ * Empty the audit log in place once everything in it was ingested
+ * (copytruncate semantics: Coraza keeps writing through its O_APPEND fd at
+ * offset 0). Returns 'truncated', 'grown' (new bytes arrived since the read —
+ * read them first) or 'failed'. Only the microseconds between fstat and
+ * ftruncate can lose a line.
+ */
+function truncateIfCaughtUp(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r+');
+    const size = fs.fstatSync(fd).size;
+    if (size !== _watch.offset) return 'grown';
+    fs.ftruncateSync(fd, 0);
+    return 'truncated';
+  } catch (err) {
+    logger.warn({ err: err.message, file }, 'waf: truncating the audit log failed');
+    return 'failed';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* ignore */ } }
+  }
+}
+
+/**
+ * Read new lines since the last offset and ingest them. When the file is
+ * fully read (no backlog, no half-written line) it is truncated right away;
+ * rotation (20 MB, 3 files) remains as the fallback when truncation is off or
+ * fails.
+ */
 async function pollOnce() {
   if (_watch.busy) return 0;
   _watch.busy = true;
   try {
     const file = _watch.file;
-    let st;
-    try { st = fs.statSync(file); }
-    catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = EMPTY; return 0; }
-    let fd;
-    try { fd = fs.openSync(file, 'r'); }
-    catch { return 0; }
-    let chunk = EMPTY;
-    try {
-      const head = readHead(fd, st.size);
-      const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
-      const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));
-      if (rotated) { _watch.offset = 0; _watch.partial = EMPTY; }  // rotated/truncated elsewhere → from the top
-      _watch.ino = st.ino;
-      if (_watch.offset === 0) _watch.head = head;
-      const to = Math.min(st.size, _watch.offset + MAX_READ_BYTES);
-      chunk = readRange(fd, _watch.offset, to);
-      _watch.offset += chunk.length;
-      if (_watch.head.length < HEAD_LEN) _watch.head = readHead(fd, st.size);
-    } finally { fs.closeSync(fd); }
+    let stored = 0;
+    let st = null;
+    for (let round = 0; round < 3; round++) {
+      try { st = fs.statSync(file); }
+      catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = EMPTY; return stored; }
+      restrictMode(file, st);
+      let fd;
+      try { fd = fs.openSync(file, 'r'); }
+      catch { return stored; }
+      let chunk = EMPTY;
+      try {
+        const head = readHead(fd, st.size);
+        const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
+        const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));
+        if (rotated) { _watch.offset = 0; _watch.partial = EMPTY; }  // rotated/truncated elsewhere → from the top
+        _watch.ino = st.ino;
+        if (_watch.offset === 0) _watch.head = head;
+        const to = Math.min(st.size, _watch.offset + MAX_READ_BYTES);
+        chunk = readRange(fd, _watch.offset, to);
+        _watch.offset += chunk.length;
+        if (_watch.head.length < HEAD_LEN) _watch.head = readHead(fd, st.size);
+      } finally { fs.closeSync(fd); }
 
-    let lines = splitLines(chunk);
-    let stored = ingestLines(lines);
+      stored += ingestLines(splitLines(chunk));
 
-    // Rotate once the file is big AND fully read (a backlog is read first).
+      if (_watch.offset < st.size) break;                 // backlog → next tick
+      if (!_watch.truncate || _watch.partial.length) break; // off, or a line is still being written
+      const res = truncateIfCaughtUp(file);
+      if (res === 'truncated') { _watch.offset = 0; _watch.head = ''; break; }
+      if (res === 'failed') break;
+      // 'grown' → another round reads the new lines, then tries again
+    }
+
+    // Fallback: rotate once the file is big AND fully read.
     let cur;
     try { cur = fs.statSync(file); } catch { cur = null; }
-    if (cur && cur.size >= _watch.rotateBytes && _watch.offset >= st.size) {
+    if (cur && cur.size >= _watch.rotateBytes && _watch.offset >= cur.size) {
       try {
         const rest = rotate(file, _watch.offset);
-        lines = splitLines(rest);
+        const lines = splitLines(rest);
         if (_watch.partial.length) { lines.push(_watch.partial.toString('utf8')); _watch.partial = EMPTY; } // the copy is complete
         stored += ingestLines(lines);
         _watch.offset = 0; _watch.head = '';
@@ -635,10 +719,11 @@ async function pollOnce() {
   }
 }
 
-function startWatcher({ file, intervalMs = WATCH_INTERVAL_MS, immediate = true, rotateBytes = ROTATE_BYTES } = {}) {
+function startWatcher({ file, intervalMs = WATCH_INTERVAL_MS, immediate = true, rotateBytes = ROTATE_BYTES, truncateAfterIngest = true } = {}) {
   if (_watch.timer) return;
   _watch.file = file || auditLogPath();
   _watch.rotateBytes = rotateBytes;
+  _watch.truncate = !!truncateAfterIngest;
   _watch.ino = null; _watch.offset = 0; _watch.partial = EMPTY; _watch.head = '';
   loadWatchState();
   const tick = () => pollOnce().catch((err) => logger.warn({ err: err.message }, 'waf: watcher tick failed'));
@@ -697,6 +782,11 @@ function status() {
   };
 }
 
+function parseRaw(text) {
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
 function parseLimit(v) {
   if (v === undefined || v === null || v === '') return EVENTS_LIMIT_DEFAULT;
   const n = Number(v);
@@ -741,7 +831,7 @@ function listEvents({ host, route_id, action, from, to, rule_id, limit, cursor }
     where.push('id < ?'); args.push(c);
   }
   const db = getDb();
-  const rows = db.prepare(`SELECT id, ts, host, route_id, client_ip, method, uri, rule_id, severity, message, action, tx_id
+  const rows = db.prepare(`SELECT id, ts, host, route_id, client_ip, method, uri, rule_id, severity, message, action, tx_id, raw
     FROM waf_events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`).all(...args, lim + 1);
   const more = rows.length > lim;
   const page = more ? rows.slice(0, lim) : rows;
@@ -756,6 +846,7 @@ function listEvents({ host, route_id, action, from, to, rule_id, limit, cursor }
   return {
     events: page.map((r) => ({
       ...r,
+      raw: parseRaw(r.raw),
       rule_excluded: !!(r.route_id != null && r.rule_id != null && exByRoute.has(r.route_id) && exByRoute.get(r.route_id).rule_ids.includes(r.rule_id)),
     })),
     next_cursor: more ? page[page.length - 1].id : null,
@@ -884,6 +975,7 @@ module.exports = {
   modulesHaveWaf,
   parseAuditLine,
   parseErrorLog,
+  redactMatchedData,
   eventsFromTransaction,
   ingestLines,
   pollOnce,
