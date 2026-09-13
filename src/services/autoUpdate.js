@@ -57,6 +57,9 @@ function requestUpdate() {
   settings.set('auto_update.last_trigger_at', new Date().toISOString());
   return { queued: true, request_id };
 }
+// update.sh writes bad_image/bad_version with a strict charset; re-check here
+// anyway (the marker lives on a host-writable volume).
+function markerRef(v) { return typeof v === 'string' && /^[A-Za-z0-9._:+-]{1,128}$/.test(v) ? v : null; }
 function readMarker() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
   catch { return null; }   // missing/unreadable/corrupt → not_configured
@@ -78,8 +81,11 @@ function getStatus() {
   const modeDiffers = !!marker.mode && marker.mode !== mode;
   const mode_mismatch = modeDiffers && checkedAt > changedAt;  // a run AFTER the change still used old mode
   const mode_pending  = modeDiffers && checkedAt <= changedAt; // change not yet picked up by a run (neutral)
+  // last_action "rolled_back": the new image failed its health check and the
+  // previous one was restored; "failed" + bad_image: the rollback failed too.
   return { status, mode, mode_mismatch, mode_pending, age_s, checked_at: marker.checked_at,
-    last_action: marker.action || null, marker_mode: marker.mode || null, running_version };
+    last_action: marker.action || null, marker_mode: marker.mode || null, running_version,
+    bad_image: markerRef(marker.bad_image), bad_version: markerRef(marker.bad_version) };
 }
 // Boot sync: baseline mode_changed_at to install time if unset (so the gate
 // isn't anchored at epoch, R1-fix #9), then project the mode onto the volume.

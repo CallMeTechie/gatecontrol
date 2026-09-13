@@ -56,6 +56,23 @@ describe('autoUpdate.getStatus', () => {
     assert.equal(s.status, 'active');
     assert.equal(s.last_action, 'failed');
   });
+  it('rolled_back exposes the failed image + version', () => {
+    writeMarker({ checked_at: new Date().toISOString(), action: 'rolled_back', mode: 'auto', ok: false,
+      bad_image: 'sha256:abc123', bad_version: '1.2.3' });
+    const s = au.getStatus();
+    assert.equal(s.last_action, 'rolled_back');
+    assert.equal(s.bad_image, 'sha256:abc123');
+    assert.equal(s.bad_version, '1.2.3');
+  });
+  it('bad_image/bad_version are null when absent or malformed', () => {
+    writeMarker({ checked_at: new Date().toISOString(), action: 'noop', mode: 'auto', ok: true });
+    assert.equal(au.getStatus().bad_image, null);
+    writeMarker({ checked_at: new Date().toISOString(), action: 'rolled_back', mode: 'auto', ok: false,
+      bad_image: '<script>', bad_version: 42 });
+    const s = au.getStatus();
+    assert.equal(s.bad_image, null);
+    assert.equal(s.bad_version, null);
+  });
 });
 
 describe('autoUpdate.getStatus — mode_mismatch timing gate', () => {

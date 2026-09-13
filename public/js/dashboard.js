@@ -282,8 +282,17 @@
     if (d.last_action === 'failed') {
       var fail = document.createElement('span');
       fail.className = 'au-pill au-red';
-      fail.textContent = T('autoupdate.failed', 'Last update failed');
+      // bad_image on a failed marker = update.sh could not roll back either.
+      fail.textContent = d.bad_image ? T('autoupdate.rollback_failed', 'Update and rollback failed — check the host')
+        : T('autoupdate.failed', 'Last update failed');
       host.appendChild(fail);
+    } else if (d.last_action === 'rolled_back') {
+      var rb = document.createElement('span');
+      rb.className = 'au-pill au-amber';
+      var what = d.bad_version ? 'v' + d.bad_version : (d.bad_image ? d.bad_image.replace(/^sha256:/, '').slice(0, 12) : '');
+      rb.textContent = T('autoupdate.rolled_back', 'Update {x} failed — previous version restored').replace('{x}', what).replace(/\s+/g, ' ');
+      rb.title = T('autoupdate.rolled_back_hint', 'The new image failed its health check. Automatic mode skips it until a newer release is published.');
+      host.appendChild(rb);
     }
 
     var badge = document.createElement('span'); badge.className = 'au-badge';
@@ -352,7 +361,7 @@
     pre.style.cssText = 'background:var(--bg-base, #f0ede7);padding:10px 12px;border-radius:6px;font-size:11px;overflow-x:auto;border:1px solid var(--border)';
     det.appendChild(pre);
     var note = document.createElement('p'); note.style.cssText = 'font-size:12px;color:var(--text-2)';
-    note.textContent = T('autoupdate.setup_note', 'update.sh must run from /opt/gatecontrol. */5 interval is required. No auto-rollback — monitor separately.');
+    note.textContent = T('autoupdate.setup_note', 'update.sh must run from /opt/gatecontrol. */5 interval is required. A new image that fails its health check is rolled back automatically.');
     det.appendChild(note);
     body.appendChild(det);
     if (window.openModal) window.openModal('au-setup-modal-overlay');
