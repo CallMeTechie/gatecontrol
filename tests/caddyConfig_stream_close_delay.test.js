@@ -40,7 +40,8 @@ function reverseProxies(node, out = []) {
 
 function hostRoute(cfg, host) {
   for (const srv of Object.values(cfg.apps.http.servers)) {
-    const r = srv.routes.find(x => x.match?.some(m => m.host?.includes(host)));
+    // Skip the HTTP→HTTPS redirect route (feature-security-options §0).
+    const r = srv.routes.find(x => x['@id'] !== 'gc_https_redirect' && x.match?.some(m => m.host?.includes(host)));
     if (r) return r;
   }
   return null;

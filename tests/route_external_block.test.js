@@ -91,7 +91,9 @@ const { buildCaddyConfig } = require('../src/services/caddyConfig');
 
 function findHostRoutes(cfg, host) {
   const routes = cfg.apps.http.servers.srv0.routes;
-  return routes.filter(r => JSON.stringify(r.match || []).includes(host));
+  // The HTTP→HTTPS redirect route (feature-security-options §0) lists every
+  // HTTPS host; only the host's own routes count here.
+  return routes.filter(r => r['@id'] !== 'gc_https_redirect' && JSON.stringify(r.match || []).includes(host));
 }
 
 test('internal-only + not_found → gated route (A) + host-only 404 fallback (B), B after A, B has no @id', () => {

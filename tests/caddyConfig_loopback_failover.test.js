@@ -24,6 +24,7 @@ function gwTarget(config, domain) {
   const srv = config.apps.http.servers;
   for (const name of Object.keys(srv)) {
     for (const r of srv[name].routes) {
+      if (r['@id'] === 'gc_https_redirect') continue; // §0 redirect route, not the host's route
       const match = (r.match || []).some(m => (m.host || []).includes(domain));
       if (!match) continue;
       const rp = (r.handle || []).find(h => h.handler === 'reverse_proxy');
@@ -39,6 +40,7 @@ function statusFor(config, domain) {
   const srv = config.apps.http.servers;
   for (const name of Object.keys(srv)) {
     for (const r of srv[name].routes) {
+      if (r['@id'] === 'gc_https_redirect') continue; // §0 redirect route, not the host's route
       const match = (r.match || []).some(m => (m.host || []).includes(domain));
       if (!match) continue;
       const sr = (r.handle || []).find(h => h.handler === 'static_response');
