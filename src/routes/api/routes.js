@@ -87,7 +87,9 @@ const router = Router();
 const httpRouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'http' OR route_type IS NULL").get().count;
 const l4RouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4'").get().count;
 
-const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash']);
+const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash', 'tls']);
+// TLS guard verdict attached by routes.create/update → top-level `tls` in the answer.
+const tlsOf = (r) => (r && r.tls ? { tls: r.tls } : {});
 
 /** Map service-layer error messages to i18n keys */
 const VALIDATION_ERROR_MAP = {
@@ -487,7 +489,7 @@ router.post('/',
     if (monitoring_enabled) {
       try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id).catch(() => {}); } catch {}
     }
-    res.status(201).json({ ok: true, route: stripRoute(route) });
+    res.status(201).json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
     const { status, error } = resolveError(req, err, 'error.routes.create');
@@ -660,7 +662,7 @@ router.put('/:id',
     if (monitoring_enabled) {
       try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id).catch(() => {}); } catch {}
     }
-    res.json({ ok: true, route: stripRoute(route) });
+    res.json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, 'Failed to update route');
     const { status, error } = resolveError(req, err, 'error.routes.update');

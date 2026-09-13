@@ -26,6 +26,20 @@ const router = Router();
 
 const UPGRADE_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
 
+// TLS guard: the services attach the preflight verdict to the returned view;
+// the answer carries it top-level as `tls: { state, code, detail }` (absent
+// when no HTTPS/SNI hostname was involved).
+function withTls(obj) {
+  const key = Object.keys(obj)[0];
+  const view = obj[key];
+  if (view && view.tls) {
+    const tls = view.tls;
+    delete view.tls;
+    return { ...obj, tls };
+  }
+  return obj;
+}
+
 const httpRouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'http' OR route_type IS NULL").get().count;
 const l4RouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4'").get().count;
 
@@ -189,7 +203,7 @@ router.post('/domains/:id/hosts', async (req, res) => {
     if (!verdict.ok) return deny(req, res, verdict.key, verdict.extra);
     if (kind === 'gateway' && !gatewayHttpTargetsOk(req, res, zone.gateway_peer_id, http ? 1 : 0)) return;
     const host = await hosts.create(zone.id, body);
-    res.status(201).json({ ok: true, host });
+    res.status(201).json({ ok: true, ...withTls({ host }) });
   } catch (err) {
     handleError(req, res, err);
   }
@@ -204,7 +218,7 @@ router.put('/hosts/:id', async (req, res) => {
     const patch = {};
     for (const k of ['description', 'subdomain', 'lan_host']) if (body[k] !== undefined) patch[k] = body[k];
     const host = await hosts.update(req.params.id, patch);
-    res.json({ ok: true, host });
+    res.json({ ok: true, ...withTls({ host }) });
   } catch (err) {
     handleError(req, res, err);
   }
@@ -272,7 +286,7 @@ router.post('/hosts/:id/entries',
         if (!isL4 && target.kind === 'gateway' && !gatewayHttpTargetsOk(req, res, target.peer_id, 1)) return;
       }
       const entry = await hosts.addEntry(req.params.id, body);
-      res.status(201).json({ ok: true, entry });
+      res.status(201).json({ ok: true, ...withTls({ entry }) });
     } catch (err) {
       handleError(req, res, err);
     }

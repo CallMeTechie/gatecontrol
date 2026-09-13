@@ -74,8 +74,13 @@ test('an installation that never wrote the key still gets the .env address', asy
   assert.ok(acmeEmailsIn(cfg).includes('env@example.com'), 'Bestandsinstallation verlor ihre .env-Adresse');
 });
 
-test('without any address there is no tls block at all (unchanged behaviour)', async () => {
+test('without any address the tls block still exists, its ACME issuer just has no email (TLS guard)', async () => {
   // beforeEach hat portal.base_domain geleert -> homeHost ist wieder intern.
+  // Vorher fehlte apps.tls komplett und Caddy lief mit seiner eingebauten
+  // Automatik — die Policy "interner Aussteller für Portal-Hosts" griff nicht.
   const cfg = await caddyConfig.buildCaddyConfig();
-  assert.ok(!cfg.apps || !cfg.apps.tls, 'apps.tls darf ohne Adresse gar nicht existieren');
+  assert.ok(cfg.apps && cfg.apps.tls, 'apps.tls muss auch ohne Adresse existieren');
+  assert.deepEqual(acmeEmailsIn(cfg), [], 'kein Aussteller darf eine leere Adresse tragen');
+  const policies = cfg.apps.tls.automation.policies;
+  assert.ok(policies.some(p => p.issuers.some(i => i.module === 'internal')), 'interner Aussteller für den Portal-Host');
 });

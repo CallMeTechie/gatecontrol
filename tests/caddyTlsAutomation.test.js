@@ -36,10 +36,19 @@ describe('caddyTlsAutomation: isPublicDomain', () => {
 });
 
 describe('caddyTlsAutomation: buildTlsAutomation', () => {
-  it('returns null when email is unset', () => {
-    assert.equal(buildTlsAutomation(['example.com'], {}), null);
-    assert.equal(buildTlsAutomation(['example.com'], { email: '' }), null);
-    assert.equal(buildTlsAutomation(['example.com'], null), null);
+  it('always returns policies; the ACME issuer carries no email when none is set (TLS guard)', () => {
+    for (const cfg of [{}, { email: '' }, null]) {
+      const out = buildTlsAutomation(['example.com', 'nas.local'], cfg);
+      assert.deepEqual(out, {
+        automation: {
+          policies: [
+            { subjects: ['example.com'], issuers: [{ module: 'acme' }] },
+            { subjects: ['nas.local'], issuers: [{ module: 'internal' }] },
+          ],
+        },
+      });
+    }
+    assert.deepEqual(buildTlsAutomation([], {}), { automation: { policies: [{ issuers: [{ module: 'acme' }] }] } });
   });
 
   it('emits an ACME policy for public domains', () => {

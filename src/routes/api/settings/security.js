@@ -76,6 +76,35 @@ router.put('/security', (req, res) => {
 });
 
 /**
+ * GET /api/settings/tls — TLS guard settings
+ */
+router.get('/tls', (req, res) => {
+  const tlsGuard = require('../../../services/tlsGuard');
+  res.json({ ok: true, max_attempts: tlsGuard.maxAttempts() });
+});
+
+/**
+ * PUT /api/settings/tls — { max_attempts: 0..10 } (0 = never pause)
+ */
+router.put('/tls', (req, res) => {
+  const tlsGuard = require('../../../services/tlsGuard');
+  try {
+    const value = req.body ? req.body.max_attempts : undefined;
+    if (value === undefined) return res.status(400).json({ ok: false, error: 'max_attempts required' });
+    const n = tlsGuard.setMaxAttempts(value);
+    activity.log('tls_settings_updated', `Certificate attempt limit set to ${n}`, {
+      source: 'admin',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+    res.json({ ok: true, max_attempts: n });
+  } catch (err) {
+    if (err.statusCode === 400) return res.status(400).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * GET /api/settings/machine-binding — Get machine binding settings
  */
 router.get('/machine-binding', (req, res) => {

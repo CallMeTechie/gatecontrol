@@ -25,14 +25,19 @@ test('failed when resolves elsewhere (server IP known-good)', async () => {
   domains._setResolverForTest(async (h, f) => (f === 4 ? ['203.0.113.1'] : []));
   const r = await domains.verify('elsewhere.example.com');
   assert.equal(r.status, 'failed');
-  assert.match(r.error, /198\.51\.100\.7/); // expected IP in the message
+  // TLS guard: error carries the code, the detail names both addresses.
+  assert.equal(r.error, 'a_mismatch');
+  assert.match(r.check.detail, /203\.0\.113\.1 ≠ 198\.51\.100\.7/);
+  assert.equal(r.expectedIp, '198.51.100.7');
 });
 
 test('verified for IPv6 server IP regardless of canonical form', async () => {
   // Override is non-canonical (uppercase + '::' compression); the resolver returns
   // the fully-expanded canonical AAAA. A plain string compare would miss this.
-  settings.set('server.public_ip', '2001:DB8::1');
-  domains._setResolverForTest(async (h, f) => (f === 6 ? ['2001:db8:0:0:0:0:0:1'] : []));
+  // TLS guard: the AAAA must match the server's v6 (server.public_ipv6) and an
+  // A record must match the v4 — an AAAA alone never verifies a domain.
+  settings.set('server.public_ipv6', '2001:DB8::1');
+  domains._setResolverForTest(async (h, f) => (f === 6 ? ['2001:db8:0:0:0:0:0:1'] : ['198.51.100.7']));
   const r = await domains.verify('v6.example.com');
   assert.equal(r.status, 'verified');
 });

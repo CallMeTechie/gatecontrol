@@ -350,6 +350,10 @@ function buildHost(bundle, entries, zone, ctx) {
   const gwEntry = own.find((e) => e.target_kind === 'gateway' && e.target_lan_host);
   const healths = entries.map((e) => e.health);
   const target = lead ? routeTarget(lead) : null;
+  // TLS guard: a failed or paused certificate degrades the host at least.
+  const tlsProblem = entries.some((e) => e.tls && (e.tls.state === 'failed' || e.tls.state === 'paused'));
+  let health = hostHealth(healths);
+  if (tlsProblem && health === 'ok') health = 'degraded';
   return {
     id: bundle ? bundle.id : null,
     domain_id: zone ? zone.id : null,
@@ -363,7 +367,8 @@ function buildHost(bundle, entries, zone, ctx) {
     target: describeTarget(target, ctx),
     entry_count: entries.length,
     enabled_count: entries.filter((e) => e.enabled).length,
-    health: hostHealth(healths),
+    health,
+    tls_problem: tlsProblem,
     entries,
   };
 }
@@ -381,9 +386,23 @@ function listZones() {
     'SELECT id, gateway_l4_route_id FROM rdp_routes WHERE gateway_l4_route_id IS NOT NULL'
   ).all().map((r) => [r.gateway_l4_route_id, r.id]));
 
+  // TLS guard status per entry (one query on tls_status). HTTP entries and SNI
+  // L4 entries get certificates; plain L4 entries report state 'none'.
+  let tlsRows = new Map();
+  let tlsOpts = {};
+  const tlsGuard = require('./tlsGuard');
+  try {
+    tlsRows = tlsGuard.loadRows();
+    const portal = require('./portalConfig').effectivePortalHost();
+    tlsOpts = { forcedInternal: new Set(portal.public ? [] : [String(portal.host).toLowerCase()]) };
+  } catch (err) { logger.warn({ err: err.message }, 'zones: tls status unavailable'); }
+
   const entries = routesSvc.toApiRows(routesSvc.getAll({ limit: 1000000 })).map((row) => {
     const e = { ...row, rdp_owned: rdpByRoute.has(row.id), rdp_route_id: rdpByRoute.get(row.id) || null };
     e.health = entryHealth(e, ctx);
+    if (e.route_type !== 'l4' || (e.l4_tls_mode && e.l4_tls_mode !== 'none')) {
+      try { e.tls = tlsGuard.entryTls(e, tlsRows, tlsOpts); } catch { e.tls = null; }
+    }
     return e;
   });
 

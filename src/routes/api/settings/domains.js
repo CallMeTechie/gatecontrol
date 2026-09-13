@@ -10,10 +10,14 @@ const router = Router();
 
 router.get('/domains', async (req, res) => {
   try {
-    const server = await domains.getServerPublicIp();
+    const server = await domains.getServerPublicIps();
     res.json({ ok: true, data: {
       domains: domains.list(),
-      serverIp: server.ip,
+      serverIp: server.v4,
+      serverIpv6: server.v6,
+      serverIps: server,
+      serverIpOverride: (settings.get('server.public_ip', '') || '').trim(),
+      serverIpv6Override: (settings.get('server.public_ipv6', '') || '').trim(),
       serverIpWarning: settings.get('domains.server_ip_warning', '0') === '1',
     } });
   } catch (err) {
@@ -69,13 +73,23 @@ router.delete('/domains/:id', (req, res) => {
   }
 });
 
+// Body: { ip?: IPv4|'' , ipv6?: IPv6|'' } — each key is applied only when
+// present ('' clears the override). A body with neither key clears the IPv4
+// override, as before.
 router.put('/domains/server-ip', async (req, res) => {
-  const ip = String(req.body?.ip ?? '').trim();
-  if (ip !== '' && !net.isIP(ip)) {
+  const body = req.body || {};
+  const hasIp = body.ip !== undefined || body.ipv6 === undefined;
+  const ip = String(body.ip ?? '').trim();
+  const ipv6 = body.ipv6 === undefined ? undefined : String(body.ipv6 ?? '').trim();
+  if (hasIp && ip !== '' && !net.isIP(ip)) {
+    return res.status(400).json({ ok: false, error: req.t('settings.domains.invalid_ip') });
+  }
+  if (ipv6 !== undefined && ipv6 !== '' && !net.isIPv6(ipv6)) {
     return res.status(400).json({ ok: false, error: req.t('settings.domains.invalid_ip') });
   }
   try {
-    settings.set('server.public_ip', ip);
+    if (hasIp) settings.set('server.public_ip', ip);
+    if (ipv6 !== undefined) settings.set('server.public_ipv6', ipv6);
     // Best-effort: re-verify all domains against the new IP so the
     // server-IP warning is refreshed immediately (without restart).
     try {

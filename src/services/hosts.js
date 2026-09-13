@@ -329,6 +329,19 @@ function activityLog(type, message, details) {
   } catch { /* best-effort */ }
 }
 
+// TLS guard: DNS/CAA preflight of a hostname that is about to get HTTPS (an
+// HTTP entry or an SNI L4 entry). Runs BEFORE the transactional write and the
+// Caddy sync so a paused host is in automatic_https.skip from the first sync
+// on. Never blocks the write; the API answer carries { state, code, detail }.
+async function guardTls(fqdn) {
+  const r = await require('./tlsGuard').guardHost(fqdn);
+  return { state: r.state, code: r.code, detail: r.detail };
+}
+function withTls(view, tls) {
+  if (view && tls) view.tls = tls;
+  return view;
+}
+
 // ─── Public API ─────────────────────────────────────────
 
 /** POST /domains/:id/hosts — host with its entries (or from a template). */
@@ -369,6 +382,8 @@ async function create(domainId, input = {}) {
     }
   }
 
+  const tls = (http || l4.some((e) => e.l4_tls_mode !== 'none')) ? await guardTls(fqdn) : null;
+
   const serviceBundle = require('./serviceBundle');
   const bundle = await serviceBundle.createBundle({
     name: description || fqdn,
@@ -386,7 +401,7 @@ async function create(domainId, input = {}) {
     domainZones.notifyGateways(domainZones.peersForTargets(db, [target]));
   }
   publish(zone.id, bundle.id);
-  return domainZones.getHost(bundle.id);
+  return withTls(domainZones.getHost(bundle.id), tls);
 }
 
 /** PUT /hosts/:id — description, rename (subdomain) and/or LAN address. */
@@ -455,6 +470,10 @@ async function update(hostId, patch = {}) {
 
   if (!changed) return domainZones.getHost(host.id);
 
+  // Renaming an HTTPS or SNI entry: preflight the new name before the write.
+  const tls = renameRows.some((r) => r.route_type !== 'l4' ? !!r.https_enabled : (r.l4_tls_mode && r.l4_tls_mode !== 'none'))
+    ? await guardTls(newFqdn) : null;
+
   const touched = [...new Map([...renameRows, ...lanRows].map((r) => [r.id, r])).values()];
   const hostSnapshot = { ...host };
   const writeHost = db.prepare(`UPDATE service_bundles SET name = ?, description = ?, subdomain = ?, domain = ?,
@@ -484,7 +503,7 @@ async function update(hostId, patch = {}) {
     activityLog('host_updated', `Host "${next.name}" updated`, { hostId: host.id, routeIds: touched.map((r) => r.id) });
   }
   publish(host.domain_id, host.id);
-  return domainZones.getHost(host.id);
+  return withTls(domainZones.getHost(host.id), tls);
 }
 
 /** DELETE /hosts/:id — deletes the host with all its entries. */
@@ -561,6 +580,8 @@ async function addEntry(hostId, input) {
     serviceBundle.assertNoExistingConflicts(l4);
   }
 
+  const tls = (isHttp || sni) ? await guardTls(fqdn) : null;
+
   const routes = require('./routes');
   const tgt = serviceBundle.memberTargetFields(
     bundleTarget(target, lanHost, lead ? { wol_enabled: lead.wol_enabled, wol_mac: lead.wol_mac } : {}),
@@ -595,7 +616,7 @@ async function addEntry(hostId, input) {
   domainZones.rebuildDns('host entry add');
   activityLog('host_entry_added', `Entry added to host "${host.name}"`, { hostId: host.id, routeId: route.id });
   publish(host.domain_id, host.id);
-  return domainZones.getEntry(route.id);
+  return withTls(domainZones.getEntry(route.id), tls);
 }
 
 /** PUT /hosts/:id/gateway-override {override:false} — back to the zone gateway. */
