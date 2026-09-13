@@ -1401,6 +1401,21 @@ const migrations = [
       );`,
     detect: (db) => hasColumn(db, 'domains', 'check_json'),
   },
+  {
+    version: 71,
+    name: 'hsts',
+    // HSTS per host (docs/feature-hsts.md): the Strict-Transport-Security
+    // header is a setting of the HTTP entry (routes); a zone carries a
+    // default for new entries as JSON ({enabled, max_age, include_subdomains,
+    // preload}) or NULL (= off).
+    sql: `
+      ALTER TABLE routes ADD COLUMN hsts_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN hsts_max_age INTEGER NOT NULL DEFAULT 31536000;
+      ALTER TABLE routes ADD COLUMN hsts_subdomains INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN hsts_preload INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE domains ADD COLUMN hsts_default TEXT;`,
+    detect: (db) => hasColumn(db, 'routes', 'hsts_enabled'),
+  },
 ];
 
 module.exports = { migrations };
