@@ -146,10 +146,20 @@
     return t && t.state ? t : null;
   }
 
+  // CAA recommendation (docs/feature-security-options.md §G) of a preflight
+  // result / check_json: { status: 'none'|'allows'|'blocks', suggestion }
+  // or null when the check never reached the CAA lookup (caa_status null).
+  const CAA_STATES = ['none', 'allows', 'blocks'];
+  function caaInfo(pf) {
+    const s = pf && pf.caa_status;
+    if (CAA_STATES.indexOf(s) < 0) return null;
+    return { status: s, suggestion: s === 'none' && pf.caa_suggestion ? String(pf.caa_suggestion) : null };
+  }
+
   const pure = {
-    EXPIRING_DAYS, FILTERS, STATES, SORT_ORDER, DNS_CODES, TLS_ERR_CODES,
+    EXPIRING_DAYS, FILTERS, STATES, SORT_ORDER, DNS_CODES, TLS_ERR_CODES, CAA_STATES,
     isProblemState, isExpiring, stateKey, sortHosts, matchesFilter, filterHosts, summarize, filterCounts,
-    errorCode, reasonKey, dnsCodeKey, parseCheck, dnsCode, hostTlsProblem, tlsFromResponse,
+    errorCode, reasonKey, dnsCodeKey, parseCheck, dnsCode, hostTlsProblem, tlsFromResponse, caaInfo,
   };
   if (!win || !win.document) return pure;
 
@@ -212,6 +222,8 @@
     shield: [['path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' }]],
     ext: [['path', { d: 'M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6' }], ['polyline', { points: '15 3 21 3 21 9' }], ['line', { x1: 10, y1: 14, x2: 21, y2: 3 }]],
     down: [['polyline', { points: '6 9 12 15 18 9' }]],
+    info: [['circle', { cx: 12, cy: 12, r: 10 }], ['line', { x1: 12, y1: 16, x2: 12, y2: 12 }], ['line', { x1: 12, y1: 8, x2: 12.01, y2: 8 }]],
+    copy: [['rect', { x: 9, y: 9, width: 13, height: 13, rx: 2 }], ['path', { d: 'M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1' }]],
   };
   function icon(name, size) {
     const svg = doc.createElementNS(SVGNS, 'svg');
@@ -366,8 +378,56 @@
       ]),
       pf.detail ? el('div', { class: 'tg-pf-detail tg-mono', text: String(pf.detail) }) : null,
       hint ? el('p', { class: 'tg-pf-hint', text: hint }) : null,
+      caaEl(pf),
       recordsEl(pf),
     ]);
+  }
+
+  // ── CAA recommendation (security options §G) ──
+  // 'none' → hint with the record to copy, 'allows' → "CAA schützt die
+  // Domain", 'blocks' → nothing extra (the preflight error says it already).
+  // opts.compact: one line for the settings domains table.
+  function caaEl(pf, opts) {
+    const c = caaInfo(pf);
+    if (!c || c.status === 'blocks') return null;
+    const compact = !!(opts && opts.compact);
+    if (c.status === 'allows') {
+      return el('div', { class: 'so-caa so-caa-ok' + (compact ? ' so-caa-compact' : ''), dataset: { caa: 'allows' } }, [icon('shield', 12), el('span', { text: t('caa.allows') })]);
+    }
+    return el('div', { class: 'so-caa so-caa-none' + (compact ? ' so-caa-compact' : ''), dataset: { caa: 'none' }, title: compact ? t('caa.none_hint') : null }, [
+      el('div', { class: 'so-caa-head' }, [icon('info', 12), el('span', { text: t('caa.none') })]),
+      compact ? null : el('div', { class: 'so-caa-hint', text: t('caa.none_hint') }),
+      c.suggestion ? el('div', { class: 'so-caa-rec' }, [el('code', { class: 'tg-mono so-caa-record', text: c.suggestion }), copyButton(c.suggestion)]) : null,
+    ]);
+  }
+  function copyButton(text) {
+    const label = el('span', { class: 'so-copy-label', text: t('caa.copy') });
+    const btn = el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm so-copy', title: t('caa.copy_hint'), 'aria-label': t('caa.copy_hint') }, [icon('copy', 12), label]);
+    let timer = null;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ok = await copyText(text);
+      label.textContent = ok ? t('caa.copied') : t('caa.copy_failed');
+      btn.classList.toggle('so-copied', ok);
+      clearTimeout(timer);
+      timer = setTimeout(() => { label.textContent = t('caa.copy'); btn.classList.remove('so-copied'); }, 1800);
+    });
+    return btn;
+  }
+  // Clipboard API where available (secure context), else a hidden textarea + execCommand.
+  async function copyText(text) {
+    try {
+      if (win.navigator && win.navigator.clipboard && win.isSecureContext) { await win.navigator.clipboard.writeText(String(text)); return true; }
+    } catch (_) { /* fall back */ }
+    try {
+      const ta = el('textarea', { class: 'so-copy-buf', readonly: true, 'aria-hidden': 'true' });
+      ta.value = String(text);
+      doc.body.appendChild(ta);
+      ta.select();
+      const ok = doc.execCommand('copy');
+      ta.remove();
+      return !!ok;
+    } catch (_) { return false; }
   }
 
   // Short reason + collapsible original Caddy text.
@@ -710,7 +770,7 @@
     const reason = o.reason || (o.tls ? t(reasonKey(o.tls.code ? 'preflight:' + o.tls.code : 'other') || 'tls.err.other') : '');
     const box = el('div', { class: 'tg-notice', role: 'alert' }, [
       icon('alert', 14),
-      el('span', { class: 'tg-notice-text', text: o.host ? t('tls.created_paused', { host: o.host, reason }) : t('tls.created_paused_short', { reason }) }),
+      el('span', { class: 'tg-notice-text', text: o.text || (o.host ? t('tls.created_paused', { host: o.host, reason }) : t('tls.created_paused_short', { reason })) }),
       o.tls && o.tls.detail ? el('code', { class: 'tg-mono tg-small', text: String(o.tls.detail) }) : null,
       el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm tg-notice-details', text: t('tls.notice_details'), on: { click: () => openDetail(o.host, null) } }),
       el('button', { type: 'button', class: 'zn-ibtn tg-notice-close', 'aria-label': t('common.close'), on: { click: () => { box.remove(); if (o.onClose) o.onClose(); } } }, [icon('x', 12)]),
@@ -725,7 +785,7 @@
 
   return Object.assign(pure, {
     t, el, append, icon, busy, toast, call, errMsg, isNotFound, fmtDate, fmtDateTime, fmtWhen,
-    stateTag, stateText, stateSub, shortReason, dnsCodeText, dnsCodeHint, recordsEl, preflightEl, errorEl,
+    stateTag, stateText, stateSub, shortReason, dnsCodeText, dnsCodeHint, recordsEl, preflightEl, errorEl, caaEl, copyText,
     fetchStatus, fetchHost, preflight, retry, dialog,
     openDetail, openPreflight, openDnsCheck, dnsTag, entryTag, decorateChip, hostProblemText, noticeEl, pausedReason,
   });

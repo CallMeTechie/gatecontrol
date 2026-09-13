@@ -189,6 +189,8 @@
     return el('tr', { class: 'tg-row' + (problem ? ' tg-row-problem' : ''), dataset: { host: h.host, state: k } }, [
       el('td', { class: aurora ? 'cell-name' : 'tg-cell-host' }, [
         el('a', { class: 'tg-host', href: zoneHref(h), title: t('tls.zone_link'), text: h.host }),
+        // Alias rows (security options §A) name their primary host.
+        h.alias_of ? el('span', { class: 'tg-sub so-alias-of', text: t('alias.of', { host: h.alias_of }) }) : null,
       ]),
       el('td', { class: 'tg-cell-status' }, [aurora ? auroraStatusTag(h) : TG.stateTag(h), sub ? el('span', { class: 'tg-sub', text: sub }) : null]),
       el('td', { class: 'tg-cell-issuer' + (aurora ? ' mono' : ''), text: h.issuer || '—' }),
