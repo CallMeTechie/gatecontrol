@@ -196,6 +196,28 @@ router.put('/:id/toggle', (req, res) => {
 });
 
 /**
+ * DELETE /api/v1/users/:id/2fa — Reset another user's two-factor login
+ * (so nobody locks themselves out). Own account: use the profile "disable".
+ */
+router.delete('/:id/2fa', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (id === req.session.userId) {
+      return res.status(400).json({ ok: false, error: req.t('two_fa.error_self_reset') });
+    }
+    const user = users.getById(id);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    }
+    require('../../services/adminTwoFactor').resetByAdmin(id, req.session.userId, req.ip);
+    res.json({ ok: true, user: users.getById(id) });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to reset user 2FA');
+    res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
+/**
  * POST /api/v1/users/:id/tokens — Create token for this user
  */
 router.post('/:id/tokens', (req, res) => {

@@ -46,6 +46,7 @@ router.use('/wg', require('./wireguard'));
 router.use('/caddy', require('./caddy'));
 router.use('/webhooks', require('./webhooks'));
 router.use('/users', require('./users'));
+router.use('/profile', require('./profile'));
 router.use('/tokens', require('./tokens'));
 router.use('/license', require('./license'));
 router.use('/client', require('./client'));

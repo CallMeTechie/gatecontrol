@@ -14,6 +14,20 @@ const loginLimiter = rateLimit({
   },
 });
 
+// Profile 2FA setup/confirm: a wrong confirmation code is a guess against
+// the pending secret, so budget it like the login form (2x the login cap,
+// per session user — the caller already holds a full session).
+const twoFactorSetupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `2fa:${(req.session && req.session.userId) || req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
+  },
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: (req) => (req.session && req.session.userId)
@@ -128,4 +142,4 @@ const shareRedeemLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
 });
 
-module.exports = { loginLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, shareRedeemLimiter };
+module.exports = { loginLimiter, twoFactorSetupLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, shareRedeemLimiter };
