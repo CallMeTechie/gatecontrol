@@ -23,22 +23,31 @@
   const RANGE_MS = { '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
   const PARANOIA_LEVELS = [1, 2, 3, 4];
   const PAGE_SIZE = 50;
-  const PATH_MAX = 512;
+  // Same limits as services/waf.js (validateRuleId / EXCLUSION_PATH_RE).
+  const RULE_ID_MAX = 9999999;
+  const PATH_MAX = 256;
+  const PATH_RE = /^\/[A-Za-z0-9._~!$&()*+,;=:@%/-]{0,255}$/;
   const TAG_CLASS = { block: 'tag-red', detect: 'tag-amber' };
   const ACTION_CLASS = { blocked: 'tag-red', detected: 'tag-amber', unknown: 'tag-grey' };
-  // Contract/validation codes → i18n key (routesValidation: WAF_MODE_INVALID,
-  // WAF_PARANOIA_INVALID, WAF_REQUIRES_HTTP; exclusion codes of the WAF API).
+  // Error codes → i18n key: routesValidation (WAF_MODE_INVALID,
+  // WAF_PARANOIA_INVALID, WAF_REQUIRES_HTTP) and services/waf.js + the WAF API
+  // (exclusions, event filters, CADDY_SYNC_FAILED).
   const ERROR_KEYS = {
     WAF_MODE_INVALID: 'waf.err.mode_invalid',
     WAF_PARANOIA_INVALID: 'waf.err.paranoia_invalid',
     WAF_REQUIRES_HTTP: 'waf.err.requires_http',
     WAF_RULE_ID_INVALID: 'waf.err.invalid_rule',
     WAF_PATH_INVALID: 'waf.err.invalid_path',
-    WAF_EXCLUSION_INVALID: 'waf.err.exclusion_invalid',
-    WAF_EXCLUSION_EXISTS: 'waf.err.duplicate',
-    WAF_EXCLUSION_DUPLICATE: 'waf.err.duplicate',
-    WAF_LICENSE: 'waf.err.license',
-    ROUTE_NOT_FOUND: 'waf.err.route_not_found',
+    WAF_EXCLUSION_REQUIRED: 'waf.err.exclusion_required',
+    WAF_EXCLUSION_LIMIT: 'waf.err.exclusion_limit',
+    WAF_EXCLUSION_NOT_FOUND: 'waf.err.exclusion_not_found',
+    WAF_ROUTE_NOT_FOUND: 'waf.err.route_not_found',
+    WAF_LIMIT_INVALID: 'waf.err.filter_invalid',
+    WAF_TIME_INVALID: 'waf.err.filter_invalid',
+    WAF_ROUTE_ID_INVALID: 'waf.err.filter_invalid',
+    WAF_ACTION_INVALID: 'waf.err.filter_invalid',
+    WAF_CURSOR_INVALID: 'waf.err.filter_invalid',
+    CADDY_SYNC_FAILED: 'waf.err.caddy_sync',
   };
   const ERROR_CODES = Object.keys(ERROR_KEYS);
 
@@ -89,15 +98,13 @@
   // ── Exclusions ({ rule_ids: [], paths: [] }, stored as JSON text) ──
   function parseRuleId(v) {
     const s = str(v).trim();
-    if (!/^\d{1,9}$/.test(s)) return null;
+    if (!/^\d{1,7}$/.test(s)) return null;
     const n = parseInt(s, 10);
-    return n > 0 ? n : null;
+    return n > 0 && n <= RULE_ID_MAX ? n : null;
   }
   function normPath(v) { return str(v).trim(); }
-  function validPath(v) {
-    const s = normPath(v);
-    return s.length > 0 && s.length <= PATH_MAX && s.charAt(0) === '/' && !/\s/.test(s);
-  }
+  // '/' + up to 255 URL characters; no spaces, quotes or backslashes.
+  function validPath(v) { return PATH_RE.test(normPath(v)); }
   function parseExclusions(v) {
     let o = v;
     if (typeof o === 'string') { try { o = JSON.parse(o); } catch (_) { o = null; } }
@@ -243,15 +250,20 @@
       paranoia: normParanoia(x.paranoia != null ? x.paranoia : x.waf_paranoia),
       events_24h: toInt(x.events_24h),
       blocked_24h: toInt(x.blocked_24h),
+      enabled: x.enabled !== false && x.enabled !== 0,
+      exclusions: parseExclusions(x.exclusions),
     };
   }
   // { engine_available, routes (sorted by host), totals } from GET /waf/status.
+  // Tiles: the answer's events_24h / blocked_24h (distinct requests, events
+  // without a route included), else totals/summary/stats, else the route sum.
   // A missing engine_available counts as available (no warning without proof).
   function statusFrom(res) {
     const r = res || {};
     const routes = (Array.isArray(r.routes) ? r.routes : []).filter(isObj).map(statusRoute)
       .sort((a, b) => a.host.localeCompare(b.host) || ((a.route_id || 0) - (b.route_id || 0)));
-    const s = isObj(r.totals) ? r.totals : (isObj(r.summary) ? r.summary : (isObj(r.stats) ? r.stats : null));
+    const s = r.events_24h != null || r.blocked_24h != null ? r
+      : (isObj(r.totals) ? r.totals : (isObj(r.summary) ? r.summary : (isObj(r.stats) ? r.stats : null)));
     const sum = (k) => routes.reduce((n, x) => n + x[k], 0);
     return {
       engine_available: r.engine_available !== false,
@@ -271,6 +283,48 @@
     const hit = (routes || []).find((r) => r.host === host && r.route_id != null);
     return hit ? hit.route_id : null;
   }
+  // Exclusions of a route known from GET /waf/status, or null.
+  function routeExclusions(routeId, routes) {
+    const hit = (routes || []).find((r) => r.route_id != null && r.route_id === Number(routeId));
+    return hit ? hit.exclusions : null;
+  }
+  // Rule of the event already excluded on its route (API flag rule_excluded,
+  // or the known exclusions); a path exclusion covers the event path.
+  function ruleExcluded(ev, excl) {
+    if (!ev) return false;
+    if (ev.rule_excluded === true) return true;
+    const c = excl ? parseExclusions(excl) : null;
+    return !!c && ev.rule_id != null && c.rule_ids.indexOf(Number(ev.rule_id)) >= 0;
+  }
+  function pathExcluded(ev, excl) {
+    if (!ev || !excl) return false;
+    const p = pathOfUri(ev.uri);
+    return parseExclusions(excl).paths.some((x) => p.indexOf(x) === 0);
+  }
+
+  // ── Row detail from the redacted raw record (services/waf.js rawFor):
+  // { request, rule_engine, interrupted, rule: { id, msg, severity, data, tags },
+  //   messages: [{ id, msg, severity }] } — object or JSON text. `others` are
+  // the other rule messages of the same request. null without a record.
+  function detailOf(ev) {
+    let raw = ev && ev.raw;
+    if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch (_) { raw = null; } }
+    if (!isObj(raw)) return null;
+    const rule = isObj(raw.rule) ? raw.rule : {};
+    const own = rule.id != null ? Number(rule.id) : (ev.rule_id != null ? Number(ev.rule_id) : null);
+    const others = (Array.isArray(raw.messages) ? raw.messages : []).filter(isObj)
+      .filter((m) => m.id == null || Number(m.id) !== own)
+      .map((m) => ({ id: m.id == null ? null : Number(m.id), msg: str(m.msg), severity: str(m.severity) }));
+    return {
+      request: str(raw.request),
+      rule_engine: str(raw.rule_engine),
+      interrupted: typeof raw.interrupted === 'boolean' ? raw.interrupted : null,
+      data: str(rule.data),
+      tags: (Array.isArray(rule.tags) ? rule.tags : []).map(str).filter(Boolean),
+      others,
+    };
+  }
+
   // Host select options: status hosts + hosts seen in events + the current one.
   function hostOptions(routes, events, current) {
     const set = new Set();
@@ -309,11 +363,12 @@
   function clientErrorKey(err) { return err ? 'waf.err.' + err : null; }
 
   const pure = {
-    MODES, ACTIONS, ACTION_FILTERS, RANGES, RANGE_MS, PARANOIA_LEVELS, PAGE_SIZE, PATH_MAX, TAG_CLASS, ACTION_CLASS, ERROR_KEYS, ERROR_CODES,
+    MODES, ACTIONS, ACTION_FILTERS, RANGES, RANGE_MS, PARANOIA_LEVELS, PAGE_SIZE, RULE_ID_MAX, PATH_MAX, TAG_CLASS, ACTION_CLASS, ERROR_KEYS, ERROR_CODES,
     normMode, normParanoia, wafOf, isHttpEntry, wafState, toRouteFields, modeKey, paranoiaKey, paranoiaHintKey, tagKey, chipKey,
     parseRuleId, normPath, validPath, parseExclusions, exclusionsOf, exclusionError, exclusionBody, applyExclusion, exclusionsFromResponse, exclusionCount,
     actionKey, pathOfUri, normFilter, rangeFrom, eventsQuery, matchesFilter, eventsFrom, eventKey, mergeEvents, rawText, requestLine,
-    statusFrom, routeIdFor, hostOptions, parseDeepLink, deepLinkQuery, pageHref, errorKey, clientErrorKey,
+    statusFrom, routeIdFor, routeExclusions, ruleExcluded, pathExcluded, detailOf, hostOptions, parseDeepLink, deepLinkQuery, pageHref,
+    errorKey, clientErrorKey,
   };
   if (!win || !win.document) return pure;
 
@@ -559,7 +614,9 @@
       try {
         const r = await addExclusion(ctx.routeId, exclusionBody(kind, value));
         const shown = rule ? String(parseRuleId(value)) : normPath(value);
-        toast(t(rule ? 'waf.excluded_rule' : 'waf.excluded_path', { rule: shown, path: shown, host }), 'success');
+        // changed:false → the exclusion existed already (no Caddy sync).
+        if (r.res && r.res.changed === false) toast(t('waf.err.duplicate'), 'warning');
+        else toast(t(rule ? 'waf.excluded_rule' : 'waf.excluded_path', { rule: shown, path: shown, host }), 'success');
         d.close({ kind, value: rule ? parseRuleId(value) : normPath(value), exclusions: r.exclusions });
       } catch (e) {
         err.show(errMsg(e));
@@ -640,7 +697,18 @@
           toast(t('waf.exclusion_removed'), 'success');
           render();
           if (o.onChanged) o.onChanged(cur);
-        } catch (e) { err.show(errMsg(e)); busy(rm, false); }
+        } catch (e) {
+          // Already gone on the server (another tab, the event list): drop it here too.
+          if (e && e.data && e.data.code === 'WAF_EXCLUSION_NOT_FOUND') {
+            cur = applyExclusion(cur, kind, value, true);
+            toast(t('waf.err.exclusion_not_found'), 'warning');
+            render();
+            if (o.onChanged) o.onChanged(cur);
+            return;
+          }
+          err.show(errMsg(e));
+          busy(rm, false);
+        }
       });
       return el('div', { class: 'wf-excl-row', role: 'listitem', dataset: { kind, value: String(value) } }, [
         el('span', { class: 'tag tag-grey wf-excl-kind', text: t(kind === 'rule' ? 'waf.exclusion_type_rule' : 'waf.exclusion_type_path') }),
@@ -668,7 +736,7 @@
         const r = await addExclusion(routeId, exclusionBody(kind, value));
         cur = r.exclusions || applyExclusion(cur, kind, value, false);
         input.value = '';
-        toast(t('waf.exclusion_added'), 'success');
+        toast(t(r.res && r.res.changed === false ? 'waf.err.duplicate' : 'waf.exclusion_added'), r.res && r.res.changed === false ? 'warning' : 'success');
         render();
         if (o.onChanged) o.onChanged(cur);
       } catch (e) { err.show(errMsg(e)); } finally { busy(addBtn, false); render(); }

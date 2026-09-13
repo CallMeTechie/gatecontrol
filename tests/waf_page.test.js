@@ -109,11 +109,11 @@ describe('waf.njk renders in every theme', () => {
       assert.match(html, /id="waf-i18n" nonce="NONCE123"/);
     });
 
-    it(`${theme}: #waf-i18n carries every waf.* key, translated`, () => {
+    it(`${theme}: #waf-i18n carries every waf.* key (except the settings-page retention strings), translated`, () => {
       for (const lang of ['de', 'en']) {
         const isl = island(render(theme, { lang }));
         const loc = lang === 'en' ? en : de;
-        const expected = Object.keys(de).filter((k) => k.startsWith('waf.'));
+        const expected = Object.keys(de).filter((k) => k.startsWith('waf.') && !k.startsWith('waf.retention_'));
         assert.ok(expected.length > 100, 'contract block present in de.json');
         for (const k of expected) {
           assert.ok(Object.prototype.hasOwnProperty.call(isl, k), `${theme}/${lang}: island has ${k}`);

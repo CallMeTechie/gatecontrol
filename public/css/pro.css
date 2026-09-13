@@ -4045,7 +4045,7 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
    waf-ui.js, the entry editor block (Security tab) and the domain-dialog
    entry tag. Legacy tokens only, like the zn-/tg-/hs-/so- blocks, so
    app.css and pro.css carry the same rules (aurora overrides surfaces). */
-.wf-dialog [hidden], .wf-editor-block [hidden], .wf-banner[hidden], .wf-card [hidden], .wf-field-error[hidden] { display: none !important; }
+.wf-dialog [hidden], .wf-editor-block [hidden], .wf-banner[hidden], .wf-card [hidden], .wf-field-error[hidden], .wf-retention [hidden] { display: none !important; }
 .wf-ic { flex-shrink: 0; }
 .wf-mono { font-family: var(--font-mono); font-size: 11.5px; }
 .wf-muted { color: var(--text-3); }
@@ -4098,7 +4098,19 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
 .wf-cell-message { min-width: 180px; max-width: 40ch; }
 .wf-msg { color: var(--text-1); line-height: 1.4; overflow-wrap: anywhere; }
 .wf-raw-toggle { display: inline-block; margin-top: 3px; }
-.wf-raw { margin: 6px 0 0; padding: 8px 10px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--text-2); }
+/* Row detail (redacted raw record): request, engine, matched data, tags, other hits, JSON */
+.wf-detail { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding: 8px 10px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11.5px; line-height: 1.45; color: var(--text-2); }
+.wf-detail-grid { display: flex; flex-direction: column; gap: 7px; }
+.wf-detail-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wf-detail-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-1); white-space: pre-wrap; word-break: break-all; }
+.wf-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag.wf-tag { font-family: var(--font-mono); font-size: 10px; white-space: nowrap; }
+.wf-others { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.wf-other { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.wf-other .wf-rule { font-size: 10.5px; }
+.wf-other-msg { color: var(--text-1); overflow-wrap: anywhere; min-width: 0; }
+.wf-sub.wf-other-sev { display: inline; margin: 0; }
+.wf-raw-json { margin: 4px 0 0; padding: 8px 10px; background: var(--bg-panel, var(--bg-card)); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--text-2); }
 .wf-cell-client { white-space: nowrap; }
 .wf-cell-request { max-width: 30ch; }
 .wf-req { display: block; max-width: 26ch; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

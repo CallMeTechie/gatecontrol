@@ -241,29 +241,36 @@
     const routeId = W.routeIdFor(ev, routes());
     const key = W.eventKey(ev);
     const raw = W.rawText(ev.raw);
+    const detail = W.detailOf(ev);
     const hasRule = ev.rule_id != null;
     const path = W.pathOfUri(ev.uri);
-    const ruleDone = hasRule && routeId != null && state.excluded.has('rule:' + routeId + ':' + ev.rule_id);
-    const pathDone = routeId != null && Array.from(state.excluded).some((x) => x.indexOf('path:' + routeId + ':') === 0 && path.indexOf(x.slice(('path:' + routeId + ':').length)) === 0);
+    // Already excluded: API flag rule_excluded, the route's exclusions from
+    // /waf/status, or an exclusion added on this page since the last load.
+    const excl = routeId != null ? W.routeExclusions(routeId, routes()) : null;
+    const ruleDone = hasRule && routeId != null && (W.ruleExcluded(ev, excl) || state.excluded.has('rule:' + routeId + ':' + ev.rule_id));
+    const pathDone = routeId != null && (W.pathExcluded(ev, excl) || Array.from(state.excluded).some((x) => x.indexOf('path:' + routeId + ':') === 0 && path.indexOf(x.slice(('path:' + routeId + ':').length)) === 0));
 
     const msg = el('div', { class: 'wf-msg-wrap' }, [
       el('div', { class: 'wf-msg', text: ev.message || '—' }),
       ev.severity ? el('span', { class: 'wf-sub', text: t('waf.severity', { severity: ev.severity }) }) : null,
     ]);
-    if (raw) {
-      const pre = el('pre', { class: 'wf-raw', text: raw });
+    if (raw || detail) {
+      // Expandable row detail: request line, engine, matched data, tags and the
+      // other rule messages of the same request, then the raw record as JSON.
+      // Untrusted data — textContent only (el() text / text nodes).
+      const box = el('div', { class: 'wf-raw wf-detail' }, [detail ? detailEl(detail) : null, raw ? jsonEl(raw) : null]);
       const open = state.expanded.has(key);
-      pre.hidden = !open;
+      box.hidden = !open;
       const toggle = el('button', { type: 'button', class: 'wf-link wf-raw-toggle', 'aria-expanded': open ? 'true' : 'false', text: open ? t('waf.raw_hide') : t('waf.raw_show') });
       toggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        pre.hidden = !pre.hidden;
-        if (pre.hidden) state.expanded.delete(key); else state.expanded.add(key);
-        toggle.setAttribute('aria-expanded', pre.hidden ? 'false' : 'true');
-        toggle.textContent = pre.hidden ? t('waf.raw_show') : t('waf.raw_hide');
+        box.hidden = !box.hidden;
+        if (box.hidden) state.expanded.delete(key); else state.expanded.add(key);
+        toggle.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+        toggle.textContent = box.hidden ? t('waf.raw_show') : t('waf.raw_hide');
       });
       msg.appendChild(toggle);
-      msg.appendChild(pre);
+      msg.appendChild(box);
     }
 
     // Compact icon buttons (the table is wide); title + aria-label carry the full text.
@@ -294,6 +301,36 @@
     ]);
   }
 
+  function detailEl(d) {
+    const none = () => el('span', { class: 'wf-muted', text: t('waf.detail_none') });
+    const row = (label, node, cls) => el('div', { class: 'wf-detail-row' + (cls ? ' ' + cls : '') }, [el('span', { class: 'wf-f-label', text: label }), node]);
+    const engine = [d.rule_engine, d.interrupted == null ? '' : t(d.interrupted ? 'waf.detail_interrupted_yes' : 'waf.detail_interrupted_no')].filter(Boolean).join(' · ');
+    return el('div', { class: 'wf-detail-grid' }, [
+      d.request ? row(t('waf.detail_request'), el('code', { class: 'wf-detail-code', text: d.request }), 'wf-detail-request') : null,
+      engine ? row(t('waf.detail_engine'), el('span', { text: engine }), 'wf-detail-engine') : null,
+      d.data ? row(t('waf.detail_data'), el('code', { class: 'wf-detail-code', text: d.data }), 'wf-detail-data') : null,
+      row(t('waf.detail_tags'), d.tags.length ? el('div', { class: 'wf-tags' }, d.tags.map((x) => el('span', { class: 'tag tag-grey wf-tag', text: x }))) : none(), 'wf-detail-tags'),
+      row(t('waf.detail_others'), d.others.length
+        ? el('ul', { class: 'wf-others' }, d.others.map((m) => el('li', { class: 'wf-other' }, [
+          m.id != null ? el('code', { class: 'wf-rule', text: String(m.id) }) : null,
+          el('span', { class: 'wf-other-msg', text: m.msg || '—' }),
+          m.severity ? el('span', { class: 'wf-sub wf-other-sev', text: m.severity }) : null,
+        ])))
+        : none(), 'wf-detail-others'),
+    ]);
+  }
+  function jsonEl(raw) {
+    const pre = el('pre', { class: 'wf-raw-json', text: raw });
+    pre.hidden = true;
+    const btn = el('button', { type: 'button', class: 'wf-link wf-json-toggle', 'aria-expanded': 'false', text: t('waf.detail_json') });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pre.hidden = !pre.hidden;
+      btn.setAttribute('aria-expanded', pre.hidden ? 'false' : 'true');
+    });
+    return el('div', { class: 'wf-json' }, [btn, pre]);
+  }
+
   // Date and time on two lines: keeps the time column narrow.
   function timeParts(ts) {
     const d = new Date(ts);
@@ -310,7 +347,7 @@
 
   async function exclude(kind, ev, routeId) {
     if (routeId == null) return;
-    const res = await W.openExclusionDialog(kind, { routeId, host: ev.host, ruleId: ev.rule_id, uri: ev.uri });
+    const res = await W.openExclusionDialog(kind, { routeId, host: ev.host, ruleId: ev.rule_id, uri: ev.uri }, { current: W.routeExclusions(routeId, routes()) });
     if (!res) return;
     state.excluded.add(kind + ':' + routeId + ':' + res.value);
     renderRows();

@@ -889,7 +889,8 @@ input[type=date]:focus, select:focus {
 .wf-table.data-table td { padding: 12px 14px; border-color: var(--line); }
 .wf-table.data-table tbody tr:hover td { background: var(--chip); }
 .wf-host-link, .wf-link, .wf-events-link, .wf-recommendation .wf-ic { color: var(--teal); }
-.wf-raw, .wf-rule, .wf-excl-row, .wf-recommendation { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.wf-raw, .wf-raw-json, .wf-rule, .wf-excl-row, .wf-recommendation { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.wf-raw-json { background: var(--surface); }
 .wf-excl-empty { border-color: var(--line); border-radius: var(--r-sm); }
 .wf-filters, .wf-pager { border-color: var(--line); }
 .wf-empty td, .wf-f-label, .wf-muted, .wf-sub, .wf-pager, .wf-hint .wf-ic { color: var(--muted); }

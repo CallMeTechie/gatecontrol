@@ -81,9 +81,12 @@ describe('waf-ui: exclusions', () => {
   it('validates rule ids and paths client-side', () => {
     assert.equal(W.parseRuleId('942100'), 942100);
     assert.equal(W.parseRuleId(' 7 '), 7);
-    for (const v of ['0', '-1', '12a', '', '1234567890', null]) assert.equal(W.parseRuleId(v), null, String(v));
+    for (const v of ['0', '-1', '12a', '', '10000000', '1234567890', null]) assert.equal(W.parseRuleId(v), null, String(v));
+    assert.equal(W.parseRuleId(String(W.RULE_ID_MAX)), 9999999);
     assert.ok(W.validPath('/api/upload'));
-    for (const v of ['api', '', '/a b', '/' + 'x'.repeat(W.PATH_MAX)]) assert.ok(!W.validPath(v), v.slice(0, 20));
+    assert.ok(W.validPath('/wp-admin/admin-ajax.php'));
+    assert.ok(W.validPath('/' + 'x'.repeat(W.PATH_MAX - 1)), '256 characters');
+    for (const v of ['api', '', '/a b', '/' + 'x'.repeat(W.PATH_MAX), '/a"b', "/a'b", '/a\\b', '/ä']) assert.ok(!W.validPath(v), v.slice(0, 20));
     const cur = { rule_ids: [942100], paths: ['/api'] };
     assert.equal(W.exclusionError('rule', '942100', cur), 'duplicate');
     assert.equal(W.exclusionError('rule', 'abc', cur), 'invalid_rule');
@@ -177,6 +180,39 @@ describe('waf-ui: status, routes, deep links, errors', () => {
     assert.equal(W.statusFrom({ routes: [] }).engine_available, true, 'missing flag counts as available');
     assert.deepEqual(W.statusFrom({ routes: res.routes, totals: { events_24h: 99, blocked_24h: 9 } }).totals, { events_24h: 99, blocked_24h: 9, routes: 2 });
     assert.deepEqual(W.statusFrom(null), { engine_available: true, routes: [], totals: { events_24h: 0, blocked_24h: 0, routes: 0 } });
+    // services/waf.js status(): top-level counters (distinct requests) win over the route sum.
+    const real = W.statusFrom({ ok: true, licensed: true, engine_available: true, events_24h: 20, blocked_24h: 4, routes: [
+      { route_id: 3, host: 'a.de', enabled: true, mode: 'block', paranoia: 2, exclusions: { rule_ids: [942100], paths: ['/api'] }, events_24h: 12, blocked_24h: 4 }] });
+    assert.deepEqual(real.totals, { events_24h: 20, blocked_24h: 4, routes: 1 });
+    assert.deepEqual(real.routes[0].exclusions, { rule_ids: [942100], paths: ['/api'] });
+    assert.equal(real.routes[0].enabled, true);
+  });
+
+  it('known exclusions: API flag rule_excluded, route exclusions, path prefixes', () => {
+    const routes = W.statusFrom({ routes: [{ route_id: 3, host: 'a.de', exclusions: { rule_ids: [942100], paths: ['/api'] } }] }).routes;
+    const excl = W.routeExclusions(3, routes);
+    assert.deepEqual(excl, { rule_ids: [942100], paths: ['/api'] });
+    assert.equal(W.routeExclusions(9, routes), null);
+    assert.ok(W.ruleExcluded({ rule_id: 1, rule_excluded: true }, null));
+    assert.ok(W.ruleExcluded({ rule_id: 942100 }, excl));
+    assert.ok(!W.ruleExcluded({ rule_id: 941100 }, excl));
+    assert.ok(W.pathExcluded({ uri: '/api/v1/x?y=1' }, excl));
+    assert.ok(!W.pathExcluded({ uri: '/login' }, excl));
+    assert.ok(!W.pathExcluded({ uri: '/api' }, null));
+  });
+
+  it('detailOf reads the redacted raw record (object or JSON) without the own rule', () => {
+    const raw = { request: 'GET /?q=1 HTTP/1.1', rule_engine: 'On', interrupted: true,
+      rule: { id: 942100, msg: 'SQL Injection', severity: 'critical', data: 'Matched Data: 1 UNION', tags: ['attack-sqli', 'OWASP_CRS'] },
+      messages: [{ id: 942100, msg: 'SQL Injection', severity: 'critical' }, { id: 949110, msg: 'Inbound Anomaly Score Exceeded', severity: 'emergency' }] };
+    const d = W.detailOf({ rule_id: 942100, raw });
+    assert.deepEqual(d, { request: 'GET /?q=1 HTTP/1.1', rule_engine: 'On', interrupted: true, data: 'Matched Data: 1 UNION',
+      tags: ['attack-sqli', 'OWASP_CRS'], others: [{ id: 949110, msg: 'Inbound Anomaly Score Exceeded', severity: 'emergency' }] });
+    assert.deepEqual(W.detailOf({ rule_id: 942100, raw: JSON.stringify(raw) }), d);
+    assert.equal(W.detailOf({ raw: null }), null);
+    assert.equal(W.detailOf({ raw: 'not json' }), null);
+    const small = W.detailOf({ rule_id: 5, raw: { request: 'GET /', rule: { id: 5 } } });
+    assert.deepEqual([small.tags, small.others, small.interrupted, small.data], [[], [], null, '']);
   });
 
   it('routeIdFor prefers the event route, else the WAF route of the host', () => {
@@ -203,7 +239,8 @@ describe('waf-ui: status, routes, deep links, errors', () => {
   });
 
   it('maps contract and API error codes to existing texts', () => {
-    for (const code of ['WAF_MODE_INVALID', 'WAF_PARANOIA_INVALID', 'WAF_REQUIRES_HTTP']) assert.ok(W.errorKey(code), code);
+    for (const code of ['WAF_MODE_INVALID', 'WAF_PARANOIA_INVALID', 'WAF_REQUIRES_HTTP', 'WAF_RULE_ID_INVALID', 'WAF_PATH_INVALID', 'WAF_EXCLUSION_REQUIRED',
+      'WAF_EXCLUSION_LIMIT', 'WAF_EXCLUSION_NOT_FOUND', 'WAF_ROUTE_NOT_FOUND', 'WAF_CURSOR_INVALID', 'CADDY_SYNC_FAILED']) assert.ok(W.errorKey(code), code);
     for (const k of Object.values(W.ERROR_KEYS)) assert.ok(typeof de[k] === 'string' && de[k].length, k);
     assert.equal(W.errorKey('waf_mode_invalid'), 'waf.err.mode_invalid');
     assert.equal(W.errorKey('OTHER'), null);

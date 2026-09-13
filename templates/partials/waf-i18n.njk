@@ -28,7 +28,10 @@
   'waf.exclusion_ph_path', 'waf.exclusion_add', 'waf.exclusion_remove', 'waf.exclusion_added',
   'waf.exclusion_removed', 'waf.events_link', 'waf.tag_block', 'waf.tag_detect', 'waf.tag_hint', 'waf.chip_block',
   'waf.chip_detect', 'waf.dialog_title', 'waf.dialog_edit', 'waf.err.invalid_rule', 'waf.err.invalid_path',
-  'waf.err.duplicate', 'waf.err.exclusion_invalid', 'waf.err.mode_invalid', 'waf.err.paranoia_invalid',
-  'waf.err.requires_http', 'waf.err.license', 'waf.err.route_not_found'
+  'waf.err.duplicate', 'waf.err.exclusion_required', 'waf.err.exclusion_limit', 'waf.err.exclusion_not_found', 'waf.err.filter_invalid',
+  'waf.err.caddy_sync', 'waf.err.mode_invalid', 'waf.err.paranoia_invalid',
+  'waf.err.requires_http', 'waf.err.license', 'waf.err.route_not_found',
+  'waf.detail_request', 'waf.detail_engine', 'waf.detail_interrupted_yes', 'waf.detail_interrupted_no', 'waf.detail_data',
+  'waf.detail_tags', 'waf.detail_others', 'waf.detail_none', 'waf.detail_json'
 ] -%}
 <script type="application/json" id="waf-i18n" nonce="{{ cspNonce }}">{ {% for k in wafI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
