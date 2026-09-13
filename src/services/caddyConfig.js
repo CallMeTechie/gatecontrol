@@ -215,6 +215,31 @@ function effectiveAcmeEmail() {
   return String((config.caddy && config.caddy.email) || '').trim();
 }
 
+// Host aliases (docs/feature-security-options.md §A): the HTTP route row
+// carries its host's alias labels (host_aliases, JSON array or array) and the
+// alias mode (host_alias_mode). Alias FQDNs are the labels prefixed to the
+// route's own fqdn (`www` on `app.example.com` → `www.app.example.com`).
+function aliasLabelsOf(route) {
+  const raw = route && route.host_aliases;
+  if (!raw) return [];
+  let list = raw;
+  if (typeof raw === 'string') {
+    try { list = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map(l => String(l || '').trim().toLowerCase()).filter(Boolean))];
+}
+
+function aliasFqdnsOf(route) {
+  if (!route || !route.domain || route.route_type === 'l4') return [];
+  const fqdn = String(route.domain).toLowerCase();
+  return aliasLabelsOf(route).map(l => `${l}.${fqdn}`);
+}
+
+function aliasModeOf(route) {
+  return route && route.host_alias_mode === 'serve' ? 'serve' : 'redirect';
+}
+
 // ─── Build Caddy JSON config from all enabled routes ────
 /**
  * Build Caddy configuration JSON. Overloaded:
@@ -836,8 +861,49 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     };
   }
 
+  // HTTP→HTTPS redirect (docs/feature-security-options.md §0). srv0 listens on
+  // :443 AND :80 and the host routes match only the hostname, so Caddy served
+  // every route unencrypted on port 80 and added no automatic redirect (that
+  // only happens when no server owns :80). The per-route `listen` values in
+  // caddyRoutes never reach the server config — they are legacy. One route,
+  // FIRST in srv0: plain-HTTP requests for every host with https_enabled=1
+  // (plus alias FQDNs of such hosts) get a 308 to the same URL over https.
+  // Excluded: paused hosts (TLS guard — they must stay reachable over HTTP),
+  // the ACME challenge path, the portal host (own rules) and the management
+  // host unless GC_BASE_URL itself is https.
+  const routeDomains = new Set(httpRoutes.map(r => String(r.domain || '').toLowerCase()).filter(Boolean));
+  const redirectHosts = [];
+  const redirectSeen = new Set();
+  const addRedirectHost = (h) => {
+    const k = String(h || '').toLowerCase();
+    if (!k || redirectSeen.has(k) || pausedSet.has(k)) return;
+    if (k === String(homeHost).toLowerCase() && !routeDomains.has(k)) return;
+    redirectSeen.add(k);
+    redirectHosts.push(k);
+  };
+  for (const route of httpRoutes) {
+    if (!route.https_enabled || !route.domain) continue;
+    addRedirectHost(route.domain);
+    for (const a of aliasFqdnsOf(route)) addRedirectHost(a);
+  }
+  if (gcHost && !routeDomains.has(gcHost) && /^https:/i.test(String(config.app.baseUrl || ''))) addRedirectHost(gcHost);
+  const redirectRoute = redirectHosts.length === 0 ? null : {
+    '@id': 'gc_https_redirect',
+    match: [{
+      protocol: 'http',
+      host: redirectHosts,
+      not: [{ path: ['/.well-known/acme-challenge/*'] }],
+    }],
+    handle: [{
+      handler: 'static_response',
+      status_code: 308,
+      headers: { Location: ['https://{http.request.host}{http.request.uri}'] },
+    }],
+    terminal: true,
+  };
+
   // Group routes into a single server
-  const serverRoutes = [...serverRoutes_pending];
+  const serverRoutes = [...(redirectRoute ? [redirectRoute] : []), ...serverRoutes_pending];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
     const inner = srvConfig.routes.length === 1 ? srvConfig.routes[0] : null;
     // Single-domain fast path: AND the host matcher with any matcher already on
