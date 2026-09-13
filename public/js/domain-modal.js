@@ -76,6 +76,7 @@
     folder: [['path', { d: 'M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z' }]],
     refresh: [['polyline', { points: '23 4 23 10 17 10' }], ['path', { d: 'M20.49 15a9 9 0 11-2.12-9.36L23 10' }]],
     alert: [['path', { d: 'M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' }], ['line', { x1: 12, y1: 9, x2: 12, y2: 13 }], ['line', { x1: 12, y1: 17, x2: 12.01, y2: 17 }]],
+    link: [['path', { d: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71' }], ['path', { d: 'M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71' }]],
     settings: [['circle', { cx: 12, cy: 12, r: 3 }], ['path', { d: 'M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z' }]],
   };
   function icon(name, size) {
@@ -355,7 +356,7 @@
     return {
       q: '',
       add: {},                 // hostId → { type, target, listen, bhttps, conflict }
-      nh: { sub: '', desc: '', lan: '', type: 'http', target: '', listen: '', bhttps: false, template: null, conflict: null, error: null },
+      nh: { sub: '', desc: '', lan: '', type: 'http', target: '', listen: '', bhttps: false, template: null, conflict: null, error: null, www: true },
       tlsNotice: null,         // { host, tls, reason } after a create answered tls.state = 'paused'
     };
   }
@@ -369,6 +370,13 @@
     const reason = TG.pausedReason(tls);
     ui.tlsNotice = { host, tls, reason };
     if (window.showToast) window.showToast(TG.t('tls.created_paused', { host, reason }), 'warning');
+  }
+
+  // Aliases (secopt-ui.js): a PUT /hosts/:id answer whose newly checked alias
+  // got paused → the same inline notice, with the alias text.
+  function noteAliasPaused(res) {
+    const n = window.GCSecOptUI && window.GCSecOptUI.pausedNotice(res);
+    if (n) ui.tlsNotice = n;
   }
 
   function isOpen() { return overlay.style.display === 'flex'; }
@@ -513,12 +521,15 @@
 
     // HSTS default of the zone (hsts-ui.js); its dialog PUTs the defaults itself.
     const hsts = window.GCHstsUI && window.GCHstsUI.defaultsControl(zone, { onChanged: afterMutation });
+    // TLS profile of the zone (secopt-ui.js, security options §E): confirm + PUT defaults.
+    const tlsMin = window.GCSecOptUI && window.GCSecOptUI.tlsProfileControl(zone, { onChanged: afterMutation });
 
-    return el('div', { class: 'zn-panel' + (hsts ? ' hs-panel4' : '') }, [
+    return el('div', { class: 'zn-panel' + (hsts ? ' hs-panel4' : '') + (tlsMin ? ' so-panel5' : '') }, [
       el('div', { class: 'zn-field' }, [el('label', { class: 'form-label', text: t(peerKind(zone) ? 'zones.target_peer_label' : 'zones.gateway_label') }), el('div', { class: 'zn-select-wrap' }, [icon(gatewayIconName(zone.gateway && zone.gateway.kind), 13), sel]), gwHint]),
       el('div', { class: 'zn-field' }, [el('span', { class: 'form-label', text: t('zones.default_access') }), grp, el('span', { class: 'form-hint', text: t('zones.default_access_hint') })]),
       hsts || null,
-      el('div', { class: 'zn-field' }, [el('label', { class: 'form-label', text: t('zones.host_filter') }), el('div', { class: 'zn-search-wrap' }, [icon('search', 13), q])]),
+      tlsMin || null,
+      el('div', { class: 'zn-field zn-field-filter' }, [el('label', { class: 'form-label', text: t('zones.host_filter') }), el('div', { class: 'zn-search-wrap' }, [icon('search', 13), q])]),
     ]);
   }
 
@@ -582,6 +593,8 @@
         el('span', { class: 'zn-name', text: label }),
         sfx ? el('span', { class: 'zn-sfx', text: sfx }) : null,
       ]),
+      // Alias names (secopt-ui.js): muted tags 'www ↗' (redirect) / 'www' (serve).
+      window.GCSecOptUI ? window.GCSecOptUI.aliasTags(host) : null,
       descBits.length ? el('span', { class: 'zn-hdesc', text: descBits.join(' · ') }) : null,
       host.gateway_override ? tag('amber', t('host.override_tag'), false, 'zn-override') : null,
       host.gateway_override && !zone.unassigned
@@ -643,6 +656,8 @@
     if (tlsTag) opts.push(tlsTag);
     const hstsTag = window.GCHstsUI && window.GCHstsUI.entryTag(e, { onChanged: afterMutation });
     if (hstsTag) opts.push(hstsTag);
+    // Security options (secopt-ui.js): '≤ 50 MB' body limit and 'mTLS'.
+    if (window.GCSecOptUI) opts.push(...window.GCSecOptUI.entryTags(e));
 
     const target = el('div', { class: 'zn-tgt' }, [
       icon(e.target_kind === 'gateway' ? (e.target_pool_id != null ? 'pool' : 'gateway') : 'peer', 12),
@@ -802,7 +817,12 @@
     const nh = ui.nh;
     const kindPeer = peerKind(zone);
     const sub = el('input', { type: 'text', class: 'zn-input zn-mono', value: nh.sub, placeholder: t('host.subdomain_ph'), 'aria-label': t('host.subdomain'), 'data-zn-key': 'nhsub', maxLength: 190, autocomplete: 'off', spellcheck: 'false' });
-    sub.addEventListener('input', () => { nh.sub = sub.value.trim(); nh.error = null; nh.conflict = null; preview.textContent = V.previewFqdn(nh.sub, zone.domain); });
+    sub.addEventListener('input', () => { nh.sub = sub.value.trim(); nh.error = null; nh.conflict = null; preview.textContent = V.previewFqdn(nh.sub, zone.domain); syncWww(); });
+    // "www-Alias anlegen" for a new '@' host with an HTTP entry (secopt-ui.js, §A).
+    const SO = window.GCSecOptUI;
+    const www = SO ? SO.wwwCheckbox(nh, zone) : null;
+    function syncWww() { if (www) www.hidden = !(SO.isApexSub(nh.sub) && SO.draftHasHttp(nh)); }
+    syncWww();
     const preview = el('span', { class: 'zn-preview', text: V.previewFqdn(nh.sub, zone.domain) });
     const desc = el('input', { type: 'text', class: 'zn-input', value: nh.desc, placeholder: t('host.description_ph'), 'aria-label': t('host.description'), 'data-zn-key': 'nhdesc', maxLength: 200 });
     desc.addEventListener('input', () => { nh.desc = desc.value; });
@@ -846,7 +866,7 @@
 
     return el('div', { class: 'zn-hcard zn-newcard' }, [
       head,
-      el('div', { class: 'zn-new-preview' }, [el('span', { class: 'zn-muted', text: t('host.fqdn_preview') }), preview]),
+      el('div', { class: 'zn-new-preview' }, [el('span', { class: 'zn-muted', text: t('host.fqdn_preview') }), preview, www]),
       row,
       nh.error ? el('div', { class: 'zn-field-error zn-pad', role: 'alert', text: nh.error }) : null,
       nh.conflict ? el('div', { class: 'zn-pad' }, [conflictRow(nh.conflict, () => { nh.listen = String(nh.conflict.suggestedPort); nh.conflict = null; render(); submitNewHost(zone, null); })]) : null,
@@ -882,6 +902,8 @@
       if (r.error) return fail(r.error);
       body.entries = [r.entry];
     }
+    const wwwAlias = window.GCSecOptUI && window.GCSecOptUI.wwwAliasFields(nh, zone);
+    if (wwwAlias) Object.assign(body, wwwAlias);
     busy(btn, true);
     try {
       const res = await call(api.post('/api/v1/domains/' + zone.domain_id + '/hosts', body));
@@ -905,6 +927,7 @@
       zone.unassigned ? null : { icon: 'pencil', label: t('host.rename'), onClick: () => renameHost(host, zone) },
       { icon: 'pencil', label: t('host.edit_description'), onClick: () => editDescription(host) },
       peerKind(zone) || (!host.lan_host && zone.unassigned) ? null : { icon: 'gateway', label: t('host.change_lan'), onClick: () => changeLan(host, zone) },
+      window.GCSecOptUI ? window.GCSecOptUI.aliasMenuItem(host, zone, { onChanged: (res) => { noteAliasPaused(res); afterMutation(); } }) : null,
       hasHttp && host.fqdn ? { icon: 'ext', label: t('host.open'), onClick: () => window.open('https://' + host.fqdn, '_blank', 'noopener') } : null,
       '-',
       { icon: 'trash', label: t('host.delete'), danger: true, onClick: () => deleteHost(host, zone, fqdn) },

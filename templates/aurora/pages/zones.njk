@@ -132,7 +132,18 @@
   'hsts.header_preview', 'hsts.header_none', 'hsts.hint_cert', 'hsts.hint_custom_header', 'hsts.hint_https',
   'hsts.saved', 'hsts.apply_title', 'hsts.apply_intro', 'hsts.apply_new_only', 'hsts.apply_existing',
   'hsts.apply_existing_none', 'hsts.apply_ok', 'hsts.defaults_saved', 'hsts.defaults_applied', 'hsts.editor_desc',
-  'hsts.preset_hint', 'hsts.err.preload_requirements', 'hsts.err.requires_https', 'hsts.err.max_age_invalid'
+  'hsts.preset_hint', 'hsts.err.preload_requirements', 'hsts.err.requires_https', 'hsts.err.max_age_invalid',
+  'alias.menu', 'alias.dialog_title', 'alias.intro', 'alias.list_label', 'alias.list_empty', 'alias.add_label',
+  'alias.add_ph', 'alias.add', 'alias.remove', 'alias.mode_label', 'alias.mode_redirect', 'alias.mode_redirect_hint',
+  'alias.mode_serve', 'alias.mode_serve_hint', 'alias.cert_hint', 'alias.saved', 'alias.paused',
+  'alias.tag_redirect_hint', 'alias.tag_serve_hint', 'alias.needs_http', 'alias.www_checkbox', 'alias.www_hint',
+  'alias.www_taken', 'alias.of', 'alias.err.invalid', 'alias.err.duplicate', 'alias.err.limit', 'alias.err.conflict',
+  'alias.err.host_exists', 'alias.err.requires_http', 'tls_profile.label', 'tls_profile.v12', 'tls_profile.v13',
+  'tls_profile.hint', 'tls_profile.confirm_title', 'tls_profile.confirm_13', 'tls_profile.confirm_13_detail',
+  'tls_profile.confirm_12', 'tls_profile.confirm_ok', 'tls_profile.saved', 'tls_profile.err.invalid',
+  'body_limit.tag', 'body_limit.tag_hint', 'body_limit.err.invalid', 'mtls.tag', 'mtls.tag_hint',
+  'mtls.err.ca_invalid', 'mtls.err.requires_https', 'mtls.err.mode_invalid', 'backend_tls.err.ca_invalid',
+  'backend_tls.err.server_name_invalid'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
 {# TLS guard strings (tls-ui.js) #}
@@ -147,6 +158,7 @@
 <script src="/js/zones-view.js?v={{ appVersion }}"></script>
 <script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/hsts-ui.js?v={{ appVersion }}"></script>
+<script src="/js/secopt-ui.js?v={{ appVersion }}"></script>
 <script src="/js/domain-modal.js?v={{ appVersion }}"></script>
 <script src="/js/zones-page.js?v={{ appVersion }}"></script>
 {% endblock %}
