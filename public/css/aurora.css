@@ -881,7 +881,7 @@ input[type=date]:focus, select:focus {
 #wf-tile-blocked.warn b { color: var(--coral); }
 .alert.wf-banner { display: flex; gap: 10px; margin-bottom: 14px; }
 .toolbar.wf-toolbar { margin-bottom: 14px; }
-.wf-toolbar .wf-filters { padding: 0; border-bottom: none; }
+.wf-toolbar .wf-filters { flex: 1 1 100%; min-width: 0; padding: 0; border-bottom: none; }
 .wf-card.card { padding: 0; }
 .wf-card .card-head { padding: 14px 16px 10px; }
 .wf-card.card::after { content: none; }
