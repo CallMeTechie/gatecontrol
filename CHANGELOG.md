@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.125.0] — 2026-09-13
 
 ### Features
 - Automatischer Rollback beim Auto-Update: Besteht ein neues Image den Health-Check nicht, startet `update.sh` wieder das vorherige Image (lokal als `:rollback` gemerkt, wird beim Aufräumen nicht gelöscht). Das fehlerhafte Image wird vermerkt und nicht erneut installiert; erst eine neuere Version wird wieder versucht. Das Dashboard zeigt „Update vX fehlgeschlagen — Vorversion wiederhergestellt“. **Auf dem Host muss `update.sh` einmal neu installiert werden** (siehe INSTALL.md).
