@@ -1,6 +1,7 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
+{% include "partials/tls-i18n.njk" %}
 
 <div class="page-header">
   <div>
@@ -84,6 +85,13 @@
           <input type="text" id="acme-email" value="{{ settingsAcmeEmail or '' }}" placeholder="{{ t('settings.acme_email.inherited') if acmeEmailInherited else '' }}" aria-label="{{ t('settings.acme_email') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="254" autocomplete="off">
           <div style="font-size:11px;color:var(--text-3)">{{ t('settings.acme_email_hint') }}</div>
           <div id="acme-email-status" class="autosave-status"></div>
+          {# TLS guard: attempts before a host is paused (docs/feature-tls-guard.md) #}
+          <div class="tg-settings-field" style="padding-top:12px;border-top:1px solid var(--border)">
+            <label for="tls-max-attempts" style="font-size:13px;color:var(--text-2)">{{ t('settings.tls.max_attempts') }}</label>
+            <input type="number" id="tls-max-attempts" min="0" max="10" step="1" value="3" inputmode="numeric" aria-label="{{ t('settings.tls.max_attempts') }}" autocomplete="off">
+            <div style="font-size:11px;color:var(--text-3)">{{ t('settings.tls.max_attempts_hint') }}</div>
+            <div id="tls-max-attempts-status" class="autosave-status"></div>
+          </div>
         </div>
       </div>
 
@@ -268,11 +276,17 @@
           <span class="l">{{ t('settings.domains.server_ip') }}</span>
           <code id="domains-server-ip" style="font-family:var(--font-mono);font-size:12px"></code>
         </div>
+        <div class="set-row" style="border-bottom:1px solid var(--border)">
+          <span class="l">{{ t('settings.tls.server_ipv6') }}</span>
+          <code id="domains-server-ipv6" style="font-family:var(--font-mono);font-size:12px"></code>
+        </div>
         <div id="domains-server-ip-warning" style="display:none;padding:8px 12px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">{{ t('settings.domains.server_ip_warning') }}</div>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="domains-server-ip-input" placeholder="{{ t('settings.domains.server_ip_override') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="64" autocomplete="off">
+          <input type="text" id="domains-server-ipv6-input" placeholder="{{ t('settings.tls.server_ipv6_override') }}" aria-label="{{ t('settings.tls.server_ipv6_override') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="64" autocomplete="off">
           <button class="btn btn-primary" id="domains-server-ip-save">{{ t('data.save') }}</button>
         </div>
+        <div style="font-size:11px;color:var(--text-3)">{{ t('settings.tls.server_ipv6_hint') }}</div>
       </div>
       <table id="domains-table"
         data-label-verified="{{ t('settings.domains.status_verified') }}"
@@ -1058,6 +1072,7 @@
 {% block scripts %}
 <script src="/js/settingsAutosaveCore.js?v={{ appVersion }}"></script>
 <script src="/js/settingsAutosave.js?v={{ appVersion }}"></script>
+<script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 <script src="/js/peer-groups-admin.js?v={{ appVersion }}"></script>
 <script src="/js/tags-admin.js?v={{ appVersion }}"></script>
