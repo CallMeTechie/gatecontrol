@@ -511,9 +511,13 @@
     const q = el('input', { type: 'search', class: 'zn-input zn-search-sm', value: ui.q, placeholder: t('zones.host_filter_ph'), 'data-zn-key': 'q', 'aria-label': t('zones.host_filter') });
     q.addEventListener('input', () => { ui.q = q.value; render(); });
 
-    return el('div', { class: 'zn-panel' }, [
+    // HSTS default of the zone (hsts-ui.js); its dialog PUTs the defaults itself.
+    const hsts = window.GCHstsUI && window.GCHstsUI.defaultsControl(zone, { onChanged: afterMutation });
+
+    return el('div', { class: 'zn-panel' + (hsts ? ' hs-panel4' : '') }, [
       el('div', { class: 'zn-field' }, [el('label', { class: 'form-label', text: t(peerKind(zone) ? 'zones.target_peer_label' : 'zones.gateway_label') }), el('div', { class: 'zn-select-wrap' }, [icon(gatewayIconName(zone.gateway && zone.gateway.kind), 13), sel]), gwHint]),
       el('div', { class: 'zn-field' }, [el('span', { class: 'form-label', text: t('zones.default_access') }), grp, el('span', { class: 'form-hint', text: t('zones.default_access_hint') })]),
+      hsts || null,
       el('div', { class: 'zn-field' }, [el('label', { class: 'form-label', text: t('zones.host_filter') }), el('div', { class: 'zn-search-wrap' }, [icon('search', 13), q])]),
     ]);
   }
@@ -625,7 +629,7 @@
   }
 
   function renderEntryLine(e, host, zone) {
-    const c = V.entryChip(e);
+    const c = V.entryChip(e, { hsts: false }); // HSTS gets its own tag below
     const opts = [];
     if (e.rdp_owned) opts.push(tag('purple', t('entry.rdp_tag'), false, 'zn-opt-tag'));
     opts.push(e.external_enabled ? tag('green', t('host.access_external'), false, 'zn-opt-tag') : tag('grey', t('host.access_internal'), false, 'zn-opt-tag'));
@@ -637,6 +641,8 @@
     if (e.baseUnverified) opts.push(tag('amber', t('entry.unverified_tag'), false, 'zn-opt-tag'));
     const tlsTag = window.GCTlsUI && window.GCTlsUI.entryTag(e, { onChanged: afterMutation });
     if (tlsTag) opts.push(tlsTag);
+    const hstsTag = window.GCHstsUI && window.GCHstsUI.entryTag(e, { onChanged: afterMutation });
+    if (hstsTag) opts.push(hstsTag);
 
     const target = el('div', { class: 'zn-tgt' }, [
       icon(e.target_kind === 'gateway' ? (e.target_pool_id != null ? 'pool' : 'gateway') : 'peer', 12),
