@@ -119,7 +119,16 @@ async function start() {
       } catch (err) {
         logger.warn({ error: err.message }, 'Domain registry boot pass skipped');
       }
+      // TLS guard: certificate inventory after the domain pass, then every 6 h.
+      // Best-effort — must never break boot.
+      try { require('./services/tlsGuard').startInventory(); }
+      catch (err) { logger.warn({ err: err.message }, 'TLS inventory not started'); }
     }, 8000); // after network/route sync settles; backoff not required (re-runs verify pending on next boot)
+
+    // TLS guard: tls.log watcher (attempt cap, per-host certificate state) and
+    // the ACME e-mail check. Best-effort.
+    try { require('./services/tlsGuard').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'TLS guard start failed'); }
 
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
@@ -373,6 +382,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/gatewayHealth').stopWatchdog(),
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),
+    () => require('./services/tlsGuard').stop(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,
