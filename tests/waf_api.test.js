@@ -101,6 +101,8 @@ test('PUT /routes/:id stores waf fields; PATCH semantics keep them', async () =>
   assert.equal(r.body.route.waf_enabled, 1);
   assert.equal(r.body.route.waf_mode, 'block');
   assert.equal(r.body.route.waf_paranoia, 3);
+  r = await GET(`/routes/${rA}`);
+  assert.deepEqual([r.body.route.waf_enabled, r.body.route.waf_mode, r.body.route.waf_paranoia, r.body.route.waf_exclusions], [1, 'block', 3, null]);
   r = await PUT(`/routes/${rA}`, { description: 'x' });
   assert.equal(r.status, 200);
   assert.deepEqual([routeRow(rA).waf_enabled, routeRow(rA).waf_mode, routeRow(rA).waf_paranoia], [1, 'block', 3]);
