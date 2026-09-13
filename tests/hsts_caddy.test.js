@@ -42,7 +42,9 @@ function httpRoute(over = {}) {
 function terminalHandler(cfg, host) {
   const server = Object.values(cfg.apps.http.servers).find((s) => (s.routes || []).some((r) => r.match?.[0]?.host?.[0] === host));
   assert.ok(server, 'server for ' + host);
-  const route = server.routes.find((r) => r.match?.[0]?.host?.[0] === host);
+  // Skip the HTTP→HTTPS redirect route (§0 of feature-security-options): it
+  // matches every HTTPS host first but is not the route's handler chain.
+  const route = server.routes.find((r) => r['@id'] !== 'gc_https_redirect' && r.match?.[0]?.host?.[0] === host);
   const stack = [...route.handle];
   let last = null;
   while (stack.length) {
