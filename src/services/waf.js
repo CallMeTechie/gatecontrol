@@ -421,10 +421,11 @@ function parseAuditLine(line) {
   };
 }
 
-// Matched data of a rule that fired on a cookie or a credential header holds
-// that value ("Matched Data: … found within REQUEST_COOKIES:sid: <value>") —
-// never stored; only the variable name survives.
-const SENSITIVE_TARGET_RE = /(REQUEST_COOKIES(?:_NAMES)?(?::[^:\s]*)?|REQUEST_HEADERS(?:_NAMES)?:(?:cookie|authorization|proxy-authorization)\b)/i;
+// Matched data of a rule that fired on a cookie, a credential header or a
+// credential-like form/JSON field (password, token, OTP, API key …) holds that
+// value ("Matched Data: … found within REQUEST_COOKIES:sid: <value>") — never
+// stored; only the variable name survives.
+const SENSITIVE_TARGET_RE = /(REQUEST_COOKIES(?:_NAMES)?(?::[^:\s]*)?|REQUEST_HEADERS(?:_NAMES)?:(?:cookie|authorization|proxy-authorization)\b|ARGS(?:_POST|_GET)?:[^:\s]*(?:pass|pwd|secret|token|otp|api[_-]?key|auth|recovery)[^:\s]*)/i;
 
 function redactMatchedData(data) {
   if (!data) return data || null;

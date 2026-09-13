@@ -281,7 +281,14 @@ test('raw: redacted JSON of request line + rule messages; cookie / authorization
     assert.equal(red.includes('SECRETVALUE'), false, target);
     assert.match(red, /^\[redacted: matched in /, target);
   }
+  // Credential-like form / JSON fields: value replaced as well.
+  for (const target of ['ARGS:password', 'ARGS_POST:new_passwd', 'ARGS:json.user.pwd', 'ARGS_POST:api_key', 'ARGS:access_token', 'ARGS_POST:recovery_code', 'ARGS_POST:client_secret']) {
+    const red = waf.redactMatchedData(`Matched Data: ' or 1=1 SECRETVALUE found within ${target}: ' or 1=1 SECRETVALUE`);
+    assert.equal(red.includes('SECRETVALUE'), false, target);
+    assert.match(red, /^\[redacted: matched in ARGS/, target);
+  }
   assert.equal(waf.redactMatchedData('Matched Data: x found within ARGS:q: x'), 'Matched Data: x found within ARGS:q: x');
+  assert.equal(waf.redactMatchedData('Matched Data: x found within ARGS:user: x'), 'Matched Data: x found within ARGS:user: x');
   const tx = waf.parseAuditLine(L.xssBlocked);
   tx.messages[0].data = 'Matched Data: <script> found within REQUEST_COOKIES:session: <script>TOPSECRET';
   const rows = waf.eventsFromTransaction(tx, lookup);
