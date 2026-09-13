@@ -159,6 +159,8 @@ jobs:
           build-args: |
             NODE_AUTH_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump.outputs.new }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # update.sh reads this label to name a rolled-back release in the dashboard.
+          labels: org.opencontainers.image.version=${{ steps.bump.outputs.new }}
 
       # ─── Release: Offline-Paket ───────────────────────
       - name: Build image for offline package

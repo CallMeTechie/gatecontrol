@@ -19,3 +19,13 @@ test('setup_* keys present in en+de + both layout GC.t blocks', () => {
     assert.ok(pro.includes("'"+k+"':"), 'missing in pro layout GC.t: '+k);
   }
 });
+
+const AU_ROLLBACK_KEYS = ['autoupdate.rolled_back', 'autoupdate.rolled_back_hint', 'autoupdate.rollback_failed'];
+test('auto-update rollback keys present in en+de + all layout GC.t blocks', () => {
+  const layouts = ['default', 'pro', 'aurora'].map((t) => fs.readFileSync(`templates/${t}/layout.njk`, 'utf8'));
+  for (const k of AU_ROLLBACK_KEYS) {
+    assert.ok(k in en, 'missing en: ' + k); assert.ok(k in de, 'missing de: ' + k);
+    for (const l of layouts) assert.ok(l.includes("'" + k + "':"), 'missing in a layout GC.t: ' + k);
+  }
+  assert.ok(en['autoupdate.rolled_back'].includes('{x}') && de['autoupdate.rolled_back'].includes('{x}'));
+});
