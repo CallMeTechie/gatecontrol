@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.124.1] — 2026-09-13
 
 ### Fixes
 - Pool-Routen mit „Backend spricht HTTPS“ bekamen Richtung Gateway einen TLS-Transport. Der Proxy-Port der Gateways spricht aber reines HTTP; die Route lieferte 502. Jetzt geht die Strecke Caddy → Gateway wie bei Einzel-Gateway-Routen unverschlüsselt durch den WireGuard-Tunnel, das Gateway spricht HTTPS zum Ziel im LAN.
