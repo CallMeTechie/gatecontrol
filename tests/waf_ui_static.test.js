@@ -304,7 +304,7 @@ describe('WAF: styles', () => {
         '.wf-pager', '.wf-locked', '.modal.wf-dialog-box', '.wf-editor-block.wf-locked', '.wf-editor-row', '.wf-recommendation', '.wf-excl-row', '.tag.wf-entry-tag']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
-      assert.match(css, /@media \(max-width: 600px\) \{[^}]*\.stats-grid\.wf-tiles \{ grid-template-columns: 1fr; \}/, `${f}: tiles stack on phones`);
+      assert.match(css, /@media \(max-width: 600px\) \{[^}]*\.stats-grid\.wf-tiles \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 8px; \}/, `${f}: compact tiles on phones`);
     }
     assert.ok(read('public/css/aurora.css').includes('.aurora-routes-kpi.wf-tile.on'));
   });

@@ -2843,7 +2843,6 @@
   "waf.raw_hide": "Hide raw data",
   "waf.exclude_rule": "Exclude rule for this route",
   "waf.exclude_path": "Exclude path",
-  "waf.exclude_rule_short": "Exclude rule",
   "waf.excluded_tag": "excluded",
   "waf.exclude_rule_title": "Exclude rule",
   "waf.exclude_rule_msg": "Exclude rule {{rule}} for {{host}}?",

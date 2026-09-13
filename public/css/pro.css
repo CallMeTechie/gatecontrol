@@ -4080,30 +4080,34 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
 .wf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 #wf-table { min-width: 980px; }
 .wf-routes-table { min-width: 560px; }
-.wf-table th { text-align: left; padding: 9px 12px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); border-bottom: 1px solid var(--border); white-space: nowrap; }
-.wf-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.wf-table th { text-align: left; padding: 9px 10px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.wf-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .wf-table tbody tr:last-child td { border-bottom: none; }
 .wf-table tbody tr:hover td { background: var(--bg-hover); }
 .wf-row-blocked td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .wf-row-detected td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
 .wf-row-excluded td { color: var(--text-3); }
-.wf-cell-time { white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
+.wf-cell-time { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
+.wf-date, .wf-clock { display: block; white-space: nowrap; }
+.wf-clock { color: var(--text-3); }
 .wf-cell-host, .wf-cell-action { white-space: nowrap; }
 .wf-host-link { background: none; border: none; padding: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-1); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
 .wf-host-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .wf-rule { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 5px; background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; color: var(--text-1); }
 .tag.wf-excluded-tag { display: inline-flex; margin-top: 4px; font-size: 10px; }
-.wf-cell-message { min-width: 220px; max-width: 42ch; }
+.wf-cell-message { min-width: 180px; max-width: 40ch; }
 .wf-msg { color: var(--text-1); line-height: 1.4; overflow-wrap: anywhere; }
 .wf-raw-toggle { display: inline-block; margin-top: 3px; }
 .wf-raw { margin: 6px 0 0; padding: 8px 10px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--text-2); }
 .wf-cell-client { white-space: nowrap; }
 .wf-cell-request { max-width: 30ch; }
-.wf-req { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wf-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.wf-req { display: block; max-width: 26ch; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wf-actions { display: flex; gap: 6px; }
 .btn.wf-act { padding: 4px 9px; font-size: 11.5px; gap: 5px; white-space: nowrap; }
 .btn.wf-act svg { width: 12px; height: 12px; }
 .btn.wf-act:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.wf-act-icon { width: 30px; height: 30px; padding: 0; justify-content: center; }
+.btn.wf-act-icon svg { width: 13px; height: 13px; }
 .tag.wf-mode-tag, .tag.wf-action-tag { white-space: nowrap; }
 .wf-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wf-num-blocked { color: var(--red); font-weight: 600; }
@@ -4180,7 +4184,8 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
   .wf-filter-host { flex: 1 1 100%; }
 }
 @media (max-width: 600px) {
-  .stats-grid.wf-tiles { grid-template-columns: 1fr; }
+  .stats-grid.wf-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .wf-tile .stat-icon, .wf-tile .stat-card-icon { display: none; }
   .wf-editor-row { grid-template-columns: 1fr; }
   .wf-filters { padding: 10px 12px; }
   .wf-pager { padding: 10px 12px; }

@@ -2788,7 +2788,6 @@
   "waf.raw_hide": "Rohdaten ausblenden",
   "waf.exclude_rule": "Regel für diese Route ausschließen",
   "waf.exclude_path": "Pfad ausschließen",
-  "waf.exclude_rule_short": "Regel ausschließen",
   "waf.excluded_tag": "ausgeschlossen",
   "waf.exclude_rule_title": "Regel ausschließen",
   "waf.exclude_rule_msg": "Regel {{rule}} für {{host}} ausschließen?",

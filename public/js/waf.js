@@ -266,22 +266,23 @@
       msg.appendChild(pre);
     }
 
+    // Compact icon buttons (the table is wide); title + aria-label carry the full text.
+    const ruleTitle = routeId == null ? t('waf.no_route') : (!hasRule ? t('waf.no_rule') : t('waf.exclude_rule'));
     const ruleBtn = el('button', {
-      type: 'button', class: 'btn btn-ghost wf-act wf-exclude-rule',
-      title: routeId == null ? t('waf.no_route') : (!hasRule ? t('waf.no_rule') : t('waf.exclude_rule')),
+      type: 'button', class: 'btn btn-ghost wf-act wf-act-icon wf-exclude-rule', title: ruleTitle, 'aria-label': t('waf.exclude_rule'),
       disabled: routeId == null || !hasRule || ruleDone,
-    }, [icon('ban', 12), t('waf.exclude_rule_short')]);
+    }, [icon('ban', 13)]);
     ruleBtn.addEventListener('click', () => exclude('rule', ev, routeId));
     const pathBtn = el('button', {
-      type: 'button', class: 'btn btn-ghost wf-act wf-exclude-path',
-      title: routeId == null ? t('waf.no_route') : t('waf.exclude_path'),
+      type: 'button', class: 'btn btn-ghost wf-act wf-act-icon wf-exclude-path',
+      title: routeId == null ? t('waf.no_route') : t('waf.exclude_path'), 'aria-label': t('waf.exclude_path'),
       disabled: routeId == null || pathDone,
-    }, [icon('path', 12), t('waf.exclude_path')]);
+    }, [icon('path', 13)]);
     pathBtn.addEventListener('click', () => exclude('path', ev, routeId));
 
     const a = W.actionKey(ev.action);
     return el('tr', { class: 'wf-row wf-row-' + a + (ruleDone || pathDone ? ' wf-row-excluded' : ''), dataset: { eventKey: key, action: a, host: ev.host } }, [
-      el('td', { class: 'wf-cell-time' }, [el('span', { title: ev.ts ? String(ev.ts) : null, text: W.fmtTime(ev.ts) })]),
+      el('td', { class: 'wf-cell-time', title: ev.ts ? W.fmtTime(ev.ts) : null }, timeParts(ev.ts)),
       el('td', { class: 'wf-cell-host' }, [el('button', { type: 'button', class: 'wf-host-link', title: t('waf.show_events'), text: ev.host || '—', on: { click: () => setFilter({ host: ev.host }) } })]),
       el('td', { class: 'wf-cell-action' }, [W.actionTag(ev.action)]),
       el('td', { class: 'wf-cell-rule' }, [hasRule ? el('code', { class: 'wf-rule', text: String(ev.rule_id) }) : el('span', { class: 'wf-muted', text: '—' }),
@@ -291,6 +292,20 @@
       el('td', { class: 'wf-cell-request' }, [el('code', { class: 'wf-req', title: W.requestLine(ev), text: W.requestLine(ev) })]),
       el('td', { class: 'wf-cell-actions' }, [el('div', { class: 'wf-actions' }, [ruleBtn, pathBtn])]),
     ]);
+  }
+
+  // Date and time on two lines: keeps the time column narrow.
+  function timeParts(ts) {
+    const d = new Date(ts);
+    if (!ts || isNaN(d.getTime())) return [el('span', { class: 'wf-date', text: ts ? String(ts) : '—' })];
+    const lang = (window.GC && window.GC.language) || document.documentElement.lang || 'de';
+    let date = d.toISOString().slice(0, 10);
+    let clock = d.toISOString().slice(11, 19);
+    try {
+      date = d.toLocaleDateString(lang, { year: 'numeric', month: '2-digit', day: '2-digit' });
+      clock = d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (_) { /* ISO fallback */ }
+    return [el('span', { class: 'wf-date', text: date }), el('span', { class: 'wf-clock', text: clock })];
   }
 
   async function exclude(kind, ev, routeId) {
