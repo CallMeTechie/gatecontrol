@@ -143,7 +143,21 @@
   'tls_profile.confirm_12', 'tls_profile.confirm_ok', 'tls_profile.saved', 'tls_profile.err.invalid',
   'body_limit.tag', 'body_limit.tag_hint', 'body_limit.err.invalid', 'mtls.tag', 'mtls.tag_hint',
   'mtls.err.ca_invalid', 'mtls.err.requires_https', 'mtls.err.mode_invalid', 'backend_tls.err.ca_invalid',
-  'backend_tls.err.server_name_invalid'
+  'backend_tls.err.server_name_invalid',
+  'waf.action_blocked', 'waf.action_detected', 'waf.backend_missing', 'waf.chip_block', 'waf.chip_detect',
+  'waf.dialog_edit', 'waf.dialog_title', 'waf.engine_missing', 'waf.err.duplicate', 'waf.err.exclusion_invalid',
+  'waf.err.invalid_path', 'waf.err.invalid_rule', 'waf.err.license', 'waf.err.mode_invalid',
+  'waf.err.paranoia_invalid', 'waf.err.requires_http', 'waf.err.route_not_found', 'waf.events_link',
+  'waf.exclude_ok', 'waf.exclude_path_detail', 'waf.exclude_path_label', 'waf.exclude_path_msg',
+  'waf.exclude_path_title', 'waf.exclude_rule_detail', 'waf.exclude_rule_msg', 'waf.exclude_rule_title',
+  'waf.excluded_path', 'waf.excluded_rule', 'waf.exclusion_add', 'waf.exclusion_added', 'waf.exclusion_path',
+  'waf.exclusion_ph_path', 'waf.exclusion_ph_rule', 'waf.exclusion_remove', 'waf.exclusion_removed',
+  'waf.exclusion_rule', 'waf.exclusion_type_label', 'waf.exclusion_type_path', 'waf.exclusion_type_rule',
+  'waf.exclusions_empty', 'waf.exclusions_hint', 'waf.exclusions_label', 'waf.load_error', 'waf.mode_block',
+  'waf.mode_block_hint', 'waf.mode_detect', 'waf.mode_detect_hint', 'waf.mode_label', 'waf.paranoia_1',
+  'waf.paranoia_1_hint', 'waf.paranoia_2', 'waf.paranoia_2_hint', 'waf.paranoia_3', 'waf.paranoia_3_hint',
+  'waf.paranoia_4', 'waf.paranoia_4_hint', 'waf.paranoia_label', 'waf.recommendation', 'waf.tag_block',
+  'waf.tag_detect', 'waf.tag_hint'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
 {# TLS guard strings (tls-ui.js) #}
@@ -159,6 +173,7 @@
 <script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/hsts-ui.js?v={{ appVersion }}"></script>
 <script src="/js/secopt-ui.js?v={{ appVersion }}"></script>
+<script src="/js/waf-ui.js?v={{ appVersion }}"></script>
 <script src="/js/domain-modal.js?v={{ appVersion }}"></script>
 <script src="/js/zones-page.js?v={{ appVersion }}"></script>
 {% endblock %}

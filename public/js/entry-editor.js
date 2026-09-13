@@ -5,7 +5,7 @@
 // Used by the domain-zones page (zones-page.js / domain-modal.js). Peers,
 // users and domains are fetched here.
 //
-//   window.GCEntryEditor.open(routeOrId, { lockTarget, onSaved, onDeleted, onChanged })
+//   window.GCEntryEditor.open(routeOrId, { lockTarget, onSaved, onDeleted, onChanged, tab, focus })
 //   window.GCEntryEditor.close()
 //
 // Page requirements: app.js globals (api, openModal, closeModal, showError,
@@ -1483,6 +1483,7 @@
     setToggle('edit-route-monitoring', route.monitoring_enabled);
     populateHsts(route);
     populateSecOpts(route);
+    populateWaf(route);
 
     // Debug
     if (byId('edit-route-debug')) {
@@ -1683,6 +1684,11 @@
     MTLS_MODE_INVALID: ['edit-mtls-block', 'errMtlsModeInvalid', 'mtls.err.mode_invalid', 'auth'],
     MTLS_CA_REQUIRED: ['edit-mtls-block', 'errCaRequired', 'mtls.err.ca_required', 'auth'],
     MTLS_LICENSE: ['edit-mtls-block', 'errLicense', 'mtls.err.license', 'auth'],
+    // Web Application Firewall (docs/feature-waf.md, routesValidation) + 403 of the waf gate.
+    WAF_MODE_INVALID: ['edit-waf-block', 'errWafModeInvalid', 'waf.err.mode_invalid', 'security'],
+    WAF_PARANOIA_INVALID: ['edit-waf-block', 'errWafParanoiaInvalid', 'waf.err.paranoia_invalid', 'security'],
+    WAF_REQUIRES_HTTP: ['edit-waf-block', 'errWafRequiresHttp', 'waf.err.requires_http', 'security'],
+    WAF_LICENSE: ['edit-waf-block', 'errLicense', 'waf.err.license', 'security'],
   };
 
   function flag(v) { return v === 1 || v === true || v === '1' || v === 'true'; }
@@ -1715,7 +1721,7 @@
     return true;
   }
   function clearSecoptErrors() {
-    ['edit-backend-tls-error', 'edit-body-limit-error', 'edit-mtls-error'].forEach(function (id) {
+    ['edit-backend-tls-error', 'edit-body-limit-error', 'edit-mtls-error', 'edit-waf-error'].forEach(function (id) {
       var n = byId(id);
       if (n) { n.hidden = true; n.textContent = ''; }
     });
@@ -1833,6 +1839,126 @@
         if (isOn('edit-route-mtls') && ca && !ca.value.trim()) ca.focus();
       });
     }
+  }
+
+  // ═══ Web Application Firewall (docs/feature-waf.md, Tab Sicherheit) ═══════
+  // #edit-route-waf (toggle, always managed here — never by app.js),
+  // #edit-route-waf-mode (detect|block), #edit-route-waf-paranoia (1–4),
+  // #edit-waf-exclusions (list built by GCWafUI.exclusionsEditor, saved per
+  // item through the WAF API), #edit-waf-engine-hint (GET /waf/status). Locked
+  // without the waf license (#edit-waf-block data-licensed="0" or
+  // window.GC.features.waf === false): then the fields are never sent.
+
+  var wafExclusions = null;   // GCWafUI.exclusionsEditor instance (built on first open)
+
+  function wafLicensed() {
+    var block = byId('edit-waf-block');
+    if (!block || block.dataset.licensed === '0') return false;
+    return !(window.GC && window.GC.features && window.GC.features.waf === false);
+  }
+  function wafText(name, key, fallback) {
+    var block = byId('edit-waf-block');
+    return (block && block.dataset[name]) || T(key, fallback);
+  }
+  function wafRouteType() {
+    if (state.lockTarget && state.route) return state.route.route_type || 'http';
+    var rt = byId('edit-route-type');
+    return rt ? (rt.value || 'http') : ((state.route && state.route.route_type) || 'http');
+  }
+  function wafMode(v) { return String(v || '').toLowerCase() === 'block' ? 'block' : 'detect'; }
+  function wafParanoia(v) {
+    var n = parseInt(v, 10);
+    return n >= 1 && n <= 4 ? n : 1;
+  }
+
+  function populateWaf(route) {
+    var block = byId('edit-waf-block');
+    if (!block) return;
+    setToggle('edit-route-waf', flag(route.waf_enabled));
+    setVal('edit-route-waf-mode', wafMode(route.waf_mode));
+    setVal('edit-route-waf-paranoia', String(wafParanoia(route.waf_paranoia)));
+    var link = byId('edit-waf-events-link');
+    if (link) link.setAttribute('href', '/waf' + (route.domain ? '?host=' + encodeURIComponent(String(route.domain).toLowerCase()) : ''));
+    var W = window.GCWafUI;
+    var box = byId('edit-waf-exclusions');
+    if (box && W && typeof W.exclusionsEditor === 'function') {
+      if (!wafExclusions) wafExclusions = W.exclusionsEditor(box, route);
+      else wafExclusions.set(route);
+    }
+    var engine = byId('edit-waf-engine-hint');
+    if (engine) {
+      engine.textContent = '';
+      if (W && typeof W.engineHint === 'function' && wafLicensed() && route.route_type !== 'l4') W.engineHint(engine);
+    }
+    syncWafBlock();
+  }
+
+  function syncWafBlock() {
+    var block = byId('edit-waf-block');
+    if (!block) return;
+    var licensed = wafLicensed();
+    var http = wafRouteType() !== 'l4';
+    var active = licensed && http;
+    var on = isOn('edit-route-waf');
+    block.classList.toggle('feature-locked', !licensed);
+    block.classList.toggle('wf-license-locked', !licensed);
+    block.classList.toggle('wf-locked', licensed && !http);
+    block.dataset.waf = on ? 'on' : 'off';
+    var toggle = byId('edit-route-waf');
+    if (toggle) {
+      toggle.setAttribute('aria-disabled', active ? 'false' : 'true');
+      toggle.setAttribute('tabindex', active ? '0' : '-1');
+    }
+    var fields = byId('edit-waf-fields');
+    if (fields) fields.classList.toggle('wf-fields-off', !on);
+    ['edit-route-waf-mode', 'edit-route-waf-paranoia'].forEach(function (id) {
+      var n = byId(id);
+      if (n) n.disabled = !(active && on);
+    });
+    var mode = wafMode(val('edit-route-waf-mode', 'detect'));
+    block.dataset.wafMode = mode;
+    var mh = byId('edit-waf-mode-hint');
+    if (mh) mh.textContent = wafText(mode === 'block' ? 'modeHintBlock' : 'modeHintDetect', 'waf.mode_' + mode + '_hint', '');
+    var p = wafParanoia(val('edit-route-waf-paranoia', '1'));
+    var ph = byId('edit-waf-paranoia-hint');
+    if (ph) ph.textContent = wafText('paranoiaHint' + p, 'waf.paranoia_' + p + '_hint', '');
+    var hint = byId('edit-waf-hint');
+    if (hint) hint.textContent = licensed && !http ? wafText('hintHttp', 'waf.hint_http', 'HTTP entries only.') : '';
+    var locked = byId('edit-waf-locked-hint');
+    if (locked) locked.hidden = licensed;
+    var link = byId('edit-waf-events-link');
+    if (link) link.hidden = !licensed;
+    if (wafExclusions) wafExclusions.setDisabled(!active);
+  }
+
+  // waf_* fields for the PUT body; nothing without the license or for L4.
+  function readWafFields(target) {
+    if (!byId('edit-waf-block') || !wafLicensed() || target.route_type === 'l4') return {};
+    return {
+      waf_enabled: isOn('edit-route-waf'),
+      waf_mode: wafMode(val('edit-route-waf-mode', 'detect')),
+      waf_paranoia: wafParanoia(val('edit-route-waf-paranoia', '1')),
+    };
+  }
+
+  function setupWafControls() {
+    var toggle = byId('edit-route-waf');
+    if (!toggle) return;
+    function flip() {
+      if (!wafLicensed() || wafRouteType() === 'l4') return;
+      setToggle('edit-route-waf', !isOn('edit-route-waf'));
+      syncWafBlock();
+    }
+    toggle.addEventListener('click', flip);
+    toggle.addEventListener('keydown', function (e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
+    });
+    ['edit-route-waf-mode', 'edit-route-waf-paranoia'].forEach(function (id) {
+      var n = byId(id);
+      if (n) n.addEventListener('change', syncWafBlock);
+    });
+    var rt = byId('edit-route-type');
+    if (rt) rt.addEventListener('change', syncWafBlock);
   }
 
   // ═══ Headers + branding ════════════════════════════════════════════════════
@@ -2409,11 +2535,15 @@
     populateTarget(route);
     applyLockTarget(route);
 
-    // Reset to first tab (before any await so the modal never shows a stale tab)
-    modal.querySelectorAll('.edit-route-tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.editTab === 'general'); });
-    modal.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = p.dataset.panel === 'general' ? '' : 'none'; });
     var debugTab = modal.querySelector('[data-edit-tab="debug"]');
     if (debugTab) debugTab.style.display = (route.route_type === 'l4') ? 'none' : '';
+    // Reset to the first tab — or opts.tab when that tab is shown (the domain
+    // dialog's WAF tag opens the security tab) — before any await so the
+    // modal never shows a stale tab.
+    var startBtn = opts.tab ? modal.querySelector('.edit-route-tabs .tab[data-edit-tab="' + opts.tab + '"]') : null;
+    var startTab = startBtn && startBtn.style.display !== 'none' ? opts.tab : 'general';
+    modal.querySelectorAll('.edit-route-tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.editTab === startTab); });
+    modal.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = p.dataset.panel === startTab ? '' : 'none'; });
 
     await populateAuth(route, id, seq);
     if (seq !== state.seq) return;
@@ -2437,8 +2567,11 @@
     currentEditRouteId = id;
     stopTracePolling();
     window.openModal(MODAL_ID);
+    // opts.focus: id of a block to scroll into view on the start tab (e.g. edit-waf-block).
+    var focusEl = opts.focus && startTab !== 'general' ? byId(opts.focus) : null;
+    if (focusEl && typeof focusEl.scrollIntoView === 'function') focusEl.scrollIntoView({ block: 'nearest' });
     // Focus the active domain element: freetext (if visible) or base-domain select
-    if (!state.lockTarget) {
+    if (!state.lockTarget && startTab === 'general') {
       var ft = byId('edit-route-domain-freetext');
       if (ft && ft.style.display !== 'none') ft.focus();
       else { var base = byId('edit-route-base-domain'); if (base) base.focus(); }
@@ -2606,6 +2739,8 @@
       };
       Object.assign(payload, readHstsFields());
       Object.assign(payload, secopt.fields);
+      // Web Application Firewall: waf_enabled, waf_mode, waf_paranoia (licensed HTTP routes only).
+      Object.assign(payload, readWafFields(target));
       var blockAction = val('edit-route-block-action', 'inherit');
       payload.external_block_action = blockAction;
       if (blockAction === 'custom') payload.external_block_body = val('edit-route-block-body', '');
@@ -2661,6 +2796,8 @@
         if (showSecoptError(data.code)) return;
         // 403 of the route_auth gate (requireFeatureField('mtls_enabled', 'route_auth')).
         if (data.feature === 'route_auth' && payload.mtls_enabled) { showSecoptError('MTLS_LICENSE'); return; }
+        // 403 of the waf gate (requireFeatureField('waf_enabled', 'waf')).
+        if (data.feature === 'waf' && payload.waf_enabled) { showSecoptError('WAF_LICENSE'); return; }
         if (data.fields) {
           var ft = byId('edit-route-domain-freetext');
           window.showFieldErrors(data.fields, {
@@ -2729,6 +2866,7 @@
     setupHeaderControls();
     setupHstsControls();
     setupSecOptControls();
+    setupWafControls();
     setupBrandingUpload('edit-branding-logo-file', 'logo', 'logo', 'edit-branding-logo-current', 'edit-branding-logo-remove');
     setupBrandingUpload('edit-branding-bg-file', 'bg_image', 'bg-image', 'edit-branding-bg-current', 'edit-branding-bg-remove');
     setupTabsAndDebug();

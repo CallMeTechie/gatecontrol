@@ -51,6 +51,7 @@
       l4_routes: {{ license.features.l4_routes | default(0) }},
       http_routes: {{ license.features.http_routes | default(0) }},
       browser_sessions: {{ ('true' if license.hasFeature('browser_sessions') else 'false') | safe }},
+      waf: {{ ('true' if license.features.waf else 'false') | safe }},
       midea_integration: {{ ('true' if license.features.midea_integration else 'false') | safe }},
       skoda_integration: {{ ('true' if license.features.skoda_integration else 'false') | safe }}
     },

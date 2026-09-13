@@ -476,6 +476,53 @@
           </div>
           <div id="edit-body-limit-error" class="so-editor-error" role="alert" hidden></div>
         </div>
+        {# Web Application Firewall (docs/feature-waf.md). Populated/read by
+           entry-editor.js, the exclusion list is built by waf-ui.js
+           (GCWafUI.exclusionsEditor). The toggle is always managed by
+           entry-editor.js; locked (and never sent) without the waf license. #}
+        <div id="edit-waf-block" class="wf-editor-block{% if not license.features.waf %} feature-locked wf-license-locked{% endif %}"
+             data-licensed="{{ '1' if license.features.waf else '0' }}"{% if not license.features.waf %} title="{{ t('license.requires_pro') }}"{% endif %}
+             data-hint-http="{{ t('waf.hint_http') }}" data-mode-hint-detect="{{ t('waf.mode_detect_hint') }}" data-mode-hint-block="{{ t('waf.mode_block_hint') }}"
+             data-paranoia-hint1="{{ t('waf.paranoia_1_hint') }}" data-paranoia-hint2="{{ t('waf.paranoia_2_hint') }}" data-paranoia-hint3="{{ t('waf.paranoia_3_hint') }}" data-paranoia-hint4="{{ t('waf.paranoia_4_hint') }}"
+             data-err-license="{{ t('waf.err.license') }}" data-err-waf-mode-invalid="{{ t('waf.err.mode_invalid') }}" data-err-waf-paranoia-invalid="{{ t('waf.err.paranoia_invalid') }}" data-err-waf-requires-http="{{ t('waf.err.requires_http') }}">
+          <div class="so-switch-row wf-switch-row">
+            <div>
+              <div class="so-switch-title">{{ t('waf.title') }} <span class="lock-icon wf-lock"></span></div>
+              <div class="so-switch-desc">{{ t('waf.editor_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-waf" data-managed="true" role="switch" aria-checked="false" aria-label="{{ t('waf.title') }}"{% if license.features.waf %} tabindex="0"{% else %} aria-disabled="true" tabindex="-1"{% endif %}></div>
+          </div>
+          <div id="edit-waf-fields" class="wf-editor-fields">
+            <div class="wf-editor-row">
+              <label class="wf-editor-f" for="edit-route-waf-mode"><span class="wf-f-label">{{ t('waf.mode_label') }}</span>
+                <select class="form-select" id="edit-route-waf-mode"{% if not license.features.waf %} disabled{% endif %}>
+                  <option value="detect" selected>{{ t('waf.mode_detect') }}</option>
+                  <option value="block">{{ t('waf.mode_block') }}</option>
+                </select>
+              </label>
+              <label class="wf-editor-f" for="edit-route-waf-paranoia"><span class="wf-f-label">{{ t('waf.paranoia_label') }}</span>
+                <select class="form-select" id="edit-route-waf-paranoia"{% if not license.features.waf %} disabled{% endif %}>
+                  <option value="1" selected>{{ t('waf.paranoia_1') }}</option>
+                  <option value="2">{{ t('waf.paranoia_2') }}</option>
+                  <option value="3">{{ t('waf.paranoia_3') }}</option>
+                  <option value="4">{{ t('waf.paranoia_4') }}</option>
+                </select>
+              </label>
+            </div>
+            <div id="edit-waf-mode-hint" class="wf-editor-hint">{{ t('waf.mode_detect_hint') }}</div>
+            <div id="edit-waf-paranoia-hint" class="wf-editor-hint">{{ t('waf.paranoia_1_hint') }}</div>
+          </div>
+          <div class="wf-recommendation">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="wf-ic" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>{{ t('waf.recommendation') }}</span>
+          </div>
+          <div id="edit-waf-exclusions" class="wf-exclusions"></div>
+          <div id="edit-waf-engine-hint" class="wf-editor-hint wf-hint-warn" role="status"></div>
+          <div id="edit-waf-hint" class="wf-editor-hint wf-hint-warn"></div>
+          <div id="edit-waf-locked-hint" class="wf-editor-hint wf-locked-hint"{% if license.features.waf %} hidden{% endif %}>{{ t('waf.locked') }}</div>
+          <a id="edit-waf-events-link" class="wf-events-link" href="/waf"{% if not license.features.waf %} hidden{% endif %}>{{ t('waf.events_link') }} →</a>
+          <div id="edit-waf-error" class="so-editor-error" role="alert" hidden></div>
+        </div>
         {% if license.features.peer_acl %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
