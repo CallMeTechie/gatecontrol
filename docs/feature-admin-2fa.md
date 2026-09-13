@@ -1,6 +1,6 @@
 # Zwei-Faktor-Anmeldung für die Management-Oberfläche
 
-Status: in Umsetzung (Branch `feat/security-options`). Verbindliche
+Status: umgesetzt (Branch `feat/security`, Release 1.123.0). Verbindliche
 Schnittstelle. Route-Auth hat bereits TOTP (`otpauth`, QR über
 `/js/vendor/qrcode.min.js`); die Bausteine werden wiederverwendet, nicht kopiert.
 

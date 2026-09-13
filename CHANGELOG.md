@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Alias-Namen pro Host: `www` (und bis zu neun weitere Namen) gehört jetzt zum Host statt als eigene Route. Wahlweise leitet der Alias per 308 auf den Hauptnamen um (Standard) oder liefert denselben Inhalt. Aliase bekommen eigene Zertifikate und laufen durch die DNS-Vorprüfung; ein Alias mit Problemen wird pausiert, ohne den Hauptnamen zu stören. Beim Anlegen eines Hosts für die Hauptdomain (`@`) ist „www-Alias anlegen“ vorausgewählt. Host-Menü → „Alias-Namen…“.
+- Zwei-Faktor-Anmeldung (TOTP) für die Oberfläche: Einrichten im Profil mit QR-Code und zehn Wiederherstellungscodes, Code-Abfrage nach dem Passwort, Sperre nach Fehlversuchen, Schutz gegen Wiederverwendung eines Codes. In den Einstellungen lässt sich 2FA für alle Admins verlangen; ein Admin kann die 2FA eines anderen Kontos zurücksetzen. Desktop-Client, Gateways und API-Tokens sind nicht betroffen.
+- Backend-Zertifikat prüfen: Für Ziele, die Caddy direkt anspricht, lässt sich die TLS-Prüfung des Backends einschalten, optional mit Servername und eigener CA. Bei Gateway-Routen baut das Gateway die Verbindung auf; dort bleibt es wie bisher.
+- Client-Zertifikate (mTLS) pro Route (Pro, wie Route-Auth): Nur Clients mit einem Zertifikat der hinterlegten CA kommen durch. Hinweis: Sobald eine Route mTLS nutzt, prüft Caddy auf dem ganzen Server, dass Hostname und SNI übereinstimmen.
+- TLS-Profil pro Domain: „TLS mindestens 1.3“ schließt ältere Clients aus.
+- Maximale Anfragegröße pro Route (MB), schützt Backends vor übergroßen Uploads.
+- Header-Vorlagen: „Sicherheits-Header (modern)“ mit `Permissions-Policy` und `Cross-Origin-Opener-Policy` statt des veralteten `X-XSS-Protection`, dazu eine Vorlage „CSP (nur eigene Quellen)“ mit Warnhinweis.
+- CAA-Empfehlung: Die DNS-Vorprüfung zeigt, ob ein CAA-Record die Domain schützt, und schlägt sonst `CAA 0 issue "letsencrypt.org"` zum Kopieren vor.
+
+### Fixes
+- Hinterlegte CA-Dateien für Backend-TLS und mTLS blieben liegen, wenn die letzte Route ihre CA entfernt hatte; sie werden jetzt beim nächsten Sync gelöscht.
+- Die Benutzerseite (Standard-Theme) lieferte einen Stilblock ohne CSP-Nonce, den der Browser blockierte.
+
+---
+
 ## [1.122.0] — 2026-09-13
 
 ### Features

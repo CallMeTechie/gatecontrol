@@ -1,6 +1,6 @@
 # Sicherheitsoptionen: Aliase, Backend-TLS, Header, Body-Limit, TLS-Profil, mTLS, CAA
 
-Status: in Umsetzung (Branch `feat/security-options`, aufbauend auf `feat/hsts`).
+Status: umgesetzt (Branch `feat/security`, Release 1.123.0).
 Verbindliche Schnittstelle zwischen Backend und Oberfläche. Wer abweicht,
 ändert zuerst dieses Dokument. Admin-2FA hat einen eigenen Vertrag
 (`feature-admin-2fa.md`), die WAF ebenfalls (`feature-waf.md`).
