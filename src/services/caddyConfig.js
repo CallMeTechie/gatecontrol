@@ -597,7 +597,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     if (route.compress_enabled) {
       routeHandlers.push({
         handler: 'encode',
-        encodings: { zstd: {}, brotli: {}, gzip: {} },
+        encodings: { zstd: {}, br: {}, gzip: {} },
       });
     }
 

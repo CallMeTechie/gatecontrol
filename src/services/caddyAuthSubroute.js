@@ -100,7 +100,7 @@ function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTarge
     handlers.push(buildMirrorHandler(mirrorTargets));
   }
   if (route.compress_enabled) {
-    handlers.push({ handler: 'encode', encodings: { zstd: {}, brotli: {}, gzip: {} } });
+    handlers.push({ handler: 'encode', encodings: { zstd: {}, br: {}, gzip: {} } });
   }
 
   // Strip GateControl's own route-auth session cookie (gc.route.sid) from the

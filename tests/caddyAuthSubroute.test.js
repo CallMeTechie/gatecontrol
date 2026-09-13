@@ -139,7 +139,7 @@ describe('caddyAuthSubroute: buildAuthHandlerChain', () => {
     });
     const enc = handlers.find(h => h.handler === 'encode');
     assert.ok(enc);
-    assert.deepEqual(enc.encodings, { zstd: {}, brotli: {}, gzip: {} });
+    assert.deepEqual(enc.encodings, { zstd: {}, br: {}, gzip: {} });
   });
 
   it('custom request headers append below forward-auth', () => {
