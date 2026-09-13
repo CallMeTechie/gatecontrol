@@ -868,3 +868,30 @@ input[type=date]:focus, select:focus {
 .so-check input, .so-radio input, .so-www-check input { accent-color: var(--teal); }
 .so-f-label, .so-alias-count, .so-alias-more, .tag.so-alias-tag, .so-err-detail, .so-hint .so-ic { color: var(--muted); }
 .tag.so-alias-tag { border-color: var(--line); }
+
+/* ─── WAF (wf-) ─── */
+/* Aurora overrides for the WAF page, its dialogs and the editor block
+   (docs/feature-waf.md). The base wf- block comes from pro.css (loaded
+   first); here only surfaces, the KPI strip, the filter toolbar and the
+   data-table integration. */
+.wf-tiles.aurora-routes-kpis { margin-bottom: 14px; }
+.aurora-routes-kpi.wf-tile { cursor: pointer; }
+.aurora-routes-kpi.wf-tile:hover { border-color: var(--line-2); }
+.aurora-routes-kpi.wf-tile.on { border-color: var(--teal); box-shadow: 0 0 0 3px var(--glow1); }
+#wf-tile-blocked.warn b { color: var(--coral); }
+.alert.wf-banner { display: flex; gap: 10px; margin-bottom: 14px; }
+.toolbar.wf-toolbar { margin-bottom: 14px; }
+.wf-toolbar .wf-filters { padding: 0; border-bottom: none; }
+.wf-card.card { padding: 0; }
+.wf-card .card-head { padding: 14px 16px 10px; }
+.wf-card.card::after { content: none; }
+.wf-table.data-table th { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.wf-table.data-table td { padding: 12px 14px; border-color: var(--line); }
+.wf-table.data-table tbody tr:hover td { background: var(--chip); }
+.wf-host-link, .wf-link, .wf-events-link, .wf-recommendation .wf-ic { color: var(--teal); }
+.wf-raw, .wf-rule, .wf-excl-row, .wf-recommendation { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.wf-excl-empty { border-color: var(--line); border-radius: var(--r-sm); }
+.wf-filters, .wf-pager { border-color: var(--line); }
+.wf-empty td, .wf-f-label, .wf-muted, .wf-sub, .wf-pager, .wf-hint .wf-ic { color: var(--muted); }
+.wf-route-current td { background: var(--chip); }
+.wf-locked .wf-ic { color: var(--muted); }
