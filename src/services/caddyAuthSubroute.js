@@ -29,7 +29,7 @@ const { buildMirrorHandler } = require('./caddyMirror');
  *
  *        bot_blocker (unshift) → trace (unshift) → forward_auth →
  *        custom request headers → rate_limit → mirror → encode →
- *        reverseProxy
+ *        cookie strip → request_body → waf → reverseProxy
  */
 
 function buildRouteAuthProxy() {
@@ -85,7 +85,7 @@ function buildRequestBodyHandler(route) {
   return { handler: 'request_body', max_size: Math.floor(mb) * 1048576 };
 }
 
-function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTargets }) {
+function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTargets, wafHandler }) {
   const handlers = [buildForwardAuthSubrequest(route.domain)];
 
   if (route.debug_enabled) {
@@ -130,6 +130,9 @@ function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTarge
 
   const bodyLimit = buildRequestBodyHandler(route);
   if (bodyLimit) handlers.push(bodyLimit);
+  // WAF (docs/feature-waf.md): built by caddyConfig (engine check there),
+  // right after request_body and before the proxy — same as the plain chain.
+  if (wafHandler) handlers.push(wafHandler);
   handlers.push(reverseProxy);
   return handlers;
 }

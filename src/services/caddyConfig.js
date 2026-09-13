@@ -49,6 +49,7 @@ const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
 const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision, MARKER_HOST } = require('./caddyOwner');
+const { buildWafHandler, blockErrorRoutes } = require('./waf');
 const {
   caddyApi,
   _caddyApi,
@@ -310,6 +311,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const rulesExist = require('./accessRules').anyRulesExist();
 
   const caddyRoutes = {};
+  // WAF (docs/feature-waf.md): hosts whose route blocks → srv0 error page.
+  const wafBlockHosts = [];
   // Pre-assembled route entries (e.g. pool-outage 503 blocks) that bypass
   // the caddyRoutes dict and are merged directly into serverRoutes.
   const serverRoutes_pending = [];
@@ -611,6 +614,16 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // in this chain and in the forward-auth chain (buildAuthHandlerChain).
     const bodyLimit = buildRequestBodyHandler(route);
 
+    // WAF (docs/feature-waf.md): Coraza right after request_body and before
+    // the proxy, in this chain and in the forward-auth chain. Only in front of
+    // a real reverse_proxy (not the gateway maintenance page) and only when the
+    // Caddy binary carries http.handlers.waf (buildWafHandler returns null
+    // otherwise).
+    const wafHandler = reverseProxy.handler === 'reverse_proxy' ? buildWafHandler(route) : null;
+    if (wafHandler && route.waf_mode === 'block') {
+      wafBlockHosts.push(route.domain, ...aliasFqdnsOf(route));
+    }
+
     const routeHandlers = [];
 
     // Bot blocker
@@ -652,6 +665,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
 
     if (bodyLimit) routeHandlers.push(bodyLimit);
+    if (wafHandler) routeHandlers.push(wafHandler);
     routeHandlers.push(reverseProxy);
 
     const routeConfig = {
@@ -709,7 +723,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     if (needsForwardAuth) {
       routeConfig.handle = buildAuthHandlerChain({
-        route, reverseProxy, customHeaders, mirrorTargets,
+        route, reverseProxy, customHeaders, mirrorTargets, wafHandler,
       });
       caddyRoutes[route.domain] = {
         listen: route.https_enabled ? [':443'] : [':80'],
@@ -1103,6 +1117,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     };
     if (tlsPolicies.length > 0) {
       caddyConfig.apps.http.servers.srv0.tls_connection_policies = [...tlsPolicies, {}];
+    }
+    // WAF block page: an interrupted request (coraza-caddy HandlerError) gets
+    // our own HTML page. Only emitted when some route blocks.
+    const wafErrorRoutes = blockErrorRoutes(wafBlockHosts);
+    if (wafErrorRoutes) {
+      caddyConfig.apps.http.servers.srv0.errors = { routes: wafErrorRoutes };
     }
     // Paused hosts (TLS guard) join the marker in skip: Caddy neither requests
     // a certificate nor redirects to HTTPS — the route stays reachable on :80.
