@@ -52,6 +52,8 @@ router.get('/data', (req, res) => {
     data: {
       retention_traffic_days: parseInt(settings.get('data.retention_traffic_days', '30'), 10),
       retention_activity_days: parseInt(settings.get('data.retention_activity_days', '30'), 10),
+      // WAF events (docs/feature-waf.md), cleaned with the other retention runs.
+      retention_waf_days: parseInt(settings.get('data.retention_waf_days', '14'), 10),
       peer_online_timeout: parseInt(settings.get('data.peer_online_timeout', '180'), 10),
     },
   });
@@ -62,7 +64,7 @@ router.get('/data', (req, res) => {
  */
 router.put('/data', (req, res) => {
   try {
-    const { retention_traffic_days, retention_activity_days, peer_online_timeout } = req.body;
+    const { retention_traffic_days, retention_activity_days, retention_waf_days, peer_online_timeout } = req.body;
     if (retention_traffic_days !== undefined) {
       const val = parseInt(retention_traffic_days, 10);
       if (val >= 1 && val <= 365) settings.set('data.retention_traffic_days', String(val));
@@ -70,6 +72,10 @@ router.put('/data', (req, res) => {
     if (retention_activity_days !== undefined) {
       const val = parseInt(retention_activity_days, 10);
       if (val >= 1 && val <= 365) settings.set('data.retention_activity_days', String(val));
+    }
+    if (retention_waf_days !== undefined) {
+      const val = parseInt(retention_waf_days, 10);
+      if (val >= 1 && val <= 365) settings.set('data.retention_waf_days', String(val));
     }
     if (peer_online_timeout !== undefined) {
       const val = parseInt(peer_online_timeout, 10);

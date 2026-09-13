@@ -309,3 +309,21 @@ test('retention: data.retention_waf_days (default 14)', () => {
     assert.equal(waf.retentionDays(), 14);
   } finally { settings.set('data.retention_waf_days', '14'); }
 });
+
+test('settings API: retention_waf_days (GET default 14, PUT 1..365) and public key', async () => {
+  const settings = require('../src/services/settings');
+  let r = await GET('/settings/data');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.retention_waf_days, 14);
+  r = await PUT('/settings/data', { retention_waf_days: 30 });
+  assert.equal(r.status, 200);
+  assert.equal(settings.get('data.retention_waf_days'), '30');
+  assert.equal((await GET('/settings/data')).body.data.retention_waf_days, 30);
+  await PUT('/settings/data', { retention_waf_days: 0 });
+  await PUT('/settings/data', { retention_waf_days: 999 });
+  assert.equal(settings.get('data.retention_waf_days'), '30', 'out of range ignored');
+  assert.equal(waf.retentionDays(), 30);
+  assert.ok(settings.PUBLIC_KEYS.has('data.retention_waf_days'));
+  assert.equal(settings.getPublic()['data.retention_waf_days'], '30');
+  settings.set('data.retention_waf_days', '14');
+});

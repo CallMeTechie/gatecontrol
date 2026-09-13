@@ -63,6 +63,7 @@ const PUBLIC_KEYS = new Set([
   'data.peer_online_timeout',
   'data.retention_activity_days',
   'data.retention_traffic_days',
+  'data.retention_waf_days',
   'autobackup_enabled',
   'autobackup_retention',
   'autobackup_schedule',
