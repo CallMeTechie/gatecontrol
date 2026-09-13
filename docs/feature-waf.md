@@ -1,6 +1,6 @@
 # Web Application Firewall (Coraza + OWASP Core Rule Set)
 
-Status: geplant (Branch `feat/waf`, nach `feat/security-options`). Verbindliche
+Status: umgesetzt (Branch `feat/waf`, Release nach 1.123.0). Verbindliche
 Schnittstelle zwischen Docker-Build, Backend und Oberfläche.
 
 ## Entscheidungen
@@ -48,7 +48,7 @@ Handler `waf` (Modul `http.handlers.waf`) vor `reverse_proxy` in beiden Ketten:
 
 ```json
 { "handler": "waf",
-  "directives": "Include @coraza.conf-recommended\nInclude @crs-setup.conf.example\nInclude @owasp_crs/*.conf\nSecRuleEngine DetectionOnly|On\nSecAction \"id:900000,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=<n>\"\nSecAuditEngine RelevantOnly\nSecAuditLogFormat JSON\nSecAuditLog /data/caddy/waf-audit.log\nSecAuditLogParts ABCFHZ\n<Ausnahmen>" }
+  "directives": "Include @coraza.conf-recommended\nInclude @crs-setup.conf.example\nInclude @owasp_crs/*.conf\nSecRuleEngine DetectionOnly|On\nSecAction \"id:900000,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=<n>\"\nSecAuditEngine RelevantOnly\nSecAuditLogFormat JSON\nSecAuditLog /data/caddy/waf-audit.log\nSecAuditLogParts AHZ\nSecAuditLogFileMode 0600\n<Ausnahmen>" }
 ```
 
 Die Direktiven werden aus `waf_mode`, `waf_paranoia`, `waf_exclusions`
@@ -56,6 +56,19 @@ erzeugt; Regel-IDs für Pfad-Ausnahmen beginnen bei 10000 + route_id * 100.
 `caddy validate` ist Teil der Tests; fehlt das Modul im Binary (alte Images),
 lässt der Generator den Handler weg und `GET /api/v1/waf/status` meldet
 `engine_available: false`.
+
+## Datensparsamkeit
+
+- Audit-Teile nur `AHZ`: keine Request-Header (B), keine Bodies (C/I/J), keine
+  Response (E/F). Teil A liefert Zeit, Transaktions-ID, Client-IP, Host,
+  Methode, URI und Protokoll; H die Regelmeldungen.
+- Die Datei ist `0600` und wird geleert, sobald der Watcher sie vollständig
+  gelesen hat (Rotation 20 MB × 3 nur als Rückfall).
+- `waf_events.raw` ist ein geschwärzter Datensatz (`request`, `rule_engine`,
+  `interrupted`, `rule {id,msg,severity,data,tags}`, `messages [{id,msg,severity}]`).
+  Fundstellen in Cookies, `Authorization`/`Proxy-Authorization` und
+  Passwort-/Token-/OTP-/API-Key-Feldern werden durch
+  `[redacted: matched in <Variable>]` ersetzt.
 
 ## Backend `src/services/waf.js`
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Web Application Firewall (Pro): Pro HTTP-Route lässt sich im Eintrags-Editor (Tab „Sicherheit“) eine WAF einschalten: Coraza mit dem OWASP Core Rule Set 4.25, fest im mitgelieferten Caddy eingebaut, ohne Downloads zur Laufzeit. Es gibt zwei Modi: „Nur erkennen“ (Standard, protokolliert nur) und „Blockieren“ (403 mit eigener Seite). Dazu kommen die Paranoia-Stufen 1–4. Empfehlung: erst ein, zwei Tage „Nur erkennen“ laufen lassen.
+- Neue Seite „Web Application Firewall“ (Sidebar unter Routing, nur mit Lizenz): Kacheln für Ereignisse und Blockierungen der letzten 24 Stunden, Filter nach Host, Aktion und Zeitraum und eine Ereignisliste mit Regel, Meldung, Client-IP und URI; „Details“ zeigt je Ereignis die Fundstelle, die Tags und die übrigen Treffer derselben Anfrage. Fehlalarme lassen sich direkt aus einer Zeile heraus beheben: „Regel für diese Route ausschließen“ oder „Pfad ausschließen“. Auf der Zonen-Seite zeigt ein Hinweis `WAF` bzw. `WAF (erkennt)`, welche Einträge geschützt sind.
+- Aufbewahrung der WAF-Ereignisse einstellbar (Einstellungen → Daten, Standard 14 Tage).
+- API: `GET /api/v1/waf/status`, `GET /api/v1/waf/events`, `POST|DELETE /api/v1/waf/routes/:id/exclusions`; Routen-Felder `waf_enabled`, `waf_mode`, `waf_paranoia`, `waf_exclusions` (Token-Scope `routes`).
+
+### Datenschutz
+- Das WAF-Protokoll speichert keine Request-Header und keine Bodies. Cookies, `Authorization`, Passwort-, Token- und OTP-Felder werden auch dann nicht übernommen, wenn eine Regel darauf angeschlagen hat; gespeichert wird nur der Name des Feldes. Die Protokolldatei von Coraza ist nur für root lesbar und wird geleert, sobald GateControl sie eingelesen hat.
+
+### Hinweise
+- Solange keine Route die WAF nutzt, ist die Caddy-Konfiguration unverändert. Das Caddy-Binary ist durch das Modul größer; die CI prüft, dass es im Image enthalten ist.
+
+---
+
 ## [1.123.0] — 2026-09-13
 
 ### Features
