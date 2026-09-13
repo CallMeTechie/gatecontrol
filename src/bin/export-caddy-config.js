@@ -37,10 +37,11 @@ function main() {
       process.exit(4);
     }
 
-    const tmp = outPath + '.tmp';
+    // Owner-only (0600) like caddyAdminClient._persistRuntimeJson: the
+    // config can carry basic-auth hashes; Caddy (root) is its only reader.
+    const { atomicWrite } = require('../utils/fs');
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
-    fs.renameSync(tmp, outPath);
+    atomicWrite(outPath, JSON.stringify(cfg, null, 2), { mode: 0o600 });
 
     const l4Count = cfg.apps.layer4 ? Object.keys(cfg.apps.layer4.servers || {}).length : 0;
     console.log(`wrote ${outPath} — ${Object.keys(httpServers).length} HTTP server(s), ${l4Count} L4 server(s)`);

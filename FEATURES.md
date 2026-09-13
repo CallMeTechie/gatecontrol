@@ -789,6 +789,8 @@ The Settings page shows all existing backup files with:
 
 Backups are stored in `/data/backups/` inside the Docker container. Since `/data/` is mounted as a Docker volume (`gatecontrol-data`), backups persist across container restarts and updates.
 
+Backups contain password and API-token hashes and encrypted keys, so they are owner-only on the host: the directory is `0700`, every backup file `0600` (backups from older versions are tightened on the next start).
+
 ### API
 
 ```bash

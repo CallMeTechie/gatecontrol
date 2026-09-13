@@ -165,14 +165,15 @@ const _caddyApi = {
 // Write the generated Caddy config to /data/caddy/runtime.json atomically.
 // entrypoint.sh boots Caddy from this file and a restart falls back to it
 // if /load leaves Caddy in a bad state.
+// Owner-only (0600): the config can carry basic-auth hashes and the full
+// route topology; Caddy runs as root and is its only reader.
 function _persistRuntimeJson(caddyConfig) {
   const fs = require('node:fs');
   const path = require('node:path');
-  const tmp = RUNTIME_JSON_PATH + '.tmp';
+  const { atomicWrite } = require('../utils/fs');
   try {
     fs.mkdirSync(path.dirname(RUNTIME_JSON_PATH), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify(caddyConfig, null, 2));
-    fs.renameSync(tmp, RUNTIME_JSON_PATH);
+    atomicWrite(RUNTIME_JSON_PATH, JSON.stringify(caddyConfig, null, 2), { mode: 0o600 });
     return true;
   } catch (err) {
     logger.warn({ err: err.message, path: RUNTIME_JSON_PATH }, 'Could not persist runtime.json (not fatal)');
