@@ -141,3 +141,13 @@ test('http server config includes trusted_proxies for ip_hash to work behind LB'
   assert.deepEqual(srv0.client_ip_headers, ['X-Forwarded-For']);
 });
 
+
+test('pool route with backend_https: no TLS transport toward the gateways (plain HTTP proxy port)', async () => {
+  setupTwoGwPool('load_balancing', 'round_robin');
+  getDb().prepare("UPDATE routes SET backend_https = 1, backend_tls_verify = 1 WHERE domain = 'a.test'").run();
+  const cfg = await caddyConfig.buildCaddyConfig({ gatewayProxyPort: 8080 });
+  const json = JSON.stringify(cfg);
+  assert.match(json, /10\.8\.0\.10:8080/);
+  assert.doesNotMatch(json, /insecure_skip_verify/);
+  assert.doesNotMatch(json, /"transport"/, 'the Caddy → pool leg carries no TLS transport');
+});

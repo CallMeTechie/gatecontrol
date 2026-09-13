@@ -242,7 +242,29 @@ function aliasModeOf(route) {
   return route && route.host_alias_mode === 'serve' ? 'serve' : 'redirect';
 }
 
-// ─── Build Caddy JSON config from all enabled routes ────
+// mTLS without server-wide strict SNI (docs/feature-security-options.md §F).
+// A client could complete the TLS handshake for a host WITHOUT client
+// authentication (SNI) and then ask for an mTLS host (Host header) over the
+// same connection — past the client-certificate check. Caddy's answer is
+// strict_sni_host, but it switches it on for the whole server as soon as one
+// policy has client_authentication, which breaks unrelated hosts (IP-based
+// clients, connection reuse across names). Instead, one guard per mTLS host:
+//   - over TLS, a request for the host whose SNI is not one of its names;
+//   - over plain HTTP (a host the TLS guard paused is not redirected), every
+//     request except the ACME challenge path;
+// gets 421 Misdirected Request before any host route.
+function mtlsSniGuardRoute(names) {
+  const sni = names.map((n) => String(n).toLowerCase());
+  return {
+    match: [
+      { host: sni, protocol: 'https', not: [{ vars: { '{http.request.tls.server_name}': sni } }] },
+      { host: sni, protocol: 'http', not: [{ path: ['/.well-known/acme-challenge/*'] }] },
+    ],
+    handle: [{ handler: 'static_response', status_code: 421, body: 'Misdirected Request' }],
+    terminal: true,
+  };
+}
+
 /**
  * Build Caddy configuration JSON. Overloaded:
  *   buildCaddyConfig()                   → Query routes from DB
@@ -580,8 +602,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // (<dataDir>/backend-ca/<id>.pem, written by caddyPemFiles at sync time)
     // are added when set. Only where Caddy dials the backend itself — for
     // gateway-typed routes the fields are stored but never emitted.
-    if (route.backend_https && !gatewayPeerIp) {
-      const verify = !!route.backend_tls_verify && route.target_kind !== 'gateway';
+    //
+    // Keyed on target_kind, not on gatewayPeerIp: pool routes resolve to
+    // poolUpstreams (gatewayPeerIp stays null) and dial the pool members'
+    // proxy port just the same — plain HTTP. They used to get the
+    // insecure_skip_verify transport here and failed with 502.
+    if (route.backend_https && route.target_kind !== 'gateway') {
+      const verify = !!route.backend_tls_verify;
       if (verify) {
         const tls = {};
         if (route.backend_tls_server_name) tls.server_name = String(route.backend_tls_server_name);
@@ -1068,6 +1095,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // then the catch-all {}. Emitted only when at least one non-default policy
   // exists — otherwise the server block stays byte-identical to before.
   const tlsPolicies = [];
+  const mtlsGuards = [];
   const zoneSni = new Map();
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
     if (srvConfig._routeId == null) continue;
@@ -1077,6 +1105,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       if (srvConfig._zoneTls13) policy.protocol_min = 'tls1.3';
       policy.client_authentication = { mode: 'require_and_verify', trusted_ca_certs_pem_files: [srvConfig._mtlsFile] };
       tlsPolicies.push(policy);
+      mtlsGuards.push(mtlsSniGuardRoute(names));
     }
     if (srvConfig._zoneTls13 && srvConfig._zoneId != null) {
       if (!zoneSni.has(srvConfig._zoneId)) zoneSni.set(srvConfig._zoneId, []);
@@ -1084,6 +1113,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
   }
   for (const sni of zoneSni.values()) tlsPolicies.push({ match: { sni }, protocol_min: 'tls1.3' });
+  // SNI guards right after the HTTP→HTTPS redirect, before any host route.
+  if (mtlsGuards.length > 0) serverRoutes.splice(redirectRoute ? 1 : 0, 0, ...mtlsGuards);
 
   if (serverRoutes.length > 0) {
     // Ownership marker — LAST route, impossible host match (never served).
@@ -1118,6 +1149,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     if (tlsPolicies.length > 0) {
       caddyConfig.apps.http.servers.srv0.tls_connection_policies = [...tlsPolicies, {}];
     }
+    // mTLS: the per-host SNI guards replace Caddy's server-wide strict SNI
+    // (see mtlsSniGuardRoute) — explicitly off, otherwise Caddy turns it on
+    // for every host as soon as one policy verifies client certificates.
+    if (mtlsGuards.length > 0) caddyConfig.apps.http.servers.srv0.strict_sni_host = false;
     // WAF block page: an interrupted request (coraza-caddy HandlerError) gets
     // our own HTML page. Only emitted when some route blocks.
     const wafErrorRoutes = blockErrorRoutes(wafBlockHosts);

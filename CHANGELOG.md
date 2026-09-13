@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Pool-Routen mit „Backend spricht HTTPS“ bekamen Richtung Gateway einen TLS-Transport. Der Proxy-Port der Gateways spricht aber reines HTTP; die Route lieferte 502. Jetzt geht die Strecke Caddy → Gateway wie bei Einzel-Gateway-Routen unverschlüsselt durch den WireGuard-Tunnel, das Gateway spricht HTTPS zum Ziel im LAN.
+- Client-Zertifikate (mTLS) schalteten in Caddy die strenge SNI-Prüfung für den ganzen Server ein: Wechselte ein Client auf einer Verbindung zwischen zwei normalen Hosts, bekam er 421. Die Prüfung gilt jetzt nur noch für die mTLS-Hosts selbst. Eine Anfrage für einen mTLS-Host über eine Verbindung, die für einen anderen Namen aufgebaut wurde, bekommt weiterhin 421.
+- Ein vom TLS-Guard pausierter mTLS-Host wird nicht auf HTTPS umgeleitet und war dadurch über Port 80 ohne Client-Zertifikat erreichbar. Er antwortet dort jetzt mit 421 (ausgenommen die ACME-Prüfung).
+
+---
+
 ## [1.124.0] — 2026-09-13
 
 ### Features

@@ -59,7 +59,8 @@ function gatewayRoute(over = {}) {
 const srv0 = (cfg) => cfg.apps.http.servers.srv0;
 const routesOf = (cfg) => srv0(cfg).routes;
 const byId = (cfg, id) => routesOf(cfg).find((r) => r['@id'] === id) || null;
-const hostRoute = (cfg, host) => routesOf(cfg).find((r) => r['@id'] !== 'gc_https_redirect' && !String(r['@id'] || '').startsWith('gc_alias_') && (r.match?.[0]?.host || []).includes(host)) || null;
+const isMtlsGuard = (r) => r.handle?.[0]?.body === 'Misdirected Request';
+const hostRoute = (cfg, host) => routesOf(cfg).find((r) => r['@id'] !== 'gc_https_redirect' && !String(r['@id'] || '').startsWith('gc_alias_') && !isMtlsGuard(r) && (r.match?.[0]?.host || []).includes(host)) || null;
 const handlersOf = (route) => {
   const out = [];
   const walk = (hs) => { for (const h of hs || []) { out.push(h); if (h.handler === 'subroute') for (const r of h.routes || []) walk(r.handle); } };
@@ -257,6 +258,33 @@ describe('caddyConfig contract: tls_connection_policies (§E TLS profile, §F mT
       {},
     ]);
     assert.deepEqual(pol[pol.length - 1], {}, 'catch-all last');
+  });
+
+  it('mTLS: per-host SNI guard (421) right after the redirect, server-wide strict SNI explicitly off', () => {
+    const cfg = buildCaddyConfig([
+      httpRoute({ id: 5, host_aliases: ['www'], mtls_enabled: 1, mtls_ca_pem: CA_PEM }),
+      httpRoute({ id: 6, domain: 'b.example.com' }),
+    ]);
+    const s = srv0(cfg);
+    assert.equal(s.strict_sni_host, false, 'no server-wide strict SNI');
+    assert.equal(s.routes[0]['@id'], 'gc_https_redirect');
+    const guard = s.routes[1];
+    const names = ['a.example.com', 'www.a.example.com'];
+    assert.deepEqual(guard.match, [
+      { host: names, protocol: 'https', not: [{ vars: { '{http.request.tls.server_name}': names } }] },
+      { host: names, protocol: 'http', not: [{ path: ['/.well-known/acme-challenge/*'] }] },
+    ]);
+    assert.equal(guard.handle[0].status_code, 421);
+    assert.equal(guard.terminal, true);
+    assert.equal(guard['@id'], undefined, 'no @id — the reconciler counts gc_route_ ids only');
+    assert.equal(s.routes.filter((r) => r.handle?.[0]?.body === 'Misdirected Request').length, 1, 'no guard for the non-mTLS host');
+  });
+
+  it('no mTLS: no guard and no strict_sni_host key (config unchanged)', () => {
+    const cfg = buildCaddyConfig([httpRoute({ id: 6, domain: 'b.example.com' })]);
+    const s = srv0(cfg);
+    assert.equal('strict_sni_host' in s, false);
+    assert.equal(s.routes.some((r) => r.handle?.[0]?.body === 'Misdirected Request'), false);
   });
 
   it('mTLS needs https_enabled and a CA; L4 routes never get a policy', () => {

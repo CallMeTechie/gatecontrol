@@ -126,6 +126,14 @@ Lizenz: Teil von `route_auth` (Pro), wie die anderen Auth-Methoden.
   client_authentication: { mode: 'require_and_verify', trusted_ca_certs_pem_files:
   ['/data/caddy/mtls/<route_id>.pem'] } }`; Datei wird beim Sync aus der DB geschrieben.
   Nur HTTP-Routen mit `https_enabled`.
+- SNI-Schutz pro Host statt server-weit (seit 1.124.1): Caddy würde bei jeder
+  Policy mit `client_authentication` `strict_sni_host` für den ganzen srv0
+  einschalten (Host-Wechsel zwischen normalen Hosts auf einer Verbindung → 421).
+  Stattdessen `strict_sni_host: false` und direkt nach `gc_https_redirect` je
+  mTLS-Host eine Route ohne `@id`, die mit 421 antwortet: über HTTPS, wenn die
+  SNI keiner der Namen des Hosts ist (`not vars {http.request.tls.server_name}`),
+  über HTTP für alles außer dem ACME-Pfad (ein pausierter Host wird nicht
+  umgeleitet und wäre sonst ohne Client-Zertifikat erreichbar).
 - API: Felder über `PUT /api/v1/routes/:id`; `MTLS_CA_INVALID`, `MTLS_REQUIRES_HTTPS` (400); Feature-Gate `requireFeatureField('mtls_enabled', 'route_auth')`.
 - `GET /zones`: `entry.mtls_enabled`.
 - Oberfläche: Eintrags-Editor, Tab Auth, Block „Client-Zertifikat (mTLS)“: Schalter,
