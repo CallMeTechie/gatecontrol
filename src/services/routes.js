@@ -77,6 +77,17 @@ function cleanupEmptyBundles(db, bundleIds) {
 // host of its own is created (hosts.assignRoute). RDP-owned L4 routes stay out.
 // Metadata-only (bundle_id) and best-effort — runs AFTER the Caddy sync so a
 // sync rollback can never strand a half-formed host, and any failure here is
+// TLS guard preflight (services/tlsGuard.js): never throws, never blocks the
+// write; the API answer carries the compact result as `tls`.
+async function guardTls(host) {
+  const r = await require('./tlsGuard').guardHost(host);
+  return { state: r.state, code: r.code, detail: r.detail };
+}
+function withTls(row, tls) {
+  if (row && tls) row.tls = tls;
+  return row;
+}
+
 // logged, never propagated (it must not roll back an already-synced route).
 // Hosts dissolve only at 0 members (cleanupEmptyBundles in remove()/batch()).
 function assignHost(routeId, opts) {
@@ -325,6 +336,13 @@ async function create(data, opts = {}) {
   const wolEnabled = (targetKind === 'gateway' && data.wol_enabled) ? 1 : 0;
   const wolMac = targetKind === 'gateway' ? (data.wol_mac || null) : null;
 
+  // TLS guard: a hostname that gets HTTPS (or SNI) is preflighted BEFORE the
+  // insert and the sync, so a paused host is skipped from the first sync on.
+  // Orchestrators (skipSync) run the guard themselves.
+  const httpsEnabled = data.https_enabled !== undefined ? !!data.https_enabled : true;
+  const wantsTls = !!domain && (routeType === 'l4' ? (!!data.l4_tls_mode && data.l4_tls_mode !== 'none') : httpsEnabled);
+  const tls = (!opts.skipSync && wantsTls) ? await guardTls(domain) : null;
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
@@ -456,7 +474,7 @@ async function create(data, opts = {}) {
     publishForRoutes(db, [routeId]);
   }
 
-  return getById(routeId);
+  return withTls(getById(routeId), tls);
 }
 
 /**
@@ -598,6 +616,19 @@ async function update(id, data) {
   validateBotBlockerConfig(data);
 
   validateTargetExclusivity(data);
+
+  // TLS guard: preflight when this update turns the route into an HTTPS route
+  // or an SNI L4 entry, or renames one. Network lookups happen here, before
+  // the write; the sync below then already carries the skip entry.
+  const nextDomain = data.domain !== undefined ? (data.domain ? sanitize(data.domain).toLowerCase() : null) : (route.domain || null);
+  const nextTls = routeType === 'l4'
+    ? (() => { const m = data.l4_tls_mode !== undefined ? data.l4_tls_mode : route.l4_tls_mode; return !!m && m !== 'none'; })()
+    : (data.https_enabled !== undefined ? !!data.https_enabled : !!route.https_enabled);
+  const prevTls = (route.route_type || 'http') === 'l4'
+    ? (!!route.l4_tls_mode && route.l4_tls_mode !== 'none')
+    : !!route.https_enabled;
+  const tlsBecomes = !!nextDomain && nextTls && (!prevTls || nextDomain !== (route.domain || null));
+  const tls = tlsBecomes ? await guardTls(nextDomain) : null;
 
   db.prepare(`
     UPDATE routes SET
@@ -819,7 +850,7 @@ async function update(id, data) {
   const refs = [...refsBefore, ...refsAfter];
   publishRoutesEvent(refs.length ? refs : [{ domain_id: null, host_id: null }]);
 
-  return after;
+  return withTls(after, tls);
 }
 
 /**
