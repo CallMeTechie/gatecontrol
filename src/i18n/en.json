@@ -1010,6 +1010,9 @@
   "autoupdate.setup_note": "update.sh must run from /opt/gatecontrol. */5 interval is required. A new image that fails its health check is rolled back automatically.",
   "autoupdate.ago_seconds": "{x}s",
   "autoupdate.ago_minutes": "{x}m",
+  "autoupdate.rolled_back": "Update {x} failed — previous version restored",
+  "autoupdate.rolled_back_hint": "The new image failed its health check. Automatic mode skips it until a newer release is published.",
+  "autoupdate.rollback_failed": "Update and rollback failed — check the host",
   "error.autobackup.get": "Failed to load auto-backup settings",
   "error.autobackup.save": "Failed to save auto-backup settings",
   "error.autobackup.run": "Failed to create backup",
@@ -2938,8 +2941,5 @@
   "waf.detail_none": "none",
   "waf.detail_json": "JSON",
   "waf.retention_label": "WAF events (days)",
-  "waf.retention_hint": "Default 14 days; the regular cleanup removes older events.",
-  "autoupdate.rolled_back": "Update {x} failed — previous version restored",
-  "autoupdate.rolled_back_hint": "The new image failed its health check. Automatic mode skips it until a newer release is published.",
-  "autoupdate.rollback_failed": "Update and rollback failed — check the host"
+  "waf.retention_hint": "Default 14 days; the regular cleanup removes older events."
 }

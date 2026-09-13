@@ -975,6 +975,9 @@
   "autoupdate.setup_note": "update.sh muss aus /opt/gatecontrol laufen. */5 ist Pflicht. Besteht ein neues Image den Health-Check nicht, wird automatisch zurückgerollt.",
   "autoupdate.ago_seconds": "{x}s",
   "autoupdate.ago_minutes": "{x}m",
+  "autoupdate.rolled_back": "Update {x} fehlgeschlagen — Vorversion wiederhergestellt",
+  "autoupdate.rolled_back_hint": "Das neue Image hat den Health-Check nicht bestanden. Der Automatik-Modus überspringt es, bis ein neueres Release erscheint.",
+  "autoupdate.rollback_failed": "Update und Rollback fehlgeschlagen — Host prüfen",
   "error.autobackup.get": "Auto-Backup-Einstellungen konnten nicht geladen werden",
   "error.autobackup.save": "Auto-Backup-Einstellungen konnten nicht gespeichert werden",
   "error.autobackup.run": "Backup konnte nicht erstellt werden",
@@ -2883,8 +2886,5 @@
   "waf.detail_none": "keine",
   "waf.detail_json": "JSON",
   "waf.retention_label": "WAF-Ereignisse (Tage)",
-  "waf.retention_hint": "Standard 14 Tage; ältere Ereignisse entfernt der regelmäßige Aufräumlauf.",
-  "autoupdate.rolled_back": "Update {x} fehlgeschlagen — Vorversion wiederhergestellt",
-  "autoupdate.rolled_back_hint": "Das neue Image hat den Health-Check nicht bestanden. Der Automatik-Modus überspringt es, bis ein neueres Release erscheint.",
-  "autoupdate.rollback_failed": "Update und Rollback fehlgeschlagen — Host prüfen"
+  "waf.retention_hint": "Standard 14 Tage; ältere Ereignisse entfernt der regelmäßige Aufräumlauf."
 }

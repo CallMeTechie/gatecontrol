@@ -36,8 +36,13 @@ test('both shipped .env examples default to loopback', () => {
 
 test('caddy reaches the app over loopback, so the loopback bind cannot break it', () => {
   const src = read('src/services/caddyConfig.js');
-  assert.match(src, /dial:\s*`127\.0\.0\.1:\$\{config\.app\.port\}`/);
+  // App upstreams come from caddyAppUpstream.appUpstream(port) (loopback + retry
+  // window during a restart).
+  assert.match(src, /appUpstream\(config\.app\.port\)/);
+  const { appUpstream } = require('../src/services/caddyAppUpstream');
+  assert.equal(appUpstream(3000).upstreams[0].dial, '127.0.0.1:3000');
   assert.doesNotMatch(src, /dial:\s*`0\.0\.0\.0:/);
+  assert.doesNotMatch(read('src/services/caddyAppUpstream.js'), /0\.0\.0\.0/);
 });
 
 // ── Marker-Host ─────────────────────────────────────────────────────────────
