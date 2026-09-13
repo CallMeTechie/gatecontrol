@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.124.0] — 2026-09-13
 
 ### Features
 - Web Application Firewall (Pro): Pro HTTP-Route lässt sich im Eintrags-Editor (Tab „Sicherheit“) eine WAF einschalten: Coraza mit dem OWASP Core Rule Set 4.25, fest im mitgelieferten Caddy eingebaut, ohne Downloads zur Laufzeit. Es gibt zwei Modi: „Nur erkennen“ (Standard, protokolliert nur) und „Blockieren“ (403 mit eigener Seite). Dazu kommen die Paranoia-Stufen 1–4. Empfehlung: erst ein, zwei Tage „Nur erkennen“ laufen lassen.
