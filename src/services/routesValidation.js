@@ -348,8 +348,70 @@ function resolveSecurityFields(data, current, { route_type, https_enabled }) {
   return fields;
 }
 
+// ─── Web Application Firewall (docs/feature-waf.md) ─────
+//
+//   waf_enabled   HTTP routes only                    → WAF_REQUIRES_HTTP
+//   waf_mode      'detect' | 'block'                  → WAF_MODE_INVALID
+//   waf_paranoia  integer 1 … 4                       → WAF_PARANOIA_INVALID
+// waf_exclusions is not a route write field — it is managed by
+// POST/DELETE /api/v1/waf/routes/:id/exclusions (services/waf.js).
+
+const WAF_MODES = ['detect', 'block'];
+const WAF_PARANOIA_MIN = 1;
+const WAF_PARANOIA_MAX = 4;
+
+function wafError(code, message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  err.code = code;
+  return err;
+}
+
+function validateWafMode(value) {
+  const v = value === undefined || value === null || value === '' ? 'detect' : String(value).trim();
+  if (!WAF_MODES.includes(v)) throw wafError('WAF_MODE_INVALID', "waf_mode must be 'detect' or 'block'");
+  return v;
+}
+
+function validateWafParanoia(value) {
+  if (value === undefined || value === null || value === '') return WAF_PARANOIA_MIN;
+  const n = typeof value === 'string' ? Number(value.trim()) : value;
+  if (!Number.isInteger(n) || n < WAF_PARANOIA_MIN || n > WAF_PARANOIA_MAX) {
+    throw wafError('WAF_PARANOIA_INVALID', `waf_paranoia must be an integer between ${WAF_PARANOIA_MIN} and ${WAF_PARANOIA_MAX}`);
+  }
+  return n;
+}
+
+/**
+ * Resolve the WAF columns for a write (same PATCH semantics as the security
+ * options: absent field = keep the stored value). An EXPLICIT waf_enabled on
+ * an L4 route is rejected; an inherited one is cleared when the route turns
+ * into L4. Returns { waf_enabled, waf_mode, waf_paranoia }.
+ */
+function resolveWafFields(data, current, { route_type }) {
+  const cur = current || {};
+  const given = (field) => data[field] !== undefined;
+  const pick = (field, fallback) => (given(field) ? data[field] : (cur[field] !== undefined && cur[field] !== null ? cur[field] : fallback));
+  const fields = {
+    waf_enabled: hstsFlag(pick('waf_enabled', 0)),
+    waf_mode: validateWafMode(pick('waf_mode', 'detect')),
+    waf_paranoia: validateWafParanoia(pick('waf_paranoia', WAF_PARANOIA_MIN)),
+  };
+  if (fields.waf_enabled && (route_type || 'http') !== 'http') {
+    if (given('waf_enabled')) throw wafError('WAF_REQUIRES_HTTP', 'waf_enabled requires an HTTP route');
+    fields.waf_enabled = 0;
+  }
+  return fields;
+}
+
 module.exports = {
   validateIfProvided,
+  WAF_MODES,
+  WAF_PARANOIA_MIN,
+  WAF_PARANOIA_MAX,
+  validateWafMode,
+  validateWafParanoia,
+  resolveWafFields,
   validateBrandingFields,
   validateBotBlockerConfig,
   VALID_BOT_MODES,

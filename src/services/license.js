@@ -66,6 +66,7 @@ const COMMUNITY_FALLBACK = {
   gateway_lan_discovery: false,
   gateway_lan_discovery_multi_subnet: false,
   gateway_scan_egress: false,        // Pro: LAN→Tunnel-Egress (Scan-to-Folder) + VIP-Failover
+  waf: false,                        // Pro: Web Application Firewall (Coraza + OWASP CRS) per HTTP route
 };
 
 let cachedPlan = 'community';

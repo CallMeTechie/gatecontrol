@@ -1462,6 +1462,37 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_admin_totp_used_at ON admin_totp_used(used_at);`,
     detect: (db) => hasColumn(db, 'users', 'totp_enabled'),
   },
+  {
+    version: 74,
+    name: 'waf',
+    // Web Application Firewall (docs/feature-waf.md): Coraza + OWASP CRS per
+    // HTTP route. waf_mode detect|block, waf_paranoia 1..4, waf_exclusions
+    // JSON {rule_ids:[], paths:[]}. waf_events is filled by the audit-log
+    // watcher (src/services/waf.js); action 'blocked' | 'detected'.
+    sql: `
+      ALTER TABLE routes ADD COLUMN waf_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN waf_mode TEXT NOT NULL DEFAULT 'detect';
+      ALTER TABLE routes ADD COLUMN waf_paranoia INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE routes ADD COLUMN waf_exclusions TEXT;
+      CREATE TABLE IF NOT EXISTS waf_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        host TEXT NOT NULL,
+        route_id INTEGER,
+        client_ip TEXT,
+        method TEXT,
+        uri TEXT,
+        rule_id INTEGER,
+        severity TEXT,
+        message TEXT,
+        action TEXT NOT NULL,
+        tx_id TEXT,
+        raw TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_waf_events_ts ON waf_events(ts);
+      CREATE INDEX IF NOT EXISTS idx_waf_events_host ON waf_events(host, ts);`,
+    detect: (db) => hasColumn(db, 'routes', 'waf_enabled'),
+  },
 ];
 
 module.exports = { migrations };

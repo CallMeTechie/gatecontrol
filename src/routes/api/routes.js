@@ -358,6 +358,8 @@ router.post('/',
   requireFeatureField('target_pool_id', 'gateway_pool_failover'),
   // mTLS (docs/feature-security-options.md §F) is part of route_auth (Pro).
   requireFeatureField('mtls_enabled', 'route_auth'),
+  // Web Application Firewall (docs/feature-waf.md), Pro feature `waf`.
+  requireFeatureField('waf_enabled', 'waf'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -374,7 +376,8 @@ router.post('/',
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
       hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
-      mtls_enabled, mtls_ca_pem, mtls_mode } = req.body;
+      mtls_enabled, mtls_ca_pem, mtls_mode,
+      waf_enabled, waf_mode, waf_paranoia } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -483,6 +486,7 @@ router.post('/',
       hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
       mtls_enabled, mtls_ca_pem, mtls_mode,
+      waf_enabled, waf_mode, waf_paranoia,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,
@@ -527,6 +531,8 @@ router.put('/:id',
   requireFeatureField('target_pool_id', 'gateway_pool_failover'),
   // mTLS (docs/feature-security-options.md §F) is part of route_auth (Pro).
   requireFeatureField('mtls_enabled', 'route_auth'),
+  // Web Application Firewall (docs/feature-waf.md), Pro feature `waf`.
+  requireFeatureField('waf_enabled', 'waf'),
   async (req, res) => {
   try {
     const { domain, target_ip, target_port, description, peer_id,
@@ -543,7 +549,8 @@ router.put('/:id',
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
       hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
-      mtls_enabled, mtls_ca_pem, mtls_mode } = req.body;
+      mtls_enabled, mtls_ca_pem, mtls_mode,
+      waf_enabled, waf_mode, waf_paranoia } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -655,6 +662,7 @@ router.put('/:id',
       hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
       mtls_enabled, mtls_ca_pem, mtls_mode,
+      waf_enabled, waf_mode, waf_paranoia,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,

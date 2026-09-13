@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -379,6 +379,8 @@ async function create(data, opts = {}) {
   // Security options (docs/feature-security-options.md §B/§D/§F): backend TLS
   // verification, body limit, mTLS. Validation throws coded 400 errors.
   const sec = resolveSecurityFields(data, null, { route_type: routeType, https_enabled: httpsEnabled });
+  // Web Application Firewall (docs/feature-waf.md): HTTP routes only.
+  const waf = resolveWafFields(data, null, { route_type: routeType });
 
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
@@ -397,8 +399,9 @@ async function create(data, opts = {}) {
                         hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
                         backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
                         mtls_enabled, mtls_ca_pem, mtls_mode,
+                        waf_enabled, waf_mode, waf_paranoia,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -468,6 +471,9 @@ async function create(data, opts = {}) {
     sec.mtls_enabled,
     sec.mtls_ca_pem,
     sec.mtls_mode,
+    waf.waf_enabled,
+    waf.waf_mode,
+    waf.waf_paranoia,
   );
 
   const routeId = result.lastInsertRowid;
@@ -690,6 +696,9 @@ async function update(id, data) {
   const sec = resolveSecurityFields(data, route, {
     route_type: routeType, https_enabled: routeType === 'l4' ? false : nextTls,
   });
+  // WAF: same PATCH semantics; an inherited waf_enabled is cleared when the
+  // route becomes L4, an explicit one → 400 WAF_REQUIRES_HTTP.
+  const waf = resolveWafFields(data, route, { route_type: routeType });
 
   const tls = tlsBecomes ? await guardTls(nextDomain) : null;
 
@@ -764,6 +773,9 @@ async function update(id, data) {
       mtls_enabled = ?,
       mtls_ca_pem = ?,
       mtls_mode = ?,
+      waf_enabled = ?,
+      waf_mode = ?,
+      waf_paranoia = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -842,6 +854,9 @@ async function update(id, data) {
     sec.mtls_enabled,
     sec.mtls_ca_pem,
     sec.mtls_mode,
+    waf.waf_enabled,
+    waf.waf_mode,
+    waf.waf_paranoia,
     id
   );
 
