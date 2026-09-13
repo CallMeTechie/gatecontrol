@@ -10,7 +10,39 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const { withCaddySync } = require('./routesSync');
 const { restoreRouteRow } = require('./routesRollback');
-const { parseHstsDefault, normalizeHstsDefault, hstsOfRoute, hstsDefaultToFields } = require('./routesValidation');
+const { parseHstsDefault, normalizeHstsDefault, hstsOfRoute, hstsDefaultToFields, validateTlsMinVersion } = require('./routesValidation');
+
+// ─── Host aliases (docs/feature-security-options.md §A) ──
+//
+// service_bundles.aliases is a JSON array of labels RELATIVE TO THE HOST FQDN
+// (`www` on host `app` of zone `example.com` → `www.app.example.com`);
+// alias_mode is 'redirect' (308 to the primary name) or 'serve'.
+
+const ALIAS_MODES = ['redirect', 'serve'];
+const ALIAS_MAX = 10;
+
+/** service_bundles.aliases (JSON text) → string[]; never throws. */
+function parseAliases(text) {
+  if (!text) return [];
+  try {
+    const list = JSON.parse(text);
+    if (!Array.isArray(list)) return [];
+    return [...new Set(list.map((l) => normalizeHost(l)).filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
+/** Alias labels + host fqdn → alias FQDNs (empty without an fqdn). */
+function aliasFqdns(hostFqdn, labels) {
+  const fqdn = normalizeHost(hostFqdn);
+  if (!fqdn) return [];
+  return (labels || []).map((l) => `${l}.${fqdn}`);
+}
+
+function aliasModeOf(bundle) {
+  return bundle && bundle.alias_mode === 'serve' ? 'serve' : 'redirect';
+}
 
 function httpError(statusCode, message, code) {
   const err = new Error(message);
@@ -355,11 +387,17 @@ function buildHost(bundle, entries, zone, ctx) {
   const tlsProblem = entries.some((e) => e.tls && (e.tls.state === 'failed' || e.tls.state === 'paused'));
   let health = hostHealth(healths);
   if (tlsProblem && health === 'ok') health = 'degraded';
+  const fqdn = zone && bundle && bundle.subdomain ? fqdnOf(bundle.subdomain, zone.domain) : ((bundle && bundle.domain) || null);
+  const aliases = bundle ? parseAliases(bundle.aliases) : [];
   return {
     id: bundle ? bundle.id : null,
     domain_id: zone ? zone.id : null,
     subdomain: zone && bundle ? bundle.subdomain : null,
-    fqdn: zone && bundle && bundle.subdomain ? fqdnOf(bundle.subdomain, zone.domain) : ((bundle && bundle.domain) || null),
+    fqdn,
+    // Host aliases (§A): labels, mode and the derived FQDNs.
+    aliases,
+    alias_mode: aliasModeOf(bundle),
+    alias_fqdns: aliasFqdns(fqdn, aliases),
     name: bundle ? bundle.name : (lead ? (lead.description || 'Remote Desktop') : 'Remote Desktop'),
     description: bundle ? (bundle.description || null) : null,
     template: bundle ? (bundle.template || null) : 'rdp',
@@ -463,6 +501,8 @@ function listZones() {
       gateway: describeTarget(zoneTarget(row), ctx),
       default_external_enabled: !!row.default_external_enabled,
       hsts_default: parseHstsDefault(row.hsts_default),
+      // TLS profile (docs/feature-security-options.md §E).
+      tls_min_version: row.tls_min_version === '1.3' ? '1.3' : '1.2',
       counts: {
         hosts: hosts.length,
         entries: all.length,
@@ -575,22 +615,27 @@ async function applyGateway(domainId, input) {
  *   apply_hsts_to_existing?: bool — also switch every HTTP entry of the zone
  *     with https_enabled (override or not) to the default: one transaction,
  *     one Caddy sync, snapshot restore (routes + zone row) on sync failure.
+ *   tls_min_version?: '1.2' | '1.3' — TLS profile of the zone
+ *     (docs/feature-security-options.md §E); a change is synced to Caddy.
  * → { zone, applied? }   (applied = number of entries rewritten)
  */
-async function updateDefaults(domainId, { default_external_enabled, hsts_default, apply_hsts_to_existing } = {}) {
+async function updateDefaults(domainId, { default_external_enabled, hsts_default, apply_hsts_to_existing, tls_min_version } = {}) {
   const db = getDb();
   const zone = zoneRowOr404(db, domainId);
   const applyHsts = !!apply_hsts_to_existing;
-  if (default_external_enabled === undefined && hsts_default === undefined && !applyHsts) {
-    throw httpError(400, 'default_external_enabled or hsts_default required');
+  if (default_external_enabled === undefined && hsts_default === undefined && !applyHsts && tls_min_version === undefined) {
+    throw httpError(400, 'default_external_enabled, hsts_default or tls_min_version required');
   }
 
-  // Validate before any write (throws HSTS_* with statusCode 400).
+  // Validate before any write (throws HSTS_* / TLS_MIN_VERSION_INVALID with statusCode 400).
   const nextHsts = hsts_default !== undefined ? normalizeHstsDefault(hsts_default) : parseHstsDefault(zone.hsts_default);
   const nextHstsJson = nextHsts ? JSON.stringify(nextHsts) : null;
   const nextExternal = default_external_enabled !== undefined ? (default_external_enabled ? 1 : 0) : zone.default_external_enabled;
+  const prevTlsMin = validateTlsMinVersion(zone.tls_min_version);
+  const nextTlsMin = tls_min_version !== undefined ? validateTlsMinVersion(tls_min_version) : prevTlsMin;
+  const tlsChanged = nextTlsMin !== prevTlsMin;
 
-  const setZone = db.prepare('UPDATE domains SET default_external_enabled = ?, hsts_default = ? WHERE id = ?');
+  const setZone = db.prepare('UPDATE domains SET default_external_enabled = ?, hsts_default = ?, tls_min_version = ? WHERE id = ?');
   const rows = applyHsts ? db.prepare(`
     SELECT r.* FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
     WHERE sb.domain_id = ? AND r.route_type != 'l4' AND r.https_enabled = 1
@@ -600,7 +645,7 @@ async function updateDefaults(domainId, { default_external_enabled, hsts_default
     updated_at = datetime('now') WHERE id = ?`);
 
   db.transaction(() => {
-    setZone.run(nextExternal, nextHstsJson, zone.id);
+    setZone.run(nextExternal, nextHstsJson, nextTlsMin, zone.id);
     for (const r of rows) {
       // Switching the default off only clears the flag; the entry keeps its
       // own max-age/flags for a later re-enable.
@@ -609,13 +654,25 @@ async function updateDefaults(domainId, { default_external_enabled, hsts_default
     }
   })();
 
-  if (rows.length > 0) {
+  // The TLS profile lives in the Caddy server config (tls_connection_policies)
+  // → one sync, same rollback as the HSTS apply.
+  if (rows.length > 0 || tlsChanged) {
     await withCaddySync(syncToCaddy, () => {
       db.transaction(() => {
         for (const row of rows) restoreRouteRow(db, row.id, row);
-        setZone.run(zone.default_external_enabled, zone.hsts_default, zone.id);
+        setZone.run(zone.default_external_enabled, zone.hsts_default, prevTlsMin, zone.id);
       })();
-    }, 'zone hsts apply');
+    }, rows.length > 0 ? 'zone hsts apply' : 'zone tls profile');
+  }
+  if (tlsChanged) {
+    try {
+      require('./activity').log('zone_tls_profile_changed', `TLS minimum of "${zone.domain}" set to ${nextTlsMin}`, {
+        source: 'admin', severity: 'info', details: { domainId: zone.id, tls_min_version: nextTlsMin },
+      });
+    } catch { /* activity is best-effort */ }
+  }
+
+  if (rows.length > 0) {
     try {
       require('./activity').log('zone_hsts_applied', `HSTS default of "${zone.domain}" applied to ${rows.length} entries`, {
         source: 'admin',
@@ -771,6 +828,11 @@ module.exports = {
   httpError,
   resolveZone,
   fqdnOf,
+  ALIAS_MODES,
+  ALIAS_MAX,
+  parseAliases,
+  aliasFqdns,
+  aliasModeOf,
   routeTarget,
   zoneTarget,
   sameTarget,

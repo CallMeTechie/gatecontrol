@@ -43,7 +43,8 @@ const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCus
 const { hstsHeaderValue, hstsOfRoute } = require('./routesValidation');
 const { resolveBackends } = require('./caddyBackends');
 const { buildTlsAutomation } = require('./caddyTlsAutomation');
-const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubroute');
+const { buildRouteAuthProxy, buildAuthHandlerChain, buildRequestBodyHandler } = require('./caddyAuthSubroute');
+const { backendCaPath, mtlsCaPath } = require('./caddyPemFiles');
 const { getAclPeers, setAclPeers } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
@@ -259,17 +260,44 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     SELECT r.*, p.allowed_ips, p.name AS peer_name,
            gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name,
            gm.proxy_port AS target_peer_proxy_port,
-           gm_home.lan_ip AS home_lan_ip
+           gm_home.lan_ip AS home_lan_ip,
+           sb.aliases AS host_aliases, sb.alias_mode AS host_alias_mode,
+           sb.domain_id AS host_domain_id, d.tls_min_version AS zone_tls_min_version
     FROM routes r
     LEFT JOIN peers p ON r.peer_id = p.id
     LEFT JOIN peers gp ON gp.id = r.target_peer_id
     LEFT JOIN gateway_meta gm ON gm.peer_id = r.target_peer_id
     LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = r.original_peer_id
+    LEFT JOIN service_bundles sb ON sb.id = r.bundle_id
+    LEFT JOIN domains d ON d.id = sb.domain_id
     WHERE r.enabled = 1
   `).all();
 
   const httpRoutes = routes.filter(r => r.route_type !== 'l4');
   const l4Routes = routes.filter(r => r.route_type === 'l4');
+
+  // PEM files for backend-CA / mTLS (docs/feature-security-options.md §B/§F):
+  // Caddy reads them from disk, so they must exist before this config is
+  // loaded — at sync time AND at boot (export-caddy-config.js builds the boot
+  // config from the DB). Only when built from the DB and only when some
+  // route carries a PEM, so the config path of today's data has no side effect.
+  if (!Array.isArray(injectedRoutes) && options.writePemFiles !== false
+      && routes.some(r => r.backend_tls_ca_pem || r.mtls_ca_pem)) {
+    try { require('./caddyPemFiles').sync(); } catch (err) { logger.warn({ err: err.message }, 'Caddy PEM files: sync failed'); }
+  }
+
+  // Security options per HTTP route, kept on the caddyRoutes entry for the
+  // grouping pass and the tls_connection_policies below.
+  const attachSecurityMeta = (srv, route) => {
+    srv._routeId = route.id;
+    srv._httpsEnabled = !!route.https_enabled;
+    srv._aliasFqdns = aliasFqdnsOf(route);
+    srv._aliasMode = aliasModeOf(route);
+    srv._zoneId = route.host_domain_id == null ? null : route.host_domain_id;
+    srv._zoneTls13 = String(route.zone_tls_min_version || '1.2') === '1.3';
+    srv._mtlsFile = (route.route_type !== 'l4' && !!route.https_enabled && !!route.mtls_enabled && !!route.mtls_ca_pem)
+      ? mtlsCaPath(route.id) : null;
+  };
 
   // Scheduled access windows: consult accessRules at build time so denial is
   // fail-closed across restarts. anyRulesExist() is a cheap short-circuit —
@@ -304,6 +332,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           }],
         }],
       };
+      attachSecurityMeta(caddyRoutes[route.domain], route);
       continue;
     }
 
@@ -540,14 +569,29 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // handshake`) whenever the flag was set. If the LAN target itself
     // needs HTTPS, that gets handled by the gateway's own proxy — not
     // by the WG-side leg.
+    //
+    // Backend certificate verification (docs/feature-security-options.md §B):
+    // with backend_tls_verify the transport carries no insecure_skip_verify;
+    // server_name (verification target + SNI) and the route's CA file
+    // (<dataDir>/backend-ca/<id>.pem, written by caddyPemFiles at sync time)
+    // are added when set. Only where Caddy dials the backend itself — for
+    // gateway-typed routes the fields are stored but never emitted.
     if (route.backend_https && !gatewayPeerIp) {
-      logger.warn({ domain: route.domain, upstreams: upstreams.map(u => u.dial).join(',') }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
-      reverseProxy.transport = {
-        protocol: 'http',
-        tls: {
-          insecure_skip_verify: true,
-        },
-      };
+      const verify = !!route.backend_tls_verify && route.target_kind !== 'gateway';
+      if (verify) {
+        const tls = {};
+        if (route.backend_tls_server_name) tls.server_name = String(route.backend_tls_server_name);
+        if (route.backend_tls_ca_pem) tls.root_ca_pem_files = [backendCaPath(route.id)];
+        reverseProxy.transport = { protocol: 'http', tls };
+      } else {
+        logger.warn({ domain: route.domain, upstreams: upstreams.map(u => u.dial).join(',') }, 'Route uses backend_https with insecure_skip_verify — TLS not validated');
+        reverseProxy.transport = {
+          protocol: 'http',
+          tls: {
+            insecure_skip_verify: true,
+          },
+        };
+      }
     }
 
     // Circuit breaker — when open, return 503
@@ -558,8 +602,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           handle: [buildCircuitBreakerOpenHandler(route.circuit_breaker_timeout)],
         }],
       };
+      attachSecurityMeta(caddyRoutes[route.domain], route);
       continue;
     }
+
+    // Request size limit (§D): request_body right before the proxy handler,
+    // in this chain and in the forward-auth chain (buildAuthHandlerChain).
+    const bodyLimit = buildRequestBodyHandler(route);
 
     const routeHandlers = [];
 
@@ -601,6 +650,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       });
     }
 
+    if (bodyLimit) routeHandlers.push(bodyLimit);
     routeHandlers.push(reverseProxy);
 
     const routeConfig = {
@@ -680,6 +730,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // already ANDs remote_ip onto the outer host match, so no hoist needed.
     const srv = caddyRoutes[route.domain];
     if (srv) {
+      attachSecurityMeta(srv, route);
       srv._externalBlock = buildExternalBlockHandler(route);
       srv._internalOnly = !route.external_enabled;
       srv._gateRanges = (routeConfig.match && routeConfig.match[0] && routeConfig.match[0].remote_ip && routeConfig.match[0].remote_ip.ranges) || INTERNAL_ONLY_RANGES;
@@ -768,7 +819,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   let pausedHosts = [];
   try { pausedHosts = require('./tlsGuard').pausedHosts(); } catch (err) { logger.warn({ err: err.message }, 'tls: paused hosts unavailable'); }
   const pausedSet = new Set(pausedHosts.map(h => String(h).toLowerCase()));
-  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), homeHost, gcHost].filter(Boolean))]
+  // Alias FQDNs (§A) are hostnames of their own for Caddy: they join the
+  // subjects right after their primary name.
+  const aliasSubjects = Object.values(caddyRoutes).flatMap(s => (Array.isArray(s._aliasFqdns) ? s._aliasFqdns : []));
+  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), ...aliasSubjects, homeHost, gcHost].filter(Boolean))]
     .filter(d => !pausedSet.has(String(d).toLowerCase()));
   const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
@@ -905,6 +959,32 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // Group routes into a single server
   const serverRoutes = [...(redirectRoute ? [redirectRoute] : []), ...serverRoutes_pending];
   for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
+    // Host aliases (§A). Mode `serve`: the alias FQDNs join the host matcher
+    // of every route of this host (content, subroute wrapper, external-block
+    // fallback) so auth, ACL, gate and headers apply identically. Mode
+    // `redirect`: one route BEFORE the host's routes answers 308 to the
+    // primary name; for an internal-only host it sits behind the same
+    // remote_ip gate and gets the same external fallback.
+    const aliases = Array.isArray(srvConfig._aliasFqdns) ? srvConfig._aliasFqdns : [];
+    const hostMatch = srvConfig._aliasMode === 'serve' && aliases.length > 0 ? [domain, ...aliases] : [domain];
+    if (srvConfig._aliasMode !== 'serve' && aliases.length > 0) {
+      const aliasMatch = { host: [...aliases] };
+      if (srvConfig._internalOnly && srvConfig._externalBlock) aliasMatch.remote_ip = { ranges: srvConfig._gateRanges };
+      serverRoutes.push({
+        '@id': `gc_alias_${srvConfig._routeId}`,
+        match: [aliasMatch],
+        handle: [{
+          handler: 'static_response',
+          status_code: 308,
+          headers: { Location: [`${srvConfig._httpsEnabled ? 'https' : 'http'}://${domain}{http.request.uri}`] },
+        }],
+        terminal: true,
+      });
+      if (srvConfig._internalOnly && srvConfig._externalBlock) {
+        serverRoutes.push({ match: [{ host: [...aliases] }], handle: srvConfig._externalBlock, terminal: true });
+      }
+    }
+
     const inner = srvConfig.routes.length === 1 ? srvConfig.routes[0] : null;
     // Single-domain fast path: AND the host matcher with any matcher already on
     // the inner route (remote_ip from a Peer-ACL or the external-exposure gate).
@@ -922,7 +1002,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // host via the subroute wrapper while preserving the inner multi-object OR
     // match untouched.
     if (inner && (!Array.isArray(inner.match) || inner.match.length <= 1)) {
-      const matchObj = { host: [domain] };
+      const matchObj = { host: hostMatch };
       if (Array.isArray(inner.match)) {
         for (const m of inner.match) Object.assign(matchObj, m);
       }
@@ -940,8 +1020,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       // match so the auth proxy is also gated (Concern 3). Non-auth routes never
       // reach here (single route → fold fast-path).
       const outerMatch = (srvConfig._internalOnly && srvConfig._externalBlock)
-        ? [{ host: [domain], remote_ip: { ranges: srvConfig._gateRanges } }]
-        : [{ host: [domain] }];
+        ? [{ host: hostMatch, remote_ip: { ranges: srvConfig._gateRanges } }]
+        : [{ host: hostMatch }];
       serverRoutes.push({
         match: outerMatch,
         handle: [{
@@ -959,12 +1039,36 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // (A) first and external clients fall to (B).
     if (srvConfig._externalBlock) {
       serverRoutes.push({
-        match: [{ host: [domain] }],
+        match: [{ host: hostMatch }],
         handle: srvConfig._externalBlock,
         terminal: true,
       });
     }
   }
+
+  // TLS connection policies (§E TLS profile, §F mTLS). Caddy takes the FIRST
+  // matching policy, so the order is: mTLS per route (SNI = fqdn + aliases,
+  // carrying the zone's 1.3 minimum too), then one policy per zone with
+  // tls_min_version '1.3' (SNI = every served FQDN of the zone incl. aliases),
+  // then the catch-all {}. Emitted only when at least one non-default policy
+  // exists — otherwise the server block stays byte-identical to before.
+  const tlsPolicies = [];
+  const zoneSni = new Map();
+  for (const [domain, srvConfig] of Object.entries(caddyRoutes)) {
+    if (srvConfig._routeId == null) continue;
+    const names = [domain, ...(Array.isArray(srvConfig._aliasFqdns) ? srvConfig._aliasFqdns : [])];
+    if (srvConfig._mtlsFile) {
+      const policy = { match: { sni: names } };
+      if (srvConfig._zoneTls13) policy.protocol_min = 'tls1.3';
+      policy.client_authentication = { mode: 'require_and_verify', trusted_ca_certs_pem_files: [srvConfig._mtlsFile] };
+      tlsPolicies.push(policy);
+    }
+    if (srvConfig._zoneTls13 && srvConfig._zoneId != null) {
+      if (!zoneSni.has(srvConfig._zoneId)) zoneSni.set(srvConfig._zoneId, []);
+      zoneSni.get(srvConfig._zoneId).push(...names);
+    }
+  }
+  for (const sni of zoneSni.values()) tlsPolicies.push({ match: { sni }, protocol_min: 'tls1.3' });
 
   if (serverRoutes.length > 0) {
     // Ownership marker — LAST route, impossible host match (never served).
@@ -996,6 +1100,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       },
       client_ip_headers: ['X-Forwarded-For'],
     };
+    if (tlsPolicies.length > 0) {
+      caddyConfig.apps.http.servers.srv0.tls_connection_policies = [...tlsPolicies, {}];
+    }
     // Paused hosts (TLS guard) join the marker in skip: Caddy neither requests
     // a certificate nor redirects to HTTPS — the route stays reachable on :80.
     for (const h of pausedHosts) {

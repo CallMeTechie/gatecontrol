@@ -76,6 +76,15 @@ function buildForwardAuthSubrequest(domain) {
   };
 }
 
+// Request size limit (docs/feature-security-options.md §D): routes.max_body_mb
+// (0 = unlimited) → Caddy's request_body handler, placed right before the
+// proxy handler in both handler chains. HTTP routes only.
+function buildRequestBodyHandler(route) {
+  const mb = Number(route && route.max_body_mb);
+  if (!route || route.route_type === 'l4' || !Number.isFinite(mb) || mb <= 0) return null;
+  return { handler: 'request_body', max_size: Math.floor(mb) * 1048576 };
+}
+
 function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTargets }) {
   const handlers = [buildForwardAuthSubrequest(route.domain)];
 
@@ -119,6 +128,8 @@ function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTarge
     },
   });
 
+  const bodyLimit = buildRequestBodyHandler(route);
+  if (bodyLimit) handlers.push(bodyLimit);
   handlers.push(reverseProxy);
   return handlers;
 }
@@ -127,4 +138,5 @@ module.exports = {
   buildRouteAuthProxy,
   buildForwardAuthSubrequest,
   buildAuthHandlerChain,
+  buildRequestBodyHandler,
 };

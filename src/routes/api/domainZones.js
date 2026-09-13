@@ -167,6 +167,7 @@ router.put('/domains/:id/defaults', async (req, res) => {
       default_external_enabled: body.default_external_enabled,
       hsts_default: body.hsts_default,
       apply_hsts_to_existing: body.apply_hsts_to_existing,
+      tls_min_version: body.tls_min_version,
     });
     res.json({ ok: true, zone, ...(applied !== undefined ? { applied } : {}) });
   } catch (err) {
@@ -207,7 +208,8 @@ router.put('/hosts/:id', async (req, res) => {
     if (!hostRow(req.params.id)) return notFound(res, 'Host');
     const body = req.body || {};
     const patch = {};
-    for (const k of ['description', 'subdomain', 'lan_host']) if (body[k] !== undefined) patch[k] = body[k];
+    // aliases / alias_mode: host aliases (docs/feature-security-options.md §A).
+    for (const k of ['description', 'subdomain', 'lan_host', 'aliases', 'alias_mode']) if (body[k] !== undefined) patch[k] = body[k];
     const host = await hosts.update(req.params.id, patch);
     res.json({ ok: true, ...withTls({ host }) });
   } catch (err) {

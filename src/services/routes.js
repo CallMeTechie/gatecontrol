@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -67,7 +67,17 @@ function cleanupEmptyBundles(db, bundleIds) {
   for (const bundleId of ids) {
     const member = db.prepare('SELECT id FROM routes WHERE bundle_id = ? LIMIT 1').get(bundleId);
     if (!member) {
+      // A dissolving host takes its alias tls_status rows with it (§A).
+      const bundle = db.prepare('SELECT domain, aliases FROM service_bundles WHERE id = ?').get(bundleId);
       db.prepare('DELETE FROM service_bundles WHERE id = ?').run(bundleId);
+      if (bundle && bundle.aliases) {
+        try {
+          const { parseAliases, aliasFqdns } = require('./domainZones');
+          require('./tlsGuard').forgetHosts(aliasFqdns(bundle.domain, parseAliases(bundle.aliases)));
+        } catch (err) {
+          logger.warn({ err: err?.message ?? String(err), bundleId }, 'tls: alias rows not removed');
+        }
+      }
     }
   }
 }
@@ -366,6 +376,9 @@ async function create(data, opts = {}) {
   const hsts = resolveHstsFields(data, hstsSeed ? hstsDefaultToFields(hstsSeed) : null, {
     route_type: routeType, https_enabled: httpsEnabled,
   });
+  // Security options (docs/feature-security-options.md §B/§D/§F): backend TLS
+  // verification, body limit, mTLS. Validation throws coded 400 errors.
+  const sec = resolveSecurityFields(data, null, { route_type: routeType, https_enabled: httpsEnabled });
 
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
@@ -382,8 +395,10 @@ async function create(data, opts = {}) {
                         external_block_action, external_block_body, external_block_redirect_url,
                         target_kind, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
                         hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
+                        backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
+                        mtls_enabled, mtls_ca_pem, mtls_mode,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -446,6 +461,13 @@ async function create(data, opts = {}) {
     hsts.hsts_max_age,
     hsts.hsts_subdomains,
     hsts.hsts_preload,
+    sec.backend_tls_verify,
+    sec.backend_tls_server_name,
+    sec.backend_tls_ca_pem,
+    sec.max_body_mb,
+    sec.mtls_enabled,
+    sec.mtls_ca_pem,
+    sec.mtls_mode,
   );
 
   const routeId = result.lastInsertRowid;
@@ -663,6 +685,11 @@ async function update(id, data) {
   const hsts = resolveHstsFields(data, route, {
     route_type: routeType, https_enabled: routeType === 'l4' ? false : nextTls,
   });
+  // Security options: same PATCH semantics (absent field = keep stored value;
+  // HTTPS off clears an inherited mtls_enabled, explicit one → 400).
+  const sec = resolveSecurityFields(data, route, {
+    route_type: routeType, https_enabled: routeType === 'l4' ? false : nextTls,
+  });
 
   const tls = tlsBecomes ? await guardTls(nextDomain) : null;
 
@@ -730,6 +757,13 @@ async function update(id, data) {
       hsts_max_age = ?,
       hsts_subdomains = ?,
       hsts_preload = ?,
+      backend_tls_verify = ?,
+      backend_tls_server_name = ?,
+      backend_tls_ca_pem = ?,
+      max_body_mb = ?,
+      mtls_enabled = ?,
+      mtls_ca_pem = ?,
+      mtls_mode = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -801,6 +835,13 @@ async function update(id, data) {
     hsts.hsts_max_age,
     hsts.hsts_subdomains,
     hsts.hsts_preload,
+    sec.backend_tls_verify,
+    sec.backend_tls_server_name,
+    sec.backend_tls_ca_pem,
+    sec.max_body_mb,
+    sec.mtls_enabled,
+    sec.mtls_ca_pem,
+    sec.mtls_mode,
     id
   );
 

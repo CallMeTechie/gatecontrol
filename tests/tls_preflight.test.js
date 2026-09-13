@@ -31,7 +31,8 @@ afterEach(() => { domains._setServerIpsForTest(null); teardown(); });
 test('shape and rule order', async () => {
   let r = await tlsGuard.preflight('printer.lan');
   assert.equal(r.ok, true); assert.equal(r.code, 'not_public');
-  assert.deepEqual(Object.keys(r).sort(), ['checked_at', 'code', 'detail', 'ok', 'records', 'server']);
+  // caa_status / caa_suggestion: CAA recommendation (feature-security-options §G)
+  assert.deepEqual(Object.keys(r).sort(), ['caa_status', 'caa_suggestion', 'checked_at', 'code', 'detail', 'ok', 'records', 'server']);
 
   domains._setServerIpsForTest({ v4: null, v6: V6 });
   r = await tlsGuard.preflight('a.example.com');

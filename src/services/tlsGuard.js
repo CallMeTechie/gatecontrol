@@ -119,6 +119,10 @@ async function evaluatePreflight(hostIn, { skipPublicCheck = false } = {}) {
     records: { a: [], aaaa: [], caa: [] },
     server: { v4: null, v6: null },
     checked_at: nowIso(),
+    // CAA recommendation (docs/feature-security-options.md §G): filled once the
+    // CAA set was looked up; null when an earlier rule ended the check.
+    caa_status: null,
+    caa_suggestion: null,
   };
   const done = (code, detail = null, ok = false) => Object.assign(result, { ok, code, detail });
 
@@ -150,13 +154,32 @@ async function evaluatePreflight(hostIn, { skipPublicCheck = false } = {}) {
   try { caa = await effectiveCaa(host); } catch { caa = []; }
   result.records.caa = caa;
   const issue = caa.filter(r => r.tag === 'issue' || r.tag === 'issuewild');
+  const allowed = allowedCaaIssuers();
   if (issue.length > 0) {
-    const allowed = allowedCaaIssuers();
     if (!issue.some(r => caaPermits(r.value, allowed))) {
+      result.caa_status = 'blocks';
       return done('caa_blocks', `CAA ${issue.map(r => `${r.tag} "${r.value}"`).join(', ')} does not allow ${[...allowed][0]}`);
     }
+    result.caa_status = 'allows';
+  } else {
+    result.caa_status = 'none';
+    result.caa_suggestion = `${caaBaseDomain(host)}. CAA 0 issue "${[...allowed][0]}"`;
   }
   return done('ok', null, true);
+}
+
+// Base domain for the CAA suggestion: the host's zone when one exists, else
+// the last two labels.
+function caaBaseDomain(host) {
+  try {
+    const z = require('./domainZones').resolveZone(host);
+    if (z && z.domain) return z.domain;
+  } catch { /* zones unavailable */ }
+  try {
+    const base = require('./domainSeed').baseDomain(host);
+    if (base) return normHost(base);
+  } catch { /* fall through */ }
+  return host;
 }
 
 // In the test environment without an injected resolver the preflight would
@@ -175,12 +198,14 @@ async function preflight(hostIn) {
     return {
       ok: true, code: 'not_public', detail: null,
       records: { a: [], aaaa: [], caa: [] }, server: { v4: null, v6: null }, checked_at: nowIso(),
+      caa_status: null, caa_suggestion: null,
     };
   }
   if (!preflightActive()) {
     return {
       ok: true, code: 'ok', detail: 'skipped (test environment without resolver)',
       records: { a: [], aaaa: [], caa: [] }, server: { v4: null, v6: null }, checked_at: nowIso(),
+      caa_status: null, caa_suggestion: null,
     };
   }
   return evaluatePreflight(host);
@@ -217,6 +242,14 @@ function restoreRow(host, snapshot) {
   db.prepare("INSERT OR IGNORE INTO tls_status (host, state) VALUES (?, 'pending')").run(h);
   db.prepare(`UPDATE tls_status SET ${COLS.map(k => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE host = @host`)
     .run({ ...patch, updated_at: snapshot.updated_at || nowIso(), host: h });
+}
+
+/** Drop the status rows of hostnames that no longer exist (removed aliases). */
+function forgetHosts(hosts) {
+  const list = [...new Set((hosts || []).map(normHost).filter(Boolean))];
+  if (list.length === 0) return 0;
+  const res = getDb().prepare(`DELETE FROM tls_status WHERE host IN (${list.map(() => '?').join(',')})`).run(...list);
+  return res.changes;
 }
 
 /** Hosts currently paused — the extra automatic_https.skip entries (one query). */
@@ -727,6 +760,9 @@ function toTlsHost(host, meta, row, kind, limit) {
     not_after: r.not_after || null,
     days_left: daysLeft(r.not_after),
     issuer: r.issuer || null,
+    // Host aliases (docs/feature-security-options.md §A): the primary fqdn
+    // for alias rows, null otherwise.
+    alias_of: meta.alias_of || null,
   };
 }
 
@@ -752,6 +788,28 @@ function loadUniverse() {
     if (cur.host_id == null && r.bundle_id != null) cur.host_id = r.bundle_id;
     if (cur.domain_id == null && r.domain_id != null) cur.domain_id = r.domain_id;
     map.set(host, cur);
+  }
+  // Alias FQDNs (§A): one row per alias, carrying the host's HTTP route and
+  // the primary name; the kind follows the HTTP entry (HTTPS + enabled).
+  try {
+    const { parseAliases, aliasFqdns } = require('./domainZones');
+    const aliasRows = db.prepare(`
+      SELECT sb.id AS host_id, sb.aliases, sb.domain_id,
+             r.id AS route_id, r.domain, r.route_type, r.https_enabled, r.l4_tls_mode, r.enabled
+      FROM service_bundles sb
+      JOIN routes r ON r.bundle_id = sb.id AND r.route_type != 'l4' AND r.domain IS NOT NULL AND r.domain != ''
+      WHERE sb.aliases IS NOT NULL AND sb.aliases != '' AND sb.aliases != '[]'
+      ORDER BY sb.id, r.id`).all();
+    for (const row of aliasRows) {
+      const primary = normHost(row.domain);
+      const kind = row.enabled ? kindOfRoute(row, { forcedInternal }) : 'none';
+      for (const fqdn of aliasFqdns(primary, parseAliases(row.aliases))) {
+        if (map.has(fqdn)) continue;
+        map.set(fqdn, { kinds: [kind], route_id: row.route_id, host_id: row.host_id, domain_id: row.domain_id, alias_of: primary });
+      }
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'tls: alias rows unavailable');
   }
   const extra = [];
   try { extra.push(new URL(config.app.baseUrl || '').hostname); } catch { /* unset */ }
@@ -831,7 +889,7 @@ function stop() {
 
 module.exports = {
   preflight, evaluatePreflight, recordPreflight, guardHost,
-  pauseHost, retryHost, pausedHosts,
+  pauseHost, retryHost, pausedHosts, forgetHosts,
   startWatcher, stopWatcher, pollOnce, parseTlsLogLine, classifyError, parseDurationSeconds, applyLogEvent,
   inventory, inventoryHost, scanCertificates, startInventory, stopInventory,
   statusFor, listStatus, entryTls, kindOfRoute, deriveState, loadRows,
