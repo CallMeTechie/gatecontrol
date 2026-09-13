@@ -41,13 +41,17 @@ function buildRequestHeadersHandler(headerList) {
  * a fresh `{ response: { set } }` object, which clobbered that
  * request block whenever a route had both gateway routing and
  * response headers configured.
+ *
+ * Also merges into an existing `headers.response.set` (later calls win
+ * per header name) so the HSTS switch can be applied after the custom
+ * headers without dropping them (docs/feature-hsts.md).
  */
 function applyResponseHeaders(reverseProxy, headerList) {
   const set = buildHeaderSetMap(headerList);
   if (!set) return;
   reverseProxy.headers = reverseProxy.headers || {};
   reverseProxy.headers.response = reverseProxy.headers.response || {};
-  reverseProxy.headers.response.set = set;
+  reverseProxy.headers.response.set = { ...(reverseProxy.headers.response.set || {}), ...set };
 }
 
 module.exports = {

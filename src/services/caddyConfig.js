@@ -40,6 +40,7 @@ const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { buildMirrorHandler } = require('./caddyMirror');
 const { applyRetryConfig } = require('./caddyRetry');
 const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
+const { hstsHeaderValue, hstsOfRoute } = require('./routesValidation');
 const { resolveBackends } = require('./caddyBackends');
 const { buildTlsAutomation } = require('./caddyTlsAutomation');
 const { buildRouteAuthProxy, buildAuthHandlerChain } = require('./caddyAuthSubroute');
@@ -60,6 +61,9 @@ const {
 const gatewayPool = require('./gatewayPool');
 const { isLoopbackHost } = require('../utils/validate');
 const gatewayHealth = require('./gatewayHealth');
+
+// HSTS (docs/feature-hsts.md): response header set per HTTPS route with the switch on.
+const HSTS_HEADER = 'Strict-Transport-Security';
 
 // Source IP ranges allowed to reach an internal-only route (external_enabled=0).
 // Centralised in config.wireguard.internalOnlyRanges (config/default.js) so
@@ -487,7 +491,21 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     applyRetryConfig(reverseProxy, route);
 
     // Response custom headers (mutates reverseProxy.headers).
-    if (customHeaders) applyResponseHeaders(reverseProxy, customHeaders.response);
+    // HSTS (docs/feature-hsts.md): with the switch on, a custom
+    // Strict-Transport-Security is dropped from the list first and the
+    // switch's value is applied AFTER the custom headers, so it wins. Never
+    // on the maintenance page (static_response) or without HTTPS.
+    const hstsOn = reverseProxy.handler === 'reverse_proxy'
+      && route.route_type !== 'l4' && !!route.https_enabled && !!route.hsts_enabled;
+    if (customHeaders) {
+      const responseHeaders = hstsOn && Array.isArray(customHeaders.response)
+        ? customHeaders.response.filter((h) => !(h && typeof h.name === 'string' && h.name.toLowerCase() === HSTS_HEADER.toLowerCase()))
+        : customHeaders.response;
+      applyResponseHeaders(reverseProxy, responseHeaders);
+    }
+    if (hstsOn) {
+      applyResponseHeaders(reverseProxy, [{ name: HSTS_HEADER, value: hstsHeaderValue(hstsOfRoute(route)) }]);
+    }
 
     // Backend HTTPS with insecure_skip_verify. Skipped for gateway-typed
     // routes: the Caddy → Gateway hop (over WG tunnel) always speaks

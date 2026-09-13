@@ -10,6 +10,7 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const { withCaddySync } = require('./routesSync');
 const { restoreRouteRow } = require('./routesRollback');
+const { parseHstsDefault, normalizeHstsDefault, hstsOfRoute, hstsDefaultToFields } = require('./routesValidation');
 
 function httpError(statusCode, message, code) {
   const err = new Error(message);
@@ -403,6 +404,8 @@ function listZones() {
     if (e.route_type !== 'l4' || (e.l4_tls_mode && e.l4_tls_mode !== 'none')) {
       try { e.tls = tlsGuard.entryTls(e, tlsRows, tlsOpts); } catch { e.tls = null; }
     }
+    // HSTS (docs/feature-hsts.md): HTTP entries only.
+    if (e.route_type !== 'l4') e.hsts = hstsOfRoute(e);
     return e;
   });
 
@@ -459,6 +462,7 @@ function listZones() {
       verification: row.status,
       gateway: describeTarget(zoneTarget(row), ctx),
       default_external_enabled: !!row.default_external_enabled,
+      hsts_default: parseHstsDefault(row.hsts_default),
       counts: {
         hosts: hosts.length,
         entries: all.length,
@@ -564,15 +568,68 @@ async function applyGateway(domainId, input) {
   return getZone(zone.id);
 }
 
-/** Only affects entries created from now on. */
-function updateDefaults(domainId, { default_external_enabled } = {}) {
+/**
+ * Zone defaults for NEW entries: access mode and HSTS (docs/feature-hsts.md).
+ *   default_external_enabled?: bool
+ *   hsts_default?: { enabled, max_age, include_subdomains, preload } | null (= off)
+ *   apply_hsts_to_existing?: bool — also switch every HTTP entry of the zone
+ *     with https_enabled (override or not) to the default: one transaction,
+ *     one Caddy sync, snapshot restore (routes + zone row) on sync failure.
+ * → { zone, applied? }   (applied = number of entries rewritten)
+ */
+async function updateDefaults(domainId, { default_external_enabled, hsts_default, apply_hsts_to_existing } = {}) {
   const db = getDb();
   const zone = zoneRowOr404(db, domainId);
-  if (default_external_enabled === undefined) throw httpError(400, 'default_external_enabled required');
-  db.prepare('UPDATE domains SET default_external_enabled = ? WHERE id = ?')
-    .run(default_external_enabled ? 1 : 0, zone.id);
+  const applyHsts = !!apply_hsts_to_existing;
+  if (default_external_enabled === undefined && hsts_default === undefined && !applyHsts) {
+    throw httpError(400, 'default_external_enabled or hsts_default required');
+  }
+
+  // Validate before any write (throws HSTS_* with statusCode 400).
+  const nextHsts = hsts_default !== undefined ? normalizeHstsDefault(hsts_default) : parseHstsDefault(zone.hsts_default);
+  const nextHstsJson = nextHsts ? JSON.stringify(nextHsts) : null;
+  const nextExternal = default_external_enabled !== undefined ? (default_external_enabled ? 1 : 0) : zone.default_external_enabled;
+
+  const setZone = db.prepare('UPDATE domains SET default_external_enabled = ?, hsts_default = ? WHERE id = ?');
+  const rows = applyHsts ? db.prepare(`
+    SELECT r.* FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
+    WHERE sb.domain_id = ? AND r.route_type != 'l4' AND r.https_enabled = 1
+  `).all(zone.id) : [];
+  const fields = hstsDefaultToFields(nextHsts);
+  const setRoute = db.prepare(`UPDATE routes SET hsts_enabled = ?, hsts_max_age = ?, hsts_subdomains = ?, hsts_preload = ?,
+    updated_at = datetime('now') WHERE id = ?`);
+
+  db.transaction(() => {
+    setZone.run(nextExternal, nextHstsJson, zone.id);
+    for (const r of rows) {
+      // Switching the default off only clears the flag; the entry keeps its
+      // own max-age/flags for a later re-enable.
+      if (nextHsts) setRoute.run(fields.hsts_enabled, fields.hsts_max_age, fields.hsts_subdomains, fields.hsts_preload, r.id);
+      else setRoute.run(0, r.hsts_max_age, r.hsts_subdomains, r.hsts_preload, r.id);
+    }
+  })();
+
+  if (rows.length > 0) {
+    await withCaddySync(syncToCaddy, () => {
+      db.transaction(() => {
+        for (const row of rows) restoreRouteRow(db, row.id, row);
+        setZone.run(zone.default_external_enabled, zone.hsts_default, zone.id);
+      })();
+    }, 'zone hsts apply');
+    try {
+      require('./activity').log('zone_hsts_applied', `HSTS default of "${zone.domain}" applied to ${rows.length} entries`, {
+        source: 'admin',
+        severity: 'info',
+        details: { domainId: zone.id, hsts_default: nextHsts, routeIds: rows.map((r) => r.id) },
+      });
+    } catch { /* activity is best-effort */ }
+    logger.info({ domainId: zone.id, routes: rows.length, hsts: nextHsts }, 'Zone HSTS default applied');
+  }
+
   publish(zone.id, null);
-  return getZone(zone.id);
+  const result = { zone: getZone(zone.id) };
+  if (applyHsts) result.applied = rows.length;
+  return result;
 }
 
 // ─── Boot reconcile ─────────────────────────────────────

@@ -160,10 +160,15 @@ router.put('/domains/:id/gateway', async (req, res) => {
   }
 });
 
-router.put('/domains/:id/defaults', (req, res) => {
+router.put('/domains/:id/defaults', async (req, res) => {
   try {
-    const zone = domainZones.updateDefaults(req.params.id, req.body || {});
-    res.json({ ok: true, zone });
+    const body = req.body || {};
+    const { zone, applied } = await domainZones.updateDefaults(req.params.id, {
+      default_external_enabled: body.default_external_enabled,
+      hsts_default: body.hsts_default,
+      apply_hsts_to_existing: body.apply_hsts_to_existing,
+    });
+    res.json({ ok: true, zone, ...(applied !== undefined ? { applied } : {}) });
   } catch (err) {
     handleError(req, res, err);
   }
