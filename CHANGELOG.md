@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Automatischer Rollback beim Auto-Update: Besteht ein neues Image den Health-Check nicht, startet `update.sh` wieder das vorherige Image (lokal als `:rollback` gemerkt, wird beim Aufräumen nicht gelöscht). Das fehlerhafte Image wird vermerkt und nicht erneut installiert; erst eine neuere Version wird wieder versucht. Das Dashboard zeigt „Update vX fehlgeschlagen — Vorversion wiederhergestellt“. **Auf dem Host muss `update.sh` einmal neu installiert werden** (siehe INSTALL.md).
+- Wöchentliche Prüfung auf neue Versionen des WAF-Moduls (Coraza) und des OWASP Core Rule Set: Die CI öffnet ein Issue mit den nötigen Schritten, solange eine neuere Version existiert, und schließt es, sobald der Build wieder aktuell ist.
+
+### Fixes
+- Kein 502 mehr während eines Neustarts: Caddy läuft bei jedem Container-Start einige Sekunden vor der App. Anfragen an Verwaltungsoberfläche, Portal und Route-Auth warten jetzt bis zu 10 Sekunden, statt sofort mit „connection refused“ abzubrechen. Ein POST wird dabei nie doppelt gesendet.
+- Datenbank, ihre `-wal`/`-shm`-Dateien und Kopien davon, die JSON-Backups und Caddys `runtime.json` waren für jedes Konto auf dem Host lesbar (644). Sie sind jetzt nur noch für den Besitzer lesbar (600, Backup-Ordner 700). Bestehende Dateien werden beim nächsten Start angepasst.
+
+---
+
 ## [1.124.1] — 2026-09-13
 
 ### Fixes
