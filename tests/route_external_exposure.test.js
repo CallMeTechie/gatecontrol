@@ -306,8 +306,11 @@ describe('caddyConfig: external-exposure gate (remote_ip fail-closed)', () => {
   // field comparison avoids js/incomplete-url-substring-sanitization that a
   // .includes()/.split() of a host literal would trip.
   function findRouteByHost(cfg, host) {
+    // Skips the HTTP→HTTPS redirect route (feature-security-options §0),
+    // which lists the same host first.
     return cfg.apps.http.servers.srv0.routes.find(
-      (r) => Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
+      (r) => r['@id'] !== 'gc_https_redirect'
+        && Array.isArray(r.match) && r.match[0] && Array.isArray(r.match[0].host)
         && r.match[0].host[0] === host && r.match[0].host.length === 1
     );
   }

@@ -47,7 +47,8 @@ describe('caddyConfig: retry-match wiring', () => {
 
   function routeHandlers(cfg) {
     const routes = cfg.apps.http.servers.srv0.routes;
-    const entry = routes.find(r => r.match && r.match[0] && r.match[0].host && r.match[0].host.includes('app.example.com'));
+    // Skip the HTTP→HTTPS redirect route (feature-security-options §0).
+    const entry = routes.find(r => r['@id'] !== 'gc_https_redirect' && r.match && r.match[0] && r.match[0].host && r.match[0].host.includes('app.example.com'));
     assert.ok(entry, 'route for app.example.com missing from srv0');
     // compound routes nest handlers via subroute; single-handler routes expose them directly
     if (entry.handle[0] && entry.handle[0].handler === 'subroute') {

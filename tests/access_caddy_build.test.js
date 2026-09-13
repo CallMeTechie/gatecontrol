@@ -70,7 +70,9 @@ afterEach(() => {
 // Find the assembled server route for a given host in srv0.
 function serverRouteFor(cfg, host) {
   const routes = cfg.apps?.http?.servers?.srv0?.routes || [];
-  return routes.find(r => r.match?.[0]?.host?.[0] === host);
+  // The HTTP→HTTPS redirect route (feature-security-options §0) lists every
+  // HTTPS host first; it is not the host's own route.
+  return routes.find(r => r['@id'] !== 'gc_https_redirect' && r.match?.[0]?.host?.[0] === host);
 }
 // Flatten a server route's handlers (including subroute children) to handler names.
 function handlerNames(serverRoute) {
