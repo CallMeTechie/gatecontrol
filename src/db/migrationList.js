@@ -1401,6 +1401,28 @@ const migrations = [
       );`,
     detect: (db) => hasColumn(db, 'domains', 'check_json'),
   },
+  {
+    version: 73,
+    name: 'admin_2fa',
+    // Admin two-factor login (docs/feature-admin-2fa.md): per-user TOTP secret
+    // (encrypted like other secrets), activation flag, argon2-hashed recovery
+    // codes, and the replay table for consumed codes (mirrors
+    // route_auth_totp_used; `code` holds a SHA-256 of the 6-digit code).
+    sql: `
+      ALTER TABLE users ADD COLUMN totp_secret_enc TEXT;
+      ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN totp_confirmed_at TEXT;
+      ALTER TABLE users ADD COLUMN recovery_codes TEXT;
+      CREATE TABLE IF NOT EXISTS admin_totp_used (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        code TEXT NOT NULL,
+        used_at INTEGER NOT NULL,
+        UNIQUE(user_id, code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_totp_used_at ON admin_totp_used(used_at);`,
+    detect: (db) => hasColumn(db, 'users', 'totp_enabled'),
+  },
 ];
 
 module.exports = { migrations };

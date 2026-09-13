@@ -148,7 +148,7 @@ function updateUserProfile(userId, data) {
   );
 
   logger.info({ userId, changes: Object.keys(data) }, 'User profile updated');
-  return db.prepare('SELECT id, username, display_name, email, role, language, theme, last_login_at, created_at FROM users WHERE id = ?').get(userId);
+  return db.prepare('SELECT id, username, display_name, email, role, language, theme, last_login_at, created_at, totp_enabled, totp_confirmed_at FROM users WHERE id = ?').get(userId);
 }
 
 /**
@@ -156,7 +156,7 @@ function updateUserProfile(userId, data) {
  */
 function getUserProfile(userId) {
   const db = getDb();
-  return db.prepare('SELECT id, username, display_name, email, role, language, theme, last_login_at, created_at FROM users WHERE id = ?').get(userId);
+  return db.prepare('SELECT id, username, display_name, email, role, language, theme, last_login_at, created_at, totp_enabled, totp_confirmed_at FROM users WHERE id = ?').get(userId);
 }
 
 module.exports = {

@@ -489,11 +489,13 @@ function generateTotpSecret(domain) {
 /**
  * Verify a TOTP token against an encrypted secret
  */
-function verifyTotp(encryptedSecret, token, routeId) {
-  if (routeId && isTotpUsed(routeId, String(token))) {
-    return false; // replay detected
-  }
-
+/**
+ * Pure check of a 6-digit code against an encrypted base32 secret
+ * (SHA1 / 30 s / window ±1, constant-time compare inside otpauth).
+ * No replay tracking — callers layer their own (route_auth_totp_used here,
+ * admin_totp_used for the admin login). Returns true/false only.
+ */
+function checkTotpCode(encryptedSecret, token) {
   let secretBase32;
   try {
     secretBase32 = decrypt(encryptedSecret);
@@ -501,6 +503,7 @@ function verifyTotp(encryptedSecret, token, routeId) {
     logger.warn({ err: err.message }, 'Failed to decrypt TOTP secret');
     return false;
   }
+  if (!/^\d{6}$/.test(String(token || ''))) return false;
 
   const totp = new OTPAuth.TOTP({
     algorithm: 'SHA1',
@@ -509,8 +512,15 @@ function verifyTotp(encryptedSecret, token, routeId) {
     secret: OTPAuth.Secret.fromBase32(secretBase32),
   });
 
-  const delta = totp.validate({ token: String(token), window: 1 });
-  if (delta === null) return false;
+  return totp.validate({ token: String(token), window: 1 }) !== null;
+}
+
+function verifyTotp(encryptedSecret, token, routeId) {
+  if (routeId && isTotpUsed(routeId, String(token))) {
+    return false; // replay detected
+  }
+
+  if (!checkTotpCode(encryptedSecret, token)) return false;
 
   // Atomically claim the code. A lost claim means a concurrent request
   // consumed the same code first — treat that as a replay.
@@ -560,6 +570,9 @@ module.exports = {
   // TOTP
   generateTotpSecret,
   verifyTotp,
+  checkTotpCode,
+  totpHash: _totpHash,
+  TOTP_REPLAY_WINDOW_MS,
   // Helpers
   maskEmail,
 };
