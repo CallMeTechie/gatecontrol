@@ -56,7 +56,8 @@ test('/login/2fa renders in every theme (code and recovery variants)', async () 
     assert.match(code.text, /name="code"[^>]*inputmode="numeric"/, theme);
     assert.match(code.text, /autofocus/, theme);
     assert.match(code.text, /href="\/login\/2fa\?recovery=1"/, theme);
-    assert.match(code.text, /id="tf-remaining"/, theme);
+    assert.match(code.text, /id="tf-remaining"[^>]*>[^<{]*\d[^<{]*</, theme);
+    assert.doesNotMatch(code.text, /replace\('',/, `${theme}: countdown placeholder must survive templating`);
     assert.match(code.text, new RegExp(theme === 'pro' ? '/css/pro\\.css' : '/css/app\\.css'), theme);
 
     const rec = await a.get('/login/2fa?recovery=1').expect(200);

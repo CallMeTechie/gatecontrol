@@ -66,7 +66,7 @@ function renderTwoFactorPage(req, res, pending) {
     layout: false,
     useRecovery: req.query && req.query.recovery === '1',
     remainingSeconds: Math.ceil(remaining / 1000),
-    remainingMinutes: Math.max(1, Math.ceil(remaining / 60000)),
+    remainingText: res.locals.t('two_fa.time_remaining').replace('{{minutes}}', String(Math.max(1, Math.ceil(remaining / 60000)))),
   });
 }
 

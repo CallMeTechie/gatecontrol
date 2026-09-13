@@ -229,7 +229,7 @@
         {% if useRecovery %}<a href="/login/2fa">{{ t('two_fa.use_code') }}</a>{% else %}<a href="/login/2fa?recovery=1">{{ t('two_fa.use_recovery') }}</a>{% endif %}
         <a href="/login">{{ t('two_fa.back_to_login') }}</a>
       </div>
-      <div class="tf-remaining" id="tf-remaining" data-seconds="{{ remainingSeconds }}">{{ t('two_fa.time_remaining').replace('{{minutes}}', remainingMinutes) }}</div>
+      <div class="tf-remaining" id="tf-remaining" data-seconds="{{ remainingSeconds }}">{{ remainingText }}</div>
     </div>
 
     <div class="login-footer">
@@ -246,7 +246,7 @@
       var expired = {{ t('two_fa.error_expired') | dump | safe }};
       function tick() {
         if (left <= 0) { el.textContent = expired; return; }
-        el.textContent = tpl.replace('{{minutes}}', String(Math.max(1, Math.ceil(left / 60))));
+        el.textContent = tpl.replace('{' + '{minutes}}', String(Math.max(1, Math.ceil(left / 60))));
         left -= 1; setTimeout(tick, 1000);
       }
       tick();
