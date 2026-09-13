@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- HSTS pro Host: Im Domain-Dialog hat jeder HTTPS-Eintrag einen HSTS-Schalter mit Laufzeit (6 Monate, 1 Jahr, 2 Jahre), `includeSubDomains` und `preload`. Preload ist standardmäßig aus, verlangt `includeSubDomains` und mindestens ein Jahr und muss ausdrücklich bestätigt werden, weil es praktisch unumkehrbar ist. Pro Domain lässt sich ein HSTS-Standard für neue Hosts setzen und auf Wunsch auf alle bestehenden anwenden (ein Caddy-Reload). Der Eintrags-Editor hat denselben Block im Tab „Sicherheit“. Ein vom Backend gesendeter HSTS-Header wird bei aktivem Schalter ersetzt.
+
+### Fixes
+- „HTTPS erzwingen“ hat nichts erzwungen: Caddy lieferte jede Route auch unverschlüsselt über Port 80 aus, weil der Server auf 80 und 443 lauscht und die Routen nur den Hostnamen prüfen; eine automatische Umleitung entstand dadurch nicht. Jetzt leitet eine eigene Route alle HTTP-Anfragen für Hosts mit „HTTPS erzwingen“ per 308 auf HTTPS um. Ausgenommen sind die ACME-Prüfung, das Portal und Hosts, die der TLS-Guard pausiert hat (sie müssen über HTTP erreichbar bleiben).
+- „Komprimierung“ ließ sich für keine Route einschalten: Der Generator trug den Encoder `brotli` ein, das Modul im mitgelieferten Caddy heißt `br`. Caddy verwarf daraufhin die komplette Konfiguration, GateControl rollte die Änderung zurück.
+- Seit 1.120.0 war in `app.css` und `pro.css` ein `@media`-Block nicht geschlossen. Die Stile der Zertifikatsseite und der LAN-Erkennung wirkten dadurch nur auf schmalen Bildschirmen; auf dem Desktop war die Zertifikatstabelle gequetscht.
+
+---
+
 ## [1.121.0] — 2026-09-13
 
 ### Änderungen

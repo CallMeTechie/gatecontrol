@@ -1,6 +1,6 @@
 # HSTS pro Host mit Domain-Standard
 
-Status: in Umsetzung (Branch `feat/hsts`). Verbindliche Schnittstelle zwischen
+Status: umgesetzt (Branch `feat/hsts`); Abweichungen unter „Stand nach der Umsetzung“. Verbindliche Schnittstelle zwischen
 Backend und Oberfläche. Wer abweicht, ändert zuerst dieses Dokument.
 
 ## Ausgangslage
@@ -124,3 +124,13 @@ Der HTTPS-Chip eines Hosts bekommt die Notiz `HSTS`, wenn der Eintrag es aktiv h
 - `caddyConfig`-Vertragstest: Header-Wert in `reverse_proxy.headers.response.set`, alle drei Varianten; kein Header bei `https_enabled = 0`, bei L4 und auf der Wartungsseite; Custom-Header gleichen Namens wird ersetzt.
 - API: `PUT /routes/:id` mit gültigen/ungültigen Kombinationen; `PUT /domains/:id/defaults` mit `apply_hsts_to_existing` → alle betroffenen Einträge geändert, genau ein Sync, Rollback bei Sync-Fehler; neue Einträge erben den Standard.
 - UI: statische Prüfung (Ids/Klassen/Keys), Template-Render, Browser-Szenario (Standard setzen und anwenden, Eintrags-Dialog, Preload-Bestätigung, Editor-Block).
+
+## Stand nach der Umsetzung
+
+- `applyResponseHeaders` fügt jetzt zu einem vorhandenen `headers.response.set` hinzu, statt es zu ersetzen, damit HSTS nach den Custom Headers diese nicht löscht.
+- `PUT /domains/:id/defaults` mit `hsts_default: null` und `apply_hsts_to_existing: true` schaltet nur `hsts_enabled` der Einträge aus; Laufzeit und Flags bleiben für ein späteres Wiedereinschalten stehen.
+- `apply_hsts_to_existing: true` ohne `hsts_default` wendet den gespeicherten Standard an. `applied` kommt nur zurück, wenn `apply_hsts_to_existing` gesendet wurde. Ohne betroffene Einträge gibt es keinen Caddy-Sync.
+- Routen-API: Fehler aus Services mit `code` werden als `{ ok:false, error, code }` durchgereicht.
+- Preload-Regeln werden auf der tatsächlich gespeicherten Kombination geprüft, auch bei ausgeschaltetem HSTS.
+- Oberfläche: Die Preload-Bestätigung kommt nur, wenn Preload neu gesetzt wird. `hsts-ui.js` wird nur auf der Zonen-Seite geladen (dort liegt auch der Eintrags-Editor).
+- Mitgeliefert: die HTTP→HTTPS-Umleitung aus `feature-security-options.md` §0 und die Korrektur des offenen `@media`-Blocks in `app.css`/`pro.css`.
