@@ -96,6 +96,20 @@
       </form>
 
       {# Token section (edit mode only) #}
+      {# 2FA status + admin reset (docs/feature-admin-2fa.md) #}
+      <div id="user-2fa-section" class="tf-user-row" style="display:none" data-current-user="{{ user.id }}">
+        <span class="tf-user-label">{{ t('two_fa.title') }}</span>
+        <span class="tf-badge" id="user-2fa-status"></span>
+        <button type="button" class="btn btn-ghost tf-btn-sm" id="btn-user-2fa-reset" style="margin-left:auto">{{ t('two_fa.users_reset') }}</button>
+      </div>
+      <script type="application/json" id="tf-users-i18n">{
+        "users_active": {{ t('two_fa.users_active') | dump | safe }},
+        "users_inactive": {{ t('two_fa.users_inactive') | dump | safe }},
+        "users_badge": {{ t('two_fa.users_badge') | dump | safe }},
+        "users_reset_confirm": {{ t('two_fa.users_reset_confirm') | dump | safe }},
+        "users_reset_done": {{ t('two_fa.users_reset_done') | dump | safe }}
+      }</script>
+
       <div id="user-tokens-section" style="display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:13px;font-weight:600;color:var(--text-1)">{{ t('users.tokens') }}</span>

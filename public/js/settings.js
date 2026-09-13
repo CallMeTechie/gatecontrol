@@ -432,7 +432,18 @@
     });
   }
   ['security-lockout-enabled', 'security-password-enabled', 'security-password-uppercase',
-   'security-password-number', 'security-password-special'].forEach(setupManagedToggle);
+   'security-password-number', 'security-password-special', 'security-require-2fa'].forEach(setupManagedToggle);
+
+  // require_2fa: warn when the current admin has no 2FA yet — switching it
+  // on would send them to the profile setup on the next page load.
+  function syncRequire2faWarning() {
+    var tg = document.getElementById('security-require-2fa');
+    var warn = document.getElementById('security-require-2fa-warning');
+    if (!tg || !warn) return;
+    warn.hidden = !(tg.classList.contains('on') && tg.getAttribute('data-self-2fa') !== '1');
+  }
+  var req2fa = document.getElementById('security-require-2fa');
+  if (req2fa) req2fa.addEventListener('change', syncRequire2faWarning);
 
   async function loadSecuritySettings() {
     try {
@@ -458,6 +469,9 @@
       if (pwNum) { if (pw.require_number) pwNum.classList.add('on'); else pwNum.classList.remove('on'); }
       var pwSpecial = document.getElementById('security-password-special');
       if (pwSpecial) { if (pw.require_special) pwSpecial.classList.add('on'); else pwSpecial.classList.remove('on'); }
+      var r2 = document.getElementById('security-require-2fa');
+      if (r2) { if (data.data.require_2fa) r2.classList.add('on'); else r2.classList.remove('on'); }
+      syncRequire2faWarning();
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('security');
     } catch (err) {
       console.error('Failed to load security settings:', err);
@@ -520,6 +534,7 @@
         'security-password-uppercase': g('security-password-uppercase') ? g('security-password-uppercase').classList.contains('on') : false,
         'security-password-number': g('security-password-number') ? g('security-password-number').classList.contains('on') : false,
         'security-password-special': g('security-password-special') ? g('security-password-special').classList.contains('on') : false,
+        'security-require-2fa': g('security-require-2fa') ? g('security-require-2fa').classList.contains('on') : false,
       };
     }
     function securitySave() {
@@ -537,12 +552,13 @@
           require_number: v['security-password-number'],
           require_special: v['security-password-special'],
         },
+        require_2fa: v['security-require-2fa'],
       });
     }
     var securityFieldIds = [
       'security-lockout-enabled', 'security-lockout-attempts', 'security-lockout-duration',
       'security-password-enabled', 'security-password-min-length', 'security-password-uppercase',
-      'security-password-number', 'security-password-special',
+      'security-password-number', 'security-password-special', 'security-require-2fa',
     ];
     var securityFields = securityFieldIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
     if (securityFields.length) {
