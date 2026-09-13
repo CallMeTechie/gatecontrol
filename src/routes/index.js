@@ -176,7 +176,14 @@ router.get('/health', async (req, res) => {
 const authRoutes = require('./auth');
 router.get('/login', guestOnly, authRoutes.loginPage);
 router.post('/login', guestOnly, loginLimiter, csrfProtection, authRoutes.login);
+// Second factor: only reachable with a valid req.session.pending2fa (set by
+// POST /login after the password check); requireAuth itself is untouched.
+router.get('/login/2fa', guestOnly, authRoutes.twoFactorPage);
+router.post('/login/2fa', guestOnly, loginLimiter, csrfProtection, authRoutes.twoFactor);
 router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
+
+// security.require_2fa: admins without 2FA are confined to the profile setup.
+router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
