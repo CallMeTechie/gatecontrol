@@ -847,3 +847,12 @@ input[type=date]:focus, select:focus {
 .tg-link { color: var(--teal); }
 .tg-empty td { color: var(--muted); }
 .toast-warning { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-bd); }
+
+/* ─── HSTS (hs-) ─── */
+/* Aurora overrides for the HSTS controls and dialogs. The base hs- block
+   comes from pro.css (loaded first); here only surfaces and accents. */
+.hs-switch-row, .hs-preview code { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.hs-warn { background: var(--amber-bg); border-color: var(--amber-bd); border-radius: var(--r-sm); }
+.hs-check input { accent-color: var(--teal); }
+.hs-f-label, .hs-preview-label, .hs-hint .hs-ic { color: var(--muted); }
+.tag.hs-entry-tag.hs-off { color: var(--muted); }
