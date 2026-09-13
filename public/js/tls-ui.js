@@ -393,9 +393,21 @@
   }
 
   // ── API ──
+  // Own GET instead of api.get: the thrown Error must carry the HTTP status
+  // (err.data.status) so a 404 of the not-yet-merged backend degrades to the
+  // "Backend noch nicht verfügbar" hint whatever the body says.
+  async function getJson(url) {
+    const res = await win.fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    let body = null;
+    try { body = await res.json(); } catch (_) { body = null; }
+    if (body && body.csrfToken) GC.csrfToken = body.csrfToken;
+    if (res.ok && body && body.ok !== false) return body;
+    const e = new Error((body && body.error) || 'API error: ' + res.status);
+    e.data = Object.assign({ status: res.status }, body || {});
+    throw e;
+  }
   async function fetchStatus() {
-    const res = await call(win.api.get('/api/v1/tls/status'));
-    return res;
+    return getJson('/api/v1/tls/status');
   }
   async function fetchHost(host) {
     const res = await fetchStatus();
@@ -403,13 +415,26 @@
     return (res.hosts || []).find((h) => str(h.host).toLowerCase() === key) || null;
   }
   async function preflight(host) {
-    const res = await call(win.api.get('/api/v1/tls/preflight/' + encodeURIComponent(host)));
+    const res = await getJson('/api/v1/tls/preflight/' + encodeURIComponent(host));
     return res.result || null;
   }
-  // → TlsHost; throws Error with err.data = { code: 'PREFLIGHT_FAILED', result } on 409.
+  // → TlsHost; throws Error with err.data = { status, code: 'PREFLIGHT_FAILED', result }
+  // on 409. Own fetch instead of api.post: app.js drops the body of a non-2xx
+  // answer unless it carries `error`, but the contract's 409 body is
+  // { ok:false, code, result } and the result must reach the dialog.
   async function retry(host) {
-    const res = await call(win.api.post('/api/v1/tls/' + encodeURIComponent(host) + '/retry', {}));
-    return res.status || null;
+    const res = await win.fetch('/api/v1/tls/' + encodeURIComponent(host) + '/retry', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': GC.csrfToken || '' },
+      body: '{}',
+    });
+    let body = null;
+    try { body = await res.json(); } catch (_) { body = null; }
+    if (body && body.csrfToken) GC.csrfToken = body.csrfToken;
+    if (res.ok && body && body.ok !== false) return body.status || null;
+    const e = new Error((body && body.error) || (body && body.code === 'PREFLIGHT_FAILED' ? t('tls.preflight_failed') : 'API error: ' + res.status));
+    e.data = Object.assign({ status: res.status }, body || {});
+    throw e;
   }
   function announce(host, state) {
     try { doc.dispatchEvent(new CustomEvent('gc:tls', { detail: { host, state, local: true } })); } catch (_) { /* ignore */ }
