@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -86,6 +86,21 @@ async function guardTls(host) {
 function withTls(row, tls) {
   if (row && tls) row.tls = tls;
   return row;
+}
+
+// HSTS (docs/feature-hsts.md): the zone default of the entry's domain
+// (domains.hsts_default via the longest-suffix zone match). Best-effort —
+// a missing zone or a broken JSON simply means "no default".
+function zoneHstsDefault(db, domain) {
+  try {
+    const zone = require('./domainZones').resolveZone(domain, db);
+    if (!zone) return null;
+    const row = db.prepare('SELECT hsts_default FROM domains WHERE id = ?').get(zone.domain_id);
+    return row ? parseHstsDefault(row.hsts_default) : null;
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err), domain }, 'HSTS zone default lookup failed');
+    return null;
+  }
 }
 
 // logged, never propagated (it must not roll back an already-synced route).
@@ -343,6 +358,15 @@ async function create(data, opts = {}) {
   const wantsTls = !!domain && (routeType === 'l4' ? (!!data.l4_tls_mode && data.l4_tls_mode !== 'none') : httpsEnabled);
   const tls = (!opts.skipSync && wantsTls) ? await guardTls(domain) : null;
 
+  // HSTS: explicit hsts_* fields win; an HTTPS entry created without any of
+  // them inherits the zone default. Validation throws HSTS_* (400).
+  const hstsSeed = (routeType === 'http' && httpsEnabled && domain && !hasHstsInput(data))
+    ? zoneHstsDefault(db, domain)
+    : null;
+  const hsts = resolveHstsFields(data, hstsSeed ? hstsDefaultToFields(hstsSeed) : null, {
+    route_type: routeType, https_enabled: httpsEnabled,
+  });
+
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
@@ -357,8 +381,9 @@ async function create(data, opts = {}) {
                         external_enabled,
                         external_block_action, external_block_body, external_block_redirect_url,
                         target_kind, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac,
+                        hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -417,6 +442,10 @@ async function create(data, opts = {}) {
     targetLanPort,
     wolEnabled,
     wolMac,
+    hsts.hsts_enabled,
+    hsts.hsts_max_age,
+    hsts.hsts_subdomains,
+    hsts.hsts_preload,
   );
 
   const routeId = result.lastInsertRowid;
@@ -628,6 +657,13 @@ async function update(id, data) {
     ? (!!route.l4_tls_mode && route.l4_tls_mode !== 'none')
     : !!route.https_enabled;
   const tlsBecomes = !!nextDomain && nextTls && (!prevTls || nextDomain !== (route.domain || null));
+
+  // HSTS: effective state after this patch. Turning HTTPS off clears an
+  // inherited hsts_enabled; an explicit hsts_enabled without HTTPS → 400.
+  const hsts = resolveHstsFields(data, route, {
+    route_type: routeType, https_enabled: routeType === 'l4' ? false : nextTls,
+  });
+
   const tls = tlsBecomes ? await guardTls(nextDomain) : null;
 
   db.prepare(`
@@ -690,6 +726,10 @@ async function update(id, data) {
       target_lan_port = COALESCE(?, target_lan_port),
       wol_enabled = COALESCE(?, wol_enabled),
       wol_mac = COALESCE(?, wol_mac),
+      hsts_enabled = ?,
+      hsts_max_age = ?,
+      hsts_subdomains = ?,
+      hsts_preload = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -757,6 +797,10 @@ async function update(id, data) {
     data.target_lan_port !== undefined ? (data.target_lan_port ? parseInt(data.target_lan_port, 10) : null) : null,
     data.wol_enabled !== undefined ? (data.wol_enabled ? 1 : 0) : null,
     data.wol_mac !== undefined ? (data.wol_mac || null) : null,
+    hsts.hsts_enabled,
+    hsts.hsts_max_age,
+    hsts.hsts_subdomains,
+    hsts.hsts_preload,
     id
   );
 

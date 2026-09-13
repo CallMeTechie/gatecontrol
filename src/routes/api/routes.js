@@ -117,6 +117,8 @@ const VALIDATION_ERROR_MAP = {
 function resolveError(req, err, fallbackKey) {
   const msg = err.message || '';
   if (msg.includes('Caddy')) return { status: 502, error: req.t('error.routes.caddy_unreachable') };
+  // Coded service errors (HSTS_* from routesValidation): status + code pass through.
+  if (err.statusCode && err.code) return { status: err.statusCode, error: msg, code: err.code };
   for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
     if (msg.toLowerCase().includes(pattern.toLowerCase())) {
       const status = pattern === 'not found' ? 404 : 400;
@@ -367,7 +369,8 @@ router.post('/',
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
-      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config } = req.body;
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -473,6 +476,7 @@ router.post('/',
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,
@@ -492,8 +496,8 @@ router.post('/',
     res.status(201).json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
-    const { status, error } = resolveError(req, err, 'error.routes.create');
-    res.status(status).json({ ok: false, error });
+    const { status, error, code } = resolveError(req, err, 'error.routes.create');
+    res.status(status).json({ ok: false, error, ...(code ? { code } : {}) });
   }
 });
 
@@ -528,7 +532,8 @@ router.put('/:id',
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
-      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config } = req.body;
+      bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -637,6 +642,7 @@ router.put('/:id',
       circuit_breaker_enabled, circuit_breaker_threshold, circuit_breaker_timeout,
       mirror_enabled, mirror_targets, debug_enabled,
       bot_blocker_enabled, bot_blocker_mode, bot_blocker_config,
+      hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,
@@ -665,8 +671,8 @@ router.put('/:id',
     res.json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, 'Failed to update route');
-    const { status, error } = resolveError(req, err, 'error.routes.update');
-    res.status(status).json({ ok: false, error });
+    const { status, error, code } = resolveError(req, err, 'error.routes.update');
+    res.status(status).json({ ok: false, error, ...(code ? { code } : {}) });
   }
 });
 
