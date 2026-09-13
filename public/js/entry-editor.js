@@ -1482,6 +1482,7 @@
 
     setToggle('edit-route-monitoring', route.monitoring_enabled);
     populateHsts(route);
+    populateSecOpts(route);
 
     // Debug
     if (byId('edit-route-debug')) {
@@ -1659,6 +1660,181 @@
     }
   }
 
+  // ═══ Security options (docs/feature-security-options.md) ═══════════════════
+  // B  Backend TLS (tab Allgemein, under "Backend HTTPS"):
+  //    #edit-route-backend-tls-verify / -server-name / -ca. Greyed out while
+  //    Backend HTTPS is off and for gateway/pool targets (the gateway dials the
+  //    target — the fields are stored but not applied, so they are not sent).
+  // D  Body limit (tab Sicherheit): #edit-route-max-body-mb, 0 = unlimited.
+  // F  mTLS (tab Auth): #edit-route-mtls + #edit-route-mtls-ca. Greyed out
+  //    while "HTTPS erzwingen" is off; never sent without the route_auth
+  //    license (#edit-mtls-block data-licensed="0").
+  // Texts come from data attributes on the blocks (like the HSTS block).
+
+  var BODY_MAX_MB = 4096;
+  // Contract error code → [block id, data attribute, i18n key, tab]. The last
+  // two codes are client-side (empty CA) and the 403 of the route_auth gate.
+  var SECOPT_ERRORS = {
+    BACKEND_CA_INVALID: ['edit-backend-tls-block', 'errBackendCaInvalid', 'backend_tls.err.ca_invalid', 'general'],
+    BACKEND_SERVER_NAME_INVALID: ['edit-backend-tls-block', 'errBackendServerNameInvalid', 'backend_tls.err.server_name_invalid', 'general'],
+    MAX_BODY_INVALID: ['edit-body-limit-block', 'errMaxBodyInvalid', 'body_limit.err.invalid', 'security'],
+    MTLS_CA_INVALID: ['edit-mtls-block', 'errMtlsCaInvalid', 'mtls.err.ca_invalid', 'auth'],
+    MTLS_REQUIRES_HTTPS: ['edit-mtls-block', 'errMtlsRequiresHttps', 'mtls.err.requires_https', 'auth'],
+    MTLS_MODE_INVALID: ['edit-mtls-block', 'errMtlsModeInvalid', 'mtls.err.mode_invalid', 'auth'],
+    MTLS_CA_REQUIRED: ['edit-mtls-block', 'errCaRequired', 'mtls.err.ca_required', 'auth'],
+    MTLS_LICENSE: ['edit-mtls-block', 'errLicense', 'mtls.err.license', 'auth'],
+  };
+
+  function flag(v) { return v === 1 || v === true || v === '1' || v === 'true'; }
+
+  // German message for a code, null for anything else.
+  function secoptErrorText(code) {
+    var m = code && SECOPT_ERRORS[String(code).toUpperCase()];
+    if (!m) return null;
+    var block = byId(m[0]);
+    return (block && block.dataset[m[1]]) || T(m[2], String(code));
+  }
+  // Shows the mapped error (form footer + inline in the block, e.g.
+  // #edit-mtls-error), switches to the tab holding the field and scrolls the
+  // block into view — the auth tab is long, the footer error sits below it.
+  function showSecoptError(code) {
+    var text = secoptErrorText(code);
+    if (!text) return false;
+    var m = SECOPT_ERRORS[String(code).toUpperCase()];
+    var modal = byId(MODAL_ID);
+    var tab = modal && modal.querySelector('.edit-route-tabs .tab[data-edit-tab="' + m[3] + '"]');
+    if (tab && tab.style.display !== 'none' && !tab.classList.contains('active')) tab.click();
+    window.showError('edit-route-error', text);
+    var inline = byId(m[0].replace(/-block$/, '-error'));
+    if (inline) {
+      inline.textContent = text;
+      inline.hidden = false;
+    }
+    var block = byId(m[0]);
+    if (block && typeof block.scrollIntoView === 'function') block.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+  function clearSecoptErrors() {
+    ['edit-backend-tls-error', 'edit-body-limit-error', 'edit-mtls-error'].forEach(function (id) {
+      var n = byId(id);
+      if (n) { n.hidden = true; n.textContent = ''; }
+    });
+  }
+
+  function secoptTargetKind() {
+    if (state.lockTarget && state.route) return state.route.target_kind || 'peer';
+    var tk = byId('edit-route-target-kind');
+    return tk ? (tk.value || 'peer') : ((state.route && state.route.target_kind) || 'peer');
+  }
+  function mtlsLicensed() {
+    var block = byId('edit-mtls-block');
+    return !!block && block.dataset.licensed !== '0';
+  }
+
+  function populateSecOpts(route) {
+    var verify = byId('edit-route-backend-tls-verify');
+    if (verify) verify.checked = flag(route.backend_tls_verify);
+    setVal('edit-route-backend-tls-server-name', route.backend_tls_server_name || '');
+    setVal('edit-route-backend-tls-ca', route.backend_tls_ca_pem || '');
+    var mb = parseInt(route.max_body_mb, 10);
+    setVal('edit-route-max-body-mb', String(isFinite(mb) && mb > 0 ? mb : 0));
+    setToggle('edit-route-mtls', flag(route.mtls_enabled));
+    setVal('edit-route-mtls-ca', route.mtls_ca_pem || '');
+    clearSecoptErrors();
+    // Preset hints belong to the last preset pick of this editor session.
+    showIf('edit-headers-hsts-hint', false);
+    var csp = byId('edit-headers-csp-warning');
+    if (csp) csp.hidden = true;
+    syncBackendTlsBlock();
+    syncMtlsBlock();
+  }
+
+  function syncBackendTlsBlock() {
+    var block = byId('edit-backend-tls-block');
+    if (!block) return;
+    var gateway = secoptTargetKind() === 'gateway';
+    var bhttps = isOn('edit-route-backend-https');
+    var active = !gateway && bhttps;
+    var verify = byId('edit-route-backend-tls-verify');
+    var checked = !!(verify && verify.checked);
+    block.classList.toggle('so-locked', !active);
+    block.classList.toggle('so-gateway', gateway);
+    if (verify) verify.disabled = !active;
+    ['edit-route-backend-tls-server-name', 'edit-route-backend-tls-ca'].forEach(function (id) {
+      var n = byId(id);
+      if (n) n.disabled = !(active && checked);
+    });
+    var fields = byId('edit-backend-tls-fields');
+    if (fields) fields.classList.toggle('so-fields-off', !checked);
+    var hint = byId('edit-backend-tls-hint');
+    if (hint) {
+      if (gateway) hint.textContent = block.dataset.hintGateway || T('backend_tls.hint_gateway', 'The gateway builds the connection to the target.');
+      else if (!bhttps) hint.textContent = block.dataset.hintHttps || T('backend_tls.hint_https', 'Only with Backend HTTPS.');
+      else hint.textContent = '';
+    }
+  }
+
+  function syncMtlsBlock() {
+    var block = byId('edit-mtls-block');
+    if (!block) return;
+    var httpsOn = isOn('edit-route-https');
+    var on = isOn('edit-route-mtls');
+    block.classList.toggle('so-locked', !httpsOn && mtlsLicensed());
+    var toggle = byId('edit-route-mtls');
+    if (toggle && mtlsLicensed()) toggle.setAttribute('aria-disabled', httpsOn ? 'false' : 'true');
+    var fields = byId('edit-mtls-fields');
+    if (fields) fields.hidden = !on;
+    var hint = byId('edit-mtls-hint');
+    if (hint) hint.textContent = httpsOn ? '' : (block.dataset.hintHttps || T('mtls.hint_https', 'mTLS requires "Force HTTPS".'));
+  }
+
+  // Security-option fields for the PUT body: { fields } or { error: code }.
+  function readSecOptFields(target, httpsOn) {
+    var out = {};
+    if (target.route_type === 'l4') return { fields: out };
+    if (byId('edit-backend-tls-block') && (target.target_kind || 'peer') !== 'gateway') {
+      var verify = byId('edit-route-backend-tls-verify');
+      out.backend_tls_verify = !!(verify && verify.checked);
+      out.backend_tls_server_name = (byId('edit-route-backend-tls-server-name').value || '').trim();
+      out.backend_tls_ca_pem = (byId('edit-route-backend-tls-ca').value || '').trim();
+    }
+    var mbInput = byId('edit-route-max-body-mb');
+    if (mbInput) {
+      var raw = String(mbInput.value || '').trim();
+      if (raw === '') raw = '0';
+      if (!/^\d+$/.test(raw) || parseInt(raw, 10) > BODY_MAX_MB) return { error: 'MAX_BODY_INVALID' };
+      out.max_body_mb = parseInt(raw, 10);
+    }
+    if (byId('edit-mtls-block') && mtlsLicensed()) {
+      var on = isOn('edit-route-mtls') && !!httpsOn;
+      var pem = (byId('edit-route-mtls-ca').value || '').trim();
+      if (on && !pem) return { error: 'MTLS_CA_REQUIRED' };
+      out.mtls_enabled = on;
+      out.mtls_ca_pem = pem;
+    }
+    return { fields: out };
+  }
+
+  function setupSecOptControls() {
+    // app.js toggles the classes on click before these listeners run.
+    var bhttps = byId('edit-route-backend-https');
+    if (bhttps) bhttps.addEventListener('click', function () { syncBackendTlsBlock(); });
+    var tk = byId('edit-route-target-kind');
+    if (tk) tk.addEventListener('change', syncBackendTlsBlock);
+    var verify = byId('edit-route-backend-tls-verify');
+    if (verify) verify.addEventListener('change', syncBackendTlsBlock);
+    var https = byId('edit-route-https');
+    if (https) https.addEventListener('click', function () { syncMtlsBlock(); });
+    var mtls = byId('edit-route-mtls');
+    if (mtls && mtlsLicensed()) {
+      mtls.addEventListener('click', function () {
+        syncMtlsBlock();
+        var ca = byId('edit-route-mtls-ca');
+        if (isOn('edit-route-mtls') && ca && !ca.value.trim()) ca.focus();
+      });
+    }
+  }
+
   // ═══ Headers + branding ════════════════════════════════════════════════════
 
   function renderHeadersList(prefix, type, arr) {
@@ -1710,15 +1886,18 @@
         // The security preset never adds Strict-Transport-Security — the HSTS
         // switch on the security tab owns that header (docs/feature-hsts.md).
         showIf('edit-headers-hsts-hint', val === 'security');
-        if (val === 'cors') {
-          editHeadersResponse.push({ name: 'Access-Control-Allow-Origin', value: '*' });
-          editHeadersResponse.push({ name: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' });
-          editHeadersResponse.push({ name: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' });
-        } else if (val === 'security') {
-          editHeadersResponse.push({ name: 'X-Frame-Options', value: 'DENY' });
-          editHeadersResponse.push({ name: 'X-Content-Type-Options', value: 'nosniff' });
-          editHeadersResponse.push({ name: 'X-XSS-Protection', value: '1; mode=block' });
-          editHeadersResponse.push({ name: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' });
+        // The CSP preset breaks apps with external sources — say so.
+        var cspWarn = byId('edit-headers-csp-warning');
+        if (cspWarn) cspWarn.hidden = val !== 'csp';
+        // Preset contents live in secopt-ui.js (docs/feature-security-options.md
+        // §C); a header of the same name is replaced, not duplicated.
+        var SO = window.GCSecOptUI;
+        if (SO && typeof SO.applyPreset === 'function') {
+          var next = SO.applyPreset(editHeadersResponse, val);
+          editHeadersResponse.length = 0;
+          next.forEach(function (h) { editHeadersResponse.push(h); });
+        } else {
+          console.warn('GCEntryEditor: secopt-ui.js missing, header preset "' + val + '" not applied');
         }
         renderHeadersList('edit', 'response', editHeadersResponse);
         this.value = '';
@@ -2360,6 +2539,9 @@
       window.showError('edit-route-error', 'Basic auth username is required when auth is enabled');
       return;
     }
+    clearSecoptErrors();
+    var secopt = readSecOptFields(target, https_enabled);
+    if (secopt.error) { showSecoptError(secopt.error); return; }
 
     window.btnLoading(btn);
     try {
@@ -2423,6 +2605,7 @@
         mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
       };
       Object.assign(payload, readHstsFields());
+      Object.assign(payload, secopt.fields);
       var blockAction = val('edit-route-block-action', 'inherit');
       payload.external_block_action = blockAction;
       if (blockAction === 'custom') payload.external_block_body = val('edit-route-block-body', '');
@@ -2475,6 +2658,9 @@
           window.showError('edit-route-error', hstsErr);
           return;
         }
+        if (showSecoptError(data.code)) return;
+        // 403 of the route_auth gate (requireFeatureField('mtls_enabled', 'route_auth')).
+        if (data.feature === 'route_auth' && payload.mtls_enabled) { showSecoptError('MTLS_LICENSE'); return; }
         if (data.fields) {
           var ft = byId('edit-route-domain-freetext');
           window.showFieldErrors(data.fields, {
@@ -2542,6 +2728,7 @@
     setupFeatureControls();
     setupHeaderControls();
     setupHstsControls();
+    setupSecOptControls();
     setupBrandingUpload('edit-branding-logo-file', 'logo', 'logo', 'edit-branding-logo-current', 'edit-branding-logo-remove');
     setupBrandingUpload('edit-branding-bg-file', 'bg_image', 'bg-image', 'edit-branding-bg-current', 'edit-branding-bg-remove');
     setupTabsAndDebug();
