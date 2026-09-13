@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Zertifikate: Die Seite zeigt jetzt den echten Stand aus Caddys Ablage und Log: gültig bis, Aussteller, letzter Fehler (verständlich und im Original), Versuche und nächster Versuch, dazu Kacheln für gültige, ablaufende, fehlgeschlagene und pausierte Zertifikate. „Prüfen“ öffnet die DNS-Vorprüfung, „Erneut versuchen“ startet den Antrag neu. Fehlt die ACME-Kontaktadresse, weist eine Leiste darauf hin.
+- Vorprüfung vor dem ersten Zertifikatsantrag: Für jeden neuen öffentlichen Hostnamen prüft GateControl A-, AAAA- und CAA-Records gegen die IPv4- **und** IPv6-Adresse des Servers. Ein AAAA-Record, der woanders hinzeigt, war bisher unsichtbar und führte zu Fehlversuchen bis zur Sperre bei Let's Encrypt (das bevorzugt IPv6). Scheitert die Prüfung, wird der Host trotzdem angelegt, aber pausiert: kein Antrag, Seite über HTTP erreichbar, Grund in der Oberfläche.
+- Versuchsbegrenzung: Caddys TLS-Log wird ausgewertet. Nach der eingestellten Zahl von Fehlversuchen (Einstellungen → Zertifikatsversuche, Standard 3, 0 = nie) wird der Host pausiert, bevor Let's Encrypt sperrt. „Erneut versuchen“ läuft erst nach bestandener Vorprüfung.
+- Domain-Prüfung in den Einstellungen ist jetzt streng (alle A- und AAAA-Records müssen auf diesen Server zeigen, CAA darf Let's Encrypt nicht ausschließen) und zeigt Grund, Records und Server-Adressen. Neu: optionale Überschreibung der Server-IPv6.
+- Zonen-Seite und Domain-Dialog markieren Hosts mit Zertifikatsproblemen und öffnen die Details mit „Erneut versuchen“.
+- LAN-Erkennung im Domain-Dialog: „Aus LAN-Erkennung übernehmen“ in der Karte „Neuer Host“ listet die vom Gateway gefundenen Geräte, startet auf Wunsch einen Scan und übernimmt IP, Hostnamen und Port als ersten Eintrag.
+- Caddy bekommt jetzt auch ohne ACME-Kontaktadresse einen `tls`-Block (interner Aussteller für Portal-Hosts, ACME für öffentliche); die Adresse wird ergänzt, sobald sie gesetzt ist.
+- Neue API: `GET /api/v1/tls/status`, `GET /api/v1/tls/preflight/:host`, `POST /api/v1/tls/:host/retry`, `PUT /api/v1/settings/tls`; SSE-Ereignis `tls`. `GET /api/v1/zones` liefert je HTTPS-Eintrag den Zertifikatsstatus.
+
+---
+
 ## [1.119.0] — 2026-09-13
 
 ### Features

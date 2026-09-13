@@ -1,6 +1,6 @@
 # TLS-Guard: DNS-Vorprüfung, Zertifikatsstatus, Versuchsbegrenzung
 
-Status: in Umsetzung (Branch `feat/tls-guard`). Verbindliche Schnittstelle zwischen
+Status: umgesetzt (Branch `feat/tls-guard`); Abweichungen unter „Stand nach der Umsetzung“. Verbindliche Schnittstelle zwischen
 Backend (`tlsGuard`, `domains`, `caddyConfig`), Oberfläche (Zertifikatsseite,
 Zonen-Seite, Domain-Dialog, Einstellungen) und der LAN-Erkennung im
 Domain-Dialog. Wer abweicht, ändert zuerst dieses Dokument.
@@ -281,3 +281,19 @@ not_after, days_left }` und je Host `host.tls_problem: boolean` (ein Eintrag
 `dns_check.<code>` und `dns_check.*`, `settings.tls.*`, `zones.discovery.*`.
 Blöcke: `tls.`/`dns_check.`/`settings.tls.` am Dateiende; `zones.discovery.`
 direkt nach der Zeile mit `"host.create"`.
+
+## Stand nach der Umsetzung
+
+- `activity.log('tls_paused', …)` nutzt die Schwere `warning` (Vokabular des Repos).
+- `entry.tls` hängt auch an SNI-L4-Einträgen; reine L4-Einträge haben kein `tls`.
+- Eine bestandene Vorprüfung hebt eine Pause mit Grund `preflight` auf (Zustand `pending`).
+- Inventur: Eine `preflight`-Pause, die jünger ist als `notBefore` des Zertifikats, bleibt bestehen; ein pausierter Host mit neuerem Zertifikat wird freigegeben und synchronisiert.
+- Der Watcher merkt sich `{file, ino, offset, head}` in der Einstellung `tls.watch_state`, damit ein Neustart Zeilen weder doppelt liest noch verliert.
+- Server-IPv6: bevorzugt die globale Adresse mit der kürzesten Interface-Kennung (Node kennt das Temporär-Flag nicht). Antworten für `GC_WG_HOST` müssen öffentlich sein (Loopback, privat, ULA, CGNAT werden verworfen), weil der Host-Resolver `127.0.1.1` für den eigenen Namen liefert.
+- `server.public_ipv6` wird über `PUT /settings/domains/server-ip` mit `{ ip?, ipv6? }` gesetzt (leerer String löscht). Eine IPv6 in `server.public_ip` gilt als v6-Überschreibung.
+- Testumgebung: Ohne injizierten Resolver (`domains._setResolverForTest`) oder `tlsGuard._setEnabledForTest(true)` wird die Vorprüfung übersprungen.
+- Zusätzlich: `GET /settings/tls`; `listStatus()` führt auch den Management-Host und einen öffentlichen Portal-Host (ohne `route_id`).
+- Antworten von `POST /routes`, `PUT /routes/:id`, `POST /domains/:id/hosts`, `PUT /hosts/:id`, `POST /hosts/:id/entries` enthalten `tls: { state, code, detail }` nur, wenn ein Hostname vorgeprüft wurde.
+- Zertifikatsseite: Kacheln aus `summary`; „Gültig“ enthält ablaufende Zertifikate, „Probleme“ = pausiert + fehlgeschlagen + ablaufend. Link zur Zone: `/routes?domain=<id>&host=<id>`.
+- LAN-Erkennung: Pool-Mitglieder über `GET /api/v1/gateway-pools/:id/members`; die Lizenz (403) ist erst beim ersten Aufruf bekannt und wird im Dialog gemeldet. Übernehmen löscht eine gewählte Vorlage; ist L4 für die Zone nicht erlaubt, wird aus einem Nicht-HTTP-Port ein HTTPS-Eintrag.
+- `tls-ui.js` wird auch auf der Einstellungsseite geladen (Texte für `dns_check` und die Record-Anzeige).
