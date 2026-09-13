@@ -410,3 +410,98 @@
     zoneKey, gatewayChoices, smbEntries, previewFqdn, validSubdomain, validIPv4, validPort,
   };
 });
+
+// ─── LAN discovery helpers (docs/feature-tls-guard.md, "LAN-Erkennung im
+// Domain-Dialog"). Pure functions, merged into the export above so the
+// browser (window.GCZonesView) and node:test see the same object.
+(function (root) {
+  const V = (typeof module !== 'undefined' && module.exports) ? module.exports : root.GCZonesView;
+  if (!V || V.classifyDiscoveredPort) return;
+
+  // Ports that get an HTTPS entry; everything else becomes TCP.
+  const DISCOVERY_HTTP_PORTS = [80, 443, 8080, 8443, 8000, 8081, 3000, 5000, 8096, 32400, 9000, 8123, 631];
+  const DISCOVERY_BACKEND_HTTPS_PORTS = [443, 8443];
+
+  // Subdomain suggestion from an mDNS/NetBIOS hostname: drop `.local`, keep
+  // the first label, lowercase, collapse everything outside [a-z0-9] into a
+  // single hyphen, trim hyphens. '' when nothing usable is left.
+  function suggestSubdomain(hostname) {
+    let s = hostname == null ? '' : String(hostname).trim().toLowerCase();
+    s = s.replace(/\.local\.?$/, '');
+    s = s.split('.')[0] || '';
+    s = s.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return s.length > 63 ? s.slice(0, 63).replace(/-+$/g, '') : s;
+  }
+
+  function validDiscoveredPort(p) {
+    const n = Number(p);
+    return Number.isInteger(n) && n >= 1 && n <= 65535;
+  }
+
+  // → { type: 'http', target, bhttps } | { type: 'tcp', target, listen }
+  // Listen-port suggestion for TCP: same value as the target port (the
+  // server answers a conflict with a suggested alternative on submit).
+  function classifyDiscoveredPort(port) {
+    const n = Number(port);
+    if (!validDiscoveredPort(n)) return null;
+    if (DISCOVERY_HTTP_PORTS.indexOf(n) !== -1) {
+      return { type: 'http', target: n, bhttps: DISCOVERY_BACKEND_HTTPS_PORTS.indexOf(n) !== -1 };
+    }
+    return { type: 'tcp', target: n, listen: n };
+  }
+
+  // Draft for the new-host entry fields (nh.type/target/listen/bhttps).
+  // With L4 not allowed for the zone, non-HTTP ports fall back to an HTTPS
+  // entry so the disabled TCP option is never selected.
+  function entryDraftFromPort(port, l4Allowed) {
+    const c = classifyDiscoveredPort(port);
+    if (!c) return null;
+    if (c.type === 'tcp' && l4Allowed === false) return { type: 'http', target: String(c.target), listen: '', bhttps: false };
+    return c.type === 'http'
+      ? { type: 'http', target: String(c.target), listen: '', bhttps: !!c.bhttps }
+      : { type: 'tcp', target: String(c.target), listen: String(c.listen), bhttps: false };
+  }
+
+  // Port numbers of a discovered device, unique, ascending, invalid dropped.
+  function devicePorts(dev) {
+    const seen = {};
+    return ((dev && dev.ports) || [])
+      .map((p) => (p && typeof p === 'object' ? p.port : p))
+      .filter((p) => validDiscoveredPort(p) && !seen[p] && (seen[p] = true))
+      .map(Number)
+      .sort((a, b) => a - b);
+  }
+
+  function ipSortKey(ip) {
+    const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(String(ip || ''));
+    return m ? m.slice(1).map((n) => String(n).padStart(3, '0')).join('.') : '999.' + String(ip || '');
+  }
+
+  // Text filter over hostname/IP (case-insensitive substring), sorted by IP.
+  function filterDiscovered(devices, q) {
+    const needle = (q == null ? '' : String(q)).trim().toLowerCase();
+    return (devices || [])
+      .filter((d) => d && (d.ip || d.hostname))
+      .filter((d) => !needle || String(d.hostname || '').toLowerCase().includes(needle) || String(d.ip || '').toLowerCase().includes(needle))
+      .slice()
+      .sort((a, b) => (ipSortKey(a.ip) < ipSortKey(b.ip) ? -1 : ipSortKey(a.ip) > ipSortKey(b.ip) ? 1 : 0));
+  }
+
+  // Whole minutes since `updatedAt` (ms epoch); null when unknown.
+  function discoveryAgeMinutes(updatedAt, now) {
+    const ts = Number(updatedAt);
+    if (!ts) return null;
+    return Math.max(0, Math.round(((now == null ? Date.now() : now) - ts) / 60000));
+  }
+
+  // Gateway capability/enabled state from GET /api/v1/gateways rows.
+  function discoveryStateOf(gateway) {
+    const tel = (gateway && gateway.health && gateway.health.telemetry) || {};
+    return { capable: tel.lan_discovery === true, enabled: !!(gateway && gateway.discovery && gateway.discovery.enabled) };
+  }
+
+  Object.assign(V, {
+    DISCOVERY_HTTP_PORTS, suggestSubdomain, classifyDiscoveredPort, entryDraftFromPort, devicePorts,
+    filterDiscovered, discoveryAgeMinutes, discoveryStateOf,
+  });
+})(typeof self !== 'undefined' ? self : this);
