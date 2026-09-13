@@ -1481,6 +1481,7 @@
     renderHeadersList('edit', 'response', editHeadersResponse);
 
     setToggle('edit-route-monitoring', route.monitoring_enabled);
+    populateHsts(route);
 
     // Debug
     if (byId('edit-route-debug')) {
@@ -1544,6 +1545,120 @@
     renderAclPeerChecklist('edit', (detail && detail.acl_peers) || [], state.peers);
   }
 
+  // ═══ HSTS (docs/feature-hsts.md, Tab Sicherheit) ═══════════════════════════
+  // Fields: #edit-route-hsts (toggle), #edit-route-hsts-max-age,
+  // #edit-route-hsts-subdomains, #edit-route-hsts-preload, #edit-hsts-hint.
+  // Greyed out while #edit-route-https is off; preload only with
+  // includeSubDomains and max-age ≥ 1 year, confirmed via GCHstsUI when present.
+
+  var HSTS_PRELOAD_MIN_AGE = 31536000;
+  var HSTS_ERROR_CODES = { HSTS_PRELOAD_REQUIREMENTS: 'preloadRequirements', HSTS_REQUIRES_HTTPS: 'requiresHttps', HSTS_MAX_AGE_INVALID: 'maxAgeInvalid' };
+
+  function hstsText(name, key, fallback) {
+    var block = byId('edit-hsts-block');
+    return (block && block.dataset[name]) || T(key, fallback);
+  }
+  // German message for a contract error code, null for other codes.
+  function hstsErrorText(code) {
+    var k = code && HSTS_ERROR_CODES[String(code).toUpperCase()];
+    if (!k) return null;
+    return hstsText('err' + k.charAt(0).toUpperCase() + k.slice(1), 'hsts.err.' + String(code).toUpperCase().slice(5).toLowerCase(), String(code));
+  }
+
+  function populateHsts(route) {
+    if (!byId('edit-hsts-block')) return;
+    var on = !!(route.hsts_enabled === 1 || route.hsts_enabled === true || route.hsts_enabled === '1');
+    setToggle('edit-route-hsts', on);
+    var sel = byId('edit-route-hsts-max-age');
+    if (sel) {
+      var age = parseInt(route.hsts_max_age, 10);
+      if (!isFinite(age) || age <= 0) age = HSTS_PRELOAD_MIN_AGE;
+      var found = Array.prototype.some.call(sel.options, function (o) { return o.value === String(age); });
+      if (!found) {
+        var opt = document.createElement('option');
+        opt.value = String(age);
+        opt.textContent = age + ' s';
+        sel.appendChild(opt);
+      }
+      sel.value = String(age);
+    }
+    var sub = byId('edit-route-hsts-subdomains');
+    var pre = byId('edit-route-hsts-preload');
+    if (sub) sub.checked = !!(route.hsts_subdomains === 1 || route.hsts_subdomains === true || route.hsts_subdomains === '1');
+    if (pre) pre.checked = !!(route.hsts_preload === 1 || route.hsts_preload === true || route.hsts_preload === '1');
+    syncHstsBlock();
+  }
+
+  function hstsPreloadAllowed() {
+    var sel = byId('edit-route-hsts-max-age');
+    var sub = byId('edit-route-hsts-subdomains');
+    return !!(sub && sub.checked && sel && parseInt(sel.value, 10) >= HSTS_PRELOAD_MIN_AGE);
+  }
+
+  function syncHstsBlock() {
+    var block = byId('edit-hsts-block');
+    if (!block) return;
+    var httpsOn = isOn('edit-route-https');
+    var hstsOn = isOn('edit-route-hsts');
+    block.classList.toggle('hs-locked', !httpsOn);
+    var toggle = byId('edit-route-hsts');
+    if (toggle) toggle.setAttribute('aria-disabled', httpsOn ? 'false' : 'true');
+    var fields = byId('edit-hsts-fields');
+    if (fields) fields.classList.toggle('hs-fields-off', !hstsOn);
+    var sel = byId('edit-route-hsts-max-age');
+    var sub = byId('edit-route-hsts-subdomains');
+    var pre = byId('edit-route-hsts-preload');
+    var active = httpsOn && hstsOn;
+    if (sel) sel.disabled = !active;
+    if (sub) sub.disabled = !active;
+    var allowed = active && hstsPreloadAllowed();
+    if (pre) {
+      if (!allowed) pre.checked = false;
+      pre.disabled = !allowed;
+    }
+    var hint = byId('edit-hsts-hint');
+    if (hint) {
+      if (!httpsOn) hint.textContent = hstsText('hintHttps', 'hsts.hint_https', 'HSTS requires "Force HTTPS".');
+      else hint.textContent = hstsText('hintPreload', 'hsts.preload_hint', 'Preload requires includeSubDomains and max-age >= 1 year.');
+    }
+  }
+
+  function readHstsFields() {
+    var out = {};
+    if (!byId('edit-hsts-block')) return out;
+    var httpsOn = isOn('edit-route-https');
+    out.hsts_enabled = httpsOn && isOn('edit-route-hsts');
+    out.hsts_max_age = parseInt(val('edit-route-hsts-max-age', String(HSTS_PRELOAD_MIN_AGE)), 10) || HSTS_PRELOAD_MIN_AGE;
+    var sub = byId('edit-route-hsts-subdomains');
+    var pre = byId('edit-route-hsts-preload');
+    out.hsts_subdomains = !!(sub && sub.checked);
+    out.hsts_preload = !!(pre && pre.checked && out.hsts_subdomains && out.hsts_max_age >= HSTS_PRELOAD_MIN_AGE);
+    return out;
+  }
+
+  function setupHstsControls() {
+    if (!byId('edit-hsts-block')) return;
+    var https = byId('edit-route-https');
+    // app.js toggles the class on click before this listener runs.
+    if (https) https.addEventListener('click', function () { syncHstsBlock(); });
+    var toggle = byId('edit-route-hsts');
+    if (toggle) toggle.addEventListener('click', function () { syncHstsBlock(); });
+    var sel = byId('edit-route-hsts-max-age');
+    var sub = byId('edit-route-hsts-subdomains');
+    var pre = byId('edit-route-hsts-preload');
+    if (sel) sel.addEventListener('change', syncHstsBlock);
+    if (sub) sub.addEventListener('change', syncHstsBlock);
+    if (pre) {
+      pre.addEventListener('change', function () {
+        if (!pre.checked) return;
+        var ask = (window.GCHstsUI && typeof window.GCHstsUI.confirmPreload === 'function')
+          ? window.GCHstsUI.confirmPreload()
+          : Promise.resolve(window.confirm(hstsText('preloadConfirm', 'hsts.preload_warning', 'Preload is practically irreversible. Enable it?')));
+        ask.then(function (ok) { if (!ok) { pre.checked = false; syncHstsBlock(); } });
+      });
+    }
+  }
+
   // ═══ Headers + branding ════════════════════════════════════════════════════
 
   function renderHeadersList(prefix, type, arr) {
@@ -1592,6 +1707,9 @@
       headersPreset.addEventListener('change', function () {
         var val = this.value;
         if (!val) return;
+        // The security preset never adds Strict-Transport-Security — the HSTS
+        // switch on the security tab owns that header (docs/feature-hsts.md).
+        showIf('edit-headers-hsts-hint', val === 'security');
         if (val === 'cors') {
           editHeadersResponse.push({ name: 'Access-Control-Allow-Origin', value: '*' });
           editHeadersResponse.push({ name: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' });
@@ -2304,6 +2422,7 @@
         mirror_enabled: isOn('edit-route-mirror') ? 1 : 0,
         mirror_targets: editMirrorTargets.length > 0 ? editMirrorTargets : null,
       };
+      Object.assign(payload, readHstsFields());
       var blockAction = val('edit-route-block-action', 'inherit');
       payload.external_block_action = blockAction;
       if (blockAction === 'custom') payload.external_block_body = val('edit-route-block-body', '');
@@ -2351,6 +2470,11 @@
       }
       var data = await window.api.put('/api/routes/' + id, payload);
       if (!data.ok) {
+        var hstsErr = hstsErrorText(data.code);
+        if (hstsErr) {
+          window.showError('edit-route-error', hstsErr);
+          return;
+        }
         if (data.fields) {
           var ft = byId('edit-route-domain-freetext');
           window.showFieldErrors(data.fields, {
@@ -2417,6 +2541,7 @@
     setupGeneralControls();
     setupFeatureControls();
     setupHeaderControls();
+    setupHstsControls();
     setupBrandingUpload('edit-branding-logo-file', 'logo', 'logo', 'edit-branding-logo-current', 'edit-branding-logo-remove');
     setupBrandingUpload('edit-branding-bg-file', 'bg_image', 'bg-image', 'edit-branding-bg-current', 'edit-branding-bg-remove');
     setupTabsAndDebug();

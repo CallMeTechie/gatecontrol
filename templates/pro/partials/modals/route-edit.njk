@@ -393,6 +393,33 @@
 
       {# ═══ TAB: Security ══════════════════════════════ #}
       <div class="edit-route-panel" data-panel="security" style="display:none">
+        {# HSTS per host (docs/feature-hsts.md). Populated/read by entry-editor.js;
+           greyed out while "HTTPS erzwingen" is off. Texts as data attributes
+           like data-load-failed on the modal. #}
+        <div id="edit-hsts-block" class="hs-editor-block" style="margin-bottom:14px"
+             data-hint-https="{{ t('hsts.hint_https') }}" data-hint-preload="{{ t('hsts.preload_hint') }}"
+             data-preload-confirm="{{ t('hsts.preload_warning') }}"
+             data-err-preload-requirements="{{ t('hsts.err.preload_requirements') }}" data-err-requires-https="{{ t('hsts.err.requires_https') }}" data-err-max-age-invalid="{{ t('hsts.err.max_age_invalid') }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ t('hsts.title') }}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('hsts.editor_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-hsts"></div>
+          </div>
+          <div id="edit-hsts-fields" class="hs-editor-fields">
+            <label class="hs-editor-f" for="edit-route-hsts-max-age"><span class="hs-f-label">{{ t('hsts.age_label') }}</span>
+              <select class="form-select" id="edit-route-hsts-max-age">
+                <option value="15552000">{{ t('hsts.age_6m') }}</option>
+                <option value="31536000" selected>{{ t('hsts.age_1y') }}</option>
+                <option value="63072000">{{ t('hsts.age_2y') }}</option>
+              </select>
+            </label>
+            <label class="hs-check"><input type="checkbox" id="edit-route-hsts-subdomains"> {{ t('hsts.include_subdomains') }}</label>
+            <label class="hs-check" title="{{ t('hsts.preload_hint') }}"><input type="checkbox" id="edit-route-hsts-preload"> {{ t('hsts.preload') }}</label>
+          </div>
+          <div id="edit-hsts-hint" class="hs-editor-hint" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+        </div>
         {% if license.features.peer_acl %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
@@ -658,6 +685,7 @@
             </select>
           </div>
         </div>
+        <div id="edit-headers-hsts-hint" class="hs-editor-hint hs-preset-hint" style="display:none;margin-bottom:12px;font-size:11px;color:var(--text-2)">{{ t('hsts.preset_hint') }}</div>
         <div style="margin-bottom:16px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.request_headers') or 'Request Headers' }}</label>
           <div id="edit-headers-request-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
