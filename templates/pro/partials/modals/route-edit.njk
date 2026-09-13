@@ -167,6 +167,30 @@
             </div>
             <div class="toggle" id="edit-route-backend-https"></div>
           </div>
+          {# Backend certificate check (docs/feature-security-options.md §B), under
+             "Backend HTTPS". Filled/read by entry-editor.js; greyed out while
+             Backend HTTPS is off and for gateway/pool targets (the gateway
+             dials the target, the fields are stored but not applied). #}
+          <div id="edit-backend-tls-block" class="so-editor-block so-backend-tls"
+               data-hint-gateway="{{ t('backend_tls.hint_gateway') }}" data-hint-https="{{ t('backend_tls.hint_https') }}"
+               data-err-backend-ca-invalid="{{ t('backend_tls.err.ca_invalid') }}" data-err-backend-server-name-invalid="{{ t('backend_tls.err.server_name_invalid') }}">
+            <label class="so-check so-check-row" for="edit-route-backend-tls-verify">
+              <input type="checkbox" id="edit-route-backend-tls-verify">
+              <span class="so-check-text"><span class="so-check-title">{{ t('backend_tls.verify') }}</span><span class="so-check-desc">{{ t('backend_tls.verify_desc') }}</span></span>
+            </label>
+            <div id="edit-backend-tls-fields" class="so-editor-fields">
+              <label class="so-editor-f" for="edit-route-backend-tls-server-name"><span class="so-f-label">{{ t('backend_tls.server_name') }}</span>
+                <input type="text" class="form-input so-mono" id="edit-route-backend-tls-server-name" maxlength="253" placeholder="{{ t('backend_tls.server_name_ph') }}" autocomplete="off" spellcheck="false">
+                <small class="form-hint">{{ t('backend_tls.server_name_hint') }}</small>
+              </label>
+              <label class="so-editor-f" for="edit-route-backend-tls-ca"><span class="so-f-label">{{ t('backend_tls.ca') }}</span>
+                <textarea class="form-input so-pem" id="edit-route-backend-tls-ca" rows="4" spellcheck="false" autocomplete="off" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                <small class="form-hint">{{ t('backend_tls.ca_hint') }}</small>
+              </label>
+            </div>
+            <div id="edit-backend-tls-hint" class="so-editor-hint so-hint-warn"></div>
+            <div id="edit-backend-tls-error" class="so-editor-error" role="alert" hidden></div>
+          </div>
           {% if license.features.compression %}
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
             <div>
@@ -371,6 +395,31 @@
           </div>
         </div>
 
+        {# Client certificates (docs/feature-security-options.md §F) — part of
+           route_auth (Pro). Filled/read by entry-editor.js; greyed out while
+           "HTTPS erzwingen" is off; locked (and never sent) without the license. #}
+        <div id="edit-mtls-block" class="so-editor-block so-mtls{% if not license.features.route_auth %} feature-locked so-license-locked{% endif %}"
+             data-licensed="{{ '1' if license.features.route_auth else '0' }}"{% if not license.features.route_auth %} title="{{ t('license.requires_pro') }}"{% endif %}
+             data-hint-https="{{ t('mtls.hint_https') }}" data-err-ca-required="{{ t('mtls.err.ca_required') }}" data-err-license="{{ t('mtls.err.license') }}"
+             data-err-mtls-ca-invalid="{{ t('mtls.err.ca_invalid') }}" data-err-mtls-requires-https="{{ t('mtls.err.requires_https') }}" data-err-mtls-mode-invalid="{{ t('mtls.err.mode_invalid') }}">
+          <div class="so-switch-row">
+            <div>
+              <div class="so-switch-title">{{ t('mtls.title') }}{% if not license.features.route_auth %} <span class="lock-icon"></span>{% endif %}</div>
+              <div class="so-switch-desc">{{ t('mtls.desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-mtls"{% if not license.features.route_auth %} data-managed="true" aria-disabled="true" tabindex="-1"{% endif %}></div>
+          </div>
+          <div id="edit-mtls-fields" class="so-editor-fields">
+            <label class="so-editor-f" for="edit-route-mtls-ca"><span class="so-f-label">{{ t('mtls.ca') }}</span>
+              <textarea class="form-input so-pem" id="edit-route-mtls-ca" rows="5" spellcheck="false" autocomplete="off" placeholder="{{ t('mtls.ca_ph') }}"{% if not license.features.route_auth %} disabled{% endif %}></textarea>
+            </label>
+          </div>
+          <div class="so-editor-hint so-mtls-hint">{{ t('mtls.hint') }}</div>
+          <div id="edit-mtls-hint" class="so-editor-hint so-hint-warn"></div>
+          {% if not license.features.route_auth %}<div class="so-editor-hint so-locked-hint">{{ t('mtls.locked') }}</div>{% endif %}
+          <div id="edit-mtls-error" class="so-editor-error" role="alert" hidden></div>
+        </div>
+
         {% if license.features.share_links %}
         <div class="form-section" id="share-links-section" data-route-id="">
           <label class="form-label">{{ t('route_auth.share_links_title') }}</label>
@@ -419,6 +468,17 @@
             <label class="hs-check" title="{{ t('hsts.preload_hint') }}"><input type="checkbox" id="edit-route-hsts-preload"> {{ t('hsts.preload') }}</label>
           </div>
           <div id="edit-hsts-hint" class="hs-editor-hint" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+        </div>
+        {# Request body limit (docs/feature-security-options.md §D). #}
+        <div id="edit-body-limit-block" class="so-editor-block so-body-limit" data-err-max-body-invalid="{{ t('body_limit.err.invalid') }}">
+          <div class="so-switch-row">
+            <label for="edit-route-max-body-mb">
+              <span class="so-switch-title">{{ t('body_limit.label') }}</span>
+              <span class="so-switch-desc">{{ t('body_limit.hint') }}</span>
+            </label>
+            <input type="number" class="form-input so-num" id="edit-route-max-body-mb" min="0" max="4096" step="1" placeholder="0" inputmode="numeric">
+          </div>
+          <div id="edit-body-limit-error" class="so-editor-error" role="alert" hidden></div>
         </div>
         {% if license.features.peer_acl %}
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
@@ -682,10 +742,12 @@
               <option value="">{{ t('headers.preset') or 'Presets' }}...</option>
               <option value="cors">{{ t('headers.preset_cors') or 'CORS Headers' }}</option>
               <option value="security">{{ t('headers.preset_security') or 'Security Headers' }}</option>
+              <option value="csp">{{ t('headers.preset_csp') }}</option>
             </select>
           </div>
         </div>
         <div id="edit-headers-hsts-hint" class="hs-editor-hint hs-preset-hint" style="display:none;margin-bottom:12px;font-size:11px;color:var(--text-2)">{{ t('hsts.preset_hint') }}</div>
+        <div id="edit-headers-csp-warning" class="so-warn so-csp-warning" role="alert" hidden>{{ t('headers.preset_csp_warning') }}</div>
         <div style="margin-bottom:16px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.request_headers') or 'Request Headers' }}</label>
           <div id="edit-headers-request-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>

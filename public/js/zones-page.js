@@ -265,6 +265,14 @@
     return card;
   }
 
+  // Host aliases (secopt-ui.js, security options §A): '+ www' after the name.
+  function aliasNote(host) {
+    const SO = window.GCSecOptUI;
+    const text = SO ? SO.aliasSummary(host) : '';
+    if (!text) return null;
+    return el('span', { class: 'so-alias-more', title: SO.hostAliases(host).fqdns.join(', '), text });
+  }
+
   function renderHostRow(host, zone) {
     const on = V.hostEnabled(host);
     const health = V.hostHealth(host);
@@ -279,6 +287,7 @@
       host.template === 'printer' ? icon('printer', 12) : null,
       el('span', { class: 'zn-name', text: V.hostLabel(host) }),
       apex && host.fqdn ? el('span', { class: 'zn-fqdn', text: host.fqdn }) : null,
+      aliasNote(host),
       host.gateway_override ? UI.tag('amber', t('host.override_tag'), false, 'zn-tag-sm') : null,
     ]);
     const desc = [];

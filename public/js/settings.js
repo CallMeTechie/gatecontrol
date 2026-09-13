@@ -2129,6 +2129,10 @@
       wrap.appendChild(box);
       cell.appendChild(wrap);
     }
+    // CAA recommendation (docs/feature-security-options.md §G): the record to
+    // copy when the domain has none, "CAA schützt die Domain" when it allows.
+    var caa = check && TG && TG.caaEl ? TG.caaEl(check, { compact: true }) : null;
+    if (caa) cell.appendChild(caa);
   }
 
   function renderRows(domains) {

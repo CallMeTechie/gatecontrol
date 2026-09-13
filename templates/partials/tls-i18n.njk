@@ -3,7 +3,9 @@
   scripts, exposed as JSON island #tls-i18n and merged into GC.t by tls-ui.js
   (docs/feature-tls-guard.md, "Sprachschlüssel"). Shared by all three themes;
   include it inside the content block of certificates.njk, zones.njk and
-  settings.njk. tests/tls_ui_static.test.js checks the key list.
+  settings.njk. tests/tls_ui_static.test.js checks the key list; the caa.*
+  and alias.of strings serve the CAA recommendation and the alias rows of the
+  certificates page (docs/feature-security-options.md §A/§G).
 #}
 {%- set tlsI18nKeys = [
   'common.cancel', 'common.close', 'common.loading', 'common.error', 'common.refresh',
@@ -34,6 +36,7 @@
   'dns_check.unknown_hint', 'dns_check.records_title', 'dns_check.server_title', 'dns_check.detail',
   'settings.tls.max_attempts', 'settings.tls.max_attempts_hint', 'settings.tls.max_attempts_invalid',
   'settings.tls.backend_missing', 'settings.tls.server_ipv6', 'settings.tls.server_ipv6_override',
-  'settings.tls.server_ipv6_hint', 'settings.tls.records_show', 'settings.tls.records_hide'
+  'settings.tls.server_ipv6_hint', 'settings.tls.records_show', 'settings.tls.records_hide',
+  'caa.none', 'caa.none_hint', 'caa.allows', 'caa.copy', 'caa.copy_hint', 'caa.copied', 'caa.copy_failed', 'alias.of'
 ] -%}
 <script type="application/json" id="tls-i18n" nonce="{{ cspNonce }}">{ {% for k in tlsI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>

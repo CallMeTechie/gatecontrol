@@ -856,3 +856,15 @@ input[type=date]:focus, select:focus {
 .hs-check input { accent-color: var(--teal); }
 .hs-f-label, .hs-preview-label, .hs-hint .hs-ic { color: var(--muted); }
 .tag.hs-entry-tag.hs-off { color: var(--muted); }
+
+/* ─── Security options (so-) ─── */
+/* Aurora overrides for the security-option controls (docs/feature-security-
+   options.md). The base so- block comes from pro.css (loaded first); here
+   only surfaces and accents. */
+.so-switch-row, .so-alias-row, .so-editor-block.so-backend-tls, .so-caa-record, textarea.so-pem { background: var(--chip); border-color: var(--line); border-radius: var(--r-sm); }
+.so-warn { background: var(--amber-bg); border-color: var(--amber-bd); border-radius: var(--r-sm); }
+.so-caa-none { background: transparent; border-color: var(--line); border-radius: var(--r-sm); }
+.so-caa-ok { background: var(--green-bg, var(--green-lt)); border-radius: var(--r-sm); }
+.so-check input, .so-radio input, .so-www-check input { accent-color: var(--teal); }
+.so-f-label, .so-alias-count, .so-alias-more, .tag.so-alias-tag, .so-err-detail, .so-hint .so-ic { color: var(--muted); }
+.tag.so-alias-tag { border-color: var(--line); }

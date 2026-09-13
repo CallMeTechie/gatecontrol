@@ -143,11 +143,16 @@ describe('HSTS: i18n', () => {
   });
 
   it('the hsts.* block is one contiguous tail of both files (contract: "am Ende")', () => {
+    // Later feature blocks that their contracts also put at the file end
+    // (docs/feature-security-options.md) may follow the HSTS block.
+    const LATER_BLOCKS = /^(alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.)/;
     for (const [name, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
       const first = keys.findIndex((k) => k.startsWith('hsts.'));
       assert.ok(first > 0, `${name}: block present`);
-      for (let i = first; i < keys.length; i++) assert.ok(keys[i].startsWith('hsts.'), `${name}: ${keys[i]} inside the tail block`);
+      let i = first;
+      for (; i < keys.length && keys[i].startsWith('hsts.'); i++) { /* HSTS block */ }
+      for (; i < keys.length; i++) assert.ok(LATER_BLOCKS.test(keys[i]), `${name}: ${keys[i]} after the HSTS block`);
       assert.ok(keys[first - 1].startsWith('settings.tls.'), `${name}: appended after the TLS guard block`);
     }
   });
@@ -175,7 +180,9 @@ describe('HSTS: styles', () => {
       assert.doesNotMatch(css.slice(0, at), /\.hs-/, `${f}: no hs- rules before the section`);
       const tg = css.indexOf('/* ─── TLS guard (tg-) ─── */');
       assert.ok(tg > 0 && tg < at, `${f}: appended after the tg- section`);
-      assert.equal(css.indexOf('/* ─── ', at + 1), -1, `${f}: hs- is the last section`);
+      // Only the security-options section (docs/feature-security-options.md) may follow.
+      const next = css.indexOf('/* ─── ', at + 1);
+      assert.ok(next === -1 || css.startsWith('/* ─── Security options (so-) ─── */', next), `${f}: hs- is the last section before so-`);
       // Every block before the marker is closed — an unclosed @media would
       // swallow the appended sections (happened with the zn-disc- block).
       const before = css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, '');
