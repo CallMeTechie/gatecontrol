@@ -1,5 +1,7 @@
 {% extends theme + "/layout.njk" %}
 
+{% block head %}<link rel="stylesheet" href="/css/two-factor.css?v={{ appVersion }}">{% endblock %}
+
 {% block content %}
 {% include "partials/tls-i18n.njk" %}
 

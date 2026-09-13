@@ -2320,34 +2320,3 @@ body.rdp-session-body {
   .tg-records { grid-template-columns: 1fr; }
   .tg-chips { margin-left: 0; }
 }
-
-/* ── Admin 2FA (docs/feature-admin-2fa.md) — profile card, users badge, settings toggle ── */
-.tf-card [hidden] { display: none !important; }
-.tf-body { display: flex; flex-direction: column; gap: 12px; }
-.tf-status { margin-left: auto; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-3); }
-.tf-status-on { color: var(--green); background: var(--green-lt); border-color: var(--green-bd, var(--green)); }
-.tf-hint { font-size: 12px; color: var(--text-3); line-height: 1.5; }
-.tf-mono { font-family: var(--font-mono); }
-.tf-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
-.tf-step { font-size: 13px; color: var(--text-1, var(--text-primary)); }
-.tf-banner { font-size: 12px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); line-height: 1.5; }
-.tf-banner-amber { background: var(--amber-lt); border-color: var(--amber-bd, var(--amber)); color: var(--amber); }
-.tf-panel { display: flex; flex-direction: column; gap: 12px; }
-.tf-qr { display: flex; justify-content: center; padding: 8px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); align-self: flex-start; }
-.tf-qr-img { display: block; width: 168px; height: 168px; image-rendering: pixelated; }
-.tf-secret-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tf-secret { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; padding: 4px 8px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); user-select: all; overflow-wrap: anywhere; }
-.tf-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tf-inline input { flex: 1 1 140px; min-width: 120px; }
-.tf-code-input { font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.3em; text-align: center; max-width: 160px; }
-.tf-btn-sm { font-size: 11px; padding: 4px 10px; }
-.tf-subform { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.tf-codes { columns: 2; column-gap: 18px; margin: 0; padding-left: 22px; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.06em; line-height: 1.9; }
-.tf-codes li { break-inside: avoid; }
-.tf-badge { display: inline-block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-3); vertical-align: middle; }
-.tf-badge-on { color: var(--green); background: var(--green-lt); border-color: var(--green-bd, var(--green)); }
-.tf-badge-off { color: var(--text-3); }
-td .tf-badge { margin-left: 6px; }
-.tf-user-row { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
-.tf-user-label { font-size: 13px; font-weight: 600; color: var(--text-1, var(--text-primary)); }
-@media (max-width: 600px) { .tf-codes { columns: 1; } }
