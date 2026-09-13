@@ -81,7 +81,7 @@ describe('HSTS: DOM hooks per theme', () => {
     assert.match(dm, /GCHstsUI\.defaultsControl\(zone, \{ onChanged: afterMutation \}\)/);
     assert.match(dm, /hsts \? ' hs-panel4' : ''/, 'four-field grid only with the control');
     assert.match(dm, /GCHstsUI\.entryTag\(e, \{ onChanged: afterMutation \}\)/);
-    assert.match(dm, /V\.entryChip\(e, \{ hsts: false \}\)/, 'no duplicate HSTS note in the entry line');
+    assert.match(dm, /V\.entryChip\(e, \{ hsts: false(, waf: false)? \}\)/, 'no duplicate HSTS note in the entry line');
     const tls = dm.indexOf('GCTlsUI.entryTag(e');
     const hs = dm.indexOf('GCHstsUI.entryTag(e');
     assert.ok(tls > 0 && hs > tls, 'HSTS tag after the TLS tag');
@@ -144,8 +144,8 @@ describe('HSTS: i18n', () => {
 
   it('the hsts.* block is one contiguous tail of both files (contract: "am Ende")', () => {
     // Later feature blocks that their contracts also put at the file end
-    // (docs/feature-security-options.md) may follow the HSTS block.
-    const LATER_BLOCKS = /^(alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.)/;
+    // (docs/feature-security-options.md, docs/feature-waf.md) may follow the HSTS block.
+    const LATER_BLOCKS = /^(alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.|waf\.|nav\.waf$)/;
     for (const [name, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
       const first = keys.findIndex((k) => k.startsWith('hsts.'));

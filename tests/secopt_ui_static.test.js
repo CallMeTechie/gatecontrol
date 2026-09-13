@@ -257,12 +257,16 @@ describe('security options: i18n', () => {
   });
 
   it('is ONE contiguous block at the end of both files, right after hsts.*', () => {
+    // The WAF block (docs/feature-waf.md: nav.waf + waf.*) may follow it.
+    const LATER_BLOCKS = /^(waf\.|nav\.waf$)/;
     for (const [name, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
       const first = keys.findIndex((k) => BLOCK_RE.test(k) && k !== 'headers.preset_cors');
       assert.ok(first > 0, `${name}: block present`);
       assert.ok(keys[first - 1].startsWith('hsts.'), `${name}: appended after the HSTS block (${keys[first - 1]})`);
-      for (let i = first; i < keys.length; i++) assert.ok(BLOCK_RE.test(keys[i]), `${name}: ${keys[i]} inside the tail block`);
+      let i = first;
+      for (; i < keys.length && BLOCK_RE.test(keys[i]); i++) { /* security options block */ }
+      for (; i < keys.length; i++) assert.ok(LATER_BLOCKS.test(keys[i]), `${name}: ${keys[i]} after the security options block`);
       assert.ok(keys.indexOf('headers.preset_security') >= first, `${name}: the updated preset label moved into the block`);
       assert.ok(keys.indexOf('headers.preset_cors') < first, `${name}: CORS label untouched`);
     }
@@ -308,7 +312,9 @@ describe('security options: styles and CSP', () => {
       assert.doesNotMatch(css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, ''), /\.so-[a-z]/, `${f}: no so- rules before the section`);
       const hs = css.indexOf('/* ─── HSTS (hs-) ─── */');
       assert.ok(hs > 0 && hs < at, `${f}: after the hs- section`);
-      assert.equal(css.indexOf('/* ─── ', at + 1), -1, `${f}: so- is the last section`);
+      // Only the WAF section (docs/feature-waf.md) may follow.
+      const next = css.indexOf('/* ─── ', at + 1);
+      assert.ok(next === -1 || css.startsWith('/* ─── WAF (wf-) ─── */', next), `${f}: so- is the last section before wf-`);
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced`);
     }
