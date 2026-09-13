@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.122.0] — 2026-09-13
 
 ### Features
 - HSTS pro Host: Im Domain-Dialog hat jeder HTTPS-Eintrag einen HSTS-Schalter mit Laufzeit (6 Monate, 1 Jahr, 2 Jahre), `includeSubDomains` und `preload`. Preload ist standardmäßig aus, verlangt `includeSubDomains` und mindestens ein Jahr und muss ausdrücklich bestätigt werden, weil es praktisch unumkehrbar ist. Pro Domain lässt sich ein HSTS-Standard für neue Hosts setzen und auf Wunsch auf alle bestehenden anwenden (ein Caddy-Reload). Der Eintrags-Editor hat denselben Block im Tab „Sicherheit“. Ein vom Backend gesendeter HSTS-Header wird bei aktivem Schalter ersetzt.
