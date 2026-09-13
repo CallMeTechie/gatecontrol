@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.121.0] — 2026-09-13
 
 ### Änderungen
 - Entfernt: die bisherige Routen-Liste („Alte Ansicht“, `/routes/legacy`) mit den Wizards „Neue Route anlegen“, „Service anlegen“ und „Drucker einrichten“. `/routes` zeigt immer die Domains-Ansicht; alles daraus geht dort im Domain-Dialog, die LAN-Erkennung inklusive.
