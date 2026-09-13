@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.123.0] — 2026-09-13
 
 ### Features
 - Alias-Namen pro Host: `www` (und bis zu neun weitere Namen) gehört jetzt zum Host statt als eigene Route. Wahlweise leitet der Alias per 308 auf den Hauptnamen um (Standard) oder liefert denselben Inhalt. Aliase bekommen eigene Zertifikate und laufen durch die DNS-Vorprüfung; ein Alias mit Problemen wird pausiert, ohne den Hauptnamen zu stören. Beim Anlegen eines Hosts für die Hauptdomain (`@`) ist „www-Alias anlegen“ vorausgewählt. Host-Menü → „Alias-Namen…“.
