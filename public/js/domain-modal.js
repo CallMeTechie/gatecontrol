@@ -134,7 +134,7 @@
   // ── Small building blocks shared by page + modal ──
   const PROTO_CLASS = { HTTPS: 'zn-proto-https', HTTP: 'zn-proto-http', TCP: 'zn-proto-tcp', UDP: 'zn-proto-udp' };
   function chipEl(entry) {
-    const c = V.entryChip(entry);
+    const c = V.entryChip(entry, { wafLabel: (state) => t(state === 'block' ? 'waf.chip_block' : 'waf.chip_detect') });
     return el('span', { class: 'zn-chip' + (entry.enabled ? '' : ' off'), title: entry.description || null }, [
       el('span', { class: 'zn-proto ' + PROTO_CLASS[c.proto], text: c.proto }),
       c.out ? el('span', { class: 'zn-chip-port', text: c.out }) : null,
@@ -642,7 +642,7 @@
   }
 
   function renderEntryLine(e, host, zone) {
-    const c = V.entryChip(e, { hsts: false }); // HSTS gets its own tag below
+    const c = V.entryChip(e, { hsts: false, waf: false }); // HSTS and WAF get their own tags below
     const opts = [];
     if (e.rdp_owned) opts.push(tag('purple', t('entry.rdp_tag'), false, 'zn-opt-tag'));
     opts.push(e.external_enabled ? tag('green', t('host.access_external'), false, 'zn-opt-tag') : tag('grey', t('host.access_internal'), false, 'zn-opt-tag'));
@@ -658,6 +658,10 @@
     if (hstsTag) opts.push(hstsTag);
     // Security options (secopt-ui.js): '≤ 50 MB' body limit and 'mTLS'.
     if (window.GCSecOptUI) opts.push(...window.GCSecOptUI.entryTags(e));
+    // Web Application Firewall (waf-ui.js): 'WAF' (block) / 'WAF · erkennt'
+    // (detect); opens the entry editor on the Security tab.
+    const wafTag = window.GCWafUI && window.GCWafUI.entryTag(e, { onOpen: () => editEntry(e, { tab: 'security', focus: 'edit-waf-block' }) });
+    if (wafTag) opts.push(wafTag);
 
     const target = el('div', { class: 'zn-tgt' }, [
       icon(e.target_kind === 'gateway' ? (e.target_pool_id != null ? 'pool' : 'gateway') : 'peer', 12),
@@ -1017,15 +1021,16 @@
     } catch (err) { toastError(err); } finally { busy(node, false); }
   }
 
-  function editEntry(e) {
+  // extra: { tab, focus } — start tab / block of the editor (WAF tag).
+  function editEntry(e, extra) {
     const ed = window.GCEntryEditor;
     if (!ed || typeof ed.open !== 'function') { toastError(t('entry.editor_missing')); return; }
     try {
-      ed.open(e.id, {
+      ed.open(e.id, Object.assign({
         lockTarget: true,
         onSaved: () => { afterMutation(); },
         onDeleted: () => { afterMutation(); },
-      });
+      }, extra || {}));
     } catch (err) { toastError(err); }
   }
 

@@ -97,12 +97,30 @@
     };
     if (e && e.backend_https) chip.note = 'Backend HTTPS';
     if (hstsActive(e) && !(opts && opts.hsts === false)) chip.note = chip.note ? chip.note + ' · HSTS' : 'HSTS';
+    // Web Application Firewall (docs/feature-waf.md): 'WAF' / 'WAF (erkennt)';
+    // opts.waf === false leaves it out (the domain dialog has its own tag),
+    // opts.wafLabel(state) supplies the translated text.
+    const waf = wafState(e);
+    if (waf && !(opts && opts.waf === false)) {
+      const label = opts && typeof opts.wafLabel === 'function' ? opts.wafLabel(waf) : (waf === 'block' ? 'WAF' : 'WAF (erkennt)');
+      chip.note = chip.note ? chip.note + ' · ' + label : label;
+    }
     return chip;
   }
 
   // entry.hsts = { enabled, … } from GET /zones; unknown shape → off.
   function hstsActive(e) {
     return !!(e && e.https_enabled && e.hsts && typeof e.hsts === 'object' && e.hsts.enabled === true);
+  }
+
+  // WAF state of an HTTP entry from GET /zones (entry.waf_enabled / waf_mode,
+  // or entry.waf = { enabled, mode }): null | 'detect' | 'block'.
+  function wafState(e) {
+    if (!e || isL4(e) || e.rdp_owned) return null;
+    const w = e.waf && typeof e.waf === 'object' ? e.waf : { enabled: e.waf_enabled, mode: e.waf_mode };
+    const on = w.enabled === true || w.enabled === 1 || w.enabled === '1';
+    if (!on) return null;
+    return String(w.mode || '').toLowerCase() === 'block' ? 'block' : 'detect';
   }
 
   // Language-neutral protocol names derived from the TARGET port (same table
@@ -412,7 +430,7 @@
   return {
     UNASSIGNED_KEY,
     isApex, hostLabel, sortHosts, sortEntries, isL4,
-    entryTargetHost, entryTargetPort, entryListenPort, entryChip, hstsActive, entryPortLabel, entryHealth,
+    entryTargetHost, entryTargetPort, entryListenPort, entryChip, hstsActive, wafState, entryPortLabel, entryHealth,
     worstHealth, hostHealth, hostEnabled, hostAccess, hostTarget, hostSinglePort,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
     isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,
