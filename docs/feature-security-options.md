@@ -159,3 +159,20 @@ Ketten; `tls_connection_policies` mit Catch-all zuletzt und Reihenfolge
 mTLS → Zone → Catch-all; PEM-Dateien werden geschrieben und verwaist entfernt;
 API-Validierung; `caddy validate` einer Beispielkonfiguration mit allen Optionen;
 UI statisch, Template-Render, Browser-Szenario.
+
+## Stand der Oberfläche (Umsetzung)
+
+- UI-Baustein `public/js/secopt-ui.js` (`GCSecOptUI`, nur Zonen-Seite, nach
+  `hsts-ui.js`): Alias-Tags, Dialog „Alias-Namen…“, www-Kästchen, TLS-Profil,
+  Eintrags-Tags `≤ N MB` / `mTLS`, Header-Vorlagen. CAA-Hinweis und
+  Kopieren-Knopf liegen in `tls-ui.js` (Vorprüfungs-Dialog, Einstellungen).
+- Aliase: Menüpunkt ohne HTTP-Eintrag deaktiviert (Hinweis statt
+  `ALIAS_REQUIRES_HTTP`). Das www-Kästchen erscheint nur bei `@` mit
+  HTTP-Eintrag und ist gesperrt, wenn `www` in der Zone schon Host oder Alias
+  ist. Ein pausierter neuer Alias zeigt eine Toast-Warnung und den Hinweis im
+  Domain-Dialog.
+- Backend-TLS-Felder werden bei Gateway-/Pool-Zielen nicht gesendet (gespeicherte
+  Werte bleiben unverändert); ohne `route_auth` werden die mTLS-Felder nie
+  gesendet. Fehlercodes erscheinen deutsch am Formularende und im Block.
+- Header-Vorlagen ersetzen gleichnamige Header statt sie zu verdoppeln.
+- `headers.preset_security` steht mit neuem Text im Sprachblock am Dateiende.
