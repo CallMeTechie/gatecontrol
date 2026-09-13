@@ -174,7 +174,7 @@ describe('WAF: script integration', () => {
     for (const id of ['wf-events-list', 'wf-host', 'wf-action-chips', 'wf-range-chips', 'wf-tiles', 'wf-more', 'wf-page-info', 'wf-new-events', 'wf-routes-list', 'wf-engine-banner', 'wf-summary', 'btn-waf-refresh', 'wf-events-card']) {
       assert.ok(src.includes(`'${id}'`), id);
     }
-    for (const cls of ['wf-raw', 'wf-raw-toggle', 'wf-detail', 'wf-detail-data', 'wf-detail-tags', 'wf-detail-others', 'wf-raw-json', 'wf-exclude-rule', 'wf-exclude-path', 'wf-host-link', 'wf-backend-missing']) assert.ok(src.includes(cls), cls);
+    for (const cls of ['wf-raw', 'wf-raw-toggle', 'wf-detail', 'wf-detail-tr', 'wf-detail-data', 'wf-detail-tags', 'wf-detail-others', 'wf-raw-json', 'wf-exclude-rule', 'wf-exclude-path', 'wf-host-link', 'wf-backend-missing']) assert.ok(src.includes(cls), cls);
     assert.match(src, /W\.detailOf\(ev\)/);
     assert.match(src, /W\.ruleExcluded\(ev, excl\)/);
     assert.match(src, /\{ current: W\.routeExclusions\(routeId, routes\(\)\) \}/);

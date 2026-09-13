@@ -234,7 +234,7 @@
       ])));
       return;
     }
-    list.replaceChildren(...state.events.map(buildRow));
+    list.replaceChildren(...state.events.flatMap(buildRow));
   }
 
   function buildRow(ev) {
@@ -254,23 +254,29 @@
       el('div', { class: 'wf-msg', text: ev.message || '—' }),
       ev.severity ? el('span', { class: 'wf-sub', text: t('waf.severity', { severity: ev.severity }) }) : null,
     ]);
+    let detailTr = null;
+    let tr = null;
     if (raw || detail) {
-      // Expandable row detail: request line, engine, matched data, tags and the
-      // other rule messages of the same request, then the raw record as JSON.
+      // Expandable row detail in its own full-width row under the event:
+      // request line, engine, matched data, tags and the other rule messages
+      // of the same request, then the raw record as JSON on demand.
       // Untrusted data — textContent only (el() text / text nodes).
       const box = el('div', { class: 'wf-raw wf-detail' }, [detail ? detailEl(detail) : null, raw ? jsonEl(raw) : null]);
+      const td = el('td', { class: 'wf-detail-cell', colSpan: COLS }, [box]);
+      td.colSpan = COLS;
+      detailTr = el('tr', { class: 'wf-detail-tr', dataset: { eventKey: key } }, [td]);
       const open = state.expanded.has(key);
-      box.hidden = !open;
+      detailTr.hidden = !open;
       const toggle = el('button', { type: 'button', class: 'wf-link wf-raw-toggle', 'aria-expanded': open ? 'true' : 'false', text: open ? t('waf.raw_hide') : t('waf.raw_show') });
       toggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        box.hidden = !box.hidden;
-        if (box.hidden) state.expanded.delete(key); else state.expanded.add(key);
-        toggle.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
-        toggle.textContent = box.hidden ? t('waf.raw_show') : t('waf.raw_hide');
+        detailTr.hidden = !detailTr.hidden;
+        if (detailTr.hidden) state.expanded.delete(key); else state.expanded.add(key);
+        if (tr) tr.classList.toggle('wf-open', !detailTr.hidden);
+        toggle.setAttribute('aria-expanded', detailTr.hidden ? 'false' : 'true');
+        toggle.textContent = detailTr.hidden ? t('waf.raw_show') : t('waf.raw_hide');
       });
       msg.appendChild(toggle);
-      msg.appendChild(box);
     }
 
     // Compact icon buttons (the table is wide); title + aria-label carry the full text.
@@ -288,7 +294,7 @@
     pathBtn.addEventListener('click', () => exclude('path', ev, routeId));
 
     const a = W.actionKey(ev.action);
-    return el('tr', { class: 'wf-row wf-row-' + a + (ruleDone || pathDone ? ' wf-row-excluded' : ''), dataset: { eventKey: key, action: a, host: ev.host } }, [
+    tr = el('tr', { class: 'wf-row wf-row-' + a + (ruleDone || pathDone ? ' wf-row-excluded' : '') + (detailTr && !detailTr.hidden ? ' wf-open' : ''), dataset: { eventKey: key, action: a, host: ev.host } }, [
       el('td', { class: 'wf-cell-time', title: ev.ts ? W.fmtTime(ev.ts) : null }, timeParts(ev.ts)),
       el('td', { class: 'wf-cell-host' }, [el('button', { type: 'button', class: 'wf-host-link', title: t('waf.show_events'), text: ev.host || '—', on: { click: () => setFilter({ host: ev.host }) } })]),
       el('td', { class: 'wf-cell-action' }, [W.actionTag(ev.action)]),
@@ -299,6 +305,7 @@
       el('td', { class: 'wf-cell-request' }, [el('code', { class: 'wf-req', title: W.requestLine(ev), text: W.requestLine(ev) })]),
       el('td', { class: 'wf-cell-actions' }, [el('div', { class: 'wf-actions' }, [ruleBtn, pathBtn])]),
     ]);
+    return detailTr ? [tr, detailTr] : [tr];
   }
 
   function detailEl(d) {
