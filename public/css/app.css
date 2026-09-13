@@ -2209,6 +2209,7 @@ body.rdp-session-body {
   .zn-disc-row { grid-template-columns: minmax(0, 1fr) auto; }
   .zn-disc-row > .zn-disc-info { grid-column: 1 / -1; }
   .zn-disc-bar .zn-disc-scan { margin-left: 0; }
+}
 /* ─── TLS guard (tg-) ─── */
 /* Certificates page (certificates.njk), the TLS dialogs of tls-ui.js and the
    TLS markers on the zones page / domain dialog / settings. Uses only the
