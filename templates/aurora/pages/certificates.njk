@@ -1,41 +1,78 @@
 {% extends theme + "/layout.njk" %}
 
+{#
+  Zertifikate — TLS guard (docs/feature-tls-guard.md), Aurora variant. Same
+  ids as default/pro so certificates.js needs no theme branch; Aurora keeps its
+  KPI strip (like the zones page), the .card.span12 + .data-table layout and
+  the primary refresh button in .page-actions (tests/aurora_theme.test.js).
+#}
+
 {% block content %}
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('nav.routing') }}</div>
     <div class="page-title">{{ t('certs.title') }}</div>
-    <div class="page-sub">ACME · Let's Encrypt</div>
+    <div class="page-sub" id="tg-summary">{{ t('tls.page_sub') }}</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-primary" id="btn-certificates-refresh">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+    <button class="btn btn-primary" id="btn-certificates-refresh" type="button">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       <span>{{ t('common.refresh') }}</span>
     </button>
   </div>
 </div>
 
-<div class="card span12">
+{# KPI strip: static tiles, values filled by certificates.js #}
+<div class="aurora-routes-kpis tg-tiles" id="tg-tiles">
+  <div class="aurora-routes-kpi tg-tile" id="tg-tile-issued" data-filter="valid" role="button" tabindex="0"><b id="tg-tile-issued-val">–</b><span>{{ t('tls.tile_issued') }}</span></div>
+  <div class="aurora-routes-kpi tg-tile" id="tg-tile-expiring" data-filter="expiring" role="button" tabindex="0"><b id="tg-tile-expiring-val">–</b><span>{{ t('tls.tile_expiring') }}</span></div>
+  <div class="aurora-routes-kpi tg-tile" id="tg-tile-failed" data-filter="problems" role="button" tabindex="0"><b id="tg-tile-failed-val">–</b><span>{{ t('tls.tile_failed') }}</span></div>
+  <div class="aurora-routes-kpi tg-tile" id="tg-tile-paused" data-filter="problems" role="button" tabindex="0"><b id="tg-tile-paused-val">–</b><span>{{ t('tls.tile_paused') }}</span></div>
+</div>
+
+<div class="alert alert-warning tg-banner" id="tg-email-banner" role="alert" hidden>
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tg-ic" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <span>{{ t('tls.email_missing') }} <a href="/settings" class="tg-banner-link">{{ t('tls.email_missing_link') }}</a></span>
+</div>
+
+<div class="toolbar tg-toolbar">
+  <div class="filter-chips tg-chips" id="tg-chips" role="group" aria-label="{{ t('tls.col_status') }}">
+    <button type="button" class="filter-chip on" data-filter="all" aria-pressed="true">{{ t('tls.filter_all') }}<span class="tg-count"></span></button>
+    <button type="button" class="filter-chip" data-filter="problems" aria-pressed="false">{{ t('tls.filter_problems') }}<span class="tg-count"></span></button>
+    <button type="button" class="filter-chip" data-filter="expiring" aria-pressed="false">{{ t('tls.filter_expiring') }}<span class="tg-count"></span></button>
+    <button type="button" class="filter-chip" data-filter="valid" aria-pressed="false">{{ t('tls.filter_valid') }}<span class="tg-count"></span></button>
+  </div>
+</div>
+
+<div class="card span12" id="tg-card">
   <div class="card-head">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     <span class="card-title">{{ t('certs.title') }}</span>
   </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>{{ t('certificates.col_domain') }}</th>
-        <th>{{ t('certificates.col_issuer') }}</th>
-        <th>{{ t('certificates.col_valid_until') }}</th>
-        <th>{{ t('peers.status') }}</th>
-      </tr>
-    </thead>
-    <tbody id="certificates-list">
-      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px 0">{{ t('common.loading') }}</td></tr>
-    </tbody>
-  </table>
+  <div class="tg-table-wrap">
+    <table class="data-table" id="tg-table">
+      <thead>
+        <tr>
+          <th>{{ t('certificates.col_domain') }}</th>
+          <th>{{ t('peers.status') }}</th>
+          <th>{{ t('certificates.col_issuer') }}</th>
+          <th>{{ t('certificates.col_valid_until') }}</th>
+          <th>{{ t('tls.col_error') }}</th>
+          <th>{{ t('tls.col_next_retry') }}</th>
+          <th>{{ t('tls.col_actions') }}</th>
+        </tr>
+      </thead>
+      <tbody id="certificates-list">
+        <tr class="tg-empty"><td colspan="7" style="text-align:center;color:var(--muted);padding:20px 0">{{ t('common.loading') }}</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
+
+{% include "partials/tls-i18n.njk" %}
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/certificates.js?v={{ appVersion }}"></script>
 {% endblock %}
