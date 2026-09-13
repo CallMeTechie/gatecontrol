@@ -2394,3 +2394,126 @@ body.rdp-session-body {
   .zn-panel.hs-panel4 { grid-template-columns: 1fr; }
   .hs-check { white-space: normal; }
 }
+
+/* ─── Security options (so-) ─── */
+/* docs/feature-security-options.md: host aliases (tags, dialog, www checkbox,
+   "+ www" on the zones page, "Alias von …" on the certificates page), backend
+   TLS / body limit / mTLS blocks of the entry editor, header preset warning,
+   TLS profile select in the domain dialog head and the CAA recommendation.
+   Legacy tokens only, like the zn-/tg-/hs- blocks, so app.css and pro.css
+   carry the same rules (aurora overrides surfaces). */
+.so-dialog [hidden], .so-editor-block [hidden], .so-caa [hidden], .so-warn[hidden], .so-www-check[hidden], .so-field-error [hidden] { display: none !important; }
+.so-ic { flex-shrink: 0; }
+.so-mono { font-family: var(--font-mono); }
+
+/* ── Domain dialog head: 5 fields (gateway · access · HSTS · TLS · filter) ── */
+.zn-panel.so-panel5, .zn-panel.hs-panel4.so-panel5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.zn-panel.so-panel5 > .zn-field-filter { grid-column: span 2; }
+.so-tls-profile .so-tls-min { width: 100%; min-width: 0; }
+.so-tls-hint { overflow-wrap: anywhere; }
+
+/* ── Host card head + zones row + certificates: aliases ── */
+.tag.so-alias-tag { padding: 1px 6px; font-size: 10px; font-family: var(--font-mono); color: var(--text-3); background: transparent; border-style: dashed; white-space: nowrap; }
+.tag.so-alias-tag.so-alias-serve { border-style: solid; }
+.so-alias-more { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.so-alias-of { font-family: var(--font-mono); }
+.zn-check.so-www-check { padding-bottom: 0; margin-left: auto; font-size: 11.5px; white-space: normal; }
+.zn-check.so-www-check.so-www-taken { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Entry line tags ── */
+.tag.so-body-tag { font-family: var(--font-mono); white-space: nowrap; }
+.tag.so-mtls-tag { gap: 3px; white-space: nowrap; }
+
+/* ── Dialogs (aliases / TLS profile) ── */
+.modal.so-dialog-box { max-width: min(560px, calc(100vw - 32px)); }
+.so-dialog-body { max-height: min(72vh, 680px); overflow-y: auto; }
+.so-dialog-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.so-dialog .zn-dialog-msg { margin: 0 0 10px; }
+.so-alias-intro { margin: 0 0 12px; }
+.so-alias-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.so-alias-head .form-label { margin: 0; }
+.so-alias-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.so-alias-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.so-alias-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 0; }
+.so-alias-fqdn { font-family: var(--font-mono); font-size: 12px; color: var(--text-1); overflow-wrap: anywhere; min-width: 0; }
+.so-alias-row .zn-ibtn { width: 24px; height: 24px; }
+.so-alias-empty { padding: 8px 10px; font-size: 12px; color: var(--text-3); border: 1px dashed var(--border); border-radius: var(--radius-sm); }
+.so-alias-add { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.so-alias-affix { flex: 1 1 240px; }
+.so-alias-affix > .so-alias-input { min-width: 70px; }
+.so-alias-add-error { margin-top: 6px; }
+.so-radios { flex-direction: column; gap: 8px; margin: 14px 0 10px; }
+.so-radios > .form-label { margin-bottom: 0; }
+.zn-radio.so-radio { align-items: flex-start; gap: 8px; }
+.so-radio input { margin-top: 3px; }
+.so-radio-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.so-radio-title { font-size: 13px; color: var(--text-1); font-weight: 500; }
+.so-radio-desc { font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.so-hints { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.so-hint { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.so-hint .so-ic { margin-top: 2px; color: var(--text-3); }
+.so-hint-warn, .so-hint-warn .so-ic { color: var(--amber); }
+.so-field-error { display: flex; flex-direction: column; gap: 2px; }
+.so-err-detail { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); overflow-wrap: anywhere; }
+.so-warn { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; margin: 4px 0 12px; background: var(--amber-lt); border: 1px solid var(--amber-bd); border-left: 3px solid var(--amber); border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5; color: var(--text-1); }
+.so-warn .so-ic { color: var(--amber); margin-top: 2px; }
+
+/* ── Entry editor blocks (general / auth / security tabs) ── */
+.so-editor-block { margin-bottom: 14px; }
+.so-editor-block.so-backend-tls { margin-top: -6px; padding: 10px 12px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.so-editor-block.so-locked > *:not(.so-editor-hint) { opacity: 0.5; pointer-events: none; }
+.so-editor-block.so-locked .toggle { cursor: not-allowed; }
+.so-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.so-switch-row > label { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
+.so-switch-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.so-switch-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+.so-check { display: inline-flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none; }
+.so-check input { accent-color: var(--accent); margin: 2px 0 0; flex-shrink: 0; }
+.so-check input:disabled { cursor: not-allowed; }
+.so-check-text { display: flex; flex-direction: column; min-width: 0; }
+.so-check-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.so-check-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+.so-editor-fields { display: flex; flex-direction: column; gap: 10px; padding: 10px 0 2px; }
+.so-mtls .so-editor-fields { padding: 10px 2px 2px; }
+.so-editor-fields.so-fields-off { opacity: 0.55; }
+.so-editor-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; }
+.so-f-label { font-size: 11px; color: var(--text-3); }
+.so-editor-f .form-input { width: 100%; padding: 6px 10px; font-size: 12px; }
+.so-editor-f .form-hint { font-size: 11px; line-height: 1.4; }
+textarea.so-pem { display: block; width: 100%; min-height: 84px; padding: 6px 10px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; color: var(--text-1); background: var(--bg-input, var(--bg-base)); border: 1px solid var(--border); border-radius: var(--radius-xs); }
+textarea.so-pem:focus { outline: none; border-color: var(--accent); }
+textarea.so-pem:disabled { opacity: 0.6; cursor: not-allowed; }
+.so-editor-hint { margin-top: 6px; font-size: 11px; line-height: 1.45; color: var(--text-2); }
+.so-editor-hint:empty { display: none; }
+.so-editor-hint.so-hint-warn { color: var(--amber); }
+.so-locked-hint { color: var(--text-3); }
+.so-editor-error { margin-top: 8px; padding: 6px 10px; font-size: 12px; line-height: 1.45; color: var(--red); background: var(--red-lt); border: 1px solid var(--red-bd); border-radius: var(--radius-xs); }
+.so-editor-block.so-license-locked { opacity: 0.6; }
+input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px; font-family: var(--font-mono); text-align: right; }
+.so-warn.so-csp-warning { margin: 0 0 12px; font-size: 11.5px; }
+
+/* ── CAA recommendation (preflight dialog, settings domains) ── */
+.so-caa { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.so-caa-ok { flex-direction: row; align-items: center; gap: 6px; background: var(--green-lt); border: 1px solid var(--green-bd); color: var(--green); font-weight: 600; }
+.so-caa-none { background: var(--bg-panel, var(--bg-card)); border: 1px dashed var(--border); }
+.so-caa-head { display: flex; gap: 6px; align-items: flex-start; color: var(--text-1); font-weight: 500; }
+.so-caa-head .tg-ic { margin-top: 2px; color: var(--text-3); }
+.so-caa-hint { color: var(--text-2); }
+.so-caa-rec { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.so-caa-record { flex: 1 1 220px; min-width: 0; padding: 4px 8px; background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; overflow-wrap: anywhere; user-select: all; color: var(--text-1); }
+.btn.so-copy { flex-shrink: 0; }
+.btn.so-copy.so-copied { color: var(--green); border-color: var(--green-bd); }
+.so-caa.so-caa-compact { margin-top: 6px; padding: 6px 8px; font-family: inherit; font-size: 11px; }
+.so-caa-compact .so-caa-record { font-size: 10.5px; }
+.so-copy-buf { position: fixed; top: -1000px; left: -1000px; opacity: 0; }
+
+@media (max-width: 1100px) {
+  .zn-panel.so-panel5, .zn-panel.hs-panel4.so-panel5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .zn-panel.so-panel5 > .zn-field-filter { grid-column: auto; }
+}
+@media (max-width: 900px) {
+  .zn-panel.so-panel5, .zn-panel.hs-panel4.so-panel5 { grid-template-columns: 1fr; }
+  .zn-check.so-www-check { margin-left: 0; flex-basis: 100%; }
+  .so-switch-row { flex-wrap: wrap; }
+  input.so-num { width: 100%; text-align: left; }
+}
