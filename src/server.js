@@ -130,6 +130,11 @@ async function start() {
     try { require('./services/tlsGuard').start(); }
     catch (err) { logger.warn({ err: err.message }, 'TLS guard start failed'); }
 
+    // WAF: audit-log watcher (waf-audit.log → waf_events, own rotation) and the
+    // engine probe (caddy list-modules). Best-effort.
+    try { require('./services/waf').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'WAF start failed'); }
+
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
     startPoller(config.intervals.peerPoller);
@@ -253,6 +258,8 @@ async function start() {
       activity.cleanup(activityDays);
       const { cleanup: cleanLoginAttempts } = require('./services/lockout');
       cleanLoginAttempts(1);
+      // WAF events: data.retention_waf_days (default 14) + row cap.
+      require('./services/waf').cleanup();
     });
     setInterval(retryCleanup, 6 * 60 * 60 * 1000);
 
@@ -383,6 +390,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),
     () => require('./services/tlsGuard').stop(),
+    () => require('./services/waf').stop(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,

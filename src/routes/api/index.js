@@ -40,6 +40,8 @@ router.use('/routes', require('./routes'));
 router.use(require('./domainZones'));
 // TLS guard: /tls/status, /tls/preflight/:host, /tls/:host/retry
 router.use('/tls', require('./tls'));
+// Web Application Firewall: /waf/status, /waf/events, /waf/routes/:id/exclusions
+router.use('/waf', require('./waf'));
 router.use('/settings', require('./settings'));
 router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));

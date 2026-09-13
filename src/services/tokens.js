@@ -44,6 +44,8 @@ const SCOPE_MAP = [
   ['/api/v1/host-templates', 'routes'],
   // TLS guard (certificate status, preflight, retry)
   ['/api/v1/tls', 'routes'],
+  // Web Application Firewall (status, events, per-route exclusions)
+  ['/api/v1/waf', 'routes'],
   ['/api/v1/settings', 'settings'],
   ['/api/v1/webhooks', 'webhooks'],
   ['/api/v1/logs', 'logs'],
