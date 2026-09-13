@@ -24,16 +24,20 @@ async function verifyAndReflag(domainNames, { verifyEach = domains.verify } = {}
     domainNames.map(async (d) => ({ domain: d, v: await verifyEach(d) }))
   );
   const db = getDb();
-  const verifiedStmt = db.prepare("UPDATE domains SET status='verified', resolved_ip=?, last_error=NULL, verified_at=datetime('now'), last_checked_at=datetime('now') WHERE domain=?");
-  const pendingStmt = db.prepare("UPDATE domains SET status='pending', last_checked_at=datetime('now') WHERE domain=?");
+  // check_json: the full preflight object of the strict check (TLS guard), so
+  // the UI can show records and reason; COALESCE keeps an older result when a
+  // stubbed verifier returns none.
+  const verifiedStmt = db.prepare("UPDATE domains SET status='verified', resolved_ip=?, last_error=NULL, verified_at=datetime('now'), last_checked_at=datetime('now'), check_json=COALESCE(?, check_json) WHERE domain=?");
+  const pendingStmt = db.prepare("UPDATE domains SET status='pending', last_checked_at=datetime('now'), check_json=COALESCE(?, check_json) WHERE domain=?");
   const results = [];
   for (const { domain: d, v } of verifications) {
     results.push({ domain: d, matched: v.status === 'verified' });
+    const checkJson = v && v.check ? JSON.stringify(v.check) : null;
     if (v.status === 'verified') {
-      verifiedStmt.run(v.resolvedIp || null, d);
+      verifiedStmt.run(v.resolvedIp || null, checkJson, d);
     } else {
       // keep/reset to pending; do NOT write 'failed' on this path
-      pendingStmt.run(d);
+      pendingStmt.run(checkJson, d);
     }
   }
   const flagged = shouldFlagServerIp(results);
