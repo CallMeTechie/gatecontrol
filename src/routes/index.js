@@ -230,6 +230,12 @@ pages.forEach(({ path, template, nav, titleKey }) => {
       } catch { extraLocals.l4BlockedPorts = []; }
     }
 
+    // Profile: `?setup2fa=1` is where the require_2fa policy sends admins
+    // without a second factor — the 2FA card opens its setup right away.
+    if (template === 'profile') {
+      extraLocals.setup2fa = req.query && req.query.setup2fa === '1';
+    }
+
     if (template === 'gateway-pools') {
       try {
         extraLocals.pools = require('../services/gatewayPool').listPools();

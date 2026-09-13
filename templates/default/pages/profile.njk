@@ -61,6 +61,8 @@
         </button>
       </div>
     </div>
+
+    {% include theme + "/partials/two-factor-card.njk" %}
   </div>
 
   {# ─── Language & Theme ──────────────────────────────── #}
@@ -108,4 +110,6 @@
 
 {% block scripts %}
 <script src="/js/profile.js?v={{ appVersion }}"></script>
+<script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
+<script src="/js/profile-2fa.js?v={{ appVersion }}"></script>
 {% endblock %}
