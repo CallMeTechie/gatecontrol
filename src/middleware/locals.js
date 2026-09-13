@@ -26,7 +26,7 @@ function injectLocals(req, res, next) {
   // User info and sidebar badge counts if authenticated
   if (req.session && req.session.userId) {
     const db = getDb();
-    const user = db.prepare('SELECT id, username, display_name, role, language, theme FROM users WHERE id = ?')
+    const user = db.prepare('SELECT id, username, display_name, role, language, theme, totp_enabled FROM users WHERE id = ?')
       .get(req.session.userId);
     if (user) {
       res.locals.user = user;

@@ -213,6 +213,7 @@
       nm.textContent = u.username;
       tdName.appendChild(nm);
       if (u.display_name) { var ns = document.createElement('div'); ns.style.cssText = 'font-size:11px;color:var(--text-3)'; ns.textContent = u.display_name; tdName.appendChild(ns); }
+      if (u.totp_enabled) { var tb = document.createElement('span'); tb.className = 'tf-badge tf-badge-on'; tb.title = tfT('users_active', '2FA active'); tb.textContent = tfT('users_badge', '2FA'); nm.appendChild(tb); }
       tr.appendChild(tdName);
       // Role
       var tdRole = document.createElement('td');
@@ -360,15 +361,62 @@
     userTitle.textContent = GC.t['users.add_user'] || 'Add User';
     userPasswordGroup.style.display = 'none';
     userTokensSection.style.display = 'none';
+    if (tfSection) tfSection.style.display = 'none';
     document.getElementById('user-username').removeAttribute('readonly');
     updatePasswordVisibility();
     openUserModal();
+  }
+
+  // ─── 2FA (docs/feature-admin-2fa.md) ─────────────────────────
+  var tfI18n = {};
+  try { tfI18n = JSON.parse(document.getElementById('tf-users-i18n').textContent); } catch (e) { tfI18n = {}; }
+  function tfT(k, fb) { return tfI18n[k] || fb; }
+  var tfSection = document.getElementById('user-2fa-section');
+  var tfResetBtn = document.getElementById('btn-user-2fa-reset');
+  var tfCurrentUser = tfSection ? parseInt(tfSection.getAttribute('data-current-user'), 10) : NaN;
+
+  function renderUser2fa(u) {
+    if (!tfSection) return;
+    var st = document.getElementById('user-2fa-status');
+    var on = !!u.totp_enabled;
+    st.textContent = on ? tfT('users_active', '2FA active') : tfT('users_inactive', 'No 2FA');
+    st.className = 'tf-badge ' + (on ? 'tf-badge-on' : 'tf-badge-off');
+    // Own account is handled on the profile page (disable); reset is for others.
+    tfResetBtn.style.display = (on && u.id !== tfCurrentUser) ? '' : 'none';
+    tfResetBtn.dataset.uid = u.id;
+    tfResetBtn.dataset.uname = u.username;
+    tfSection.style.display = 'flex';
+  }
+
+  if (tfResetBtn) {
+    tfResetBtn.addEventListener('click', async function () {
+      var id = tfResetBtn.dataset.uid;
+      var name = tfResetBtn.dataset.uname || '';
+      if (!id) return;
+      if (!confirm(tfT('users_reset_confirm', 'Reset 2FA for {{name}}?').replace('{{name}}', name))) return;
+      btnLoading(tfResetBtn);
+      try {
+        var data = await api.del('/api/v1/users/' + id + '/2fa');
+        if (data.ok) {
+          renderUser2fa(data.user || { id: parseInt(id, 10), totp_enabled: 0 });
+          if (window.showToast) showToast(tfT('users_reset_done', '2FA reset'), 'success');
+          loadUsers();
+        } else {
+          showError(userFormError, data.error || 'Error');
+        }
+      } catch (err) {
+        showError(userFormError, err.message);
+      } finally {
+        btnReset(tfResetBtn);
+      }
+    });
   }
 
   async function openEditModal(userId) {
     try {
       var data = await api.get('/api/v1/users/' + userId);
       var u = data.user;
+      renderUser2fa(u);
       editId = u.id;
       userEditIdEl.value = u.id;
       userTitle.textContent = GC.t['users.edit_user'] || 'Edit User';

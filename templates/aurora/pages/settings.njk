@@ -1,5 +1,7 @@
 {% extends theme + "/layout.njk" %}
 
+{% block head %}<link rel="stylesheet" href="/css/two-factor.css?v={{ appVersion }}">{% endblock %}
+
 {% block content %}
 {% include "partials/tls-i18n.njk" %}
 
@@ -357,6 +359,11 @@
             <input type="number" id="security-lockout-duration" value="15" min="1" max="1440" style="width:100%">
           </div>
         </div>
+        <div class="set-row">
+          <span class="l">{{ t('two_fa.settings_require') }}<small>{{ t('two_fa.settings_require_hint') }}</small></span>
+          <div class="toggle" id="security-require-2fa" data-managed="true" data-self-2fa="{{ '1' if user.totp_enabled else '0' }}"></div>
+        </div>
+        <div class="tf-banner tf-banner-amber" id="security-require-2fa-warning" hidden>{{ t('two_fa.settings_self_warning') }}</div>
         <div class="set-sec"><div class="sh"><b>{{ t('security.lockout.locked_accounts') }}</b></div></div>
         <div id="security-locked-list" style="font-size:12px;color:var(--text-3)">{{ t('security.lockout.no_locked') }}</div>
         <div id="security-status" class="autosave-status"></div>

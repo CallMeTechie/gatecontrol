@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#F8FAFC">
+  <title>{{ t('two_fa.login_title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
+  <style nonce="{{ cspNonce }}">
+    body {
+      background: var(--bg-body);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: var(--space-4);
+      font-family: var(--font-sans);
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .login-brand {
+      text-align: center;
+      margin-bottom: var(--space-8);
+    }
+
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      background: var(--accent);
+      border-radius: var(--radius-lg);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: var(--space-4);
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+    }
+
+    .login-logo svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+    }
+
+    .login-brand h1 {
+      font-size: var(--text-2xl);
+      font-weight: var(--weight-bold);
+      color: var(--text-primary);
+      letter-spacing: -0.025em;
+      margin-bottom: var(--space-1);
+    }
+
+    .login-brand h1 span {
+      color: var(--accent);
+    }
+
+    .login-brand p {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+    }
+
+    .login-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      padding: var(--space-8);
+    }
+
+    .form-group {
+      margin-bottom: var(--space-5);
+    }
+
+    .form-label {
+      display: block;
+      font-size: var(--text-sm);
+      font-weight: var(--weight-medium);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
+
+    .form-input {
+      width: 100%;
+      height: 44px;
+      padding: 0 var(--space-3);
+      font-size: var(--text-base);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      background: var(--bg-input);
+      border: 1px solid var(--border-input);
+      border-radius: var(--radius);
+      box-sizing: border-box;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+
+    .form-input:focus {
+      border-color: var(--border-focus);
+      background: var(--bg-input-focus);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .password-wrap {
+      position: relative;
+    }
+
+    .password-wrap .form-input {
+      padding-right: 40px;
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+    }
+
+    .password-toggle:hover {
+      color: var(--text-secondary);
+    }
+
+    .login-submit {
+      width: 100%;
+      height: 44px;
+      margin-top: var(--space-2);
+      font-size: var(--text-base);
+      font-weight: var(--weight-semibold);
+      font-family: var(--font-sans);
+      letter-spacing: 0.01em;
+      color: var(--text-inverse);
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .login-submit:hover {
+      background: var(--accent-hover);
+    }
+
+    .login-error {
+      background: var(--red-light);
+      border: 1px solid var(--red-border);
+      color: var(--red-text);
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius);
+      font-size: var(--text-sm);
+      margin-bottom: var(--space-5);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .login-footer {
+      text-align: center;
+      margin-top: var(--space-6);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
+    .login-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .login-footer a:hover {
+      text-decoration: underline;
+    }
+    .tf-intro { font-size: 13px; color: var(--text-2, var(--text-secondary)); margin: 0 0 16px; line-height: 1.5; }
+    .tf-mono { font-family: var(--font-mono); letter-spacing: 0.08em; }
+    .tf-code { font-size: 20px; text-align: center; letter-spacing: 0.35em; }
+    .tf-links { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; font-size: 12px; }
+    .tf-links a { color: var(--accent); text-decoration: none; }
+    .tf-links a:hover { text-decoration: underline; }
+    .tf-remaining { margin-top: 12px; font-size: 11px; color: var(--text-3, var(--text-muted)); font-family: var(--font-mono); }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-brand">
+      <div class="login-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+        </svg>
+      </div>
+      <h1>Gate<span>Control</span></h1>
+      <p>{{ t('auth.sign_in_subtitle') }}</p>
+    </div>
+
+    <div class="login-card">
+      {% if flash.error %}
+      <div class="login-error">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span>{{ flash.error }}</span>
+      </div>
+      {% endif %}
+
+      <p class="tf-intro">{% if useRecovery %}{{ t('two_fa.recovery_intro') }}{% else %}{{ t('two_fa.login_intro') }}{% endif %}</p>
+      <form method="POST" action="/login/2fa" id="tf-login-form">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        {% if useRecovery %}
+        <div class="form-group">
+          <label class="form-label" for="recovery_code">{{ t('two_fa.recovery_code_label') }}</label>
+          <input class="form-input tf-mono" type="text" id="recovery_code" name="recovery_code" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus required maxlength="16" placeholder="XXXXX-XXXXX">
+        </div>
+        {% else %}
+        <div class="form-group">
+          <label class="form-label" for="code">{{ t('two_fa.code_label') }}</label>
+          <input class="form-input tf-mono tf-code" type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" autofocus required maxlength="6" placeholder="123456">
+        </div>
+        {% endif %}
+        <button type="submit" class="login-submit">{{ t('two_fa.submit') }}</button>
+      </form>
+      <div class="tf-links">
+        {% if useRecovery %}<a href="/login/2fa">{{ t('two_fa.use_code') }}</a>{% else %}<a href="/login/2fa?recovery=1">{{ t('two_fa.use_recovery') }}</a>{% endif %}
+        <a href="/login">{{ t('two_fa.back_to_login') }}</a>
+      </div>
+      <div class="tf-remaining" id="tf-remaining" data-seconds="{{ remainingSeconds }}">{{ remainingText }}</div>
+    </div>
+
+    <div class="login-footer">
+      <p>{{ appName }} v{{ appVersion }}</p>
+    </div>
+  </div>
+
+  <script nonce="{{ cspNonce }}">
+    (function () {
+      var el = document.getElementById('tf-remaining');
+      if (!el) return;
+      var left = parseInt(el.getAttribute('data-seconds'), 10) || 0;
+      var tpl = {{ t('two_fa.time_remaining') | dump | safe }};
+      var expired = {{ t('two_fa.error_expired') | dump | safe }};
+      function tick() {
+        if (left <= 0) { el.textContent = expired; return; }
+        el.textContent = tpl.replace('{' + '{minutes}}', String(Math.max(1, Math.ceil(left / 60))));
+        left -= 1; setTimeout(tick, 1000);
+      }
+      tick();
+    })();
+  </script>
+</body>
+</html>

@@ -41,7 +41,9 @@ function filterScopesForRole(scopes, role) {
  */
 function stripSensitive(row) {
   if (!row) return row;
-  const { password_hash, ...rest } = row;
+  // 2FA secret and recovery-code hashes never leave the service; the
+  // totp_enabled flag stays (users list badge / policy checks).
+  const { password_hash, totp_secret_enc, recovery_codes, ...rest } = row;
   return rest;
 }
 

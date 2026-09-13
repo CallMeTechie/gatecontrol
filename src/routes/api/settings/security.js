@@ -29,6 +29,7 @@ router.get('/security', (req, res) => {
         require_number: settings.get('security.password.require_number', 'true') === 'true',
         require_special: settings.get('security.password.require_special', 'true') === 'true',
       },
+      require_2fa: settings.get('security.require_2fa', 'false') === 'true',
     },
   });
 });
@@ -38,7 +39,18 @@ router.get('/security', (req, res) => {
  */
 router.put('/security', (req, res) => {
   try {
-    const { lockout: lo, password: pw } = req.body;
+    const { lockout: lo, password: pw, require_2fa } = req.body;
+
+    if (require_2fa !== undefined) {
+      const on = require_2fa === true || require_2fa === 'true';
+      const was = settings.get('security.require_2fa', 'false') === 'true';
+      settings.set('security.require_2fa', on ? 'true' : 'false');
+      if (on !== was) {
+        activity.log('security_require_2fa_changed', `Two-factor login for all admins ${on ? 'required' : 'no longer required'}`, {
+          source: 'admin', ipAddress: req.ip, severity: 'info',
+        });
+      }
+    }
 
     if (lo) {
       if (lo.enabled !== undefined) settings.set('security.lockout.enabled', String(lo.enabled));
