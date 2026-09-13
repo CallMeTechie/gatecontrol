@@ -121,6 +121,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
+      # WAF (docs/feature-waf.md): the image must ship Caddy with Coraza —
+      # without http.handlers.waf the generator silently omits every WAF handler.
+      - name: Verify Caddy WAF module
+        run: docker run --rm --entrypoint caddy gatecontrol:security-scan list-modules | grep -qx http.handlers.waf
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
