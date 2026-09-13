@@ -25,7 +25,7 @@ const {
   sanitize,
 } = require('../utils/validate');
 
-const { httpError, resolveZone, fqdnOf, routeTarget, zoneTarget, sameTarget } = domainZones;
+const { httpError, resolveZone, fqdnOf, routeTarget, zoneTarget, sameTarget, parseAliases, aliasFqdns, aliasModeOf, ALIAS_MODES, ALIAS_MAX } = domainZones;
 
 const LABEL_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const isIpv4 = (s) => /^(\d{1,3}\.){3}\d{1,3}$/.test(String(s || '')) && String(s).split('.').every((o) => +o >= 0 && +o <= 255);
@@ -236,10 +236,97 @@ function checkFqdn(fqdn, currentFqdn, zone) {
   }
 }
 
+// ─── Host aliases (docs/feature-security-options.md §A) ──
+
+// aliases input (array of labels relative to the host fqdn) → normalised
+// unique labels. Same label rules as `subdomain`, but never '@'.
+function normalizeAliases(raw) {
+  if (raw === null || raw === undefined) return [];
+  if (!Array.isArray(raw)) throw httpError(400, 'aliases must be an array of labels', 'ALIAS_INVALID');
+  const out = [];
+  for (const item of raw) {
+    const label = normalizeHost(item);
+    if (!label) continue;
+    if (label === '@' || !label.split('.').every((l) => LABEL_RE.test(l))) {
+      throw httpError(400, `Invalid alias "${item}" (DNS labels a-z, 0-9, "-")`, 'ALIAS_INVALID');
+    }
+    if (!out.includes(label)) out.push(label);
+  }
+  if (out.length > ALIAS_MAX) throw httpError(400, `At most ${ALIAS_MAX} aliases per host`, 'ALIAS_LIMIT');
+  return out;
+}
+
+function normalizeAliasMode(raw) {
+  const mode = String(raw || '').trim().toLowerCase();
+  if (!ALIAS_MODES.includes(mode)) throw httpError(400, "alias_mode must be 'redirect' or 'serve'", 'ALIAS_INVALID');
+  return mode;
+}
+
+// Every alias FQDN must be a valid, policy-clean hostname that is neither a
+// host nor an alias of another host in the zone, nor the domain of any HTTP
+// route (legacy host-less rows), nor inside another zone (a nested zone
+// `app.example.com` owns `www.app.example.com`).
+function assertAliasesFree(db, zone, host, hostFqdn, labels) {
+  if (labels.length === 0) return;
+  const zoneDomain = normalizeHost(zone.domain);
+  const others = db.prepare('SELECT id, subdomain, domain, aliases FROM service_bundles WHERE domain_id = ? AND id != ?').all(zone.id, host.id);
+  const taken = new Map(); // fqdn → reason
+  for (const o of others) {
+    const ofqdn = o.subdomain ? fqdnOf(o.subdomain, zoneDomain) : normalizeHost(o.domain);
+    if (ofqdn) taken.set(ofqdn, 'host');
+    for (const a of aliasFqdns(ofqdn, parseAliases(o.aliases))) taken.set(a, 'alias');
+  }
+  for (const fqdn of aliasFqdns(hostFqdn, labels)) {
+    const err = validateDomain(fqdn);
+    if (err) throw httpError(400, `Alias ${fqdn}: ${err}`, 'ALIAS_INVALID');
+    checkFqdn(fqdn, null, zone);
+    const z = resolveZone(fqdn, db);
+    if (!z || z.domain_id !== zone.id) {
+      throw httpError(409, `Alias ${fqdn} belongs to another domain zone`, 'ALIAS_CONFLICT');
+    }
+    if (fqdn === hostFqdn || taken.has(fqdn)) {
+      throw httpError(409, `Alias ${fqdn} is already a ${taken.get(fqdn) || 'host'} in this domain`, 'ALIAS_CONFLICT');
+    }
+    const route = db.prepare("SELECT id FROM routes WHERE lower(domain) = ? AND route_type != 'l4' LIMIT 1").get(fqdn);
+    if (route) throw httpError(409, `Alias ${fqdn} is already used by a route`, 'ALIAS_CONFLICT');
+  }
+}
+
+// Preflight every new alias FQDN (its own tls_status row; a failed check
+// pauses the alias only). Returns the compact result of the first paused
+// alias, else of the last one — null without any new alias.
+async function guardAliases(fqdns) {
+  let out = null;
+  for (const fqdn of fqdns) {
+    const r = await guardTls(fqdn);
+    if (!out || out.state !== 'paused') out = { ...r, host: fqdn };
+  }
+  return out;
+}
+
+function forgetTlsRows(fqdns) {
+  if (!fqdns.length) return;
+  try { require('./tlsGuard').forgetHosts(fqdns); }
+  catch (err) { logger.warn({ err: err.message, hosts: fqdns }, 'tls: alias rows not removed'); }
+}
+
 function assertUniqueHost(db, domainId, subdomain, excludeId) {
   const dup = db.prepare('SELECT id FROM service_bundles WHERE domain_id = ? AND subdomain = ? AND id != ?')
     .get(domainId, subdomain, excludeId == null ? -1 : excludeId);
   if (dup) throw httpError(409, 'A host with this name already exists in the domain', 'HOST_EXISTS');
+  // The reverse of assertAliasesFree: a host name must not be an alias of
+  // another host in the zone (§A).
+  const zone = db.prepare('SELECT domain FROM domains WHERE id = ?').get(domainId);
+  const fqdn = zone ? fqdnOf(subdomain, normalizeHost(zone.domain)) : null;
+  if (!fqdn) return;
+  const others = db.prepare("SELECT id, subdomain, domain, aliases FROM service_bundles WHERE domain_id = ? AND id != ? AND aliases IS NOT NULL")
+    .all(domainId, excludeId == null ? -1 : excludeId);
+  for (const o of others) {
+    const ofqdn = o.subdomain ? fqdnOf(o.subdomain, normalizeHost(zone.domain)) : normalizeHost(o.domain);
+    if (aliasFqdns(ofqdn, parseAliases(o.aliases)).includes(fqdn)) {
+      throw httpError(409, `${fqdn} is already an alias of another host in the domain`, 'HOST_EXISTS');
+    }
+  }
 }
 
 function assertDomainFree(db, args) {
@@ -382,6 +469,17 @@ async function create(domainId, input = {}) {
     }
   }
 
+  // Aliases (§A) may come along with the host (the dialog's "www alias" box);
+  // validated here so a conflict fails BEFORE the host exists, applied via
+  // update() afterwards (its own sync).
+  const aliasPatch = (input.aliases !== undefined || input.alias_mode !== undefined)
+    ? { aliases: normalizeAliases(input.aliases), alias_mode: input.alias_mode !== undefined ? normalizeAliasMode(input.alias_mode) : 'redirect' }
+    : null;
+  if (aliasPatch && aliasPatch.aliases.length > 0) {
+    if (!http) throw httpError(400, 'Aliases need a host with an HTTP entry', 'ALIAS_REQUIRES_HTTP');
+    assertAliasesFree(db, zone, { id: -1 }, fqdn, aliasPatch.aliases);
+  }
+
   const tls = (http || l4.some((e) => e.l4_tls_mode !== 'none')) ? await guardTls(fqdn) : null;
 
   const serviceBundle = require('./serviceBundle');
@@ -400,19 +498,30 @@ async function create(domainId, input = {}) {
   if (target.kind === 'pool') {
     domainZones.notifyGateways(domainZones.peersForTargets(db, [target]));
   }
+  if (aliasPatch && (aliasPatch.aliases.length > 0 || aliasPatch.alias_mode !== 'redirect')) {
+    // update() attaches an alias verdict when one was preflighted; the
+    // primary's verdict wins in the answer (aliases are listed per name in
+    // GET /tls/status).
+    const view = await update(bundle.id, aliasPatch);
+    return withTls(view, tls);
+  }
   publish(zone.id, bundle.id);
   return withTls(domainZones.getHost(bundle.id), tls);
 }
 
-/** PUT /hosts/:id — description, rename (subdomain) and/or LAN address. */
+/** PUT /hosts/:id — description, rename (subdomain), LAN address and/or aliases. */
 async function update(hostId, patch = {}) {
   const db = getDb();
   const host = bundleOr404(db, hostId);
   const zone = zoneRowOf(db, host);
   const members = membersOf(db, host.id);
   const oldFqdn = hostFqdn(host, zone);
+  const oldAliases = parseAliases(host.aliases);
 
-  const next = { name: host.name, description: host.description, subdomain: host.subdomain, domain: host.domain };
+  const next = {
+    name: host.name, description: host.description, subdomain: host.subdomain, domain: host.domain,
+    aliases: oldAliases, alias_mode: aliasModeOf(host),
+  };
   let changed = false;
 
   if (patch.description !== undefined) {
@@ -468,18 +577,45 @@ async function update(hostId, patch = {}) {
     if (lanRows.length > 0) changed = true;
   }
 
+  // Aliases (§A): labels and mode; validated against the FINAL fqdn so a
+  // rename in the same patch is honoured. Only hosts with an HTTP entry.
+  let aliasChanged = false;
+  if (patch.aliases !== undefined || patch.alias_mode !== undefined) {
+    if (!zone) throw httpError(400, 'Host has no domain zone');
+    if (patch.aliases !== undefined) next.aliases = normalizeAliases(patch.aliases);
+    if (patch.alias_mode !== undefined) next.alias_mode = normalizeAliasMode(patch.alias_mode);
+    aliasChanged = JSON.stringify(next.aliases) !== JSON.stringify(oldAliases) || next.alias_mode !== aliasModeOf(host);
+    if (aliasChanged) changed = true;
+  }
+  if (next.aliases.length > 0 && (aliasChanged || newFqdn !== oldFqdn)) {
+    if (!members.some((r) => r.route_type !== 'l4')) throw httpError(400, 'Aliases need a host with an HTTP entry', 'ALIAS_REQUIRES_HTTP');
+    assertAliasesFree(db, zone, host, newFqdn, next.aliases);
+  }
+
   if (!changed) return domainZones.getHost(host.id);
 
   // Renaming an HTTPS or SNI entry: preflight the new name before the write.
-  const tls = renameRows.some((r) => r.route_type !== 'l4' ? !!r.https_enabled : (r.l4_tls_mode && r.l4_tls_mode !== 'none'))
+  const httpsHost = members.some((r) => r.route_type !== 'l4' && !!r.https_enabled);
+  let tls = renameRows.some((r) => r.route_type !== 'l4' ? !!r.https_enabled : (r.l4_tls_mode && r.l4_tls_mode !== 'none'))
     ? await guardTls(newFqdn) : null;
+  // Alias FQDNs are hostnames of their own: new ones are preflighted (each
+  // gets its own tls_status row; a paused alias never blocks the primary),
+  // dropped ones — removed aliases, or every old one after a rename — lose
+  // their row after the sync.
+  const oldAliasFqdns = aliasFqdns(oldFqdn, oldAliases);
+  const newAliasFqdns = aliasFqdns(newFqdn, next.aliases);
+  const addedAliasFqdns = newAliasFqdns.filter((f) => !oldAliasFqdns.includes(f));
+  const droppedAliasFqdns = oldAliasFqdns.filter((f) => !newAliasFqdns.includes(f));
+  const aliasTls = httpsHost && addedAliasFqdns.length ? await guardAliases(addedAliasFqdns) : null;
+  if (!tls && aliasTls) tls = aliasTls;
 
   const touched = [...new Map([...renameRows, ...lanRows].map((r) => [r.id, r])).values()];
   const hostSnapshot = { ...host };
   const writeHost = db.prepare(`UPDATE service_bundles SET name = ?, description = ?, subdomain = ?, domain = ?,
-    updated_at = datetime('now') WHERE id = ?`);
+    aliases = ?, alias_mode = ?, updated_at = datetime('now') WHERE id = ?`);
+  const aliasesJson = next.aliases.length ? JSON.stringify(next.aliases) : null;
   db.transaction(() => {
-    writeHost.run(next.name, next.description, next.subdomain, next.domain, host.id);
+    writeHost.run(next.name, next.description, next.subdomain, next.domain, aliasesJson, next.alias_mode, host.id);
     if (renameRows.length) {
       db.prepare(`UPDATE routes SET domain = ?, updated_at = datetime('now') WHERE id IN (${renameRows.map(() => '?').join(',')})`)
         .run(newFqdn, ...renameRows.map((r) => r.id));
@@ -490,17 +626,25 @@ async function update(hostId, patch = {}) {
     }
   })();
 
-  if (touched.length > 0) {
+  // Aliases live in the Caddy config too (alias routes, host matcher, ACME
+  // subjects) → a pure alias change syncs as well.
+  if (touched.length > 0 || aliasChanged || droppedAliasFqdns.length > 0) {
     await withCaddySync(syncToCaddy, () => {
       db.transaction(() => {
         for (const row of touched) restoreRouteRow(db, row.id, row);
-        writeHost.run(hostSnapshot.name, hostSnapshot.description, hostSnapshot.subdomain, hostSnapshot.domain, host.id);
+        writeHost.run(hostSnapshot.name, hostSnapshot.description, hostSnapshot.subdomain, hostSnapshot.domain,
+          hostSnapshot.aliases, hostSnapshot.alias_mode, host.id);
         db.prepare('UPDATE service_bundles SET updated_at = ? WHERE id = ?').run(hostSnapshot.updated_at, host.id);
       })();
     }, 'host update');
-    domainZones.notifyGateways(domainZones.peersForTargets(db, touched.map(routeTarget)));
-    domainZones.rebuildDns('host update');
-    activityLog('host_updated', `Host "${next.name}" updated`, { hostId: host.id, routeIds: touched.map((r) => r.id) });
+    forgetTlsRows(droppedAliasFqdns);
+    if (touched.length > 0) {
+      domainZones.notifyGateways(domainZones.peersForTargets(db, touched.map(routeTarget)));
+      domainZones.rebuildDns('host update');
+    }
+    activityLog('host_updated', `Host "${next.name}" updated`, {
+      hostId: host.id, routeIds: touched.map((r) => r.id), ...(aliasChanged ? { aliases: next.aliases, alias_mode: next.alias_mode } : {}),
+    });
   }
   publish(host.domain_id, host.id);
   return withTls(domainZones.getHost(host.id), tls);
