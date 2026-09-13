@@ -1416,6 +1416,30 @@ const migrations = [
       ALTER TABLE domains ADD COLUMN hsts_default TEXT;`,
     detect: (db) => hasColumn(db, 'routes', 'hsts_enabled'),
   },
+  {
+    version: 72,
+    name: 'security_options',
+    // Security options (docs/feature-security-options.md):
+    //   A  host aliases      service_bundles.aliases (JSON array of labels
+    //                        relative to the host fqdn), alias_mode redirect|serve
+    //   B  backend TLS       routes.backend_tls_verify / _server_name / _ca_pem
+    //   D  body limit        routes.max_body_mb (0 = unlimited)
+    //   E  TLS profile       domains.tls_min_version '1.2' | '1.3'
+    //   F  mTLS per route    routes.mtls_enabled / mtls_ca_pem / mtls_mode
+    // v73 is reserved for admin 2FA.
+    sql: `
+      ALTER TABLE service_bundles ADD COLUMN aliases TEXT;
+      ALTER TABLE service_bundles ADD COLUMN alias_mode TEXT NOT NULL DEFAULT 'redirect';
+      ALTER TABLE routes ADD COLUMN backend_tls_verify INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN backend_tls_server_name TEXT;
+      ALTER TABLE routes ADD COLUMN backend_tls_ca_pem TEXT;
+      ALTER TABLE routes ADD COLUMN max_body_mb INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE domains ADD COLUMN tls_min_version TEXT NOT NULL DEFAULT '1.2';
+      ALTER TABLE routes ADD COLUMN mtls_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN mtls_ca_pem TEXT;
+      ALTER TABLE routes ADD COLUMN mtls_mode TEXT NOT NULL DEFAULT 'require';`,
+    detect: (db) => hasColumn(db, 'routes', 'mtls_enabled'),
+  },
 ];
 
 module.exports = { migrations };
