@@ -680,6 +680,17 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
           },
           include: ['http.log.access'],
         },
+        // ACME activity for the TLS guard (services/tlsGuard.js watches this file).
+        tls: {
+          writer: {
+            output: 'file',
+            filename: `${config.caddy.dataDir || '/data/caddy'}/tls.log`,
+            roll_size_mb: 5,
+            roll_keep: 2,
+          },
+          encoder: { format: 'json' },
+          include: ['tls.obtain', 'tls.renew', 'tls.issuance.acme', 'tls.issuance.acme.acme_client', 'tls.issuance.zerossl'],
+        },
       },
     },
     apps: {
@@ -709,7 +720,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   let gcHost = '';
   try { gcHost = new URL(config.app.baseUrl || '').hostname.toLowerCase(); } catch { /* unset/invalid baseUrl */ }
   const forceInternal = portal.public ? [] : [homeHost];
-  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), homeHost, gcHost].filter(Boolean))];
+  // TLS guard: hosts paused by the preflight or the attempt cap get no ACME
+  // subject and land in automatic_https.skip below (no request, no redirect).
+  let pausedHosts = [];
+  try { pausedHosts = require('./tlsGuard').pausedHosts(); } catch (err) { logger.warn({ err: err.message }, 'tls: paused hosts unavailable'); }
+  const pausedSet = new Set(pausedHosts.map(h => String(h).toLowerCase()));
+  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), homeHost, gcHost].filter(Boolean))]
+    .filter(d => !pausedSet.has(String(d).toLowerCase()));
   const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
 
@@ -895,6 +912,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       },
       client_ip_headers: ['X-Forwarded-For'],
     };
+    // Paused hosts (TLS guard) join the marker in skip: Caddy neither requests
+    // a certificate nor redirects to HTTPS — the route stays reachable on :80.
+    for (const h of pausedHosts) {
+      if (!caddyConfig.apps.http.servers.srv0.automatic_https.skip.includes(h)) {
+        caddyConfig.apps.http.servers.srv0.automatic_https.skip.push(h);
+      }
+    }
   }
 
   // L4 config

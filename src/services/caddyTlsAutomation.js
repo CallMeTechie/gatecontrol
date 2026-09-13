@@ -11,8 +11,9 @@
  * still emitted so newly-created routes get a cert attempt before the
  * next full buildCaddyConfig pass.
  *
- * Returns null when `caddyConfig.email` is not configured — callers
- * skip writing apps.tls in that case.
+ * Always returns policies (TLS guard contract): without an ACME e-mail the
+ * issuer simply carries none, so the internal-issuer policy for private
+ * hosts and the subject list (minus paused hosts) still reach Caddy.
  */
 
 const NON_PUBLIC_TLDS = new Set([
@@ -26,13 +27,20 @@ function isPublicDomain(domain) {
   return !NON_PUBLIC_TLDS.has(tld);
 }
 
+function acmeIssuer(caddyConfig) {
+  const issuer = { module: 'acme' };
+  if (caddyConfig.email) issuer.email = caddyConfig.email;
+  if (caddyConfig.acmeCa) issuer.ca = caddyConfig.acmeCa;
+  return issuer;
+}
+
 function buildTlsAutomation(routeDomains, caddyConfig, forceInternalDomains = []) {
-  if (!caddyConfig || !caddyConfig.email) return null;
+  caddyConfig = caddyConfig || {};
 
   // Listener-only entries like ":443" land in caddyRoutes for the
   // server-block setup but are not domains — skip them so they don't
   // become bogus issuer subjects.
-  const allDomains = routeDomains.filter(d => !/^:\d+$/.test(d));
+  const allDomains = (routeDomains || []).filter(d => !/^:\d+$/.test(d));
   // forceInternalDomains overrides TLD classification: these are always
   // treated as private/internal regardless of their public-looking TLD.
   // Deduplicate to avoid double entries if a domain appears in both lists.
@@ -48,12 +56,7 @@ function buildTlsAutomation(routeDomains, caddyConfig, forceInternalDomains = []
   const policies = [];
 
   if (publicDomains.length > 0) {
-    const acmePolicy = {
-      subjects: publicDomains,
-      issuers: [{ module: 'acme', email: caddyConfig.email }],
-    };
-    if (caddyConfig.acmeCa) acmePolicy.issuers[0].ca = caddyConfig.acmeCa;
-    policies.push(acmePolicy);
+    policies.push({ subjects: publicDomains, issuers: [acmeIssuer(caddyConfig)] });
   }
 
   if (privateDomains.length > 0) {
@@ -66,9 +69,7 @@ function buildTlsAutomation(routeDomains, caddyConfig, forceInternalDomains = []
   if (policies.length === 0) {
     // Catch-all so new routes created before the next buildCaddyConfig
     // still get a cert attempt instead of silently waiting.
-    const fallback = { issuers: [{ module: 'acme', email: caddyConfig.email }] };
-    if (caddyConfig.acmeCa) fallback.issuers[0].ca = caddyConfig.acmeCa;
-    policies.push(fallback);
+    policies.push({ issuers: [acmeIssuer(caddyConfig)] });
   }
 
   return { automation: { policies } };
