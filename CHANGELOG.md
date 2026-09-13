@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- Entfernt: die bisherige Routen-Liste („Alte Ansicht“, `/routes/legacy`) mit den Wizards „Neue Route anlegen“, „Service anlegen“ und „Drucker einrichten“. `/routes` zeigt immer die Domains-Ansicht; alles daraus geht dort im Domain-Dialog, die LAN-Erkennung inklusive.
+- Entfernt: die API-Endpunkte `/api/v1/service-bundles` und `/api/v1/printer-presets`. Hosts werden über `POST /api/v1/domains/:id/hosts` angelegt, Drucker über die Vorlage `printer`, Scan-zu-Ordner über `POST /api/v1/hosts/:id/scan-to-folder`. API-Clients, die die alten Endpunkte nutzen, müssen umgestellt werden.
+- Der Routen-Editor exportiert nur noch `open` und `close`; rund 8.000 Zeilen Altcode (Seite, Skripte, Stile, Texte) sind weg.
+
+---
+
 ## [1.120.0] — 2026-09-13
 
 ### Features
