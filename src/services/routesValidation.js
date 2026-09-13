@@ -231,11 +231,137 @@ function hstsDefaultToFields(def) {
   };
 }
 
+// ─── Security options (docs/feature-security-options.md) ─
+//
+// Rules shared by routes.create/update and the API:
+//   B  backend_tls_verify / backend_tls_server_name / backend_tls_ca_pem
+//        CA must parse as one or more PEM certificates → BACKEND_CA_INVALID
+//        server name must be a hostname              → BACKEND_SERVER_NAME_INVALID
+//   D  max_body_mb: integer 0 … 4096 (0 = unlimited) → MAX_BODY_INVALID
+//   E  domains.tls_min_version: '1.2' | '1.3'        → TLS_MIN_VERSION_INVALID
+//   F  mtls_enabled needs an HTTP route with HTTPS   → MTLS_REQUIRES_HTTPS
+//        and a parsable CA PEM                       → MTLS_CA_INVALID
+//        mtls_mode: 'require' only                   → MTLS_MODE_INVALID
+// Errors carry statusCode 400 + code like the HSTS ones.
+
+const MAX_BODY_MB_MAX = 4096;
+const TLS_MIN_VERSIONS = ['1.2', '1.3'];
+const MTLS_MODES = ['require'];
+const HOSTNAME_RE = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+const PEM_CERT_RE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+function secError(code, message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  err.code = code;
+  return err;
+}
+
+/**
+ * Parse a PEM text with one or more certificates (crypto.X509Certificate).
+ * Returns { pem, count } with the certificates re-joined one per block and
+ * a trailing newline; throws a plain Error when nothing parses.
+ */
+function parsePemCertificates(pem) {
+  const crypto = require('node:crypto');
+  const text = String(pem == null ? '' : pem).replace(/\r\n?/g, '\n').trim();
+  const blocks = text.match(PEM_CERT_RE);
+  if (!blocks || blocks.length === 0) throw new Error('no PEM certificate block found');
+  for (const block of blocks) {
+    // Throws on a malformed block ("error:0480006C:PEM routines::no start line" etc.).
+    new crypto.X509Certificate(block); // eslint-disable-line no-new
+  }
+  return { pem: blocks.join('\n') + '\n', count: blocks.length };
+}
+
+/** Empty → null; otherwise the normalised PEM or a coded 400. */
+function normalizeCaPem(value, code) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  try {
+    return parsePemCertificates(text).pem;
+  } catch (err) {
+    throw secError(code, 'CA must be one or more PEM certificates (' + err.message + ')');
+  }
+}
+
+/** Parse max_body_mb; '' / null / undefined mean 0 (unlimited). */
+function validateMaxBodyMb(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const n = typeof value === 'string' ? Number(value.trim()) : value;
+  if (!Number.isInteger(n) || n < 0 || n > MAX_BODY_MB_MAX) {
+    throw secError('MAX_BODY_INVALID', `max_body_mb must be an integer between 0 and ${MAX_BODY_MB_MAX} (0 = unlimited)`);
+  }
+  return n;
+}
+
+/** Optional hostname for backend certificate verification / SNI. */
+function validateBackendServerName(value) {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim().toLowerCase().replace(/\.$/, '');
+  if (!s) return null;
+  if (!HOSTNAME_RE.test(s)) throw secError('BACKEND_SERVER_NAME_INVALID', 'backend_tls_server_name must be a hostname');
+  return s;
+}
+
+function validateTlsMinVersion(value) {
+  const v = value === undefined || value === null ? '1.2' : String(value).trim();
+  if (!TLS_MIN_VERSIONS.includes(v)) throw secError('TLS_MIN_VERSION_INVALID', "tls_min_version must be '1.2' or '1.3'");
+  return v;
+}
+
+function validateMtlsMode(value) {
+  const v = value === undefined || value === null || value === '' ? 'require' : String(value).trim();
+  if (!MTLS_MODES.includes(v)) throw secError('MTLS_MODE_INVALID', "mtls_mode must be 'require'");
+  return v;
+}
+
+/**
+ * Resolve the security-option columns for a write. `data` is the incoming
+ * payload (fields may be absent), `current` the stored row (create: null).
+ * Like HSTS: turning HTTPS off clears an INHERITED mtls_enabled, an EXPLICIT
+ * mtls_enabled=1 without HTTPS is rejected. Returns the seven columns.
+ */
+function resolveSecurityFields(data, current, { route_type, https_enabled }) {
+  const cur = current || {};
+  const given = (field) => data[field] !== undefined;
+  const pick = (field, fallback) => (given(field) ? data[field] : (cur[field] !== undefined && cur[field] !== null ? cur[field] : fallback));
+  const httpsOn = (route_type || 'http') === 'http' && !!https_enabled;
+
+  const fields = {
+    backend_tls_verify: hstsFlag(pick('backend_tls_verify', 0)),
+    backend_tls_server_name: given('backend_tls_server_name') ? validateBackendServerName(data.backend_tls_server_name) : (cur.backend_tls_server_name || null),
+    backend_tls_ca_pem: given('backend_tls_ca_pem') ? normalizeCaPem(data.backend_tls_ca_pem, 'BACKEND_CA_INVALID') : (cur.backend_tls_ca_pem || null),
+    max_body_mb: given('max_body_mb') ? validateMaxBodyMb(data.max_body_mb) : validateMaxBodyMb(cur.max_body_mb),
+    mtls_enabled: hstsFlag(pick('mtls_enabled', 0)),
+    mtls_ca_pem: given('mtls_ca_pem') ? normalizeCaPem(data.mtls_ca_pem, 'MTLS_CA_INVALID') : (cur.mtls_ca_pem || null),
+    mtls_mode: validateMtlsMode(pick('mtls_mode', 'require')),
+  };
+  if (fields.mtls_enabled && !httpsOn) {
+    if (given('mtls_enabled')) throw secError('MTLS_REQUIRES_HTTPS', 'mtls_enabled requires an HTTP route with https_enabled');
+    fields.mtls_enabled = 0;
+  }
+  if (fields.mtls_enabled && !fields.mtls_ca_pem) {
+    throw secError('MTLS_CA_INVALID', 'mtls_ca_pem (PEM, one or more certificates) is required when mtls_enabled is set');
+  }
+  return fields;
+}
+
 module.exports = {
   validateIfProvided,
   validateBrandingFields,
   validateBotBlockerConfig,
   VALID_BOT_MODES,
+  MAX_BODY_MB_MAX,
+  TLS_MIN_VERSIONS,
+  parsePemCertificates,
+  normalizeCaPem,
+  validateMaxBodyMb,
+  validateBackendServerName,
+  validateTlsMinVersion,
+  validateMtlsMode,
+  resolveSecurityFields,
   HSTS_MAX_AGE_MIN,
   HSTS_MAX_AGE_MAX,
   HSTS_MAX_AGE_DEFAULT,
