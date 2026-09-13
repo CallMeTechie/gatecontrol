@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const { precreatePrivateFile, restrictDbFiles } = require('../utils/fileModes');
 
 let db = null;
 
@@ -16,6 +17,21 @@ function getDb() {
 
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  // Owner-only modes (0600) for the DB, its -wal/-shm and copies of it: it
+  // holds password/token hashes and sessions and lives on a host bind mount.
+  // A fresh DB is pre-created with 0600 (SQLite would use 0644), existing
+  // files from older versions are tightened; SQLite then creates -wal/-shm
+  // with the DB file's mode. Best-effort — never blocks opening the DB.
+  if (dbPath !== ':memory:' && !dbPath.startsWith('file:')) {
+    try {
+      precreatePrivateFile(dbPath);
+      const changed = restrictDbFiles(dbPath);
+      if (changed.length) logger.info({ files: changed }, 'Restricted database file permissions to owner-only');
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Could not restrict database file permissions');
+    }
   }
 
   db = new Database(dbPath);

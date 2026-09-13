@@ -310,6 +310,7 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 - Läuft auf Alpine Linux (minimale Angriffsfläche)
 - WireGuard-Konfigurationsdateien mit `chmod 600` gesichert
 - Verschlüsselungsschlüssel-Datei mit `chmod 600` gesichert
+- Datenbank (inkl. `-wal`/`-shm`), automatische Backups und die generierte Caddy-Konfiguration nur für den Eigentümer lesbar (`0600`, Backup-Verzeichnis `0700`) — bestehende Installationen werden beim nächsten Start angepasst
 - Nur benötigte Capabilities: `NET_ADMIN` (Netzwerk-Interface-Verwaltung) und `SYS_MODULE` (Kernel-Modul-Laden)
 - Health-Check-Endpoint (`/health`) überprüft DB-Konnektivität und WireGuard-Interface-Status
 - Atomare WireGuard-Config-Schreibvorgänge (Write-to-Tmp + Rename) verhindern Korruption bei Crash

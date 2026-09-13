@@ -6,8 +6,16 @@ const logger = require('../utils/logger');
 const settings = require('./settings');
 const backup = require('./backup');
 const activity = require('./activity');
+const { atomicWrite } = require('../utils/fs');
+const { ensurePrivateDir, PRIVATE_FILE_MODE } = require('../utils/fileModes');
 
-const BACKUP_DIR = '/data/backups';
+// Backups carry the full DB content (users with password hashes, API-token
+// hashes, peers with encrypted keys, settings) — owner-only: dir 0700,
+// files 0600. Node reads them itself for download; nothing else needs them.
+// Backups from older versions are tightened at boot (server.js →
+// utils/fileModes.restrictSensitiveDataFiles).
+// GC_BACKUP_DIR exists for tests only.
+const BACKUP_DIR = process.env.GC_BACKUP_DIR || '/data/backups';
 
 // Schedule interval mapping (in milliseconds)
 const SCHEDULE_MS = {
@@ -24,12 +32,10 @@ const FILENAME_REGEX = /^gatecontrol-\d{8}-\d{6}\.json$/;
 let timer = null;
 
 /**
- * Ensure backup directory exists
+ * Ensure backup directory exists (owner-only, 0700)
  */
 function ensureDir() {
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
+  ensurePrivateDir(BACKUP_DIR);
 }
 
 /**
@@ -86,7 +92,10 @@ function runBackup() {
   const filename = `gatecontrol-${timestamp}.json`;
   const filepath = path.join(BACKUP_DIR, filename);
 
-  fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf-8');
+  // Fresh tmp file + rename: the 0600 mode always applies (a plain
+  // writeFileSync would keep the mode of an existing file) and a crash
+  // mid-write never leaves a truncated backup under a valid name.
+  atomicWrite(filepath, JSON.stringify(data, null, 2), { mode: PRIVATE_FILE_MODE });
 
   // Update last run time
   settings.set('autobackup_last_run', new Date().toISOString());

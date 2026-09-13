@@ -29,6 +29,21 @@ async function start() {
   runMigrations();
   await seedAdminUser();
 
+  // Owner-only modes for sensitive files that older versions left
+  // world-readable on the host bind mount (DB copies, JSON backups,
+  // runtime.json). New files are created 0600 already. Best-effort.
+  try {
+    const { restrictSensitiveDataFiles } = require('./utils/fileModes');
+    const changed = restrictSensitiveDataFiles({
+      dbPath: config.app.dbPath,
+      backupDir: require('./services/autobackup').BACKUP_DIR,
+      caddyDataDir: config.caddy.dataDir,
+    });
+    if (changed.length) logger.info({ files: changed }, 'Restricted sensitive data files to owner-only permissions');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Restricting data file permissions failed (non-fatal)');
+  }
+
   // One-shot: promote every existing peer-CSV tag into the tags registry
   // so the Tags admin card shows them all as registered (no "nicht
   // registriert" badge). Idempotent, runs every startup.
