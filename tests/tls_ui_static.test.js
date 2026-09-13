@@ -152,8 +152,9 @@ describe('TLS guard: i18n', () => {
 
   it('the block is one contiguous tail of both files (contract: "am Dateiende")', () => {
     // Later feature blocks that the contracts also put at the file end
-    // (docs/feature-hsts.md: hsts.*) may follow the TLS block.
-    const LATER_BLOCKS = /^hsts\./;
+    // (docs/feature-hsts.md: hsts.*, docs/feature-security-options.md) may
+    // follow the TLS block.
+    const LATER_BLOCKS = /^(hsts\.|alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.)/;
     for (const [name, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
       const first = keys.findIndex((k) => PREFIX_RE.test(k));
