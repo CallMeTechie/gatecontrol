@@ -2309,3 +2309,43 @@ body.rdp-session-body {
   .zn-f-lan { flex-basis: 100%; }
   .zn-gw-select { max-width: none; flex: 1 1 100%; }
 }
+
+/* ─── Domain zones: LAN discovery (zn-disc-) ─── */
+.zn-newhead > .zn-disc-hint { flex: 1 1 100%; font-size: 11px; color: var(--text-3); line-height: 1.4; }
+.zn-disc-hint .zn-link { font-size: 11px; }
+.modal.zn-dialog-box.zn-dialog-wide { max-width: min(680px, calc(100vw - 32px)); }
+.zn-disc-bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.zn-disc-gwwrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.zn-disc-gwwrap .zn-f-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
+.zn-disc-gwname { display: inline-flex; align-items: center; gap: 6px; height: 32px; font-size: 13px; font-weight: 600; }
+.zn-disc-gwname .zn-ic { color: var(--text-3); }
+.zn-disc-gw { min-width: 200px; }
+.zn-disc-search { flex: 1 1 180px; }
+.zn-disc-bar .zn-disc-scan { margin-left: auto; }
+.zn-disc-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 18px; margin-bottom: 8px; font-size: 12px; color: var(--text-2); }
+.zn-disc-status:empty { display: none; }
+.zn-disc-spin { display: inline-flex; color: var(--accent); animation: zn-disc-spin 1s linear infinite; }
+@keyframes zn-disc-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.zn-disc-err { color: var(--red); }
+.zn-disc-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); }
+.zn-disc-age { color: var(--text-3); }
+.zn-disc-hintbox { margin-bottom: 10px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.zn-disc-list { max-height: min(52vh, 460px); overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-base); }
+.zn-disc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.zn-disc-row:last-child { border-bottom: 0; }
+.zn-disc-info { min-width: 0; }
+.zn-disc-name { font-size: 13px; font-weight: 600; color: var(--text-1); overflow-wrap: anywhere; }
+.zn-disc-sep { color: var(--text-3); font-weight: 400; }
+.zn-disc-ip { font-family: var(--font-mono); font-size: 12px; font-weight: 400; color: var(--text-2); }
+.zn-disc-ports { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 4px; font-size: 11px; }
+.zn-disc-chip { display: inline-block; padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+.zn-disc-chip-http { border-color: var(--accent); color: var(--accent); }
+.zn-disc-portwrap { display: flex; flex-direction: column; gap: 4px; }
+.zn-disc-portwrap .zn-f-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
+.zn-disc-port { width: 96px; }
+.zn-disc-empty { padding: 22px 12px; text-align: center; font-size: 12px; color: var(--text-3); }
+@media (max-width: 600px) {
+  .zn-disc-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .zn-disc-row > .zn-disc-info { grid-column: 1 / -1; }
+  .zn-disc-bar .zn-disc-scan { margin-left: 0; }
+}

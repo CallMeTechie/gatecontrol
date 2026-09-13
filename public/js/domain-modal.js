@@ -789,6 +789,7 @@
       desc,
       el('span', { class: 'zn-spacer' }),
       tplBtn,
+      renderDiscoveryControl(zone), // LAN discovery button or hint (null for peer zones)
     ]);
 
     const lan = kindPeer ? null : el('input', { type: 'text', class: 'zn-input zn-mono', value: nh.lan, placeholder: t('host.lan_ph'), 'aria-label': t('host.lan_host'), 'data-zn-key': 'nhlan', maxLength: 253, autocomplete: 'off', spellcheck: 'false' });
@@ -1074,6 +1075,7 @@
     closeMenu();
     current = { domainId: domainId == null ? null : Number(domainId) };
     ui = freshUi();
+    discReset(); // LAN-discovery capability is loaded once per modal open
     pendingRefresh = false;
     bodyEl.replaceChildren();
     bodyEl.scrollTop = 0;
@@ -1103,4 +1105,333 @@
   function bind(c) { ctx = Object.assign(ctx, c || {}); }
 
   window.GCDomainModal = { open, close, refresh, isOpen, bind, currentDomainId: () => (current ? current.domainId : undefined) };
+
+  // ─── LAN discovery in the new-host card ────────────────────────────────
+  // docs/feature-tls-guard.md, "LAN-Erkennung im Domain-Dialog". Capability
+  // (GET /api/v1/gateways: health.telemetry.lan_discovery + discovery.enabled)
+  // and pool members (GET /api/v1/gateway-pools/:id/members) are loaded once
+  // per modal open — discReset() runs in open(). Pure helpers live in
+  // zones-view.js (V.suggestSubdomain, V.entryDraftFromPort, …).
+  const DISC_SCAN_WAIT_MS = 60000;   // gateway scans stop after 45 s; wait a bit longer
+  const DISC_POLL_MS = 5000;         // fallback while a scan runs and no SSE arrives
+  const disc = { gateways: null, gatewaysLoading: null, members: {}, membersLoading: {}, pending: false };
+
+  function discReset() {
+    disc.gateways = null;
+    disc.gatewaysLoading = null;
+    disc.members = {};
+    disc.membersLoading = {};
+    disc.pending = false;
+  }
+
+  // Discovery target of a zone: a gateway peer or a pool; null hides the feature.
+  function discTarget(zone) {
+    const g = zone && !zone.unassigned && zone.gateway;
+    if (!g || !g.kind || g.kind === 'peer') return null;
+    if (g.kind === 'gateway') return g.peer_id != null ? { kind: 'gateway', peerId: g.peer_id } : null;
+    if (g.kind === 'pool') return g.pool_id != null ? { kind: 'pool', poolId: g.pool_id } : null;
+    return null;
+  }
+
+  function discLoadGateways() {
+    if (disc.gateways) return Promise.resolve(disc.gateways);
+    if (!disc.gatewaysLoading) {
+      disc.gatewaysLoading = api.get('/api/v1/gateways').then((res) => {
+        const map = {};
+        ((res && res.gateways) || []).forEach((g) => {
+          const st = V.discoveryStateOf(g);
+          map[String(g.peer_id)] = { id: g.peer_id, name: g.name || g.hostname || ('#' + g.peer_id), capable: st.capable, enabled: st.enabled };
+        });
+        return map;
+      }).catch(() => ({})).then((map) => { disc.gateways = map; disc.gatewaysLoading = null; return map; });
+    }
+    return disc.gatewaysLoading;
+  }
+
+  function discLoadMembers(poolId) {
+    const key = String(poolId);
+    if (disc.members[key]) return Promise.resolve(disc.members[key]);
+    if (!disc.membersLoading[key]) {
+      disc.membersLoading[key] = api.get('/api/v1/gateway-pools/' + encodeURIComponent(key) + '/members')
+        .then((rows) => (Array.isArray(rows) ? rows : []).filter((m) => m && m.peer_id != null).map((m) => ({ id: m.peer_id, name: m.peer_name })))
+        .catch(() => [])
+        .then((list) => { disc.members[key] = list; delete disc.membersLoading[key]; return list; });
+    }
+    return disc.membersLoading[key];
+  }
+
+  // Candidate gateways of a zone with their discovery state; null while loading.
+  function discCandidates(zone) {
+    const tg = discTarget(zone);
+    if (!tg || !disc.gateways) return null;
+    let ids;
+    if (tg.kind === 'gateway') ids = [{ id: tg.peerId }];
+    else { ids = disc.members[String(tg.poolId)]; if (!ids) return null; }
+    return ids.map((m) => {
+      const g = disc.gateways[String(m.id)];
+      return { id: m.id, name: m.name || (g && g.name) || ('#' + m.id), capable: !!(g && g.capable), enabled: !!(g && g.enabled), known: !!g };
+    });
+  }
+
+  function discEnsureLoaded(zone) {
+    const tg = discTarget(zone);
+    if (!tg || disc.pending) return;
+    const need = [];
+    if (!disc.gateways) need.push(discLoadGateways());
+    if (tg.kind === 'pool' && !disc.members[String(tg.poolId)]) need.push(discLoadMembers(tg.poolId));
+    if (!need.length) return;
+    disc.pending = true;
+    Promise.all(need).then(() => { disc.pending = false; if (isOpen()) refresh(); }, () => { disc.pending = false; });
+  }
+
+  // Remember a state the discover endpoint reported (409) so the card shows the hint.
+  function discMark(peerId, patch) {
+    if (!disc.gateways) return;
+    disc.gateways[String(peerId)] = Object.assign(disc.gateways[String(peerId)] || { id: peerId, name: '#' + peerId, capable: true, enabled: true }, patch);
+  }
+
+  // New-host card: the button, or a muted hint linking to the gateway page.
+  function renderDiscoveryControl(zone) {
+    const tg = discTarget(zone);
+    if (!tg) return null;
+    discEnsureLoaded(zone);
+    const cands = discCandidates(zone);
+    if (!cands) {
+      return el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm zn-disc-btn', disabled: true, title: t('zones.discovery.loading'), 'data-zn-key': 'nhdisc' }, [icon('search', 12), t('zones.discovery.button')]);
+    }
+    if (cands.some((c) => c.capable && c.enabled)) {
+      return el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm zn-disc-btn', 'data-zn-key': 'nhdisc', on: { click: () => openDiscoveryDialog(zone) } }, [icon('search', 12), t('zones.discovery.button')]);
+    }
+    let msg;
+    if (tg.kind === 'pool') msg = t('zones.discovery.hint_pool_none');
+    else msg = cands[0].capable ? t('zones.discovery.hint_disabled') : t('zones.discovery.hint_unavailable');
+    return el('span', { class: 'zn-hint-muted zn-disc-hint' }, [
+      msg, ' ', el('a', { href: '/gateways', class: 'zn-link zn-disc-link', text: t('zones.discovery.hint_link') }),
+    ]);
+  }
+
+  function discErrCode(err) { return err && err.data && err.data.error ? String(err.data.error) : ''; }
+  function discIsLicense(err) {
+    const d = err && err.data;
+    return !!(d && (d.feature === 'gateway_lan_discovery' || /not licensed|feature_not_available/i.test(String(d.error || ''))));
+  }
+  function discErrText(err) {
+    const code = discErrCode(err);
+    if (code === 'no_subnet') return t('zones.discovery.err_no_subnet');
+    if (code === 'gateway_unreachable') return t('zones.discovery.err_gateway_unreachable');
+    return errMsg(err);
+  }
+
+  function openDiscoveryDialog(zone) {
+    const tg = discTarget(zone);
+    const cands = discCandidates(zone) || [];
+    if (!tg || !cands.length) return;
+    const first = cands.find((c) => c.capable && c.enabled) || cands[0];
+    const st = { peerId: first.id, devices: [], updatedAt: null, inFlight: false, timedOut: false, q: '', hint: null, error: null, loading: false, waitUntil: 0, marked: false };
+    let closed = false;
+    let pollTimer = null;
+    const cand = () => cands.find((c) => String(c.id) === String(st.peerId)) || cands[0];
+
+    const d = dialog({ title: t('zones.discovery.title'), wide: true });
+    d.overlay.classList.add('zn-disc-dialog');
+
+    let gwNode;
+    if (tg.kind === 'pool') {
+      const sel = el('select', { class: 'form-select zn-select zn-disc-gw', 'aria-label': t('zones.discovery.gateway') },
+        cands.map((c) => el('option', { value: String(c.id), text: c.name + (c.capable && c.enabled ? '' : ' · ' + t('zones.discovery.member_unavailable')) })));
+      sel.value = String(st.peerId);
+      sel.addEventListener('change', () => {
+        st.peerId = Number(sel.value);
+        st.devices = []; st.updatedAt = null; st.inFlight = false; st.timedOut = false; st.error = null;
+        stopPoll();
+        load(false);
+      });
+      gwNode = el('label', { class: 'zn-disc-gwwrap' }, [el('span', { class: 'zn-f-label', text: t('zones.discovery.gateway') }), sel]);
+    } else {
+      gwNode = el('div', { class: 'zn-disc-gwwrap' }, [
+        el('span', { class: 'zn-f-label', text: t('zones.discovery.gateway') }),
+        el('span', { class: 'zn-disc-gwname' }, [icon('gateway', 12), first.name]),
+      ]);
+    }
+    const filter = el('input', { type: 'search', class: 'zn-input zn-search-sm zn-disc-filter', placeholder: t('zones.discovery.filter_ph'), 'aria-label': t('zones.discovery.filter'), autocomplete: 'off' });
+    filter.addEventListener('input', () => { st.q = filter.value; renderList(); });
+    const scanBtn = el('button', { type: 'button', class: 'btn btn-primary zn-btn-sm zn-disc-scan', on: { click: () => scan() } }, [icon('refresh', 12), t('zones.discovery.scan')]);
+    const status = el('div', { class: 'zn-disc-status', role: 'status', 'aria-live': 'polite' });
+    const hintBox = el('div', { class: 'zn-disc-hintbox', role: 'alert' }, [
+      el('span', { class: 'zn-disc-hintmsg' }), ' ', el('a', { href: '/gateways', class: 'zn-link', text: t('zones.discovery.hint_link') }),
+    ]);
+    hintBox.hidden = true;
+    const list = el('div', { class: 'zn-disc-list' });
+
+    d.body.appendChild(el('p', { class: 'zn-dialog-detail', text: t('zones.discovery.intro') }));
+    d.body.appendChild(el('div', { class: 'zn-disc-bar' }, [gwNode, el('div', { class: 'zn-search-wrap zn-disc-search' }, [icon('search', 13), filter]), scanBtn]));
+    d.body.appendChild(status);
+    d.body.appendChild(hintBox);
+    d.body.appendChild(list);
+    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.close'), on: { click: () => d.close(null) } }));
+
+    function setHint(msg) {
+      st.hint = msg || null;
+      hintBox.querySelector('.zn-disc-hintmsg').textContent = msg || '';
+      hintBox.hidden = !msg;
+      scanBtn.hidden = !!msg;
+    }
+    function renderStatus() {
+      status.replaceChildren();
+      scanBtn.disabled = st.inFlight;
+      if (st.inFlight) {
+        status.appendChild(el('span', { class: 'zn-disc-spin', 'aria-hidden': 'true' }, [icon('refresh', 12)]));
+        status.appendChild(el('span', { class: 'zn-disc-scanning', text: t('zones.discovery.scanning') }));
+        return;
+      }
+      if (st.error) { status.appendChild(el('span', { class: 'zn-disc-err', text: st.error })); return; }
+      if (st.timedOut) status.appendChild(el('span', { class: 'zn-disc-warn' }, [icon('alert', 11), ' ', t('zones.discovery.timed_out')]));
+      const mins = V.discoveryAgeMinutes(st.updatedAt);
+      if (mins != null && st.devices.length) {
+        status.appendChild(el('span', { class: 'zn-disc-age', text: mins === 0 ? t('zones.discovery.age_now') : t('zones.discovery.age', { n: mins }) }));
+      }
+    }
+    function renderList() {
+      list.replaceChildren();
+      const shown = V.filterDiscovered(st.devices, st.q);
+      if (!shown.length) {
+        const txt = st.devices.length ? t('zones.discovery.no_match') : (st.loading ? t('common.loading') : t('zones.discovery.empty'));
+        list.appendChild(el('div', { class: 'zn-disc-empty', text: txt }));
+        return;
+      }
+      shown.forEach((dev) => list.appendChild(renderDeviceRow(dev)));
+    }
+    function renderDeviceRow(dev) {
+      const ports = V.devicePorts(dev);
+      const name = dev.hostname ? String(dev.hostname) : t('zones.discovery.no_hostname');
+      const chips = ports.length
+        ? ports.map((p) => {
+          const c = V.classifyDiscoveredPort(p);
+          const http = !!(c && c.type === 'http');
+          return el('span', { class: 'zn-disc-chip' + (http ? ' zn-disc-chip-http' : ''), text: String(p) + ' ' + (http ? 'HTTPS' : 'TCP') });
+        })
+        : [el('span', { class: 'zn-muted', text: t('zones.discovery.ports_none') })];
+      const info = el('div', { class: 'zn-disc-info' }, [
+        el('div', { class: 'zn-disc-name' }, [el('span', { class: 'zn-disc-host', text: name }), el('span', { class: 'zn-disc-sep', text: ' · ' }), el('span', { class: 'zn-disc-ip', text: String(dev.ip || '') })]),
+        el('div', { class: 'zn-disc-ports' }, chips),
+      ]);
+      let portSel = null;
+      if (ports.length > 1) {
+        portSel = el('select', { class: 'form-select zn-select zn-disc-port', 'aria-label': t('zones.discovery.port') }, ports.map((p) => el('option', { value: String(p), text: String(p) })));
+        portSel.value = String(ports[0]);
+      }
+      const adopt = el('button', {
+        type: 'button', class: 'btn btn-secondary zn-btn-sm zn-disc-adopt',
+        on: { click: () => { const port = portSel ? Number(portSel.value) : ports[0]; d.close(true); adoptDiscoveredDevice(zone, dev, port); } },
+      }, [icon('plus', 12), t('zones.discovery.adopt')]);
+      return el('div', { class: 'zn-disc-row', dataset: { ip: String(dev.ip || '') } }, [
+        info,
+        portSel ? el('label', { class: 'zn-disc-portwrap' }, [el('span', { class: 'zn-f-label', text: t('zones.discovery.port') }), portSel]) : el('span', { class: 'zn-disc-portwrap' }),
+        adopt,
+      ]);
+    }
+
+    // Snapshot from GET …/discovered or from a gc:gateway_discovery event.
+    function apply(snap, fromEvent) {
+      const was = st.inFlight;
+      st.devices = Array.isArray(snap.devices) ? snap.devices : [];
+      if (snap.updated_at != null) st.updatedAt = snap.updated_at; else if (fromEvent) st.updatedAt = Date.now();
+      st.inFlight = fromEvent ? !snap.done : !!snap.in_flight;
+      st.timedOut = !!snap.timed_out;
+      if (st.inFlight) { if (!was) st.waitUntil = Date.now() + DISC_SCAN_WAIT_MS; startPoll(); } else stopPoll();
+      renderStatus();
+      renderList();
+    }
+    function startPoll() {
+      if (pollTimer) return;
+      pollTimer = setInterval(() => {
+        if (closed || !st.inFlight) { stopPoll(); return; }
+        if (Date.now() > st.waitUntil) { stopPoll(); st.inFlight = false; st.timedOut = true; renderStatus(); return; }
+        load(true);
+      }, DISC_POLL_MS);
+    }
+    function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+    async function load(quiet) {
+      const pid = st.peerId;
+      const c = cand();
+      if (!(c.capable && c.enabled)) {
+        setHint(c.capable ? t('zones.discovery.hint_disabled') : t('zones.discovery.hint_unavailable'));
+        st.devices = []; renderStatus(); renderList();
+        return;
+      }
+      setHint(null);
+      if (!quiet) { st.loading = true; st.error = null; renderList(); }
+      try {
+        const res = await api.get('/api/v1/gateways/' + encodeURIComponent(String(pid)) + '/discovered');
+        if (closed || pid !== st.peerId) return;
+        apply(res || {}, false);
+      } catch (err) {
+        if (closed || pid !== st.peerId) return;
+        if (discIsLicense(err)) setHint(t('zones.discovery.hint_license'));
+        else { st.error = t('zones.discovery.err_load', { error: errMsg(err) }); renderStatus(); }
+      } finally {
+        if (!closed && pid === st.peerId) { st.loading = false; renderList(); }
+      }
+    }
+
+    async function scan() {
+      const pid = st.peerId;
+      st.error = null; st.timedOut = false; st.inFlight = true; st.waitUntil = Date.now() + DISC_SCAN_WAIT_MS;
+      renderStatus();
+      try {
+        await call(api.post('/api/v1/gateways/' + encodeURIComponent(String(pid)) + '/discover', {}));
+        if (closed || pid !== st.peerId) return;
+        startPoll();
+      } catch (err) {
+        if (closed || pid !== st.peerId) return;
+        const code = discErrCode(err);
+        if (code === 'scan_in_progress') { startPoll(); return; } // keep waiting for the running scan
+        st.inFlight = false;
+        if (discIsLicense(err)) setHint(t('zones.discovery.hint_license'));
+        else if (code === 'discovery_disabled') { discMark(pid, { enabled: false }); st.marked = true; setHint(t('zones.discovery.hint_disabled')); }
+        else if (code === 'capability_unavailable') { discMark(pid, { capable: false }); st.marked = true; setHint(t('zones.discovery.hint_unavailable')); }
+        else st.error = t('zones.discovery.err_scan', { error: discErrText(err) });
+        renderStatus();
+      }
+    }
+
+    const onEvent = (e) => {
+      const p = (e && e.detail) || {};
+      if (closed || String(p.peer_id) !== String(st.peerId)) return;
+      apply({ devices: p.devices, done: p.done, timed_out: p.timed_out, updated_at: Date.now() }, true);
+    };
+    document.addEventListener('gc:gateway_discovery', onEvent);
+    d.promise.then(() => {
+      closed = true;
+      stopPoll();
+      document.removeEventListener('gc:gateway_discovery', onEvent);
+      if (st.marked) refresh();
+    });
+
+    renderStatus();
+    renderList();
+    load(false);
+    filter.focus();
+  }
+
+  // Prefill the new-host draft; nothing is submitted.
+  function adoptDiscoveredDevice(zone, dev, port) {
+    const nh = ui.nh;
+    nh.lan = String(dev.ip || '').trim();
+    const sub = V.suggestSubdomain(dev.hostname);
+    if (sub) nh.sub = sub;
+    if (!nh.desc && dev.hostname) nh.desc = String(dev.hostname);
+    const draft = V.entryDraftFromPort(port, l4Allowed(zone));
+    if (draft) {
+      nh.type = draft.type; nh.target = draft.target; nh.listen = draft.listen; nh.bhttps = draft.bhttps;
+      nh.template = null; // the adopted port becomes the first entry
+    }
+    nh.error = null;
+    nh.conflict = null;
+    render();
+    const n = bodyEl.querySelector('[data-zn-key="nhsub"]');
+    if (n) { n.focus(); if (typeof n.select === 'function') n.select(); n.scrollIntoView({ block: 'nearest' }); }
+    toastOk(t('zones.discovery.adopted', { ip: nh.lan }));
+  }
 })();
