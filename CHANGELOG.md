@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.120.0] — 2026-09-13
 
 ### Features
 - Zertifikate: Die Seite zeigt jetzt den echten Stand aus Caddys Ablage und Log: gültig bis, Aussteller, letzter Fehler (verständlich und im Original), Versuche und nächster Versuch, dazu Kacheln für gültige, ablaufende, fehlgeschlagene und pausierte Zertifikate. „Prüfen“ öffnet die DNS-Vorprüfung, „Erneut versuchen“ startet den Antrag neu. Fehlt die ACME-Kontaktadresse, weist eine Leiste darauf hin.
