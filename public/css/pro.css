@@ -4105,6 +4105,7 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
 .wf-detail { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11.5px; line-height: 1.45; color: var(--text-2); min-width: 0; }
 .wf-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 20px; }
 .wf-detail-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wf-detail-row.wf-detail-others { grid-column: 1 / -1; }
 .wf-detail-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-1); white-space: pre-wrap; word-break: break-all; }
 .wf-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .tag.wf-tag { font-family: var(--font-mono); font-size: 10px; white-space: nowrap; }
