@@ -168,13 +168,16 @@ describe('WAF: script integration', () => {
     assert.match(src, /W\.mergeEvents\(/);
     assert.match(src, /document\.addEventListener\('gc:waf', onWafEvent\)/);
     assert.match(src, /setTimeout\(\(\) => \{[\s\S]*?\}, 800\)/, 'debounced');
-    assert.match(src, /W\.openExclusionDialog\(kind, \{ routeId, host: ev\.host, ruleId: ev\.rule_id, uri: ev\.uri \}\)/);
+    assert.match(src, /W\.openExclusionDialog\(kind, \{ routeId, host: ev\.host, ruleId: ev\.rule_id, uri: ev\.uri \}, \{ current:/);
     assert.match(src, /W\.isNotFound\(err\)/);
     assert.match(src, /engine_available === false/);
     for (const id of ['wf-events-list', 'wf-host', 'wf-action-chips', 'wf-range-chips', 'wf-tiles', 'wf-more', 'wf-page-info', 'wf-new-events', 'wf-routes-list', 'wf-engine-banner', 'wf-summary', 'btn-waf-refresh', 'wf-events-card']) {
       assert.ok(src.includes(`'${id}'`), id);
     }
-    for (const cls of ['wf-raw', 'wf-raw-toggle', 'wf-exclude-rule', 'wf-exclude-path', 'wf-host-link', 'wf-backend-missing']) assert.ok(src.includes(cls), cls);
+    for (const cls of ['wf-raw', 'wf-raw-toggle', 'wf-detail', 'wf-detail-data', 'wf-detail-tags', 'wf-detail-others', 'wf-raw-json', 'wf-exclude-rule', 'wf-exclude-path', 'wf-host-link', 'wf-backend-missing']) assert.ok(src.includes(cls), cls);
+    assert.match(src, /W\.detailOf\(ev\)/);
+    assert.match(src, /W\.ruleExcluded\(ev, excl\)/);
+    assert.match(src, /\{ current: W\.routeExclusions\(routeId, routes\(\)\) \}/);
   });
 
   it('entry-editor.js populates, locks, sends and maps the WAF fields', () => {
@@ -203,6 +206,30 @@ describe('WAF: script integration', () => {
     const zv = stripComments(read('public/js/zones-view.js'));
     assert.match(zv, /'WAF \(erkennt\)'/);
     assert.match(zv, /opts\.waf === false/);
+  });
+});
+
+describe('WAF: event retention on the settings page', () => {
+  for (const theme of THEMES) {
+    it(`${theme}: data-waf-days next to the activity retention, only with the waf license`, () => {
+      const src = read(`templates/${theme}/pages/settings.njk`);
+      const act = src.indexOf('id="data-activity-days"');
+      const waf = src.indexOf('id="data-waf-days"');
+      assert.ok(act > 0 && waf > act && waf < src.indexOf('id="data-peer-timeout"'), 'between activity retention and peer timeout');
+      const before = src.slice(0, waf);
+      assert.ok(before.lastIndexOf('{% if license.features.waf %}') > before.lastIndexOf('{% endif %}'), 'inside the license guard');
+      assert.match(src, /<input type="number" id="data-waf-days" value="14" min="1" max="365"/);
+      assert.ok(src.includes("{{ t('waf.retention_label') }}") && src.includes("{{ t('waf.retention_hint') }}"));
+    });
+  }
+
+  it('settings.js loads and saves retention_waf_days with the data cluster', () => {
+    const js = stripComments(read('public/js/settings.js'));
+    assert.match(js, /elWaf\.value = d\.retention_waf_days/);
+    assert.match(js, /\[trafficDays, activityDays, wafDays, peerTimeout\]\.filter\(Boolean\)/);
+    assert.match(js, /'data-waf-days': wafDays \? wafDays\.value : ''/);
+    assert.match(js, /if \(wafDays\) body\.retention_waf_days = wafDays\.value;/);
+    assert.equal(de['waf.retention_label'], 'WAF-Ereignisse (Tage)');
   });
 });
 

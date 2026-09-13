@@ -233,6 +233,14 @@
               <label class="form-label" for="data-activity-days">{{ t('data.activity_retention') or 'Activity logs (days)' }}</label>
               <input type="number" id="data-activity-days" value="30" min="1" max="365" style="width:100%">
             </div>
+            {# WAF events (docs/feature-waf.md): data.retention_waf_days, 1–365, default 14. #}
+            {% if license.features.waf %}
+            <div class="form-group wf-retention" style="flex:1;margin-bottom:0">
+              <label class="form-label" for="data-waf-days">{{ t('waf.retention_label') }}</label>
+              <input type="number" id="data-waf-days" value="14" min="1" max="365" style="width:100%" title="{{ t('waf.retention_hint') }}" aria-describedby="data-waf-days-hint">
+              <small class="form-hint" id="data-waf-days-hint" hidden>{{ t('waf.retention_hint') }}</small>
+            </div>
+            {% endif %}
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label" for="data-peer-timeout">{{ t('data.peer_timeout') or 'Peer online timeout (seconds)' }}</label>

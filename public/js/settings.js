@@ -587,6 +587,9 @@
       if (el2) el2.value = d.retention_activity_days;
       var el3 = document.getElementById('data-peer-timeout');
       if (el3) el3.value = d.peer_online_timeout;
+      // WAF events (docs/feature-waf.md); the field only exists with the waf license.
+      var elWaf = document.getElementById('data-waf-days');
+      if (elWaf && d.retention_waf_days != null) elWaf.value = d.retention_waf_days;
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('data');
     } catch (err) {
       console.error('Failed to load data settings:', err);
@@ -597,8 +600,9 @@
     var trafficDays = document.getElementById('data-traffic-days');
     var activityDays = document.getElementById('data-activity-days');
     var peerTimeout = document.getElementById('data-peer-timeout');
+    var wafDays = document.getElementById('data-waf-days');
     var dataStatus = document.getElementById('data-status');
-    var dataFields = [trafficDays, activityDays, peerTimeout].filter(Boolean);
+    var dataFields = [trafficDays, activityDays, wafDays, peerTimeout].filter(Boolean);
     if (dataFields.length) {
       SettingsAutosave.bind({
         cluster: 'data',
@@ -608,15 +612,18 @@
           return {
             'data-traffic-days': trafficDays ? trafficDays.value : '',
             'data-activity-days': activityDays ? activityDays.value : '',
+            'data-waf-days': wafDays ? wafDays.value : '',
             'data-peer-timeout': peerTimeout ? peerTimeout.value : '',
           };
         },
         save: function () {
-          return api.put('/api/settings/data', {
+          var body = {
             retention_traffic_days: trafficDays ? trafficDays.value : '',
             retention_activity_days: activityDays ? activityDays.value : '',
             peer_online_timeout: peerTimeout ? peerTimeout.value : '',
-          });
+          };
+          if (wafDays) body.retention_waf_days = wafDays.value;
+          return api.put('/api/settings/data', body);
         },
       });
     }
