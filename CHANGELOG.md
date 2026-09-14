@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.125.1] — 2026-09-14
 
 ### Fixes
 - WAF: Große Uploads legten Caddy lahm. Coraza puffert bis zu 12,5 MB jedes Request-Bodys und ließ die Regeln auch über Binärdaten laufen. Ein Upload von wenigen MB hielt Caddy minutenlang beschäftigt und ließ es über 2 GB wachsen, auch im Modus „Nur erkennen“. Jetzt prüft die WAF Header, URL und Query immer, den Body aber nur, wenn er höchstens 1 MB groß ist und als Formular, Multipart, JSON oder XML vorliegt. Gemessen mit dem Caddy aus dem Image: Uploads mit 60 MB laufen in 0,1 s durch, Caddy bleibt unter 100 MB; Angriffe in Formularen, JSON und URL werden weiter blockiert.
