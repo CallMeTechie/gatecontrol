@@ -222,17 +222,58 @@
     document.getElementById('backup-file-input').click();
   });
 
-  document.getElementById('backup-file-input').addEventListener('change', async function(e) {
+  // Encrypted off-site archives (.gcbk, release B §7): the passphrase row shows
+  // up when the server needs one (PASSPHRASE_REQUIRED) or rejects it
+  // (DECRYPT_FAILED); preview and restore then send it as form field.
+  const restorePassRow = document.getElementById('restore-passphrase-row');
+  const restorePass = document.getElementById('restore-passphrase');
+  function restorePassphrase() {
+    return restorePassRow && !restorePassRow.hidden && restorePass && restorePass.value ? restorePass.value : '';
+  }
+  function backupFormData(file) {
+    const fd = new FormData();
+    fd.append('backup', file);
+    const pass = restorePassphrase();
+    if (pass) fd.append('passphrase', pass);
+    return fd;
+  }
+  function restoreErrorText(data) {
+    if (data && data.code && window.GCOpsUI) return GCOpsUI.errorText(data, ['offsite.err.generic', data.error || 'Failed']);
+    return (data && data.error ? data.error : 'Failed') + (data && data.errors ? ': ' + data.errors.join(', ') : '');
+  }
+  function onGcbkNeedsPassphrase(data) {
+    const code = data && data.code;
+    if (restorePassRow && (code === 'PASSPHRASE_REQUIRED' || code === 'DECRYPT_FAILED')) {
+      restorePassRow.hidden = false;
+      if (restorePass) restorePass.focus();
+    }
+  }
+  if (restorePass) restorePass.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); previewBackup(); }
+  });
+  const restorePassApply = document.getElementById('restore-passphrase-apply');
+  if (restorePassApply) restorePassApply.addEventListener('click', function () { previewBackup(); });
+
+  document.getElementById('backup-file-input').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
+    pendingBackupFile = null;
+    if (restorePassRow) restorePassRow.hidden = true;
+    if (restorePass) restorePass.value = '';
+    previewBackup(file);
+  });
 
+  let previewFile = null;
+  async function previewBackup(fileArg) {
+    const file = fileArg || previewFile;
+    if (!file) return;
+    previewFile = file;
     const preview = document.getElementById('backup-preview');
     const restoreBtn = document.getElementById('btn-backup-restore');
     const msgEl = document.getElementById('restore-message');
     msgEl.style.display = 'none';
 
-    const formData = new FormData();
-    formData.append('backup', file);
+    const formData = backupFormData(file);
 
     try {
       const resp = await fetch('/api/v1/settings/restore/preview', {
@@ -247,12 +288,19 @@
         preview.style.display = 'none';
         restoreBtn.style.display = 'none';
         pendingBackupFile = null;
-        showMessage('restore-message', data.error + (data.errors ? ': ' + data.errors.join(', ') : ''), 'error');
+        onGcbkNeedsPassphrase(data);
+        showMessage('restore-message', restoreErrorText(data), 'error');
         return;
       }
 
       const s = data.summary;
-      preview.textContent = s.peers + ' Peers, ' + s.routes + ' Routes, ' + s.settings + ' Settings, ' + s.webhooks + ' Webhooks (' + s.created_at + ')';
+      let line = s.peers + ' Peers, ' + s.routes + ' Routes, ' + s.settings + ' Settings, ' + s.webhooks + ' Webhooks (' + s.created_at + ')';
+      if (data.encrypted && window.GCOpsUI) {
+        line += ' · ' + GCOpsUI.tr('offsite.restore_encrypted', 'encrypted archive')
+          + ' · ' + (data.include_key ? GCOpsUI.tr('offsite.restore_with_key', 'contains the key') : GCOpsUI.tr('offsite.restore_without_key', 'without the key'))
+          + (data.gc_version ? ' · v' + data.gc_version : '');
+      }
+      preview.textContent = line;
       preview.style.display = 'block';
       restoreBtn.style.display = 'inline-flex';
       pendingBackupFile = file;
@@ -262,14 +310,13 @@
       pendingBackupFile = null;
       showMessage('restore-message', err.message, 'error');
     }
-  });
+  }
 
   document.getElementById('btn-backup-restore').addEventListener('click', async function() {
     if (!pendingBackupFile) return;
     if (!confirm('This will replace ALL existing peers, routes, settings and webhooks. Continue?')) return;
 
-    const formData = new FormData();
-    formData.append('backup', pendingBackupFile);
+    const formData = backupFormData(pendingBackupFile);
 
     try {
       const resp = await fetch('/api/v1/settings/restore', {
@@ -285,7 +332,8 @@
         alert('Restore complete: ' + r.peers + ' peers, ' + r.routes + ' routes, ' + r.settings + ' settings, ' + r.webhooks + ' webhooks');
         window.location.reload();
       } else {
-        showMessage('restore-message', data.error || 'Restore failed', 'error');
+        onGcbkNeedsPassphrase(data);
+        showMessage('restore-message', data.code ? restoreErrorText(data) : (data.error || 'Restore failed'), 'error');
       }
     } catch (err) {
       showMessage('restore-message', err.message, 'error');
@@ -868,6 +916,8 @@
           : (GC.t['autobackup.last_run_never'] || 'Never');
       }
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('autobackup');
+      // Off-site card: uploads follow the automatic backups (hint while they are off).
+      document.dispatchEvent(new CustomEvent('gc:autobackup-settings', { detail: { enabled: !!d.enabled } }));
     } catch (err) {
       console.error('Failed to load auto-backup settings:', err);
     }
@@ -1148,6 +1198,688 @@
   }
 })();
 
+
+// ─── Auto-Update: maintenance window + update e-mail (release B §6) ─────
+// GET/PUT /api/v1/system/auto-update: PUT {window:{enabled,start,end,tz}} and
+// PUT {notify_email}; both answer with the full status (window, window_open,
+// notify_email, last_action). update.sh writes last_action "waiting_window"
+// when it holds a new image back until the window opens.
+(function initAutoUpdateWindow() {
+  var card = document.getElementById('card-au-window');
+  if (!card || !window.GCOpsUI || !window.SettingsAutosave) return;
+  var O = window.GCOpsUI;
+  var T = O.tr;
+  function byId(id) { return document.getElementById(id); }
+  var enabledEl = byId('au-window-enabled');
+  var startEl = byId('au-window-start');
+  var endEl = byId('au-window-end');
+  var tzEl = byId('au-window-tz');
+  var notifyEl = byId('au-notify-email');
+  var errEl = byId('au-window-error');
+  var saved = null; // last status answer (saved window + last_action)
+
+  function setToggle(t, on) { t.classList.toggle('on', !!on); t.setAttribute('aria-checked', on ? 'true' : 'false'); }
+  function managedToggle(t) {
+    t.addEventListener('click', function () {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      setToggle(t, !t.classList.contains('on'));
+      t.dispatchEvent(new Event('change'));
+    });
+    t.addEventListener('keydown', function (e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); t.click(); }
+    });
+  }
+  managedToggle(enabledEl);
+  managedToggle(notifyEl);
+
+  function fillZones(selected) {
+    var zones = O.timeZones(window.Intl, selected);
+    tzEl.replaceChildren.apply(tzEl, zones.map(function (z) {
+      var o = document.createElement('option');
+      o.value = z;
+      o.textContent = z.replace(/_/g, ' ');
+      return o;
+    }));
+    tzEl.value = selected;
+  }
+  function currentWindow() {
+    return { enabled: enabledEl.classList.contains('on'), start: startEl.value, end: endEl.value, tz: tzEl.value };
+  }
+  function mode() {
+    var c = document.querySelector('input[name="au-mode"]:checked');
+    return c ? c.value : (saved && saved.mode) || 'auto';
+  }
+
+  function renderClock() {
+    var clock = byId('au-window-clock');
+    var now = O.timeIn(tzEl.value);
+    clock.textContent = now ? T('autoupdate.window_now', 'Local time there: {x}', { x: now }) : '';
+    renderState();
+  }
+  function renderState() {
+    var w = currentWindow();
+    card.classList.toggle('op-au-off', !w.enabled);
+    byId('au-window-overnight').hidden = !O.overMidnight(w.start, w.end);
+    var problem = O.windowProblem(w);
+    errEl.textContent = problem === 'same' ? T('autoupdate.window_same', 'Start and end must differ.') : '';
+    errEl.hidden = problem !== 'same';
+    byId('au-window-mode-note').hidden = mode() !== 'manual';
+    // State of the SAVED window (unsaved edits would be misleading).
+    var sw = saved && saved.window;
+    var stateEl = byId('au-window-state');
+    stateEl.replaceChildren();
+    if (sw && sw.enabled && w.enabled && sw.start === w.start && sw.end === w.end && sw.tz === w.tz) {
+      var open = O.inWindow(sw);
+      stateEl.appendChild(O.el(document, 'span', {
+        class: 'tag tag-dot ' + (open ? 'tag-green' : 'tag-grey'),
+        id: 'au-window-open', 'data-open': open ? '1' : '0',
+        text: open ? T('autoupdate.window_open', 'The window is open right now.')
+          : T('autoupdate.window_closed', 'Outside the window — next start {x}.', { x: sw.start + ' (' + sw.tz.replace(/_/g, ' ') + ')' }),
+      }));
+    }
+    byId('au-window-waiting').hidden = !(saved && saved.last_action === 'waiting_window');
+    byId('au-reinstall').hidden = !w.enabled;
+  }
+
+  function apply(d) {
+    saved = d;
+    var w = d.window || {};
+    setToggle(enabledEl, !!w.enabled);
+    startEl.value = O.isHHMM(w.start) ? w.start : '03:00';
+    endEl.value = O.isHHMM(w.end) ? w.end : '05:00';
+    var tz = w.tz || O.DEFAULT_TZ;
+    // Never configured (off, server default zone): suggest the browser's zone.
+    var browserTz = O.browserTimeZone(window.Intl);
+    if (!w.enabled && tz === O.DEFAULT_TZ && browserTz && browserTz !== tz && O.timeIn(browserTz)) tz = browserTz;
+    fillZones(tz);
+    setToggle(notifyEl, d.notify_email !== false);
+    renderClock();
+  }
+
+  window.api.get('/api/system/auto-update').then(function (d) {
+    if (!d) return;
+    apply(d);
+    SettingsAutosave.resync('au-window');
+    SettingsAutosave.resync('au-notify');
+  }).catch(function () {});
+
+  [startEl, endEl].forEach(function (n) { n.addEventListener('input', renderState); });
+  tzEl.addEventListener('change', renderClock);
+  document.querySelectorAll('input[name="au-mode"]').forEach(function (r) { r.addEventListener('change', renderState); });
+  setInterval(renderClock, 30000);
+
+  SettingsAutosave.bind({
+    cluster: 'au-window',
+    fields: [enabledEl, startEl, endEl, tzEl],
+    statusEl: byId('au-window-status'),
+    valuesById: function () {
+      return { 'au-window-enabled': enabledEl.classList.contains('on'), 'au-window-start': startEl.value, 'au-window-end': endEl.value, 'au-window-tz': tzEl.value };
+    },
+    save: function () {
+      var w = currentWindow();
+      var problem = O.windowProblem(w);
+      if (problem) {
+        return Promise.resolve({ ok: false, error: problem === 'same' ? T('autoupdate.window_same', 'Start and end must differ.') : O.errorText({ code: 'INVALID_WINDOW' }) });
+      }
+      return window.api.put('/api/system/auto-update', { window: w }).then(function (r) {
+        if (r && r.ok) { saved = r; renderState(); return r; }
+        return { ok: false, error: O.errorText(r, ['autoupdate.err.generic', 'Could not save.']) };
+      });
+    },
+  });
+  SettingsAutosave.bind({
+    cluster: 'au-notify',
+    fields: [notifyEl],
+    statusEl: byId('au-notify-status'),
+    valuesById: function () { return { 'au-notify-email': notifyEl.classList.contains('on') }; },
+    save: function () {
+      return window.api.put('/api/system/auto-update', { notify_email: notifyEl.classList.contains('on') }).then(function (r) {
+        if (r && r.ok) { saved = r; return r; }
+        return { ok: false, error: O.errorText(r, ['autoupdate.err.generic', 'Could not save.']) };
+      });
+    },
+  });
+
+  // "Update now" while an update waits for the window (skips the window).
+  var TRIGGER_REASONS = {
+    cooldown: ['autoupdate.trigger_cooldown', 'Just requested — please wait a moment.'],
+    stale_no_cron: ['autoupdate.not_configured', 'Auto-update not set up'],
+    not_manual_mode: ['autoupdate.trigger_not_manual', 'Only in Manual mode or with a maintenance window.'],
+  };
+  byId('au-window-trigger').addEventListener('click', function () {
+    var btn = this;
+    window.btnLoading(btn);
+    window.api.post('/api/system/auto-update/trigger', {}).then(function (j) {
+      var queued = !!(j && j.queued);
+      var r = !queued && j && TRIGGER_REASONS[j.reason];
+      if (window.showToast) window.showToast(r ? T(r[0], r[1]) : T('autoupdate.trigger_queued', 'Update queued'), queued ? 'success' : 'error');
+    }).catch(function () {
+      if (window.showToast) window.showToast(T('autoupdate.err.generic', 'Could not save.'), 'error');
+    }).then(function () { window.btnReset(btn); });
+  });
+
+  byId('au-reinstall-copy').addEventListener('click', function () {
+    copyText(byId('au-reinstall-cmd').textContent, T('autoupdate.reinstall_copied', 'Commands copied'));
+  });
+
+  function copyText(text, okMsg) {
+    var done = function () { if (window.showToast) window.showToast(okMsg, 'success'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text) && done(); });
+    } else if (fallbackCopy(text)) done();
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+})();
+
+// ─── Off-site backups + pre-migration snapshots (release B §4, §7) ──────
+// API under /api/v1/settings/backup (admin session; writes and transfers need
+// the scheduled_backups licence → 403 {feature}). Secrets are write-only:
+// inputs start empty, has_password / has_secret_access_key only change the
+// hint. Error codes are mapped to UI texts by GCOpsUI.errorText; transport
+// details (remote messages) are shown verbatim as technical detail.
+(function initOffsite() {
+  var card = document.getElementById('card-offsite');
+  if (!card || !window.GCOpsUI) return;
+  var O = window.GCOpsUI;
+  var T = O.tr;
+  var lang = (window.GC && window.GC.language) || undefined;
+  var BASE = '/api/settings/backup';
+  var MAX_TARGETS = 10;
+  var licensed = card.dataset.licensed !== '0';
+  var state = { settings: null, targets: null, loadError: null, busy: {}, results: {}, files: {}, candidates: null, pubkey: null };
+  var editing = null;
+
+  function byId(id) { return document.getElementById(id); }
+  function el(tag, props, children) { return O.el(document, tag, props, children); }
+  // api.* resolve 400/403 as data and throw on 409/502 with err.data = body.
+  function call(p) {
+    return p.then(function (r) { return r || { ok: false }; }, function (e) { return (e && e.data) || { ok: false, error: e && e.message }; });
+  }
+  function toast(msg, type) { if (window.showToast) window.showToast(msg, type || 'success'); }
+  function setToggle(t, on) { t.classList.toggle('on', !!on); t.setAttribute('aria-checked', on ? 'true' : 'false'); }
+
+  // ── Licence ──────────────────────────────────────────────
+  function applyLicense() {
+    var box = byId('offsite-license');
+    card.classList.toggle('op-unlicensed', !licensed);
+    if (!licensed && box.hidden) {
+      var node = null;
+      try { node = window.GCLicenseHint && typeof window.GCLicenseHint.render === 'function' ? window.GCLicenseHint.render('scheduled_backups') : null; } catch (_) { node = null; }
+      box.replaceChildren(node && node.nodeType ? node : el('span', { class: 'op-license-text', text: T('offsite.license', 'Off-site backups are part of the “Scheduled backups” licence.') }));
+      box.hidden = false;
+    }
+    [byId('offsite-passphrase'), byId('offsite-passphrase2')].forEach(function (n) { n.disabled = !licensed; });
+    byId('offsite-include-key').setAttribute('aria-disabled', licensed ? 'false' : 'true');
+    renderStrength();
+    renderAddButton();
+  }
+  function checkLicense(r) {
+    if (licensed && O.errorCode(r) === 'LICENSE') { licensed = false; applyLicense(); renderTargets(); }
+  }
+
+  // ── Passphrase + include_key ─────────────────────────────
+  var pass1 = byId('offsite-passphrase');
+  var pass2 = byId('offsite-passphrase2');
+  var passSave = byId('offsite-pass-save');
+  var includeEl = byId('offsite-include-key');
+  var includeNote = byId('offsite-include-key-note');
+
+  function renderPassState() {
+    var s = state.settings || {};
+    var set = !!s.passphrase_set;
+    byId('offsite-pass-state').replaceChildren(el('span', {
+      class: 'tag tag-dot ' + (set ? 'tag-green' : 'tag-amber'), id: 'offsite-pass-tag', 'data-set': set ? '1' : '0',
+      text: set ? T('offsite.passphrase_set', 'A passphrase is set.') : T('offsite.passphrase_missing', 'No passphrase yet — without one GateControl uploads nothing.'),
+    }));
+    pass1.placeholder = (set ? pass1.dataset.phSet : pass1.dataset.phNew) || '';
+    byId('offsite-pass-change-note').hidden = !set;
+    var on = s.include_key !== false;
+    setToggle(includeEl, on);
+    includeNote.textContent = on ? includeNote.dataset.on : includeNote.dataset.off;
+    includeNote.classList.toggle('op-note-warn', !on);
+  }
+  function renderStrength() {
+    var v = pass1.value;
+    var r = O.passphraseStrength(v);
+    var box = byId('offsite-pass-strength');
+    var text = byId('offsite-pass-strength-text');
+    var mismatch = pass2.value !== '' && pass2.value !== v;
+    box.dataset.level = r.level;
+    box.classList.toggle('op-mismatch', mismatch);
+    if (mismatch) text.textContent = T('offsite.passphrase_mismatch', 'The two entries do not match.');
+    else if (r.level === 'short') text.textContent = T('offsite.strength_short', '{n} more characters to reach the minimum of 12.', { n: r.missing });
+    else if (r.level === 'weak') text.textContent = T('offsite.strength_weak', 'Weak — longer is better, e.g. four random words.');
+    else if (r.level === 'ok') text.textContent = T('offsite.strength_ok', 'Fair');
+    else if (r.level === 'strong') text.textContent = T('offsite.strength_strong', 'Strong');
+    else text.textContent = T('offsite.strength_hint', 'At least 12 characters. A sentence or four random words work well.');
+    passSave.disabled = !licensed || r.level === 'empty' || r.level === 'short' || v !== pass2.value;
+  }
+  pass1.addEventListener('input', renderStrength);
+  pass2.addEventListener('input', renderStrength);
+  byId('offsite-pass-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (passSave.disabled) return;
+    window.btnLoading(passSave);
+    call(window.api.put(BASE + '/offsite', { passphrase: pass1.value })).then(function (r) {
+      if (r.ok) {
+        state.settings = r;
+        pass1.value = '';
+        pass2.value = '';
+        renderPassState();
+        toast(T('offsite.passphrase_saved', 'Passphrase saved'));
+      } else {
+        checkLicense(r);
+        toast(O.errorText(r), 'error');
+      }
+    }).then(function () { window.btnReset(passSave); renderStrength(); });
+  });
+
+  includeEl.addEventListener('click', function () {
+    if (includeEl.getAttribute('aria-disabled') === 'true' || includeEl.dataset.busy) return;
+    var next = !includeEl.classList.contains('on');
+    setToggle(includeEl, next);
+    includeEl.dataset.busy = '1';
+    call(window.api.put(BASE + '/offsite', { include_key: next })).then(function (r) {
+      if (r.ok) { state.settings = r; toast(T('offsite.saved', 'Saved')); }
+      else { checkLicense(r); toast(O.errorText(r), 'error'); }
+      renderPassState();
+    }).then(function () { delete includeEl.dataset.busy; });
+  });
+  includeEl.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeEl.click(); }
+  });
+
+  function loadSettings() {
+    return call(window.api.get(BASE + '/offsite')).then(function (r) {
+      if (r.ok) { state.settings = r; renderPassState(); }
+    });
+  }
+
+  // ── Automatic backups off → uploads only on "Upload now" ─
+  function renderAutobackupHint(enabled) { byId('offsite-autobackup-off').hidden = enabled !== false; }
+  document.addEventListener('gc:autobackup-settings', function (e) { renderAutobackupHint(!!(e.detail && e.detail.enabled)); });
+  var abToggle = byId('autobackup-enabled');
+  if (abToggle) abToggle.addEventListener('change', function () { renderAutobackupHint(abToggle.classList.contains('on')); });
+
+  // ── Targets ──────────────────────────────────────────────
+  function renderAddButton() {
+    var add = byId('offsite-add');
+    var full = !!(state.targets && state.targets.length >= MAX_TARGETS);
+    add.disabled = !licensed || full;
+    add.title = full ? T('offsite.max_targets', 'At most 10 targets.') : '';
+  }
+  function loadTargets() {
+    return call(window.api.get(BASE + '/targets')).then(function (r) {
+      if (r.ok) { state.targets = r.targets || []; state.loadError = null; }
+      else { state.loadError = O.errorText(r); }
+      renderTargets();
+    });
+  }
+  function actionButton(t, name, label, onClick, extra) {
+    var busy = state.busy[t.id];
+    var b = el('button', Object.assign({
+      type: 'button', class: 'btn btn-sm ' + (name === 'delete' ? 'btn-danger' : 'btn-ghost') + ' op-t-' + name + (busy === name ? ' is-loading' : ''),
+      'data-action': name, text: label, disabled: !licensed || !!busy,
+    }, extra || {}));
+    b.addEventListener('click', function () { onClick(t); });
+    return b;
+  }
+  function resultEl(res) {
+    if (!res) return null;
+    return el('div', { class: 'op-t-result ' + (res.ok ? 'op-ok' : 'op-bad'), role: 'status' }, [
+      el('span', { class: 'op-t-result-text', text: res.text }),
+      res.detail ? el('code', { class: 'op-t-detail', text: res.detail }) : null,
+    ]);
+  }
+  function filesEl(t) {
+    var f = state.files[t.id];
+    if (!f) return null;
+    var body;
+    if (f.error) body = el('div', { class: 'op-t-result op-bad', role: 'status' }, [el('span', { text: f.error }), f.detail ? el('code', { class: 'op-t-detail', text: f.detail }) : null]);
+    else if (!f.files.length) body = el('div', { class: 'op-empty', text: T('offsite.files_empty', 'No GateControl archives on the target yet.') });
+    else {
+      body = el('div', { class: 'op-table-wrap' }, [el('table', { class: 'data-table op-files-table' }, [
+        el('thead', null, [el('tr', null, [
+          el('th', { text: T('offsite.files_name', 'File') }), el('th', { text: T('offsite.files_size', 'Size') }), el('th', { text: T('offsite.files_modified', 'Modified') }),
+        ])]),
+        el('tbody', null, f.files.map(function (x) {
+          return el('tr', null, [
+            el('td', { class: 'mono', text: x.name }),
+            el('td', { class: 'mono', text: O.fmtBytes(x.size) }),
+            el('td', { text: x.modified ? O.fmtDateTime(x.modified, lang) : '—' }),
+          ]);
+        })),
+      ])]);
+    }
+    return el('div', { class: 'op-t-files', id: 'offsite-files-' + t.id }, [
+      el('div', { class: 'op-t-files-head', text: T('offsite.files_title', 'Archives on the target') }),
+      body,
+      el('p', { class: 'op-note', text: T('offsite.files_note', 'Only gatecontrol-*.gcbk files; GateControl never touches other files.') }),
+    ]);
+  }
+  function targetRow(t) {
+    var st = O.targetStatus(t, state.busy[t.id] === 'run');
+    var lastRun = t.last_run_at
+      ? el('span', { title: O.fmtDateTime(t.last_run_at, lang), text: T('offsite.last_run', 'Last run {x}', { x: O.fmtAgo(t.last_run_at, lang) }) })
+      : el('span', { text: T('offsite.never_run', 'Not run yet') });
+    return el('div', { class: 'op-target' + (t.enabled ? '' : ' op-paused'), 'data-target-id': t.id, 'data-type': t.type }, [
+      el('div', { class: 'op-t-head' }, [
+        el('span', { class: 'op-t-type', text: O.TYPE_LABELS[t.type] || t.type }),
+        el('div', { class: 'op-t-main' }, [
+          el('div', { class: 'op-t-name', text: t.name }),
+          el('div', { class: 'op-t-dest', text: O.targetSummary(t) }),
+        ]),
+        el('div', { class: 'op-t-status' }, [
+          t.enabled ? null : el('span', { class: 'tag tag-grey', text: T('offsite.paused', 'paused') }),
+          el('span', { class: 'tag tag-dot ' + st.cls, 'data-status': t.last_status || 'never', text: T(st.key, st.fallback) }),
+        ]),
+      ]),
+      el('div', { class: 'op-t-meta' }, [lastRun, el('span', { text: T('offsite.keep', 'keeps {n}', { n: t.keep }) })]),
+      t.config_error ? el('div', { class: 'op-t-error', text: T('offsite.config_error', 'Credentials unreadable — enter them again (different GC_ENCRYPTION_KEY).') }) : null,
+      t.last_status === 'failed' && t.last_error ? el('code', { class: 'op-t-error op-t-detail', text: t.last_error }) : null,
+      el('div', { class: 'op-t-actions' }, [
+        actionButton(t, 'test', T('offsite.act_test', 'Test'), testTarget),
+        actionButton(t, 'run', T('offsite.act_run', 'Upload now'), runTarget),
+        actionButton(t, 'files', T('offsite.act_files', 'Files'), toggleFiles, { 'aria-expanded': state.files[t.id] ? 'true' : 'false', 'aria-controls': 'offsite-files-' + t.id }),
+        actionButton(t, 'edit', T('offsite.act_edit', 'Edit'), openDialog),
+        actionButton(t, 'delete', T('offsite.act_delete', 'Delete'), deleteTarget),
+      ]),
+      resultEl(state.results[t.id]),
+      filesEl(t),
+    ]);
+  }
+  function renderTargets() {
+    var box = byId('offsite-targets');
+    renderAddButton();
+    if (state.loadError && !state.targets) { box.replaceChildren(el('div', { class: 'op-t-result op-bad', text: state.loadError })); return; }
+    if (!state.targets) return;
+    if (!state.targets.length) {
+      box.replaceChildren(el('div', { class: 'op-empty op-targets-empty', text: T('offsite.targets_empty', 'No target yet. Add one so backups leave the server.') }));
+      return;
+    }
+    box.replaceChildren.apply(box, state.targets.map(targetRow));
+  }
+  function findTarget(id) { return (state.targets || []).filter(function (x) { return x.id === id; })[0] || null; }
+
+  function testTarget(t) {
+    state.busy[t.id] = 'test';
+    delete state.results[t.id];
+    renderTargets();
+    return call(window.api.post(BASE + '/targets/' + t.id + '/test', {})).then(function (r) {
+      state.results[t.id] = r.ok
+        ? { ok: true, text: T('offsite.test_ok', 'Connection ok'), detail: r.detail || '' }
+        : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? T('offsite.test_failed', 'Connection failed') : O.errorText(r), detail: O.errorDetail(r) };
+      checkLicense(r);
+    }).then(function () { delete state.busy[t.id]; renderTargets(); });
+  }
+  function runTarget(t) {
+    state.busy[t.id] = 'run';
+    delete state.results[t.id];
+    renderTargets();
+    return call(window.api.post(BASE + '/targets/' + t.id + '/run', {})).then(function (r) {
+      if (r.ok) {
+        state.results[t.id] = {
+          ok: true,
+          text: T('offsite.run_ok', 'Uploaded: {file}', { file: r.file || '' }) + (r.deleted ? ' · ' + T('offsite.run_deleted', '{n} older archives deleted', { n: r.deleted }) : ''),
+        };
+        if (state.files[t.id]) delete state.files[t.id];
+      } else {
+        // The remote detail of a failed upload lands in last_error (shown in the row).
+        state.results[t.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r) };
+        checkLicense(r);
+        if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') { pass1.focus(); }
+      }
+    }).then(function () { delete state.busy[t.id]; return loadTargets(); });
+  }
+  function toggleFiles(t) {
+    if (state.files[t.id]) { delete state.files[t.id]; renderTargets(); return; }
+    state.busy[t.id] = 'files';
+    renderTargets();
+    call(window.api.get(BASE + '/targets/' + t.id + '/files')).then(function (r) {
+      state.files[t.id] = r.ok ? { files: r.files || [] } : { error: O.errorText(r), detail: O.errorDetail(r) || (O.errorCode(r) === 'TRANSPORT_FAILED' ? String(r.error || '') : '') };
+      checkLicense(r);
+    }).then(function () { delete state.busy[t.id]; renderTargets(); });
+  }
+  function deleteTarget(t) {
+    O.confirmDialog(document, {
+      title: T('offsite.delete_title', 'Delete target?'),
+      message: T('offsite.delete_msg', '“{name}” will be removed.', { name: t.name }),
+      detail: T('offsite.delete_detail', 'The archives on the target are kept.'),
+      okLabel: T('offsite.act_delete', 'Delete'),
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      state.busy[t.id] = 'delete';
+      renderTargets();
+      call(window.api.del(BASE + '/targets/' + t.id)).then(function (r) {
+        if (r.ok) { toast(T('offsite.deleted_target', 'Target deleted')); delete state.results[t.id]; delete state.files[t.id]; }
+        else { checkLicense(r); toast(O.errorText(r), 'error'); }
+      }).then(function () { delete state.busy[t.id]; loadTargets(); });
+    });
+  }
+
+  // ── Add / edit dialog ────────────────────────────────────
+  var modal = byId('offsite-target-modal');
+  var typeEl = byId('ot-type');
+  var formErr = byId('offsite-target-error');
+  var FIELD_INPUTS = {
+    host: 'ot-host', port: 'ot-port', username: 'ot-username', path: 'ot-path', share: 'ot-share', domain: 'ot-domain',
+    endpoint: 'ot-endpoint', region: 'ot-region', bucket: 'ot-bucket', prefix: 'ot-prefix', access_key_id: 'ot-akid',
+    secret_access_key: 'ot-secret', url: 'ot-url', password: 'ot-password',
+  };
+  function val(id) { return byId(id).value; }
+  function clearFormErrors() {
+    formErr.hidden = true;
+    formErr.textContent = '';
+    modal.querySelectorAll('.field-invalid').forEach(function (n) { n.classList.remove('field-invalid'); n.removeAttribute('aria-invalid'); });
+  }
+  function formError(text, inputId) {
+    formErr.textContent = text;
+    formErr.hidden = false;
+    var input = inputId && byId(inputId);
+    if (input) { input.classList.add('field-invalid'); input.setAttribute('aria-invalid', 'true'); input.focus(); }
+  }
+  function showType(type) {
+    modal.querySelectorAll('[data-for]').forEach(function (n) { n.hidden = n.dataset.for.split(' ').indexOf(type) < 0; });
+    byId('ot-port').placeholder = O.DEFAULT_PORTS[type] ? String(O.DEFAULT_PORTS[type]) : '';
+    var cfg = (editing && editing.config) || {};
+    var hasPw = !!(editing && (type === 'smb' || type === 'webdav') && cfg.has_password);
+    byId('ot-clear-password-row').hidden = !hasPw;
+    byId('ot-password-hint').hidden = !hasPw;
+    byId('ot-password-hint').textContent = hasPw ? byId('ot-password-hint').dataset.kept : '';
+    var hasSecret = !!(editing && type === 's3' && cfg.has_secret_access_key);
+    byId('ot-secret-hint').hidden = !hasSecret;
+    byId('ot-secret-hint').textContent = hasSecret ? byId('ot-secret-hint').dataset.kept : '';
+    if (type === 'sftp') loadPubkey();
+    if (type === 'sftp' || type === 'smb') fillCandidates(type);
+  }
+  function openDialog(t) {
+    editing = t || null;
+    clearFormErrors();
+    byId('offsite-target-form').reset();
+    var title = byId('offsite-target-title');
+    title.textContent = editing ? title.dataset.edit : title.dataset.add;
+    typeEl.value = editing ? editing.type : 'sftp';
+    typeEl.disabled = !!editing;
+    byId('ot-id').value = editing ? String(editing.id) : '';
+    if (editing) {
+      var c = editing.config || {};
+      byId('ot-name').value = editing.name || '';
+      byId('ot-keep').value = editing.keep || 14;
+      byId('ot-enabled').checked = !!editing.enabled;
+      ['host', 'port', 'username', 'path', 'share', 'domain', 'endpoint', 'region', 'bucket', 'prefix', 'url'].forEach(function (k) {
+        if (c[k] != null && byId(FIELD_INPUTS[k])) byId(FIELD_INPUTS[k]).value = String(c[k]);
+      });
+      if (c.access_key_id != null) byId('ot-akid').value = c.access_key_id;
+      byId('ot-path-style').checked = !!c.path_style;
+    }
+    byId('ot-lan').open = false;
+    byId('ot-l4').value = '';
+    byId('ot-l4-note').hidden = true;
+    showType(typeEl.value);
+    window.openModal('offsite-target-modal');
+    byId('ot-name').focus();
+  }
+  typeEl.addEventListener('change', function () { clearFormErrors(); showType(typeEl.value); });
+  byId('offsite-add').addEventListener('click', function () { openDialog(null); });
+  byId('offsite-target-form').addEventListener('submit', function (e) { e.preventDefault(); saveDialog(); });
+  byId('offsite-target-save').addEventListener('click', saveDialog);
+
+  function saveDialog() {
+    clearFormErrors();
+    var type = typeEl.value;
+    var values = {
+      name: val('ot-name'), keep: val('ot-keep'), enabled: byId('ot-enabled').checked,
+      host: val('ot-host'), port: val('ot-port'), username: val('ot-username'), path: val('ot-path'), share: val('ot-share'),
+      domain: val('ot-domain'), endpoint: val('ot-endpoint'), region: val('ot-region'), bucket: val('ot-bucket'),
+      prefix: val('ot-prefix'), access_key_id: val('ot-akid'), secret_access_key: val('ot-secret'), url: val('ot-url'),
+      password: val('ot-password'), clear_password: byId('ot-clear-password').checked, path_style: byId('ot-path-style').checked,
+    };
+    if (!values.name.trim()) { formError(O.errorText({ code: 'INVALID_NAME' }), 'ot-name'); return; }
+    var body = O.targetPayload(type, values, !!editing);
+    var btn = byId('offsite-target-save');
+    var wasNew = !editing;
+    window.btnLoading(btn);
+    var req = editing ? window.api.put(BASE + '/targets/' + editing.id, body) : window.api.post(BASE + '/targets', body);
+    call(req).then(function (r) {
+      if (r.ok && r.target) {
+        window.closeModal('offsite-target-modal');
+        toast(T('offsite.saved_target', 'Target saved'));
+        delete state.results[r.target.id];
+        loadTargets().then(function () {
+          // A new target is tested right away (for SFTP this also shows whether the key is in place).
+          if (wasNew && licensed) { var t = findTarget(r.target.id); if (t) testTarget(t); }
+        });
+        return;
+      }
+      checkLicense(r);
+      var code = O.errorCode(r);
+      var field = code === 'INVALID_CONFIG' ? O.configField(r) : null;
+      formError(O.errorText(r), field ? FIELD_INPUTS[field] : code === 'INVALID_NAME' ? 'ot-name' : code === 'INVALID_KEEP' ? 'ot-keep' : null);
+    }).then(function () { window.btnReset(btn); });
+  }
+
+  // LAN targets: internal L4 routes (TCP, no TLS) as host/port picker.
+  var l4 = byId('ot-l4');
+  function fillCandidates(type) {
+    var render = function () {
+      var list = O.sortCandidates(state.candidates || [], type);
+      var first = l4.options[0];
+      l4.replaceChildren(first);
+      list.forEach(function (c) {
+        var flags = [];
+        if (!c.internal) flags.push(T('offsite.l4_public', 'public'));
+        if (!c.enabled) flags.push(T('offsite.l4_off', 'disabled'));
+        var o = document.createElement('option');
+        o.value = String(c.route_id);
+        var lbl = /^L4 :\d+$/.test(String(c.label)) ? c.label : c.label + ' · :' + c.listen_port;
+        o.textContent = lbl + ' → ' + c.target + (flags.length ? ' (' + flags.join(', ') + ')' : '');
+        l4.appendChild(o);
+      });
+      l4.disabled = !list.length;
+      if (!list.length) showL4Note(T('offsite.l4_none', 'No suitable L4 route (TCP, no TLS, single port).'), false);
+    };
+    if (state.candidates) { render(); return; }
+    call(window.api.get(BASE + '/targets/l4-candidates')).then(function (r) {
+      state.candidates = r.ok ? (r.routes || []) : [];
+      render();
+    });
+  }
+  function showL4Note(text, warn) {
+    var n = byId('ot-l4-note');
+    n.textContent = text;
+    n.classList.toggle('op-note-warn', !!warn);
+    n.hidden = !text;
+  }
+  l4.addEventListener('change', function () {
+    var id = Number(l4.value);
+    var c = (state.candidates || []).filter(function (x) { return x.route_id === id; })[0];
+    if (!c) { showL4Note('', false); return; }
+    byId('ot-host').value = c.connect_host;
+    byId('ot-port').value = String(c.connect_port);
+    if (!byId('ot-name').value.trim()) byId('ot-name').value = String(c.label).slice(0, 64);
+    var note = T('offsite.l4_filled', 'Host and port set: {host}:{port}', { host: c.connect_host, port: c.connect_port });
+    if (!c.internal) note += ' ' + T('offsite.l4_public_warn', 'This route is reachable from the internet. For a NAS use an internal route instead.');
+    if (!c.enabled) note += ' ' + T('offsite.l4_off_warn', 'The route is disabled — enable it before testing.');
+    showL4Note(note, !c.internal || !c.enabled);
+  });
+
+  // SFTP: GateControl's own ed25519 key (generated on first request).
+  var pubkeyEl = byId('ot-pubkey');
+  function loadPubkey() {
+    if (state.pubkey) { pubkeyEl.value = state.pubkey; return; }
+    if (!licensed) { pubkeyEl.value = ''; pubkeyEl.placeholder = T('offsite.license', 'Off-site backups are part of the “Scheduled backups” licence.'); return; }
+    call(window.api.get(BASE + '/ssh-key')).then(function (r) {
+      if (r.ok && r.public_key) { state.pubkey = r.public_key; pubkeyEl.value = r.public_key; }
+      else { checkLicense(r); pubkeyEl.value = ''; pubkeyEl.placeholder = O.errorText(r); }
+    });
+  }
+  byId('ot-key-copy').addEventListener('click', function () {
+    if (!pubkeyEl.value) return;
+    var done = function () { toast(T('offsite.key_copied', 'Key copied')); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pubkeyEl.value).then(done, function () { pubkeyEl.select(); try { if (document.execCommand('copy')) done(); } catch (_) { /* manual copy */ } });
+    } else { pubkeyEl.select(); try { if (document.execCommand('copy')) done(); } catch (_) { /* manual copy */ } }
+  });
+  byId('ot-key-rotate').addEventListener('click', function () {
+    if (!licensed) return;
+    var btn = this;
+    O.confirmDialog(document, {
+      title: T('offsite.key_rotate_title', 'Renew the SSH key?'),
+      message: T('offsite.key_rotate_msg', 'Afterwards add the new public key to every SFTP target; the old one stops working.'),
+      okLabel: T('offsite.key_rotate_ok', 'Renew'),
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      window.btnLoading(btn);
+      call(window.api.post(BASE + '/ssh-key/rotate', {})).then(function (r) {
+        if (r.ok && r.public_key) { state.pubkey = r.public_key; pubkeyEl.value = r.public_key; toast(T('offsite.key_rotated', 'New key generated')); }
+        else { checkLicense(r); toast(O.errorText(r), 'error'); }
+      }).then(function () { window.btnReset(btn); });
+    });
+  });
+
+  // ── Pre-migration snapshots (§4) ─────────────────────────
+  function loadPremig() {
+    var box = byId('premig-list');
+    call(window.api.get(BASE + '/pre-migration')).then(function (r) {
+      if (!r.ok) { box.replaceChildren(el('div', { class: 'op-t-result op-bad', text: O.errorText(r) })); return; }
+      var files = r.files || [];
+      if (!files.length) { box.replaceChildren(el('div', { class: 'op-empty', text: box.dataset.empty || '' })); return; }
+      box.replaceChildren.apply(box, files.map(function (f) {
+        return el('div', { class: 'op-pm-row', 'data-name': f.name }, [
+          el('div', { class: 'op-pm-main' }, [
+            el('div', { class: 'op-pm-ver', text: T('premig.versions', 'Schema {from} → {to}', { from: f.from_version || '?', to: f.to_version || '?' }) }),
+            el('div', { class: 'op-pm-name', text: f.name }),
+          ]),
+          el('div', { class: 'op-pm-meta', text: O.fmtDateTime(f.created_at, lang) + ' · ' + O.fmtBytes(f.size) }),
+          el('a', { class: 'btn btn-ghost btn-sm op-pm-dl', href: '/api/v1/settings/backup/pre-migration/' + encodeURIComponent(f.name), download: f.name, text: box.dataset.download || 'Download' }),
+        ]);
+      }));
+    });
+  }
+
+  // Live status of scheduled uploads (SSE type `backup`, dispatched by events.js as gc:backup).
+  var sseTimer = null;
+  document.addEventListener('gc:backup', function () {
+    clearTimeout(sseTimer);
+    sseTimer = setTimeout(loadTargets, 400);
+  });
+
+  applyLicense();
+  renderStrength();
+  loadSettings();
+  loadTargets();
+  loadPremig();
+})();
 
 // ── Machine Binding Settings ──────────────────────────
 (async function () {

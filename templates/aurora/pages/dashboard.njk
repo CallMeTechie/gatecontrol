@@ -33,6 +33,25 @@
   </div>
 </div>
 
+{# "Was ist neu" (docs/feature-release-b.md §6): shown by dashboard.js while
+   GET /system/whats-new reports unseen; the changelog arrives as structured
+   tokens and is rendered with textContent only. #}
+<section class="card op-wn" id="whats-new" hidden aria-labelledby="whats-new-title"
+         data-title="{{ t('whatsnew.title') }}" data-title-all="{{ t('whatsnew.title_all') }}">
+  <div class="op-wn-head">
+    <span class="op-wn-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></span>
+    <div class="op-wn-titles">
+      <h2 class="card-title op-wn-title" id="whats-new-title"></h2>
+      <div class="op-wn-sub" id="whats-new-sub"></div>
+    </div>
+    <div class="op-wn-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="whats-new-all">{{ t('whatsnew.all') }}</button>
+      <button type="button" class="btn btn-primary btn-sm" id="whats-new-dismiss">{{ t('whatsnew.dismiss') }}</button>
+    </div>
+  </div>
+  <div class="op-wn-body" id="whats-new-body" tabindex="0" aria-label="{{ t('whatsnew.all') }}"></div>
+</section>
+
 <!-- ── Row 1: KPI Cards (6-across down to 1200px, then progressively stacked) ── -->
 <div class="aurora-kpi-grid">
 
@@ -299,5 +318,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/dashboard.js?v={{ appVersion }}"></script>
 {% endblock %}

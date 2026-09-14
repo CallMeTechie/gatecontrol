@@ -64,11 +64,24 @@
       rb.textContent = T('autoupdate.rolled_back', 'Update {x} failed — previous version restored').replace('{x}', what).replace(/\s+/g, ' ');
       rb.title = T('autoupdate.rolled_back_hint', 'The new image failed its health check. Automatic mode skips it until a newer release is published.');
       host.appendChild(rb);
+    } else if (d.last_action === 'waiting_window') {
+      // update.sh pulled a new image outside the maintenance window (release B §6).
+      var ww = document.createElement('span');
+      ww.className = 'au-pill au-amber';
+      ww.id = 'au-waiting-window';
+      var win = d.window || {};
+      ww.textContent = T('autoupdate.waiting_window', 'Update waiting for the maintenance window')
+        + (win.start && win.end ? ' (' + win.start + '–' + win.end + ')' : '');
+      ww.title = T('autoupdate.waiting_window_hint', 'A new version is ready and will be deployed in the next window. "Update now" deploys it right away.');
+      host.appendChild(ww);
     }
 
-    var badge = document.createElement('span'); badge.className = 'au-badge';
+    // Version badge doubles as the entry to "What's new" (all recent releases).
+    var badge = document.createElement('button'); badge.type = 'button'; badge.className = 'au-badge au-badge-btn';
     badge.textContent = (d.mode === 'manual' ? T('autoupdate.mode_manual', 'Manual') : T('autoupdate.mode_auto', 'Automatic'))
       + (d.running_version ? ' · v' + d.running_version : '');
+    badge.title = T('autoupdate.version_whats_new', "What's new?");
+    badge.addEventListener('click', function () { loadWhatsNew(true, true); });
     host.appendChild(badge);
 
     if (d.mode_mismatch) {
@@ -97,24 +110,103 @@
       setup.addEventListener('click', openAuSetup); host.appendChild(setup);
     }
 
-    if (d.mode === 'manual') {
+    // Manual mode, or Automatic with a maintenance window: "Update now" drops
+    // the trigger flag and update.sh deploys without waiting for the window.
+    var windowOn = !!(d.window && d.window.enabled);
+    if (d.mode === 'manual' || windowOn) {
       var trig = document.createElement('button'); trig.className = 'btn btn-primary';
+      trig.id = 'au-trigger';
       trig.textContent = T('autoupdate.trigger', 'Update now');
+      if (d.mode !== 'manual') trig.title = T('autoupdate.trigger_now_window', 'Deploys the update right away without waiting for the window.');
       if (d.status !== 'active') { trig.disabled = true; trig.title = T('autoupdate.not_configured', 'Auto-update not set up'); }
       trig.addEventListener('click', triggerAuUpdate); host.appendChild(trig);
     }
+
+    // Narrow screens show the status pills as dots only (ops.css): every pill
+    // gets a dot + text span; the text stays for screen readers and as tooltip.
+    Array.prototype.forEach.call(host.querySelectorAll('.au-pill'), function (p) {
+      var text = p.textContent.trim();
+      if (!p.title) p.title = text;
+      if (!p.querySelector('.au-dot')) {
+        var s = document.createElement('span'); s.textContent = text;
+        var dt = document.createElement('span'); dt.className = 'au-dot';
+        p.textContent = '';
+        p.appendChild(dt); p.appendChild(s);
+      }
+    });
   }
 
   function loadAutoUpdate() {
     window.api.get('/api/system/auto-update').then(renderAutoUpdate).catch(function () {});
   }
 
+  // Why a trigger was not queued (autoUpdate.requestUpdate reasons).
+  var TRIGGER_REASONS = {
+    cooldown: ['autoupdate.trigger_cooldown', 'Just requested — please wait a moment.'],
+    stale_no_cron: ['autoupdate.not_configured', 'Auto-update not set up'],
+    not_manual_mode: ['autoupdate.trigger_not_manual', 'Only in Manual mode or with a maintenance window.'],
+  };
   function triggerAuUpdate() {
     window.api.post('/api/system/auto-update/trigger', {}).then(function (j) {
-      if (window.showToast) window.showToast(T('autoupdate.trigger_queued', 'Update queued'), (j && j.queued) ? 'success' : 'error');
+      var queued = !!(j && j.queued);
+      var r = !queued && j && TRIGGER_REASONS[j.reason];
+      if (window.showToast) window.showToast(r ? T(r[0], r[1]) : T('autoupdate.trigger_queued', 'Update queued'), queued ? 'success' : 'error');
       loadAutoUpdate();
     }).catch(function () {});
   }
+
+  // ─── "Was ist neu" card (release B §6) ─────────────────────────────────────
+  // GET /system/whats-new → { current, unseen, sections:[{version,date,groups}] }.
+  // Shown only while unseen (or on request via the version badge / "Alle
+  // Neuerungen" with ?all=1). "Gelesen" → POST /whats-new/seen {version}.
+  var whatsNewCurrent = null;
+  function loadWhatsNew(all, reveal) {
+    var card = document.getElementById('whats-new');
+    if (!card || !window.GCOpsUI) return;
+    window.api.get('/api/system/whats-new' + (all ? '?all=1' : '')).then(function (d) {
+      if (!d || !d.ok) return;
+      whatsNewCurrent = d.current || null;
+      if (!all && !d.unseen) { card.hidden = true; return; }
+      renderWhatsNew(card, d, all);
+      if (reveal && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }).catch(function () {
+      if (reveal && window.showToast) window.showToast(T('whatsnew.load_error', 'Could not load the changes.'), 'error');
+    });
+  }
+  function renderWhatsNew(card, d, all) {
+    var O = window.GCOpsUI;
+    var sections = Array.isArray(d.sections) ? d.sections : [];
+    var title = document.getElementById('whats-new-title');
+    var sub = document.getElementById('whats-new-sub');
+    var body = document.getElementById('whats-new-body');
+    var allBtn = document.getElementById('whats-new-all');
+    title.textContent = all ? (card.dataset.titleAll || "What's new")
+      : O.fmt(card.dataset.title || 'New in GateControl {v}', { v: d.current || '' });
+    var versions = sections.map(function (s) { return 'v' + s.version; });
+    sub.textContent = versions.length > 1 ? versions.join(' · ') : (sections[0] && sections[0].date ? O.fmtDate(sections[0].date, (window.GC && GC.language) || undefined) : '');
+    body.replaceChildren.apply(body, sections.length
+      ? O.whatsNewNodes(document, sections, (window.GC && GC.language) || undefined)
+      : [O.el(document, 'p', { class: 'op-empty', text: T('whatsnew.empty', 'No entries in the changelog.') })]);
+    // One release: title + date already name it, the per-release head would repeat it.
+    body.classList.toggle('op-wn-single', sections.length === 1 && !all);
+    body.scrollTop = 0;
+    if (allBtn) allBtn.hidden = !!all;
+    card.dataset.mode = all ? 'all' : 'new';
+    card.hidden = false;
+  }
+  function dismissWhatsNew() {
+    var card = document.getElementById('whats-new');
+    if (card) card.hidden = true;
+    var body = whatsNewCurrent ? { version: whatsNewCurrent } : {};
+    window.api.post('/api/system/whats-new/seen', body).catch(function () {});
+  }
+  (function initWhatsNew() {
+    var allBtn = document.getElementById('whats-new-all');
+    if (allBtn) allBtn.addEventListener('click', function () { loadWhatsNew(true, false); });
+    var dismiss = document.getElementById('whats-new-dismiss');
+    if (dismiss) dismiss.addEventListener('click', dismissWhatsNew);
+    loadWhatsNew(false, false);
+  })();
 
   function openAuSetup() {
     var body = document.getElementById('au-setup-body'); if (!body) return;
