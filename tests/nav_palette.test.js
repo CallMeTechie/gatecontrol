@@ -85,8 +85,11 @@ describe('sidebar groups (§8)', () => {
 
 describe('layout wiring', () => {
   const layout = read('templates/aurora/layout.njk');
-  it('nav.css right after aurora.css; command-palette.js after app.js', () => {
-    assert.match(layout, /aurora\.css\?v=\{\{ appVersion \}\}">\n {2}<link rel="stylesheet" href="\/css\/nav\.css\?v=\{\{ appVersion \}\}">/);
+  it('nav.css after aurora.css (feature stylesheets follow it); command-palette.js after app.js', () => {
+    const aurora = layout.indexOf('/css/aurora.css?v=');
+    const nav = layout.indexOf('/css/nav.css?v=');
+    assert.ok(aurora > 0 && nav > aurora, 'nav.css is linked after aurora.css');
+    assert.ok(layout.slice(aurora, nav).split('\n').every((l) => !l.trim() || /<link rel="stylesheet" href="\/css\/[a-z-]+\.css\?v=/.test(l.trim())), 'only feature stylesheets in between');
     assert.match(layout, /app\.js\?v=\{\{ appVersion \}\}"><\/script>\n<script src="\/js\/command-palette\.js\?v=\{\{ appVersion \}\}"><\/script>/);
   });
   it('every palette.* key and the settings tab labels are in the GC.t whitelist', () => {
