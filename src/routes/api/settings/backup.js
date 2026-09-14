@@ -11,6 +11,7 @@ const backup = require('../../../services/backup');
 const logger = require('../../../utils/logger');
 const { requireFeature } = require('../../../middleware/license');
 const { uploadLimiter } = require('../../../middleware/rateLimit');
+const gcbk = require('../../../services/offsite/gcbk');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -57,20 +58,44 @@ router.get('/backup', (req, res) => {
   }
 });
 
+
+// ── Encrypted archives (.gcbk, docs/feature-release-b.md §7) ──────────────
+async function openArchive(req) {
+  const given = req.body && typeof req.body.passphrase === 'string' && req.body.passphrase !== '' ? req.body.passphrase : null;
+  const passphrase = given || require('../../../services/offsite').getPassphrase();
+  if (!passphrase) throw new gcbk.GcbkError('PASSPHRASE_REQUIRED', 'passphrase required for an encrypted backup');
+  return gcbk.decryptBackup(req.file.buffer, passphrase);
+}
+function sendArchiveError(res, err) {
+  if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
+  logger.error({ error: err.message }, 'Failed to open encrypted backup');
+  return res.status(500).json({ ok: false, error: 'could not open the encrypted backup', code: 'DECRYPT_FAILED' });
+}
+
 /**
  * POST /api/settings/restore/preview — Validate and preview backup
  */
-router.post('/restore/preview', uploadLimiter, upload.single('backup'), (req, res) => {
+router.post('/restore/preview', uploadLimiter, upload.single('backup'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
     }
 
     let data;
-    try {
-      data = JSON.parse(req.file.buffer.toString('utf-8'));
-    } catch {
-      return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+    let archive = null;
+    if (gcbk.isGcbk(req.file.buffer)) {
+      try {
+        archive = await openArchive(req);
+      } catch (err) {
+        return sendArchiveError(res, err);
+      }
+      data = archive.payload.backup;
+    } else {
+      try {
+        data = JSON.parse(req.file.buffer.toString('utf-8'));
+      } catch {
+        return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+      }
     }
 
     const errors = backup.validateBackup(data);
@@ -79,7 +104,7 @@ router.post('/restore/preview', uploadLimiter, upload.single('backup'), (req, re
     }
 
     const summary = backup.getBackupSummary(data);
-    res.json({ ok: true, summary });
+    res.json({ ok: true, summary, ...(archive ? { encrypted: true, include_key: !!archive.payload.encryption_key, gc_version: archive.header.gc_version || null } : {}) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to preview backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.preview') });
@@ -96,10 +121,30 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
     }
 
     let data;
-    try {
-      data = JSON.parse(req.file.buffer.toString('utf-8'));
-    } catch {
-      return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+    if (gcbk.isGcbk(req.file.buffer)) {
+      // Encrypted off-site archive (.gcbk): passphrase from the form field, else
+      // the configured one (restore on the same installation). With an archived
+      // GC_ENCRYPTION_KEY the secrets are re-encrypted to this installation's key.
+      let archive;
+      try {
+        archive = await openArchive(req);
+      } catch (err) {
+        return sendArchiveError(res, err);
+      }
+      data = archive.payload.backup;
+      const current = require('../../../../config/default').encryption.key;
+      if (archive.payload.encryption_key && current && archive.payload.encryption_key.toLowerCase() !== current.toLowerCase()) {
+        const { rekeyBackup } = require('../../../services/offsite/rekey');
+        const r = rekeyBackup(data, archive.payload.encryption_key, current);
+        data = r.backup;
+        logger.info({ converted: r.converted }, 'Restore: secrets re-encrypted from the archived key');
+      }
+    } else {
+      try {
+        data = JSON.parse(req.file.buffer.toString('utf-8'));
+      } catch {
+        return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+      }
     }
 
     const result = await backup.restoreBackup(data);
@@ -227,6 +272,185 @@ router.delete('/autobackup/:filename', (req, res) => {
     }
     logger.error({ error: err.message }, 'Failed to delete backup file');
     res.status(500).json({ ok: false, error: req.t('error.autobackup.delete') });
+  }
+});
+
+// ═══ Release B: pre-migration snapshots + off-site backups ═══════════════
+// docs/feature-release-b.md §4 / §7. All paths live under /backup/…, which the
+// settings aggregator already refuses for token auth (session only); on top
+// of that the admin role is required. Off-site changes/transfers need the
+// `scheduled_backups` license feature (like autobackup).
+
+function requireAdminSession(req, res, next) {
+  if (req.tokenAuth || !req.session || !req.session.userId) {
+    return res.status(403).json({ ok: false, error: 'session required', code: 'SESSION_REQUIRED' });
+  }
+  const user = require('../../../services/users').getById(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).json({ ok: false, error: 'admin required', code: 'ADMIN_REQUIRED' });
+  next();
+}
+
+function sendOffsiteError(res, err, fallback) {
+  if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED' });
+  if (err instanceof offsite().OffsiteError) return res.status(err.status).json({ ok: false, error: err.message, code: err.code });
+  if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
+  logger.error({ error: err && err.message }, fallback);
+  return res.status(500).json({ ok: false, error: fallback, code: 'INTERNAL' });
+}
+
+const offsite = () => require('../../../services/offsite');
+const licensed = requireFeature('scheduled_backups');
+
+/**
+ * GET /api/settings/backup/pre-migration — snapshots taken before migrations
+ */
+router.get('/backup/pre-migration', requireAdminSession, (req, res) => {
+  try {
+    const { listSnapshots } = require('../../../db/preMigrationBackup');
+    const dbPath = require('../../../db/connection').getDb().name;
+    res.json({ ok: true, files: listSnapshots(dbPath) });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not list pre-migration backups');
+  }
+});
+
+/**
+ * GET /api/settings/backup/pre-migration/:name — download one snapshot
+ */
+router.get('/backup/pre-migration/:name', requireAdminSession, (req, res) => {
+  try {
+    const { snapshotPath, parseName } = require('../../../db/preMigrationBackup');
+    const name = req.params.name;
+    if (!parseName(name)) return res.status(400).json({ ok: false, error: 'invalid file name', code: 'INVALID_NAME' });
+    const p = snapshotPath(require('../../../db/connection').getDb().name, name);
+    if (!p) return res.status(404).json({ ok: false, error: 'not found', code: 'NOT_FOUND' });
+    activity.log('pre_migration_backup_downloaded', `Pre-migration backup downloaded: ${name}`, {
+      source: 'admin', ipAddress: req.ip, severity: 'warning',
+    });
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.setHeader('Content-Type', 'application/vnd.sqlite3');
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(p);
+  } catch (err) {
+    sendOffsiteError(res, err, 'download failed');
+  }
+});
+
+/**
+ * GET/PUT /api/settings/backup/offsite — { passphrase?, include_key } → { passphrase_set, include_key }
+ */
+router.get('/backup/offsite', requireAdminSession, (req, res) => {
+  try { res.json({ ok: true, ...offsite().getOffsiteSettings() }); }
+  catch (err) { sendOffsiteError(res, err, 'could not read off-site settings'); }
+});
+
+router.put('/backup/offsite', requireAdminSession, licensed, (req, res) => {
+  try {
+    const r = offsite().updateOffsiteSettings(req.body || {});
+    activity.log('offsite_settings_updated', 'Off-site backup settings updated', { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not save off-site settings');
+  }
+});
+
+/**
+ * GET/POST /api/settings/backup/ssh-key(/rotate) — public key for SFTP targets
+ */
+router.get('/backup/ssh-key', requireAdminSession, licensed, (req, res) => {
+  try { res.json({ ok: true, public_key: offsite().ensureSshKey() }); }
+  catch (err) { sendOffsiteError(res, err, 'could not read the SSH key'); }
+});
+
+router.post('/backup/ssh-key/rotate', requireAdminSession, licensed, (req, res) => {
+  try {
+    const pub = offsite().rotateSshKey();
+    activity.log('offsite_ssh_key_rotated', 'Off-site backup SSH key rotated', { source: 'admin', ipAddress: req.ip, severity: 'warning' });
+    res.json({ ok: true, public_key: pub });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not rotate the SSH key');
+  }
+});
+
+/**
+ * Targets
+ */
+router.get('/backup/targets', requireAdminSession, (req, res) => {
+  try { res.json({ ok: true, targets: offsite().listTargets() }); }
+  catch (err) { sendOffsiteError(res, err, 'could not list targets'); }
+});
+
+router.get('/backup/targets/l4-candidates', requireAdminSession, (req, res) => {
+  try { res.json({ ok: true, routes: offsite().l4Candidates() }); }
+  catch (err) { sendOffsiteError(res, err, 'could not list L4 routes'); }
+});
+
+router.post('/backup/targets', requireAdminSession, licensed, (req, res) => {
+  try {
+    const target = offsite().createTarget(req.body || {});
+    activity.log('offsite_target_created', `Off-site backup target created: ${target.name} (${target.type})`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    res.status(201).json({ ok: true, target });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not create target');
+  }
+});
+
+function targetId(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) { res.status(400).json({ ok: false, error: 'invalid id', code: 'INVALID_ID' }); return null; }
+  return id;
+}
+
+router.put('/backup/targets/:id', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const target = await offsite().updateTarget(id, req.body || {});
+    activity.log('offsite_target_updated', `Off-site backup target updated: ${target.name}`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    res.json({ ok: true, target });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not update target');
+  }
+});
+
+router.delete('/backup/targets/:id', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const t = offsite().getTarget(id);
+    await offsite().deleteTarget(id);
+    activity.log('offsite_target_deleted', `Off-site backup target deleted: ${t ? t.name : id}`, { source: 'admin', ipAddress: req.ip, severity: 'warning' });
+    res.json({ ok: true });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not delete target');
+  }
+});
+
+router.post('/backup/targets/:id/test', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const detail = await offsite().testTarget(id);
+    res.json({ ok: true, detail });
+  } catch (err) {
+    if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', detail: err.message });
+    sendOffsiteError(res, err, 'test failed');
+  }
+});
+
+router.post('/backup/targets/:id/run', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const r = await offsite().runTarget(id);
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    sendOffsiteError(res, err, 'upload failed');
+  }
+});
+
+router.get('/backup/targets/:id/files', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    res.json({ ok: true, files: await offsite().listRemoteFiles(id) });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not list files');
   }
 });
 

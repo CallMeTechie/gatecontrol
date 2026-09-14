@@ -5,6 +5,8 @@ data
 .git
 .gitignore
 *.md
+# "What's new" reads the changelog at runtime (src/services/changelog.js)
+!CHANGELOG.md
 .DS_Store
 *.log
 *.tar.gz

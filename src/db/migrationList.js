@@ -1494,6 +1494,32 @@ const migrations = [
     detect: (db) => hasColumn(db, 'routes', 'waf_enabled'),
   },
   {
+    version: 76,
+    name: 'ops_center',
+    // Release B operations (docs/feature-release-b.md §6/§7):
+    //   backup_targets          off-site backup destinations; config_enc holds
+    //                           the whole per-type config as one GC_ENCRYPTION_KEY
+    //                           ciphertext (secrets included), last_* = result
+    //                           of the latest upload ('ok' | 'failed').
+    //   users.last_seen_version "What's new": newest release the user dismissed.
+    // v75 is Release A (aurora_only), v77 Release B security_center.
+    sql: `
+      CREATE TABLE IF NOT EXISTS backup_targets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('sftp','smb','s3','webdav')),
+        config_enc TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        keep INTEGER NOT NULL DEFAULT 14,
+        last_run_at TEXT,
+        last_status TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL
+      );
+      ALTER TABLE users ADD COLUMN last_seen_version TEXT;`,
+    detect: (db) => hasColumn(db, 'users', 'last_seen_version'),
+  },
+  {
     version: 77,
     name: 'security_center',
     // Release B, security strand (docs/feature-release-b.md §2, §3, §13b):

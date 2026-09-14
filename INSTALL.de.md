@@ -313,6 +313,8 @@ Eingeloggte Admins sehen die vollen Details auch im Browser: öffne `GC_BASE_URL
 docker compose logs --tail 100
 ```
 
+Die mitgelieferte `docker-compose.yml` rotiert die Container-Logs von `gatecontrol` und `guacd` (`json-file`, 3 × 10 MB). Docker rotiert von sich aus nie; auf Hosts, die vor 1.126 installiert wurden, denselben `logging:`-Block bei beiden Diensten in der eigenen `docker-compose.yml` ergänzen und einmal `docker compose up -d` ausführen.
+
 Nach dem Boot-Strap sollten keine `level=error`-Zeilen mehr auftauchen. Häufige Nicht-Fehler, die du **ignorieren** kannst:
 
 - `dnsmasq warning: interface wg0 does not currently exist` beim Start — dnsmasq kommt vor wg-quick hoch; `bind-dynamic` fängt das ab.
@@ -411,6 +413,10 @@ Einstellungen → Backup → **Full backup download**. Liefert eine portable JSO
 
 Das In-UI-Backup enthält **keine** Caddy-Zertifikate — die werden nach Restore automatisch neu ausgestellt.
 
+### Backups außer Haus (Pro, „geplante Backups")
+
+Nach jedem automatischen Backup kann GateControl eine verschlüsselte Kopie per SFTP (Schlüssel-Anmeldung mit einem von GateControl erzeugten Schlüssel — dessen öffentlichen Schlüssel auf dem Ziel in `~/.ssh/authorized_keys` eintragen), SMB, S3-kompatiblen Speicher oder WebDAV hochladen (Einstellungen → Backup). Die Dateien heißen `gatecontrol-JJJJMMTT-HHmmss.gcbk`; pro Ziel bleiben nur die neuesten *n* davon, andere Dateien werden nie angefasst. Sie sind mit deiner Passphrase verschlüsselt (scrypt + AES-256-GCM) und enthalten — solange du es nicht abschaltest — den Encryption-Key; **Passphrase + Datei genügen also für eine Wiederherstellung auf neuer Hardware**: die `.gcbk` unter Einstellungen → Backup → Wiederherstellen hochladen und die Passphrase eingeben. Ohne GateControl: `node src/bin/offsite-decrypt.js <datei.gcbk> -o backup.json [-k encryption_key]` (im Container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Die Passphrase außerhalb des Servers aufbewahren — sie lässt sich nicht wiederherstellen. Ein NAS im LAN hinter einem Gateway ist über eine interne L4-Route (SSH- oder SMB-Port) erreichbar: als Ziel die VPN-Adresse des Servers (Standard `10.8.0.1`) und den Listen-Port der Route eintragen.
+
 ---
 
 ## 11. Updates
@@ -454,11 +460,15 @@ Der Update-**Modus** wird in der Server-Karte **Einstellungen → Auto-Update** 
 
 **Automatisches Rollback:** Vor jedem Recreate taggt `update.sh` das laufende Image als `ghcr.io/callmetechie/gatecontrol:rollback`. Wird das neue Image nicht innerhalb von `GC_WAIT_TIMEOUT` gesund, zeigt `:latest` lokal wieder auf dieses Image und der Container wird ohne Pull daraus neu erstellt (`docker-compose.yml` bleibt unverändert). Das Dashboard zeigt dann „Update … fehlgeschlagen — Vorversion wiederhergestellt", das Skript endet mit Exit 1. Die ID des fehlerhaften Images landet in `data/.auto-update-bad-image`; im Automatik-Modus wird dieses Image übersprungen, bis ein neueres `:latest` erscheint — ein kaputtes Release wird also nicht alle 5 Minuten erneut ausgerollt. Im Manuell-Modus versucht „Update jetzt" es bewusst noch einmal. Scheitert auch das Rollback, endet das Skript mit Exit 4, das Dashboard zeigt „Update und Rollback fehlgeschlagen" und du musst eingreifen (`docker compose ps`, `docker compose logs gatecontrol`). Der `:rollback`-Tag hält genau ein Vorgänger-Image auf der Platte; das Prune (nur ungetaggte Images) entfernt es nie.
 
+**Wartungsfenster (Automatik-Modus):** Unter Einstellungen → Auto-Update lassen sich automatische Deploys auf ein Zeitfenster beschränken, z. B. 03:00–05:00 in `Europe/Berlin` (auch über Mitternacht, z. B. 23:00–02:00). Der Server schreibt es in `data/.auto-update-config.json`; außerhalb des Fensters zieht `update.sh` das neue Image zwar schon, protokolliert aber `outside maintenance window` und meldet den Status `waiting_window` — ausgerollt wird beim ersten Cron-Lauf im Fenster. „Update jetzt" rollt sofort aus, unabhängig vom Fenster. Die Zeitzone kommt aus den tzdata des Hosts (`/usr/share/zoneinfo`); fehlen sie, rechnet `date` in UTC und das Skript warnt im Log. Das Fenster braucht die `update.sh` ab GateControl 1.126 — ein älteres Skript ignoriert es und rollt weiter jederzeit aus.
+
+**Datenbank-Sicherung vor Migrationen:** Muss eine neue Version die Datenbank migrieren, kopiert GateControl sie vorher nach `data/backups/pre-migration/gatecontrol-v<von>-v<bis>-<Zeitstempel>.db` (nur für den Besitzer lesbar, die letzten 3 bleiben; Download unter Einstellungen → Backup). Scheitert die Kopie (Platte voll, Rechte), startet der Container nicht und `update.sh` rollt auf das vorherige Image zurück. Notausgang: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in der `.env`.
+
 Stellschrauben (Umgebungsvariablen): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (Default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
 
 #### Upgrade von einer älteren `update.sh`
 
-Falls du `update.sh` bereits aus einer früheren GateControl-Version per Cron betreibst, musst du sie **einmalig** durch die aktuelle (modusbewusste) Version aus diesem Release ersetzen. Das ältere Skript kennt weder den Automatisch/Manuell-Modus noch das `pending-update`-Flag. Solange du es nicht austauschst, zeigt das Dashboard eine **`mode_mismatch`**-Warnung und der **Manuell-Modus wird nicht wirksam** — das veraltete Skript deployt (bzw. überspringt) weiter, unabhängig vom in den Einstellungen gewählten Modus. Kopiere die neue `update.sh` ins Deploy-Verzeichnis, dann verschwindet die Warnung beim nächsten Cron-Lauf.
+Falls du `update.sh` bereits aus einer früheren GateControl-Version per Cron betreibst, musst du sie **einmalig** durch die aktuelle (modusbewusste) Version aus diesem Release ersetzen. Das ältere Skript kennt weder den Automatisch/Manuell-Modus noch das `pending-update`-Flag. Solange du es nicht austauschst, zeigt das Dashboard eine **`mode_mismatch`**-Warnung und der **Manuell-Modus wird nicht wirksam** — das veraltete Skript deployt (bzw. überspringt) weiter, unabhängig vom in den Einstellungen gewählten Modus. Kopiere die neue `update.sh` ins Deploy-Verzeichnis, dann verschwindet die Warnung beim nächsten Cron-Lauf. Dasselbe gilt für das Wartungsfenster (1.126): `update.sh` einmal ersetzen, sonst wirkt das Fenster nicht.
 
 ### Manuelles Update
 
@@ -507,6 +517,11 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 EOF
 
 # 3. Alt stoppen, Daten kopieren, Neu starten (kurze Downtime)

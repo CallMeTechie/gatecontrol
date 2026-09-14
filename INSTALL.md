@@ -313,6 +313,8 @@ Logged-in admins see the full detail from the browser too: open `GC_BASE_URL/hea
 docker compose logs --tail 100
 ```
 
+The shipped `docker-compose.yml` rotates the container logs of `gatecontrol` and `guacd` (`json-file`, 3 × 10 MB). Docker's default never rotates; on hosts installed before 1.126, add the same `logging:` block to both services in your `docker-compose.yml` and run `docker compose up -d` once.
+
 No `level=error` lines should appear after the initial bootstrap. Common non-errors you **can** ignore:
 
 - `dnsmasq warning: interface wg0 does not currently exist` during startup — dnsmasq comes up before wg-quick; `bind-dynamic` takes care of it.
@@ -411,6 +413,10 @@ Settings → Backup → **Download full backup**. This produces a portable JSON 
 
 The in-UI backup does **not** include Caddy certificates — those are re-issued automatically after restore.
 
+### Off-site backups (Pro, "scheduled backups")
+
+After every automatic backup GateControl can upload an encrypted copy to SFTP (key authentication with a key GateControl generates — add its public key to `~/.ssh/authorized_keys` on the target), SMB, S3-compatible storage or WebDAV (Settings → Backup). The files are called `gatecontrol-YYYYMMDD-HHmmss.gcbk`; per target only the newest *n* of these are kept, other files are never touched. They are encrypted with your off-site passphrase (scrypt + AES-256-GCM) and — unless you switch it off — contain the encryption key, so **passphrase + file are enough to restore on new hardware**: upload the `.gcbk` under Settings → Backup → Restore and enter the passphrase. Without GateControl: `node src/bin/offsite-decrypt.js <file.gcbk> -o backup.json [-k encryption_key]` (inside the container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Keep the passphrase outside the server — it cannot be recovered. A NAS in the LAN behind a gateway is reached through an internal L4 route (SSH or SMB port): enter the server's VPN address (`10.8.0.1` by default) and the route's listen port as target.
+
 ---
 
 ## 11. Updates
@@ -454,11 +460,15 @@ The update **mode** is chosen in the server's **Settings → Auto-Update** card.
 
 **Automatic rollback:** before each recreate, `update.sh` tags the running image as `ghcr.io/callmetechie/gatecontrol:rollback`. If the new image does not become healthy within `GC_WAIT_TIMEOUT`, it points `:latest` locally back at that image and recreates the container from it without pulling (`docker-compose.yml` stays unchanged). The dashboard then shows "Update … failed — previous version restored", and the script exits 1. The failed image ID is stored in `data/.auto-update-bad-image`; in Automatic mode that image is skipped until a newer `:latest` is published, so a broken release is not redeployed every 5 minutes. In Manual mode, "Update now" deliberately tries it again. If the rollback fails as well, the script exits 4, the dashboard shows "Update and rollback failed", and you have to step in (`docker compose ps`, `docker compose logs gatecontrol`). The `:rollback` tag keeps exactly one previous image on disk; the dangling-only prune never removes it.
 
+**Maintenance window (Automatic mode):** in Settings → Auto-Update you can restrict automatic deploys to a time window, e.g. 03:00–05:00 in `Europe/Berlin` (a window may span midnight, e.g. 23:00–02:00). The server writes it into `data/.auto-update-config.json`; outside the window `update.sh` still pulls the new image, logs `outside maintenance window` and reports the state `waiting_window` — the deploy happens on the first cron run inside the window. "Update now" deploys immediately regardless of the window. The time zone is read from the host's tzdata (`/usr/share/zoneinfo`); without it `date` falls back to UTC and the script logs a warning. The window needs the `update.sh` of GateControl 1.126 or newer — an older script ignores it and keeps deploying at any time.
+
+**Database snapshot before migrations:** when a new version has to migrate the database, GateControl first copies it to `data/backups/pre-migration/gatecontrol-v<from>-v<to>-<timestamp>.db` (owner-only, the last 3 are kept; download under Settings → Backup). If that copy fails (disk full, permissions), the container does not start and `update.sh` rolls back to the previous image. Emergency exit: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in `.env`.
+
 Tunables (environment variables): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
 
 #### Upgrading from an older `update.sh`
 
-If you already run `update.sh` from cron from a previous GateControl version, you must **replace it once** with the current (mode-aware) version shipped with this release. The older script does not understand the Automatic/Manual mode or the `pending-update` flag. Until you swap it in, the dashboard shows a **`mode_mismatch`** warning and **Manual mode will not actually take effect** — the stale script keeps deploying (or skipping) regardless of the mode you selected in Settings. Copy the new `update.sh` into the deployment directory and the warning clears on the next cron run.
+If you already run `update.sh` from cron from a previous GateControl version, you must **replace it once** with the current (mode-aware) version shipped with this release. The older script does not understand the Automatic/Manual mode or the `pending-update` flag. Until you swap it in, the dashboard shows a **`mode_mismatch`** warning and **Manual mode will not actually take effect** — the stale script keeps deploying (or skipping) regardless of the mode you selected in Settings. Copy the new `update.sh` into the deployment directory and the warning clears on the next cron run. The same applies to the maintenance window (1.126): replace `update.sh` once, otherwise the window has no effect.
 
 ### Manual update
 
@@ -507,6 +517,11 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 EOF
 
 # 3. Stop old, copy data, start new (brief downtime)
