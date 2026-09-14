@@ -18,6 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/aurora.css?v={{ appVersion }}">
+  <link rel="stylesheet" href="/css/nav.css?v={{ appVersion }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -173,6 +174,38 @@
       'settings.portal.switch_warning': {{ t('settings.portal.switch_warning') | dump | safe }},
       'sidebar.toggle_open': {{ t('sidebar.toggle_open') | dump | safe }},
       'sidebar.toggle_close': {{ t('sidebar.toggle_close') | dump | safe }},
+      {# quick search (command-palette.js, release B §8) #}
+      'palette.title': {{ t('palette.title') | dump | safe }},
+      'palette.placeholder': {{ t('palette.placeholder') | dump | safe }},
+      'palette.hint': {{ t('palette.hint') | dump | safe }},
+      'palette.shortcut_hint': {{ t('palette.shortcut_hint') | dump | safe }},
+      'palette.empty': {{ t('palette.empty') | dump | safe }},
+      'palette.loading': {{ t('palette.loading') | dump | safe }},
+      'palette.load_failed': {{ t('palette.load_failed') | dump | safe }},
+      'palette.results': {{ t('palette.results') | dump | safe }},
+      'palette.group_recent': {{ t('palette.group_recent') | dump | safe }},
+      'palette.group_pages': {{ t('palette.group_pages') | dump | safe }},
+      'palette.group_actions': {{ t('palette.group_actions') | dump | safe }},
+      'palette.group_settings': {{ t('palette.group_settings') | dump | safe }},
+      'palette.group_hosts': {{ t('palette.group_hosts') | dump | safe }},
+      'palette.group_entries': {{ t('palette.group_entries') | dump | safe }},
+      'palette.group_peers': {{ t('palette.group_peers') | dump | safe }},
+      'palette.group_gateways': {{ t('palette.group_gateways') | dump | safe }},
+      'palette.action_add_domain': {{ t('palette.action_add_domain') | dump | safe }},
+      'palette.action_add_peer': {{ t('palette.action_add_peer') | dump | safe }},
+      'palette.action_theme': {{ t('palette.action_theme') | dump | safe }},
+      'palette.unassigned': {{ t('palette.unassigned') | dump | safe }},
+      'nav.settings': {{ t('nav.settings') | dump | safe }},
+      'settings.tab_general': {{ t('settings.tab_general') | dump | safe }},
+      'settings.tab_security': {{ t('settings.tab_security') | dump | safe }},
+      'settings.tab_backup': {{ t('settings.tab_backup') | dump | safe }},
+      'settings.tab_email': {{ t('settings.tab_email') | dump | safe }},
+      'settings.tab_monitoring': {{ t('settings.tab_monitoring') | dump | safe }},
+      'settings.tab_advanced': {{ t('settings.tab_advanced') | dump | safe }},
+      'settings.tab_license': {{ t('settings.tab_license') | dump | safe }},
+      'settings.tab_split_tunnel': {{ t('settings.tab_split_tunnel') | dump | safe }},
+      'settings.tab_pihole': {{ t('settings.tab_pihole') | dump | safe }},
+      'settings.portal.title': {{ t('settings.portal.title') | dump | safe }},
       'tokens.no_tokens': {{ t('tokens.no_tokens') | dump | safe }},
       'tokens.created': {{ t('tokens.created') | dump | safe }},
       'tokens.last_used': {{ t('tokens.last_used') | dump | safe }},
@@ -543,6 +576,7 @@
   };
 </script>
 <script src="/js/app.js?v={{ appVersion }}"></script>
+<script src="/js/command-palette.js?v={{ appVersion }}"></script>
 <script src="/js/events.js?v={{ appVersion }}"></script>
 {% block scripts %}{% endblock %}
 </body>

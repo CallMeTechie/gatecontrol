@@ -4,6 +4,12 @@
   </button>
   <div class="page-crumb">{{ title }}</div>
   <div class="topbar-spacer"></div>
+  {# Quick search (command-palette.js): Ctrl/⌘+K or "/" — this button is the touch entry point. #}
+  <button type="button" class="cp-trigger" id="cp-open" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" title="{{ t('palette.shortcut_hint') }}" aria-label="{{ t('palette.shortcut_hint') }}">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-4.2-4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span class="cp-trigger-label">{{ t('nav.search') }}</span>
+    <kbd class="cp-kbd" id="cp-kbd">{{ 'Strg K' if language == 'de' else 'Ctrl K' }}</kbd>
+  </button>
   <div class="topbar-status" id="wg-status"><span class="pulse-dot"></span><span>{{ t('status.wg_active') }}</span></div>
   <span id="au-status" class="au-actions"></span>
   <div class="topbar-lang" id="lang-switcher">
