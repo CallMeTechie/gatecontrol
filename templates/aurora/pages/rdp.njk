@@ -1,6 +1,8 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
+{# Must be set before its first use (button + locked notice below). #}
+{% set rdpLocked = not license.hasFeature('remote_desktop') %}
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('nav.routing') }}</div>
@@ -16,15 +18,14 @@
 </div>
 
 {% if rdpLocked %}
-<div class="alert alert-warning" style="margin-bottom:16px">
+<div class="rdp-locked-hint" style="margin-bottom:16px" data-license-hint="remote_desktop">
   {{ t('error.license.feature_not_available') }}
-  <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" style="margin-left:8px;font-weight:600">Upgrade</a>
+  <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" rel="noopener" style="margin-left:8px;font-weight:600">Upgrade</a>
 </div>
 {% endif %}
 
 {# -- Stats Cards: hidden in Aurora but kept for JS null-check safety --------- #}
 {# setStatValue() null-checks getElementById; hidden keeps HTML valid & IDs reachable #}
-{% set rdpLocked = not license.hasFeature('remote_desktop') %}
 <div id="rdp-stats" hidden>
   <span id="rdp-stat-total">0</span>
   <span id="rdp-stat-online"><span class="stat-dot stat-dot-green"></span>0</span>
