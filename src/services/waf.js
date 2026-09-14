@@ -145,6 +145,16 @@ const BODY_RULES = [
   'SecRule REQUEST_HEADERS:Content-Type "!@rx ^(?:application/x-www-form-urlencoded|multipart/form-data|(?:application|text)/(?:[a-z0-9.+-]+\\+)?(?:json|xml))(?:\\s*;|\\s*$)" "id:9002,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"',
 ];
 
+// Own IPs (docs/feature-release-b.md §3): with trusted_bypass on, requests
+// from these addresses skip the rule engine entirely — a phase-1 rule BEFORE
+// the CRS include (like BODY_RULES; id 9003, below the path-exclusion range).
+// REMOTE_ADDR is the connection address (Coraza takes it from RemoteAddr).
+function trustedBypassRule(list) {
+  const ips = (list || []).map((v) => String(v).trim()).filter((v) => /^[0-9a-fA-F.:/]{2,64}$/.test(v));
+  if (ips.length === 0) return null;
+  return `SecRule REMOTE_ADDR "@ipMatch ${ips.join(',')}" "id:9003,phase:1,pass,nolog,ctl:ruleEngine=Off"`;
+}
+
 /**
  * SecLang directives for one route. Order matters:
  *   - the paranoia SecAction (id 900000) and the path exclusions
@@ -154,7 +164,7 @@ const BODY_RULES = [
  *   - SecRuleRemoveById (configure-time) must come AFTER the CRS rules.
  * Engine settings after the includes override coraza.conf-recommended.
  */
-function directivesFor(route, { auditLog } = {}) {
+function directivesFor(route, { auditLog, trustedIps } = {}) {
   const mode = modeOf(route);
   const pl = paranoiaOf(route);
   const ex = parseExclusions(route && route.waf_exclusions);
@@ -166,6 +176,8 @@ function directivesFor(route, { auditLog } = {}) {
   ];
   // Request bodies (see BODY_RULES): what Coraza may buffer and scan.
   lines.push(...BODY_RULES);
+  const bypass = trustedBypassRule(trustedIps);
+  if (bypass) lines.push(bypass);
   ex.paths.slice(0, PATH_RULE_SPAN).forEach((p, i) => {
     lines.push(`SecRule REQUEST_URI "@beginsWith ${p}" "id:${PATH_RULE_BASE + routeId * PATH_RULE_SPAN + i},phase:1,pass,nolog,ctl:ruleEngine=Off"`);
   });
@@ -197,18 +209,19 @@ function directivesFor(route, { auditLog } = {}) {
 }
 
 /** Caddy handler for a route, or null when the WAF is off / not applicable. */
-function buildWafHandler(route, { engine } = {}) {
+function buildWafHandler(route, { engine, trustedIps } = {}) {
   if (!route || !route.waf_enabled || route.route_type === 'l4') return null;
   const available = engine !== undefined ? !!engine : engineAvailable();
   if (!available) return null;
-  return { handler: 'waf', load_owasp_crs: true, directives: directivesFor(route) };
+  return { handler: 'waf', load_owasp_crs: true, directives: directivesFor(route, { trustedIps }) };
 }
 
 // ─── Block page ─────────────────────────────────────────
 
-function renderBlockPage() {
+function renderBlockPage({ reference = '{http.error.id}' } = {}) {
   // Hardcoded bilingual like caddyAccessWindow (rendered at config-build time).
-  // {http.error.id} is the Coraza transaction id, expanded by Caddy.
+  // {http.error.id} is the Coraza transaction id, expanded by Caddy; the
+  // scanner-ban route (wafBans.banRoute) shows the client address instead.
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -231,7 +244,7 @@ function renderBlockPage() {
     <p>Die Web Application Firewall hat diese Anfrage als möglichen Angriff eingestuft und nicht weitergeleitet. Wenn Sie glauben, dass dies ein Fehler ist, wenden Sie sich an den Betreiber und nennen Sie die Referenz.</p>
     <p class="lang-sep"><strong>Request blocked</strong></p>
     <p>The web application firewall classified this request as a possible attack and did not forward it. If you believe this is a mistake, contact the operator and quote the reference.</p>
-    <div class="detail">Referenz / Reference: <code>{http.error.id}</code></div>
+    <div class="detail">Referenz / Reference: <code>${reference}</code></div>
   </div>
 </body>
 </html>`;
@@ -567,6 +580,9 @@ function ingestLines(lines) {
   for (const e of firsts.slice(0, MAX_PUBLISH_PER_BATCH)) {
     try { eventBus.publish('waf', { host: e.host, action: e.action, rule_id: e.rule_id }); } catch { /* best-effort */ }
   }
+  // Scanner ban (docs/feature-release-b.md §3): count the stored hits per
+  // client IP; never throws.
+  if (n > 0) require('./wafBans').onIngested(rows);
   return n;
 }
 
@@ -771,20 +787,43 @@ const SINCE_24H = () => new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 // A request (transaction) with several rule hits is one event in the counters.
 const TX_KEY = "COALESCE(tx_id, 'row:' || id)";
 
-/** { events, blocked, by_route: { [route_id]: { events, blocked } } } since `since` (ISO; default 24 h). */
+// Own IPs (docs/feature-release-b.md §3) never count in the tiles and
+// statistics: the distinct client addresses of the window are matched against
+// the trusted list in JS (CIDR), the hits then excluded in SQL via json_each.
+function trustedInWindow(db, from, matcher) {
+  const m = matcher || require('./wafBans').trustedMatcher();
+  const ips = [];
+  for (const r of db.prepare('SELECT DISTINCT client_ip FROM waf_events WHERE ts >= ? AND client_ip IS NOT NULL').all(from)) {
+    if (m(r.client_ip)) ips.push(r.client_ip);
+  }
+  return ips;
+}
+
+/**
+ * { events, blocked, trusted, by_route: { [route_id]: { events, blocked } } }
+ * since `since` (ISO; default 24 h) — events/blocked/by_route without the
+ * own (trusted) IPs, `trusted` = requests from them.
+ */
 function stats({ since } = {}) {
   const from = since || SINCE_24H();
   const db = getDb();
+  let trustedIps = [];
+  try { trustedIps = trustedInWindow(db, from); } catch (err) { logger.warn({ err: err.message }, 'waf: trusted list unavailable'); }
+  const excl = trustedIps.length ? " AND (client_ip IS NULL OR client_ip NOT IN (SELECT value FROM json_each(?)))" : '';
+  const args = trustedIps.length ? [from, JSON.stringify(trustedIps)] : [from];
   const total = db.prepare(`SELECT COUNT(DISTINCT ${TX_KEY}) AS events,
       COUNT(DISTINCT CASE WHEN action = 'blocked' THEN ${TX_KEY} END) AS blocked
-    FROM waf_events WHERE ts >= ?`).get(from);
+    FROM waf_events WHERE ts >= ?${excl}`).get(...args);
   const byRoute = {};
   for (const r of db.prepare(`SELECT route_id, COUNT(DISTINCT ${TX_KEY}) AS events,
       COUNT(DISTINCT CASE WHEN action = 'blocked' THEN ${TX_KEY} END) AS blocked
-    FROM waf_events WHERE ts >= ? AND route_id IS NOT NULL GROUP BY route_id`).all(from)) {
+    FROM waf_events WHERE ts >= ? AND route_id IS NOT NULL${excl} GROUP BY route_id`).all(...args)) {
     byRoute[r.route_id] = { events: r.events, blocked: r.blocked };
   }
-  return { since: from, events: total.events || 0, blocked: total.blocked || 0, by_route: byRoute };
+  const trusted = trustedIps.length
+    ? db.prepare(`SELECT COUNT(DISTINCT ${TX_KEY}) AS n FROM waf_events WHERE ts >= ? AND client_ip IN (SELECT value FROM json_each(?))`).get(from, JSON.stringify(trustedIps)).n
+    : 0;
+  return { since: from, events: total.events || 0, blocked: total.blocked || 0, trusted: trusted || 0, by_route: byRoute };
 }
 
 /** GET /waf/status payload. */
@@ -797,6 +836,7 @@ function status() {
     engine_available: engineAvailable(),
     events_24h: s.events,
     blocked_24h: s.blocked,
+    trusted_24h: s.trusted,
     routes: rows.map((r) => ({
       route_id: r.id,
       host: r.domain,
@@ -871,10 +911,14 @@ function listEvents({ host, route_id, action, from, to, rule_id, limit, cursor }
       exByRoute.set(r.id, parseExclusions(r.waf_exclusions));
     }
   }
+  // Own IPs are marked (docs/feature-release-b.md §3) — the UI dims them.
+  let trusted = () => false;
+  try { trusted = require('./wafBans').trustedMatcher(); } catch { /* no list */ }
   return {
     events: page.map((r) => ({
       ...r,
       raw: parseRaw(r.raw),
+      trusted: trusted(r.client_ip),
       rule_excluded: !!(r.route_id != null && r.rule_id != null && exByRoute.has(r.route_id) && exByRoute.get(r.route_id).rule_ids.includes(r.rule_id)),
     })),
     next_cursor: more ? page[page.length - 1].id : null,
@@ -979,9 +1023,14 @@ function start({ watcher = true } = {}) {
   if (watcher) {
     try { startWatcher(); } catch (err) { logger.warn({ err: err.message }, 'WAF audit log watcher not started'); }
   }
+  // Scanner ban: expiry sweep every 5 min.
+  try { require('./wafBans').start(); } catch (err) { logger.warn({ err: err.message }, 'WAF ban sweep not started'); }
 }
 
-function stop() { stopWatcher(); }
+function stop() {
+  stopWatcher();
+  try { require('./wafBans').stop(); } catch { /* ignore */ }
+}
 
 module.exports = {
   WAF_MODES,
@@ -996,6 +1045,7 @@ module.exports = {
   validateRuleId,
   validateExclusionPath,
   directivesFor,
+  trustedBypassRule,
   BODY_RULES,
   BODY_INSPECT_MAX_BYTES,
   buildWafHandler,
@@ -1021,4 +1071,5 @@ module.exports = {
   start,
   stop,
   _setEngineForTest,
+  SUMMARY_RULE_RE,
 };

@@ -56,5 +56,7 @@ router.use('/', require('./gateway'));
 router.use('/', require('./pihole'));
 router.use('/', require('./portal'));
 router.use('/', require('./domains'));
+// WAF: own IPs, trusted bypass, scanner ban (docs/feature-release-b.md §3)
+router.use('/', require('./waf'));
 
 module.exports = router;

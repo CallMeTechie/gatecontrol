@@ -7,12 +7,19 @@
 //   GET    /waf/events                    event list (filters, keyset cursor)
 //   POST   /waf/routes/:id/exclusions     { rule_id?, path? } → add + Caddy sync   (feature `waf`)
 //   DELETE /waf/routes/:id/exclusions     { rule_id?, path? } (body or query)       (feature `waf`)
+// Release B §3 (docs/feature-release-b.md), all feature `waf`:
+//   GET    /waf/bans                      { ok, bans:[{ip, reason, hits, first_seen, banned_at, expires_at, manual}] }
+//   POST   /waf/bans                      { ip, duration_h?, reason? } → { ok, ban }   (manual ban, synced at once)
+//   DELETE /waf/bans/:ip                  → { ok, ban }  (IP or CIDR, '/' as %2F)
+//   GET    /waf/assistant[?route_id=]     { ok, routes:[…] } (services/wafAssistant.js)
 //
 // Errors: { ok:false, error, code } — codes from services/waf.js (WAF_*), plus
 // CADDY_SYNC_FAILED (502) when the change could not be deployed (rolled back).
 
 const { Router } = require('express');
 const waf = require('../../services/waf');
+const wafBans = require('../../services/wafBans');
+const wafAssistant = require('../../services/wafAssistant');
 const license = require('../../services/license');
 const { requireFeature } = require('../../middleware/license');
 const logger = require('../../utils/logger');
@@ -77,6 +84,52 @@ router.delete('/routes/:id/exclusions', requireFeature('waf'), async (req, res) 
     res.json({ ok: true, route_id: Number(req.params.id), ...out });
   } catch (err) {
     sendError(res, err, 'DELETE /waf/routes/:id/exclusions');
+  }
+});
+
+// ─── Scanner ban (release B §3) ─────────────────────────
+
+router.get('/bans', requireFeature('waf'), (req, res) => {
+  try {
+    res.json({ ok: true, bans: wafBans.listBans() });
+  } catch (err) {
+    sendError(res, err, 'GET /waf/bans');
+  }
+});
+
+router.post('/bans', requireFeature('waf'), async (req, res) => {
+  try {
+    const ban = await wafBans.addBan(req.body || {});
+    res.status(201).json({ ok: true, ban });
+  } catch (err) {
+    sendError(res, err, 'POST /waf/bans');
+  }
+});
+
+router.delete('/bans/:ip', requireFeature('waf'), async (req, res) => {
+  try {
+    const ban = await wafBans.removeBan(req.params.ip);
+    res.json({ ok: true, ban });
+  } catch (err) {
+    sendError(res, err, 'DELETE /waf/bans/:ip');
+  }
+});
+
+// ─── Assistant (release B §3) ───────────────────────────
+
+router.get('/assistant', requireFeature('waf'), async (req, res) => {
+  try {
+    const q = req.query || {};
+    let routeId;
+    if (q.route_id !== undefined && q.route_id !== '') {
+      routeId = Number(q.route_id);
+      if (!Number.isInteger(routeId) || routeId < 1) {
+        return res.status(400).json({ ok: false, error: 'route_id must be a positive integer', code: 'WAF_ROUTE_ID_INVALID' });
+      }
+    }
+    res.json({ ok: true, ...(await wafAssistant.assistant({ routeId })) });
+  } catch (err) {
+    sendError(res, err, 'GET /waf/assistant');
   }
 });
 

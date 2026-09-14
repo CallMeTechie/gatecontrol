@@ -337,6 +337,10 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // WAF (docs/feature-waf.md): hosts whose route blocks → srv0 error page.
   const wafBlockHosts = [];
   let wafInUse = false;
+  // Own IPs with trusted_bypass (docs/feature-release-b.md §3): [] when off,
+  // so every WAF handler stays byte-identical.
+  let wafTrustedBypass = [];
+  try { wafTrustedBypass = require('./wafBans').bypassList(); } catch (err) { logger.warn({ err: err.message }, 'waf: trusted list unavailable'); }
   // Pre-assembled route entries (e.g. pool-outage 503 blocks) that bypass
   // the caddyRoutes dict and are merged directly into serverRoutes.
   const serverRoutes_pending = [];
@@ -648,7 +652,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // a real reverse_proxy (not the gateway maintenance page) and only when the
     // Caddy binary carries http.handlers.waf (buildWafHandler returns null
     // otherwise).
-    const wafHandler = reverseProxy.handler === 'reverse_proxy' ? buildWafHandler(route) : null;
+    const wafHandler = reverseProxy.handler === 'reverse_proxy' ? buildWafHandler(route, { trustedIps: wafTrustedBypass }) : null;
     if (wafHandler) wafInUse = true;
     if (wafHandler && route.waf_mode === 'block') {
       wafBlockHosts.push(route.domain, ...aliasFqdnsOf(route));
@@ -1118,6 +1122,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   for (const sni of zoneSni.values()) tlsPolicies.push({ match: { sni }, protocol_min: 'tls1.3' });
   // SNI guards right after the HTTP→HTTPS redirect, before any host route.
   if (mtlsGuards.length > 0) serverRoutes.splice(redirectRoute ? 1 : 0, 0, ...mtlsGuards);
+  // Scanner ban (docs/feature-release-b.md §3): right after the redirect and
+  // the mTLS guards, before any host route; null (absent) without bans.
+  let wafBanRoute = null;
+  try { wafBanRoute = require('./wafBans').banRoute({ gcHost }); } catch (err) { logger.warn({ err: err.message }, 'waf: ban route unavailable'); }
+  if (wafBanRoute) serverRoutes.splice((redirectRoute ? 1 : 0) + mtlsGuards.length, 0, wafBanRoute);
 
   if (serverRoutes.length > 0) {
     // Ownership marker — LAST route, impossible host match (never served).
