@@ -63,6 +63,7 @@
   "auth.sign_in_subtitle": "Melden Sie sich an, um fortzufahren",
   "auth.username": "Benutzername",
   "auth.password": "Passwort",
+  "auth.show_password": "Passwort anzeigen",
   "auth.submit": "Anmelden",
   "auth.error_required": "Benutzername und Passwort sind erforderlich",
   "auth.error_invalid": "Ungültiger Benutzername oder Passwort",

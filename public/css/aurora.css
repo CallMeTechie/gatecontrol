@@ -896,3 +896,75 @@ input[type=date]:focus, select:focus {
 .wf-empty td, .wf-f-label, .wf-muted, .wf-sub, .wf-pager, .wf-hint .wf-ic { color: var(--muted); }
 .wf-route-current td { background: var(--chip); }
 .wf-locked .wf-ic { color: var(--muted); }
+
+/* ─── Auth pages (au-) ─── */
+/* Standalone pages outside the app shell: /login, /login/2fa, the error page
+   and the route-auth login (loaded via /route-auth/static/ on proxied domains).
+   They load pro.css + aurora.css like layout.njk (app.css is gone since the
+   Default theme was removed); tokens, .card, .btn and .form-* come from above,
+   this block only adds the centred layout and the auth-specific pieces. */
+body.au-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 32px 16px; overflow: auto; }
+.au-wrap { position: relative; z-index: 1; width: 100%; max-width: 410px; animation: rise .45s cubic-bezier(.2,.7,.2,1); }
+.au-brand { display: flex; align-items: center; justify-content: center; gap: 11px; margin-bottom: 22px; font-family: var(--font-display); font-weight: 800; letter-spacing: -.02em; font-size: 21px; color: var(--text); }
+.au-brand .mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; flex: 0 0 auto; background: linear-gradient(145deg, var(--teal), var(--teal-dim)); color: var(--btn-text); box-shadow: 0 10px 24px -10px var(--teal-dim); }
+.au-brand .mark svg { width: 20px; height: 20px; }
+.au-brand-logo img { max-height: 96px; max-width: 100%; object-fit: contain; }
+.au-brand-text { margin: -10px 0 18px; text-align: center; font-size: 13.5px; color: var(--muted); }
+.card.au-card { padding: 28px 28px 26px; }
+.au-card .page-eyebrow { margin-bottom: 4px; }
+.au-title { margin: 0; font-family: var(--font-display); font-weight: 800; letter-spacing: -.025em; font-size: 26px; line-height: 1.1; color: var(--text); overflow-wrap: anywhere; }
+.au-sub { margin: 8px 0 22px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.au-card .form-input { padding: 11px 13px; font-size: 14px; }
+.au-pw { position: relative; }
+.au-pw .form-input { padding-right: 44px; }
+.au-pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--faint); cursor: pointer; }
+.au-pw-toggle:hover, .au-pw-toggle[aria-pressed="true"] { color: var(--text); background: var(--chip); }
+.au-pw-toggle svg { width: 17px; height: 17px; }
+.btn.au-submit { width: 100%; justify-content: center; padding: 12px 16px; font-size: 14px; margin-top: 6px; }
+.btn.is-loading { pointer-events: none; opacity: .65; }
+.btn.is-loading::after { content: ""; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: au-spin .6s linear infinite; }
+@keyframes au-spin { to { transform: rotate(360deg); } }
+.au-card .login-error, .au-card .form-error { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--red-bd); border-radius: 10px; background: var(--red-bg); color: var(--red); font-size: 13px; line-height: 1.45; }
+.au-card .login-error svg { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+.au-card .form-error { display: none; }
+.au-card .form-error.visible { display: block; }
+.au-links { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-top: 16px; font-size: 12.5px; }
+.au-links-center { justify-content: center; gap: 12px; }
+.au-links a, .au-link { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--teal); text-decoration: none; cursor: pointer; }
+.au-links a:hover, .au-link:hover { text-decoration: underline; }
+.au-link-sep { width: 1px; height: 12px; background: var(--line-2); }
+.au-meta { margin-top: 14px; font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+.au-foot { margin-top: 18px; text-align: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: .03em; color: var(--faint); }
+.au-center { text-align: center; }
+.au-center .au-sub { margin-bottom: 22px; }
+.au-icon { width: 46px; height: 46px; margin-bottom: 16px; display: grid; place-items: center; border-radius: 13px; background: var(--teal-soft); color: var(--teal); }
+.au-center .au-icon { margin-left: auto; margin-right: auto; }
+.au-icon svg { width: 21px; height: 21px; }
+.au-icon.au-icon-danger { background: var(--red-bg); color: var(--red); }
+.tf-mono { font-family: var(--font-mono); letter-spacing: .08em; }
+.au-card .form-input.tf-code { font-size: 22px; text-align: center; letter-spacing: .35em; }
+/* route-auth: domain chip, step dots, one-digit code boxes */
+.au-domain { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin-bottom: 18px; padding: 4px 11px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; }
+.au-domain span { overflow-wrap: anywhere; }
+.au-domain svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.au-steps { display: flex; align-items: center; gap: 6px; margin: 16px 0 18px; }
+.au-step { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); transition: .2s; }
+.au-step.done { background: var(--teal); opacity: .45; }
+.au-step.active { width: 22px; border-radius: 4px; background: var(--teal); }
+.au-step-line { flex: 0 0 18px; height: 1px; background: var(--line-2); }
+.au-info { margin: 12px 0 18px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.au-info strong { color: var(--text); font-weight: 600; }
+.au-card .au-title + .form-error + form, .au-card .au-title + .form-error + #email-section { margin-top: 20px; }
+.au-card .au-title + .form-error.visible { margin-top: 16px; }
+.au-code { display: flex; gap: 8px; margin-bottom: 18px; }
+.au-code input { flex: 1; min-width: 0; height: 52px; padding: 0; text-align: center; font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--text); background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px; outline: 0; -moz-appearance: textfield; appearance: textfield; transition: border-color .15s, box-shadow .15s; }
+.au-code input::-webkit-outer-spin-button, .au-code input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.au-code input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--glow1); }
+.au-code input.filled { border-color: var(--teal); }
+.ra-share-invitation .au-sub { margin-bottom: 0; }
+@media (max-width: 600px) {
+  body.au-page { justify-content: flex-start; padding-top: 40px; }
+  .card.au-card { padding: 24px 18px 22px; }
+  .au-title { font-size: 23px; }
+  .au-code input { height: 46px; font-size: 18px; }
+}
