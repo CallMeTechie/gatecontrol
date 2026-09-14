@@ -120,6 +120,31 @@ function paranoiaOf(route) {
   return Math.min(WAF_PARANOIA_MAX, Math.max(WAF_PARANOIA_MIN, n));
 }
 
+// Request-body handling in front of arbitrary apps (NAS, media servers, PDF
+// tools …). Without these, Coraza buffers up to SecRequestBodyLimit (12.5 MB)
+// of every body and runs the CRS regexes over it — a binary upload of a few
+// MB kept Caddy busy for minutes and grew it past 2 GB (measured with the
+// image's Caddy), even in detect mode. Headers, URI and query are always
+// inspected; the body only when it is small and in a format the CRS parses:
+//   - Content-Length above BODY_INSPECT_MAX_BYTES → body not buffered/scanned
+//   - Content-Type other than form, multipart, JSON or XML (+json/+xml
+//     suffixes) → body not buffered/scanned (binary data cannot be judged)
+//   - the CRS 4 list of allowed content types (920420) gets back what CRS 3.3
+//     allowed and browsers/apps send every day: application/octet-stream
+//     (plain binary uploads), text/plain (navigator.sendBeacon), multipart/
+//     related, application/csp-report and application/reports+json (CSP and
+//     Reporting-API reports). Images/videos etc. stay restricted — an app that
+//     uploads them raw shows up as 920420 and gets a per-route exclusion.
+// Rules run in phase 1 BEFORE the CRS include; ids 9001/9002 sit below the
+// path-exclusion range (PATH_RULE_BASE).
+const BODY_INSPECT_MAX_BYTES = 1048576;
+const CRS_ALLOWED_CONTENT_TYPES = '|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |application/octet-stream| |text/plain| |multipart/related| |application/csp-report| |application/reports+json|';
+const BODY_RULES = [
+  `SecAction "id:900220,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=${CRS_ALLOWED_CONTENT_TYPES}'"`,
+  `SecRule REQUEST_HEADERS:Content-Length "@gt ${BODY_INSPECT_MAX_BYTES}" "id:9001,phase:1,pass,nolog,ctl:requestBodyAccess=Off"`,
+  'SecRule REQUEST_HEADERS:Content-Type "!@rx ^(?:application/x-www-form-urlencoded|multipart/form-data|(?:application|text)/(?:[a-z0-9.+-]+\\+)?(?:json|xml))(?:\\s*;|\\s*$)" "id:9002,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"',
+];
+
 /**
  * SecLang directives for one route. Order matters:
  *   - the paranoia SecAction (id 900000) and the path exclusions
@@ -139,6 +164,8 @@ function directivesFor(route, { auditLog } = {}) {
     'Include @crs-setup.conf.example',
     `SecAction "id:900000,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=${pl}"`,
   ];
+  // Request bodies (see BODY_RULES): what Coraza may buffer and scan.
+  lines.push(...BODY_RULES);
   ex.paths.slice(0, PATH_RULE_SPAN).forEach((p, i) => {
     lines.push(`SecRule REQUEST_URI "@beginsWith ${p}" "id:${PATH_RULE_BASE + routeId * PATH_RULE_SPAN + i},phase:1,pass,nolog,ctl:ruleEngine=Off"`);
   });
@@ -969,6 +996,8 @@ module.exports = {
   validateRuleId,
   validateExclusionPath,
   directivesFor,
+  BODY_RULES,
+  BODY_INSPECT_MAX_BYTES,
   buildWafHandler,
   blockErrorRoutes,
   renderBlockPage,

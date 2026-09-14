@@ -65,6 +65,7 @@ describe('directivesFor', () => {
       'Include @coraza.conf-recommended',
       'Include @crs-setup.conf.example',
       'SecAction "id:900000,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=1"',
+      ...waf.BODY_RULES,
       'Include @owasp_crs/*.conf',
       'SecRuleEngine DetectionOnly',
       'SecRequestBodyLimitAction ProcessPartial',
@@ -76,6 +77,29 @@ describe('directivesFor', () => {
       'SecAuditLogParts AHZ',
       'SecAuditLogFileMode 0600',
     ]);
+  });
+
+  it('request bodies: large or non-parsable bodies are not buffered/scanned; octet-stream is an allowed type', () => {
+    const [allowed, bigBody, typeRule] = waf.BODY_RULES;
+    assert.match(allowed, /^SecAction "id:900220,phase:1,pass,nolog,setvar:'tx\.allowed_request_content_type=\|application\/x-www-form-urlencoded\| .*'"$/);
+    for (const t of ['application/octet-stream', 'text/plain', 'multipart/related', 'application/csp-report', 'application/reports+json']) {
+      assert.ok(allowed.includes(`|${t}|`), `re-allowed ${t}`);
+    }
+    assert.ok(!allowed.includes('image/') && !allowed.includes('video/'), 'media types stay restricted');
+    for (const t of ['multipart/form-data', 'application/json', 'text/xml', 'application/xml', 'application/soap+xml']) {
+      assert.ok(allowed.includes(`|${t}|`), `CRS default ${t} kept`);
+    }
+    assert.equal(bigBody, `SecRule REQUEST_HEADERS:Content-Length "@gt ${waf.BODY_INSPECT_MAX_BYTES}" "id:9001,phase:1,pass,nolog,ctl:requestBodyAccess=Off"`);
+    assert.equal(waf.BODY_INSPECT_MAX_BYTES, 1048576);
+    assert.match(typeRule, /"id:9002,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"$/);
+    // The Content-Type pattern (as Coraza sees it) keeps parsable bodies inspected.
+    const rx = new RegExp(typeRule.match(/"!@rx (.+?)" "id:9002/)[1]);
+    for (const ct of ['application/x-www-form-urlencoded', 'multipart/form-data; boundary=x', 'application/json', 'application/json; charset=utf-8',
+      'application/vnd.api+json', 'text/xml', 'application/soap+xml;charset=utf-8']) assert.ok(rx.test(ct), `inspected: ${ct}`);
+    for (const ct of ['application/octet-stream', 'image/jpeg', 'text/plain', 'application/zip', 'video/mp4', 'application/jsonp', 'application/x-json-stream'])
+      assert.ok(!rx.test(ct), `not inspected: ${ct}`);
+    const ids = waf.BODY_RULES.map((l) => Number(l.match(/id:(\d+)/)[1]));
+    assert.ok(ids.every((id) => id < 10000 || id >= 900000), 'below the path-exclusion range');
   });
 
   it('block mode → SecRuleEngine On; paranoia is clamped to 1..4', () => {
@@ -175,6 +199,18 @@ describe('caddyConfig: waf handler', () => {
     assert.equal(h.load_owasp_crs, true);
     assert.equal(h.directives, waf.directivesFor({ id: 7, waf_mode: 'detect', waf_paranoia: 2 }));
     assert.equal(srv0(cfg).errors, undefined, 'detect mode: no block page');
+  });
+
+  it('WAF in use: its logger is kept out of Caddy\'s default log (matched data would land in the container log)', () => {
+    waf._setEngineForTest(true);
+    const on = buildCaddyConfig([httpRoute({ waf_enabled: 1, waf_mode: 'detect' })]);
+    assert.deepEqual(on.logging.logs.default, { exclude: ['http.handlers.waf'] });
+    assert.ok(on.logging.logs.access && on.logging.logs.tls, 'access and tls logs untouched');
+    const off = buildCaddyConfig([httpRoute({})]);
+    assert.equal(off.logging.logs.default, undefined, 'without WAF the logging block is unchanged');
+    waf._setEngineForTest(false);
+    const noEngine = buildCaddyConfig([httpRoute({ waf_enabled: 1 })]);
+    assert.equal(noEngine.logging.logs.default, undefined, 'no handler emitted → no exclusion');
   });
 
   it('forward-auth chain: waf after request_body and before reverse_proxy', () => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- WAF: Große Uploads legten Caddy lahm. Coraza puffert bis zu 12,5 MB jedes Request-Bodys und ließ die Regeln auch über Binärdaten laufen. Ein Upload von wenigen MB hielt Caddy minutenlang beschäftigt und ließ es über 2 GB wachsen, auch im Modus „Nur erkennen“. Jetzt prüft die WAF Header, URL und Query immer, den Body aber nur, wenn er höchstens 1 MB groß ist und als Formular, Multipart, JSON oder XML vorliegt. Gemessen mit dem Caddy aus dem Image: Uploads mit 60 MB laufen in 0,1 s durch, Caddy bleibt unter 100 MB; Angriffe in Formularen, JSON und URL werden weiter blockiert.
+- WAF: Die OWASP-Regeln in Version 4 werteten `application/octet-stream`, `text/plain` (z. B. `navigator.sendBeacon`), `multipart/related` sowie CSP- und Reporting-API-Berichte als unzulässigen Inhaltstyp; im Modus „Blockieren“ hätte das normale Uploads und Statistik-Aufrufe abgewiesen. Diese Typen sind wieder erlaubt, wie schon in den Regeln der Version 3.3. Bilder und Videos, die eine App ohne Formular hochlädt, bleiben eingeschränkt. Sie erscheinen als Regel 920420 in der Ereignisliste und lassen sich pro Route ausschließen.
+- WAF: Coraza schrieb jeden Treffer samt Fundstelle zusätzlich ins allgemeine Caddy-Log. Das Container-Log wird nicht rotiert, und die Fundstellen konnten Cookie- oder Formularwerte enthalten. Die Meldungen gehen jetzt nur noch ins eigene WAF-Audit-Log, das die Ereignisliste speist.
+
+---
+
 ## [1.125.0] — 2026-09-13
 
 ### Features

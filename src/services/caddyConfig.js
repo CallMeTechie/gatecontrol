@@ -336,6 +336,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const caddyRoutes = {};
   // WAF (docs/feature-waf.md): hosts whose route blocks → srv0 error page.
   const wafBlockHosts = [];
+  let wafInUse = false;
   // Pre-assembled route entries (e.g. pool-outage 503 blocks) that bypass
   // the caddyRoutes dict and are merged directly into serverRoutes.
   const serverRoutes_pending = [];
@@ -648,6 +649,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // Caddy binary carries http.handlers.waf (buildWafHandler returns null
     // otherwise).
     const wafHandler = reverseProxy.handler === 'reverse_proxy' ? buildWafHandler(route) : null;
+    if (wafHandler) wafInUse = true;
     if (wafHandler && route.waf_mode === 'block') {
       wafBlockHosts.push(route.domain, ...aliasFqdnsOf(route));
     }
@@ -1156,6 +1158,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     if (mtlsGuards.length > 0) caddyConfig.apps.http.servers.srv0.strict_sni_host = false;
     // WAF block page: an interrupted request (coraza-caddy HandlerError) gets
     // our own HTML page. Only emitted when some route blocks.
+    // coraza-caddy logs every rule match (full matched data — cookie or form
+    // values included) at error level through Caddy's default logger, i.e.
+    // into the unrotated container log. The events already reach waf_events
+    // via the minimised audit log, so keep them out of the default log.
+    if (wafInUse) caddyConfig.logging.logs.default = { exclude: ['http.handlers.waf'] };
     const wafErrorRoutes = blockErrorRoutes(wafBlockHosts);
     if (wafErrorRoutes) {
       caddyConfig.apps.http.servers.srv0.errors = { routes: wafErrorRoutes };
