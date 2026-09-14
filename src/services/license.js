@@ -76,6 +76,10 @@ let previousPlan = null;
 let refreshInterval = null;
 let enforcingLimits = false;
 let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
+// Feature keys the applied licence token actually carried (null = no token
+// applied: community fallback). Lets getLicenseInfo() tell a feature the plan
+// switches off from one the licence server does not deliver yet (release B §11).
+let tokenFeatureKeys = null;
 
 // ─── Hardware Fingerprint ────────────────────────
 
@@ -287,6 +291,7 @@ function setCommunityMode() {
   cachedPlan = 'community';
   cachedFeatures = { ...COMMUNITY_FALLBACK };
   cachedLicenseInfo = null;
+  tokenFeatureKeys = null;
   // Note: unlicensed flag is NOT set here — caller decides
 }
 
@@ -298,6 +303,7 @@ function applyLicense(data) {
   // (not yet known to the license server) still work. License-returned
   // values override the fallback.
   cachedFeatures = { ...COMMUNITY_FALLBACK, ...data.features };
+  tokenFeatureKeys = new Set(Object.keys(data.features || {}));
   cachedLicenseInfo = {
     expires_at: data.expires_at || null,
     activations: data.activations || null,
@@ -482,6 +488,29 @@ function getPlan() {
   return cachedPlan;
 }
 
+/**
+ * Why each locked boolean feature is locked (docs/feature-release-b.md §11):
+ *   'unlicensed'   no licence token applied (no key, or it could not be
+ *                  validated) — the community fallback is in force
+ *   'not_in_token' the token does not carry the key at all (a feature newer
+ *                  than what the licence server delivers)
+ *   'plan'         the token carries the key as false
+ * Only boolean features that are not `true`; limits (numbers) never appear.
+ */
+function lockedFeatures() {
+  const out = {};
+  const keys = new Set([...Object.keys(COMMUNITY_FALLBACK), ...Object.keys(cachedFeatures || {})]);
+  for (const key of [...keys].sort()) {
+    const val = cachedFeatures ? cachedFeatures[key] : undefined;
+    const isBool = typeof val === 'boolean' || (val === undefined && typeof COMMUNITY_FALLBACK[key] === 'boolean');
+    if (!isBool || val === true) continue;
+    if (unlicensed || tokenFeatureKeys === null) out[key] = 'unlicensed';
+    else if (!tokenFeatureKeys.has(key)) out[key] = 'not_in_token';
+    else out[key] = 'plan';
+  }
+  return out;
+}
+
 function getLicenseInfo() {
   const keyRaw = config.license.key;
   let masked = null;
@@ -501,6 +530,7 @@ function getLicenseInfo() {
     activations: cachedLicenseInfo?.activations || null,
     max_activations: cachedLicenseInfo?.max_activations || null,
     license_key_masked: masked,
+    locked: lockedFeatures(),
   };
 }
 
@@ -536,6 +566,15 @@ function _overrideForTest(features) {
   Object.assign(cachedFeatures, features);
 }
 
+// Test seam: apply a licence payload as if it came from a token
+// ({ plan, features }); `null` restores the unlicensed community mode.
+function _applyLicenseForTest(data) {
+  if (process.env.NODE_ENV !== 'test') return;
+  if (data) { applyLicense(data); return; }
+  setCommunityMode();
+  unlicensed = true;
+}
+
 module.exports = {
   validateLicense,
   refreshLicenseInBackground,
@@ -553,4 +592,6 @@ module.exports = {
   COMMUNITY_FALLBACK,
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
+  _applyLicenseForTest,
+  lockedFeatures,
 };
