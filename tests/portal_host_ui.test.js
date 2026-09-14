@@ -19,7 +19,7 @@ test('settings page renders the Portal address card, no raw i18n keys', async ()
 });
 
 test('all three themes contain the portal-address ids incl. the Apply button', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const html = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'pages', 'settings.njk'), 'utf8');
     ['portal-base-domain', 'portal-prefix', 'portal-effective-host', 'portal-host-error', 'portal-switch-warning', 'portal-host-apply', 'portal-no-domains-hint']
       .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));

@@ -65,6 +65,7 @@
   "auth.sign_in_subtitle": "Sign in to continue",
   "auth.username": "Username",
   "auth.password": "Password",
+  "auth.show_password": "Show password",
   "auth.submit": "Sign in",
   "auth.error_required": "Username and password are required",
   "auth.error_invalid": "Invalid username or password",

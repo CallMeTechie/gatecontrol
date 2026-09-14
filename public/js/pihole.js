@@ -1,9 +1,6 @@
 (function () {
   'use strict';
 
-  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
   function fmtDate(iso) {
     if (!iso) return '—';
     try {
@@ -58,7 +55,7 @@
   function T(k, d) { return (window.GC && GC.t && GC.t[k]) || d; }
 
   // ── Blocking status badge + pause countdown ──────────────────
-  // Shared by both theme renderers and the 1s ticker below. The server sends
+  // Shared by the summary renderer and the 1s ticker below. The server sends
   // blocking = { state, timer } where timer is the seconds left on a pause; we
   // turn that into a local deadline and count it down between summary syncs.
   var blockingState = null;   // 'enabled' | 'disabled' | 'partial' | null
@@ -93,8 +90,8 @@
     paintBlockingBadge();
   }
 
-  // ── Aurora: Summary (donut + pi-stats) ───────────────────────
-  function auroraRenderSummary(data) {
+  // ── Summary (donut + pi-stats) ───────────────────────
+  function renderSummary(data) {
     const q = data.queries || {};
     setText('ph-stat-queries', fmtNum(q.total));
     setText('ph-stat-blocked', fmtNum(q.blocked));
@@ -129,8 +126,8 @@
     if (warn) warn.style.display = data.attribution === 'collapsed' ? '' : 'none';
   }
 
-  // ── Aurora: Top Blocked Domains (toplist <li> renderer) ──────
-  function auroraRenderTopDomains(domains) {
+  // ── Top Blocked Domains (toplist <li> renderer) ──────
+  function renderTopDomains(domains) {
     const ul = document.getElementById('ph-top-domains-tbody');
     if (!ul) return;
     replaceChildren(ul, []);
@@ -151,8 +148,8 @@
     }
   }
 
-  // ── Aurora: Top Clients (toplist <li> renderer) ───────────────
-  function auroraRenderTopClients(clients) {
+  // ── Top Clients (toplist <li> renderer) ───────────────
+  function renderTopClients(clients) {
     const ul = document.getElementById('ph-top-clients-tbody');
     if (!ul) return;
     replaceChildren(ul, []);
@@ -172,24 +169,6 @@
         el('span', { class: 'cnt' }, fmtNum(count)),
       ]));
     }
-  }
-
-  // ── Summary ──────────────────────────────────────────────────
-  function renderSummary(data) {
-    if (isAurora()) return auroraRenderSummary(data);
-    const q = data.queries || {};
-    setText('ph-stat-queries', fmtNum(q.total));
-    setText('ph-stat-blocked', fmtNum(q.blocked));
-    setText('ph-stat-blocked-pct', q.percent != null ? Number(q.percent).toFixed(1) + ' %' : '—');
-    setText('ph-stat-gravity', fmtNum(data.gravity));
-    const cl = data.clients;
-    const clActive = cl && typeof cl === 'object' ? cl.active : cl;
-    setText('ph-stat-clients', fmtNum(clActive));
-
-    updateBlocking(data.blocking || {});
-
-    const warn = document.getElementById('ph-attribution-warn');
-    if (warn) warn.style.display = data.attribution === 'collapsed' ? '' : 'none';
   }
 
   // ── History chart (simple SVG polylines) ─────────────────────
@@ -225,48 +204,8 @@
     svg.appendChild(polyBlocked);
   }
 
-  // ── Top Blocked Domains ──────────────────────────────────────
-  function renderTopDomains(domains) {
-    if (isAurora()) return auroraRenderTopDomains(domains);
-    const tbody = document.getElementById('ph-top-domains-tbody');
-    if (!tbody) return;
-    replaceChildren(tbody, []);
-    if (!domains || !domains.length) {
-      tbody.appendChild(el('tr', null,
-        el('td', { colspan: '2', style: 'text-align:center;color:var(--text-3);padding:20px' },
-          T('common.no_data', '—'))));
-      return;
-    }
-    for (const d of domains) {
-      tbody.appendChild(el('tr', null, [
-        el('td', null, el('span', { style: 'font-family:var(--font-mono);font-size:11px' }, d.domain || d.name || '—')),
-        el('td', null, fmtNum(d.count)),
-      ]));
-    }
-  }
-
-  // ── Top Clients ──────────────────────────────────────────────
+  // ── Top-clients attribution mode (set from /health) ─────────────
   var _attribution = 'per_peer';
-
-  function renderTopClients(clients) {
-    if (isAurora()) return auroraRenderTopClients(clients);
-    const tbody = document.getElementById('ph-top-clients-tbody');
-    if (!tbody) return;
-    replaceChildren(tbody, []);
-    if (!clients || !clients.length) {
-      tbody.appendChild(el('tr', null,
-        el('td', { colspan: '2', style: 'text-align:center;color:var(--text-3);padding:20px' },
-          T('common.no_data', '—'))));
-      return;
-    }
-    for (const c of clients) {
-      const nameCell = _attribution === 'per_peer' && c.peerName ? c.peerName : (c.ip || '—');
-      tbody.appendChild(el('tr', null, [
-        el('td', null, el('span', { style: 'font-size:12px' }, nameCell)),
-        el('td', null, fmtNum(c.count)),
-      ]));
-    }
-  }
 
   // ── Query Types (types is a plain object { type: count }) ────
   function renderQueryTypes(types) {

@@ -32,13 +32,7 @@
     return r;
   }
 
-  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
-  // ── Aurora-only sibling renderers ─────────────────────────────────────────
-  // These functions are ONLY called when isAurora() is true.
-  // The original card()/renderDetail() else-paths remain byte-identical.
-  // (No shared helper is modified; this is the no-shared-helper-edit rule.)
+  // ── Fleet cards + detail view (Aurora unit-grid / 3-column detail) ────────
   function gwAvatarGradient(g) {
     if (status(g) !== 'online') return 'linear-gradient(145deg,#9aa6b2,#6b7682)';
     var id = String(g.peer_id || ''), sum = 0;
@@ -56,14 +50,14 @@
     });
     return s;
   }
-  function auroraResRow(parent, label, valueText, pctVal, isHot) {
+  function resRow(parent, label, valueText, pctVal, isHot) {
     var row = el('div', 'urow'); row.appendChild(el('span', null, label)); row.appendChild(el('b', null, valueText));
     parent.appendChild(row);
     var rb = el('div', 'resbar'); var fill = el('i');
     fill.style.width = Math.max(0, Math.min(100, pctVal)) + '%';
     if (isHot) fill.className = 'hot'; rb.appendChild(fill); parent.appendChild(rb);
   }
-  function auroraCard(g) {
+  function card(g) {
     var t = (g.health && g.health.telemetry) || {};
     var st = status(g);
     var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id;
@@ -98,15 +92,15 @@
       wrap.appendChild(el('div', 'empty-state', emptyTxt));
     } else {
       var cores = t.cpu_cores || 1; var load1 = (t.cpu_load_avg && t.cpu_load_avg[0]) || 0; var cpuPct = pct(load1, cores);
-      auroraResRow(wrap, 'CPU', cpuPct + '%', cpuPct, cpuPct > 90);
-      if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); auroraResRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
-      if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); auroraResRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
+      resRow(wrap, 'CPU', cpuPct + '%', cpuPct, cpuPct > 90);
+      if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); resRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
+      if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); resRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
     }
     // (Update-check moved to the header icon button above.)
     return wrap;
   }
-  // Issue 10: Aurora-specific versions card — vertical kv list to prevent overflow
-  function auroraVersionsCard(g) {
+  // Issue 10: versions card — vertical kv list to prevent overflow
+  function versionsCard(g) {
     var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
     var c = el('div', 'gw');
     var top = el('div', 'top'); top.appendChild(el('h3', null, T('gateways.sec_versions', 'Versionen & System'))); c.appendChild(top);
@@ -135,14 +129,14 @@
     c.appendChild(body);
     return c;
   }
-  function auroraRenderDetail(g) {
+  function renderDetail(g) {
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Back to fleet')); back.dataset.act = 'back';
     root.appendChild(back);
     root.appendChild(detailHead(g));
-    // Issue 11: 3-column detail grid (1/3 width per card); auroraVersionsCard for Issue 10
+    // Issue 11: 3-column detail grid (1/3 width per card); versionsCard for Issue 10
     var grid2 = el('div', 'gw-detail-grid');
-    grid2.appendChild(auroraVersionsCard(g));
+    grid2.appendChild(versionsCard(g));
     grid2.appendChild(resourcesCard(g));
     grid2.appendChild(routesCard(g));
     // Bottom two cards ("Discovered devices" + "Scan targets") at 1/2 width each
@@ -155,33 +149,6 @@
     detailView.replaceChildren(root);
   }
 
-  // ── Fleet cards ──────────────────────────────────────────────────────────
-  function card(g) {
-    if (isAurora()) return auroraCard(g);
-    var t = (g.health && g.health.telemetry) || {};
-    var routes = (g.health && g.health.route_reachability) || [];
-    var up = routes.filter(function (r) { return r.reachable; }).length;
-    var st = status(g);
-    var wrap = el('div', 'gw'); wrap.dataset.id = g.peer_id;
-    var top = el('div', 'top');
-    var tb = el('div'); tb.appendChild(el('h3', null, g.name)); tb.appendChild(el('div', 'host', (g.hostname || '') + ' · ' + (g.ip || '')));
-    top.appendChild(tb); top.appendChild(el('span', 'pill ' + st, T('gateways.' + st, st))); wrap.appendChild(top);
-    var body = el('div', 'body');
-    var verKv = el('div', 'kv'); verKv.appendChild(el('div', 'k', T('gateways.version', 'Version')));
-    var verV = el('div', 'v', (t.gateway_version || '—') + ' '); if (g.update_available) verV.appendChild(el('span', 'badge drift', '↑ ' + latest));
-    verKv.appendChild(verV); body.appendChild(verKv);
-    var cores = (t.cpu_cores || 1); var load1 = (t.cpu_load_avg && t.cpu_load_avg[0]) || 0;
-    metricRow(body, 'CPU', load1.toFixed(2), pct(load1, cores), pct(load1, cores) > 90 ? 'bad' : null);
-    if (t.mem_total) metricRow(body, 'RAM', (Math.round(t.mem_used / 1e9 * 10) / 10) + '/' + Math.round(t.mem_total / 1e9) + ' GB', pct(t.mem_used, t.mem_total), null);
-    if (t.disk && t.disk.total) metricRow(body, 'Disk', pct(t.disk.used, t.disk.total) + '%', pct(t.disk.used, t.disk.total), pct(t.disk.used, t.disk.total) > 85 ? 'bad' : (pct(t.disk.used, t.disk.total) > 70 ? 'warn' : null));
-    var rt = el('div', 'kv'); rt.appendChild(el('div', 'k', T('gateways.routes', 'Routes'))); rt.appendChild(el('div', 'v', up + ' / ' + routes.length)); body.appendChild(rt);
-    wrap.appendChild(body);
-    var foot = el('div', 'foot');
-    foot.appendChild(el('span', null, 'WG ' + (g.health && g.health.wg_handshake_age_s != null ? g.health.wg_handshake_age_s + 's' : '—') + ' · ' + ago(g.last_seen_at)));
-    var btn = el('button', 'btn ghost recheck', '↻'); btn.dataset.id = g.peer_id; foot.appendChild(btn);
-    wrap.appendChild(foot);
-    return wrap;
-  }
   function kpi(cls, n, label) { var k = el('div', 'kpi' + (cls ? ' ' + cls : '')); k.appendChild(el('div', 'n', n)); k.appendChild(el('div', 'l', label)); return k; }
 
   // ── Detail view (mirrors gateway-detail.html mockup) ──────────────────────
@@ -237,38 +204,6 @@
     // reconcileUpdateToast, driven from render()) — NOT inline. Inline status
     // text reflowed the action row's buttons/icons on every status change.
     return ph;
-  }
-  function versionsCard(g) {
-    var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
-    var c = el('div', 'gw');
-    var top = el('div', 'top'); top.appendChild(el('h3', null, T('gateways.sec_versions', 'Versionen & System'))); c.appendChild(top);
-    var body = el('div', 'body');
-    var gwVal = el('span'); gwVal.appendChild(document.createTextNode((t.gateway_version || '—') + ' '));
-    if (g.update_available && latest) gwVal.appendChild(el('span', 'badge drift', '↑ ' + latest));
-    var r1 = el('div', 'row3');
-    r1.appendChild(kvRow(T('gateways.lbl_gateway', 'Gateway'), gwVal));
-    r1.appendChild(kvRow(T('gateways.lbl_node', 'Node'), t.node_version || '—'));
-    r1.appendChild(kvRow(T('gateways.lbl_wgtools', 'wg-tools'), t.wg_tools_version || '—'));
-    body.appendChild(r1);
-    var r2 = el('div', 'row3');
-    r2.appendChild(kvRow(T('gateways.lbl_os', 'OS'), (t.os_platform || '—') + (t.os_release ? ' ' + t.os_release : '')));
-    r2.appendChild(kvRow(T('gateways.lbl_arch', 'Arch'), t.arch || '—'));
-    r2.appendChild(kvRow(T('gateways.lbl_cores', 'Kerne'), t.cpu_cores != null ? String(t.cpu_cores) : '—'));
-    body.appendChild(r2);
-    body.appendChild(kvRow(T('gateways.lbl_default_gw', 'Default-Gateway (LAN)'), t.default_gateway_ip || '—'));
-    body.appendChild(kvRow(T('gateways.lbl_dns_resolvers', 'DNS-Resolver'), (t.dns_resolvers && t.dns_resolvers.length) ? t.dns_resolvers.join(', ') : '—'));
-    var cfgVal;
-    if (h.config_hash) {
-      cfgVal = el('span'); cfgVal.appendChild(document.createTextNode('✓ ' + T('gateways.config_synced', 'synchron') + ' · '));
-      cfgVal.appendChild(el('code', null, String(h.config_hash).slice(0, 8)));
-    } else { cfgVal = T('gateways.config_unknown', 'unbekannt'); }
-    body.appendChild(kvRow(T('gateways.lbl_config_hash', 'Config-Hash'), cfgVal));
-    var shortDigest = '—';
-    if (t.image_digest) { var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8); shortDigest = di.slice(-12); }
-    body.appendChild(kvRow(T('gateways.lbl_image_digest', 'Image'), shortDigest));
-    body.appendChild(kvRow(T('gateways.lbl_last_pull', 'Last pull'), t.last_pull_at ? ago(t.last_pull_at) : T('gateways.last_pull_never', 'never')));
-    c.appendChild(body);
-    return c;
   }
   function resourcesCard(g) {
     var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
@@ -476,7 +411,7 @@
     ]);
   }
   // The scan-icon spinner (@keyframes gw-spin) and the indeterminate progress
-  // bar (.gw-progress) live in the linked stylesheets (app.css + pro.css).
+  // bar (.gw-progress) live in the linked stylesheet (pro.css, under aurora.css).
   // A runtime-injected <style> is blocked by our CSP (styleSrcElem requires a
   // nonce; only style="" attributes get 'unsafe-inline'), so keyframe/class
   // rules MUST be served from a stylesheet, not injected here.
@@ -1019,26 +954,6 @@
 
     load();
     return frame.card;
-  }
-
-  function renderDetail(g) {
-    if (isAurora()) return auroraRenderDetail(g);
-    var root = el('div', 'gw-detail');
-    var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Zurück zur Flotte')); back.dataset.act = 'back';
-    root.appendChild(back);
-    root.appendChild(detailHead(g));
-    var grid2 = el('div', 'grid two');
-    grid2.appendChild(versionsCard(g));
-    grid2.appendChild(resourcesCard(g));
-    grid2.appendChild(routesCard(g));
-    grid2.appendChild(discoveredDevicesCard(g));
-    // Scan-Egress section, gated on the gateway's advertised capability flag —
-    // mirrors the `lan_discovery` gate on the discovery-settings gear. The card
-    // is omitted entirely for gateways that don't report `scan_egress`.
-    var telE = (g.health && g.health.telemetry) || {};
-    if (telE.scan_egress === true) grid2.appendChild(egressCard(g));
-    root.appendChild(grid2);
-    detailView.replaceChildren(root);
   }
 
   // ── View routing ──────────────────────────────────────────────────────────

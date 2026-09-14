@@ -50,11 +50,14 @@ describe('aurora theme — dark/light wiring', () => {
   });
 });
 
-describe('aurora theme — profile picker', () => {
-  it('offers Aurora as a selectable option', async () => {
-    getDb().prepare("UPDATE users SET theme = 'default' WHERE username = 'admin'").run();
-    const res = await agent.get('/profile').expect(200);
-    assert.match(res.text, /data-theme="aurora"/, 'profile picker has an Aurora button');
+describe('aurora theme — no theme picker', () => {
+  it('profile and settings offer no theme choice any more', async () => {
+    getDb().prepare("UPDATE users SET theme = 'default' WHERE username = 'admin'").run(); // stale value is ignored
+    const profile = await agent.get('/profile').expect(200);
+    assert.match(profile.text, /class="app"/, 'still the aurora shell');
+    assert.doesNotMatch(profile.text, /id="theme-buttons"|data-theme="(default|pro|aurora)"/, 'no personal theme picker');
+    const settingsPage = await agent.get('/settings').expect(200);
+    assert.doesNotMatch(settingsPage.text, /id="default-theme-buttons"|data-default-theme=/, 'no default-theme picker');
   });
 });
 
@@ -107,14 +110,12 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
     assert.match(css, /\.resbar/, '.resbar present in aurora.css');
   });
 
-  it('gateways.js contains isAurora() detector and aurora sibling functions', () => {
+  it('gateways.js renders the Aurora fleet cards and detail view without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in gateways.js');
-    assert.match(js, /function auroraCard\(/, 'auroraCard() present in gateways.js');
-    assert.match(js, /function auroraRenderDetail\(/, 'auroraRenderDetail() present in gateways.js');
-    // One-line guard at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraCard/, 'card() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderDetail/, 'renderDetail() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in gateways.js (Aurora is the only theme)');
+    assert.match(js, /function card\(/, 'card() present');
+    assert.match(js, /function renderDetail\(/, 'renderDetail() present');
+    assert.match(js, /function versionsCard\(/, 'versionsCard() present');
   });
 });
 
@@ -182,17 +183,14 @@ describe('aurora theme — dashboard layout (Task P2-1)', () => {
     assert.match(res.text, /id="route-count-badge"/, '#route-count-badge present in aurora sidebar');
   });
 
-  it('dashboard.js contains isAurora() detector and aurora sibling functions', () => {
+  it('dashboard.js renders the Aurora dashboard without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in dashboard.js');
-    assert.match(js, /function auroraRefreshStats\(/, 'auroraRefreshStats() present');
-    assert.match(js, /function auroraRenderChart\(/, 'auroraRenderChart() present');
-    assert.match(js, /function auroraRefreshDonut\(/, 'auroraRefreshDonut() present');
-    assert.match(js, /function auroraRefreshActivity\(/, 'auroraRefreshActivity() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshStats/, 'refreshStats() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshActivity/, 'refreshActivity() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshChart/, 'refreshChart() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dashboard.js (Aurora is the only theme)');
+    assert.match(js, /function refreshStats\(/, 'refreshStats() present');
+    assert.match(js, /function renderChart\(/, 'renderChart() present');
+    assert.match(js, /function refreshDonut\(/, 'refreshDonut() present');
+    assert.match(js, /function refreshActivity\(/, 'refreshActivity() present');
+    assert.match(js, /function refreshChart\(/, 'refreshChart() present');
   });
 
   it('Pi-hole donut card is absent when pihole_integration is not licensed (feature gate works)', async () => {
@@ -269,16 +267,12 @@ describe('aurora theme — pihole layout (Task P2-2)', () => {
     assert.match(res.text, /<ul id="ph-top-clients-tbody"/, 'ph-top-clients-tbody is a <ul> in Aurora');
   });
 
-  it('pihole.js contains isAurora() detector and aurora sibling functions', () => {
+  it('pihole.js renders the Aurora toplists without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'pihole.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in pihole.js');
-    assert.match(js, /function auroraRenderSummary\(/, 'auroraRenderSummary() present');
-    assert.match(js, /function auroraRenderTopDomains\(/, 'auroraRenderTopDomains() present');
-    assert.match(js, /function auroraRenderTopClients\(/, 'auroraRenderTopClients() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderSummary/, 'renderSummary() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTopDomains/, 'renderTopDomains() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderTopClients/, 'renderTopClients() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in pihole.js (Aurora is the only theme)');
+    assert.match(js, /function renderSummary\(/, 'renderSummary() present');
+    assert.match(js, /function renderTopDomains\(/, 'renderTopDomains() present');
+    assert.match(js, /function renderTopClients\(/, 'renderTopClients() present');
   });
 });
 
@@ -377,18 +371,15 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
     assert.match(res.text, /data-status="offline"/, 'toggle-btn data-status="offline" present');
   });
 
-  it('peers.js contains isAurora() detector and aurora sibling functions', () => {
-    const js = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in peers.js');
-    assert.match(js, /function auroraActionBtns\(/, 'auroraActionBtns() present');
-    assert.match(js, /function auroraRenderPeers\(/, 'auroraRenderPeers() present');
-    assert.match(js, /function auroraRenderGatewayCard\(/, 'auroraRenderGatewayCard() present');
-    assert.match(js, /function auroraInitStatusToggle\(/, 'auroraInitStatusToggle() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraActionBtns/, 'actionBtns() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderPeers/, 'renderPeers() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderGatewayCard/, 'renderGatewayCard() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) auroraInitStatusToggle/, 'auroraInitStatusToggle() called in init');
+  it('peers.js renders the Aurora table and unit cards without a theme branch', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in peers.js (Aurora is the only theme)');
+    assert.match(js, /function actionBtns\(/, 'actionBtns() present');
+    assert.match(js, /function renderPeers\(/, 'renderPeers() present');
+    assert.match(js, /function renderGatewayCard\(/, 'renderGatewayCard() present');
+    assert.match(js, /function initStatusToggle\(/, 'initStatusToggle() present');
+    assert.match(js, /\n  initStatusToggle\(\);/, 'initStatusToggle() called in init');
+    assert.match(js, /class="icon-action/, 'icon-action buttons');
   });
 
   it('aurora.css carries the peers-page additions', () => {
@@ -564,16 +555,13 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.doesNotMatch(njk, /<style>/, 'no <style> block in aurora users.njk (moved to aurora.css)');
   });
 
-  it('users.js contains isAurora() detector and aurora sibling functions', () => {
+  it('users.js renders the Aurora table and cards without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'users.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in users.js');
-    assert.match(js, /function auroraRenderUsersDesktop\(/, 'auroraRenderUsersDesktop() present');
-    assert.match(js, /function auroraRenderUsersCards\(/, 'auroraRenderUsersCards() present');
-    assert.match(js, /function auroraUserActionBtns\(/, 'auroraUserActionBtns() present');
-    assert.match(js, /function auroraMfaTag\(/, 'auroraMfaTag() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderUsersDesktop/, 'renderUsersDesktop() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderUsersCards/, 'renderUsersCards() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in users.js (Aurora is the only theme)');
+    assert.match(js, /function renderUsersDesktop\(/, 'renderUsersDesktop() present');
+    assert.match(js, /function renderUsersCards\(/, 'renderUsersCards() present');
+    assert.match(js, /function userActionBtns\(/, 'userActionBtns() present');
+    assert.match(js, /function mfaTag\(/, 'mfaTag() present');
   });
 
   it('aurora.css carries the users-page additions', () => {
@@ -643,14 +631,13 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     assert.match(res.text, /<tbody id="certificates-list"/, '<tbody id="certificates-list"> present');
   });
 
-  it('certificates.js contains isAurora() detector and aurora sibling functions', () => {
+  it('certificates.js renders the Aurora table rows without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'certificates.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in certificates.js');
-    assert.match(js, /function auroraTableRow\(/, 'auroraTableRow() present');
-    assert.match(js, /function auroraStatusTag\(/, 'auroraStatusTag() present');
-    assert.match(js, /function auroraLoadCertificates\(/, 'auroraLoadCertificates() present');
-    // Guard at entry point
-    assert.match(js, /if \(isAurora\(\)\) return auroraLoadCertificates/, 'loadCertificates() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in certificates.js (Aurora is the only theme)');
+    assert.match(js, /function buildRow\(/, 'buildRow() present');
+    assert.match(js, /function load\(/, 'load() present');
+    assert.match(js, /class: 'cell-name'/, 'data-table cell classes');
+    assert.match(js, /TG\.stateTag\(h, 'tag-dot'\)/, 'tag-dot status tags');
   });
 
   it('aurora.css already carries data-table, row-actions, icon-action, tag-dot (no new rules needed)', () => {
@@ -715,8 +702,8 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     assert.match(res.text, /id="dns-domain"/, '#dns-domain present');
     assert.match(res.text, /id="dns-hosts-path"/, '#dns-hosts-path present');
     assert.match(res.text, /id="dns-mtime"/, '#dns-mtime present');
-    // Static tbody (hidden, JS guarded in Aurora)
-    assert.match(res.text, /id="dns-static-tbody"/, '#dns-static-tbody present');
+    // The default/pro static table is gone (records are merged into one table)
+    assert.doesNotMatch(res.text, /id="dns-static-tbody"/, '#dns-static-tbody absent');
     // Peer table body (Aurora unified table)
     assert.match(res.text, /id="dns-peer-tbody"/, '#dns-peer-tbody present');
     // Search input
@@ -734,13 +721,11 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     assert.doesNotMatch(res.text, /colspan="6"/, '6-column default colspan absent in Aurora dns');
   });
 
-  it('dns.js contains isAurora() detector and aurora sibling function', () => {
+  it('dns.js renders the unified records table without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dns.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in dns.js');
-    assert.match(js, /function auroraRenderPeers\(/, 'auroraRenderPeers() present in dns.js');
-    // Guard at entry point
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderPeers/, 'renderPeers() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return;/, 'renderStatic() has isAurora early-return guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dns.js (Aurora is the only theme)');
+    assert.match(js, /function renderPeers\(/, 'renderPeers() present');
+    assert.doesNotMatch(js, /renderStatic|dns-static-tbody/, 'the separate static table (default/pro) is gone');
   });
 
   it('aurora.css already carries feature-lock, data-table, cell-name, mono rules (no new rules needed)', () => {
@@ -808,13 +793,11 @@ describe('aurora theme — logs page (Task 8)', () => {
     assert.match(res.text, /data-status=""/, 'data-status="" present for access filter');
   });
 
-  it('logs.js contains isAurora() and aurora sibling functions', () => {
+  it('logs.js renders Aurora log rows without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'logs.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in logs.js');
-    assert.match(js, /function auroraRenderLogs\(/, 'auroraRenderLogs() present in logs.js');
-    assert.match(js, /function auroraRenderAccessLogs\(/, 'auroraRenderAccessLogs() present in logs.js');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderLogs/, 'renderLogs() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderAccessLogs/, 'renderAccessLogs() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in logs.js (Aurora is the only theme)');
+    assert.match(js, /function renderLogs\(/, 'renderLogs() present');
+    assert.match(js, /function renderAccessLogs\(/, 'renderAccessLogs() present');
   });
 
   it('aurora.css has .log-row, .sev, .ts, .msg, .src, .toggle-group rules', () => {
@@ -899,19 +882,14 @@ describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
     assert.match(res.text, /btn-cooldown-preset/, '.btn-cooldown-preset class present');
   });
 
-  it('gatewayPools.js contains isAurora() detector and aurora sibling functions', () => {
+  it('gatewayPools.js renders the Aurora pool UI without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gatewayPools.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in gatewayPools.js');
-    assert.match(js, /function auroraBuildMemberRow\(/, 'auroraBuildMemberRow() present');
-    assert.match(js, /function auroraInitCooldownPresets\(/, 'auroraInitCooldownPresets() present');
-    assert.match(js, /function auroraRenderMigrateForm\(/, 'auroraRenderMigrateForm() present');
-    // Guards at entry points
-    assert.match(js, /if \(isAurora\(\)\) return auroraBuildMemberRow/, 'buildMemberRow() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraInitCooldownPresets/, 'initCooldownPresets() has isAurora guard');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderMigrateForm/, 'renderMigrateForm() has isAurora guard');
-    // Docker preset in aurora list
-    assert.match(js, /AURORA_COOLDOWN_PRESETS/, 'AURORA_COOLDOWN_PRESETS array present');
-    assert.match(js, /preset_docker/, 'gateway_pools.preset_docker key in aurora preset list');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in gatewayPools.js (Aurora is the only theme)');
+    assert.match(js, /function buildMemberRow\(/, 'buildMemberRow() present');
+    assert.match(js, /function initCooldownPresets\(/, 'initCooldownPresets() present');
+    assert.match(js, /function renderMigrateForm\(/, 'renderMigrateForm() present');
+    assert.match(js, /gateway_pools\.preset_docker/, 'Aurora preset list (incl. Docker)');
+    assert.doesNotMatch(js, /AURORA_COOLDOWN_PRESETS/, 'single preset list');
   });
 
   it('aurora.css carries pool-member-row Aurora overrides', () => {
@@ -1010,11 +988,10 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     assert.match(res.text, /data-step-key="access"/, 'access step-key present');
   });
 
-  it('rdp.js contains isAurora() and auroraRenderGrid() sibling functions', () => {
+  it('rdp.js renders the Aurora card grid without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
-    assert.match(js, /function isAurora\(\)/, 'isAurora() present in rdp.js');
-    assert.match(js, /function auroraRenderGrid\(/, 'auroraRenderGrid() present in rdp.js');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRenderGrid/, 'renderGrid() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in rdp.js (Aurora is the only theme)');
+    assert.match(js, /function renderGrid\(/, 'renderGrid() present');
   });
 
   it('aurora.css has .rdp-step-dot and .rdp-step-line rules (extracted from inline style)', () => {
@@ -1098,9 +1075,7 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
     assert.match(res.text, /id="data-peer-timeout"/, 'data-peer-timeout present');
     assert.doesNotMatch(res.text, /id="btn-route-block-save"/, 'btn-route-block-save absent (autosave)'); // removed by autosave feature
     assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action present');
-    assert.match(res.text, /id="default-theme-buttons"/, 'default-theme-buttons present');
-    assert.match(res.text, /data-default-theme="default"/, 'data-default-theme=default present');
-    assert.match(res.text, /data-default-theme="pro"/, 'data-default-theme=pro present');
+    assert.doesNotMatch(res.text, /id="default-theme-buttons"/, 'default-theme picker removed (Aurora only)');
     assert.match(res.text, /id="btn-clear-logs"/, 'btn-clear-logs present');
     assert.match(res.text, /id="btn-svc-wg-restart"/, 'btn-svc-wg-restart present');
     assert.match(res.text, /id="btn-svc-wg-stop"/, 'btn-svc-wg-stop present');
@@ -1212,22 +1187,7 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.match(res.text, /id="password-message"/, '#password-message present');
     assert.match(res.text, /id="btn-change-password"/, '#btn-change-password present');
     assert.match(res.text, /id="language-buttons"/, '#language-buttons present');
-    assert.match(res.text, /id="theme-buttons"/, '#theme-buttons present');
-  });
-
-  it('renders all 3 theme-picker buttons with correct data-theme attributes', async () => {
-    selectAurora();
-    const res = await agent.get('/profile').expect(200);
-    assert.match(res.text, /data-theme="default"/, 'data-theme="default" button present');
-    assert.match(res.text, /data-theme="pro"/, 'data-theme="pro" button present');
-    assert.match(res.text, /data-theme="aurora"/, 'data-theme="aurora" button present');
-  });
-
-  it('aurora theme-picker button carries .on class when theme is aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/profile').expect(200);
-    // The aurora button should be marked active (.on) when the user has aurora selected
-    assert.match(res.text, /toggle-btn on[^"]*"[^>]*data-theme="aurora"|data-theme="aurora"[^>]*class="[^"]*toggle-btn on/, 'aurora toggle-btn has .on class when aurora theme selected');
+    assert.doesNotMatch(res.text, /id="theme-buttons"/, '#theme-buttons removed (Aurora only)');
   });
 
   it('renders language buttons inside #language-buttons as toggle-group', async () => {
@@ -1274,11 +1234,11 @@ describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
     assert.doesNotMatch(js, /\/api\/pihole\/stats/, '/api/pihole/stats (wrong URL) absent');
   });
 
-  it('dashboard.js has auroraRefreshResources() and auroraSetResourceDonut() functions', () => {
+  it('dashboard.js has refreshResources() and setResourceDonut() functions', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.match(js, /function auroraRefreshResources\(/, 'auroraRefreshResources() present');
-    assert.match(js, /function auroraSetResourceDonut\(/, 'auroraSetResourceDonut() present');
-    assert.match(js, /if \(isAurora\(\)\) return auroraRefreshResources/, 'refreshResources() has isAurora guard');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dashboard.js (Aurora is the only theme)');
+    assert.match(js, /function refreshResources\(/, 'refreshResources() present');
+    assert.match(js, /function setResourceDonut\(/, 'setResourceDonut() present');
   });
 
   it('aurora.css has .res-gauge-wrap and .res-gauge-info rules', () => {
@@ -1290,17 +1250,17 @@ describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
 
 // ── UX-fixes: Peers gateway card — badge inside, gear-edit, card→detail nav ──
 describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
-  it('auroraRenderGatewayCard builds badge inside the card using DOM (not detached)', () => {
+  it('renderGatewayCard builds badge inside the card using DOM (not detached)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     // Badge is created with DOM createElement and appended inside uh (card header)
-    assert.match(js, /badge\.className\s*=\s*statusClass/, 'badge.className assigned from statusClass inside auroraRenderGatewayCard');
+    assert.match(js, /badge\.className\s*=\s*statusClass/, 'badge.className assigned from statusClass inside renderGatewayCard');
     assert.match(js, /right\.appendChild\(badge\)/, 'badge appended to the right-side header span (inside card)');
     // The "right" span is added to uh (header row), which is added to unit (card)
     assert.match(js, /uh\.appendChild\(right\)/, 'right span appended to uh header row');
     assert.match(js, /unit\.appendChild\(uh\)/, 'uh header row appended to unit card');
   });
 
-  it('auroraRenderGatewayCard emits a gear button with data-action="edit" and data-id=peer_id', () => {
+  it('renderGatewayCard emits a gear button with data-action="edit" and data-id=peer_id', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     // Gear button gets setAttribute('data-action', 'edit')
     assert.match(js, /gearBtn\.setAttribute\('data-action',\s*'edit'\)/, "gear button has data-action='edit'");
@@ -1309,17 +1269,17 @@ describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
     assert.match(js, /right\.appendChild\(gearBtn\)/, 'gear button appended inside card header');
   });
 
-  it('auroraRenderGatewayCard gear button stops propagation and calls showEditModal', () => {
+  it('renderGatewayCard gear button stops propagation and calls showEditModal', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     assert.match(js, /e\.stopPropagation\(\)[\s\S]{0,40}showEditModal\(gw\.peer_id\)/, 'gear click: stopPropagation then showEditModal(gw.peer_id)');
   });
 
-  it('auroraRenderGatewayCard sets dataset.gwDetail for test assertions and a11y', () => {
+  it('renderGatewayCard sets dataset.gwDetail for test assertions and a11y', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     assert.match(js, /unit\.dataset\.gwDetail\s*=\s*'\/gateways#gw\/'/, "unit.dataset.gwDetail set to '/gateways#gw/' prefix");
   });
 
-  it('auroraRenderGatewayCard card click navigates to /gateways#gw/<id> (Issue 7)', () => {
+  it('renderGatewayCard card click navigates to /gateways#gw/<id> (Issue 7)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     assert.match(js, /window\.location\.href\s*=\s*'\/gateways#gw\/'/, "card click sets window.location.href to '/gateways#gw/' + peer_id");
     // Must NOT call showEditModal on card click (that's now the gear's job)
@@ -1331,7 +1291,7 @@ describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
     assert.ok(hasNav, 'card-click handler navigates via window.location.href');
   });
 
-  it('auroraRenderGatewayCard card click uses button/a guard (gear and badge excluded from nav)', () => {
+  it('renderGatewayCard card click uses button/a guard (gear and badge excluded from nav)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
     // Card click guard: e.target.closest('button, a') prevents nav when gear is clicked
     assert.match(js, /e\.target\.closest\('button,\s*a'\)[\s\S]{0,20}return/, 'card-click has button/a closest guard before nav');
@@ -1347,7 +1307,7 @@ describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
 
 // ── UX-fixes: Gateways fleet card + detail (Issues 8/9/10/11) ────────────────
 describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
-  it('Issue 8: auroraCard builds badge inside card header using right container', () => {
+  it('Issue 8: card builds badge inside card header using right container', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
     // stTag appended to right container, right container appended to uh (inside card)
     assert.match(js, /right\.appendChild\(stTag\)/, 'badge (stTag) appended to right container');
@@ -1360,27 +1320,27 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
     assert.match(css, /\.tag\.tag-dot::before\s*\{[^}]*content:\s*none/, '.tag.tag-dot::before has content:none (before-dot suppressed)');
   });
 
-  it('Issue 10: auroraVersionsCard() present and called from auroraRenderDetail()', () => {
+  it('Issue 10: versionsCard() present and called from renderDetail()', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
-    assert.match(js, /function auroraVersionsCard\(/, 'auroraVersionsCard() present in gateways.js');
-    assert.match(js, /grid2\.appendChild\(auroraVersionsCard\(g\)\)/, 'auroraRenderDetail() calls auroraVersionsCard(g)');
+    assert.match(js, /function versionsCard\(/, 'versionsCard() present in gateways.js');
+    assert.match(js, /grid2\.appendChild\(versionsCard\(g\)\)/, 'renderDetail() calls versionsCard(g)');
   });
 
-  it('Issue 11: auroraRenderDetail uses gw-detail-grid with exactly 3 columns (1/3 each)', () => {
+  it('Issue 11: renderDetail uses gw-detail-grid with exactly 3 columns (1/3 each)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'auroraRenderDetail() uses gw-detail-grid class');
+    assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'renderDetail() uses gw-detail-grid class');
     assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,minmax\(0,1fr\)\)/, 'gw-detail-grid uses exactly 3 columns (1/3 each)');
   });
 });
 
 // ── UX-fixes: RDP page (Issues 12/13/14/15/16) ───────────────────────────────
 describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
-  it('Issue 12: auroraRenderGrid uses rdp-card-grid container (not span6/full-width)', () => {
+  it('Issue 12: renderGrid uses rdp-card-grid container (not span6/full-width)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
     // Container must use rdp-card-grid, not grid (which yields span6 half-width cards)
-    assert.match(js, /container\.className\s*=\s*'rdp-card-grid'/, "auroraRenderGrid uses 'rdp-card-grid' container");
+    assert.match(js, /container\.className\s*=\s*'rdp-card-grid'/, "renderGrid uses 'rdp-card-grid' container");
     // Cards must not use span6 (which is half-width in 12-col grid)
     assert.doesNotMatch(js, /card\.className\s*=\s*'card span6'/, "card.className no longer uses 'card span6'");
     // aurora.css must define the grid rule with auto-fill
@@ -1429,31 +1389,23 @@ describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
     assert.match(res.text, /id="rdp-browser-audio-vnc"/, 'rdp-browser-audio-vnc in rendered HTML');
   });
 
-  it('Issue 16: aurora check handler uses isAurora() branch — color+icon, not big text', () => {
+  it('Issue 16: aurora check handler sets color + icon, not big text', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
-    // Must have isAurora() branch inside check handler
-    assert.match(js, /if \(isAurora\(\)\)[\s\S]{0,200}checkBtn\.style\.color/, 'isAurora() branch sets color on checkBtn');
-    // Aurora branch sets innerHTML (icon), not textContent
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch');
+    assert.match(js, /checkBtn\.style\.color = result\.online \? 'var\(--green\)' : 'var\(--red\)'/, 'color on checkBtn');
+    // Sets innerHTML (icon), not textContent
     assert.match(js, /checkBtn\.innerHTML\s*=\s*result\.online/, 'Aurora branch sets innerHTML to status icon on check result');
-    // Non-aurora path still sets textContent
-    assert.match(js, /checkBtn\.textContent\s*=\s*result\.online/, 'non-aurora branch still sets textContent');
+    assert.doesNotMatch(js, /checkBtn\.textContent\s*=\s*result\.online/, 'the big-text (default/pro) branch is gone');
   });
 });
 
 // ── UX-fixes: Settings + sidebar chrome (Issues 17/18/19) ────────────────────
 describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () => {
-  it('Issue 17: settings default-theme picker has an aurora button (data-default-theme=aurora)', async () => {
-    selectAurora();
+  it('Issue 17 (superseded): the settings page has no default-theme picker, the source neither', async () => {
     const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /data-default-theme="aurora"/, 'aurora theme button present in default-theme picker');
-  });
-
-  it('Issue 17: aurora settings.njk has data-default-theme="aurora" button in source', () => {
-    const njk = fs.readFileSync(
-      path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
-      'utf8'
-    );
-    assert.match(njk, /data-default-theme="aurora"/, 'aurora button present in settings.njk template');
+    assert.doesNotMatch(res.text, /data-default-theme=/, 'no default-theme buttons rendered');
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
+    assert.doesNotMatch(njk, /data-default-theme=|settings\.default_theme/, 'no default-theme card in settings.njk');
   });
 
   it('Issue 18: aurora.css scopes align-items:start to settings panels (no card stretching)', () => {

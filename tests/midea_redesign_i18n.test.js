@@ -24,7 +24,7 @@ test('redesign i18n keys exist in en + de', () => {
 // reused keys the redesign JS resolves via T() at runtime (must also be whitelisted)
 const REUSED_CLIENT = ['midea.owners.label', 'midea.owners.none', 'midea.owners.error_unknown_user', 'midea.device.mode', 'midea.cloud.connected'];
 test('redesign + reused client keys are whitelisted in all 3 layouts', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const layout = fs.readFileSync(`templates/${theme}/layout.njk`, 'utf8');
     for (const k of [...KEYS, ...REUSED_CLIENT]) {
       assert.ok(layout.includes(`'${k}'`), `${theme}/layout.njk missing whitelist for ${k}`);

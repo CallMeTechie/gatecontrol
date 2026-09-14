@@ -13,7 +13,7 @@ const nunjucks = require('nunjucks');
 const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'templates')), { autoescape: true });
 env.addFilter('bytes', (v) => String(v || 0) + ' B');
@@ -82,19 +82,12 @@ describe('waf.njk renders in every theme', () => {
       assert.deepEqual(headCells(html, 'wf-routes-table'), ['Host', 'Modus', 'Paranoia', 'Ereignisse 24 h', 'Blockiert 24 h', 'Aktionen']);
       assert.match(html, /<td colspan="8">Lädt|<td colspan="8">/);
       assert.ok(!html.includes('id="wf-locked"'), 'no locked notice with the license');
-      if (theme === 'aurora') {
-        assert.match(html, /class="app"/, 'aurora shell');
-        assert.match(html, /aurora-routes-kpi wf-tile/);
-        assert.match(html, /class="data-table wf-table" id="wf-table"/);
-        assert.match(html, /class="card span12 wf-card" id="wf-events-card"/);
-        assert.match(html, /class="toolbar wf-toolbar"/);
-        assert.match(html, /class="page-actions">\s*<button class="btn btn-primary" id="btn-waf-refresh"/);
-      } else {
-        assert.match(html, /stats-grid wf-tiles/);
-        assert.match(html, /stat-card wf-tile/);
-        assert.match(html, /class="wf-table" id="wf-table"/);
-      }
-      if (theme === 'pro') assert.match(html, /stat-card-header/);
+      assert.match(html, /class="app"/, 'aurora shell');
+      assert.match(html, /aurora-routes-kpi wf-tile/);
+      assert.match(html, /class="data-table wf-table" id="wf-table"/);
+      assert.match(html, /class="card span12 wf-card" id="wf-events-card"/);
+      assert.match(html, /class="toolbar wf-toolbar"/);
+      assert.match(html, /class="page-actions">\s*<button class="btn btn-primary" id="btn-waf-refresh"/);
     });
 
     it(`${theme}: loads waf-ui.js before waf.js, after app.js, island first`, () => {
@@ -155,7 +148,7 @@ describe('waf.njk renders in every theme', () => {
   }
 
   it('English rendering uses en.json', () => {
-    const html = render('default', { lang: 'en' });
+    const html = render('aurora', { lang: 'en' });
     assert.match(html, /<div class="page-title">WAF<\/div>/);
     assert.match(html, /Events 24 h/);
     assert.match(html, /All hosts/);

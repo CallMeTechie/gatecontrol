@@ -13,7 +13,7 @@ const nunjucks = require('nunjucks');
 const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 const PREFIXES = ['zones.', 'host.', 'entry.', 'template.'];
 
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'templates')), { autoescape: true });
@@ -87,10 +87,8 @@ describe('zones.njk renders in every theme', () => {
       assert.ok(dm > 0 && dm < html.indexOf('id="modal-edit-route"') && dm < html.indexOf('id="modal-confirm"'),
         'domain modal precedes the editor/confirm overlays (they must stack above it)');
       for (const id of REQUIRED_IDS) assert.ok(html.includes(`id="${id}"`), `#${id} rendered`);
-      if (theme === 'aurora') {
-        assert.match(html, /id="zn-kpis"/);
-        assert.match(html, /class="app"/, 'aurora shell');
-      }
+      assert.match(html, /id="zn-kpis"/);
+      assert.match(html, /class="app"/, 'aurora shell');
       assert.doesNotMatch(html, /id="routes-list"|id="btn-add-route"|zn-legacy-link|\/routes\/legacy/, 'no legacy page markup');
     });
 
@@ -132,16 +130,11 @@ describe('zones.njk renders in every theme', () => {
   });
 
   it('English rendering uses en.json', () => {
-    const html = render('default', 'en');
+    const html = render('aurora', 'en');
     assert.match(html, /id="zn-add-domain"[\s\S]*?Add domain/);
     assert.match(html, /Collapse all/);
   });
 
-  it('license limit badges render only for limited tiers (default/pro)', () => {
-    assert.doesNotMatch(render('default'), /limit-badge/);
-    assert.match(render('default', 'de', { http_routes: 5, l4_routes: 2 }), /HTTPS: 3 \/ 5/);
-    assert.match(render('pro', 'de', { http_routes: 5, l4_routes: 2 }), /TCP\/UDP: 2 \/ 2/);
-  });
 });
 
 describe('zones i18n keys', () => {
@@ -171,16 +164,6 @@ describe('zones i18n keys', () => {
     }
   });
 
-  it('all three themes ship the same island key list', () => {
-    const list = (theme) => {
-      const src = fs.readFileSync(path.join(ROOT, `templates/${theme}/pages/zones.njk`), 'utf8');
-      const m = /set zonesI18nKeys = \[([\s\S]*?)\]/.exec(src);
-      assert.ok(m, `${theme}: zonesI18nKeys defined`);
-      return m[1].replace(/\s+/g, '');
-    };
-    assert.equal(list('pro'), list('default'));
-    assert.equal(list('aurora'), list('default'));
-  });
 });
 
 describe('zones scripts and styles', () => {
@@ -200,7 +183,7 @@ describe('zones scripts and styles', () => {
   });
 
   it('each theme stylesheet has one appended zn- section', () => {
-    for (const f of ['app.css', 'pro.css', 'aurora.css']) {
+    for (const f of ['pro.css', 'aurora.css']) {
       const css = fs.readFileSync(path.join(ROOT, 'public/css', f), 'utf8');
       const at = css.indexOf('/* ─── Domain zones (zn-) ─── */');
       assert.ok(at > 0, `${f}: section marker`);

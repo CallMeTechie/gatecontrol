@@ -7,7 +7,7 @@
 // styleSrcElem with a nonce requirement and NO 'unsafe-inline', so a
 // nonce-less injected <style> is blocked — the .gw-progress / gw-spin rules
 // never applied. The fix moves the rules into the linked stylesheets
-// (app.css + pro.css, served from 'self', CSP-allowed). These tests assert
+// (pro.css — Aurora's base stylesheet, served from 'self', CSP-allowed). These tests assert
 // that arrangement so the regression cannot silently return.
 
 const { describe, it } = require('node:test');
@@ -26,7 +26,7 @@ describe('gateways progress indicator CSS (CSP-safe)', () => {
     );
   });
 
-  for (const css of ['css/app.css', 'css/pro.css']) {
+  for (const css of ['css/pro.css']) {
     it(`${css} defines the spin + progress keyframes and .gw-progress`, () => {
       const c = read(css);
       assert.match(c, /@keyframes\s+gw-spin\b/, `${css} missing @keyframes gw-spin`);

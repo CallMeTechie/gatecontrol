@@ -200,10 +200,7 @@ function update(id, data) {
     fields.push('language = ?');
     values.push(data.language);
   }
-  if (data.theme !== undefined) {
-    fields.push('theme = ?');
-    values.push(data.theme);
-  }
+  // data.theme is ignored: Aurora is the only theme (docs/feature-aurora-only.md).
 
   if (fields.length === 0) return getById(id);
 

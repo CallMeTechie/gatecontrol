@@ -20,7 +20,7 @@ test('served routes page carries the edit modal registry ids (rendered, no raw k
 });
 
 test('edit modal carries registry ids in all three themes', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const html = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'partials', 'modals', 'route-edit.njk'), 'utf8');
     ['edit-route-prefix', 'edit-route-base-domain', 'edit-route-domain-freetext']
       .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));

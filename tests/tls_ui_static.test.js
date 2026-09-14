@@ -13,7 +13,7 @@ const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
 const TG = require('../public/js/tls-ui.js');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 const PREFIX_RE = /^(tls\.|dns_check\.|settings\.tls\.)/;
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -180,7 +180,7 @@ describe('TLS guard: i18n', () => {
 
 describe('TLS guard: styles', () => {
   it('each theme stylesheet has exactly one appended tg- section and no tg- rules before it', () => {
-    for (const f of ['app.css', 'pro.css', 'aurora.css']) {
+    for (const f of ['pro.css', 'aurora.css']) {
       const css = read('public/css/' + f);
       const marker = '/* ─── TLS guard (tg-) ─── */';
       const at = css.indexOf(marker);
@@ -190,7 +190,7 @@ describe('TLS guard: styles', () => {
       const zn = css.indexOf('/* ─── Domain zones (zn-) ─── */');
       assert.ok(zn > 0 && zn < at, `${f}: appended after the zn- section`);
     }
-    for (const f of ['app.css', 'pro.css']) {
+    for (const f of ['pro.css']) {
       const css = read('public/css/' + f);
       for (const cls of ['.tg-tiles', '.tg-banner', '.tg-chips', '.tg-table', '.tg-orig', '.tg-actions', '.tg-records', '.tg-preflight', '.tg-notice', '.tg-chip-warn', '.tg-entry-tag', '.toast-warning']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);

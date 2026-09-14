@@ -2,8 +2,6 @@
 'use strict';
 
 (function () {
-  // ── Aurora theme detector (identical pattern to peers.js / gateways.js) ──────
-  function isAurora() { return !!document.querySelector('.app'); }
 
   var currentView = 'grid';
   var currentFilter = 'all';
@@ -62,16 +60,6 @@
       frag.appendChild(ind);
     }
     return frag;
-  }
-
-  function formatRelativeTime(isoDate) {
-    if (!isoDate) return '-';
-    var diff = (Date.now() - new Date(isoDate + 'Z').getTime()) / 1000;
-    if (diff < 0) return '-';
-    if (diff < 60) return GC.t['rdp.just_now'] || 'gerade eben';
-    if (diff < 3600) return Math.floor(diff / 60) + ' Min';
-    if (diff < 86400) return Math.floor(diff / 3600) + 'h';
-    return Math.floor(diff / 86400) + 'd';
   }
 
   // -- DOM References -------------------------------------------
@@ -155,244 +143,6 @@
     } else {
       renderList(filtered);
     }
-  }
-
-  function renderGrid(routes) {
-    if (isAurora()) return auroraRenderGrid(routes);
-    grid.textContent = '';
-    var container = document.createElement('div');
-    container.className = 'vm-grid';
-
-    routes.forEach(function (r) {
-      var isOnline = r.status && r.status.online;
-      var isMaintenance = r.maintenance_enabled;
-      var tags = [];
-      try { tags = JSON.parse(r.tags || '[]'); } catch {}
-      if (!Array.isArray(tags)) tags = [];
-
-      var card = document.createElement('div');
-      card.className = 'vm-card';
-      if (isMaintenance) card.style.borderLeft = '3px solid var(--amber)';
-
-      // Header: name + host + status tag
-      var header = document.createElement('div');
-      header.className = 'vm-card-header';
-
-      var nameBlock = document.createElement('div');
-      var nameEl = document.createElement('div');
-      nameEl.className = 'vm-name';
-      nameEl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
-      var nameText = document.createElement('span');
-      nameText.textContent = r.name;
-      nameEl.appendChild(nameText);
-      nameEl.appendChild(buildProtoBadge(r));
-      nameBlock.appendChild(nameEl);
-
-      var hostEl = document.createElement('div');
-      hostEl.className = 'vm-host';
-      hostEl.textContent = r.host + ':' + (r.port || 3389);
-      nameBlock.appendChild(hostEl);
-      header.appendChild(nameBlock);
-
-      var statusTag = document.createElement('span');
-      statusTag.className = 'tag';
-      if (isOnline) {
-        statusTag.classList.add('tag-green');
-        statusTag.textContent = GC.t['rdp.online'] || 'Online';
-      } else if (isMaintenance) {
-        statusTag.classList.add('tag-amber');
-        statusTag.textContent = GC.t['rdp.maintenance'] || 'Wartung';
-      } else {
-        statusTag.classList.add('tag-red');
-        statusTag.textContent = GC.t['rdp.offline'] || 'Offline';
-      }
-      header.appendChild(statusTag);
-      card.appendChild(header);
-
-      // Tags
-      if (tags.length > 0) {
-        var tagsRow = document.createElement('div');
-        tagsRow.className = 'vm-tags';
-        tags.forEach(function (tg) {
-          var tagEl = document.createElement('span');
-          tagEl.className = 'tag tag-neutral';
-          tagEl.textContent = tg;
-          tagsRow.appendChild(tagEl);
-        });
-        card.appendChild(tagsRow);
-      }
-
-      // Meta rows
-      var meta = document.createElement('div');
-      meta.className = 'vm-meta';
-
-      // Access mode row
-      var accessRow = document.createElement('div');
-      accessRow.className = 'vm-meta-row';
-      var accessLabel = document.createElement('span');
-      accessLabel.textContent = GC.t['rdp.access_mode'] || 'Zugriff';
-      accessRow.appendChild(accessLabel);
-      var accessTag = document.createElement('span');
-      accessTag.className = 'tag';
-      accessTag.style.fontSize = '10px';
-      if (r.access_mode === 'external' || r.access_mode === 'both') {
-        accessTag.classList.add('tag-purple');
-        accessTag.textContent = r.access_mode === 'both' ? (GC.t['rdp.access_both'] || 'Extern + Intern') : (GC.t['rdp.access_external'] || 'Extern');
-      } else {
-        accessTag.classList.add('tag-blue');
-        accessTag.textContent = GC.t['rdp.access_internal'] || 'Intern';
-      }
-      accessRow.appendChild(accessTag);
-      meta.appendChild(accessRow);
-
-      // External hostname (if applicable)
-      if (r.external_hostname && (r.access_mode === 'external' || r.access_mode === 'both')) {
-        var extHostRow = document.createElement('div');
-        extHostRow.className = 'vm-meta-row';
-        var extHostLabel = document.createElement('span');
-        extHostLabel.textContent = 'Hostname';
-        extHostRow.appendChild(extHostLabel);
-        var extHostVal = document.createElement('span');
-        extHostVal.style.cssText = 'font-family:var(--font-mono);font-size:11px';
-        extHostVal.textContent = r.external_hostname;
-        extHostRow.appendChild(extHostVal);
-        meta.appendChild(extHostRow);
-      }
-
-      // Credentials row
-      var credRow = document.createElement('div');
-      credRow.className = 'vm-meta-row';
-      var credLabel = document.createElement('span');
-      credLabel.textContent = GC.t['rdp.credentials'] || 'Credentials';
-      credRow.appendChild(credLabel);
-      var credVal = document.createElement('span');
-      if (r.credential_mode === 'full') credVal.textContent = GC.t['rdp.credential_full'] || 'Vollständig';
-      else if (r.credential_mode === 'user_only') credVal.textContent = GC.t['rdp.credential_user'] || 'Nur Username';
-      else credVal.textContent = GC.t['rdp.credential_none'] || 'Keine';
-      credRow.appendChild(credVal);
-      meta.appendChild(credRow);
-
-      // Active sessions row
-      var sessRow = document.createElement('div');
-      sessRow.className = 'vm-meta-row';
-      var sessLabel = document.createElement('span');
-      sessLabel.textContent = GC.t['rdp.stat_active_sessions'] || 'Aktive Sessions';
-      sessRow.appendChild(sessLabel);
-      var sessVal = document.createElement('span');
-      if (r.active_sessions > 0) {
-        sessVal.style.cssText = 'font-weight:600;color:var(--blue)';
-        sessVal.textContent = r.active_session_users
-          ? r.active_sessions + ' (' + r.active_session_users + ')'
-          : String(r.active_sessions);
-      } else {
-        sessVal.textContent = '-';
-      }
-      sessRow.appendChild(sessVal);
-      meta.appendChild(sessRow);
-
-      // Last access row
-      if (r.last_access) {
-        var lastAccessRow = document.createElement('div');
-        lastAccessRow.className = 'vm-meta-row';
-        var lastAccessLabel = document.createElement('span');
-        lastAccessLabel.textContent = GC.t['rdp.last_access'] || 'Letzter Zugriff';
-        lastAccessRow.appendChild(lastAccessLabel);
-        var lastAccessVal = document.createElement('span');
-        lastAccessVal.textContent = formatRelativeTime(r.last_access);
-        lastAccessRow.appendChild(lastAccessVal);
-        meta.appendChild(lastAccessRow);
-      }
-
-      // WoL row (if enabled)
-      if (r.wol_enabled && r.wol_mac_address) {
-        var wolRow = document.createElement('div');
-        wolRow.className = 'vm-meta-row';
-        var wolLabel = document.createElement('span');
-        wolLabel.textContent = 'WoL';
-        wolRow.appendChild(wolLabel);
-        var wolVal = document.createElement('span');
-        wolVal.style.cssText = 'font-family:var(--font-mono);font-size:11px';
-        wolVal.textContent = r.wol_mac_address;
-        wolRow.appendChild(wolVal);
-        meta.appendChild(wolRow);
-      }
-
-      // Maintenance row
-      if (r.maintenance_enabled) {
-        var maintRow = document.createElement('div');
-        maintRow.className = 'vm-meta-row';
-        var maintLabel = document.createElement('span');
-        maintLabel.textContent = GC.t['rdp.maintenance'] || 'Wartung';
-        maintRow.appendChild(maintLabel);
-        var maintVal = document.createElement('span');
-        if (r.maintenance_schedule) {
-          maintVal.style.cssText = 'font-family:var(--font-mono);font-size:10px';
-          maintVal.textContent = r.maintenance_schedule;
-        } else {
-          maintVal.style.cssText = 'color:var(--amber);font-weight:600';
-          maintVal.textContent = GC.t['rdp.maintenance_active'] || 'Aktiv';
-        }
-        maintRow.appendChild(maintVal);
-        meta.appendChild(maintRow);
-      }
-
-      card.appendChild(meta);
-
-      // Actions
-      var actions = document.createElement('div');
-      actions.className = 'vm-actions';
-
-      if (!isOnline && r.wol_enabled && r.wol_mac_address) {
-        var wolBtn = document.createElement('button');
-        wolBtn.className = 'btn btn-sm btn-green';
-        wolBtn.dataset.wol = r.id;
-        wolBtn.textContent = GC.t['rdp.wol_send'] || 'WoL senden';
-        actions.appendChild(wolBtn);
-      }
-
-      if (r.active_sessions > 0) {
-        var disconnBtn = document.createElement('button');
-        disconnBtn.className = 'btn btn-sm btn-amber';
-        disconnBtn.dataset.disconnectAll = r.id;
-        disconnBtn.textContent = GC.t['rdp.disconnect_all'] || 'Alle trennen';
-        actions.appendChild(disconnBtn);
-      }
-
-      if (r.browser_enabled && GC.features && GC.features.browser_sessions) {
-        var browserBtn = document.createElement('button');
-        browserBtn.className = 'btn btn-sm btn-primary';
-        browserBtn.textContent = GC.t['rdp.browser.open'] || 'Im Browser öffnen';
-        (function (id) {
-          browserBtn.addEventListener('click', function () {
-            window.open('/rdp/' + id + '/session', '_blank', 'noopener');
-          });
-        }(r.id));
-        actions.appendChild(browserBtn);
-      }
-
-      var editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-sm btn-ghost';
-      editBtn.dataset.edit = r.id;
-      editBtn.textContent = GC.t['rdp.edit'] || 'Bearbeiten';
-      actions.appendChild(editBtn);
-
-      var checkBtn = document.createElement('button');
-      checkBtn.className = 'btn btn-sm btn-ghost';
-      checkBtn.dataset.check = r.id;
-      checkBtn.textContent = GC.t['rdp.connect_test'] || 'Verbindungstest';
-      actions.appendChild(checkBtn);
-
-      var delBtn = document.createElement('button');
-      delBtn.className = 'btn btn-sm btn-danger';
-      delBtn.dataset.delete = r.id;
-      delBtn.textContent = GC.t['rdp.delete'] || 'Löschen';
-      actions.appendChild(delBtn);
-
-      card.appendChild(actions);
-      container.appendChild(card);
-    });
-
-    grid.appendChild(container);
   }
 
   function renderList(routes) {
@@ -558,17 +308,12 @@
     if (checkBtn) {
       try {
         var result = await api.get('/api/v1/rdp/' + checkBtn.dataset.check + '/status');
-        if (isAurora()) {
-          // Issue 16: Aurora — color + distinct icon, no big text in button
-          checkBtn.style.color = result.online ? 'var(--green)' : 'var(--red)';
-          checkBtn.title = result.online ? (GC.t['rdp.online'] || 'Online') : (GC.t['rdp.offline'] || 'Offline');
-          checkBtn.innerHTML = result.online
-            ? '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-            : '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-        } else {
-          checkBtn.textContent = result.online ? 'Online' : 'Offline';
-          checkBtn.style.color = result.online ? 'var(--success)' : 'var(--danger)';
-        }
+        // Issue 16: color + distinct icon, no big text in button
+        checkBtn.style.color = result.online ? 'var(--green)' : 'var(--red)';
+        checkBtn.title = result.online ? (GC.t['rdp.online'] || 'Online') : (GC.t['rdp.offline'] || 'Offline');
+        checkBtn.innerHTML = result.online
+          ? '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       } catch {}
       return;
     }
@@ -1734,11 +1479,11 @@
     loadRoutes();
   }, 60000);
 
-  // ── Aurora theme — card grid (theme-branched sibling of renderGrid()) ─────────
+  // ── Card grid ────────────────────────────────────────────────────────────────
   // Emits .grid > .card.span6 structure per mockup (2026-06-21).
   // All action data-* attributes from the default renderGrid() are preserved.
   // Added: Session-Verlauf (.btn-block) targeting #modal-peer-traffic.
-  function auroraRenderGrid(routes) {
+  function renderGrid(routes) {
     grid.textContent = '';
     if (routes.length === 0) {
       grid.style.cssText = 'font-size:13px;color:var(--muted);padding:20px 0;text-align:center';
@@ -1922,7 +1667,6 @@
       rowActions.appendChild(delBtn);
 
       card.appendChild(rowActions);
-
 
       container.appendChild(card);
     });

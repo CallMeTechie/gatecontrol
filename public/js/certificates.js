@@ -1,6 +1,6 @@
 'use strict';
 
-// Certificates page (certificates.njk, all three themes). Renders the TLS
+// Certificates page (certificates.njk). Renders the TLS
 // guard status from GET /api/v1/tls/status (docs/feature-tls-guard.md):
 // summary tiles, ACME-e-mail banner, filter chips and one table row per host
 // with status, issuer, last error, next retry and the actions "Prüfen" /
@@ -11,9 +11,6 @@
   if (!certsList) return;
   const TG = window.GCTlsUI;
   const $ = (id) => document.getElementById(id);
-
-  // ─── Aurora theme detector (kept: tests/aurora_theme.test.js) ─────────
-  function isAurora() { return !!document.querySelector('.app'); }
 
   if (!TG) {
     // tls-ui.js missing: keep the page readable instead of throwing.
@@ -73,13 +70,6 @@
     if (document.hidden) { stale = true; return; }
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(load, 300);
-  }
-
-  // Kept for tests/aurora_theme.test.js — all themes share one loader now.
-  async function auroraLoadCertificates() { return load(); }
-  async function loadCertificates() {
-    if (isAurora()) return auroraLoadCertificates();
-    return load();
   }
 
   // ─── Rendering ─────────────────────────────────────────────────────────
@@ -163,19 +153,17 @@
         el('button', { type: 'button', class: 'tg-link', text: t('tls.filter_all'), on: { click: () => setFilter('all') } })])));
       return;
     }
-    certsList.replaceChildren(...rows.map((h) => (isAurora() ? auroraTableRow(h) : buildRow(h))));
+    certsList.replaceChildren(...rows.map(buildRow));
   }
 
-  // Aurora keeps its .data-table cell classes; the row content is identical.
-  function auroraTableRow(h) { return buildRow(h, true); }
-  function auroraStatusTag(h) { return TG.stateTag(h, 'tag-dot'); }
 
   function zoneHref(h) {
     if (h.domain_id != null) return '/routes?domain=' + encodeURIComponent(h.domain_id) + (h.host_id != null ? '&host=' + encodeURIComponent(h.host_id) : '');
     return '/routes';
   }
 
-  function buildRow(h, aurora) {
+  // Rows use the .data-table cell classes (cell-name, mono) and tag-dot status tags.
+  function buildRow(h) {
     const k = TG.stateKey(h);
     const problem = k === 'failed' || k === 'paused' || k === 'expiring';
     const sub = TG.stateSub(h);
@@ -187,16 +175,16 @@
     ]);
 
     return el('tr', { class: 'tg-row' + (problem ? ' tg-row-problem' : ''), dataset: { host: h.host, state: k } }, [
-      el('td', { class: aurora ? 'cell-name' : 'tg-cell-host' }, [
+      el('td', { class: 'cell-name' }, [
         el('a', { class: 'tg-host', href: zoneHref(h), title: t('tls.zone_link'), text: h.host }),
         // Alias rows (security options §A) name their primary host.
         h.alias_of ? el('span', { class: 'tg-sub so-alias-of', text: t('alias.of', { host: h.alias_of }) }) : null,
       ]),
-      el('td', { class: 'tg-cell-status' }, [aurora ? auroraStatusTag(h) : TG.stateTag(h), sub ? el('span', { class: 'tg-sub', text: sub }) : null]),
-      el('td', { class: 'tg-cell-issuer' + (aurora ? ' mono' : ''), text: h.issuer || '—' }),
-      el('td', { class: 'tg-cell-valid' + (aurora ? ' mono' : '') }, [h.not_after ? TG.fmtDate(h.not_after) : '—']),
+      el('td', { class: 'tg-cell-status' }, [TG.stateTag(h, 'tag-dot'), sub ? el('span', { class: 'tg-sub', text: sub }) : null]),
+      el('td', { class: 'tg-cell-issuer mono', text: h.issuer || '—' }),
+      el('td', { class: 'tg-cell-valid mono' }, [h.not_after ? TG.fmtDate(h.not_after) : '—']),
       el('td', { class: 'tg-cell-error' }, [TG.errorEl(h)]),
-      el('td', { class: 'tg-cell-retry' + (aurora ? ' mono' : '') }, [k === 'failed' && h.next_retry_at ? el('span', { title: TG.fmtDateTime(h.next_retry_at), text: TG.fmtWhen(h.next_retry_at) }) : '—']),
+      el('td', { class: 'tg-cell-retry mono' }, [k === 'failed' && h.next_retry_at ? el('span', { title: TG.fmtDateTime(h.next_retry_at), text: TG.fmtWhen(h.next_retry_at) }) : '—']),
       el('td', { class: 'tg-cell-actions' }, [actions]),
     ]);
   }
@@ -250,10 +238,10 @@
 
   // ─── Init ──────────────────────────────────────────────────────────────
   const refreshBtn = $('btn-certificates-refresh');
-  if (refreshBtn) refreshBtn.addEventListener('click', loadCertificates);
+  if (refreshBtn) refreshBtn.addEventListener('click', load);
 
   render();
-  loadCertificates();
+  load();
   setInterval(scheduleLoad, 60000);
   ['gc:tls', 'gc:routes', 'gc:reconnected'].forEach((ev) => document.addEventListener(ev, scheduleLoad));
   document.addEventListener('visibilitychange', () => {

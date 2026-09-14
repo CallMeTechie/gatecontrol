@@ -25,11 +25,10 @@ test('toggles dispatch a change event (setupManagedToggle)', async () => {
   assert.match(js.text, /dispatchEvent\(new Event\(['"]change['"]\)\)/);
 });
 
-test('field-saving style is served in both stylesheets', async () => {
-  const appCss = await supertest(app).get('/css/app.css').expect(200);
-  assert.match(appCss.text, /\.field-saving/);
+test('field-saving style is served (pro.css, Aurora base); app.css is gone', async () => {
   const proCss = await supertest(app).get('/css/pro.css').expect(200);
   assert.match(proCss.text, /\.field-saving/);
+  await supertest(app).get('/css/app.css').expect(404);
 });
 
 test('independent clusters migrated: buttons gone, autosave bound, mb fixed', async () => {
@@ -40,9 +39,10 @@ test('independent clusters migrated: buttons gone, autosave bound, mb fixed', as
   const page = await getAgent().get('/settings').expect(200);
   ['btn-metrics-save','btn-dns-save','btn-data-save','btn-monitoring-save','mb-save','au-mode-save']
     .forEach(id => assert.doesNotMatch(page.text, new RegExp('id="' + id + '"')));
-  // dedicated status badges present (incl. machine-binding + default-theme)
-  ['machine-binding-status','default-theme-status']
+  // dedicated status badge present (machine-binding); the default-theme card is gone
+  ['machine-binding-status']
     .forEach(id => assert.match(page.text, new RegExp('id="' + id + '"')));
+  assert.doesNotMatch(page.text, /id="default-theme-(status|buttons)"/);
   // machine-binding JS points statusEl at its dedicated badge, not the old hidden div
   assert.match(js.text, /getElementById\(['"]machine-binding-status['"]\)/);
 });

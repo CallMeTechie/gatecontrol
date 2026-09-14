@@ -86,7 +86,7 @@
   let renderPending = false;
   UI.onMenuClosed(() => { if (renderPending) setTimeout(render, 0); });
 
-  // Nearest scrolling ancestor (default/aurora: <main>, pro: the wrapper).
+  // Nearest scrolling ancestor (<main> in the Aurora shell).
   function scroller() {
     for (let n = root.parentElement; n && n !== document.body; n = n.parentElement) {
       const oy = getComputedStyle(n).overflowY;

@@ -4,98 +4,7 @@
   const REFRESH_INTERVAL = 15000; // 15 seconds
   let refreshTimer = null;
 
-  // ── Aurora detection (reads layout DOM; must NOT be a GC field) ──────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
-  // ─── Stat Cards ─────────────────────────────────────────────────────────────
-  async function refreshStats() {
-    if (isAurora()) return auroraRefreshStats();
-    try {
-      const data = await api.get('/api/dashboard/stats');
-
-      // Peers connected
-      const peersEl = document.getElementById('stat-peers');
-      if (peersEl) peersEl.textContent = data.peers.online;
-
-      // Active routes
-      const routesEl = document.getElementById('stat-routes');
-      if (routesEl) routesEl.textContent = data.routes.active;
-
-      // Monitoring summary — parseInt guards against type-coercion XSS
-      const monitorEl = document.getElementById('stat-monitoring');
-      const monitorSubEl = document.getElementById('stat-monitoring-sub');
-      if (monitorEl && data.monitoring) {
-        var up = parseInt(data.monitoring.up, 10) || 0;
-        var total = parseInt(data.monitoring.total, 10) || 0;
-        var down = parseInt(data.monitoring.down, 10) || 0;
-        if (total > 0) {
-          monitorEl.textContent = '';
-          var spanUp = document.createElement('span');
-          spanUp.style.color = down > 0 ? 'var(--amber)' : 'var(--green)';
-          spanUp.textContent = up;
-          var spanTotal = document.createElement('span');
-          spanTotal.style.color = 'var(--text-2)';
-          spanTotal.textContent = '/' + total;
-          monitorEl.appendChild(spanUp);
-          monitorEl.appendChild(spanTotal);
-          if (monitorSubEl) {
-            monitorSubEl.textContent = '';
-            if (down > 0) {
-              var downMsg = (GC.t && GC.t['monitoring.dashboard_down']) || '{n} down';
-              monitorSubEl.style.color = 'var(--red)';
-              monitorSubEl.textContent = downMsg.replace('{n}', String(down));
-            } else {
-              monitorSubEl.style.color = 'var(--green)';
-              monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_all_ok']) || 'Alle erreichbar';
-            }
-          }
-        } else {
-          monitorEl.textContent = '—';
-          if (monitorSubEl) {
-            monitorSubEl.style.color = 'var(--text-3)';
-            monitorSubEl.textContent = (GC.t && GC.t['monitoring.dashboard_empty']) || 'Monitoring nicht aktiv';
-          }
-        }
-      }
-      // Traffic today
-      const trafficEl = document.getElementById('stat-traffic');
-      if (trafficEl) trafficEl.innerHTML = formatTrafficValue(data.traffic.today);
-
-      // Upload/Download rates
-      const upRateEl = document.getElementById('stat-upload-rate');
-      if (upRateEl) upRateEl.textContent = formatBytes(data.traffic.uploadRate) + '/s';
-
-      const dnRateEl = document.getElementById('stat-download-rate');
-      if (dnRateEl) dnRateEl.textContent = formatBytes(data.traffic.downloadRate) + '/s';
-
-      // Avg latency
-      const latencyEl = document.getElementById('stat-latency');
-      if (latencyEl) {
-        latencyEl.textContent = data.latency != null ? data.latency + ' ms' : '—';
-      }
-
-      // WireGuard status in topbar
-      const wgStatusEl = document.getElementById('wg-status');
-      if (wgStatusEl) {
-        if (data.wireguard.running) {
-          wgStatusEl.classList.remove('inactive');
-        } else {
-          wgStatusEl.classList.add('inactive');
-        }
-      }
-
-      // Sidebar badges
-      const peerBadge = document.getElementById('peer-count-badge');
-      if (peerBadge) peerBadge.textContent = data.peers.total;
-
-      const routeBadge = document.getElementById('route-count-badge');
-      if (routeBadge) routeBadge.textContent = data.routes.active;
-
-    } catch (err) {
-      console.error('Failed to refresh stats:', err);
-    }
-  }
-
+  // ─── Helpers ────────────────────────────────────────────────────────────────
   function formatTrafficValue(bytes) {
     if (!bytes || bytes === 0) return '0 <span style="font-size:14px;font-weight:400">B</span>';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -106,144 +15,6 @@
     return `${val}<span style="font-size:14px;font-weight:400"> ${units[i]}</span>`;
   }
 
-  // ─── System Resources ───────────────────────────────────────────────────────
-  async function refreshResources() {
-    if (isAurora()) return auroraRefreshResources();
-    try {
-      const data = await api.get('/api/system/resources');
-
-      // CPU
-      const cpuPct = document.getElementById('cpu-pct');
-      if (cpuPct) cpuPct.textContent = data.cpu.percent + ' %';
-
-      const cpuBar = document.getElementById('cpu-bar');
-      if (cpuBar) {
-        cpuBar.style.width = data.cpu.percent + '%';
-        cpuBar.style.background = data.cpu.percent > 80 ? 'var(--red)' :
-          data.cpu.percent > 50 ? 'var(--amber)' : 'var(--green)';
-      }
-
-      const cpuInfo = document.getElementById('cpu-info');
-      if (cpuInfo) cpuInfo.textContent = `${data.cpu.cores} Cores · ${data.cpu.model.split(' ').slice(0, 3).join(' ')}`;
-
-      // RAM
-      const ramPct = document.getElementById('ram-pct');
-      if (ramPct) ramPct.textContent = data.memory.percent + ' %';
-
-      const ramBar = document.getElementById('ram-bar');
-      if (ramBar) {
-        ramBar.style.width = data.memory.percent + '%';
-        ramBar.style.background = data.memory.percent > 90 ? 'var(--red)' :
-          data.memory.percent > 70 ? 'var(--amber)' : 'var(--blue)';
-      }
-
-      const ramInfo = document.getElementById('ram-info');
-      if (ramInfo) ramInfo.textContent = `${formatBytes(data.memory.used)} / ${formatBytes(data.memory.total)}`;
-
-      // Uptime
-      const uptimeValue = document.getElementById('uptime-value');
-      if (uptimeValue) uptimeValue.textContent = data.uptime.formatted;
-
-      const uptimeBoot = document.getElementById('uptime-boot');
-      if (uptimeBoot && data.uptime && data.uptime.bootTime) {
-        const label = (GC.t && GC.t['dashboard.booted_on']) || 'Seit {date}';
-        uptimeBoot.textContent = label.replace('{date}', data.uptime.bootTime);
-      }
-
-    } catch (err) {
-      console.error('Failed to refresh resources:', err);
-    }
-  }
-
-  // ─── Activity Feed ──────────────────────────────────────────────────────────
-  async function refreshActivity() {
-    if (isAurora()) return auroraRefreshActivity();
-    try {
-      const data = await api.get('/api/logs/recent?limit=6');
-      const feed = document.getElementById('activity-feed');
-      if (!feed) return;
-
-      if (!data.entries || data.entries.length === 0) {
-        feed.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">No events yet</div>';
-        return;
-      }
-
-      feed.innerHTML = data.entries.map(entry => {
-        const colorMap = { green: 'var(--green)', red: 'var(--red)', amber: 'var(--amber)', blue: 'var(--blue)' };
-        const dotColor = colorMap[entry.color] || 'var(--blue)';
-        const time = formatRelativeTime(entry.created_at);
-
-        return `
-          <div class="activity-item">
-            <div class="activity-dot" style="background:${dotColor}"></div>
-            <div>
-              <div class="activity-text">${escapeHtml(entry.message)}</div>
-              <div class="activity-time">${time}${entry.ip_address ? ' · ' + escapeHtml(entry.ip_address) : ''}</div>
-            </div>
-          </div>`;
-      }).join('');
-    } catch (err) {
-      console.error('Failed to refresh activity:', err);
-    }
-  }
-
-  // ─── Traffic Chart ──────────────────────────────────────────────────────────
-  async function refreshChart(period) {
-    if (isAurora()) return auroraRefreshChart(period);
-    try {
-      const data = await api.get(`/api/dashboard/traffic?period=${period || '1h'}`);
-      renderChart(data.data);
-    } catch (err) {
-      console.error('Failed to refresh chart:', err);
-    }
-  }
-
-  function renderChart(dataPoints) {
-    const svg = document.querySelector('#traffic-chart .chart-svg');
-    if (!svg || !dataPoints || dataPoints.length === 0) return;
-
-    const w = 560, h = 120;
-    const maxVal = Math.max(1, ...dataPoints.map(d => Math.max(d.upload, d.download)));
-
-    function toPath(points, key) {
-      if (points.length === 0) return '';
-      const step = w / Math.max(1, points.length - 1);
-      return points.map((p, i) => {
-        const x = i * step;
-        const y = h - 10 - ((p[key] / maxVal) * (h - 20));
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(' ');
-    }
-
-    const upPath = toPath(dataPoints, 'upload');
-    const dnPath = toPath(dataPoints, 'download');
-
-    // Area paths (close to bottom)
-    const upArea = upPath + ` L${w},${h} L0,${h} Z`;
-    const dnArea = dnPath + ` L${w},${h} L0,${h} Z`;
-
-    svg.innerHTML = `
-      <defs>
-        <linearGradient id="gUp" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0a6e4f" stop-opacity="0.18"/>
-          <stop offset="100%" stop-color="#0a6e4f" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="gDn" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#1d4ed8" stop-opacity="0.14"/>
-          <stop offset="100%" stop-color="#1d4ed8" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <line x1="0" y1="30" x2="${w}" y2="30" stroke="#e4e0d6" stroke-width="1"/>
-      <line x1="0" y1="60" x2="${w}" y2="60" stroke="#e4e0d6" stroke-width="1"/>
-      <line x1="0" y1="90" x2="${w}" y2="90" stroke="#e4e0d6" stroke-width="1"/>
-      <path d="${upArea}" fill="url(#gUp)"/>
-      <path d="${upPath}" fill="none" stroke="#0a6e4f" stroke-width="2"/>
-      <path d="${dnArea}" fill="url(#gDn)"/>
-      <path d="${dnPath}" fill="none" stroke="#1d4ed8" stroke-width="2"/>
-    `;
-  }
-
-  // ─── Helpers ────────────────────────────────────────────────────────────────
   function formatRelativeTime(isoStr) {
     if (!isoStr) return '—';
     const now = Date.now();
@@ -369,20 +140,13 @@
   // No custom close handler — the modal closes via the global
   // [data-close-modal] handler in app.js.
 
-  // ─── Tab switching for chart ────────────────────────────────────────────────
-  document.querySelectorAll('.tabs .tab[data-period]').forEach(tab => {
-    tab.addEventListener('click', () => {
-      refreshChart(tab.dataset.period);
-    });
-  });
-
   // ─── Refresh all ───────────────────────────────────────────────────────────
   async function refreshAll() {
     await Promise.all([
       refreshStats(),
       refreshResources(),
       refreshActivity(),
-      refreshChart(isAurora() ? '24h' : '1h'),
+      refreshChart('24h'),
     ]);
     loadAutoUpdate();
   }
@@ -401,11 +165,9 @@
     document.addEventListener(ev, function () { refreshAll(); });
   });
 
-  // ── Aurora-only sibling functions ────────────────────────────────────────────
-  // These functions are ONLY called when isAurora() is true.
-  // The original refreshStats/refreshActivity/renderChart else-paths remain byte-identical.
+  // ── Renderers (Aurora is the only theme) ───────────────────────────────────
 
-  async function auroraRefreshStats() {
+  async function refreshStats() {
     var peerOnlineCount = 0; // Bug 2: captured here, applied after gateways fetch
 
     try {
@@ -471,7 +233,7 @@
       if (routeBadge) routeBadge.textContent = data.routes.active;
 
     } catch (err) {
-      console.error('Aurora: Failed to refresh stats:', err);
+      console.error('Failed to refresh stats:', err);
     }
 
     // Separate fetch for gateways KPI (Bug 1: API returns { gateways:[…] }, not a bare array)
@@ -494,11 +256,11 @@
     // Pi-hole donut (3-state: no card if gated off; donut on ok; empty-state on error)
     var donutCard = document.getElementById('pihole-donut-card');
     if (donutCard) {
-      auroraRefreshDonut();
+      refreshDonut();
     }
   }
 
-  async function auroraRefreshDonut() {
+  async function refreshDonut() {
     var donut = document.getElementById('dash-donut');
     var donutPct = document.getElementById('donut-pct');
     var statsBody = document.getElementById('pihole-stats-body');
@@ -544,14 +306,14 @@
     }
   }
 
-  // Enhancement 4: Aurora resource donut gauge update
-  async function auroraRefreshResources() {
+  // Resource bars + radial donut gauges (CPU/RAM)
+  async function refreshResources() {
     try {
       var data = await api.get('/api/system/resources');
       var cpuPct = data.cpu.percent;
       var ramPct = data.memory.percent;
 
-      // Write shared IDs (shared refreshResources() bypassed for aurora; we write here)
+      // Resource IDs (bars/labels) + the radial donut gauges
       var cpuPctEl = document.getElementById('cpu-pct');
       if (cpuPctEl) cpuPctEl.textContent = cpuPct + ' %';
 
@@ -588,16 +350,16 @@
       }
 
       // Update radial donut gauge arcs
-      auroraSetResourceDonut('cpu-donut', cpuPct);
-      auroraSetResourceDonut('ram-donut', ramPct);
+      setResourceDonut('cpu-donut', cpuPct);
+      setResourceDonut('ram-donut', ramPct);
 
     } catch (err) {
-      console.error('Aurora: Failed to refresh resources:', err);
+      console.error('Failed to refresh resources:', err);
     }
   }
 
   // Set stroke-dasharray + color on a resource donut arc by load percentage
-  function auroraSetResourceDonut(donutId, pct) {
+  function setResourceDonut(donutId, pct) {
     var donut = document.getElementById(donutId);
     if (!donut) return;
     var arc = donut.querySelector('.val');
@@ -607,7 +369,7 @@
     arc.style.stroke = p > 90 ? 'var(--red)' : p > 70 ? 'var(--amber)' : 'var(--teal)';
   }
 
-  async function auroraRefreshActivity() {
+  async function refreshActivity() {
     try {
       var data = await api.get('/api/logs/recent?limit=8');
       var feed = document.getElementById('activity-feed');
@@ -631,20 +393,20 @@
           '</div>';
       }).join('');
     } catch (err) {
-      console.error('Aurora: Failed to refresh activity:', err);
+      console.error('Failed to refresh activity:', err);
     }
   }
 
-  async function auroraRefreshChart(period) {
+  async function refreshChart(period) {
     try {
       var data = await api.get('/api/dashboard/traffic?period=' + (period || '24h'));
-      auroraRenderChart(data.data);
+      renderChart(data.data);
     } catch (err) {
-      console.error('Aurora: Failed to refresh chart:', err);
+      console.error('Failed to refresh chart:', err);
     }
   }
 
-  function auroraRenderChart(dataPoints) {
+  function renderChart(dataPoints) {
     var container = document.getElementById('traffic-chart');
     if (!container) return;
 
@@ -695,17 +457,15 @@
     if (tPeak) tPeak.textContent = formatBytes(peakBytes);
   }
 
-  // ─── Aurora toggle-group wiring ─────────────────────────────────────────────
-  if (isAurora()) {
-    document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(b) {
-          b.classList.remove('on');
-        });
-        btn.classList.add('on');
-        auroraRefreshChart(btn.dataset.r);
+  // ─── Traffic period toggle-group ────────────────────────────────────────────
+  document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.toggle-group .toggle-btn[data-r]').forEach(function(b) {
+        b.classList.remove('on');
       });
+      btn.classList.add('on');
+      refreshChart(btn.dataset.r);
     });
-  }
+  });
 
 })();

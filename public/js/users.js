@@ -51,9 +51,6 @@
     }
   }
 
-  // ─── Aurora theme detector ────────────────────────────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
   // ─── Render users (responsive: table on desktop, cards on mobile) ──
   var isMobile = function () { return window.innerWidth < 768; };
   var usersCard = document.getElementById('users-table').parentElement;
@@ -64,8 +61,8 @@
     if (isMobile()) { renderUsersCards(users); } else { renderUsersDesktop(users); }
   }
 
-  // ─── Aurora: action buttons (icon-action class, SVG icons) ───
-  function auroraUserActionBtns(u) {
+  // ─── action buttons (icon-action class, SVG icons) ───
+  function userActionBtns(u) {
     var editSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z"/></svg>';
     var toggleSvg = u.enabled
       ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>'
@@ -81,8 +78,8 @@
     '</div>';
   }
 
-  // ─── Aurora: MFA status tag ────────────────────────────────
-  function auroraMfaTag(u) {
+  // ─── MFA status tag ────────────────────────────────
+  function mfaTag(u) {
     // MFA field is not yet returned by the API; fall back gracefully
     if (u.totp_enabled) {
       return '<span class="tag tag-green tag-dot">' + escapeHtml(GC.t['users.mfa_totp'] || 'TOTP') + '</span>';
@@ -90,8 +87,8 @@
     return '<span class="tag tag-grey tag-dot">' + escapeHtml(GC.t['users.mfa_off'] || 'Off') + '</span>';
   }
 
-  // ─── Aurora: desktop table render ─────────────────────────
-  function auroraRenderUsersDesktop(users) {
+  // ─── desktop table render ─────────────────────────
+  function renderUsersDesktop(users) {
     document.getElementById('users-table').style.display = '';
     var mc = document.getElementById('users-mobile-cards');
     if (mc) mc.remove();
@@ -117,18 +114,18 @@
       return '<tr>' +
         '<td class="cell-name">' + escapeHtml(u.username) + displaySub + '</td>' +
         '<td>' + roleTag + '</td>' +
-        '<td>' + auroraMfaTag(u) + '</td>' +
+        '<td>' + mfaTag(u) + '</td>' +
         '<td style="font-size:12px;color:var(--muted)">' + escapeHtml(lastLogin) + '</td>' +
-        '<td>' + auroraUserActionBtns(u) + '</td>' +
+        '<td>' + userActionBtns(u) + '</td>' +
       '</tr>';
     }).join('');
 
     // Wire up delegated action buttons
-    tbody.addEventListener('click', _auroraHandleUserAction, { once: false });
+    tbody.addEventListener('click', handleUserAction, { once: false });
   }
 
-  // ─── Aurora: mobile cards render ──────────────────────────
-  function auroraRenderUsersCards(users) {
+  // ─── mobile cards render ──────────────────────────
+  function renderUsersCards(users) {
     document.getElementById('users-table').style.display = 'none';
     tbody.textContent = '';
     var mc = document.getElementById('users-mobile-cards');
@@ -162,21 +159,21 @@
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
           '<span class="cell-name">' + escapeHtml(u.username) + '</span>' +
           roleTag +
-          auroraMfaTag(u) +
+          mfaTag(u) +
         '</div>' +
         (displaySub ? displaySub : '') +
         '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' + escapeHtml(lastLogin) + '</div>' +
-        auroraUserActionBtns(u);
+        userActionBtns(u);
 
       container.appendChild(card);
     });
 
     usersCard.appendChild(container);
-    container.addEventListener('click', _auroraHandleUserAction);
+    container.addEventListener('click', handleUserAction);
   }
 
-  // ─── Aurora: delegated click handler for row-actions ──────
-  function _auroraHandleUserAction(e) {
+  // ─── delegated click handler for row-actions ──────
+  function handleUserAction(e) {
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var action = btn.dataset.action;
@@ -184,135 +181,6 @@
     if (action === 'edit-user') { openEditModal(uid); }
     else if (action === 'toggle-user') { toggleUser(uid, btn.dataset.enabled === '1'); }
     else if (action === 'delete-user') { deleteUser(uid); }
-  }
-
-  function renderUsersDesktop(users) {
-    if (isAurora()) return auroraRenderUsersDesktop(users);
-    document.getElementById('users-table').style.display = '';
-    var mc = document.getElementById('users-mobile-cards');
-    if (mc) mc.remove();
-    tbody.textContent = '';
-
-    if (!users.length) {
-      var tr = document.createElement('tr');
-      var td = document.createElement('td');
-      td.colSpan = 7;
-      td.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
-      td.textContent = 'No users found';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
-    }
-
-    users.forEach(function (u) {
-      var tr = document.createElement('tr');
-      // Name
-      var tdName = document.createElement('td');
-      var nm = document.createElement('div');
-      nm.style.cssText = 'font-weight:600;font-size:13px';
-      nm.textContent = u.username;
-      tdName.appendChild(nm);
-      if (u.display_name) { var ns = document.createElement('div'); ns.style.cssText = 'font-size:11px;color:var(--text-3)'; ns.textContent = u.display_name; tdName.appendChild(ns); }
-      if (u.totp_enabled) { var tb = document.createElement('span'); tb.className = 'tf-badge tf-badge-on'; tb.title = tfT('users_active', '2FA active'); tb.textContent = tfT('users_badge', '2FA'); nm.appendChild(tb); }
-      tr.appendChild(tdName);
-      // Role
-      var tdRole = document.createElement('td');
-      var rb = document.createElement('span');
-      rb.style.cssText = u.role === 'admin' ? 'background:var(--accent);color:#fff;font-size:11px;padding:2px 8px;border-radius:var(--radius-sm)' : 'background:var(--green);color:#fff;font-size:11px;padding:2px 8px;border-radius:var(--radius-sm)';
-      rb.textContent = u.role === 'admin' ? (GC.t['users.role_admin'] || 'Admin') : (GC.t['users.role_user'] || 'User');
-      tdRole.appendChild(rb); tr.appendChild(tdRole);
-      // Tokens
-      var tdTk = document.createElement('td'); tdTk.textContent = u.tokenCount != null ? u.tokenCount : 0; tr.appendChild(tdTk);
-      // Peers
-      var tdPr = document.createElement('td'); tdPr.textContent = u.peerCount != null ? u.peerCount : 0; tr.appendChild(tdPr);
-      // Status
-      var tdSt = document.createElement('td');
-      var sb = document.createElement('span');
-      sb.style.cssText = u.enabled ? 'color:var(--green);font-size:12px;font-weight:500' : 'color:var(--text-3);font-size:12px;font-weight:500';
-      sb.textContent = u.enabled ? (GC.t['users.enabled'] || 'Enabled') : (GC.t['users.disabled'] || 'Disabled');
-      tdSt.appendChild(sb); tr.appendChild(tdSt);
-      // Last access
-      var tdLa = document.createElement('td'); tdLa.style.cssText = 'font-size:12px;color:var(--text-3)'; tdLa.textContent = relativeTime(u.lastAccess); tr.appendChild(tdLa);
-      // Actions
-      var tdAc = document.createElement('td'); tdAc.className = 'user-actions';
-      appendIconBtns(tdAc, u);
-      tr.appendChild(tdAc);
-      tbody.appendChild(tr);
-    });
-  }
-
-  function appendIconBtns(container, u) {
-    var be = document.createElement('button'); be.className = 'icon-btn'; be.title = 'Edit'; be.textContent = '\u270E';
-    be.addEventListener('click', function () { openEditModal(u.id); }); container.appendChild(be);
-    var bt = document.createElement('button'); bt.className = 'icon-btn'; bt.title = u.enabled ? 'Disable' : 'Enable'; bt.textContent = u.enabled ? '\u23F8' : '\u25B6';
-    bt.addEventListener('click', function () { toggleUser(u.id, u.enabled); }); container.appendChild(bt);
-    var bd = document.createElement('button'); bd.className = 'icon-btn'; bd.title = 'Delete'; bd.style.cssText = 'color:var(--red)'; bd.textContent = '\u2715';
-    bd.addEventListener('click', function () { deleteUser(u.id); }); container.appendChild(bd);
-  }
-
-  function renderUsersCards(users) {
-    if (isAurora()) return auroraRenderUsersCards(users);
-    document.getElementById('users-table').style.display = 'none';
-    tbody.textContent = ''; // clear "Laden..." placeholder
-    var mc = document.getElementById('users-mobile-cards');
-    if (mc) mc.remove();
-
-    var container = document.createElement('div');
-    container.id = 'users-mobile-cards';
-    container.style.cssText = 'display:flex;flex-direction:column;gap:10px;padding:12px';
-
-    if (!users.length) {
-      var empty = document.createElement('div');
-      empty.style.cssText = 'text-align:center;color:var(--text-3);padding:20px 0';
-      empty.textContent = 'No users found';
-      container.appendChild(empty);
-      usersCard.appendChild(container);
-      return;
-    }
-
-    users.forEach(function (u) {
-      var card = document.createElement('div');
-      card.style.cssText = 'padding:14px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm)';
-
-      // Header: name + badges
-      var hdr = document.createElement('div');
-      hdr.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap';
-      var nameEl = document.createElement('span'); nameEl.style.cssText = 'font-weight:700;font-size:14px'; nameEl.textContent = u.username; hdr.appendChild(nameEl);
-      if (u.display_name) { var sn = document.createElement('span'); sn.style.cssText = 'font-size:12px;color:var(--text-3)'; sn.textContent = u.display_name; hdr.appendChild(sn); }
-      var rb = document.createElement('span');
-      rb.style.cssText = u.role === 'admin' ? 'background:var(--accent);color:#fff;font-size:10px;padding:2px 6px;border-radius:var(--radius-sm)' : 'background:var(--green);color:#fff;font-size:10px;padding:2px 6px;border-radius:var(--radius-sm)';
-      rb.textContent = u.role === 'admin' ? (GC.t['users.role_admin'] || 'Admin') : (GC.t['users.role_user'] || 'User');
-      hdr.appendChild(rb);
-      var stEl = document.createElement('span');
-      stEl.style.cssText = u.enabled ? 'color:var(--green);font-size:11px;font-weight:500' : 'color:var(--text-3);font-size:11px;font-weight:500';
-      stEl.textContent = u.enabled ? (GC.t['users.enabled'] || 'Aktiv') : (GC.t['users.disabled'] || 'Deaktiviert');
-      hdr.appendChild(stEl);
-      card.appendChild(hdr);
-
-      // Meta: labeled values
-      var meta = document.createElement('div');
-      meta.style.cssText = 'font-size:12px;color:var(--text-2);margin-bottom:10px';
-      var tokens = u.tokenCount != null ? u.tokenCount : 0;
-      var peers = u.peerCount != null ? u.peerCount : 0;
-      meta.textContent = tokens + ' Tokens \u00B7 ' + peers + ' Peers \u00B7 ' + relativeTime(u.lastAccess);
-      card.appendChild(meta);
-
-      // Actions: labeled text buttons in a flex row
-      var acts = document.createElement('div');
-      acts.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
-      var be = document.createElement('button'); be.className = 'btn btn-sm btn-ghost'; be.textContent = GC.t['rdp.edit'] || 'Bearbeiten';
-      be.addEventListener('click', function () { openEditModal(u.id); }); acts.appendChild(be);
-      var bt = document.createElement('button'); bt.className = 'btn btn-sm btn-ghost';
-      bt.textContent = u.enabled ? (GC.t['users.disable'] || 'Deaktivieren') : (GC.t['users.enable'] || 'Aktivieren');
-      bt.addEventListener('click', function () { toggleUser(u.id, u.enabled); }); acts.appendChild(bt);
-      var bd = document.createElement('button'); bd.className = 'btn btn-sm'; bd.style.cssText = 'color:var(--red);border-color:var(--red)';
-      bd.textContent = GC.t['rdp.delete'] || 'Loeschen';
-      bd.addEventListener('click', function () { deleteUser(u.id); }); acts.appendChild(bd);
-      card.appendChild(acts);
-
-      container.appendChild(card);
-    });
-    usersCard.appendChild(container);
   }
 
   // Re-render on resize crossing mobile/desktop boundary

@@ -19,7 +19,7 @@ test('all timer keys exist in de and en', () => {
 });
 
 test('all three layouts carry the skoda.timers.* GC.t whitelist', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const layout = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'layout.njk'), 'utf8');
     for (const k of ADMIN_KEYS) assert.ok(layout.includes(`'${k}'`), `${theme} ${k}`);
   }

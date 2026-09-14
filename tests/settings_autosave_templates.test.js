@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const THEMES = ['aurora', 'default', 'pro'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 // IDs confirmed REMOVED across all three themes (verified by grep before writing this test).
 // btn-ip2location-save is intentionally KEPT in all themes — it is an action button whose

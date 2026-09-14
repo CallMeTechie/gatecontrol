@@ -34,19 +34,15 @@ router.get('/profile', (req, res) => {
  */
 router.put('/profile', async (req, res) => {
   try {
-    const { display_name, email, language, theme } = req.body;
+    // A `theme` field is ignored (no error): Aurora is the only theme.
+    const { display_name, email, language } = req.body;
 
     if (language && !config.i18n.availableLanguages.includes(language)) {
       return res.status(400).json({ ok: false, error: req.t('error.settings.language_unsupported') });
     }
 
-    const availableThemes = ['default', 'pro', 'aurora'];
-    if (theme && !availableThemes.includes(theme)) {
-      return res.status(400).json({ ok: false, error: 'Invalid theme' });
-    }
-
     const profile = settings.updateUserProfile(req.session.userId, {
-      display_name, email, language, theme,
+      display_name, email, language,
     });
 
     if (language) req.session.language = language;

@@ -1,6 +1,6 @@
 'use strict';
 
-// WAF page (waf.njk, all three themes; docs/feature-waf.md, "Oberfläche").
+// WAF page (waf.njk; docs/feature-waf.md, "Oberfläche").
 // Tiles and the routes-with-WAF list from GET /api/v1/waf/status, the event
 // table from GET /api/v1/waf/events (filters host / action / period, cursor
 // pagination "Ältere Ereignisse laden"), row actions "Regel für diese Route

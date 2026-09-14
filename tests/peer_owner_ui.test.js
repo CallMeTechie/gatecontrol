@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'); const path = require('node:path');
 test('owner selects exist in add+edit peer partials (3 themes)', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const add = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'partials', 'modals', 'peer-add.njk'), 'utf8');
     const edit = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'partials', 'modals', 'peer-edit.njk'), 'utf8');
     assert.ok(add.includes('add-peer-owner'), `${theme} add`);

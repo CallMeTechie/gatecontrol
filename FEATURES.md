@@ -1533,17 +1533,9 @@ Responsive sidebar for phones and tablets. The navigation sidebar collapses into
 
 ---
 
-## Themes
+## Theme
 
-GateControl supports multiple UI themes:
-
-- **Classic** (`default`) — Original design with warm tones (Outfit font, teal accent)
-- **Pro** (`pro`) — Clean corporate design (Inter font, Royal Blue accent, Stripe/Linear aesthetic)
-
-Set the default theme via environment variable:
-
-```
-GC_DEFAULT_THEME=pro
-```
-
-Users can switch themes individually via **Profile → Theme**.
+GateControl has one UI theme, **Aurora** (Bricolage Grotesque / Hanken Grotesk /
+JetBrains Mono, teal accent) with a dark and a light mode (toggle in the top bar,
+remembered per browser). The former Classic (`default`) and Pro (`pro`) themes were
+removed; `GC_DEFAULT_THEME` is ignored.

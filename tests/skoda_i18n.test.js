@@ -33,7 +33,7 @@ test('all skoda keys exist in de and en', () => {
 
 test('client-side keys are in all three layout GC.t whitelists', () => {
   const CLIENT_KEYS = KEYS.filter((k) => k.startsWith('skoda.'));
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const layout = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'layout.njk'), 'utf8');
     for (const k of CLIENT_KEYS) assert.ok(layout.includes(`'${k}'`), `${theme} layout missing ${k}`);
   }

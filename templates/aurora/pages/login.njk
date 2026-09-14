@@ -1,101 +1,74 @@
 <!DOCTYPE html>
-<html lang="{{ language }}">
+<html lang="{{ language }}" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f0eb">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <title>{{ t('auth.login') }} — {{ appName }}</title>
+  <script nonce="{{ cspNonce }}">
+(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
-  <style nonce="{{ cspNonce }}">
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: auto;
-    }
-    .login-box {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-md);
-      padding: 40px 36px;
-      width: 100%;
-      max-width: 380px;
-    }
-    .login-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 32px;
-    }
-    .login-field {
-      margin-bottom: 16px;
-    }
-    .login-field label {
-      display: block;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-3);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 6px;
-    }
-    .login-field input {
-      width: 100%;
-      padding: 10px 14px;
-    }
-    .login-submit {
-      width: 100%;
-      margin-top: 8px;
-      padding: 11px 16px;
-      justify-content: center;
-    }
-    .login-error {
-      background: var(--red-lt);
-      border: 1px solid var(--red-bd);
-      color: var(--red);
-      font-size: 12px;
-      padding: 8px 12px;
-      border-radius: var(--radius-sm);
-      margin-bottom: 16px;
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
+  <link rel="stylesheet" href="/css/aurora.css?v={{ appVersion }}">
 </head>
-<body>
-  <div class="login-box">
-    <div class="login-logo">
-      <div class="logo-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
-        </svg>
-      </div>
-      <div>
-        <div class="logo-wordmark">{{ appName }}</div>
-      </div>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="nm">{{ appName }}</span>
     </div>
 
-    {% if flash.error %}
-    <div class="login-error">{{ flash.error }}</div>
-    {% endif %}
+    <div class="card au-card">
+      <h1 class="au-title">{{ t('auth.login') }}</h1>
+      <p class="au-sub">{{ t('auth.sign_in_subtitle') }}</p>
 
-    <form method="POST" action="/login">
-      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
-      {% if returnTo %}<input type="hidden" name="returnTo" value="{{ returnTo }}">{% endif %}
-      <div class="login-field">
-        <label for="username">{{ t('auth.username') }}</label>
-        <input type="text" id="username" name="username" autocomplete="username" autofocus required maxlength="64">
+      {% if flash.error %}
+      <div class="login-error" role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span>{{ flash.error }}</span>
       </div>
-      <div class="login-field">
-        <label for="password">{{ t('auth.password') }}</label>
-        <input type="password" id="password" name="password" autocomplete="current-password" required maxlength="128">
-      </div>
-      <button type="submit" class="btn btn-primary login-submit">{{ t('auth.submit') }}</button>
-    </form>
-  </div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        {% if returnTo %}<input type="hidden" name="returnTo" value="{{ returnTo }}">{% endif %}
+        <div class="form-group">
+          <label class="form-label" for="username">{{ t('auth.username') }}</label>
+          <input class="form-input" type="text" id="username" name="username" autocomplete="username" autofocus required maxlength="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">{{ t('auth.password') }}</label>
+          <div class="au-pw">
+            <input class="form-input" type="password" id="password" name="password" autocomplete="current-password" required maxlength="128">
+            <button type="button" class="au-pw-toggle" id="au-pw-toggle" aria-label="{{ t('auth.show_password') }}" title="{{ t('auth.show_password') }}" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary au-submit">{{ t('auth.submit') }}</button>
+      </form>
+    </div>
+
+    <div class="au-foot">{{ appName }} v{{ appVersion }}</div>
+  </main>
+
+  <script nonce="{{ cspNonce }}">
+    (function () {
+      var btn = document.getElementById('au-pw-toggle');
+      var pw = document.getElementById('password');
+      if (!btn || !pw) return;
+      btn.addEventListener('click', function () {
+        var show = pw.type === 'password';
+        pw.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        pw.focus();
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -45,7 +45,7 @@
 
 {# ─── General Tab ─────────────────────────────────────── #}
 <div class="settings-panel" data-settings-panel="general">
-  {# Fix 4: single merged grid — App info sits in same flex-column as Default Theme etc., eliminating gap #}
+  {# Fix 4: single merged grid — App info sits in same flex-column as the ACME e-mail card etc., eliminating gap #}
   <div class="grid">
     <div class="span6" style="display:flex;flex-direction:column;gap:14px">
       <div class="card">
@@ -59,22 +59,6 @@
           <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.wg_host') }}</span><code style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">{{ wgHost }}:{{ wgPort }}</code></div>
           <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.subnet') }}</span><code style="font-family:var(--font-mono);font-size:12px">{{ wgSubnet }}</code></div>
           <div class="set-row"><span class="l">{{ t('settings.default_language') }}</span><code style="font-family:var(--font-mono);font-size:12px">{{ language }}</code></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>
-          {{ t('settings.default_theme') }}
-        </div>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
-          <div style="display:flex;gap:8px" id="default-theme-buttons">
-            <button class="btn {{ 'btn-primary' if theme == 'default' or not theme else 'btn-ghost' }}" data-default-theme="default" style="flex:1;justify-content:center">{{ t('profile.theme_classic') }}</button>
-            <button class="btn {{ 'btn-primary' if theme == 'pro' else 'btn-ghost' }}" data-default-theme="pro" style="flex:1;justify-content:center">{{ t('profile.theme_pro') }}</button>
-            <button class="btn {{ 'btn-primary' if theme == 'aurora' else 'btn-ghost' }}" data-default-theme="aurora" style="flex:1;justify-content:center">{{ t('profile.theme_aurora') }}</button>
-          </div>
-          <div style="font-size:11px;color:var(--text-3)">{{ t('settings.default_theme_hint') }}</div>
-          <div id="default-theme-status" class="autosave-status"></div>
         </div>
       </div>
 

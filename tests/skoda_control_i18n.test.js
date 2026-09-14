@@ -12,7 +12,7 @@ test('skoda.cmd.* keys exist in de and en', () => {
   for (const k of KEYS) { assert.ok(de[k] && de[k].trim(), `de ${k}`); assert.ok(en[k] && en[k].trim(), `en ${k}`); }
 });
 test('all three layouts carry the skoda.cmd.* GC.t whitelist', () => {
-  for (const theme of ['aurora','default','pro']) {
+  for (const theme of ['aurora']) {
     const layout = fs.readFileSync(path.join(__dirname,'..','templates',theme,'layout.njk'),'utf8');
     for (const k of KEYS) assert.ok(layout.includes(`'${k}'`), `${theme} ${k}`);
   }

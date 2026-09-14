@@ -46,22 +46,15 @@ describe('settings/user — profile, password, language', () => {
     assert.equal(res.body.ok, false);
   });
 
-  it('PUT /profile rejects invalid theme', async () => {
-    const res = await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'bogus' })
-      .expect(400);
-    assert.equal(res.body.ok, false);
-  });
-
-  it('PUT /profile accepts theme aurora', async () => {
-    const res = await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'aurora' })
-      .expect(200);
-    assert.equal(res.body.ok, true);
+  it('PUT /profile ignores a theme field (Aurora is the only theme)', async () => {
+    for (const theme of ['bogus', 'pro', 'aurora']) {
+      const res = await agent
+        .put('/api/v1/settings/profile')
+        .set('X-CSRF-Token', csrf)
+        .send({ theme })
+        .expect(200);
+      assert.equal(res.body.ok, true, theme);
+    }
   });
 
   it('PUT /password requires both current_password and new_password', async () => {
@@ -112,7 +105,7 @@ describe('settings/user — profile, password, language', () => {
 });
 
 // ─── Appearance Cluster ─────────────────────────────────────
-describe('settings/appearance — app, default-theme', () => {
+describe('settings/appearance — app, default-theme (removed)', () => {
   it('GET /app returns settings + config block', async () => {
     const res = await agent.get('/api/v1/settings/app').expect(200);
     assert.equal(res.body.ok, true);
@@ -122,32 +115,26 @@ describe('settings/appearance — app, default-theme', () => {
     assert.ok(Array.isArray(res.body.config.availableLanguages));
   });
 
-  it('PUT /default-theme accepts valid theme', async () => {
-    const res = await agent
-      .put('/api/v1/settings/default-theme')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'default' })
-      .expect(200);
-    assert.equal(res.body.ok, true);
-    assert.equal(res.body.theme, 'default');
+  it('GET /app still reports defaultTheme aurora (backwards compatibility)', async () => {
+    require('../src/services/settings').set('default_theme', 'pro'); // e.g. restored from an old backup
+    const res = await agent.get('/api/v1/settings/app').expect(200);
+    assert.equal(res.body.config.defaultTheme, 'aurora');
+    assert.equal(res.body.settings.default_theme, 'aurora');
   });
 
-  it('PUT /default-theme rejects invalid theme', async () => {
-    const res = await agent
-      .put('/api/v1/settings/default-theme')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'bogus' })
-      .expect(400);
-    assert.equal(res.body.ok, false);
-  });
-
-  it('PUT /default-theme accepts aurora', async () => {
-    const res = await agent
-      .put('/api/v1/settings/default-theme')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'aurora' })
-      .expect(200);
-    assert.equal(res.body.theme, 'aurora');
+  it('PUT /default-theme is gone: 410 THEME_REMOVED for any body, nothing stored', async () => {
+    const settings = require('../src/services/settings');
+    settings.set('default_theme', 'aurora');
+    for (const body of [{ theme: 'default' }, { theme: 'pro' }, { theme: 'aurora' }, { theme: 'bogus' }, {}]) {
+      const res = await agent
+        .put('/api/v1/settings/default-theme')
+        .set('X-CSRF-Token', csrf)
+        .send(body)
+        .expect(410);
+      assert.equal(res.body.ok, false);
+      assert.equal(res.body.code, 'THEME_REMOVED');
+    }
+    assert.equal(settings.get('default_theme'), 'aurora');
   });
 });
 
