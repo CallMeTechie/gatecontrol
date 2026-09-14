@@ -42,6 +42,8 @@ router.use(require('./domainZones'));
 router.use('/tls', require('./tls'));
 // Web Application Firewall: /waf/status, /waf/events, /waf/routes/:id/exclusions
 router.use('/waf', require('./waf'));
+// Security check + exposure (docs/feature-release-b.md §1/§10)
+router.use('/security', require('./security'));
 router.use('/settings', require('./settings'));
 router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));

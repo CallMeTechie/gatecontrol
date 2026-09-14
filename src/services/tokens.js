@@ -46,6 +46,8 @@ const SCOPE_MAP = [
   ['/api/v1/tls', 'routes'],
   // Web Application Firewall (status, events, per-route exclusions)
   ['/api/v1/waf', 'routes'],
+  // Security check + exposure (docs/feature-release-b.md §1/§10)
+  ['/api/v1/security', 'routes'],
   ['/api/v1/settings', 'settings'],
   ['/api/v1/webhooks', 'webhooks'],
   ['/api/v1/logs', 'logs'],

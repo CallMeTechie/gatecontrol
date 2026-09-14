@@ -211,6 +211,23 @@ async function preflight(hostIn) {
   return evaluatePreflight(host);
 }
 
+/**
+ * CAA state of one name only (no A/AAAA rules) — for the security check
+ * (docs/feature-release-b.md §1) when preflight() ended before its CAA step
+ * (e.g. a zone apex that does not point at this server).
+ * → { status: 'none'|'allows'|'blocks'|'unknown', suggestion }
+ */
+async function caaStatus(hostIn) {
+  const host = normHost(hostIn);
+  if (!isPublicDomain(host) || !preflightActive()) return { status: 'unknown', suggestion: null };
+  const set = await domains.resolveCaa(host);
+  if (set === null) return { status: 'unknown', suggestion: null };
+  const allowed = allowedCaaIssuers();
+  const issue = set.filter(r => r.tag === 'issue' || r.tag === 'issuewild');
+  if (issue.length === 0) return { status: 'none', suggestion: `${caaBaseDomain(host)}. CAA 0 issue "${[...allowed][0]}"` };
+  return { status: issue.some(r => caaPermits(r.value, allowed)) ? 'allows' : 'blocks', suggestion: null };
+}
+
 // ─── Status rows ────────────────────────────────────────
 
 const COLS = ['state', 'attempts', 'last_error', 'last_error_code', 'last_attempt_at', 'next_retry_at',
@@ -888,7 +905,7 @@ function stop() {
 }
 
 module.exports = {
-  preflight, evaluatePreflight, recordPreflight, guardHost,
+  preflight, evaluatePreflight, recordPreflight, guardHost, caaStatus,
   pauseHost, retryHost, pausedHosts, forgetHosts,
   startWatcher, stopWatcher, pollOnce, parseTlsLogLine, classifyError, parseDurationSeconds, applyLogEvent,
   inventory, inventoryHost, scanCertificates, startInventory, stopInventory,
