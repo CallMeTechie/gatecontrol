@@ -14,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
 const H = require('../public/js/hsts-ui.js');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -171,7 +171,7 @@ describe('HSTS: i18n', () => {
 
 describe('HSTS: styles', () => {
   it('each theme stylesheet has exactly one appended hs- section after the tg- section', () => {
-    for (const f of ['app.css', 'pro.css', 'aurora.css']) {
+    for (const f of ['pro.css', 'aurora.css']) {
       const css = read('public/css/' + f);
       const marker = '/* ─── HSTS (hs-) ─── */';
       const at = css.indexOf(marker);
@@ -190,7 +190,7 @@ describe('HSTS: styles', () => {
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced overall`);
     }
-    for (const f of ['app.css', 'pro.css']) {
+    for (const f of ['pro.css']) {
       const css = read('public/css/' + f);
       for (const cls of ['.zn-panel.hs-panel4', '.hs-fields', '.hs-check', '.tag.hs-entry-tag', '.hs-warn', '.hs-radios', '.hs-editor-block.hs-locked', '.hs-editor-fields', '.hs-dialog-body', '.hs-preview']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);

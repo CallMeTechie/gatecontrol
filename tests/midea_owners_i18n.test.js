@@ -16,7 +16,7 @@ test('owner i18n keys exist in en + de', () => {
 
 test('client-facing owner keys are whitelisted in all 3 layouts', () => {
   const clientKeys = KEYS;   // all 5 are client-facing — T() resolves them in the browser (incl. the alert)
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const layout = fs.readFileSync(`templates/${theme}/layout.njk`, 'utf8');
     for (const k of clientKeys) {
       assert.ok(layout.includes(`'${k}'`), `${theme}/layout.njk missing whitelist for ${k}`);

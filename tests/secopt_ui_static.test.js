@@ -17,7 +17,7 @@ const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
 const S = require('../public/js/secopt-ui.js');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 const BLOCK_RE = /^(alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.)/;
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -302,8 +302,8 @@ describe('security options: i18n', () => {
 });
 
 describe('security options: styles and CSP', () => {
-  it('app.css / pro.css / aurora.css end with one so- section after hs-, braces balanced', () => {
-    for (const f of ['app.css', 'pro.css', 'aurora.css']) {
+  it('pro.css / aurora.css end with one so- section after hs-, braces balanced', () => {
+    for (const f of ['pro.css', 'aurora.css']) {
       const css = read('public/css/' + f);
       const marker = '/* ─── Security options (so-) ─── */';
       const at = css.indexOf(marker);
@@ -318,7 +318,7 @@ describe('security options: styles and CSP', () => {
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced`);
     }
-    for (const f of ['app.css', 'pro.css']) {
+    for (const f of ['pro.css']) {
       const css = read('public/css/' + f);
       for (const cls of ['.zn-panel.so-panel5', '.tag.so-alias-tag', '.so-alias-more', '.so-alias-row', '.so-radios', '.tag.so-body-tag', '.tag.so-mtls-tag',
         '.so-editor-block.so-locked', 'textarea.so-pem', '.so-switch-row', 'input.so-num', '.so-warn', '.so-caa-none', '.so-caa-ok', '.so-caa-record', '.btn.so-copy', '.so-alias-of', '.so-www-check']) {
@@ -335,6 +335,5 @@ describe('security options: styles and CSP', () => {
     const bad = [];
     for (const f of files) for (const m of read(f).matchAll(/<style\b[^>]*>/g)) if (!/nonce="\{\{ cspNonce \}\}"/.test(m[0])) bad.push(f + ': ' + m[0]);
     assert.deepEqual(bad, []);
-    assert.match(read('templates/default/pages/users.njk'), /<style nonce="\{\{ cspNonce \}\}">/);
   });
 });

@@ -13,7 +13,7 @@ const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const editorJs = read('public', 'js', 'entry-editor.js');
 const de = JSON.parse(read('src', 'i18n', 'de.json'));

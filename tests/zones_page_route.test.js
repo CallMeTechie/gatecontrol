@@ -1,6 +1,6 @@
 'use strict';
 
-// /routes always renders the domain-zones page (zones.njk) in every theme,
+// /routes always renders the domain-zones page (aurora/pages/zones.njk),
 // with the route-page locals. The legacy list, its /routes/legacy path and
 // the PUT /api/v1/zones/ui-mode switch are gone.
 
@@ -13,7 +13,8 @@ const assert = require('node:assert/strict');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
 
 let agent, csrf, db;
-const THEMES = ['default', 'pro', 'aurora'];
+// Stored personal themes from before the Aurora-only release must not matter.
+const STORED = ['default', 'pro', 'aurora'];
 
 before(async () => {
   await setup();
@@ -39,24 +40,24 @@ function captureRender() {
 test('/routes renders zones.njk with activeNav routes and the route-page locals', async () => {
   const cap = captureRender();
   try {
-    for (const theme of THEMES) {
-      useTheme(theme);
+    for (const stored of STORED) {
+      useTheme(stored);
       await agent.get('/routes').expect(200);
       const last = cap.seen.at(-1);
-      assert.equal(last.view, `${theme}/pages/zones.njk`);
+      assert.equal(last.view, 'aurora/pages/zones.njk', `users.theme=${stored}`);
       assert.equal(last.locals.activeNav, 'routes');
       assert.ok(Array.isArray(last.locals.gatewayPools));
       assert.ok(Array.isArray(last.locals.l4BlockedPorts));
     }
   } finally {
     cap.restore();
-    useTheme('default');
+    useTheme('aurora');
   }
 });
 
-test('/routes serves the zones page without legacy markup or scripts in every theme', async () => {
+test('/routes serves the zones page without legacy markup or scripts', async () => {
   try {
-    for (const theme of THEMES) {
+    for (const theme of STORED) {
       useTheme(theme);
       const res = await agent.get('/routes').expect(200);
       assert.match(res.text, /id="zn-zones"/, `${theme}: zones container`);
@@ -65,7 +66,7 @@ test('/routes serves the zones page without legacy markup or scripts in every th
       assert.doesNotMatch(res.text, /\/js\/routes\.js|\/js\/printerPresetForm\.js/, `${theme}: no legacy scripts`);
     }
   } finally {
-    useTheme('default');
+    useTheme('aurora');
   }
 });
 

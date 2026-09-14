@@ -6,7 +6,7 @@ const path = require('node:path');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
 
-const THEMES = ['aurora', 'default', 'pro'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 const ALL_KEYS = [
   'settings.acme_email',
   'settings.acme_email_hint',

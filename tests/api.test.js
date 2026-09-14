@@ -171,58 +171,36 @@ describe('Settings API', () => {
   });
 });
 
-// ─── Profile Theme API ─────────────────────────────
-describe('Profile Theme API', () => {
-  it('PUT /api/v1/settings/profile accepts theme field', async () => {
-    const res = await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'pro' })
-      .expect(200);
-    assert.equal(res.body.ok, true);
-    assert.equal(res.body.profile.theme, 'pro');
+// ─── Profile theme field (Aurora is the only theme) ──
+describe('Profile theme field', () => {
+  it('PUT /api/v1/settings/profile ignores a theme field (no error, no change)', async () => {
+    const before = (await agent.get('/api/v1/settings/profile').expect(200)).body.profile;
+    for (const theme of ['pro', 'default', 'nonexistent']) {
+      const res = await agent
+        .put('/api/v1/settings/profile')
+        .set('X-CSRF-Token', csrf)
+        .send({ theme })
+        .expect(200);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.profile.theme, before.theme, theme);
+    }
   });
 
-  it('GET /api/v1/settings/profile returns updated theme', async () => {
-    const res = await agent.get('/api/v1/settings/profile').expect(200);
-    assert.equal(res.body.ok, true);
-    assert.equal(res.body.profile.theme, 'pro');
-  });
-
-  it('PUT /api/v1/settings/profile switches back to default', async () => {
-    const res = await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'default' })
-      .expect(200);
-    assert.equal(res.body.ok, true);
-    assert.equal(res.body.profile.theme, 'default');
-  });
-
-  it('PUT /api/v1/settings/profile rejects invalid theme', async () => {
-    const res = await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'nonexistent' })
-      .expect(400);
-    assert.equal(res.body.ok, false);
-  });
-
-  it('PUT /api/v1/settings/profile with theme does not affect other fields', async () => {
+  it('PUT /api/v1/settings/profile with theme still saves the other fields', async () => {
     const res = await agent
       .put('/api/v1/settings/profile')
       .set('X-CSRF-Token', csrf)
       .send({ theme: 'pro', display_name: 'Theme Test' })
       .expect(200);
     assert.equal(res.body.ok, true);
-    assert.equal(res.body.profile.theme, 'pro');
     assert.equal(res.body.profile.display_name, 'Theme Test');
+    assert.notEqual(res.body.profile.theme, 'pro');
 
     // Reset
     await agent
       .put('/api/v1/settings/profile')
       .set('X-CSRF-Token', csrf)
-      .send({ theme: 'default', display_name: 'admin' });
+      .send({ display_name: 'admin' });
   });
 });
 
@@ -350,24 +328,8 @@ describe('Backup API', () => {
   });
 });
 
-// ─── Pro Theme Rendering ─────────────────────────────
-describe('Pro Theme Rendering', () => {
-  before(async () => {
-    await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'pro' })
-      .expect(200);
-  });
-
-  after(async () => {
-    await agent
-      .put('/api/v1/settings/profile')
-      .set('X-CSRF-Token', csrf)
-      .send({ theme: 'default' })
-      .expect(200);
-  });
-
+// ─── Aurora rendering (pro.css base + aurora.css) ────
+describe('Aurora rendering', () => {
   const pages = [
     'dashboard',
     'peers',
@@ -381,12 +343,11 @@ describe('Pro Theme Rendering', () => {
   ];
 
   for (const page of pages) {
-    it(`GET /${page} renders with pro.css`, async () => {
+    it(`GET /${page} renders with pro.css + aurora.css`, async () => {
       const res = await agent.get(`/${page}`).expect(200);
-      assert.ok(
-        res.text.includes('pro.css'),
-        `Expected pro.css in /${page} response`
-      );
+      assert.ok(res.text.includes('/css/pro.css'), `Expected pro.css in /${page} response`);
+      assert.ok(res.text.includes('/css/aurora.css'), `Expected aurora.css in /${page} response`);
+      assert.ok(!res.text.includes('/css/app.css'), `No app.css in /${page} response`);
     });
   }
 });

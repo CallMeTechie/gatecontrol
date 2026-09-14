@@ -13,7 +13,7 @@ const nunjucks = require('nunjucks');
 const ROOT = path.join(__dirname, '..');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'templates')), { autoescape: true });
 env.addFilter('bytes', (v) => String(v || 0) + ' B');
@@ -65,16 +65,11 @@ describe('certificates.njk renders in every theme', () => {
       const tiles = Array.from(html.matchAll(/id="tg-tile-(issued|expiring|failed|paused)" data-filter="([a-z]+)"/g)).map((m) => m[1] + '→' + m[2]);
       assert.deepEqual(tiles, ['issued→valid', 'expiring→expiring', 'failed→problems', 'paused→problems']);
       assert.equal((html.match(/<th>/g) || []).length, 7, 'seven table columns');
-      if (theme === 'aurora') {
-        assert.match(html, /class="app"/, 'aurora shell');
-        assert.match(html, /class="card span12" id="tg-card"/);
-        assert.match(html, /class="data-table" id="tg-table"/);
-        assert.match(html, /class="page-actions">\s*<button class="btn btn-primary" id="btn-certificates-refresh"/);
-        assert.match(html, /aurora-routes-kpi tg-tile/);
-      } else {
-        assert.match(html, /stats-grid tg-tiles/);
-        assert.match(html, /stat-card tg-tile/);
-      }
+      assert.match(html, /class="app"/, 'aurora shell');
+      assert.match(html, /class="card span12" id="tg-card"/);
+      assert.match(html, /class="data-table" id="tg-table"/);
+      assert.match(html, /class="page-actions">\s*<button class="btn btn-primary" id="btn-certificates-refresh"/);
+      assert.match(html, /aurora-routes-kpi tg-tile/);
     });
 
     it(`${theme}: loads tls-ui.js before certificates.js, after app.js, with cache busting`, () => {
@@ -116,7 +111,7 @@ describe('certificates.njk renders in every theme', () => {
   }
 
   it('English rendering uses en.json', () => {
-    const html = render('default', 'en');
+    const html = render('aurora', 'en');
     assert.match(html, /Certificate status per host/);
     assert.match(html, /Set the ACME e-mail in Settings/);
   });

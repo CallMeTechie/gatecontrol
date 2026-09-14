@@ -21,9 +21,10 @@ test('coral bg/bd tokens exist in dark AND light theme blocks', () => {
   }
 });
 
-// Negativ-Assertion (Lehre css_smoke): Redesign darf NICHT in Default/Pro leaken.
-test('default/pro css untouched by aurora routes classes', () => {
-  for (const f of ['public/css/app.css', 'public/css/pro.css']) {
+// Negativ-Assertion (Lehre css_smoke): die Aurora-Klassen gehören in aurora.css,
+// nicht in das Basis-Stylesheet pro.css.
+test('pro.css (Aurora base) untouched by aurora routes classes', () => {
+  for (const f of ['public/css/pro.css']) {
     assert.ok(!fs.readFileSync(f, 'utf8').includes('.aurora-routes-'), `${f} leaked .aurora-routes-*`);
   }
 });

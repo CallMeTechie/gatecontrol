@@ -1,6 +1,6 @@
 'use strict';
 
-// Template rendering of the new 2FA surfaces in all three themes + i18n
+// Template rendering of the 2FA surfaces (Aurora, the only theme) + i18n
 // parity of the two_fa.* block.
 
 const cryptoEnv = require('node:crypto');
@@ -13,7 +13,7 @@ const assert = require('node:assert/strict');
 const supertest = require('supertest');
 const { setup, teardown } = require('./helpers/setup');
 
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 let app, agent, csrf;
 beforeEach(async () => { ({ app, agent, csrfToken: csrf } = await setup()); });
 afterEach(teardown);
@@ -34,8 +34,7 @@ test('two_fa.* keys exist in de and en with identical key sets, inserted as one 
   assert.deepEqual(all.slice(first, first + deKeys.length), deKeys);
 });
 
-test('/login/2fa renders in every theme (code and recovery variants)', async () => {
-  const settings = require('../src/services/settings');
+test('/login/2fa renders (code and recovery variants)', async () => {
   const adminTwoFactor = require('../src/services/adminTwoFactor');
   const { getDb } = require('../src/db/connection');
   // enable 2FA on admin directly so the password step leaves a pending marker
@@ -44,7 +43,6 @@ test('/login/2fa renders in every theme (code and recovery variants)', async () 
   getDb().prepare("UPDATE users SET totp_enabled = 1, totp_confirmed_at = datetime('now') WHERE id = ?").run(admin.id);
 
   for (const theme of THEMES) {
-    settings.set('default_theme', theme);
     const a = supertest.agent(app);
     const page = await a.get('/login').expect(200);
     const loginCsrf = page.text.match(/name="_csrf"\s+value="([^"]+)"/)[1];
@@ -58,7 +56,9 @@ test('/login/2fa renders in every theme (code and recovery variants)', async () 
     assert.match(code.text, /href="\/login\/2fa\?recovery=1"/, theme);
     assert.match(code.text, /id="tf-remaining"[^>]*>[^<{]*\d[^<{]*</, theme);
     assert.doesNotMatch(code.text, /replace\('',/, `${theme}: countdown placeholder must survive templating`);
-    assert.match(code.text, new RegExp(theme === 'pro' ? '/css/pro\\.css' : '/css/app\\.css'), theme);
+    assert.match(code.text, /\/css\/pro\.css/, theme);
+    assert.match(code.text, /\/css\/aurora\.css/, theme);
+    assert.doesNotMatch(code.text, /app\.css/, theme);
 
     const rec = await a.get('/login/2fa?recovery=1').expect(200);
     assert.match(rec.text, /name="recovery_code"/, theme);
@@ -67,10 +67,8 @@ test('/login/2fa renders in every theme (code and recovery variants)', async () 
   }
 });
 
-test('profile card, users modal row and settings toggle render in every theme', async () => {
+test('profile card, users modal row and settings toggle render', async () => {
   for (const theme of THEMES) {
-    await agent.put('/api/v1/settings/profile').set('x-csrf-token', csrf).send({ theme }).expect(200);
-
     const profile = await agent.get('/profile').expect(200);
     assert.match(profile.text, /id="tf-card"[^>]*data-enabled="0"/, theme);
     for (const id of ['tf-btn-setup', 'tf-qr', 'tf-secret', 'tf-confirm-code', 'tf-btn-confirm', 'tf-codes', 'tf-btn-download-codes', 'tf-btn-regenerate', 'tf-btn-disable', 'tf-i18n']) {

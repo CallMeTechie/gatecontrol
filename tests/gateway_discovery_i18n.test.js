@@ -34,10 +34,9 @@ test('en + de discovery keys are non-empty strings', () => {
 
 // Guards against a key existing in JSON but not injected into window.GC.t
 // (the client would silently fall back to the inline default). Covers Step 4.
-test('every discovery key is injected into both layout GC.t blocks', () => {
-  for (const theme of ['default', 'pro']) {
+test('every discovery key is injected into the layout GC.t block', () => {
+  for (const theme of ['aurora']) {
     const p = path.join(__dirname, '..', 'templates', theme, 'layout.njk');
-    if (!fs.existsSync(p)) continue;
     const txt = fs.readFileSync(p, 'utf8');
     for (const k of KEYS) {
       assert.ok(txt.includes("'" + k + "'") || txt.includes('"' + k + '"'), theme + ' layout missing GC.t injection for ' + k);

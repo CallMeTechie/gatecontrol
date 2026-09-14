@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'); const path = require('node:path');
 test('bulk owner control in batch bar (3 themes)', () => {
-  for (const theme of ['aurora', 'default', 'pro']) {
+  for (const theme of ['aurora']) {
     const html = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'pages', 'peers.njk'), 'utf8');
     ['peer-bulk-owner', 'peer-bulk-owner-apply'].forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));
   }

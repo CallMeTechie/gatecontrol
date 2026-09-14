@@ -12,7 +12,7 @@ const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
-const THEMES = ['default', 'pro', 'aurora'];
+const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const modalJs = read('public', 'js', 'domain-modal.js');
 const viewJs = read('public', 'js', 'zones-view.js');
@@ -23,7 +23,7 @@ const en = JSON.parse(enRaw);
 
 const KEYS = Object.keys(de).filter((k) => k.startsWith('zones.discovery.'));
 const USED_KEYS = Array.from(modalJs.matchAll(/'(zones\.discovery\.[a-z0-9_]+)'/g)).map((m) => m[1]);
-const CSS = { default: read('public', 'css', 'app.css'), pro: read('public', 'css', 'pro.css') };
+const CSS = { pro: read('public', 'css', 'pro.css') }; // Aurora's base stylesheet
 const CSS_SECTION = '/* ─── Domain zones: LAN discovery (zn-disc-) ─── */';
 
 describe('zones.discovery i18n', () => {
@@ -97,7 +97,7 @@ describe('domain-modal.js: discovery wiring', () => {
     }
     assert.match(modalJs, /'data-zn-key': 'nhdisc'/);
   });
-  it('every layout-relevant zn-disc- class is styled in app.css and pro.css (aurora loads pro.css)', () => {
+  it('every layout-relevant zn-disc- class is styled in pro.css (aurora loads pro.css)', () => {
     // Hook-only classes (E2E selectors / text targets) inherit their look from
     // .btn, .zn-link, .zn-input, .modal-overlay etc. and need no rule.
     const HOOK_ONLY = new Set(['zn-disc-btn', 'zn-disc-link', 'zn-disc-dialog', 'zn-disc-filter', 'zn-disc-hintmsg', 'zn-disc-scanning', 'zn-disc-host', 'zn-disc-adopt']);

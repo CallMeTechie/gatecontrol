@@ -10,19 +10,17 @@ test('all new gateway update keys exist in en + de', () => {
 });
 
 const SETUP_KEYS = ['gateways.setup_title','gateways.setup_note','gateways.setup_done','gateways.setup_pending','gateways.setup_download_update','gateways.setup_guide','gateways.setup_synology','gateways.setup_linux','gateways.setup_syn_1','gateways.setup_syn_2','gateways.setup_lin_1','gateways.setup_lin_2','gateways.setup_legacy_hint'];
-test('setup_* keys present in en+de + both layout GC.t blocks', () => {
-  const dflt = fs.readFileSync('templates/default/layout.njk','utf8');
-  const pro = fs.readFileSync('templates/pro/layout.njk','utf8');
+test('setup_* keys present in en+de + the layout GC.t block', () => {
+  const layout = fs.readFileSync('templates/aurora/layout.njk','utf8');
   for (const k of SETUP_KEYS) {
     assert.ok(k in en, 'missing en: '+k); assert.ok(k in de, 'missing de: '+k);
-    assert.ok(dflt.includes("'"+k+"':"), 'missing in default layout GC.t: '+k);
-    assert.ok(pro.includes("'"+k+"':"), 'missing in pro layout GC.t: '+k);
+    assert.ok(layout.includes("'"+k+"':"), 'missing in the layout GC.t: '+k);
   }
 });
 
 const AU_ROLLBACK_KEYS = ['autoupdate.rolled_back', 'autoupdate.rolled_back_hint', 'autoupdate.rollback_failed'];
-test('auto-update rollback keys present in en+de + all layout GC.t blocks', () => {
-  const layouts = ['default', 'pro', 'aurora'].map((t) => fs.readFileSync(`templates/${t}/layout.njk`, 'utf8'));
+test('auto-update rollback keys present in en+de + the layout GC.t block', () => {
+  const layouts = ['aurora'].map((t) => fs.readFileSync(`templates/${t}/layout.njk`, 'utf8'));
   for (const k of AU_ROLLBACK_KEYS) {
     assert.ok(k in en, 'missing en: ' + k); assert.ok(k in de, 'missing de: ' + k);
     for (const l of layouts) assert.ok(l.includes("'" + k + "':"), 'missing in a layout GC.t: ' + k);

@@ -7,7 +7,7 @@ const { setup, teardown } = require('./helpers/setup');
 let injectLocals;
 
 before(async () => {
-  await setup();   // initializes DB so settings.get('default_theme') works
+  await setup();   // initializes the DB the badge-count queries read
   ({ injectLocals } = require('../src/middleware/locals'));
 });
 after(() => teardown());
@@ -43,5 +43,27 @@ describe('injectLocals — flash handling does not pollute sessions', () => {
     const res = { locals: {} };
     await run({ session: undefined, path: '/' }, res);
     assert.equal(res.locals.flash, undefined);
+  });
+});
+
+describe('injectLocals — Aurora is the only theme', () => {
+  test('theme is aurora for anon visitors, whatever default_theme says', async () => {
+    const settings = require('../src/services/settings');
+    for (const stored of ['default', 'pro', 'aurora', 'bogus']) {
+      settings.set('default_theme', stored);
+      const res = { locals: {} };
+      await run({ session: {}, path: '/login' }, res);
+      assert.equal(res.locals.theme, 'aurora', `default_theme=${stored}`);
+    }
+  });
+
+  test('a stored personal users.theme does not change the theme', async () => {
+    const { getDb } = require('../src/db/connection');
+    const admin = getDb().prepare("SELECT id FROM users WHERE username = 'admin'").get();
+    getDb().prepare("UPDATE users SET theme = 'pro' WHERE id = ?").run(admin.id);
+    const res = { locals: {} };
+    await run({ session: { userId: admin.id }, path: '/dashboard' }, res);
+    assert.equal(res.locals.user.id, admin.id);
+    assert.equal(res.locals.theme, 'aurora');
   });
 });
