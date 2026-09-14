@@ -1,9 +1,6 @@
 'use strict';
 
 (function () {
-  // ── Aurora detection ────────────────────────────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
   function formatTime(ts) {
     if (!ts) return '';
     const d = new Date(ts + (ts.includes('Z') ? '' : 'Z'));
@@ -15,7 +12,6 @@
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-
 
   // Note: All user-controlled values are escaped with escapeHtml() before being
   // inserted into HTML strings. Static structural markup (CSS classes,
@@ -46,8 +42,6 @@
   // ═══════════════════════════════════════════════════
   const logContainer = document.getElementById('full-activity-log');
   const logsCount = document.getElementById('logs-count');
-  const SEVERITY_COLORS = { info: 'var(--blue)', success: 'var(--green)', warning: 'var(--amber)', error: 'var(--red)' };
-
   let currentPage = 1;
   let totalPages = 1;
   let currentFilter = 'all';
@@ -73,19 +67,19 @@
     renderLogs(filtered);
   }
 
-  // ─── Aurora: severity class map ─────────────────────
-  var AURORA_SEV_CLASS = { info: 'info', success: 'ok', warning: 'warn', error: 'err' };
-  var AURORA_STATUS_SEV = { 2: 'ok', 3: 'info', 4: 'warn', 5: 'err' };
+  // ─── Severity class maps (log rows) ─────────────────
+  var SEV_CLASS = { info: 'info', success: 'ok', warning: 'warn', error: 'err' };
+  var STATUS_SEV = { 2: 'ok', 3: 'info', 4: 'warn', 5: 'err' };
 
-  function auroraFormatTs(ts) {
+  function formatTs(ts) {
     if (!ts) return '';
     var d = new Date(ts + (ts.includes('Z') ? '' : 'Z'));
     if (isNaN(d.getTime())) return ts;
     return d.toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
-  function auroraRenderLogs(entries) {
-    // Aurora live search: filter by text if #log-search has a value
+  function renderLogs(entries) {
+    // Live search: filter by text if #log-search has a value
     var searchEl = document.getElementById('log-search');
     var q = searchEl ? searchEl.value.trim().toLowerCase() : '';
     var visible = q
@@ -102,8 +96,8 @@
     }
 
     var html = visible.map(function (e) {
-      var sevClass = AURORA_SEV_CLASS[e.severity] || 'info';
-      var ts = escapeHtml(auroraFormatTs(e.created_at));
+      var sevClass = SEV_CLASS[e.severity] || 'info';
+      var ts = escapeHtml(formatTs(e.created_at));
       var src = e.source || e.event_type || '';
       return '<div class="log-row" data-severity="' + escapeHtml(e.severity) + '">' +
         '<span class="sev ' + sevClass + '"></span>' +
@@ -124,7 +118,7 @@
     logContainer.innerHTML = html;
   }
 
-  function auroraRenderAccessLogs(entries) {
+  function renderAccessLogs(entries) {
     if (!entries.length) {
       accessContainer.textContent = GC.t['logs.no_access_entries'] || 'No access log entries';
       return;
@@ -132,7 +126,7 @@
 
     var html = entries.map(function (e) {
       var statusClass = Math.floor(e.status / 100);
-      var sevClass = AURORA_STATUS_SEV[statusClass] || 'info';
+      var sevClass = STATUS_SEV[statusClass] || 'info';
       var time = escapeHtml(formatTime(e.timestamp));
       var statusCode = parseInt(e.status, 10) || 0;
       var duration = parseInt(e.duration, 10) || 0;
@@ -158,38 +152,6 @@
     }
 
     accessContainer.innerHTML = html;
-  }
-
-  function renderLogs(entries) {
-    if (isAurora()) return auroraRenderLogs(entries);
-    if (!entries.length) {
-      logContainer.textContent = GC.t['logs.no_entries'] || 'No log entries';
-      return;
-    }
-
-    let html = entries.map(e => {
-      const color = SEVERITY_COLORS[e.severity] || SEVERITY_COLORS.info;
-      const time = escapeHtml(formatTime(e.created_at));
-      const typeTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">${escapeHtml(e.event_type)}</span>`;
-
-      return `<div class="activity-item" data-severity="${escapeHtml(e.severity)}">
-        <div class="activity-dot" style="background:${color}"></div>
-        <div style="flex:1;min-width:0">
-          <div class="activity-text">${escapeHtml(e.message)} ${typeTag}</div>
-          <div class="activity-time">${time}${e.source ? ' · ' + escapeHtml(e.source) : ''}${e.ip_address ? ' · ' + escapeHtml(e.ip_address) : ''}</div>
-        </div>
-      </div>`;
-    }).join('');
-
-    if (totalPages > 1 && currentFilter === 'all') {
-      html += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:16px 0;border-top:1px solid var(--border);margin-top:8px">';
-      html += `<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ${currentPage <= 1 ? 'disabled' : ''} data-page="${currentPage - 1}">&laquo; Prev</button>`;
-      html += `<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-2)">${currentPage} / ${totalPages}</span>`;
-      html += `<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ${currentPage >= totalPages ? 'disabled' : ''} data-page="${currentPage + 1}">Next &raquo;</button>`;
-      html += '</div>';
-    }
-
-    logContainer.innerHTML = html;
   }
 
   // Severity filter tabs
@@ -222,13 +184,6 @@
   let accessTotalPages = 1;
   let accessStatusFilter = '';
 
-  const STATUS_COLORS = {
-    2: 'var(--green)',
-    3: 'var(--blue)',
-    4: 'var(--amber)',
-    5: 'var(--red)',
-  };
-
   async function loadAccessLogs(page) {
     try {
       const params = new URLSearchParams({ page, limit: 50 });
@@ -244,44 +199,6 @@
     } catch (err) {
       accessContainer.textContent = err.message;
     }
-  }
-
-  function renderAccessLogs(entries) {
-    if (isAurora()) return auroraRenderAccessLogs(entries);
-    if (!entries.length) {
-      accessContainer.textContent = GC.t['logs.no_access_entries'] || 'No access log entries';
-      return;
-    }
-
-    let html = entries.map(e => {
-      const statusClass = Math.floor(e.status / 100);
-      const dotColor = STATUS_COLORS[statusClass] || 'var(--text-3)';
-      const time = escapeHtml(formatTime(e.timestamp));
-      const methodTag = `<span class="tag tag-grey" style="font-size:10px;padding:1px 6px;font-family:var(--font-mono)">${escapeHtml(e.method)}</span>`;
-      const statusCode = parseInt(e.status, 10) || 0;
-      const statusTag = `<span style="font-family:var(--font-mono);font-weight:600;color:${dotColor}">${statusCode}</span>`;
-      const duration = parseInt(e.duration, 10) || 0;
-      const size = parseInt(e.size, 10) || 0;
-
-      return `<div class="activity-item">
-        <div class="activity-dot" style="background:${dotColor}"></div>
-        <div style="flex:1;min-width:0">
-          <div class="activity-text">${methodTag} ${statusTag} <span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(e.host)}${escapeHtml(e.uri)}</span></div>
-          <div class="activity-time">${time} · ${escapeHtml(e.remote_ip)} · ${duration}ms · ${formatBytes(size)}</div>
-        </div>
-      </div>`;
-    }).join('');
-
-    // Pagination
-    if (accessTotalPages > 1) {
-      html += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:16px 0;border-top:1px solid var(--border);margin-top:8px">';
-      html += `<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ${accessPage <= 1 ? 'disabled' : ''} data-access-page="${accessPage - 1}">&laquo; Prev</button>`;
-      html += `<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-2)">${accessPage} / ${accessTotalPages}</span>`;
-      html += `<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" ${accessPage >= accessTotalPages ? 'disabled' : ''} data-access-page="${accessPage + 1}">Next &raquo;</button>`;
-      html += '</div>';
-    }
-
-    accessContainer.innerHTML = html;
   }
 
   // Access status filter tabs
@@ -352,7 +269,7 @@
     });
   }
 
-  // ─── Aurora: live search wiring ───────────────────
+  // ─── Live search wiring ───────────────────────────
   var logSearchEl = document.getElementById('log-search');
   if (logSearchEl) {
     logSearchEl.addEventListener('input', function () { applyFilter(); });

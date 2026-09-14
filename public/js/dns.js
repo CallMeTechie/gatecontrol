@@ -1,9 +1,6 @@
 (function () {
   'use strict';
 
-  // ─── Aurora theme detector ──────────────────────────────────────────────
-  function isAurora() { return !!document.querySelector('.app'); }
-
   function fmtDate(iso) {
     if (!iso) return '—';
     try {
@@ -33,22 +30,8 @@
     return node;
   }
 
-  function monoText(v) {
-    return el('span', { style: 'font-family:var(--font-mono)' }, v == null ? '—' : String(v));
-  }
-
-  function dash() { return el('span', { style: 'color:var(--text-3)' }, '—'); }
-
   function tag(cls, text) {
     return el('span', { class: 'tag ' + cls }, text);
-  }
-
-  function sourceBadge(src) {
-    if (!src) return tag('tag-grey', '—');
-    if (src === 'admin') return tag('tag-blue', GC.t['peers.hostname_source_admin'] || 'manuell');
-    if (src === 'agent') return tag('tag-green', GC.t['peers.hostname_source_agent'] || 'auto');
-    if (src === 'stale') return tag('tag-amber', GC.t['peers.hostname_source_stale'] || 'stale');
-    return tag('tag-grey', src);
   }
 
   function statDot(cls) {
@@ -91,30 +74,13 @@
     }
   }
 
-  function renderStatic(records) {
-    if (isAurora()) return; // Aurora merges static records into auroraRenderPeers()
-    const tbody = document.getElementById('dns-static-tbody');
-    replaceChildren(tbody, []);
-    if (!records || !records.length) {
-      tbody.appendChild(el('tr', null,
-        el('td', { colspan: '2', style: 'text-align:center;color:var(--text-3);padding:20px' }, '—')));
-      return;
-    }
-    for (const r of records) {
-      tbody.appendChild(el('tr', null, [
-        el('td', null, monoText(r.fqdn)),
-        el('td', null, monoText(r.ip)),
-      ]));
-    }
-  }
-
   let allPeers = [];
   let allStatic = [];
 
-  // ─── Aurora: unified records table (static + peer) ──────────────────────
+  // ─── Unified records table (static + peer) ──────────────────────────────
   // Renders both static records (from allStatic) and filtered peer records
-  // into the single 3-column data-table used in the Aurora theme.
-  function auroraRenderPeers(peers) {
+  // into the single 3-column data-table.
+  function renderPeers(peers) {
     const tbody = document.getElementById('dns-peer-tbody');
     replaceChildren(tbody, []);
     const rows = [];
@@ -144,28 +110,6 @@
     replaceChildren(tbody, rows);
   }
 
-  function renderPeers(peers) {
-    if (isAurora()) return auroraRenderPeers(peers);
-    const tbody = document.getElementById('dns-peer-tbody');
-    replaceChildren(tbody, []);
-    if (!peers.length) {
-      tbody.appendChild(el('tr', null,
-        el('td', { colspan: '6', style: 'text-align:center;color:var(--text-3);padding:20px' },
-          GC.t['dns.no_peers'] || 'Keine Peers')));
-      return;
-    }
-    for (const p of peers) {
-      tbody.appendChild(el('tr', null, [
-        el('td', null, p.name || ''),
-        el('td', null, p.hostname ? monoText(p.hostname) : dash()),
-        el('td', null, p.fqdn ? el('span', { style: 'font-family:var(--font-mono);font-size:11px' }, p.fqdn) : dash()),
-        el('td', null, monoText(p.ip || '—')),
-        el('td', null, sourceBadge(p.hostname_source)),
-        el('td', null, el('span', { style: 'font-size:11px;color:var(--text-2)' }, fmtDate(p.hostname_reported_at))),
-      ]));
-    }
-  }
-
   function applyFilter() {
     const q = (document.getElementById('dns-peer-search').value || '').trim().toLowerCase();
     if (!q) return renderPeers(allPeers);
@@ -183,14 +127,13 @@
       if (!data.ok) throw new Error(data.error || 'Load failed');
       renderStatus(data.status || {});
       allStatic = data.staticRecords || [];
-      renderStatic(allStatic);
       allPeers = data.peers || [];
       applyFilter();
     } catch (err) {
       const tbody = document.getElementById('dns-peer-tbody');
       if (tbody) {
         replaceChildren(tbody, el('tr', null,
-          el('td', { colspan: isAurora() ? '3' : '6', style: 'text-align:center;color:var(--red);padding:20px' }, err.message)));
+          el('td', { colspan: '3', style: 'text-align:center;color:var(--red);padding:20px' }, err.message)));
       }
     }
   }

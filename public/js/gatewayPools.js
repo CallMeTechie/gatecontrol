@@ -1,17 +1,5 @@
 'use strict';
 
-function isAurora() { return !!document.querySelector('.app'); }
-
-const COOLDOWN_PRESETS = [
-  { i18n: 'gateway_pools.preset_lxc', value: 60 },
-  { i18n: 'gateway_pools.preset_linux_vm', value: 180 },
-  { i18n: 'gateway_pools.preset_proxmox', value: 600 },
-  { i18n: 'gateway_pools.preset_nas', value: 900 },
-  { i18n: 'gateway_pools.preset_windows', value: 1800 },
-  { i18n: 'gateway_pools.preset_conservative', value: 3600 },
-  { i18n: 'gateway_pools.preset_custom', value: null },
-];
-
 function csrfToken() {
   return (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '';
 }
@@ -107,10 +95,9 @@ function rebuildPeerDropdown() {
   }
 }
 
-// ── Aurora sibling functions — only called when isAurora() is true ────────
-// These are additive; the else-path (default) is never modified.
+// ── Member rows, cooldown presets, migrate form ───────────────────────────
 
-const AURORA_COOLDOWN_PRESETS = [
+const COOLDOWN_PRESETS = [
   { i18n: 'gateway_pools.preset_lxc', value: 60 },
   { i18n: 'gateway_pools.preset_linux_vm', value: 180 },
   { i18n: 'gateway_pools.preset_proxmox', value: 600 },
@@ -121,7 +108,7 @@ const AURORA_COOLDOWN_PRESETS = [
   { i18n: 'gateway_pools.preset_custom', value: null },
 ];
 
-function auroraBuildMemberRow(peerId, peerName) {
+function buildMemberRow(peerId, peerName) {
   const row = document.createElement('div');
   row.className = 'pool-member-row';
   row.dataset.peerId = String(peerId);
@@ -161,7 +148,7 @@ function auroraBuildMemberRow(peerId, peerName) {
   return row;
 }
 
-function auroraInitCooldownPresets() {
+function initCooldownPresets() {
   const sel = document.getElementById('cooldown-preset');
   if (!sel) return;
   while (sel.firstChild) sel.removeChild(sel.firstChild);
@@ -170,7 +157,7 @@ function auroraInitCooldownPresets() {
   placeholder.value = '';
   placeholder.textContent = '---';
   sel.appendChild(placeholder);
-  AURORA_COOLDOWN_PRESETS.forEach(function(p) {
+  COOLDOWN_PRESETS.forEach(function(p) {
     const label = (window.GC && window.GC.t && window.GC.t[p.i18n]) || p.i18n;
     const opt = document.createElement('option');
     opt.value = p.value != null ? String(p.value) : '';
@@ -188,13 +175,13 @@ function auroraInitCooldownPresets() {
   }
 }
 
-function auroraRenderMigrateForm() {
+function renderMigrateForm() {
   const list = document.getElementById('migrate-routes-list');
   while (list.firstChild) list.removeChild(list.firstChild);
 
   const migrateMode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
   document.querySelectorAll('input[name="migrate-mode"]').forEach(function(el){
-    el.onchange = auroraRenderMigrateForm;
+    el.onchange = renderMigrateForm;
   });
 
   const pools = MIGRATE_CANDIDATES.pools || [];
@@ -379,48 +366,6 @@ function auroraRenderMigrateForm() {
   }
 }
 
-// ── Member row rendering (drag-and-drop ordered list) ────────────────────
-function buildMemberRow(peerId, peerName) {
-  if (isAurora()) return auroraBuildMemberRow(peerId, peerName);
-  const row = document.createElement('div');
-  row.className = 'pool-member-row';
-  row.dataset.peerId = String(peerId);
-  row.draggable = true;
-
-  const handle = document.createElement('span');
-  handle.className = 'pool-member-handle';
-  handle.textContent = '≡'; // ≡
-  handle.setAttribute('aria-hidden', 'true');
-
-  const pos = document.createElement('span');
-  pos.className = 'pool-member-position';
-  pos.textContent = '#1';
-
-  const name = document.createElement('span');
-  name.className = 'pool-member-name';
-  name.textContent = peerName || ('Peer #' + peerId);
-
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button';
-  removeBtn.className = 'btn btn-sm btn-danger btn-remove-member';
-  removeBtn.dataset.peerId = String(peerId);
-  removeBtn.textContent = '×'; // ×
-  removeBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    row.remove();
-    refreshPositions();
-    rebuildPeerDropdown();
-  });
-
-  row.appendChild(handle);
-  row.appendChild(pos);
-  row.appendChild(name);
-  row.appendChild(removeBtn);
-
-  attachDragHandlers(row);
-  return row;
-}
-
 function refreshPositions() {
   const container = document.getElementById('pool-members');
   if (!container) return;
@@ -500,35 +445,6 @@ function collectMembersFromForm() {
   return Array.from(rows).map(function(row, i) {
     return { peer_id: parseInt(row.dataset.peerId, 10), priority: i + 1 };
   });
-}
-
-// Cooldown preset dropdown — idempotent (clears previous options on re-init)
-function initCooldownPresets() {
-  if (isAurora()) return auroraInitCooldownPresets();
-  const sel = document.getElementById('cooldown-preset');
-  if (!sel) return;
-  while (sel.firstChild) sel.removeChild(sel.firstChild);
-
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '---';
-  sel.appendChild(placeholder);
-  COOLDOWN_PRESETS.forEach(function(p) {
-    const label = (window.GC && window.GC.t && window.GC.t[p.i18n]) || p.i18n;
-    const opt = document.createElement('option');
-    opt.value = p.value != null ? String(p.value) : '';
-    opt.textContent = label;
-    sel.appendChild(opt);
-  });
-
-  if (!sel.dataset.presetListenerAttached) {
-    sel.addEventListener('change', function() {
-      const v = sel.value;
-      const inp = document.querySelector('input[name="failback_cooldown_s"]');
-      if (v && inp) inp.value = v;
-    });
-    sel.dataset.presetListenerAttached = '1';
-  }
 }
 
 // Mode toggle: show/hide lb_policy row.
@@ -686,216 +602,6 @@ function openMigrateModal() {
       p.textContent = 'Failed to load migration candidates.';
       list.appendChild(p);
     });
-}
-
-function renderMigrateForm() {
-  if (isAurora()) return auroraRenderMigrateForm();
-  const list = document.getElementById('migrate-routes-list');
-  while (list.firstChild) list.removeChild(list.firstChild);
-
-  // Mode toggle is static markup in the template; wire its re-render here BEFORE
-  // any early return so relocate mode is reachable even with zero pools (a
-  // permanent move to a gateway doesn't need a pool).
-  const migrateMode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
-  document.querySelectorAll('input[name="migrate-mode"]').forEach(function(el){
-    el.onchange = renderMigrateForm;
-  });
-
-  const pools = MIGRATE_CANDIDATES.pools || [];
-  const routes = MIGRATE_CANDIDATES.routes || [];
-
-  if (migrateMode === 'pool' && pools.length === 0) {
-    const p = document.createElement('p');
-    p.style.color = 'var(--text-3)';
-    p.textContent = tr('gateway_pools.no_pools_for_migration', 'No pools available — create a pool first.');
-    list.appendChild(p);
-    return;
-  }
-
-  const help = document.createElement('p');
-  help.style.cssText = 'font-size:13px;margin-bottom:12px;color:var(--text-2)';
-  help.textContent = tr('gateway_pools.migrate_help',
-    'Assign existing gateway routes to a pool so traffic fails over when the pinned gateway goes down.');
-  list.appendChild(help);
-
-  // Pool picker
-  const poolGroup = document.createElement('div');
-  poolGroup.className = 'form-group';
-  const poolLbl = document.createElement('label');
-  poolLbl.className = 'form-label';
-  poolLbl.textContent = tr('gateway_pools.target_pool', 'Target pool');
-  const poolSel = document.createElement('select');
-  poolSel.id = 'migrate-target-pool';
-  poolSel.className = 'form-input';
-  pools.forEach(function(pool) {
-    const opt = document.createElement('option');
-    opt.value = pool.id;
-    opt.textContent = pool.name + ' (' + pool.mode + ')';
-    poolSel.appendChild(opt);
-  });
-  poolGroup.appendChild(poolLbl);
-  poolGroup.appendChild(poolSel);
-  list.appendChild(poolGroup);
-
-  if (routes.length === 0) {
-    const p = document.createElement('p');
-    p.style.cssText = 'font-size:13px;color:var(--text-3);margin-top:12px';
-    p.textContent = tr('gateway_pools.migrate_no_routes', 'No gateway-pinned routes to migrate.');
-    list.appendChild(p);
-    return;
-  }
-
-  // Route checklist grouped by source peer
-  const grouped = {};
-  routes.forEach(function(r) {
-    const key = r.peer_name || ('Peer #' + r.target_peer_id);
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(r);
-  });
-
-  const listLbl = document.createElement('label');
-  listLbl.className = 'form-label';
-  listLbl.style.marginTop = '12px';
-  listLbl.textContent = tr('gateway_pools.migrate_routes_label', 'Routes to migrate');
-  list.appendChild(listLbl);
-
-  // Select-all / select-none controls
-  const ctrl = document.createElement('div');
-  ctrl.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;font-size:12px';
-  const selAll = document.createElement('a');
-  selAll.href = '#';
-  selAll.textContent = tr('gateway_pools.select_all', 'Select all');
-  selAll.addEventListener('click', function(e) {
-    e.preventDefault();
-    list.querySelectorAll('input[name="migrate-route"]').forEach(function(c) { c.checked = true; });
-  });
-  const selNone = document.createElement('a');
-  selNone.href = '#';
-  selNone.textContent = tr('gateway_pools.select_none', 'Select none');
-  selNone.addEventListener('click', function(e) {
-    e.preventDefault();
-    list.querySelectorAll('input[name="migrate-route"]').forEach(function(c) { c.checked = false; });
-  });
-  ctrl.appendChild(selAll);
-  ctrl.appendChild(document.createTextNode(' · '));
-  ctrl.appendChild(selNone);
-  list.appendChild(ctrl);
-
-  Object.keys(grouped).forEach(function(peerName) {
-    const groupHeader = document.createElement('div');
-    groupHeader.style.cssText = 'font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px;margin-bottom:4px';
-    groupHeader.textContent = peerName;
-    list.appendChild(groupHeader);
-
-    grouped[peerName].forEach(function(r) {
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;cursor:pointer';
-      row.addEventListener('mouseenter', function() { row.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))'; });
-      row.addEventListener('mouseleave', function() { row.style.background = ''; });
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.name = 'migrate-route';
-      cb.value = String(r.id);
-      // Default-uncheck loopback routes — moving "ssh.*→127.0.0.1" to a pool
-      // means the upstream changes machine on failover, which is rarely
-      // desired. User can opt-in by checking manually.
-      // Use the REAL backend the gateway forwards to (target_lan_host), not the
-      // legacy target_ip placeholder which is always 127.0.0.1 for gateway routes.
-      const lanHost = r.target_lan_host || '';
-      const isLoopback = lanHost === '::1' || lanHost.toLowerCase() === 'localhost'
-        || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lanHost);
-      cb.checked = !isLoopback;
-
-      const label = document.createElement('span');
-      label.style.cssText = 'flex:1;font-size:13px';
-      const domSpan = document.createElement('strong');
-      domSpan.textContent = r.domain;
-      const tgtSpan = document.createElement('span');
-      tgtSpan.style.cssText = 'color:var(--text-3);font-family:var(--font-mono);font-size:11px;margin-left:8px';
-      tgtSpan.textContent = '→ ' + (r.target_lan_host || r.target_ip) + ':' + (r.target_lan_port || r.target_port);
-      label.appendChild(domSpan);
-      label.appendChild(tgtSpan);
-
-      if (isLoopback) {
-        const warn = document.createElement('span');
-        warn.style.cssText = 'color:var(--orange,#f59e0b);font-size:11px;margin-left:8px';
-        warn.textContent = '⚠ ' + tr('gateway_pools.migrate_loopback_warn', 'loopback — verify before migrating');
-        label.appendChild(warn);
-      }
-
-      row.appendChild(cb);
-      row.appendChild(label);
-      list.appendChild(row);
-    });
-  });
-
-  // ── Mode branch: pool (default) vs. permanent relocate ──────────────────
-  if (migrateMode === 'relocate') {
-    const poolGroupEl = document.getElementById('migrate-target-pool');
-    if (poolGroupEl) poolGroupEl.parentNode.style.display = 'none';
-
-    // Target-gateway <select>, populated from /api/v1/gateways. On change, load
-    // that gateway's discovered hosts into the shared datalist.
-    const gwGroup = document.createElement('div');
-    gwGroup.className = 'form-group';
-    const gwLbl = document.createElement('label');
-    gwLbl.className = 'form-label';
-    gwLbl.textContent = tr('gateway_pools.relocate_target_gateway', 'Target gateway');
-    const gwSel = document.createElement('select');
-    gwSel.id = 'relocate-target-gateway';
-    gwSel.className = 'form-input';
-    gwGroup.appendChild(gwLbl);
-    gwGroup.appendChild(gwSel);
-    list.insertBefore(gwGroup, list.firstChild);
-    gwSel.addEventListener('change', function() { loadRelocateHosts(gwSel.value); });
-    fetch('/api/v1/gateways')
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        const gateways = data && Array.isArray(data.gateways) ? data.gateways
-          : (Array.isArray(data) ? data : []);
-        gateways.forEach(function(g) {
-          const opt = document.createElement('option');
-          opt.value = g.peer_id || g.id;
-          opt.textContent = g.name || ('Gateway #' + (g.peer_id || g.id));
-          gwSel.appendChild(opt);
-        });
-        if (gwSel.value) loadRelocateHosts(gwSel.value);
-      })
-      .catch(function() { /* free-text entry still works without the list */ });
-
-    // Bulk-apply field (one IP applied to all visible relocate inputs).
-    const bulk = document.createElement('input');
-    bulk.type = 'text';
-    bulk.className = 'form-input';
-    bulk.placeholder = tr('gateway_pools.relocate_bulk_ip', 'Apply IP to all selected');
-    bulk.addEventListener('input', function() {
-      list.querySelectorAll('input[name="relocate-lan-host"]').forEach(function(inp) { inp.value = bulk.value; });
-    });
-    list.insertBefore(bulk, list.firstChild);
-
-    // Shared datalist for autocomplete from the target gateway's discovered hosts.
-    let dl = document.getElementById('relocate-host-options');
-    if (!dl) { dl = document.createElement('datalist'); dl.id = 'relocate-host-options'; list.appendChild(dl); }
-
-    // Per-route LAN-host input, prefilled with current target_lan_host. The
-    // checkbox cb sits inside its row <label>; append the input to that row.
-    routes.forEach(function(r) {
-      const cb = list.querySelector('input[name="migrate-route"][value="' + r.id + '"]');
-      if (!cb) return;
-      const rowLabel = cb.closest('label');
-      if (!rowLabel) return;
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.name = 'relocate-lan-host';
-      inp.className = 'form-input';
-      inp.setAttribute('list', 'relocate-host-options');
-      inp.dataset.routeId = String(r.id);
-      inp.dataset.lanPort = String(r.target_lan_port || r.target_port || '');
-      inp.value = r.target_lan_host || '';
-      rowLabel.appendChild(inp);
-    });
-  }
 }
 
 function loadRelocateHosts(gatewayId) {

@@ -20,9 +20,8 @@
   function T(key, fallback) {
     return (window.GC && window.GC.t && window.GC.t[key]) || fallback;
   }
-  function isAurora() { return !!document.querySelector('.app'); }
   function byId(id) { return document.getElementById(id); }
-  function warnColor() { return isAurora() ? 'var(--amber)' : 'var(--yellow, #facc15)'; }
+  function warnColor() { return 'var(--amber)'; }
 
   // Tiny DOM builder so we never touch innerHTML (a hook blocks it).
   function el(tag, props, children) {

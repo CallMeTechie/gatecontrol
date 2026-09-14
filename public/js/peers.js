@@ -14,7 +14,6 @@
   function _stopPairingCountdown() {
     if (_pairingCountdownTimer) { clearInterval(_pairingCountdownTimer); _pairingCountdownTimer = null; }
   }
-  function isAurora() { return !!document.querySelector('.app'); }
 
   function openGatewayTokensModal(peer, tokens) {
     var apiEl = document.getElementById('gateway-tokens-api-token');
@@ -207,8 +206,8 @@
     function activateTab(name) {
       tabs.forEach(function(b) {
         var on = b.getAttribute('data-gw-tab') === name;
-        b.style.borderBottomColor = on ? (isAurora() ? 'var(--accent)' : '#2563eb') : 'transparent';
-        b.style.color = on ? (isAurora() ? 'var(--accent)' : '#2563eb') : (isAurora() ? 'var(--muted)' : '#6b7280');
+        b.style.borderBottomColor = on ? 'var(--accent)' : 'transparent';
+        b.style.color = on ? 'var(--accent)' : 'var(--muted)';
         b.style.fontWeight = on ? '600' : 'normal';
       });
       panes.forEach(function(p) {
@@ -242,7 +241,7 @@
         var ms = expiresAt - Date.now();
         if (ms <= 0) {
           countdownEl.textContent = (GC.t['gateway_deploy_lxc_expired'] || 'Expired — click ↻ to regenerate');
-          countdownEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+          countdownEl.style.color = 'var(--red)';
           _stopPairingCountdown();
           return;
         }
@@ -250,7 +249,7 @@
         var m = Math.floor(s / 60);
         var ss = String(s % 60).padStart(2, '0');
         countdownEl.textContent = (GC.t['gateway_deploy_lxc_valid_for'] || 'Valid for') + ' ' + m + ':' + ss;
-        countdownEl.style.color = ms < 2 * 60 * 1000 ? (isAurora() ? 'var(--red)' : '#dc2626') : (isAurora() ? 'var(--muted)' : '#6b7280');
+        countdownEl.style.color = ms < 2 * 60 * 1000 ? 'var(--red)' : 'var(--muted)';
       }
       tick();
       _pairingCountdownTimer = setInterval(tick, 1000);
@@ -281,7 +280,7 @@
         startCountdown(data.expiresAt);
       } catch (err) {
         statusEl.textContent = (GC.t['gateway_deploy_lxc_failed'] || 'Failed') + ': ' + err.message;
-        statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+        statusEl.style.color = 'var(--red)';
       }
     }
 
@@ -421,122 +420,6 @@
   // and static SVG/HTML strings. This follows the existing pattern throughout the codebase.
   var peersMobile = document.getElementById('peers-mobile');
 
-  function actionBtns(p) {
-    if (isAurora()) return auroraActionBtns(p);
-    var gatewayBtn = p.peer_type === 'gateway'
-      ? '<button class="icon-btn" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
-        '</button>'
-      : '';
-    return gatewayBtn +
-    '<button class="icon-btn" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
-    '</button>' +
-    '<button class="icon-btn" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
-    '</button>' +
-    '<button class="icon-btn" title="Edit" data-action="edit" data-id="' + p.id + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
-    '</button>' +
-    '<button class="icon-btn" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
-    '</button>' +
-    '<button class="icon-btn" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
-    '</button>';
-  }
-
-  function renderPeers(peers) {
-    if (isAurora()) return auroraRenderPeers(peers);
-    var colSpan = batchMode ? 7 : 6;
-    if (!peers.length) {
-      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
-      if (peersMobile) peersMobile.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</div>';
-      return;
-    }
-
-    // Desktop table
-    tbody.innerHTML = peers.map(function(p) {
-      var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '\u2014';
-      var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
-      var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
-      var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
-      var statusTag = getStatusTag(p);
-      var expiryTag = getExpiryTag(p);
-      var groupBadge = getGroupBadge(p);
-      var peerTags = parseTags(p.tags);
-      var tagsHtml = peerTags.map(function(t) { return '<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">' + escapeHtml(t) + '</span>'; }).join('');
-      var totalTraffic = (p.total_rx || p.total_tx) ? '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">\u03A3 ' + formatBytes((p.total_rx || 0) + (p.total_tx || 0)) + '</div>' : '';
-      var checked = batchSelected.has(String(p.id)) ? ' checked' : '';
-      var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
-
-      var hostnameHtml = '';
-      if (p.hostname) {
-        var srcLabel = '';
-        if (p.hostname_source === 'admin') srcLabel = (GC.t['peers.hostname_source_admin'] || 'manuell');
-        else if (p.hostname_source === 'agent') srcLabel = (GC.t['peers.hostname_source_agent'] || 'auto');
-        else if (p.hostname_source === 'stale') srcLabel = (GC.t['peers.hostname_source_stale'] || 'stale');
-        hostnameHtml = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">'
-          + '\u29C9 ' + escapeHtml(p.hostname)
-          + (srcLabel ? ' <span style="opacity:0.6">(' + escapeHtml(srcLabel) + ')</span>' : '')
-          + '</div>';
-      }
-      return '<tr data-peer-id="' + p.id + '">' +
-        batchTd +
-        '<td>' +
-          '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + getGatewayBadge(p) + '</div>' +
-          '<div class="peer-meta">' + escapeHtml(p.description || '') + '</div>' +
-          hostnameHtml +
-          (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
-        '</td>' +
-        '<td><span style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(ip) + '</span></td>' +
-        '<td><span style="font-size:12px;color:var(--text-2)">' + lastContact + '</span></td>' +
-        '<td>' +
-          '<span style="font-family:var(--font-mono);font-size:11px">\u2193' + rx + ' \u2191' + tx + '</span>' +
-          totalTraffic +
-        '</td>' +
-        '<td>' + statusTag + '</td>' +
-        '<td><div class="peer-actions">' + actionBtns(p) + '</div></td>' +
-      '</tr>';
-    }).join('');
-
-    // Mobile cards
-    if (peersMobile) {
-      peersMobile.innerHTML = peers.map(function(p) {
-        var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '\u2014';
-        var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
-        var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
-        var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
-        var statusTag = getStatusTag(p);
-        var expiryTag = getExpiryTag(p);
-        var groupBadge = getGroupBadge(p);
-        var peerTags = parseTags(p.tags);
-        var tagsHtml = peerTags.map(function(t) { return '<span class="tag tag-grey" style="font-size:10px;padding:1px 6px">' + escapeHtml(t) + '</span>'; }).join('');
-
-        var mobileChecked = batchSelected.has(String(p.id)) ? ' checked' : '';
-        var mobileBatchCb = batchMode ? '<input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + mobileChecked + ' style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent)">' : '';
-
-        return '<div class="peer-card" data-peer-id="' + p.id + '">' +
-          '<div class="peer-card-top">' +
-            mobileBatchCb +
-            '<div class="peer-card-info">' +
-              '<div class="peer-name">' + escapeHtml(p.name) + expiryTag + groupBadge + getGatewayBadge(p) + '</div>' +
-              (p.description ? '<div class="peer-meta">' + escapeHtml(p.description) + '</div>' : '') +
-              (tagsHtml ? '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">' + tagsHtml + '</div>' : '') +
-            '</div>' +
-            statusTag +
-          '</div>' +
-          '<div class="peer-card-meta">' +
-            '<span>' + escapeHtml(ip) + '</span>' +
-            '<span>\u2193' + rx + ' \u2191' + tx + '</span>' +
-            '<span>' + lastContact + '</span>' +
-          '</div>' +
-          '<div class="peer-card-actions">' + actionBtns(p) + '</div>' +
-        '</div>';
-      }).join('');
-    }
-  }
-
   // ─── Gateway badge ───────────────────────────────────────
   function getGatewayBadge(peer) {
     if (peer.peer_type !== 'gateway') return '';
@@ -632,17 +515,17 @@
     });
   }
 
-  var auroraStatusFilter = 'all';
+  var statusFilter = 'all';
 
   function applyFilters() {
     // Gateway peers live in their own section above the table — exclude
     // them from the client list so they don't appear twice.
     var filtered = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
-    // Aurora status-toggle filter (additive — only active in Aurora theme)
-    if (isAurora() && auroraStatusFilter !== 'all') {
+    // Status-toggle filter (All / Online / Offline)
+    if (statusFilter !== 'all') {
       filtered = filtered.filter(function(p) {
-        if (auroraStatusFilter === 'online') return p.enabled && p.isOnline;
-        if (auroraStatusFilter === 'offline') return !p.isOnline && p.enabled;
+        if (statusFilter === 'online') return p.enabled && p.isOnline;
+        if (statusFilter === 'offline') return !p.isOnline && p.enabled;
         return true;
       });
     }
@@ -736,28 +619,6 @@
         break;
       }
       case 'gateway-env': downloadGatewayEnv(id); break;
-    }
-  }
-
-  // Rotate the gateway's api_token + push_token and present the result
-  // in the Gateway-Pairing-Tokens modal. Mirrors the Edit-modal's
-  // 'Tokens rotieren'-button behaviour, exposed as a single call so
-  // the icon button on the Gateway-Card can use the same path without
-  // routing through the Edit modal first.
-  async function rotateGatewayTokensAndShowModal(peer) {
-    var confirmMsg = (GC.t && GC.t['gateway_download_confirm'])
-      || 'Gateway-Tokens werden regeneriert. Laufender Gateway wird ungültig. Fortfahren?';
-    if (!confirm(confirmMsg)) return;
-    try {
-      // /rotate returns JSON: { ok, apiToken, pushToken, envContent }
-      var data = await api.post('/api/peers/' + peer.id + '/gateway-env/rotate', {});
-      if (!data || data.ok === false) {
-        alert((GC.t && GC.t['common.error'] || 'Error') + ': ' + (data && data.error ? data.error : 'rotate failed'));
-        return;
-      }
-      openGatewayTokensModal(peer, data);
-    } catch (err) {
-      alert((GC.t && GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err));
     }
   }
 
@@ -1372,7 +1233,7 @@
     input.value = '';
     btn.disabled = true;
     statusEl.textContent = ' ';
-    statusEl.style.color = (isAurora() ? 'var(--muted)' : '#6b7280');
+    statusEl.style.color = 'var(--muted)';
 
     openModal('modal-gateway-delete');
 
@@ -1381,12 +1242,12 @@
       impact = await api.get('/api/peers/' + encodeURIComponent(peerId) + '/delete-impact');
     } catch (err) {
       statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+      statusEl.style.color = 'var(--red)';
       return;
     }
     if (!impact || !impact.ok || !impact.peer) {
       statusEl.textContent = (impact && impact.error) || (GC.t['common.error'] || 'Error');
-      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+      statusEl.style.color = 'var(--red)';
       return;
     }
 
@@ -1417,15 +1278,15 @@
       if (v === gwDeletePeer.ip) {
         btn.disabled = false;
         statusEl.textContent = GC.t['gateway_delete_ip_match'] || '✓ IP matches';
-        statusEl.style.color = (isAurora() ? 'var(--green)' : '#10b981');
+        statusEl.style.color = 'var(--green)';
       } else {
         btn.disabled = true;
         if (v.length === 0) {
           statusEl.textContent = ' ';
-          statusEl.style.color = (isAurora() ? 'var(--muted)' : '#6b7280');
+          statusEl.style.color = 'var(--muted)';
         } else {
           statusEl.textContent = GC.t['gateway_delete_ip_mismatch'] || 'IP does not match';
-          statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+          statusEl.style.color = 'var(--red)';
         }
       }
     };
@@ -1447,7 +1308,7 @@
       loadGroups();
     } catch (err) {
       statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = (isAurora() ? 'var(--red)' : '#dc2626');
+      statusEl.style.color = 'var(--red)';
       btn.disabled = false;
     } finally {
       btnReset(btn);
@@ -1486,9 +1347,8 @@
     }
   }
 
-  // Aurora renders the peer traffic as a bar chart (matching the dashboard's
-  // .chart/.col/.bar markup); default/pro keep the SVG line/area chart.
-  function renderAuroraTrafficBars(container, dataPoints) {
+  // Peer traffic as a bar chart (same .chart/.col/.bar markup as the dashboard).
+  function renderTrafficBars(container, dataPoints) {
     if (!dataPoints || dataPoints.length === 0) {
       container.innerHTML = '<div class="empty-state" style="padding:30px 0;text-align:center;color:var(--faint);font-size:13px">' + escapeHtml(GC.t['dashboard.chart_no_data'] || 'No traffic data') + '</div>';
       return;
@@ -1510,33 +1370,7 @@
   function renderTrafficChart(dataPoints) {
     var svg = document.getElementById('traffic-peer-chart');
     if (!svg) return;
-    if (isAurora()) { renderAuroraTrafficBars(svg, dataPoints); return; }
-    if (!dataPoints || dataPoints.length === 0) {
-      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="var(--text-3)" font-size="13">No data</text>';
-      return;
-    }
-    var w = 520, h = 120;
-    var maxVal = Math.max(1, Math.max.apply(null, dataPoints.map(function(d) { return Math.max(d.upload, d.download); })));
-    function toPath(points, key) {
-      var step = w / Math.max(1, points.length - 1);
-      return points.map(function(p, i) {
-        var x = i * step;
-        var y = h - 10 - ((p[key] / maxVal) * (h - 20));
-        return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
-      }).join(' ');
-    }
-    var upPath = toPath(dataPoints, 'upload');
-    var dnPath = toPath(dataPoints, 'download');
-    svg.innerHTML =
-      '<defs><linearGradient id="gPUp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0a6e4f" stop-opacity="0.18"/><stop offset="100%" stop-color="#0a6e4f" stop-opacity="0"/></linearGradient>' +
-      '<linearGradient id="gPDn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1d4ed8" stop-opacity="0.14"/><stop offset="100%" stop-color="#1d4ed8" stop-opacity="0"/></linearGradient></defs>' +
-      '<line x1="0" y1="30" x2="' + w + '" y2="30" stroke="var(--border)" stroke-width="1"/>' +
-      '<line x1="0" y1="60" x2="' + w + '" y2="60" stroke="var(--border)" stroke-width="1"/>' +
-      '<line x1="0" y1="90" x2="' + w + '" y2="90" stroke="var(--border)" stroke-width="1"/>' +
-      '<path d="' + upPath + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#gPUp)"/>' +
-      '<path d="' + upPath + '" fill="none" stroke="#0a6e4f" stroke-width="2"/>' +
-      '<path d="' + dnPath + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#gPDn)"/>' +
-      '<path d="' + dnPath + '" fill="none" stroke="#1d4ed8" stroke-width="2"/>';
+    renderTrafficBars(svg, dataPoints);
   }
 
   document.addEventListener('click', function(e) {
@@ -1575,7 +1409,7 @@
         '</div>';
       }
       return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-group-id="' + g.id + '">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : (isAurora() ? 'var(--muted)' : '#6b7280')) + ';flex-shrink:0"></span>' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : 'var(--muted)') + ';flex-shrink:0"></span>' +
         '<span style="font-size:13px;font-weight:500;flex:1">' + escapeHtml(g.name) + '</span>' +
         (g.description ? '<span style="font-size:11px;color:var(--text-3);flex:1">' + escapeHtml(g.description) + '</span>' : '') +
         '<span class="tag tag-grey" style="font-size:10px">' + g.peer_count + ' peer(s)</span>' +
@@ -1781,9 +1615,8 @@
 
   // ─── Home-Gateway cards (above the peer table) ──────────
   // One /api/gateways call returns each gateway's state, telemetry and
-  // the routes it serves. Cards default to collapsed; the expanded set
-  // is persisted per-gateway in localStorage so the UI remembers which
-  // ones the admin had open.
+  // the routes it serves; each gateway renders as a unit card that links
+  // to its detail view on /gateways.
   var gwContainer = document.getElementById('gateways-container');
   var gwCountEl = document.getElementById('gw-section-count');
   var peersCountEl = document.getElementById('peers-section-count');
@@ -1793,14 +1626,6 @@
   var statClTotal  = document.getElementById('stat-cl-total');
 
   var allGateways = [];
-  var GW_EXPANDED_KEY = 'gc_gw_expanded_v1';
-  var gwExpanded = (function() {
-    try { return new Set((JSON.parse(localStorage.getItem(GW_EXPANDED_KEY) || '[]') || []).map(String)); }
-    catch (_) { return new Set(); }
-  })();
-  function saveGwExpanded() {
-    try { localStorage.setItem(GW_EXPANDED_KEY, JSON.stringify(Array.from(gwExpanded))); } catch (_) { /* ignore */ }
-  }
 
   function clearEl(el) { while (el && el.firstChild) el.removeChild(el.firstChild); }
 
@@ -1842,371 +1667,11 @@
     Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
     return el;
   }
-  function shieldSvg() {
-    return svgEl(
-      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-      [svgShape('path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' }),
-       svgShape('polyline', { points: '9 12 11 14 15 10' })]
-    );
-  }
-  function chevronSvg() {
-    return svgEl(
-      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-      [svgShape('polyline', { points: '6 9 12 15 18 9' })]
-    );
-  }
   function plainSvg(path) {
     return svgEl(
       { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', width: '14', height: '14' },
       [svgShape('path', { d: path })]
     );
-  }
-
-  function addMeta(row, text) {
-    var el = document.createElement('span');
-    el.textContent = text;
-    row.appendChild(el);
-  }
-  function addSep(row) {
-    var s = document.createElement('span');
-    s.className = 'sep';
-    s.textContent = '·';
-    row.appendChild(s);
-  }
-
-  function renderGatewayHeader(gw, isExpanded) {
-    var head = document.createElement('header');
-    head.className = 'gw-card-head';
-    head.setAttribute('role', 'button');
-    head.setAttribute('tabindex', '0');
-    head.setAttribute('aria-expanded', String(isExpanded));
-
-    var avatar = document.createElement('div');
-    avatar.className = 'gw-avatar';
-    avatar.appendChild(shieldSvg());
-
-    var identity = document.createElement('div');
-    identity.className = 'gw-identity';
-    var h3 = document.createElement('h3');
-    h3.textContent = gw.name;
-    identity.appendChild(h3);
-
-    var meta = document.createElement('div');
-    meta.className = 'gw-identity-meta';
-    var metaParts = [];
-    if (gw.hostname) metaParts.push(gw.hostname);
-    if (gw.ip) metaParts.push(gw.ip);
-    if (gw.api_port) metaParts.push('API :' + gw.api_port);
-    metaParts.forEach(function(p, i) {
-      addMeta(meta, p);
-      if (i < metaParts.length - 1) addSep(meta);
-    });
-    identity.appendChild(meta);
-
-    var statusWrap = document.createElement('div');
-    statusWrap.className = 'gw-status';
-    var telemetry = (gw.health && gw.health.telemetry) || null;
-    if (telemetry && telemetry.gateway_version) {
-      var vchip = document.createElement('span');
-      vchip.className = 'version-chip';
-      vchip.title = gwT('peers.gateway.version_chip', 'Gateway-Container-Version');
-      vchip.textContent = 'v' + telemetry.gateway_version;
-      statusWrap.appendChild(vchip);
-    }
-
-    var status = gw.status || 'degraded';
-    var pill = document.createElement('span');
-    pill.className = 'status-pill ' + status;
-    var dot = document.createElement('span');
-    dot.className = 'dot';
-    pill.appendChild(dot);
-    var labelKey = 'peers.gateway.status_' + status;
-    var fallback = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Degraded';
-    pill.appendChild(document.createTextNode(gwT(labelKey, fallback)));
-    statusWrap.appendChild(pill);
-
-    var chev = document.createElement('span');
-    chev.className = 'gw-chev';
-    chev.appendChild(chevronSvg());
-    statusWrap.appendChild(chev);
-
-    head.appendChild(avatar);
-    head.appendChild(identity);
-    head.appendChild(statusWrap);
-    return head;
-  }
-
-  function teleRow(grid, key, value, barPercent, barClass) {
-    if (value === undefined || value === null || value === '') return;
-    var k = document.createElement('div');
-    k.className = 'tele-k';
-    k.textContent = key;
-    var v = document.createElement('div');
-    v.className = 'tele-v';
-    v.textContent = value;
-    if (typeof barPercent === 'number' && barPercent >= 0) {
-      var bar = document.createElement('span');
-      bar.className = 'tele-bar';
-      var fill = document.createElement('span');
-      fill.className = 'tele-bar-fill' + (barClass ? ' ' + barClass : '');
-      fill.style.width = Math.min(100, Math.max(0, barPercent)) + '%';
-      bar.appendChild(fill);
-      v.appendChild(bar);
-    }
-    grid.appendChild(k);
-    grid.appendChild(v);
-  }
-
-  function renderTelemetrySection(gw) {
-    var sec = document.createElement('div');
-    sec.className = 'gw-section';
-    var title = document.createElement('div');
-    title.className = 'gw-section-title';
-    title.textContent = gwT('peers.gateway.section_telemetry', 'Telemetrie');
-    sec.appendChild(title);
-
-    var grid = document.createElement('div');
-    grid.className = 'tele-rows';
-    var h = gw.health || {};
-    var t = h.telemetry || {};
-
-    // Status-y fields
-    teleRow(grid, gwT('peers.gateway.last_seen', 'Zuletzt gesehen'),
-      gw.last_seen_at ? (formatRelTime(gw.last_seen_at) + ' ago') : '—');
-    teleRow(grid, gwT('peers.gateway.uptime', 'Laufzeit'), formatUptimeSec(h.uptime_s));
-    if (typeof h.wg_handshake_age_s === 'number') {
-      teleRow(grid, gwT('peers.gateway.wg_handshake', 'Handshake'), h.wg_handshake_age_s + 's ago');
-    }
-    if (h.hostname) teleRow(grid, gwT('peers.gateway.hostname', 'Hostname'), h.hostname);
-
-    // Versions
-    if (t.gateway_version) teleRow(grid, 'Gateway', 'v' + t.gateway_version);
-    if (t.node_version)    teleRow(grid, 'Node', t.node_version);
-    if (t.wg_tools_version) teleRow(grid, 'WG-Tools', t.wg_tools_version);
-    if (t.os_platform) {
-      teleRow(grid, 'OS', t.os_platform + (t.os_release ? ' ' + t.os_release : '') + (t.arch ? ' · ' + t.arch : ''));
-    }
-
-    // Resources
-    if (t.cpu_cores) {
-      var loadStr = Array.isArray(t.cpu_load_avg)
-        ? t.cpu_load_avg.map(function(n) { return (+n).toFixed(2); }).join(' · ')
-        : '';
-      teleRow(grid, 'CPU', t.cpu_cores + ' cores' + (loadStr ? ' · load ' + loadStr : ''));
-    }
-    if (t.mem_total) {
-      var pct = Math.round((t.mem_used / t.mem_total) * 100);
-      var memCls = pct > 90 ? 'bad' : pct > 70 ? 'warn' : '';
-      teleRow(grid, 'Memory',
-        window.formatBytes(t.mem_used) + ' / ' + window.formatBytes(t.mem_total) + ' (' + pct + '%)',
-        pct, memCls);
-    }
-    if (t.disk && t.disk.total) {
-      var dPct = Math.round((t.disk.used / t.disk.total) * 100);
-      var dCls = dPct > 90 ? 'bad' : dPct > 70 ? 'warn' : '';
-      teleRow(grid, 'Disk',
-        window.formatBytes(t.disk.free) + ' frei / ' + window.formatBytes(t.disk.total) + ' (' + dPct + '%)',
-        dPct, dCls);
-    }
-
-    // LAN
-    if (t.default_gateway_ip) teleRow(grid, 'LAN-GW', t.default_gateway_ip);
-    if (Array.isArray(t.dns_resolvers) && t.dns_resolvers.length) {
-      teleRow(grid, 'DNS', t.dns_resolvers.join(', '));
-    }
-
-    sec.appendChild(grid);
-    return sec;
-  }
-
-  function renderRoutesSection(gw) {
-    var sec = document.createElement('div');
-    sec.className = 'gw-section';
-    var title = document.createElement('div');
-    title.className = 'gw-section-title';
-    var routes = Array.isArray(gw.routes) ? gw.routes : [];
-    title.textContent = gwT('peers.gateway.section_routes', 'Geroutete Ziele') + ' (' + routes.length + ')';
-    sec.appendChild(title);
-
-    if (!routes.length) {
-      var empty = document.createElement('div');
-      empty.style.cssText = 'font-size:11px;color:var(--text-3);font-family:var(--font-mono)';
-      empty.textContent = gwT('peers.gateway.no_routes', 'Keine Routen über diesen Gateway');
-      sec.appendChild(empty);
-      return sec;
-    }
-
-    // Build a lookup from route_reachability if present
-    var reach = {};
-    var arr = (gw.health && Array.isArray(gw.health.route_reachability)) ? gw.health.route_reachability : [];
-    arr.forEach(function(r) { reach[r.route_id] = r; });
-
-    // Defense-in-depth: an offline gateway means nothing behind it can be
-    // reachable, even if a stale last_health says otherwise. The API layer
-    // already force-marks reachable=false for offline gateways, but this
-    // guard keeps the UI honest if it ever sees pre-fix or cached data.
-    var gatewayDown = gw.status === 'offline';
-
-    var list = document.createElement('div');
-    list.className = 'gw-routes-list';
-    routes.forEach(function(r) {
-      var row = document.createElement('div');
-      row.className = 'gw-route-row';
-
-      var dot = document.createElement('span');
-      dot.className = 'gw-route-dot';
-      var rr = reach[r.id];
-      if (gatewayDown) {
-        dot.classList.add('down');
-      } else if (rr) {
-        if (rr.reachable) dot.classList.add(); // green default
-        else dot.classList.add('down');
-      } else {
-        dot.classList.add('check');
-      }
-      row.appendChild(dot);
-
-      var domain = document.createElement('span');
-      domain.className = 'gw-route-domain';
-      domain.textContent = r.domain || '—';
-      row.appendChild(domain);
-
-      var target = document.createElement('span');
-      target.className = 'gw-route-target';
-      if (r.route_type === 'l4') {
-        target.textContent = '→ ' + (r.target_lan_host || '?') + ':' + (r.target_lan_port || r.l4_listen_port || '?');
-      } else {
-        target.textContent = '→ ' + (r.target_lan_host || '?') + ':' + (r.target_lan_port || '?');
-      }
-      row.appendChild(target);
-
-      var kind = document.createElement('span');
-      kind.className = 'gw-route-kind ' + (r.route_type || 'http');
-      kind.textContent = (r.route_type || 'http').toUpperCase();
-      row.appendChild(kind);
-
-      list.appendChild(row);
-    });
-    sec.appendChild(list);
-
-    // Reachability summary
-    if (arr.length) {
-      var reachCount = arr.filter(function(x) { return x.reachable; }).length;
-      var latencies = arr.filter(function(x) { return typeof x.latency_ms === 'number'; }).map(function(x) { return x.latency_ms; });
-      var avg = latencies.length ? (latencies.reduce(function(a, b) { return a + b; }, 0) / latencies.length).toFixed(1) : null;
-      var summary = document.createElement('div');
-      summary.style.cssText = 'margin-top:10px;font-size:11px;color:var(--text-3);font-family:var(--font-mono)';
-      summary.textContent = 'Reachability: ' + reachCount + '/' + arr.length + ' erreichbar' + (avg ? ' · Ø ' + avg + ' ms' : '');
-      sec.appendChild(summary);
-    }
-    return sec;
-  }
-
-  function renderActionsSection(gw) {
-    var footer = document.createElement('footer');
-    footer.className = 'gw-actions';
-
-    var left = document.createElement('div');
-    left.className = 'gw-actions-left';
-    if (gw.health && gw.health.config_hash) {
-      left.textContent = 'Config-Hash: ' + gw.health.config_hash.slice(0, 24);
-    } else {
-      left.textContent = '';
-    }
-    footer.appendChild(left);
-
-    function mkBtn(labelKey, labelFallback, onClick, danger) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn btn-sm' + (danger ? ' btn-danger' : '');
-      b.textContent = gwT(labelKey, labelFallback);
-      b.addEventListener('click', function(e) { e.stopPropagation(); onClick(); });
-      return b;
-    }
-
-    // Icon-only button matching the existing icon-btn class used in the
-    // standard peer list. The trash sits next to "Bearbeiten" so the
-    // destructive action is grouped with the modify action visually.
-    function mkIconBtn(titleKey, titleFallback, svgPath, onClick, danger) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'icon-btn' + (danger ? ' icon-btn-danger' : '');
-      b.title = gwT(titleKey, titleFallback);
-      b.setAttribute('aria-label', b.title);
-      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + svgPath + '</svg>';
-      b.addEventListener('click', function(e) { e.stopPropagation(); onClick(); });
-      return b;
-    }
-
-    // Pencil icon — same SVG path as the regular peer-list edit button
-    // for visual consistency. Tooltip carries the original 'Bearbeiten'
-    // label so accessibility/i18n stays intact.
-    footer.appendChild(mkIconBtn(
-      'peers.gateway.action_edit', 'Bearbeiten',
-      '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>',
-      function() { showEditModal(gw.peer_id); }
-    ));
-    // Trash icon — opens the IP-typing safety modal (showGatewayDeleteConfirm).
-    footer.appendChild(mkIconBtn(
-      'peers.gateway.action_delete', 'Gateway löschen',
-      '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
-      function() { showGatewayDeleteConfirm(gw.peer_id); },
-      true
-    ));
-    // Key icon — opens the Gateway-Pairing-Tokens modal directly.
-    // Same flow as Edit modal → 'Tokens rotieren'-Button: confirm,
-    // POST /gateway-env/rotate, then open the modal with envContent +
-    // apiToken + pushToken populated. NOT downloadGatewayEnv() —
-    // that's a misleadingly-named legacy file-download function.
-    footer.appendChild(mkIconBtn(
-      'peers.gateway.action_env', 'Pairing-Tokens',
-      '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
-      function() {
-        rotateGatewayTokensAndShowModal({ id: gw.peer_id, name: gw.name });
-      }
-    ));
-    return footer;
-  }
-
-  function toggleGwExpanded(peerId, card) {
-    var id = String(peerId);
-    if (gwExpanded.has(id)) { gwExpanded.delete(id); card.classList.remove('expanded'); }
-    else { gwExpanded.add(id); card.classList.add('expanded'); }
-    var head = card.querySelector('.gw-card-head');
-    if (head) head.setAttribute('aria-expanded', String(gwExpanded.has(id)));
-    saveGwExpanded();
-  }
-
-  function renderGatewayCard(gw) {
-    if (isAurora()) return auroraRenderGatewayCard(gw);
-    var card = document.createElement('article');
-    card.className = 'gw-card';
-    var isOpen = gwExpanded.has(String(gw.peer_id));
-    if (isOpen) card.classList.add('expanded');
-    if (gw.status === 'offline') card.classList.add('offline');
-
-    var head = renderGatewayHeader(gw, isOpen);
-    card.appendChild(head);
-
-    var body = document.createElement('div');
-    body.className = 'gw-card-body';
-    body.appendChild(renderTelemetrySection(gw));
-    body.appendChild(renderRoutesSection(gw));
-    card.appendChild(body);
-
-    card.appendChild(renderActionsSection(gw));
-
-    head.addEventListener('click', function(e) {
-      if (e.target.closest('button, a')) return;
-      toggleGwExpanded(gw.peer_id, card);
-    });
-    head.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleGwExpanded(gw.peer_id, card);
-      }
-    });
-    return card;
   }
 
   function renderGateways() {
@@ -2252,11 +1717,9 @@
     }
   }
 
-  // ─── Aurora theme-branched functions ─────────────────────────────────────
-  // These are pure siblings — no existing function body is modified.
-  // Guards (if(isAurora()) return aurora…()) above call these.
+  // ─── Peer table rows, action buttons and gateway unit cards ──────────────
 
-  function auroraActionBtns(p) {
+  function actionBtns(p) {
     // Gateway-env download button (gateway peers only)
     var gwBtn = p.peer_type === 'gateway'
       ? '<button class="icon-action" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
@@ -2280,7 +1743,7 @@
       '</button>';
   }
 
-  function auroraRenderPeers(peers) {
+  function renderPeers(peers) {
     if (!peers.length) {
       var colSpan = batchMode ? 7 : 6;
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
@@ -2301,12 +1764,12 @@
         '<td>' + lastContact + '</td>' +
         '<td class="mono">↓' + rx + ' ↑' + tx + '</td>' +
         '<td>' + statusTag + '</td>' +
-        '<td><div class="row-actions">' + auroraActionBtns(p) + '</div></td>' +
+        '<td><div class="row-actions">' + actionBtns(p) + '</div></td>' +
       '</tr>';
     }).join('');
   }
 
-  function auroraRenderGatewayCard(gw) {
+  function renderGatewayCard(gw) {
     // ── Issue 5: badge INSIDE the card header ──────────────────────────────
     // ── Issue 6: gear button opens edit modal (not card click) ─────────────
     // ── Issue 7: card click → /gateways#gw/<id> detail page ───────────────
@@ -2431,13 +1894,13 @@
     return unit;
   }
 
-  function auroraInitStatusToggle() {
+  function initStatusToggle() {
     var toggle = document.getElementById('aurora-status-toggle');
     if (!toggle) return;
     toggle.addEventListener('click', function(e) {
       var btn = e.target.closest('.toggle-btn');
       if (!btn) return;
-      auroraStatusFilter = btn.dataset.status || 'all';
+      statusFilter = btn.dataset.status || 'all';
       toggle.querySelectorAll('.toggle-btn').forEach(function(b) {
         b.classList.toggle('on', b === btn);
       });
@@ -2467,7 +1930,7 @@
       .then(function () { batchSelected.clear(); if (batchSelectAll) batchSelectAll.checked = false; updateBatchBar(); loadPeers(); showToast((GC.t && GC.t['peers.owner.bulk_done']) || 'Owners updated'); })
       .catch(function (e) { showToast(e.message, 'error'); });
   });
-  if (isAurora()) auroraInitStatusToggle();
+  initStatusToggle();
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
   setInterval(loadGateways, 20000);
