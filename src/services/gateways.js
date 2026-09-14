@@ -108,7 +108,7 @@ function getGatewayConfig(peerId) {
   // load-balancing) still surfaces in every pool member's config.
   const httpRoutes = db.prepare(`
     SELECT id, domain, target_kind, target_lan_host, target_lan_port,
-           backend_https, wol_enabled, wol_mac
+           backend_https, backend_tls_fingerprint, wol_enabled, wol_mac
     FROM routes
     WHERE target_kind = 'gateway' AND enabled = 1
       AND (route_type = 'http' OR route_type IS NULL)
@@ -156,6 +156,12 @@ function getGatewayConfig(peerId) {
       // throw ZodError, /api/v1/gateway/config returns 500, and the
       // gateway never picks up the new route → "No route for domain X".
       protocol: r.backend_https ? 'https' : 'http',
+      // Pinned SHA-256 of the LAN certificate (docs/feature-release-b.md
+      // §13b), only when set. The config-hash schema (HttpRouteSchema, zod
+      // .strip()) drops unknown keys before hashing, so the hash of every
+      // route — with or without a fingerprint — stays byte-identical and
+      // older gateways simply ignore the field.
+      ...(r.backend_https && r.backend_tls_fingerprint ? { backend_tls_fingerprint: r.backend_tls_fingerprint } : {}),
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),

@@ -10,7 +10,7 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const { withCaddySync } = require('./routesSync');
 const { restoreRouteRow } = require('./routesRollback');
-const { parseHstsDefault, normalizeHstsDefault, hstsOfRoute, hstsDefaultToFields, validateTlsMinVersion } = require('./routesValidation');
+const { parseHstsDefault, normalizeHstsDefault, hstsOfRoute, hstsDefaultToFields, validateTlsMinVersion, normalizeWafDefault, parseWafDefault, wafModeChanged } = require('./routesValidation');
 
 // ─── Host aliases (docs/feature-security-options.md §A) ──
 //
@@ -501,6 +501,8 @@ function listZones() {
       gateway: describeTarget(zoneTarget(row), ctx),
       default_external_enabled: !!row.default_external_enabled,
       hsts_default: parseHstsDefault(row.hsts_default),
+      // WAF default for new HTTP entries (docs/feature-release-b.md §2).
+      waf_default: parseWafDefault(row.waf_default),
       // TLS profile (docs/feature-security-options.md §E).
       tls_min_version: row.tls_min_version === '1.3' ? '1.3' : '1.2',
       counts: {
@@ -609,60 +611,93 @@ async function applyGateway(domainId, input) {
 }
 
 /**
- * Zone defaults for NEW entries: access mode and HSTS (docs/feature-hsts.md).
+ * Zone defaults for NEW entries: access mode, HSTS (docs/feature-hsts.md) and
+ * WAF (docs/feature-release-b.md §2).
  *   default_external_enabled?: bool
  *   hsts_default?: { enabled, max_age, include_subdomains, preload } | null (= off)
  *   apply_hsts_to_existing?: bool — also switch every HTTP entry of the zone
- *     with https_enabled (override or not) to the default: one transaction,
- *     one Caddy sync, snapshot restore (routes + zone row) on sync failure.
+ *     with https_enabled (override or not) to the default
+ *   waf_default?: { enabled, mode, paranoia } | null (= no default)
+ *   apply_waf_to_existing?: bool — also set every HTTP entry of the zone to
+ *     the WAF default (null / enabled:false switches the WAF off there and
+ *     keeps mode/paranoia)
  *   tls_min_version?: '1.2' | '1.3' — TLS profile of the zone
  *     (docs/feature-security-options.md §E); a change is synced to Caddy.
- * → { zone, applied? }   (applied = number of entries rewritten)
+ * Every write is one transaction and at most one Caddy sync, with a snapshot
+ * restore (routes + zone row) on sync failure. No licence check here — the
+ * API endpoint gates an enabling waf_default (feature `waf`).
+ * → { zone, applied?, applied_waf? }   (applied = entries rewritten by the
+ *   HSTS and/or WAF apply, applied_waf = entries rewritten by the WAF apply)
  */
-async function updateDefaults(domainId, { default_external_enabled, hsts_default, apply_hsts_to_existing, tls_min_version } = {}) {
+async function updateDefaults(domainId, {
+  default_external_enabled, hsts_default, apply_hsts_to_existing, tls_min_version, waf_default, apply_waf_to_existing,
+} = {}) {
   const db = getDb();
   const zone = zoneRowOr404(db, domainId);
   const applyHsts = !!apply_hsts_to_existing;
-  if (default_external_enabled === undefined && hsts_default === undefined && !applyHsts && tls_min_version === undefined) {
-    throw httpError(400, 'default_external_enabled, hsts_default or tls_min_version required');
+  const applyWaf = !!apply_waf_to_existing;
+  if (default_external_enabled === undefined && hsts_default === undefined && !applyHsts && tls_min_version === undefined
+      && waf_default === undefined && !applyWaf) {
+    throw httpError(400, 'default_external_enabled, hsts_default, waf_default or tls_min_version required');
   }
 
-  // Validate before any write (throws HSTS_* / TLS_MIN_VERSION_INVALID with statusCode 400).
+  // Validate before any write (throws HSTS_* / WAF_* / TLS_MIN_VERSION_INVALID with statusCode 400).
   const nextHsts = hsts_default !== undefined ? normalizeHstsDefault(hsts_default) : parseHstsDefault(zone.hsts_default);
   const nextHstsJson = nextHsts ? JSON.stringify(nextHsts) : null;
+  const nextWaf = waf_default !== undefined ? normalizeWafDefault(waf_default) : parseWafDefault(zone.waf_default);
+  const nextWafJson = nextWaf ? JSON.stringify(nextWaf) : null;
   const nextExternal = default_external_enabled !== undefined ? (default_external_enabled ? 1 : 0) : zone.default_external_enabled;
   const prevTlsMin = validateTlsMinVersion(zone.tls_min_version);
   const nextTlsMin = tls_min_version !== undefined ? validateTlsMinVersion(tls_min_version) : prevTlsMin;
   const tlsChanged = nextTlsMin !== prevTlsMin;
 
-  const setZone = db.prepare('UPDATE domains SET default_external_enabled = ?, hsts_default = ?, tls_min_version = ? WHERE id = ?');
-  const rows = applyHsts ? db.prepare(`
+  const setZone = db.prepare('UPDATE domains SET default_external_enabled = ?, hsts_default = ?, tls_min_version = ?, waf_default = ? WHERE id = ?');
+  const hstsRows = applyHsts ? db.prepare(`
     SELECT r.* FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
     WHERE sb.domain_id = ? AND r.route_type != 'l4' AND r.https_enabled = 1
   `).all(zone.id) : [];
+  const wafRows = applyWaf ? db.prepare(`
+    SELECT r.* FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
+    WHERE sb.domain_id = ? AND r.route_type != 'l4'
+  `).all(zone.id) : [];
+  // Snapshots of every touched route, taken before any write.
+  const snapshots = new Map();
+  for (const r of [...hstsRows, ...wafRows]) snapshots.set(r.id, r);
   const fields = hstsDefaultToFields(nextHsts);
   const setRoute = db.prepare(`UPDATE routes SET hsts_enabled = ?, hsts_max_age = ?, hsts_subdomains = ?, hsts_preload = ?,
     updated_at = datetime('now') WHERE id = ?`);
+  const setWaf = db.prepare(`UPDATE routes SET waf_enabled = ?, waf_mode = ?, waf_paranoia = ?, waf_mode_changed_at = ?,
+    updated_at = datetime('now') WHERE id = ?`);
+  const nowIso = new Date().toISOString();
 
   db.transaction(() => {
-    setZone.run(nextExternal, nextHstsJson, nextTlsMin, zone.id);
-    for (const r of rows) {
+    setZone.run(nextExternal, nextHstsJson, nextTlsMin, nextWafJson, zone.id);
+    for (const r of hstsRows) {
       // Switching the default off only clears the flag; the entry keeps its
       // own max-age/flags for a later re-enable.
       if (nextHsts) setRoute.run(fields.hsts_enabled, fields.hsts_max_age, fields.hsts_subdomains, fields.hsts_preload, r.id);
       else setRoute.run(0, r.hsts_max_age, r.hsts_subdomains, r.hsts_preload, r.id);
     }
+    for (const r of wafRows) {
+      // Default off (null or enabled:false) only clears the switch; the entry
+      // keeps its mode/paranoia/exclusions for a later re-enable.
+      const next = nextWaf && nextWaf.enabled
+        ? { waf_enabled: 1, waf_mode: nextWaf.mode, waf_paranoia: nextWaf.paranoia }
+        : { waf_enabled: 0, waf_mode: r.waf_mode, waf_paranoia: r.waf_paranoia };
+      const changedAt = wafModeChanged(r, next) ? nowIso : (r.waf_mode_changed_at || null);
+      setWaf.run(next.waf_enabled, next.waf_mode, next.waf_paranoia, changedAt, r.id);
+    }
   })();
 
   // The TLS profile lives in the Caddy server config (tls_connection_policies)
-  // → one sync, same rollback as the HSTS apply.
-  if (rows.length > 0 || tlsChanged) {
+  // → one sync, same rollback as the HSTS/WAF apply.
+  if (snapshots.size > 0 || tlsChanged) {
     await withCaddySync(syncToCaddy, () => {
       db.transaction(() => {
-        for (const row of rows) restoreRouteRow(db, row.id, row);
-        setZone.run(zone.default_external_enabled, zone.hsts_default, prevTlsMin, zone.id);
+        for (const row of snapshots.values()) restoreRouteRow(db, row.id, row);
+        setZone.run(zone.default_external_enabled, zone.hsts_default, prevTlsMin, zone.waf_default, zone.id);
       })();
-    }, rows.length > 0 ? 'zone hsts apply' : 'zone tls profile');
+    }, snapshots.size > 0 ? 'zone defaults apply' : 'zone tls profile');
   }
   if (tlsChanged) {
     try {
@@ -672,20 +707,31 @@ async function updateDefaults(domainId, { default_external_enabled, hsts_default
     } catch { /* activity is best-effort */ }
   }
 
-  if (rows.length > 0) {
+  if (hstsRows.length > 0) {
     try {
-      require('./activity').log('zone_hsts_applied', `HSTS default of "${zone.domain}" applied to ${rows.length} entries`, {
+      require('./activity').log('zone_hsts_applied', `HSTS default of "${zone.domain}" applied to ${hstsRows.length} entries`, {
         source: 'admin',
         severity: 'info',
-        details: { domainId: zone.id, hsts_default: nextHsts, routeIds: rows.map((r) => r.id) },
+        details: { domainId: zone.id, hsts_default: nextHsts, routeIds: hstsRows.map((r) => r.id) },
       });
     } catch { /* activity is best-effort */ }
-    logger.info({ domainId: zone.id, routes: rows.length, hsts: nextHsts }, 'Zone HSTS default applied');
+    logger.info({ domainId: zone.id, routes: hstsRows.length, hsts: nextHsts }, 'Zone HSTS default applied');
+  }
+  if (wafRows.length > 0) {
+    try {
+      require('./activity').log('zone_waf_applied', `WAF default of "${zone.domain}" applied to ${wafRows.length} entries`, {
+        source: 'admin',
+        severity: 'info',
+        details: { domainId: zone.id, waf_default: nextWaf, routeIds: wafRows.map((r) => r.id) },
+      });
+    } catch { /* activity is best-effort */ }
+    logger.info({ domainId: zone.id, routes: wafRows.length, waf: nextWaf }, 'Zone WAF default applied');
   }
 
   publish(zone.id, null);
   const result = { zone: getZone(zone.id) };
-  if (applyHsts) result.applied = rows.length;
+  if (applyHsts || applyWaf) result.applied = snapshots.size;
+  if (applyWaf) result.applied_waf = wafRows.length;
   return result;
 }
 

@@ -236,6 +236,62 @@ router.post('/batch', async (req, res) => {
 });
 
 /**
+ * POST /api/v1/routes/bulk — { ids: int[≤200], set: { enabled?, external_enabled?,
+ * waf_enabled?, waf_mode?, waf_paranoia?, hsts_enabled?, hsts_max_age?,
+ * hsts_subdomains?, monitoring_enabled? } } (docs/feature-release-b.md §2).
+ * All or nothing: one invalid route → 400 BULK_INVALID with failed[], nothing
+ * changed. Licence gates like PUT /:id (waf, uptime_monitoring) plus the
+ * route limits of PUT /:id/toggle when routes get enabled.
+ * → { ok, updated: ids, changed: n }
+ */
+router.post('/bulk', async (req, res) => {
+  const deny = (feature, extra = {}) => res.status(403).json({
+    ok: false,
+    error: req.t ? req.t('error.license.feature_not_available') : 'Feature not available in your plan',
+    feature,
+    upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+    ...extra,
+  });
+  try {
+    const license = require('../../services/license');
+    const { plans, set } = routes.planBulkUpdate(req.body);
+    if (set.waf_enabled && !license.hasFeature('waf')) return deny('waf');
+    if (set.monitoring_enabled && !license.hasFeature('uptime_monitoring')) return deny('uptime_monitoring');
+    if (set.enabled) {
+      const db = getDb();
+      for (const [key, isL4] of [['http_routes', false], ['l4_routes', true]]) {
+        const limit = license.getFeatureLimit(key);
+        if (limit === -1) continue;
+        const adding = plans.filter((p) => !p.row.enabled && ((p.row.route_type === 'l4') === isL4)).length;
+        if (adding === 0) continue;
+        const count = db.prepare(isL4
+          ? "SELECT COUNT(*) AS n FROM routes WHERE route_type = 'l4' AND enabled = 1"
+          : "SELECT COUNT(*) AS n FROM routes WHERE (route_type = 'http' OR route_type IS NULL) AND enabled = 1").get().n;
+        if (count + adding > limit) {
+          return res.status(403).json({
+            ok: false,
+            error: req.t ? req.t('error.license.limit_reached') : 'Route limit reached',
+            feature: key, current: count, limit,
+            upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+          });
+        }
+      }
+    }
+    const out = await routes.bulkUpdate(req.body);
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    if (err.statusCode && err.code) {
+      return res.status(err.statusCode).json({ ok: false, error: err.message, code: err.code, ...(err.failed ? { failed: err.failed } : {}) });
+    }
+    logger.error({ error: err.message }, 'Routes bulk update failed');
+    if (/caddy/i.test(err.message || '')) {
+      return res.status(502).json({ ok: false, error: req.t('error.routes.caddy_unreachable'), code: 'CADDY_SYNC_FAILED' });
+    }
+    res.status(500).json({ ok: false, error: req.t('error.routes.update') });
+  }
+});
+
+/**
  * GET /api/routes — List all routes with peer info
  */
 router.get('/', async (req, res) => {
@@ -487,6 +543,8 @@ router.post('/',
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
       mtls_enabled, mtls_ca_pem, mtls_mode,
       waf_enabled, waf_mode, waf_paranoia,
+      // Gateway backend TLS fingerprint (docs/feature-release-b.md §13b).
+      backend_tls_fingerprint: req.body.backend_tls_fingerprint,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,
@@ -663,6 +721,8 @@ router.put('/:id',
       backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
       mtls_enabled, mtls_ca_pem, mtls_mode,
       waf_enabled, waf_mode, waf_paranoia,
+      // Gateway backend TLS fingerprint (docs/feature-release-b.md §13b).
+      backend_tls_fingerprint: req.body.backend_tls_fingerprint,
       target_kind: req.body.target_kind,
       target_peer_id: req.body.target_peer_id,
       target_pool_id: req.body.target_pool_id,

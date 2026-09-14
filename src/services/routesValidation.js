@@ -404,7 +404,108 @@ function resolveWafFields(data, current, { route_type }) {
   return fields;
 }
 
+/** True when the payload carries any waf_* write field (explicit choice). */
+function hasWafInput(data) {
+  return ['waf_enabled', 'waf_mode', 'waf_paranoia'].some((k) => data[k] !== undefined);
+}
+
+/**
+ * WAF switch/mode changed between two column sets? (routes.waf_mode_changed_at
+ * is stamped on every change of waf_enabled or waf_mode — release B §3.)
+ */
+function wafModeChanged(before, after) {
+  const b = before || {};
+  return (b.waf_enabled ? 1 : 0) !== (after.waf_enabled ? 1 : 0)
+    || String(b.waf_mode || 'detect') !== String(after.waf_mode || 'detect');
+}
+
+/**
+ * Zone WAF default (release B §2): { enabled, mode, paranoia } or null (= no
+ * default). Throws the WAF_* codes above.
+ */
+function normalizeWafDefault(input) {
+  if (input === null || input === undefined) return null;
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    throw wafError('WAF_DEFAULT_INVALID', 'waf_default must be an object or null');
+  }
+  return {
+    enabled: !!hstsFlag(input.enabled),
+    mode: validateWafMode(input.mode),
+    paranoia: validateWafParanoia(input.paranoia),
+  };
+}
+
+/** domains.waf_default (JSON text) → object | null; never throws. */
+function parseWafDefault(text) {
+  if (!text) return null;
+  try {
+    const obj = JSON.parse(text);
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    return {
+      enabled: !!obj.enabled,
+      mode: WAF_MODES.includes(obj.mode) ? obj.mode : 'detect',
+      paranoia: Number.isInteger(obj.paranoia) && obj.paranoia >= WAF_PARANOIA_MIN && obj.paranoia <= WAF_PARANOIA_MAX ? obj.paranoia : WAF_PARANOIA_MIN,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Zone default object → routes column values (null / disabled → WAF off). */
+function wafDefaultToFields(def) {
+  if (!def || !def.enabled) return { waf_enabled: 0, waf_mode: def ? def.mode : 'detect', waf_paranoia: def ? def.paranoia : WAF_PARANOIA_MIN };
+  return { waf_enabled: 1, waf_mode: def.mode, waf_paranoia: def.paranoia };
+}
+
+// ─── Gateway backend TLS fingerprint (release B §13b) ───
+//
+// routes.backend_tls_fingerprint: SHA-256 of the LAN certificate the gateway
+// should pin, stored as 64 lower-case hex characters. Input with or without
+// colons (AA:BB:… as browsers/openssl print it), case-insensitive, optional
+// "sha256:" / "SHA256=" prefix. Only for gateway HTTP routes with
+// backend_https — an explicit value elsewhere → 400, an inherited one is
+// cleared when the route stops qualifying (HSTS-style PATCH semantics).
+
+const FINGERPRINT_RE = /^[0-9a-f]{64}$/;
+
+/** Parse a fingerprint input; '' / null → null; throws BACKEND_TLS_FINGERPRINT_INVALID. */
+function normalizeBackendFingerprint(value) {
+  if (value === undefined || value === null) return null;
+  let s = String(value).trim().toLowerCase();
+  if (!s) return null;
+  s = s.replace(/^sha-?256\s*[:=]\s*/, '');
+  const hex = s.replace(/[:\s-]/g, '');
+  if (!FINGERPRINT_RE.test(hex)) {
+    throw secError('BACKEND_TLS_FINGERPRINT_INVALID', 'backend_tls_fingerprint must be a SHA-256 fingerprint (64 hex characters, colons allowed)');
+  }
+  return hex;
+}
+
+/**
+ * Resolve routes.backend_tls_fingerprint for a write. `data` is the payload,
+ * `current` the stored row (create: null), `effective` the route's state
+ * after the write ({ route_type, target_kind, backend_https }).
+ */
+function resolveBackendFingerprint(data, current, { route_type, target_kind, backend_https }) {
+  const given = data.backend_tls_fingerprint !== undefined;
+  const value = given ? normalizeBackendFingerprint(data.backend_tls_fingerprint) : ((current && current.backend_tls_fingerprint) || null);
+  if (!value) return null;
+  const qualifies = (route_type || 'http') === 'http' && target_kind === 'gateway' && !!backend_https;
+  if (!qualifies) {
+    if (given) throw secError('BACKEND_TLS_FINGERPRINT_INVALID', 'backend_tls_fingerprint requires a gateway HTTP route with backend_https');
+    return null;
+  }
+  return value;
+}
+
 module.exports = {
+  hasWafInput,
+  wafModeChanged,
+  normalizeWafDefault,
+  parseWafDefault,
+  wafDefaultToFields,
+  normalizeBackendFingerprint,
+  resolveBackendFingerprint,
   validateIfProvided,
   WAF_MODES,
   WAF_PARANOIA_MIN,

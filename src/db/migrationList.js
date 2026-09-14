@@ -1493,6 +1493,40 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_waf_events_host ON waf_events(host, ts);`,
     detect: (db) => hasColumn(db, 'routes', 'waf_enabled'),
   },
+  {
+    version: 77,
+    name: 'security_center',
+    // Release B, security strand (docs/feature-release-b.md §2, §3, §13b):
+    //   domains.waf_default             JSON {enabled, mode, paranoia} or NULL,
+    //                                   inherited by new HTTP entries of the zone
+    //   routes.waf_mode_changed_at      ISO time of the last waf_enabled/waf_mode
+    //                                   change (WAF assistant: "detect since");
+    //                                   backfilled from updated_at for routes that
+    //                                   already have the WAF on (an upper bound —
+    //                                   the assistant errs on "too early")
+    //   routes.backend_tls_fingerprint  SHA-256 of the LAN certificate (64 hex,
+    //                                   lower case), gateway routes with backend_https
+    //   waf_bans                        scanner ban list (auto + manual)
+    //   idx_waf_events_client           per-IP counting (ban, assistant)
+    sql: `
+      ALTER TABLE domains ADD COLUMN waf_default TEXT;
+      ALTER TABLE routes ADD COLUMN waf_mode_changed_at TEXT;
+      ALTER TABLE routes ADD COLUMN backend_tls_fingerprint TEXT;
+      UPDATE routes SET waf_mode_changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', COALESCE(updated_at, created_at))
+        WHERE waf_enabled = 1;
+      CREATE TABLE IF NOT EXISTS waf_bans (
+        ip TEXT PRIMARY KEY,
+        reason TEXT,
+        hits INTEGER,
+        first_seen TEXT,
+        banned_at TEXT,
+        expires_at TEXT,
+        manual INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_waf_bans_expires ON waf_bans(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_waf_events_client ON waf_events(client_ip, ts);`,
+    detect: (db) => hasColumn(db, 'routes', 'backend_tls_fingerprint'),
+  },
 ];
 
 module.exports = { migrations };

@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -109,6 +109,24 @@ function zoneHstsDefault(db, domain) {
     return row ? parseHstsDefault(row.hsts_default) : null;
   } catch (err) {
     logger.warn({ err: err?.message ?? String(err), domain }, 'HSTS zone default lookup failed');
+    return null;
+  }
+}
+
+// WAF (release B §2): the zone default of the entry's domain
+// (domains.waf_default, longest-suffix zone match). Only an enabled default
+// counts, and only while the licence carries `waf` — the route API gates an
+// explicit waf_enabled the same way. Best-effort like zoneHstsDefault.
+function zoneWafDefault(db, domain) {
+  try {
+    if (!require('./license').hasFeature('waf')) return null;
+    const zone = require('./domainZones').resolveZone(domain, db);
+    if (!zone) return null;
+    const row = db.prepare('SELECT waf_default FROM domains WHERE id = ?').get(zone.domain_id);
+    const def = row ? parseWafDefault(row.waf_default) : null;
+    return def && def.enabled ? def : null;
+  } catch (err) {
+    logger.warn({ err: err?.message ?? String(err), domain }, 'WAF zone default lookup failed');
     return null;
   }
 }
@@ -379,8 +397,15 @@ async function create(data, opts = {}) {
   // Security options (docs/feature-security-options.md §B/§D/§F): backend TLS
   // verification, body limit, mTLS. Validation throws coded 400 errors.
   const sec = resolveSecurityFields(data, null, { route_type: routeType, https_enabled: httpsEnabled });
-  // Web Application Firewall (docs/feature-waf.md): HTTP routes only.
-  const waf = resolveWafFields(data, null, { route_type: routeType });
+  // Web Application Firewall (docs/feature-waf.md): HTTP routes only. An
+  // HTTP entry created without any waf_* field inherits the zone default.
+  const wafSeed = (routeType === 'http' && domain && !hasWafInput(data)) ? zoneWafDefault(db, domain) : null;
+  const waf = resolveWafFields(data, wafSeed ? wafDefaultToFields(wafSeed) : null, { route_type: routeType });
+  const wafChangedAt = waf.waf_enabled ? new Date().toISOString() : null;
+  // Gateway backend TLS fingerprint (release B §13b).
+  const backendFingerprint = resolveBackendFingerprint(data, null, {
+    route_type: routeType, target_kind: targetKind, backend_https: !!data.backend_https,
+  });
 
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
@@ -399,9 +424,9 @@ async function create(data, opts = {}) {
                         hsts_enabled, hsts_max_age, hsts_subdomains, hsts_preload,
                         backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
                         mtls_enabled, mtls_ca_pem, mtls_mode,
-                        waf_enabled, waf_mode, waf_paranoia,
+                        waf_enabled, waf_mode, waf_paranoia, waf_mode_changed_at, backend_tls_fingerprint,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -474,6 +499,8 @@ async function create(data, opts = {}) {
     waf.waf_enabled,
     waf.waf_mode,
     waf.waf_paranoia,
+    wafChangedAt,
+    backendFingerprint,
   );
 
   const routeId = result.lastInsertRowid;
@@ -699,6 +726,14 @@ async function update(id, data) {
   // WAF: same PATCH semantics; an inherited waf_enabled is cleared when the
   // route becomes L4, an explicit one → 400 WAF_REQUIRES_HTTP.
   const waf = resolveWafFields(data, route, { route_type: routeType });
+  const wafChangedAt = wafModeChanged(route, waf) ? new Date().toISOString() : (route.waf_mode_changed_at || null);
+  // Gateway backend TLS fingerprint (release B §13b): effective target kind
+  // and backend scheme after this patch decide whether it may stay.
+  const backendFingerprint = resolveBackendFingerprint(data, route, {
+    route_type: routeType,
+    target_kind: data.target_kind !== undefined ? (data.target_kind || 'peer') : (route.target_kind || 'peer'),
+    backend_https: data.backend_https !== undefined ? !!data.backend_https : !!route.backend_https,
+  });
 
   const tls = tlsBecomes ? await guardTls(nextDomain) : null;
 
@@ -776,6 +811,8 @@ async function update(id, data) {
       waf_enabled = ?,
       waf_mode = ?,
       waf_paranoia = ?,
+      waf_mode_changed_at = ?,
+      backend_tls_fingerprint = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -857,6 +894,8 @@ async function update(id, data) {
     waf.waf_enabled,
     waf.waf_mode,
     waf.waf_paranoia,
+    wafChangedAt,
+    backendFingerprint,
     id
   );
 
@@ -1135,6 +1174,170 @@ async function batch(action, ids) {
   return ids.length;
 }
 
+// ─── Bulk update (release B §2) ──────────────────────────
+//
+// POST /api/v1/routes/bulk { ids, set }: the same field rules as
+// PUT /api/v1/routes/:id (resolveHstsFields / resolveWafFields), validated for
+// EVERY route before anything is written — one failure → nothing changes.
+// One transaction, one Caddy sync, full-row restore of every touched route on
+// sync failure. Licence gates are the API layer's job (like PUT).
+
+const BULK_MAX_IDS = 200;
+const BULK_BOOL_FIELDS = ['enabled', 'external_enabled', 'waf_enabled', 'hsts_enabled', 'hsts_subdomains', 'monitoring_enabled'];
+const BULK_FIELDS = [...BULK_BOOL_FIELDS, 'waf_mode', 'waf_paranoia', 'hsts_max_age'];
+const BULK_COLUMNS = ['enabled', 'external_enabled', 'monitoring_enabled', 'waf_enabled', 'waf_mode', 'waf_paranoia',
+  'waf_mode_changed_at', 'hsts_enabled', 'hsts_max_age', 'hsts_subdomains', 'hsts_preload'];
+
+function bulkError(statusCode, code, message, extra = {}) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
+}
+
+function bulkBool(v) {
+  if (v === true || v === 1) return 1;
+  if (v === false || v === 0) return 0;
+  return null;
+}
+
+/** Validate the request shape → { ids:number[], set:object } or throw 400. */
+function parseBulkInput(input) {
+  const body = input && typeof input === 'object' ? input : {};
+  const rawIds = body.ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) throw bulkError(400, 'BULK_IDS_INVALID', 'ids must be a non-empty array of route ids');
+  if (rawIds.length > BULK_MAX_IDS) throw bulkError(400, 'BULK_IDS_INVALID', `at most ${BULK_MAX_IDS} ids per request`);
+  const ids = [];
+  for (const v of rawIds) {
+    const n = typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v;
+    if (!Number.isInteger(n) || n < 1) throw bulkError(400, 'BULK_IDS_INVALID', 'ids must be positive integers');
+    if (!ids.includes(n)) ids.push(n);
+  }
+  const set = body.set;
+  if (!set || typeof set !== 'object' || Array.isArray(set) || Object.keys(set).length === 0) {
+    throw bulkError(400, 'BULK_SET_INVALID', 'set must be an object with at least one field');
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(set)) {
+    if (!BULK_FIELDS.includes(k)) throw bulkError(400, 'BULK_FIELD_INVALID', `field "${k}" cannot be changed in bulk`);
+    if (v === undefined) continue;
+    if (BULK_BOOL_FIELDS.includes(k)) {
+      const b = bulkBool(v);
+      if (b === null) throw bulkError(400, 'BULK_FIELD_INVALID', `${k} must be a boolean`);
+      out[k] = b;
+    } else {
+      out[k] = v;
+    }
+  }
+  if (Object.keys(out).length === 0) throw bulkError(400, 'BULK_SET_INVALID', 'set must be an object with at least one field');
+  return { ids, set: out };
+}
+
+/** The column values of `route` after applying `set`; throws the coded field errors. */
+function bulkNextColumns(route, set) {
+  const routeType = route.route_type || 'http';
+  const httpsOn = routeType !== 'l4' && !!route.https_enabled;
+  const hsts = resolveHstsFields(set, route, { route_type: routeType, https_enabled: httpsOn });
+  const waf = resolveWafFields(set, route, { route_type: routeType });
+  const pickBool = (field) => (set[field] !== undefined ? set[field] : (route[field] ? 1 : 0));
+  return {
+    enabled: pickBool('enabled'),
+    external_enabled: pickBool('external_enabled'),
+    monitoring_enabled: pickBool('monitoring_enabled'),
+    waf_enabled: waf.waf_enabled,
+    waf_mode: waf.waf_mode,
+    waf_paranoia: waf.waf_paranoia,
+    waf_mode_changed_at: wafModeChanged(route, waf) ? new Date().toISOString() : (route.waf_mode_changed_at || null),
+    hsts_enabled: hsts.hsts_enabled,
+    hsts_max_age: hsts.hsts_max_age,
+    hsts_subdomains: hsts.hsts_subdomains,
+    hsts_preload: hsts.hsts_preload,
+  };
+}
+
+/**
+ * Validate all routes of a bulk request without writing. → { ids, set, rows,
+ * plans: [{ row, next, changed }] } or throws 400 BULK_INVALID with
+ * `failed: [{ id, code, error }]` (every failing route, not just the first).
+ */
+function planBulkUpdate(input) {
+  const { ids, set } = parseBulkInput(input);
+  const db = getDb();
+  const rows = db.prepare(`SELECT * FROM routes WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const failed = [];
+  const plans = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) { failed.push({ id, code: 'NOT_FOUND', error: 'route not found' }); continue; }
+    try {
+      const next = bulkNextColumns(row, set);
+      const changed = BULK_COLUMNS.some((c) => c !== 'waf_mode_changed_at' && String(next[c]) !== String(row[c]));
+      plans.push({ row, next, changed });
+    } catch (err) {
+      failed.push({ id, code: err.code || 'INVALID', error: err.message });
+    }
+  }
+  if (failed.length > 0) {
+    throw bulkError(400, 'BULK_INVALID', `${failed.length} of ${ids.length} routes cannot be changed — nothing was changed`, { failed });
+  }
+  return { ids, set, plans };
+}
+
+/** Validate (planBulkUpdate) and apply a bulk update. → { updated: ids, changed: n }. */
+async function bulkUpdate(input) {
+  const { ids, set, plans } = planBulkUpdate(input);
+  const db = getDb();
+  const todo = plans.filter((p) => p.changed);
+  if (todo.length === 0) return { updated: ids, changed: 0 };
+
+  const setSql = BULK_COLUMNS.map((c) => `${c} = ?`).join(', ');
+  const stmt = db.prepare(`UPDATE routes SET ${setSql}, updated_at = datetime('now') WHERE id = ?`);
+  db.transaction(() => {
+    for (const p of todo) stmt.run(...BULK_COLUMNS.map((c) => p.next[c]), p.row.id);
+  })();
+
+  // Looked up at call time (like domainZones) so a stub of
+  // caddyConfig.syncToCaddy applies.
+  await withCaddySync(() => require('./caddyConfig').syncToCaddy(), () => {
+    db.transaction(() => {
+      for (const p of todo) restoreRouteRow(db, p.row.id, p.row);
+    })();
+  }, 'routes bulk update');
+
+  const changedIds = todo.map((p) => p.row.id);
+  activity.log('routes_bulk_update', `Bulk update of ${changedIds.length} route(s): ${Object.keys(set).join(', ')}`, {
+    source: 'admin',
+    severity: 'info',
+    details: { routeIds: changedIds, requested: ids, set },
+  });
+  logger.info({ routeIds: changedIds, fields: Object.keys(set) }, 'Routes bulk update');
+
+  // Companions see enabled (their config lists enabled gateway routes only).
+  const gwPeers = new Set();
+  for (const p of todo) {
+    if (p.row.target_kind === 'gateway' && p.row.target_peer_id && p.next.enabled !== (p.row.enabled ? 1 : 0)) gwPeers.add(p.row.target_peer_id);
+  }
+  if (gwPeers.size > 0) {
+    try {
+      const gateways = require('./gateways');
+      for (const pid of gwPeers) gateways.notifyConfigChanged(pid).catch(() => {});
+    } catch { /* module load guard */ }
+  }
+  if (todo.some((p) => p.next.enabled !== (p.row.enabled ? 1 : 0) || p.next.external_enabled !== (p.row.external_enabled ? 1 : 0))) {
+    try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after bulk update failed'); }
+  }
+  // Monitoring newly on → first check right away (like PUT).
+  for (const p of todo) {
+    if (p.next.monitoring_enabled && !p.row.monitoring_enabled) {
+      try { require('./monitor').checkRouteById(p.row.id).catch(() => {}); } catch { /* best-effort */ }
+    }
+  }
+  publishRoutesEvent(hostRefs(db, todo.map((p) => p.row.bundle_id)));
+  return { updated: ids, changed: changedIds.length };
+}
+
 /**
  * Resolve the server-side companion proxy URL for a gateway route.
  * The GC server reaches deCONZ/companion via the peer's WireGuard IP on the
@@ -1188,6 +1391,9 @@ module.exports = {
   getAclPeers,
   setAclPeers,
   batch,
+  planBulkUpdate,
+  bulkUpdate,
+  BULK_MAX_IDS,
   getForUser,
   resolveCompanionUrl,
 };

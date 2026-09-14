@@ -163,13 +163,27 @@ router.put('/domains/:id/gateway', async (req, res) => {
 router.put('/domains/:id/defaults', async (req, res) => {
   try {
     const body = req.body || {};
-    const { zone, applied } = await domainZones.updateDefaults(req.params.id, {
+    // WAF default (docs/feature-release-b.md §2): an enabling default — or
+    // applying one to existing entries — needs the `waf` feature, like
+    // waf_enabled on PUT /routes/:id. Switching it off never does.
+    const wafDef = body.waf_default;
+    const enablesWaf = wafDef && typeof wafDef === 'object' && !Array.isArray(wafDef) && wafDef.enabled
+      && wafDef.enabled !== 'false' && wafDef.enabled !== '0';
+    if (enablesWaf && !license.hasFeature('waf')) return denyFeature(req, res, 'waf');
+    if (body.apply_waf_to_existing && wafDef === undefined && !license.hasFeature('waf')) {
+      const z = zoneRow(req.params.id);
+      const cur = z ? require('../../services/routesValidation').parseWafDefault(z.waf_default) : null;
+      if (cur && cur.enabled) return denyFeature(req, res, 'waf');
+    }
+    const { zone, applied, applied_waf } = await domainZones.updateDefaults(req.params.id, {
       default_external_enabled: body.default_external_enabled,
       hsts_default: body.hsts_default,
       apply_hsts_to_existing: body.apply_hsts_to_existing,
       tls_min_version: body.tls_min_version,
+      waf_default: body.waf_default,
+      apply_waf_to_existing: body.apply_waf_to_existing,
     });
-    res.json({ ok: true, zone, ...(applied !== undefined ? { applied } : {}) });
+    res.json({ ok: true, zone, ...(applied !== undefined ? { applied } : {}), ...(applied_waf !== undefined ? { applied_waf } : {}) });
   } catch (err) {
     handleError(req, res, err);
   }
