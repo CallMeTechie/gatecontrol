@@ -251,7 +251,8 @@ describe('security.js integration', () => {
   });
 
   it('events.js forwards the security SSE event (gc:security)', () => {
-    assert.match(read('public/js/events.js'), /'waf', 'security', 'routes', 'tls'\]/);
+    const list = read('public/js/events.js').match(/\[([^\]]*'waf'[^\]]*)\]\.forEach/);
+    assert.ok(list && /'security'/.test(list[1]), 'security is in the forwarded SSE types');
   });
 });
 

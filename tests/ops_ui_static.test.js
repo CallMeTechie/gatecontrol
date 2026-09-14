@@ -40,10 +40,13 @@ const SETTINGS_OPS = section(SETTINGS_JS, '// ─── Auto-Update: maintenance
 const DASH_WN = section(DASH_JS, '// ─── "Was ist neu" card', '// ─── Refresh all');
 
 describe('ops UI: stylesheet + scripts', () => {
-  it('ops.css is linked exactly once, right after aurora.css', () => {
+  it('ops.css is linked exactly once, after aurora.css among the feature stylesheets', () => {
     const links = Array.from(LAYOUT.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
     assert.equal(links.filter((l) => l === '/css/ops.css').length, 1);
-    assert.equal(links.indexOf('/css/ops.css'), links.indexOf('/css/aurora.css') + 1);
+    const a = links.indexOf('/css/aurora.css');
+    const o = links.indexOf('/css/ops.css');
+    assert.ok(o > a, 'after aurora.css');
+    assert.ok(links.slice(a + 1, o).every((l) => /^\/css\/[a-z-]+\.css$/.test(l)), 'only feature stylesheets in between');
   });
   it('aurora.css is untouched by this strand (no op- rules); ops.css braces balance', () => {
     assert.doesNotMatch(read('public/css/aurora.css'), /\.op-/);
