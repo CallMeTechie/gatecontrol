@@ -155,7 +155,10 @@ async function start() {
     startPoller(config.intervals.peerPoller);
     startSessionCleanup();  // Route auth session cleanup every 15 min
     startMonitor();         // Uptime monitoring checks
-    startAutoBackup();      // Automatic backup scheduler
+    startAutoBackup();      // Automatic backup scheduler (+ off-site upload hook)
+    // Update / rollback e-mails (docs/feature-release-b.md §6). Best-effort.
+    try { require('./services/updateNotify').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'update notifications not started'); }
     startLicenseRefresh();
     startRdpMonitor();     // RDP health check monitor
 
@@ -406,6 +409,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/accessReconciler').stop(),
     () => require('./services/tlsGuard').stop(),
     () => require('./services/waf').stop(),
+    () => require('./services/updateNotify').stop(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,
