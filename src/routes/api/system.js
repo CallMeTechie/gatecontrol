@@ -128,6 +128,46 @@ router.post('/auto-update/trigger', (req, res) => {
   }
 });
 
+// ── What's new (docs/feature-release-b.md §6) ────────────────
+// Structured CHANGELOG sections newer than the user's last dismissed version
+// (users.last_seen_version), newest first, ≤ 5. ?all=1 → the latest 5
+// releases regardless (for an explicit "What's new" page). No HTML.
+function sessionUserId(req) {
+  return !req.tokenAuth && req.session && req.session.userId ? req.session.userId : null;
+}
+router.get('/whats-new', (req, res) => {
+  try {
+    const changelog = require('../../services/changelog');
+    const { getDb } = require('../../db/connection');
+    const uid = sessionUserId(req);
+    const row = uid ? getDb().prepare('SELECT last_seen_version FROM users WHERE id = ?').get(uid) : null;
+    const all = req.query.all === '1' || req.query.all === 'true';
+    const r = changelog.whatsNew({ current: pkgVersion(), lastSeen: row ? row.last_seen_version : null, all });
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'whats-new unavailable', code: 'WHATS_NEW_FAILED' });
+  }
+});
+
+router.post('/whats-new/seen', (req, res) => {
+  const uid = sessionUserId(req);
+  if (!uid) return res.status(403).json({ ok: false, error: 'session required', code: 'SESSION_REQUIRED' });
+  const changelog = require('../../services/changelog');
+  const current = pkgVersion();
+  const version = req.body && req.body.version !== undefined ? req.body.version : current;
+  if (!changelog.isVersion(version) || changelog.compareVersions(version, current) > 0) {
+    return res.status(400).json({ ok: false, error: 'invalid version', code: 'INVALID_VERSION' });
+  }
+  try {
+    require('../../db/connection').getDb().prepare('UPDATE users SET last_seen_version = ? WHERE id = ?').run(version, uid);
+    res.json({ ok: true, last_seen_version: version });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'could not save', code: 'WHATS_NEW_FAILED' });
+  }
+});
+
+function pkgVersion() { return require('../../../package.json').version; }
+
 router.get('/update-sh', (req, res) => {
   try {
     const content = systemSetup.readUpdateSh();
