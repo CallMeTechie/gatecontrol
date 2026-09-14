@@ -10,7 +10,7 @@ const nunjucks = require('nunjucks');
 const config = require('../config/default');
 const SQLiteStore = require('./middleware/sessionStore');
 const { i18nMiddleware, loadLocales } = require('./middleware/i18n');
-const { injectLocals } = require('./middleware/locals');
+const { injectLocals, THEME } = require('./middleware/locals');
 const { injectCsrfToken } = require('./middleware/csrf');
 const logger = require('./utils/logger');
 
@@ -79,24 +79,15 @@ function createApp() {
   // ─── Route Auth (public, before session/csrf) ──────
   // Must be mounted before session middleware to avoid admin CSRF token
   // conflicts with route-auth CSRF. The admin-side injectLocals runs
-  // AFTER session so user-specific theme resolution works there; here
-  // route-auth gets its own lean middleware stack (i18n + default-theme
-  // fallback) so /route-auth/login can render its Nunjucks template
+  // AFTER session; here route-auth gets its own lean middleware stack
+  // (i18n + theme) so /route-auth/login can render its Nunjucks template
   // without `res.locals.theme` being undefined (which produced a 500
   // on every unauthenticated visit to a protected route).
   loadLocales();
-  // Resolve default theme without touching req.session (not yet initialised
-  // at this middleware position). Lets the template render without the
-  // admin-side injectLocals stack.
+  // Aurora is the only theme; no settings/session lookup needed here.
   const routeAuthLocals = (req, res, next) => {
-    try {
-      const settings = require('./services/settings');
-      const defaultsCfg = require('../config/default');
-      const t = settings.get('default_theme');
-      res.locals.theme = (t === 'default' || t === 'pro' || t === 'aurora') ? t : defaultsCfg.theme.defaultTheme;
-    } catch {
-      res.locals.theme = 'default';
-    }
+    res.locals.theme = THEME;
+    res.locals.appVersion = require('../package.json').version; // ?v= cache-buster on the CSS links
     next();
   };
   const routeAuthRoutes = require('./routes/routeAuth');
@@ -178,7 +169,7 @@ function createApp() {
     if (req.path.startsWith('/api/')) {
       return res.status(404).json({ error: 'Not found' });
     }
-    res.status(404).render(`${config.theme.defaultTheme}/pages/404.njk`, {
+    res.status(404).render(`${THEME}/pages/404.njk`, {
       title: '404',
     });
   });
@@ -191,7 +182,7 @@ function createApp() {
       if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: 'Invalid CSRF token' });
       }
-      return res.status(403).render(`${config.theme.defaultTheme}/pages/error.njk`, {
+      return res.status(403).render(`${THEME}/pages/error.njk`, {
         title: 'Forbidden',
         message: 'Invalid security token. Please refresh and try again.',
       });
@@ -201,7 +192,7 @@ function createApp() {
     if (req.path.startsWith('/api/')) {
       return res.status(status).json({ error: 'Internal server error' });
     }
-    res.status(status).render(`${config.theme.defaultTheme}/pages/error.njk`, {
+    res.status(status).render(`${THEME}/pages/error.njk`, {
       title: 'Error',
       message: process.env.NODE_ENV === 'production'
         ? 'Something went wrong'

@@ -1,10 +1,10 @@
 'use strict';
 
-// Appearance / app-level settings: getAll() bundle and system default theme.
+// Appearance / app-level settings: getPublic() bundle (the default-theme
+// endpoint is gone: Aurora is the only theme).
 // Carved out of the legacy 863-LOC settings.js — semantics unchanged.
 
 const { Router } = require('express');
-const { getDb } = require('../../../db/connection');
 const settings = require('../../../services/settings');
 const config = require('../../../../config/default');
 const logger = require('../../../utils/logger');
@@ -21,6 +21,9 @@ router.get('/app', (req, res) => {
     // getPublic(), nicht getAll(): letzteres enthält Secrets, die
     // Sicherheitsrichtlinie und Betreiber-Adressen (services/settings.js).
     const appSettings = settings.getPublic();
+    // Backwards compatibility: default_theme is always 'aurora' now, even when
+    // an old backup restored another value into the settings table.
+    if ('default_theme' in appSettings) appSettings.default_theme = 'aurora';
     res.json({
       ok: true,
       settings: appSettings,
@@ -41,27 +44,12 @@ router.get('/app', (req, res) => {
 });
 
 /**
- * PUT /api/settings/default-theme — Set system default theme
+ * PUT /api/settings/default-theme — removed. Aurora is the only theme
+ * (docs/feature-aurora-only.md); the route stays so old clients get a clear
+ * answer instead of a 404.
  */
 router.put('/default-theme', (req, res) => {
-  try {
-    const { theme } = req.body;
-    const validThemes = ['default', 'pro', 'aurora'];
-    if (!theme || !validThemes.includes(theme)) {
-      return res.status(400).json({ ok: false, error: 'Invalid theme. Must be: ' + validThemes.join(', ') });
-    }
-    settings.set('default_theme', theme);
-    // Also update the current user's personal theme so the change is
-    // visible immediately (user.theme overrides system default in locals.js)
-    if (req.session && req.session.userId) {
-      const db = getDb();
-      db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, req.session.userId);
-    }
-    res.json({ ok: true, theme });
-  } catch (err) {
-    logger.error({ error: err.message }, 'Failed to set default theme');
-    res.status(500).json({ ok: false, error: 'Failed to save theme setting' });
-  }
+  res.status(410).json({ ok: false, code: 'THEME_REMOVED', error: 'Themes were removed; Aurora is the only theme' });
 });
 
 /**

@@ -1493,6 +1493,16 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_waf_events_host ON waf_events(host, ts);`,
     detect: (db) => hasColumn(db, 'routes', 'waf_enabled'),
   },
+  {
+    version: 75,
+    name: 'aurora_only',
+    // Aurora is the only theme (docs/feature-aurora-only.md). Data only: the
+    // stored choices are normalised so nothing hints at a removed theme; the
+    // users.theme column stays (no DROP) and is ignored by the app.
+    sql: `
+      UPDATE settings SET value = 'aurora' WHERE key = 'default_theme';
+      UPDATE users SET theme = 'aurora' WHERE theme IS NOT NULL;`,
+  },
 ];
 
 module.exports = { migrations };

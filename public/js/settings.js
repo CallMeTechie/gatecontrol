@@ -1419,38 +1419,6 @@
   loadST();
 })();
 
-// ─── Default Theme Switcher ─────────────────────────────
-(function () {
-  var container = document.getElementById('default-theme-buttons');
-  if (!container) return;
-  var statusEl = document.getElementById('default-theme-status');
-  function flash() {
-    if (!statusEl) return;
-    statusEl.classList.remove('autosave-error');
-    statusEl.classList.add('field-saving');
-    statusEl.textContent = (window.GC && GC.t && GC.t['settings.autosave.saved']) || 'Saved';
-    setTimeout(function () { statusEl.classList.remove('field-saving'); }, 500);
-  }
-  container.addEventListener('click', async function (e) {
-    var btn = e.target.closest('[data-default-theme]');
-    if (!btn) return;
-    var selected = btn.dataset.defaultTheme;
-    try {
-      var data = await api.put('/api/v1/settings/default-theme', { theme: selected });
-      if (data.ok) {
-        container.querySelectorAll('[data-default-theme]').forEach(function (b) {
-          b.className = b.dataset.defaultTheme === selected ? 'btn btn-primary' : 'btn btn-ghost';
-        });
-        flash();
-        // Reload page to apply the new theme (templates are server-rendered)
-        setTimeout(function () { window.location.reload(); }, 300);
-      }
-    } catch (err) {
-      alert(err.message || 'Failed to save');
-    }
-  });
-})();
-
 // ─── ACME contact email ───────────────────────────────
 (function () {
   var el = document.getElementById('acme-email');

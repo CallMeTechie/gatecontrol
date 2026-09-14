@@ -118,8 +118,11 @@ const config = {
     availableLanguages: envList('GC_AVAILABLE_LANGUAGES', ['en', 'de']),
   },
 
+  // Aurora is the only theme (docs/feature-aurora-only.md). GC_DEFAULT_THEME
+  // is ignored on purpose: existing .env files still carry it (e.g. =default)
+  // and it must not change anything any more.
   theme: {
-    defaultTheme: env('GC_DEFAULT_THEME', 'default'),
+    defaultTheme: 'aurora',
   },
 
   network: {

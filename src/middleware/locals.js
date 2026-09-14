@@ -2,12 +2,10 @@
 
 const config = require('../../config/default');
 const { getDb } = require('../db/connection');
-const settings = require('../services/settings');
 
-function getDefaultTheme() {
-  const dbTheme = settings.get('default_theme');
-  return (dbTheme === 'default' || dbTheme === 'pro' || dbTheme === 'aurora') ? dbTheme : config.theme.defaultTheme;
-}
+// Aurora is the only theme (docs/feature-aurora-only.md): neither users.theme,
+// the default_theme setting nor GC_DEFAULT_THEME select a template set any more.
+const THEME = 'aurora';
 
 function injectLocals(req, res, next) {
   // App config available in all templates
@@ -21,16 +19,15 @@ function injectLocals(req, res, next) {
   res.locals.wgInterface = config.wireguard.interface;
   res.locals.wgDns = config.wireguard.dns.join(',');
   res.locals.currentPath = req.path;
-  res.locals.theme = getDefaultTheme();
+  res.locals.theme = THEME;
 
   // User info and sidebar badge counts if authenticated
   if (req.session && req.session.userId) {
     const db = getDb();
-    const user = db.prepare('SELECT id, username, display_name, role, language, theme, totp_enabled FROM users WHERE id = ?')
+    const user = db.prepare('SELECT id, username, display_name, role, language, totp_enabled FROM users WHERE id = ?')
       .get(req.session.userId);
     if (user) {
       res.locals.user = user;
-      res.locals.theme = user.theme || getDefaultTheme();
       if (user.language) {
         req.session.language = user.language;
       }
@@ -82,4 +79,4 @@ function setFlash(req, type, message) {
   req.session.flash[type] = message;
 }
 
-module.exports = { injectLocals, setFlash };
+module.exports = { injectLocals, setFlash, THEME };

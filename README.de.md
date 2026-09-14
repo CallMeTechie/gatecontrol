@@ -424,7 +424,6 @@ Alle Konfiguration erfolgt über Umgebungsvariablen in der `.env`-Datei.
 | Variable | Standard | Beschreibung |
 |----------|---------|-------------|
 | `GC_DEFAULT_LANGUAGE` | `en` | Standardsprache (`en` oder `de`) |
-| `GC_DEFAULT_THEME` | `default` | UI-Theme |
 
 ### Netzwerk & Verschlüsselung
 
