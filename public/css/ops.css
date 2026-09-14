@@ -135,6 +135,10 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
 .op-wn-list li::marker { color: var(--teal); }
 .op-wn-code { font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--surface-3); overflow-wrap: anywhere; }
 
+/* /dashboard#auto-update: highlight the topbar status */
+@keyframes op-flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 40% { box-shadow: 0 0 0 6px var(--teal-soft); } }
+#au-status.op-flash { border-radius: 999px; outline: 2px solid var(--teal); outline-offset: 3px; animation: op-flash 1.2s ease 2; }
+
 /* Topbar version badge = entry to "What's new" */
 .au-badge-btn { cursor: pointer; font-family: inherit; line-height: inherit; }
 .au-badge-btn:hover, .au-badge-btn:focus-visible { color: var(--text); border-color: var(--line-2); }

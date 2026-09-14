@@ -224,6 +224,25 @@ describe('ops UI: behaviour wiring', () => {
     assert.match(d, /window\.api\.post\('\/api\/system\/whats-new\/seen', body\)/);
     assert.match(d, /if \(!all && !d\.unseen\) \{ card\.hidden = true; return; \}/);
   });
+  it('settings.js: /settings#<tab> or #<element id> selects the tab, the hash follows tab switches', () => {
+    const tabs = stripComments(section(SETTINGS_JS, '// ─── Settings Tab Switching', '// Mobile hamburger toggle'))
+      + stripComments(section(SETTINGS_JS, '// Tab from the address first', '})();'));
+    assert.match(tabs, /history\.replaceState\(null, '', location\.pathname \+ location\.search \+ '#' \+ tabName\)/);
+    assert.match(tabs, /window\.addEventListener\('hashchange', fromHash\)/);
+    assert.match(tabs, /target\.closest\('\.settings-panel'\)/);
+    assert.match(tabs, /if \(!fromHash\(\)\) \{/, 'the hash wins over the remembered tab');
+    assert.ok(SETTINGS_TPL.includes('data-settings-panel="backup"') && SETTINGS_TPL.includes('data-settings-tab="backup"'));
+  });
+  it('dashboard.js: #auto-update highlights the topbar status and opens the setup guide when not set up', () => {
+    const d = stripComments(DASH_JS);
+    assert.match(d, /location\.hash === '#auto-update'/);
+    assert.match(d, /host\.classList\.add\('op-flash'\)/);
+    assert.match(d, /if \(d && d\.status !== 'active'\) openAuSetup\(\);/);
+    assert.match(OPS_CSS, /#au-status\.op-flash \{/);
+  });
+  it('events.js subscribes the backup SSE type (gc:backup refreshes the targets)', () => {
+    assert.match(read('public/js/events.js'), /'tls', 'backup'\]/);
+  });
   it('entry-editor.js: fingerprint only for gateway + Backend HTTPS, code mapped, client check', () => {
     const e = stripComments(EDITOR_JS);
     assert.match(e, /BACKEND_TLS_FINGERPRINT_INVALID: \['edit-backend-tls-block', 'errBackendTlsFingerprintInvalid', 'backend_tls\.err\.fingerprint_invalid', 'general'\]/);

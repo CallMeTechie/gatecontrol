@@ -137,7 +137,31 @@
   }
 
   function loadAutoUpdate() {
-    window.api.get('/api/system/auto-update').then(renderAutoUpdate).catch(function () {});
+    window.api.get('/api/system/auto-update').then(function (d) {
+      renderAutoUpdate(d);
+      revealAutoUpdate(d);
+    }).catch(function () {});
+  }
+
+  // /dashboard#auto-update (fix link of the security check): there is no
+  // dashboard card — the auto-update status lives in the topbar (#au-status,
+  // partials/topbar.njk). Scroll up, highlight it and, while auto-update is not
+  // set up, open the setup guide (the setup button is hidden at phone width).
+  var auRevealPending = location.hash === '#auto-update';
+  window.addEventListener('hashchange', function () {
+    if (location.hash === '#auto-update') { auRevealPending = true; loadAutoUpdate(); }
+  });
+  function revealAutoUpdate(d) {
+    if (!auRevealPending) return;
+    auRevealPending = false;
+    var host = document.getElementById('au-status');
+    if (!host) return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    host.classList.remove('op-flash');
+    void host.offsetWidth; // restart the animation
+    host.classList.add('op-flash');
+    setTimeout(function () { host.classList.remove('op-flash'); }, 2600);
+    if (d && d.status !== 'active') openAuSetup();
   }
 
   // Why a trigger was not queued (autoUpdate.requestUpdate reasons).

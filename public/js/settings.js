@@ -24,7 +24,29 @@
       if (activeTab) label.textContent = activeTab.textContent;
     }
     try { localStorage.setItem('settings-active-tab', tabName); } catch (e) {}
+    // Keep the address in sync (links like /settings#backup from the security
+    // check); replaceState: no history entry per tab, no scroll jump.
+    if (window.history && history.replaceState && location.hash !== '#' + tabName) {
+      try { history.replaceState(null, '', location.pathname + location.search + '#' + tabName); } catch (e) {}
+    }
   }
+
+  // #<tab> selects the tab; #<element id> inside a panel (e.g. #card-offsite)
+  // selects that panel and scrolls the element into view.
+  function fromHash() {
+    var h = decodeURIComponent((location.hash || '').slice(1));
+    if (!h || !/^[A-Za-z0-9_-]+$/.test(h)) return false;
+    if (document.querySelector('[data-settings-panel="' + h + '"]')) { switchTab(h); return true; }
+    var target = document.getElementById(h);
+    var panel = target && target.closest('.settings-panel');
+    if (!panel) return false;
+    var name = panel.dataset.settingsPanel;
+    switchTab(name);
+    try { history.replaceState(null, '', location.pathname + location.search + '#' + h); } catch (e) {}
+    setTimeout(function () { if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    return true;
+  }
+  window.addEventListener('hashchange', fromHash);
 
   tabs.forEach(function (t) {
     t.addEventListener('click', function () {
@@ -55,11 +77,13 @@
     });
   }
 
-  // Restore last active tab
-  var saved = null;
-  try { saved = localStorage.getItem('settings-active-tab'); } catch (e) {}
-  if (saved && document.querySelector('[data-settings-panel="' + saved + '"]')) {
-    switchTab(saved);
+  // Tab from the address first, else the last active tab
+  if (!fromHash()) {
+    var saved = null;
+    try { saved = localStorage.getItem('settings-active-tab'); } catch (e) {}
+    if (saved && document.querySelector('[data-settings-panel="' + saved + '"]')) {
+      switchTab(saved);
+    }
   }
 })();
 
