@@ -173,7 +173,8 @@
              dials the target, the fields are stored but not applied). #}
           <div id="edit-backend-tls-block" class="so-editor-block so-backend-tls"
                data-hint-gateway="{{ t('backend_tls.hint_gateway') }}" data-hint-https="{{ t('backend_tls.hint_https') }}"
-               data-err-backend-ca-invalid="{{ t('backend_tls.err.ca_invalid') }}" data-err-backend-server-name-invalid="{{ t('backend_tls.err.server_name_invalid') }}">
+               data-err-backend-ca-invalid="{{ t('backend_tls.err.ca_invalid') }}" data-err-backend-server-name-invalid="{{ t('backend_tls.err.server_name_invalid') }}"
+               data-err-backend-tls-fingerprint-invalid="{{ t('backend_tls.err.fingerprint_invalid') }}">
             <label class="so-check so-check-row" for="edit-route-backend-tls-verify">
               <input type="checkbox" id="edit-route-backend-tls-verify">
               <span class="so-check-text"><span class="so-check-title">{{ t('backend_tls.verify') }}</span><span class="so-check-desc">{{ t('backend_tls.verify_desc') }}</span></span>
@@ -189,6 +190,15 @@
               </label>
             </div>
             <div id="edit-backend-tls-hint" class="so-editor-hint so-hint-warn"></div>
+            {# Gateway targets with Backend HTTPS: pin the LAN certificate by its
+               SHA-256 fingerprint (release B §13b). Shown only for gateway targets. #}
+            <div id="edit-backend-tls-fp" class="so-editor-fields so-fp" hidden>
+              <label class="so-editor-f" for="edit-route-backend-tls-fingerprint"><span class="so-f-label">{{ t('backend_tls.fp_label') }}</span>
+                <input type="text" class="form-input so-mono" id="edit-route-backend-tls-fingerprint" maxlength="120" placeholder="{{ t('backend_tls.fp_ph') }}" autocomplete="off" spellcheck="false" aria-describedby="edit-backend-tls-fp-help">
+              </label>
+              <small class="form-hint" id="edit-backend-tls-fp-help">{{ t('backend_tls.fp_hint') }} <code class="so-fp-cmd">openssl s_client -connect &lt;LAN-IP&gt;:&lt;Port&gt; &lt;/dev/null | openssl x509 -noout -fingerprint -sha256</code></small>
+              <small class="form-hint so-fp-note">{{ t('backend_tls.fp_gateway_note') }}</small>
+            </div>
             <div id="edit-backend-tls-error" class="so-editor-error" role="alert" hidden></div>
           </div>
           {% if license.features.compression %}

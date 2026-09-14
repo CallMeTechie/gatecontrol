@@ -443,8 +443,18 @@
           <div class="sh"><b>{{ t('settings.restore') }}</b></div>
           <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('settings.restore_desc') }}</div>
         </div>
-        <input type="file" id="backup-file-input" accept=".json" style="display:none">
+        <div class="form-hint op-restore-gcbk">{{ t('offsite.restore_gcbk_hint') }}</div>
+        <input type="file" id="backup-file-input" accept=".json,.gcbk" style="display:none">
         <div id="backup-preview" style="display:none;padding:10px;border-radius:6px;background:var(--surface-3);font-size:12px;font-family:var(--font-mono)"></div>
+        {# Encrypted off-site archive (.gcbk): passphrase for preview + restore; empty = the one saved here. #}
+        <div id="restore-passphrase-row" class="op-restore-pass" hidden>
+          <label class="form-label" for="restore-passphrase">{{ t('offsite.restore_passphrase') }}</label>
+          <div class="op-inline">
+            <input type="password" class="form-input" id="restore-passphrase" autocomplete="off" maxlength="1024" spellcheck="false">
+            <button type="button" class="btn btn-ghost btn-sm" id="restore-passphrase-apply">{{ t('offsite.restore_check') }}</button>
+          </div>
+          <small class="form-hint">{{ t('offsite.restore_passphrase_hint') }}</small>
+        </div>
         <div id="restore-message" style="display:none"></div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" id="btn-backup-select" style="flex:0 0 auto">{{ t('settings.restore_select') }}</button>
@@ -497,6 +507,225 @@
           <div id="autobackup-files" style="font-size:12px;color:var(--text-3)">{{ t('autobackup.no_files') }}</div>
         </div>
       </div>
+    </div>
+
+    {# ── Off-site backups (docs/feature-release-b.md §7, licence scheduled_backups).
+       Filled by settings.js (GCOpsUI helpers); styles in public/css/ops.css.
+       Secrets are write-only: nothing secret is ever rendered or read back. #}
+    <div class="card span12 op-offsite" id="card-offsite" data-licensed="{{ '1' if license.hasFeature('scheduled_backups') else '0' }}">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0017.5 8h-1.8A7 7 0 104 14.9"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg></span>
+        {{ t('offsite.title') }}
+      </div>
+      <p class="op-sub">{{ t('offsite.subtitle') }}</p>
+      <div id="offsite-license" class="op-license" hidden></div>
+      <div id="offsite-autobackup-off" class="op-note op-note-warn" hidden>{{ t('offsite.autobackup_off') }}</div>
+      <div class="op-offsite-grid">
+        <section class="op-pane" aria-labelledby="offsite-enc-title">
+          <h3 class="op-h" id="offsite-enc-title">{{ t('offsite.enc_title') }}</h3>
+          <div id="offsite-pass-state" class="op-state" aria-live="polite"></div>
+          <form id="offsite-pass-form" class="op-pass-form" autocomplete="off" novalidate>
+            <input type="text" name="username" value="gatecontrol-offsite" autocomplete="username" hidden>
+            <div class="form-group">
+              <label class="form-label" for="offsite-passphrase">{{ t('offsite.passphrase') }}</label>
+              <input type="password" class="form-input" id="offsite-passphrase" autocomplete="new-password" maxlength="1024" spellcheck="false"
+                     data-ph-new="{{ t('offsite.passphrase_ph_new') }}" data-ph-set="{{ t('offsite.passphrase_ph_set') }}" aria-describedby="offsite-pass-strength">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="offsite-passphrase2">{{ t('offsite.passphrase_repeat') }}</label>
+              <input type="password" class="form-input" id="offsite-passphrase2" autocomplete="new-password" maxlength="1024" spellcheck="false">
+            </div>
+            <div id="offsite-pass-strength" class="op-strength" data-level="empty" aria-live="polite">
+              <span class="op-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              <span class="op-strength-text" id="offsite-pass-strength-text"></span>
+            </div>
+            <div class="op-actions">
+              <button type="submit" class="btn btn-primary btn-sm" id="offsite-pass-save" disabled>{{ t('offsite.passphrase_save') }}</button>
+            </div>
+          </form>
+          <p class="op-note" id="offsite-pass-change-note" hidden>{{ t('offsite.passphrase_change_note') }}</p>
+          <div class="set-row op-set-row">
+            <span class="l" id="offsite-include-key-label">{{ t('offsite.include_key') }}<small>{{ t('offsite.include_key_desc') }}</small></span>
+            <div class="toggle" id="offsite-include-key" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="offsite-include-key-label"></div>
+          </div>
+          <p class="op-note" id="offsite-include-key-note" data-on="{{ t('offsite.include_key_on') }}" data-off="{{ t('offsite.include_key_off') }}"></p>
+          <p class="op-note op-note-warn op-loss">{{ t('offsite.passphrase_loss') }}</p>
+        </section>
+        <section class="op-pane" aria-labelledby="offsite-targets-title">
+          <div class="op-pane-head">
+            <h3 class="op-h" id="offsite-targets-title">{{ t('offsite.targets_title') }}</h3>
+            <button type="button" class="btn btn-primary btn-sm" id="offsite-add">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              {{ t('offsite.add') }}
+            </button>
+          </div>
+          <div id="offsite-targets" class="op-targets">
+            <div class="op-empty">{{ t('common.loading') }}</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    {# ── Snapshots before database migrations (docs/feature-release-b.md §4) ── #}
+    <div class="card span12 op-premig" id="card-premigration">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
+        {{ t('premig.title') }}
+      </div>
+      <p class="op-sub">{{ t('premig.subtitle') }}</p>
+      <div id="premig-list" class="op-premig-list" data-empty="{{ t('premig.empty') }}" data-download="{{ t('premig.download') }}">
+        <div class="op-empty">{{ t('common.loading') }}</div>
+      </div>
+      <p class="op-note">{{ t('premig.restore_hint') }}</p>
+    </div>
+  </div>
+</div>
+
+{# Add/edit dialog of an off-site target (outside the tab panels: position:fixed
+   children of a display:none panel would stay hidden). One field set; the
+   wrappers carry data-for="<types>" and settings.js shows the ones of the
+   selected type. Secret inputs stay empty; has_* flags only change the hint. #}
+<div class="modal-overlay" id="offsite-target-modal" style="display:none">
+  <div class="modal modal-wide op-target-modal" role="dialog" aria-modal="true" aria-labelledby="offsite-target-title">
+    <div class="modal-head">
+      <span class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0017.5 8h-1.8A7 7 0 104 14.9"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg></span>
+      <span class="modal-title" id="offsite-target-title" data-add="{{ t('offsite.add') }}" data-edit="{{ t('offsite.dlg_edit') }}">{{ t('offsite.add') }}</span>
+      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
+    </div>
+    <form class="modal-body op-target-form" id="offsite-target-form" novalidate autocomplete="off">
+      <input type="hidden" id="ot-id" value="">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="ot-name">{{ t('offsite.f_name') }}</label>
+          <input type="text" class="form-input" id="ot-name" maxlength="64" placeholder="{{ t('offsite.f_name_ph') }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ot-type">{{ t('offsite.f_type') }}</label>
+          <select class="form-select" id="ot-type">
+            <option value="sftp">SFTP</option>
+            <option value="smb">SMB</option>
+            <option value="s3">S3</option>
+            <option value="webdav">WebDAV</option>
+          </select>
+          <small class="form-hint" id="ot-type-hint">{{ t('offsite.f_type_hint') }}</small>
+        </div>
+      </div>
+
+      <div class="form-group" data-for="webdav">
+        <label class="form-label" for="ot-url">{{ t('offsite.field.url') }}</label>
+        <input type="url" class="form-input mono" id="ot-url" maxlength="2048" placeholder="https://cloud.example.com/remote.php/dav/files/alice/gatecontrol/" spellcheck="false">
+        <small class="form-hint">{{ t('offsite.f_url_hint') }}</small>
+      </div>
+
+      <div class="form-group" data-for="s3">
+        <label class="form-label" for="ot-endpoint">{{ t('offsite.f_endpoint') }}</label>
+        <input type="url" class="form-input mono" id="ot-endpoint" maxlength="2048" placeholder="https://s3.eu-central-1.wasabisys.com" spellcheck="false">
+        <small class="form-hint">{{ t('offsite.f_endpoint_hint') }}</small>
+      </div>
+      <div class="form-row" data-for="s3">
+        <div class="form-group">
+          <label class="form-label" for="ot-bucket">{{ t('offsite.field.bucket') }}</label>
+          <input type="text" class="form-input mono" id="ot-bucket" maxlength="63" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ot-region">{{ t('offsite.field.region') }}</label>
+          <input type="text" class="form-input mono" id="ot-region" maxlength="32" placeholder="us-east-1" spellcheck="false">
+        </div>
+      </div>
+      <div class="form-group" data-for="s3">
+        <label class="form-label" for="ot-prefix">{{ t('offsite.f_prefix') }}</label>
+        <input type="text" class="form-input mono" id="ot-prefix" maxlength="255" placeholder="gatecontrol" spellcheck="false">
+      </div>
+      <div class="form-row" data-for="s3">
+        <div class="form-group">
+          <label class="form-label" for="ot-akid">{{ t('offsite.field.access_key_id') }}</label>
+          <input type="text" class="form-input mono" id="ot-akid" maxlength="128" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ot-secret">{{ t('offsite.field.secret_access_key') }}</label>
+          <input type="password" class="form-input mono" id="ot-secret" maxlength="1024" autocomplete="new-password" spellcheck="false">
+          <small class="form-hint" id="ot-secret-hint" data-kept="{{ t('offsite.secret_kept') }}" hidden></small>
+        </div>
+      </div>
+      <label class="form-check op-check" data-for="s3">
+        <input type="checkbox" id="ot-path-style">
+        <span>{{ t('offsite.f_path_style') }}</span>
+      </label>
+
+      <div class="form-row op-host-row" data-for="sftp smb">
+        <div class="form-group">
+          <label class="form-label" for="ot-host">{{ t('offsite.field.host') }}</label>
+          <input type="text" class="form-input mono" id="ot-host" maxlength="253" placeholder="nas.example.com" spellcheck="false">
+        </div>
+        <div class="form-group op-port">
+          <label class="form-label" for="ot-port">{{ t('offsite.field.port') }}</label>
+          <input type="number" class="form-input mono" id="ot-port" min="1" max="65535" placeholder="22">
+        </div>
+      </div>
+      <details class="op-lan" id="ot-lan" data-for="sftp smb">
+        <summary>{{ t('offsite.lan_title') }}</summary>
+        <p class="op-note">{{ t('offsite.lan_hint') }}</p>
+        <label class="form-label" for="ot-l4">{{ t('offsite.lan_pick_label') }}</label>
+        <select class="form-select" id="ot-l4"><option value="">{{ t('offsite.l4_pick') }}</option></select>
+        <div class="op-note" id="ot-l4-note" aria-live="polite" hidden></div>
+      </details>
+      <div class="form-row" data-for="sftp smb webdav">
+        <div class="form-group">
+          <label class="form-label" for="ot-username">{{ t('offsite.field.username') }}</label>
+          <input type="text" class="form-input mono" id="ot-username" maxlength="128" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group" data-for="smb webdav">
+          <label class="form-label" for="ot-password">{{ t('offsite.field.password') }}</label>
+          <input type="password" class="form-input" id="ot-password" maxlength="1024" autocomplete="new-password">
+          <small class="form-hint" id="ot-password-hint" data-kept="{{ t('offsite.secret_kept') }}" hidden></small>
+        </div>
+      </div>
+      <div class="form-row" data-for="sftp smb">
+        <div class="form-group" data-for="smb">
+          <label class="form-label" for="ot-share">{{ t('offsite.field.share') }}</label>
+          <input type="text" class="form-input mono" id="ot-share" maxlength="80" placeholder="backup" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ot-path">{{ t('offsite.f_path') }}</label>
+          <input type="text" class="form-input mono" id="ot-path" maxlength="255" placeholder="gatecontrol" spellcheck="false">
+        </div>
+      </div>
+      <label class="form-check op-check" id="ot-clear-password-row" data-for="smb webdav" hidden>
+        <input type="checkbox" id="ot-clear-password">
+        <span>{{ t('offsite.f_clear_password') }}</span>
+      </label>
+      <div class="form-group" data-for="smb">
+        <label class="form-label" for="ot-domain">{{ t('offsite.f_domain') }}</label>
+        <input type="text" class="form-input mono" id="ot-domain" maxlength="64" placeholder="WORKGROUP" spellcheck="false">
+      </div>
+
+      <div class="op-key" id="ot-key" data-for="sftp">
+        <div class="op-key-head">{{ t('offsite.key_title') }}</div>
+        <p class="op-note">{{ t('offsite.key_hint') }}</p>
+        <textarea class="form-textarea mono op-key-val" id="ot-pubkey" rows="2" readonly spellcheck="false" aria-label="{{ t('offsite.key_title') }}"></textarea>
+        <div class="op-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="ot-key-copy">{{ t('offsite.key_copy') }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="ot-key-rotate">{{ t('offsite.key_rotate') }}</button>
+        </div>
+        <p class="op-note">{{ t('offsite.key_hostkey_note') }}</p>
+      </div>
+
+      <div class="form-row op-common-row">
+        <div class="form-group">
+          <label class="form-label" for="ot-keep">{{ t('offsite.f_keep') }}</label>
+          <input type="number" class="form-input" id="ot-keep" min="1" max="365" value="14">
+          <small class="form-hint">{{ t('offsite.f_keep_hint') }}</small>
+        </div>
+        <label class="form-check op-check op-enabled">
+          <input type="checkbox" id="ot-enabled" checked>
+          <span>{{ t('offsite.f_enabled') }}</span>
+        </label>
+      </div>
+      <div id="offsite-target-error" class="op-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button type="button" class="btn btn-primary" id="offsite-target-save">{{ t('common.save') }}</button>
     </div>
   </div>
 </div>
@@ -739,6 +968,70 @@
           <span>{{ t('autoupdate.mode_manual') }}</span>
         </label>
         <div id="au-mode-status" class="autosave-status"></div>
+      </div>
+    </div>
+
+    {# ── Maintenance window + update e-mail (docs/feature-release-b.md §6).
+       settings.js (initAutoUpdateWindow) loads GET /system/auto-update and saves
+       PUT {window} / {notify_email} through SettingsAutosave. #}
+    <div class="card span12 op-au" id="card-au-window">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>
+        {{ t('autoupdate.window_title') }}
+      </div>
+      <div class="op-au-grid">
+        <section class="op-pane" aria-label="{{ t('autoupdate.window_title') }}">
+          <p class="op-sub">{{ t('autoupdate.window_help') }}</p>
+          <div class="set-row op-set-row">
+            <span class="l" id="au-window-enabled-label">{{ t('autoupdate.window_enabled') }}<small id="au-window-mode-note" hidden>{{ t('autoupdate.window_manual_note') }}</small></span>
+            <div class="toggle" id="au-window-enabled" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="au-window-enabled-label"></div>
+          </div>
+          <div class="op-au-fields" id="au-window-fields">
+            <div class="form-group">
+              <label class="form-label" for="au-window-start">{{ t('autoupdate.window_from') }}</label>
+              <input type="time" class="form-input mono" id="au-window-start" step="60" value="03:00" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="au-window-end">{{ t('autoupdate.window_to') }}</label>
+              <input type="time" class="form-input mono" id="au-window-end" step="60" value="05:00" required>
+            </div>
+            <div class="form-group op-au-tz">
+              <label class="form-label" for="au-window-tz">{{ t('autoupdate.window_tz') }}</label>
+              <select class="form-select" id="au-window-tz"><option value="Europe/Berlin">Europe/Berlin</option></select>
+            </div>
+          </div>
+          <div class="op-au-meta">
+            <span class="tag tag-blue" id="au-window-overnight" hidden>{{ t('autoupdate.window_overnight') }}</span>
+            <span id="au-window-state" class="op-au-state" aria-live="polite"></span>
+            <span id="au-window-clock" class="op-au-clock"></span>
+          </div>
+          <div id="au-window-error" class="op-error" role="alert" hidden></div>
+          <div id="au-window-waiting" class="op-note op-note-warn op-au-waiting" hidden>
+            <span>{{ t('autoupdate.waiting_window_hint') }}</span>
+            <button type="button" class="btn btn-primary btn-sm" id="au-window-trigger" title="{{ t('autoupdate.trigger_now_window') }}">{{ t('autoupdate.trigger') }}</button>
+          </div>
+          <div id="au-window-status" class="autosave-status"></div>
+          <details class="op-reinstall" id="au-reinstall">
+            <summary>{{ t('autoupdate.reinstall_title') }}</summary>
+            <p class="op-note">{{ t('autoupdate.reinstall_hint') }}</p>
+            <pre class="op-cmd" id="au-reinstall-cmd">cd /opt/gatecontrol
+curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
+chmod +x update.sh</pre>
+            <div class="op-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="au-reinstall-copy">{{ t('offsite.key_copy') }}</button>
+              <a class="btn btn-ghost btn-sm" href="/api/v1/system/update-sh" id="au-reinstall-download">{{ t('autoupdate.download') }}</a>
+            </div>
+            <p class="op-note">{{ t('autoupdate.reinstall_cron') }}</p>
+          </details>
+        </section>
+        <section class="op-pane" aria-label="{{ t('autoupdate.notify_email') }}">
+          <div class="set-row op-set-row">
+            <span class="l" id="au-notify-email-label">{{ t('autoupdate.notify_email') }}<small>{{ t('autoupdate.notify_email_desc') }}</small></span>
+            <div class="toggle" id="au-notify-email" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="au-notify-email-label"></div>
+          </div>
+          <p class="op-note">{{ t('autoupdate.notify_email_recipient') }}</p>
+          <div id="au-notify-status" class="autosave-status"></div>
+        </section>
       </div>
     </div>
   </div>
@@ -1072,6 +1365,7 @@
 <script src="/js/settingsAutosaveCore.js?v={{ appVersion }}"></script>
 <script src="/js/settingsAutosave.js?v={{ appVersion }}"></script>
 <script src="/js/tls-ui.js?v={{ appVersion }}"></script>
+<script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 <script src="/js/peer-groups-admin.js?v={{ appVersion }}"></script>
 <script src="/js/tags-admin.js?v={{ appVersion }}"></script>

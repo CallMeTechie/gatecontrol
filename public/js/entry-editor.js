@@ -1677,6 +1677,7 @@
   var SECOPT_ERRORS = {
     BACKEND_CA_INVALID: ['edit-backend-tls-block', 'errBackendCaInvalid', 'backend_tls.err.ca_invalid', 'general'],
     BACKEND_SERVER_NAME_INVALID: ['edit-backend-tls-block', 'errBackendServerNameInvalid', 'backend_tls.err.server_name_invalid', 'general'],
+    BACKEND_TLS_FINGERPRINT_INVALID: ['edit-backend-tls-block', 'errBackendTlsFingerprintInvalid', 'backend_tls.err.fingerprint_invalid', 'general'],
     MAX_BODY_INVALID: ['edit-body-limit-block', 'errMaxBodyInvalid', 'body_limit.err.invalid', 'security'],
     MTLS_CA_INVALID: ['edit-mtls-block', 'errMtlsCaInvalid', 'mtls.err.ca_invalid', 'auth'],
     MTLS_REQUIRES_HTTPS: ['edit-mtls-block', 'errMtlsRequiresHttps', 'mtls.err.requires_https', 'auth'],
@@ -1741,6 +1742,7 @@
     if (verify) verify.checked = flag(route.backend_tls_verify);
     setVal('edit-route-backend-tls-server-name', route.backend_tls_server_name || '');
     setVal('edit-route-backend-tls-ca', route.backend_tls_ca_pem || '');
+    setVal('edit-route-backend-tls-fingerprint', formatFingerprint(route.backend_tls_fingerprint || ''));
     var mb = parseInt(route.max_body_mb, 10);
     setVal('edit-route-max-body-mb', String(isFinite(mb) && mb > 0 ? mb : 0));
     setToggle('edit-route-mtls', flag(route.mtls_enabled));
@@ -1777,6 +1779,48 @@
       else if (!bhttps) hint.textContent = block.dataset.hintHttps || T('backend_tls.hint_https', 'Only with Backend HTTPS.');
       else hint.textContent = '';
     }
+    // Gateway targets: the certificate is pinned by fingerprint instead (§13b);
+    // stays usable inside the locked block, needs Backend HTTPS.
+    var fp = byId('edit-backend-tls-fp');
+    if (fp) {
+      fp.hidden = !gateway;
+      fp.classList.toggle('so-fields-off', gateway && !bhttps);
+      var fpInput = byId('edit-route-backend-tls-fingerprint');
+      if (fpInput) fpInput.disabled = !(gateway && bhttps);
+    }
+  }
+
+  // ─── Gateway backend TLS fingerprint (release B §13b) ───
+  // Same rule as routesValidation.normalizeBackendFingerprint: optional
+  // "sha256:" prefix, colons/spaces/dashes ignored, 64 hex. '' clears it,
+  // null = invalid. Shown with colons in upper case like browsers print it.
+  function normalizeFingerprint(value) {
+    var s = String(value == null ? '' : value).trim().toLowerCase();
+    if (!s) return '';
+    s = s.replace(/^sha-?256\s*[:=]\s*/, '');
+    var hex = s.replace(/[:\s-]/g, '');
+    return /^[0-9a-f]{64}$/.test(hex) ? hex : null;
+  }
+  function formatFingerprint(hex) {
+    var h = String(hex || '').toUpperCase();
+    return /^[0-9A-F]{64}$/.test(h) ? h.match(/../g).join(':') : String(hex || '');
+  }
+  // Live check; the text goes to the block's error line (#edit-backend-tls-error),
+  // the same place showSecoptError uses on save.
+  function checkFingerprintField(strict) {
+    var input = byId('edit-route-backend-tls-fingerprint');
+    var err = byId('edit-backend-tls-error');
+    if (!input || !err) return true;
+    var raw = input.value.trim();
+    var ok = input.disabled || normalizeFingerprint(raw) !== null;
+    // While typing only complain once 64+ hex digits could be there.
+    var show = !ok && (strict || raw.replace(/[^0-9a-fA-F]/g, '').length >= 64);
+    var block = byId('edit-backend-tls-block');
+    err.textContent = show ? ((block && block.dataset.errBackendTlsFingerprintInvalid) || T('backend_tls.err.fingerprint_invalid', 'Not a SHA-256 fingerprint.')) : '';
+    err.hidden = !show;
+    input.classList.toggle('field-invalid', show);
+    if (show) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
+    return ok;
   }
 
   function syncMtlsBlock() {
@@ -1803,6 +1847,14 @@
       out.backend_tls_server_name = (byId('edit-route-backend-tls-server-name').value || '').trim();
       out.backend_tls_ca_pem = (byId('edit-route-backend-tls-ca').value || '').trim();
     }
+    // Gateway + Backend HTTPS: send the fingerprint ('' clears it). Without
+    // Backend HTTPS it is not sent — the server drops a stored one then.
+    var fpInput = byId('edit-route-backend-tls-fingerprint');
+    if (fpInput && (target.target_kind || 'peer') === 'gateway' && isOn('edit-route-backend-https')) {
+      var fpHex = normalizeFingerprint(fpInput.value);
+      if (fpHex === null) { checkFingerprintField(true); return { error: 'BACKEND_TLS_FINGERPRINT_INVALID' }; }
+      out.backend_tls_fingerprint = fpHex;
+    }
     var mbInput = byId('edit-route-max-body-mb');
     if (mbInput) {
       var raw = String(mbInput.value || '').trim();
@@ -1828,6 +1880,15 @@
     if (tk) tk.addEventListener('change', syncBackendTlsBlock);
     var verify = byId('edit-route-backend-tls-verify');
     if (verify) verify.addEventListener('change', syncBackendTlsBlock);
+    var fpInput = byId('edit-route-backend-tls-fingerprint');
+    if (fpInput) {
+      fpInput.addEventListener('input', function () { checkFingerprintField(false); });
+      fpInput.addEventListener('blur', function () {
+        var hex = normalizeFingerprint(fpInput.value);
+        if (hex) fpInput.value = formatFingerprint(hex);
+        checkFingerprintField(true);
+      });
+    }
     var https = byId('edit-route-https');
     if (https) https.addEventListener('click', function () { syncMtlsBlock(); });
     var mtls = byId('edit-route-mtls');

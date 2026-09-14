@@ -1,0 +1,177 @@
+/* ─── Operations UI (op-): release B §6, §7, §13b ─────────────────────────────
+   Off-site backups + pre-migration snapshots (Settings → Backup), maintenance
+   window + update e-mail (Settings → Advanced), "Was ist neu" (dashboard), the
+   gateway fingerprint field in the entry editor. Linked once from
+   templates/aurora/layout.njk right after aurora.css; Aurora tokens only
+   (--surface*, --line*, --muted, --faint, --teal, --green/--amber/--red*), so
+   light and dark mode follow the theme. Markup: settings.njk, dashboard.njk,
+   partials/modals/route-edit.njk; DOM built by settings.js / dashboard.js. */
+
+.op-offsite [hidden], .op-premig [hidden], .op-target-modal [hidden], .op-au [hidden],
+.op-wn[hidden], .op-wn [hidden], .op-restore-pass[hidden], .op-dialog [hidden] { display: none !important; }
+
+/* ── Shared bits ─────────────────────────────────────────── */
+.op-sub { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 90ch; }
+.op-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.op-note-warn { color: var(--amber); }
+.op-error { margin-top: 10px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45; color: var(--red); background: var(--red-bg); border: 1px solid var(--red-bd); border-radius: 8px; }
+.op-empty { font-size: 12.5px; color: var(--faint); padding: 10px 0; }
+.op-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.op-inline { display: flex; gap: 8px; align-items: center; }
+.op-inline .form-input { flex: 1; min-width: 0; }
+.op-h { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 14px; letter-spacing: -.01em; color: var(--text); }
+.op-pane { min-width: 0; padding: 16px; background: var(--chip); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.op-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.op-state { margin: 10px 0 12px; min-height: 24px; }
+.op-set-row { padding: 10px 0; border-top: 1px solid var(--line); margin-top: 12px; }
+.op-set-row .l { min-width: 0; }
+.op-pane > .op-set-row:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.op-license { margin-top: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--amber); background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: 10px; }
+.op-offsite > .op-note-warn { margin-top: 12px; }
+.op-cmd { margin: 8px 0 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--text);
+  background: var(--surface-3); border: 1px solid var(--line); border-radius: 8px; white-space: pre; overflow-x: auto; }
+.op-restore-gcbk { margin-top: -6px; }
+.op-restore-pass .form-hint { margin-top: 4px; }
+
+/* ── Off-site backups (Settings → Backup) ────────────────── */
+.op-offsite-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 18px; margin-top: 16px; align-items: start; }
+.op-pass-form .form-group { margin-bottom: 12px; }
+.op-strength { display: flex; align-items: center; gap: 10px; min-height: 20px; font-size: 12px; color: var(--muted); }
+.op-meter { display: inline-flex; gap: 3px; flex: 0 0 auto; }
+.op-meter i { width: 20px; height: 4px; border-radius: 2px; background: var(--line-2); transition: background .15s; }
+.op-strength[data-level="short"] .op-meter i:nth-child(-n+1) { background: var(--red); }
+.op-strength[data-level="weak"] .op-meter i:nth-child(-n+2) { background: var(--amber); }
+.op-strength[data-level="ok"] .op-meter i:nth-child(-n+3) { background: var(--teal); }
+.op-strength[data-level="strong"] .op-meter i { background: var(--green); }
+.op-strength[data-level="short"] .op-strength-text, .op-strength.op-mismatch .op-strength-text { color: var(--red); }
+.op-strength[data-level="strong"] .op-strength-text { color: var(--green); }
+.op-loss { padding: 10px 12px; background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: 10px; }
+.op-offsite.op-unlicensed .op-pass-form, .op-offsite.op-unlicensed .op-set-row { opacity: .6; }
+
+.op-targets { display: flex; flex-direction: column; gap: 10px; }
+.op-target { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.op-target.op-paused { border-style: dashed; }
+.op-t-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.op-t-type { flex: 0 0 auto; min-width: 58px; padding: 5px 8px; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: var(--teal); background: var(--teal-soft); border-radius: 8px; }
+.op-t-main { flex: 1; min-width: 0; }
+.op-t-name { font-weight: 700; font-size: 13.5px; overflow-wrap: anywhere; }
+.op-t-dest { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
+.op-t-status { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.op-t-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--faint); }
+.op-t-error { font-size: 12px; color: var(--red); }
+.op-t-detail { display: block; padding: 6px 8px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--chip); border: 1px solid var(--line); border-radius: 7px; }
+code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); background: var(--red-bg); }
+.op-t-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.op-t-actions .op-t-delete { margin-left: auto; }
+.op-t-result { padding: 8px 10px; font-size: 12.5px; line-height: 1.45; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+.op-t-result.op-ok { color: var(--green); background: var(--green-bg); border-color: var(--green-bd); }
+.op-t-result.op-bad { color: var(--red); background: var(--red-bg); border-color: var(--red-bd); }
+.op-t-result .op-t-detail { color: var(--text); }
+.op-t-files { border-top: 1px dashed var(--line-2); padding-top: 8px; min-width: 0; }
+.op-t-files-head { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+.op-table-wrap { overflow-x: auto; }
+.op-files-table { font-size: 12.5px; }
+.op-files-table th, .op-files-table td { padding: 7px 10px; }
+
+/* Pre-migration snapshots */
+.op-premig-list { margin-top: 12px; }
+.op-pm-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.op-pm-row:last-child { border-bottom: 0; }
+.op-pm-main { flex: 1 1 260px; min-width: 0; }
+.op-pm-ver { font-weight: 700; font-size: 13.5px; }
+.op-pm-name { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); overflow-wrap: anywhere; margin-top: 2px; }
+.op-pm-meta { font-size: 12px; color: var(--muted); }
+
+/* Add/edit dialog */
+.op-target-form .form-row { align-items: start; margin-bottom: 15px; }
+.op-target-form .form-row .form-group { margin-bottom: 0; }
+.op-offsite .btn:disabled, .op-premig .btn:disabled, .op-au .btn:disabled, .op-target-modal .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; filter: none; }
+.op-host-row { grid-template-columns: minmax(0, 1fr) 120px; }
+.op-check { margin-bottom: 15px; }
+.op-check input { accent-color: var(--teal); }
+.op-lan { margin: 0 0 15px; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 10px; background: var(--chip); }
+.op-lan summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--teal); }
+.op-lan .op-note:first-of-type { margin-bottom: 10px; }
+.op-key { margin: 0 0 15px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+.op-key-head { font-size: 12.5px; font-weight: 700; }
+.op-key-val { margin-top: 8px; resize: none; font-size: 11.5px; word-break: break-all; }
+.op-common-row { border-top: 1px solid var(--line); padding-top: 14px; }
+.op-enabled { margin-top: 26px; }
+
+/* ── Maintenance window (Settings → Advanced) ────────────── */
+.op-au-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; margin-top: 14px; align-items: start; }
+.op-au .op-sub { margin-top: 0; }
+.op-au-fields { display: grid; grid-template-columns: 130px 130px minmax(0, 1fr); gap: 12px; margin-top: 4px; transition: opacity .15s; }
+.op-au-fields .form-group { margin-bottom: 0; }
+.op-au.op-au-off .op-au-fields { opacity: .6; }
+.op-au-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 26px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.op-au-clock { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); }
+.op-au-waiting { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: 10px; }
+.op-reinstall { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.op-reinstall summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--amber); }
+
+/* ── "Was ist neu" (dashboard) ───────────────────────────── */
+.op-wn { margin-bottom: 18px; }
+.op-wn-head { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.op-wn-ic { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--teal); background: var(--teal-soft); }
+.op-wn-ic svg { width: 18px; height: 18px; }
+.op-wn-titles { flex: 1 1 220px; min-width: 0; }
+.op-wn-title { margin: 0; font-size: 16px; }
+.op-wn-sub { margin-top: 2px; font-size: 12px; color: var(--faint); }
+.op-wn-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.op-wn-body { margin-top: 14px; max-height: 340px; overflow-y: auto; padding-right: 6px; }
+.op-wn-body:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 8px; }
+.op-wn-single .op-wn-ver { display: none; }
+.op-wn-single .op-wn-group:first-of-type .op-wn-gtitle { margin-top: 0; }
+.op-wn-section + .op-wn-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.op-wn-ver { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.op-wn-vnum { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+.op-wn-date { font-size: 12px; color: var(--faint); }
+.op-wn-gtitle { margin: 10px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.op-wn-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.55; color: var(--text); }
+.op-wn-list li::marker { color: var(--teal); }
+.op-wn-code { font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--surface-3); overflow-wrap: anywhere; }
+
+/* /dashboard#auto-update: highlight the topbar status */
+@keyframes op-flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 40% { box-shadow: 0 0 0 6px var(--teal-soft); } }
+#au-status.op-flash { border-radius: 999px; outline: 2px solid var(--teal); outline-offset: 3px; animation: op-flash 1.2s ease 2; }
+
+/* Topbar version badge = entry to "What's new" */
+.au-badge-btn { cursor: pointer; font-family: inherit; line-height: inherit; }
+.au-badge-btn:hover, .au-badge-btn:focus-visible { color: var(--text); border-color: var(--line-2); }
+
+/* ── Entry editor: gateway certificate fingerprint (§13b) ── */
+.so-editor-block.so-locked > .so-fp { opacity: 1; pointer-events: auto; }
+.so-editor-block.so-locked > .so-fp.so-fields-off { opacity: .55; }
+.so-editor-block.so-locked > .so-editor-error { opacity: 1; }
+.so-fp { gap: 6px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 10px; }
+.so-fp .form-hint { margin-top: 0; font-size: 11px; line-height: 1.45; }
+.so-fp-cmd { display: block; margin-top: 4px; padding: 5px 8px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+  background: var(--surface-3); border-radius: 6px; overflow-x: auto; white-space: pre; }
+.so-fp-note { color: var(--amber); }
+
+@media (max-width: 1100px) {
+  .op-offsite-grid, .op-au-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  /* Topbar auto-update status: at phone width only ~60 px are left next to
+     menu, title, theme and profile — show the status pills as dots (text as
+     tooltip) and drop badge, re-check and buttons (setup/"Update now" stay on
+     wider screens and in Settings → Erweitert). Before, the row overflowed. */
+  .topbar .au-actions { flex-wrap: nowrap; min-width: 0; gap: 4px; }
+  .topbar .au-actions .au-pill { padding: 7px; }
+  .topbar .au-actions .au-pill > span:not(.au-dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .topbar .au-actions .au-pill { position: relative; }
+  .topbar .au-actions .au-badge, .topbar .au-actions .icon-btn, .topbar .au-actions .btn { display: none; }
+  .op-pane { padding: 12px; }
+  .op-target-form .form-row, .op-host-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .op-au-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .op-au-fields .op-au-tz { grid-column: 1 / -1; }
+  .op-t-head { flex-wrap: wrap; }
+  .op-t-status { width: 100%; justify-content: flex-start; }
+  .op-t-actions .op-t-delete { margin-left: 0; }
+  .op-enabled { margin-top: 0; }
+}
