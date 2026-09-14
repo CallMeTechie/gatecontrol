@@ -96,7 +96,8 @@ describe('TLS guard: DOM hooks per theme', () => {
   });
 
   it('events.js forwards the tls SSE event as gc:tls', () => {
-    assert.match(read('public/js/events.js'), /'routes',\s*'tls'\]/);
+    const list = read('public/js/events.js').match(/\[([^\]]*'routes'[^\]]*)\]\.forEach/);
+    assert.ok(list && /'tls'/.test(list[1]), 'tls is in the forwarded SSE types');
   });
 
   it('tls-ui.js exposes the contract API and builds DOM without innerHTML', () => {

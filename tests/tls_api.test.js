@@ -140,5 +140,6 @@ test('token scope, unauthenticated access and the SSE type list', async () => {
   const r = await supertest(app).get('/api/v1/tls/status');
   assert.ok([401, 403].includes(r.status));
   const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'events.js'), 'utf8');
-  assert.match(src, /'routes',\s*'tls'\]/, 'events.js forwards tls');
+  const list = src.match(/\[([^\]]*'routes'[^\]]*)\]\.forEach/);
+  assert.ok(list && /'tls'/.test(list[1]), 'events.js forwards tls');
 });
