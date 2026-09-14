@@ -313,6 +313,8 @@ Eingeloggte Admins sehen die vollen Details auch im Browser: öffne `GC_BASE_URL
 docker compose logs --tail 100
 ```
 
+Die mitgelieferte `docker-compose.yml` rotiert die Container-Logs von `gatecontrol` und `guacd` (`json-file`, 3 × 10 MB). Docker rotiert von sich aus nie; auf Hosts, die vor 1.126 installiert wurden, denselben `logging:`-Block bei beiden Diensten in der eigenen `docker-compose.yml` ergänzen und einmal `docker compose up -d` ausführen.
+
 Nach dem Boot-Strap sollten keine `level=error`-Zeilen mehr auftauchen. Häufige Nicht-Fehler, die du **ignorieren** kannst:
 
 - `dnsmasq warning: interface wg0 does not currently exist` beim Start — dnsmasq kommt vor wg-quick hoch; `bind-dynamic` fängt das ab.
@@ -507,6 +509,11 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 EOF
 
 # 3. Alt stoppen, Daten kopieren, Neu starten (kurze Downtime)

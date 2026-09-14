@@ -16,6 +16,12 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    # Rotate the container log (Docker's json-file default never rotates).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   guacd:
     image: guacamole/guacd:1.6.0
@@ -31,6 +37,12 @@ services:
     # session burst can't starve the co-located GC process.
     cpus: "1.0"
     mem_limit: 512m
+    # Rotate the container log (Docker's json-file default never rotates).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   gatecontrol-data:
