@@ -24,15 +24,23 @@ function useDb(name) {
   return conn.getDb();
 }
 
-/** Pretend the newest migration has not run yet: drop its schema + record. */
+/**
+ * Pretend the newest migration has not run yet. Uses an idempotent probe
+ * migration appended to the (shared) list instead of rewinding a real one, so
+ * the test does not depend on the schema of whatever migration is newest.
+ */
 function rewindLatest(db) {
   const { migrations } = require('../src/db/migrationList');
+  if (!migrations.some((m) => m.name === 'pmb_probe')) {
+    migrations.push({
+      version: Math.max(...migrations.map((m) => m.version)) + 1,
+      name: 'pmb_probe',
+      sql: 'CREATE TABLE IF NOT EXISTS pmb_probe (x INTEGER)',
+      detect: () => false,
+    });
+  }
   const latest = Math.max(...migrations.map((m) => m.version));
   db.prepare('DELETE FROM migration_history WHERE version = ?').run(latest);
-  if (latest === 76) {
-    db.exec('DROP TABLE backup_targets');
-    db.exec('ALTER TABLE users DROP COLUMN last_seen_version');
-  }
   return latest;
 }
 
@@ -138,7 +146,13 @@ describe('migration runner snapshot', () => {
   test('entrypoint path (export-caddy-config) stops with the same message', () => {
     conn.closeDb(); // the child opens broken.db itself
     const { spawnSync } = require('node:child_process');
-    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'src', 'bin', 'export-caddy-config.js'), path.join(dataDir, 'rt.json')], {
+    // The child has its own module registry: preload the same probe migration
+    // (see rewindLatest) so broken.db has a pending migration there too.
+    const { migrations } = require('../src/db/migrationList');
+    const probe = migrations.find((m) => m.name === 'pmb_probe');
+    const preload = path.join(dataDir, 'pmb-probe-preload.js');
+    fs.writeFileSync(preload, `require(${JSON.stringify(path.join(__dirname, '..', 'src', 'db', 'migrationList'))}).migrations.push(${JSON.stringify({ version: probe.version, name: probe.name, sql: probe.sql })});\n`);
+    const r = spawnSync(process.execPath, ['--require', preload, path.join(__dirname, '..', 'src', 'bin', 'export-caddy-config.js'), path.join(dataDir, 'rt.json')], {
       env: {
         ...process.env,
         NODE_ENV: 'test',
