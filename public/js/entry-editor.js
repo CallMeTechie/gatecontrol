@@ -1924,7 +1924,11 @@
     var hint = byId('edit-waf-hint');
     if (hint) hint.textContent = licensed && !http ? wafText('hintHttp', 'waf.hint_http', 'HTTP entries only.') : '';
     var locked = byId('edit-waf-locked-hint');
-    if (locked) locked.hidden = licensed;
+    if (locked) {
+      locked.hidden = licensed;
+      // Licence hint (docs/feature-release-b.md §11): why it is locked + "Lizenz aktualisieren".
+      if (!licensed && window.GCLicenseHint) window.GCLicenseHint.mount(locked, 'waf');
+    }
     var link = byId('edit-waf-events-link');
     if (link) link.hidden = !licensed;
     if (wafExclusions) wafExclusions.setDisabled(!active);

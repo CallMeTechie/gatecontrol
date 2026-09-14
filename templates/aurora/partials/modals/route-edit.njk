@@ -412,7 +412,7 @@
           </div>
           <div class="so-editor-hint so-mtls-hint">{{ t('mtls.hint') }}</div>
           <div id="edit-mtls-hint" class="so-editor-hint so-hint-warn"></div>
-          {% if not license.features.route_auth %}<div class="so-editor-hint so-locked-hint">{{ t('mtls.locked') }}</div>{% endif %}
+          {% if not license.features.route_auth %}<div class="so-editor-hint so-locked-hint" data-license-hint="route_auth">{{ t('mtls.locked') }}</div>{% endif %}
           <div id="edit-mtls-error" class="so-editor-error" role="alert" hidden></div>
         </div>
 

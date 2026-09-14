@@ -14,7 +14,7 @@
   function connect() {
     if (stopped || !window.EventSource) return;
     es = new EventSource('/api/v1/events');
-    ['gateway', 'peer', 'activity', 'monitor', 'gateway_discovery', 'pihole', 'waf', 'routes', 'tls'].forEach(function (t) {
+    ['gateway', 'peer', 'activity', 'monitor', 'gateway_discovery', 'pihole', 'waf', 'security', 'routes', 'tls'].forEach(function (t) {
       es.addEventListener(t, function (e) {
         try { dispatch(t, JSON.parse(e.data)); } catch (_) {}
       });

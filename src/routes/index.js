@@ -197,6 +197,9 @@ const pages = [
   // Web Application Firewall (docs/feature-waf.md); licensed only — the sidebar
   // item needs license.features.waf, the page renders a locked notice without it.
   { path: '/waf', template: 'waf', titleKey: 'nav.waf' },
+  // Sicherheits-Check + "Was ist öffentlich?" (docs/feature-release-b.md §1/§10),
+  // no licence gate; the sidebar item (activeNav 'security') comes from strand B4.
+  { path: '/security', template: 'security', titleKey: 'security.page_title' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title' },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },

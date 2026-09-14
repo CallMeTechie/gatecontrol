@@ -574,6 +574,8 @@
       var locked = discMuted(T('gateways.discovery.multi_subnet_locked', ''));
       locked.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:4px';
       body.appendChild(locked);
+      // Licence hint (docs/feature-release-b.md §11): reason + "Lizenz aktualisieren".
+      if (window.GCLicenseHint) body.appendChild(window.GCLicenseHint.render('gateway_lan_discovery_multi_subnet', { compact: true }));
     }
 
     body.appendChild(section('gateways.discovery.categories', 'Categories'));

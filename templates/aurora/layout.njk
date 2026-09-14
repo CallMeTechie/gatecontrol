@@ -18,6 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/pro.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/aurora.css?v={{ appVersion }}">
+  <link rel="stylesheet" href="/css/security.css?v={{ appVersion }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -168,6 +169,47 @@
       'security.lockout.remaining': {{ t('security.lockout.remaining') | dump | safe }},
       'security.lockout.unlock': {{ t('security.lockout.unlock') | dump | safe }},
       'security.saved': {{ t('security.saved') | dump | safe }},
+      {# Sicherheits-Check page (security.js) + licence hint (license-hint.js), release B §1/§10/§11 #}
+      {%- for k in [
+        'security.page_sub', 'security.summary', 'security.group_critical', 'security.group_warning', 'security.group_info',
+        'security.group_open', 'security.status_pass', 'security.status_fail', 'security.status_info', 'security.status_na',
+        'security.count', 'security.items_more', 'security.items_less', 'security.item_open', 'security.loading',
+        'security.load_error', 'security.retry', 'security.empty', 'security.all_good', 'security.pending',
+        'security.confirm_ok', 'security.confirm_generic', 'security.fix_generic', 'security.fix_open', 'security.fix_done',
+        'security.fix_failed', 'security.copy', 'security.copied', 'security.copy_failed', 'security.copy_hint',
+        'security.show_exposure', 'security.check.unknown_title', 'security.check.unknown_pass', 'security.check.unknown_fail',
+        'security.check.unknown_na', 'security.check.admin_2fa.title', 'security.check.admin_2fa.pass',
+        'security.check.admin_2fa.fail', 'security.check.admin_2fa.na', 'security.check.require_2fa.title',
+        'security.check.require_2fa.pass', 'security.check.require_2fa.fail', 'security.check.require_2fa.na',
+        'security.check.hsts.title', 'security.check.hsts.pass', 'security.check.hsts.fail', 'security.check.hsts.na',
+        'security.check.caa.title', 'security.check.caa.pass', 'security.check.caa.fail', 'security.check.caa.na',
+        'security.check.waf_coverage.title', 'security.check.waf_coverage.pass', 'security.check.waf_coverage.fail',
+        'security.check.waf_coverage.na', 'security.check.waf_ready.title', 'security.check.waf_ready.pass',
+        'security.check.waf_ready.fail', 'security.check.waf_ready.na', 'security.check.public_unprotected.title',
+        'security.check.public_unprotected.pass', 'security.check.public_unprotected.fail',
+        'security.check.public_unprotected.na', 'security.check.backup_offsite.title', 'security.check.backup_offsite.pass',
+        'security.check.backup_offsite.fail', 'security.check.backup_offsite.fail_none', 'security.check.backup_offsite.na',
+        'security.check.tls_min.title', 'security.check.tls_min.pass', 'security.check.tls_min.fail',
+        'security.check.tls_min.na', 'security.check.auto_update.title', 'security.check.auto_update.pass',
+        'security.check.auto_update.fail', 'security.check.auto_update.fail_failed', 'security.check.auto_update.na',
+        'security.fix.admin_2fa', 'security.fix.require_2fa', 'security.fix.hsts', 'security.fix.caa',
+        'security.fix.waf_coverage', 'security.fix.waf_ready', 'security.fix.backup_offsite', 'security.fix.auto_update',
+        'security.confirm.require_2fa', 'security.confirm.hsts', 'security.confirm.waf_coverage', 'security.exp_summary',
+        'security.exp_col_host', 'security.exp_col_target', 'security.exp_col_type', 'security.exp_col_health',
+        'security.exp_col_auth', 'security.exp_col_mtls', 'security.exp_col_ip', 'security.exp_col_waf', 'security.exp_col_hsts',
+        'security.exp_col_rate', 'security.exp_col_tls', 'security.exp_type_http', 'security.exp_type_l4',
+        'security.exp_health_ok', 'security.exp_health_down', 'security.exp_health_unknown', 'security.exp_on',
+        'security.exp_off', 'security.exp_na', 'security.exp_auth_route_auth', 'security.exp_auth_basic',
+        'security.exp_waf_block', 'security.exp_waf_detect', 'security.exp_unprotected', 'security.exp_open',
+        'security.exp_open_short', 'security.exp_no_host', 'security.exp_port', 'security.exp_empty',
+        'security.exp_empty_filter', 'security.exp_reset', 'security.exp_load_error', 'license_hint.title',
+        'license_hint.generic', 'license_hint.plan', 'license_hint.not_in_token', 'license_hint.unlicensed',
+        'license_hint.unlocked', 'license_hint.refresh', 'license_hint.refreshed', 'license_hint.still_locked',
+        'license_hint.rate_limited', 'license_hint.failed', 'license_hint.enter', 'license_hint.upgrade', 'license_hint.reload',
+        'common.cancel'
+      ] %}
+      {{ k | dump | safe }}: {{ t(k) | dump | safe }},
+      {%- endfor %}
       'settings.portal.saved': {{ t('settings.portal.saved') | dump | safe }},
       'settings.portal.internal_default': {{ t('settings.portal.internal_default') | dump | safe }},
       'settings.portal.switch_warning': {{ t('settings.portal.switch_warning') | dump | safe }},
@@ -544,6 +586,7 @@
 </script>
 <script src="/js/app.js?v={{ appVersion }}"></script>
 <script src="/js/events.js?v={{ appVersion }}"></script>
+<script src="/js/license-hint.js?v={{ appVersion }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,95 @@
+{% extends theme + "/layout.njk" %}
+
+{#
+  Sicherheits-Check (docs/feature-release-b.md §1 + §10). Static shell;
+  public/js/security.js fills it from GET /api/v1/security/check (tab
+  „Check“) and GET /api/v1/security/exposure (tab „Öffentlich erreichbar“,
+  deep link /security#exposure). No licence gate: checks that need a feature
+  report „nicht anwendbar“ and show the licence hint. Styles: security.css.
+#}
+
+{% block content %}
+<div id="sc-page" class="sc-page">
+<div class="page-header sc-header">
+  <div>
+    <div class="page-eyebrow">{{ t('security.page_eyebrow') }}</div>
+    <div class="page-title">{{ t('security.page_title') }}</div>
+    <div class="page-sub" id="sc-summary">{{ t('security.page_sub') }}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" id="sc-refresh" type="button">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      <span>{{ t('security.recheck') }}</span>
+    </button>
+  </div>
+</div>
+
+<div class="tabs sc-tabs" id="sc-tabs" role="tablist" aria-label="{{ t('security.tabs_label') }}">
+  <button type="button" class="tab active" id="sc-tab-check" role="tab" aria-selected="true" aria-controls="sc-panel-check" data-sc-tab="check">{{ t('security.tab_check') }} <span class="sc-tab-count" id="sc-tab-check-count" hidden></span></button>
+  <button type="button" class="tab" id="sc-tab-exposure" role="tab" aria-selected="false" aria-controls="sc-panel-exposure" data-sc-tab="exposure" tabindex="-1">{{ t('security.tab_exposure') }} <span class="sc-tab-count" id="sc-tab-exposure-count" hidden></span></button>
+</div>
+
+<section id="sc-panel-check" class="sc-panel" role="tabpanel" aria-labelledby="sc-tab-check" data-sc-panel="check">
+  <div class="aurora-routes-kpis sc-tiles" id="sc-tiles">
+    <div class="aurora-routes-kpi sc-tile sc-tile-fail" id="sc-tile-fail"><b id="sc-tile-fail-val">–</b><span>{{ t('security.tile_fail') }}</span></div>
+    <div class="aurora-routes-kpi sc-tile sc-tile-info" id="sc-tile-info"><b id="sc-tile-info-val">–</b><span>{{ t('security.tile_info') }}</span></div>
+    <div class="aurora-routes-kpi sc-tile sc-tile-pass" id="sc-tile-pass"><b id="sc-tile-pass-val">–</b><span>{{ t('security.tile_pass') }}</span></div>
+  </div>
+  <div class="sc-pending" id="sc-pending" role="status" hidden></div>
+  <div class="sc-checks" id="sc-checks" aria-live="polite" aria-busy="false">
+    <div class="sc-state sc-loading"><span>{{ t('security.loading') }}</span></div>
+  </div>
+</section>
+
+<section id="sc-panel-exposure" class="sc-panel" role="tabpanel" aria-labelledby="sc-tab-exposure" data-sc-panel="exposure" hidden>
+  <div class="toolbar sc-toolbar" role="search">
+    <div class="search-box sc-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="sc-exp-search" placeholder="{{ t('security.exp_search') }}" aria-label="{{ t('security.exp_search') }}" autocomplete="off">
+    </div>
+    <div class="filter-chips sc-chips" id="sc-exp-chips" role="group" aria-label="{{ t('security.exp_filter_label') }}">
+      <button type="button" class="filter-chip on" data-filter="all" aria-pressed="true">{{ t('security.exp_filter_all') }} <span class="sc-chip-n"></span></button>
+      <button type="button" class="filter-chip" data-filter="unprotected" aria-pressed="false">{{ t('security.exp_filter_unprotected') }} <span class="sc-chip-n"></span></button>
+      <button type="button" class="filter-chip" data-filter="nowaf" aria-pressed="false">{{ t('security.exp_filter_nowaf') }} <span class="sc-chip-n"></span></button>
+    </div>
+  </div>
+
+  <div class="card span12 sc-card" id="sc-exp-card">
+    <div class="card-head sc-card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      <span class="card-title">{{ t('security.exp_title') }}</span>
+      <span class="sc-card-sub" id="sc-exp-summary"></span>
+    </div>
+    <p class="sc-exp-intro">{{ t('security.exp_sub') }}</p>
+    <div class="sc-table-wrap">
+      <table class="data-table sc-exp-table" id="sc-exp-table">
+        <thead>
+          <tr>
+            <th>{{ t('security.exp_col_host') }}</th>
+            <th>{{ t('security.exp_col_target') }}</th>
+            <th>{{ t('security.exp_col_type') }}</th>
+            <th>{{ t('security.exp_col_health') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_auth') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_mtls') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_ip') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_waf') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_hsts') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_rate') }}</th>
+            <th class="sc-p">{{ t('security.exp_col_tls') }}</th>
+            <th><span class="sr-only">{{ t('security.exp_open') }}</span></th>
+          </tr>
+        </thead>
+        <tbody id="sc-exp-list">
+          <tr class="sc-empty"><td colspan="12">{{ t('common.loading') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sc-legend">{{ t('security.exp_legend') }}</p>
+  </div>
+</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/security.js?v={{ appVersion }}"></script>
+{% endblock %}
