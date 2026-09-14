@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- **Aurora ist das einzige Theme.** Die Themes „Standard“ und „Pro“ sind entfernt (rund 21.000 Zeilen Templates, Stile und Skripte). Die Auswahl „Standard-Design“ in den Einstellungen und das persönliche Theme im Profil entfallen; bestehende Einstellungen werden auf Aurora umgestellt (Migration v75). `GC_DEFAULT_THEME` wird ignoriert.
+- `PUT /api/v1/settings/default-theme` antwortet mit `410 THEME_REMOVED`; ein `theme`-Feld in Profil- und Benutzer-APIs wird ignoriert.
+
+### Fixes
+- Die Anmeldeseite zeigte das globale Standard-Theme statt Aurora, auch wenn Aurora eingestellt war: Ohne Sitzung kennt GateControl das persönliche Theme nicht. Anmeldung, 2FA-Abfrage, Fehlerseite und die Anmeldeseite von Route-Auth sind jetzt im Aurora-Design (Hell und Dunkel, schmale Bildschirme), das Branding einer Route bleibt erhalten.
+- Das Auge zum Anzeigen des Passworts auf der Anmeldeseite funktioniert wieder (der alte Inline-Handler wurde von der Content-Security-Policy blockiert).
+
+---
+
 ## [1.125.1] — 2026-09-14
 
 ### Fixes
