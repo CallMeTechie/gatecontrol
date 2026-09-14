@@ -32,9 +32,75 @@ function writeAtomic(file, content) {
   try { fs.writeFileSync(tmp, content, { mode: 0o644 }); fs.renameSync(tmp, file); }
   catch (err) { try { fs.unlinkSync(tmp); } catch {} throw err; }
 }
-function writeConfigFile(mode) {
-  writeAtomic(CONFIG_FILE, JSON.stringify({ mode }) + '\n');
+// ── Maintenance window (docs/feature-release-b.md §6) ──────────────────────
+// Setting auto_update.window = JSON {enabled,start,end,tz}. In auto mode the
+// host's update.sh deploys a new :latest only while the local time in `tz`
+// lies in [start, end) — end < start spans midnight. The window is projected
+// into .auto-update-config.json ONLY when enabled, so an older update.sh (and
+// a disabled window) behave exactly as before. tz is restricted to the IANA
+// charset because update.sh passes it as TZ= to date(1).
+const DEFAULT_WINDOW = Object.freeze({ enabled: false, start: '03:00', end: '05:00', tz: 'Europe/Berlin' });
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const TZ_RE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
+
+function isValidTz(tz) {
+  if (typeof tz !== 'string' || tz.length > 64 || !TZ_RE.test(tz)) return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
 }
+/** @returns {string|null} error text or null */
+function validateWindow(w) {
+  if (!w || typeof w !== 'object' || Array.isArray(w)) return 'window must be an object';
+  if (w.enabled !== undefined && typeof w.enabled !== 'boolean') return 'window.enabled must be a boolean';
+  for (const k of ['start', 'end']) {
+    if (w[k] !== undefined && (typeof w[k] !== 'string' || !HHMM_RE.test(w[k]))) return `window.${k} must be HH:MM (00:00-23:59)`;
+  }
+  if (w.tz !== undefined && !isValidTz(w.tz)) return 'window.tz must be an IANA time zone (e.g. Europe/Berlin)';
+  return null;
+}
+function getWindow() {
+  let stored = null;
+  try { stored = JSON.parse(settings.get('auto_update.window', 'null')); } catch { stored = null; }
+  const w = { ...DEFAULT_WINDOW, ...(stored && typeof stored === 'object' ? stored : {}) };
+  if (!HHMM_RE.test(w.start)) w.start = DEFAULT_WINDOW.start;
+  if (!HHMM_RE.test(w.end)) w.end = DEFAULT_WINDOW.end;
+  if (!isValidTz(w.tz)) w.tz = DEFAULT_WINDOW.tz;
+  return { enabled: w.enabled === true, start: w.start, end: w.end, tz: w.tz };
+}
+function minutesOf(hhmm) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; }
+/** Same rule as update.sh: [start, end), over midnight when end < start, start == end = always. */
+function isInWindow(w, now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: w.tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(now);
+  const hh = Number(parts.find((p) => p.type === 'hour').value) % 24;
+  const mm = Number(parts.find((p) => p.type === 'minute').value);
+  const cur = hh * 60 + mm;
+  const s = minutesOf(w.start);
+  const e = minutesOf(w.end);
+  if (s === e) return true;
+  return s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);
+}
+function writeConfigFile(mode, win = getWindow()) {
+  const cfg = { mode };
+  if (win.enabled) cfg.window = { start: win.start, end: win.end, tz: win.tz };
+  writeAtomic(CONFIG_FILE, JSON.stringify(cfg) + '\n');
+}
+function setWindow(input) {
+  const err = validateWindow(input);
+  if (err) { const e = new Error(err); e.code = 'INVALID_WINDOW'; throw e; }
+  const next = { ...getWindow(), ...input };
+  if (next.enabled && next.start === next.end) {
+    const e = new Error('window.start and window.end must differ'); e.code = 'INVALID_WINDOW'; throw e;
+  }
+  // Host file first (same rule as setMode): a failed write changes nothing.
+  writeConfigFile(getMode(), next);
+  settings.set('auto_update.window', JSON.stringify(next));
+  return next;
+}
+
+// "Update"/"Rollback" e-mails (services/updateNotify.js); default on.
+function getNotifyEmail() { return settings.get('notify.update_email', 'true') !== 'false'; }
+function setNotifyEmail(v) { settings.set('notify.update_email', v ? 'true' : 'false'); return getNotifyEmail(); }
+
 function setMode(mode) {
   if (!VALID_MODES.includes(mode)) throw new Error('invalid mode');
   // Write the host-facing config file FIRST; if it throws we never change the
@@ -46,7 +112,9 @@ function setMode(mode) {
   return { mode };
 }
 function requestUpdate() {
-  if (getMode() !== 'manual') return { queued: false, reason: 'not_manual_mode' };
+  // Auto mode with a maintenance window: "Update now" drops the same flag;
+  // update.sh then deploys immediately instead of waiting for the window.
+  if (getMode() !== 'manual' && !getWindow().enabled) return { queued: false, reason: 'not_manual_mode' };
   if (getStatus().status !== 'active') return { queued: false, reason: 'stale_no_cron' }; // R1-fix #10
   const last = settings.get('auto_update.last_trigger_at', null);
   if (last && (Date.now() - new Date(last).getTime()) < TRIGGER_COOLDOWN_MS) {
@@ -69,7 +137,7 @@ function getStatus() {
   const running_version = pkg.version;
   const marker = readMarker();
   if (!marker || !marker.checked_at) {
-    return { status: 'not_configured', mode, mode_mismatch: false, mode_pending: false, age_s: null, last_action: null, running_version };
+    return { status: 'not_configured', mode, mode_mismatch: false, mode_pending: false, age_s: null, last_action: null, running_version, ...windowInfo() };
   }
   const checkedAt = new Date(marker.checked_at).getTime();
   const now = Date.now();
@@ -85,7 +153,13 @@ function getStatus() {
   // previous one was restored; "failed" + bad_image: the rollback failed too.
   return { status, mode, mode_mismatch, mode_pending, age_s, checked_at: marker.checked_at,
     last_action: marker.action || null, marker_mode: marker.mode || null, running_version,
-    bad_image: markerRef(marker.bad_image), bad_version: markerRef(marker.bad_version) };
+    bad_image: markerRef(marker.bad_image), bad_version: markerRef(marker.bad_version), ...windowInfo() };
+}
+function windowInfo() {
+  const window = getWindow();
+  let window_open = null;
+  if (window.enabled) { try { window_open = isInWindow(window); } catch { window_open = null; } }
+  return { window, window_open, notify_email: getNotifyEmail() };
 }
 // Boot sync: baseline mode_changed_at to install time if unset (so the gate
 // isn't anchored at epoch, R1-fix #9), then project the mode onto the volume.
@@ -96,4 +170,8 @@ function syncConfigFileOnBoot() {
   try { writeConfigFile(getMode()); }
   catch (err) { logger.warn({ err: err.message }, 'auto-update: could not write config file'); }
 }
-module.exports = { getStatus, getMode, setMode, requestUpdate, syncConfigFileOnBoot };
+module.exports = {
+  getStatus, getMode, setMode, requestUpdate, syncConfigFileOnBoot,
+  getWindow, setWindow, validateWindow, isInWindow, getNotifyEmail, setNotifyEmail,
+  readMarker, STATE_FILE, CONFIG_FILE,
+};

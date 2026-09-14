@@ -8,6 +8,7 @@
 #   race          present → every `up --force-recreate` fails (host-net/name race)
 #   pullflag      present → `compose up --help` advertises --pull
 #   ver_<id>      OCI version label of an image
+#   tz            TZ the script passed to `date +%H:%M` (fake clock, see $FAKE_NOW)
 # shellcheck disable=SC2015  # `cond && ok .. || no ..`: ok/no always return 0
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,6 +18,7 @@ no(){ echo "  NOT OK - $1"; FAIL=$((FAIL+1)); }
 LATEST=ghcr.io/callmetechie/gatecontrol:latest
 RB=ghcr.io/callmetechie/gatecontrol:rollback
 ORIG_PATH="$PATH"
+REAL_DATE="$(command -v date)"
 
 newbox(){ # $1=running $2=remote latest $3=workdir label (__SELF__ = sandbox) [$4=1 → force-recreate race]
   SBX="$(mktemp -d)"; mkdir -p "$SBX/bin" "$SBX/data" "$SBX/st"
@@ -53,13 +55,24 @@ case "$1" in
 esac
 exit 0
 EOF
-  chmod +x "$SBX/bin/docker"; export PATH="$SBX/bin:$ORIG_PATH"
+  chmod +x "$SBX/bin/docker"
+  # Fake clock for the maintenance window: `date +%H:%M` answers $FAKE_NOW and
+  # records the TZ it was asked for; every other date call is the real one.
+  cat >"$SBX/bin/date" <<DATESHIM
+#!/usr/bin/env bash
+if [ "\${1:-}" = "+%H:%M" ] && [ -n "\${FAKE_NOW:-}" ]; then printf '%s' "\${TZ:-}" >"\$SHIM_ST/tz"; echo "\$FAKE_NOW"; exit 0; fi
+exec $REAL_DATE "\$@"
+DATESHIM
+  chmod +x "$SBX/bin/date"; export PATH="$SBX/bin:$ORIG_PATH"
 }
 run(){ GC_DATA_DIR="$SBX/data" GC_UPDATE_LOG="$SBX/log" COMPOSE_DIR="$SBX" GC_CONTAINER=gatecontrol TMPDIR="$SBX" bash "$ROOT/update.sh" >/dev/null 2>&1; echo $?; }
 st(){ cat "$SBX/data/.auto-update-state.json" 2>/dev/null; }
 tagof(){ cat "$SHIM_ST/tag_$(printf '%s' "$1" | tr '/:@' '___')" 2>/dev/null; }
 ups(){ grep -c '^compose up -d' "$CALLS" | tr -d ' '; }   # compose up calls (gatecontrol + guacd)
 auto(){ printf '{"mode":"auto"}\n' >"$SBX/data/.auto-update-config.json"; }
+win(){ # $1=mode $2=start $3=end [$4=tz] — config as the server writes it (window only when enabled)
+  printf '{"mode":"%s","window":{"start":"%s","end":"%s","tz":"%s"}}\n' "$1" "$2" "$3" "${4:-Europe/Berlin}" >"$SBX/data/.auto-update-config.json"
+}
 
 # 0) vendored server copy must stay byte-identical to the repo-root script
 cmp -s "$ROOT/update.sh" "$ROOT/src/services/systemSetup/templates/update.sh" \
@@ -162,6 +175,76 @@ code="$(run)"
 { [ "$code" = 1 ] && st | grep -q '"action":"failed"' && ! grep -q "^tag .* $LATEST" "$CALLS" && ! st | grep -q bad_image; } \
   && ok "no previous image → failed without rollback" || no "no-prev failure (code=$code)"
 rm -rf "$SBX"
+
+# 12) maintenance window: update available outside the window → waiting_window, no recreate, exit 0
+newbox sha256:old sha256:new __SELF__; win auto 03:00 05:00
+export FAKE_NOW=12:00
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(ups)" = 0 ] && [ "$(cat "$SHIM_ST/running")" = sha256:old ]; } \
+  && ok "outside window → no recreate, exit 0" || no "outside window recreated (code=$code, ups=$(ups))"
+{ st | grep -q '"action":"waiting_window"' && st | grep -q '"mode":"auto"' && st | grep -q '"ok":true'; } \
+  && ok "outside window → state waiting_window" || no "waiting_window state: $(st)"
+grep -q 'outside maintenance window' "$SBX/log" && ok "log says 'outside maintenance window'" || no "no window log line"
+[ "$(cat "$SHIM_ST/tz" 2>/dev/null)" = Europe/Berlin ] && ok "window time read in the configured TZ" || no "TZ passed to date: '$(cat "$SHIM_ST/tz" 2>/dev/null)'"
+grep -q '^pull' "$CALLS" && ok "image is pulled outside the window (deploy later is fast)" || no "no pull outside window"
+
+# 13) same box, clock inside the window → deployed
+export FAKE_NOW=04:59
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SHIM_ST/running")" = sha256:new ] && st | grep -q '"action":"updated"'; } \
+  && ok "inside window → updated" || no "inside window (code=$code): $(st)"
+rm -rf "$SBX"
+
+# 14) window over midnight (23:00-02:00): start inclusive, end exclusive
+for c in "22:59 waiting_window" "23:00 updated" "01:30 updated" "02:00 waiting_window"; do
+  now="${c% *}"; want="${c#* }"
+  newbox sha256:old sha256:new __SELF__; win auto 23:00 02:00
+  export FAKE_NOW="$now"; run >/dev/null
+  st | grep -q "\"action\":\"$want\"" && ok "midnight window at $now → $want" || no "midnight window at $now: $(st)"
+  rm -rf "$SBX"
+done
+
+# 15) "Update now" (flag) in auto mode ignores the window; flag is consumed
+newbox sha256:old sha256:new __SELF__; win auto 03:00 05:00
+echo '{}' >"$SBX/data/pending-update"; export FAKE_NOW=12:00
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SHIM_ST/running")" = sha256:new ] && st | grep -q '"action":"updated"'; } \
+  && ok "flag deploys outside the window" || no "flag outside window (code=$code): $(st)"
+[ -f "$SBX/data/pending-update" ] && no "flag not consumed" || ok "flag consumed"
+rm -rf "$SBX"
+
+# 16) nothing to update outside the window → noop (waiting_window only when an update waits)
+newbox sha256:same sha256:same __SELF__; win auto 03:00 05:00
+export FAKE_NOW=12:00; run >/dev/null
+st | grep -q '"action":"noop"' && ok "up to date outside window → noop" || no "up-to-date outside window: $(st)"
+rm -rf "$SBX"
+
+# 17) manual mode: the window does not apply, a manual trigger deploys at any time
+newbox sha256:old sha256:new __SELF__; win manual 03:00 05:00
+echo '{}' >"$SBX/data/pending-update"; export FAKE_NOW=12:00
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SHIM_ST/running")" = sha256:new ] && st | grep -q '"mode":"manual"' && st | grep -q '"action":"updated"'; } \
+  && ok "manual trigger ignores the window" || no "manual + window (code=$code): $(st)"
+rm -rf "$SBX"
+
+# 18) an invalid window (bad time / injected or odd TZ) is ignored → update as before, TZ never used
+for bad in '25:00|05:00|Europe/Berlin' '03:00|05:00|$(touch /tmp/gc-x)' '03:00|05:00|../../etc/passwd'; do
+  IFS='|' read -r b1 b2 b3 <<<"$bad"
+  newbox sha256:old sha256:new __SELF__; win auto "$b1" "$b2" "$b3"
+  export FAKE_NOW=12:00; run >/dev/null
+  { st | grep -q '"action":"updated"' && [ ! -f "$SHIM_ST/tz" ] && grep -q 'invalid maintenance window' "$SBX/log"; } \
+    && ok "invalid window '$bad' ignored" || no "invalid window '$bad': $(st)"
+  rm -rf "$SBX"
+done
+[ -e /tmp/gc-x ] && no "TZ value was executed" || ok "TZ value never executed"
+
+# 19) known-bad :latest outside the window keeps the rollback state (loop guard first)
+newbox sha256:old sha256:bad __SELF__; win auto 03:00 05:00
+printf 'sha256:bad rolled_back 1.2.3\n' >"$SBX/data/.auto-update-bad-image"
+export FAKE_NOW=12:00; run >/dev/null
+st | grep -q '"action":"rolled_back"' && ok "known-bad image outside window stays rolled_back" || no "bad+window: $(st)"
+rm -rf "$SBX"
+unset FAKE_NOW
 
 echo "update_sh.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -87,14 +87,31 @@ router.get('/auto-update', (req, res) => {
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
+// Body: any of { mode: 'auto'|'manual', window: {enabled,start,end,tz},
+// notify_email: bool } (docs/feature-release-b.md §6). Validated up front,
+// then applied; the answer is the full status (incl. window, notify_email).
 router.put('/auto-update', (req, res) => {
-  const { mode } = req.body || {};
-  if (mode !== 'auto' && mode !== 'manual') {
-    return res.status(400).json({ ok: false, error: 'invalid mode' });
+  const { mode, window: win, notify_email: notifyEmail } = req.body || {};
+  if (mode === undefined && win === undefined && notifyEmail === undefined) {
+    return res.status(400).json({ ok: false, error: 'invalid mode', code: 'INVALID_MODE' });
+  }
+  if (mode !== undefined && mode !== 'auto' && mode !== 'manual') {
+    return res.status(400).json({ ok: false, error: 'invalid mode', code: 'INVALID_MODE' });
+  }
+  if (win !== undefined) {
+    const err = autoUpdate.validateWindow(win);
+    if (err) return res.status(400).json({ ok: false, error: err, code: 'INVALID_WINDOW' });
+  }
+  if (notifyEmail !== undefined && typeof notifyEmail !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'notify_email must be a boolean', code: 'INVALID_NOTIFY_EMAIL' });
   }
   try {
-    res.json({ ok: true, ...autoUpdate.setMode(mode) });
+    if (win !== undefined) autoUpdate.setWindow(win);
+    if (mode !== undefined) autoUpdate.setMode(mode);
+    if (notifyEmail !== undefined) autoUpdate.setNotifyEmail(notifyEmail);
+    res.json({ ok: true, ...autoUpdate.getStatus() });
   } catch (err) {
+    if (err.code === 'INVALID_WINDOW') return res.status(400).json({ ok: false, error: err.message, code: err.code });
     res.status(500).json({ ok: false, error: err.message });
   }
 });

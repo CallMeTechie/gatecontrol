@@ -9,6 +9,13 @@
 # :latest (not the pull output). Refuses to recreate from a different project dir
 # than the one the container was deployed from (would mount the wrong /data).
 #
+# Maintenance window (auto mode only): with "window":{"start":"03:00","end":
+# "05:00","tz":"Europe/Berlin"} in the config file, a new :latest is deployed
+# only while the local time in tz lies in [start, end) — end < start spans
+# midnight. Outside the window the run pulls, logs "outside maintenance window"
+# and writes the state waiting_window (exit 0). "Update now" in the UI drops the
+# pending-update flag, which deploys immediately regardless of the window.
+#
 # Rollback: before a recreate the running image is tagged <repo>:rollback. If the
 # new image fails its health check, :latest is re-pointed locally at that image
 # and the container recreated from it (no pull, docker-compose.yml untouched).
@@ -91,6 +98,33 @@ MODE="auto"
 if [ -f "$CONFIG_FILE" ]; then
   if grep -q '"mode"[[:space:]]*:[[:space:]]*"manual"' "$CONFIG_FILE" 2>/dev/null; then MODE="manual"; fi
 fi
+
+# Maintenance window (only present in the config file while enabled). Values
+# are validated strictly; an unusable window is ignored (updates as before).
+WIN_START="" WIN_END="" WIN_TZ=""
+if [ -f "$CONFIG_FILE" ]; then
+  WIN_JSON="$(tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | grep -o '"window"[[:space:]]*:[[:space:]]*{[^}]*}' || true)"
+  if [ -n "$WIN_JSON" ]; then
+    win_field() { printf '%s' "$WIN_JSON" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"; }
+    WIN_START="$(win_field start)"; WIN_END="$(win_field end)"; WIN_TZ="$(win_field tz)"
+    HHMM='^([01][0-9]|2[0-3]):[0-5][0-9]$' TZRE='^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$'
+    if [[ ! "$WIN_START" =~ $HHMM ]] || [[ ! "$WIN_END" =~ $HHMM ]] || [[ ! "$WIN_TZ" =~ $TZRE ]]; then
+      log "WARN: invalid maintenance window in $CONFIG_FILE — ignoring it"
+      WIN_START="" WIN_END="" WIN_TZ=""
+    elif [ ! -e "${TZDIR:-/usr/share/zoneinfo}/$WIN_TZ" ]; then
+      log "WARN: time zone '$WIN_TZ' not found on this host (tzdata missing?) — date(1) falls back to UTC"
+    fi
+  fi
+fi
+
+hm_to_min() { echo $(( 10#${1%%:*} * 60 + 10#${1##*:} )); }
+in_window() { # [start, end) in WIN_TZ; end < start spans midnight; start == end = always
+  local now s e
+  now="$(hm_to_min "$(TZ="$WIN_TZ" date +%H:%M)")"
+  s="$(hm_to_min "$WIN_START")"; e="$(hm_to_min "$WIN_END")"
+  [ "$s" -eq "$e" ] && return 0
+  if [ "$s" -lt "$e" ]; then [ "$now" -ge "$s" ] && [ "$now" -lt "$e" ]; else [ "$now" -ge "$s" ] || [ "$now" -lt "$e" ]; fi
+}
 
 recreate() { # [$@=extra `compose up` args]
   # Happy path: --force-recreate + --wait. On failure, recover with a clean
@@ -214,7 +248,14 @@ if [ "$MODE" = "manual" ]; then
 fi
 
 # auto mode
-rm -f "$FLAG_FILE" 2>/dev/null || true     # clear any orphaned flag from a prior manual session
+# A pending-update flag here is either an orphan from a prior manual session
+# (removed) or — with a maintenance window — "Update now" from the UI, which
+# deploys right away like a manual trigger (window and known-bad skip ignored).
+REQUESTED=0
+if [ -f "$FLAG_FILE" ]; then
+  rm -f "$FLAG_FILE" 2>/dev/null || true
+  [ -n "$WIN_START" ] && REQUESTED=1
+fi
 if ! docker pull "$IMAGE" >>"$LOG" 2>&1; then log "pull failed"; write_state failed auto; exit 1; fi
 case "$(needs_update)" in
   no)  log "auto: already up to date"; write_state noop auto; exit 0 ;;
@@ -222,9 +263,14 @@ case "$(needs_update)" in
 esac
 # Loop guard: :latest is still the image that already failed and was rolled
 # back → do not redeploy it every run. A newer :latest has a different ID.
-if [ -n "$BAD_ID" ] && [ "$(image_id "$IMAGE")" = "$BAD_ID" ]; then
+if [ "$REQUESTED" = 0 ] && [ -n "$BAD_ID" ] && [ "$(image_id "$IMAGE")" = "$BAD_ID" ]; then
   log "auto: :latest $BAD_ID ${BAD_VERSION:+(v$BAD_VERSION) }failed before ($BAD_RESULT) — skipping until a newer :latest"
   write_state "$BAD_RESULT" auto "$BAD_ID" "$BAD_VERSION"; exit 0
 fi
+if [ "$REQUESTED" = 0 ] && [ -n "$WIN_START" ] && ! in_window; then
+  log "auto: update available but outside maintenance window $WIN_START-$WIN_END ($WIN_TZ) — waiting"
+  write_state waiting_window auto "$BAD_ID" "$BAD_VERSION"; exit 0
+fi
+if [ "$REQUESTED" = 1 ]; then log "auto: update requested from the UI — maintenance window ignored"; fi
 log "auto: update needed — recreating"
 deploy auto
