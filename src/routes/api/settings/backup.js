@@ -230,4 +230,58 @@ router.delete('/autobackup/:filename', (req, res) => {
   }
 });
 
+// ═══ Release B: pre-migration snapshots ══════════════════════════════════
+// docs/feature-release-b.md §4. All paths live under /backup/…, which the
+// settings aggregator already refuses for token auth (session only); on top
+// of that the admin role is required.
+
+function requireAdminSession(req, res, next) {
+  if (req.tokenAuth || !req.session || !req.session.userId) {
+    return res.status(403).json({ ok: false, error: 'session required', code: 'SESSION_REQUIRED' });
+  }
+  const user = require('../../../services/users').getById(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).json({ ok: false, error: 'admin required', code: 'ADMIN_REQUIRED' });
+  next();
+}
+
+function sendOffsiteError(res, err, fallback) {
+  logger.error({ error: err && err.message }, fallback);
+  return res.status(500).json({ ok: false, error: fallback, code: 'INTERNAL' });
+}
+
+/**
+ * GET /api/settings/backup/pre-migration — snapshots taken before migrations
+ */
+router.get('/backup/pre-migration', requireAdminSession, (req, res) => {
+  try {
+    const { listSnapshots } = require('../../../db/preMigrationBackup');
+    const dbPath = require('../../../db/connection').getDb().name;
+    res.json({ ok: true, files: listSnapshots(dbPath) });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not list pre-migration backups');
+  }
+});
+
+/**
+ * GET /api/settings/backup/pre-migration/:name — download one snapshot
+ */
+router.get('/backup/pre-migration/:name', requireAdminSession, (req, res) => {
+  try {
+    const { snapshotPath, parseName } = require('../../../db/preMigrationBackup');
+    const name = req.params.name;
+    if (!parseName(name)) return res.status(400).json({ ok: false, error: 'invalid file name', code: 'INVALID_NAME' });
+    const p = snapshotPath(require('../../../db/connection').getDb().name, name);
+    if (!p) return res.status(404).json({ ok: false, error: 'not found', code: 'NOT_FOUND' });
+    activity.log('pre_migration_backup_downloaded', `Pre-migration backup downloaded: ${name}`, {
+      source: 'admin', ipAddress: req.ip, severity: 'warning',
+    });
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.setHeader('Content-Type', 'application/vnd.sqlite3');
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(p);
+  } catch (err) {
+    sendOffsiteError(res, err, 'download failed');
+  }
+});
+
 module.exports = router;
