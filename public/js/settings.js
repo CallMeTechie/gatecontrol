@@ -1540,10 +1540,15 @@
     add.disabled = !licensed || full;
     add.title = full ? T('offsite.max_targets', 'At most 10 targets.') : '';
   }
-  function loadTargets() {
+  function loadTargets(opts) {
     return call(window.api.get(BASE + '/targets')).then(function (r) {
+      var before = JSON.stringify([state.targets, state.loadError]);
       if (r.ok) { state.targets = r.targets || []; state.loadError = null; }
       else { state.loadError = O.errorText(r); }
+      // Live refreshes (gc:backup) often bring back exactly what an action
+      // already rendered — skip the rebuild then, so focus and open panels'
+      // DOM stay put.
+      if (opts && opts.ifChanged && JSON.stringify([state.targets, state.loadError]) === before) return;
       renderTargets();
     });
   }
@@ -1895,7 +1900,7 @@
   var sseTimer = null;
   document.addEventListener('gc:backup', function () {
     clearTimeout(sseTimer);
-    sseTimer = setTimeout(loadTargets, 400);
+    sseTimer = setTimeout(function () { loadTargets({ ifChanged: true }); }, 400);
   });
 
   applyLicense();

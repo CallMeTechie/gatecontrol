@@ -40,6 +40,11 @@ const SETTINGS_OPS = section(SETTINGS_JS, '// ─── Auto-Update: maintenance
 const DASH_WN = section(DASH_JS, '// ─── "Was ist neu" card', '// ─── Refresh all');
 
 describe('ops UI: stylesheet + scripts', () => {
+  it('live backup refresh (gc:backup) only re-renders the target list when the data changed', () => {
+    const js = read('public/js/settings.js');
+    assert.match(js, /addEventListener\('gc:backup'[\s\S]{0,200}loadTargets\(\{ ifChanged: true \}\)/);
+    assert.match(js, /if \(opts && opts\.ifChanged && JSON\.stringify\(\[state\.targets, state\.loadError\]\) === before\) return;/);
+  });
   it('ops.css is linked exactly once, after aurora.css among the feature stylesheets', () => {
     const links = Array.from(LAYOUT.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
     assert.equal(links.filter((l) => l === '/css/ops.css').length, 1);
