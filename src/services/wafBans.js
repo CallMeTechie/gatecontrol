@@ -99,9 +99,11 @@ function canonIp(value) {
   return p && p.single ? p.text : null;
 }
 
-// Private, loopback, link-local, CGNAT, ULA …: never auto-banned. Behind a
-// private load balancer Coraza sees the balancer's address — banning it
-// would lock out everybody.
+// Private, loopback, link-local, CGNAT, ULA …: never auto-banned. Coraza's
+// client_ip is Caddy's client IP (X-Forwarded-For from trusted private
+// proxies), so a private address here is a VPN/LAN client or a proxy that
+// sent no header — banning it could lock out the operator or everybody
+// behind that proxy.
 function isPublicIp(ip) {
   try { return ipaddr.process(String(ip)).range() === 'unicast'; } catch { return false; }
 }
@@ -394,9 +396,11 @@ function activeBanIps() {
 /**
  * srv0 route for the ban list, or null when nothing is banned (the config
  * then stays byte-identical). client_ip honours the server's trusted_proxies
- * (private ranges) — a direct client cannot talk itself out of the ban with
- * X-Forwarded-For. The management host and the ACME challenge path stay
- * reachable. Answer: 403 with the WAF block page.
+ * (private ranges) — a direct client cannot talk itself out of (or another
+ * address into) the ban with X-Forwarded-For; behind a private proxy the
+ * forwarded address counts, the same address Coraza logs. The management host
+ * and the ACME challenge path stay reachable. Answer: 403 with the WAF block
+ * page, showing the client address as reference.
  */
 function banRoute({ gcHost } = {}) {
   let ips;

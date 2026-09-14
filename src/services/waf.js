@@ -148,7 +148,9 @@ const BODY_RULES = [
 // Own IPs (docs/feature-release-b.md §3): with trusted_bypass on, requests
 // from these addresses skip the rule engine entirely — a phase-1 rule BEFORE
 // the CRS include (like BODY_RULES; id 9003, below the path-exclusion range).
-// REMOTE_ADDR is the connection address (Coraza takes it from RemoteAddr).
+// REMOTE_ADDR is Caddy's client IP: X-Forwarded-For only counts from the
+// server's trusted_proxies (private ranges) — verified with the image's Caddy:
+// a direct client cannot claim a trusted address via the header.
 function trustedBypassRule(list) {
   const ips = (list || []).map((v) => String(v).trim()).filter((v) => /^[0-9a-fA-F.:/]{2,64}$/.test(v));
   if (ips.length === 0) return null;
