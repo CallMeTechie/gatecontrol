@@ -1,7 +1,7 @@
 /* ─── Operations UI (op-): release B §6, §7, §13b ─────────────────────────────
    Off-site backups + pre-migration snapshots (Settings → Backup), maintenance
    window + update e-mail (Settings → Advanced), "Was ist neu" (dashboard), the
-   (later) the entry-editor fingerprint field. Linked once from
+   gateway fingerprint field in the entry editor. Linked once from
    templates/aurora/layout.njk right after aurora.css; Aurora tokens only
    (--surface*, --line*, --muted, --faint, --teal, --green/--amber/--red*), so
    light and dark mode follow the theme. Markup: settings.njk, dashboard.njk,
@@ -138,6 +138,16 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
 /* Topbar version badge = entry to "What's new" */
 .au-badge-btn { cursor: pointer; font-family: inherit; line-height: inherit; }
 .au-badge-btn:hover, .au-badge-btn:focus-visible { color: var(--text); border-color: var(--line-2); }
+
+/* ── Entry editor: gateway certificate fingerprint (§13b) ── */
+.so-editor-block.so-locked > .so-fp { opacity: 1; pointer-events: auto; }
+.so-editor-block.so-locked > .so-fp.so-fields-off { opacity: .55; }
+.so-editor-block.so-locked > .so-editor-error { opacity: 1; }
+.so-fp { gap: 6px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 10px; }
+.so-fp .form-hint { margin-top: 0; font-size: 11px; line-height: 1.45; }
+.so-fp-cmd { display: block; margin-top: 4px; padding: 5px 8px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+  background: var(--surface-3); border-radius: 6px; overflow-x: auto; white-space: pre; }
+.so-fp-note { color: var(--amber); }
 
 @media (max-width: 1100px) {
   .op-offsite-grid, .op-au-grid { grid-template-columns: minmax(0, 1fr); }
