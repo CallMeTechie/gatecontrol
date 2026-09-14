@@ -1508,6 +1508,7 @@ const migrations = [
     //                                   lower case), gateway routes with backend_https
     //   waf_bans                        scanner ban list (auto + manual)
     //   idx_waf_events_client           per-IP counting (ban, assistant)
+    //   idx_waf_events_route            per-route analysis (assistant)
     sql: `
       ALTER TABLE domains ADD COLUMN waf_default TEXT;
       ALTER TABLE routes ADD COLUMN waf_mode_changed_at TEXT;
@@ -1524,7 +1525,8 @@ const migrations = [
         manual INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_waf_bans_expires ON waf_bans(expires_at);
-      CREATE INDEX IF NOT EXISTS idx_waf_events_client ON waf_events(client_ip, ts);`,
+      CREATE INDEX IF NOT EXISTS idx_waf_events_client ON waf_events(client_ip, ts);
+      CREATE INDEX IF NOT EXISTS idx_waf_events_route ON waf_events(route_id, ts);`,
     detect: (db) => hasColumn(db, 'routes', 'backend_tls_fingerprint'),
   },
 ];

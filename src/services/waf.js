@@ -792,8 +792,11 @@ const TX_KEY = "COALESCE(tx_id, 'row:' || id)";
 // Own IPs (docs/feature-release-b.md §3) never count in the tiles and
 // statistics: the distinct client addresses of the window are matched against
 // the trusted list in JS (CIDR), the hits then excluded in SQL via json_each.
-function trustedInWindow(db, from, matcher) {
-  const m = matcher || require('./wafBans').trustedMatcher();
+function trustedInWindow(db, from) {
+  const wafBans = require('./wafBans');
+  const list = wafBans.getSettings().trusted_ips;
+  if (list.length === 0) return [];
+  const m = wafBans.trustedMatcher(list);
   const ips = [];
   for (const r of db.prepare('SELECT DISTINCT client_ip FROM waf_events WHERE ts >= ? AND client_ip IS NOT NULL').all(from)) {
     if (m(r.client_ip)) ips.push(r.client_ip);

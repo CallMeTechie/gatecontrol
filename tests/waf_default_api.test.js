@@ -69,7 +69,7 @@ test('migration v77: columns, waf_bans, indexes', () => {
   assert.deepEqual(db.prepare('PRAGMA table_info(waf_bans)').all().map((c) => c.name),
     ['ip', 'reason', 'hits', 'first_seen', 'banned_at', 'expires_at', 'manual']);
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map((r) => r.name);
-  assert.ok(idx.includes('idx_waf_events_client') && idx.includes('idx_waf_bans_expires'));
+  assert.ok(idx.includes('idx_waf_events_client') && idx.includes('idx_waf_events_route') && idx.includes('idx_waf_bans_expires'));
   assert.equal(db.prepare('SELECT name FROM migration_history WHERE version = 77').get().name, 'security_center');
 });
 
@@ -78,7 +78,7 @@ test('migration v77 backfills waf_mode_changed_at from updated_at for WAF routes
   const mem = new Database(':memory:');
   mem.exec(`CREATE TABLE domains (id INTEGER PRIMARY KEY, domain TEXT);
     CREATE TABLE routes (id INTEGER PRIMARY KEY, waf_enabled INTEGER, created_at TEXT, updated_at TEXT);
-    CREATE TABLE waf_events (id INTEGER PRIMARY KEY, client_ip TEXT, ts TEXT);
+    CREATE TABLE waf_events (id INTEGER PRIMARY KEY, route_id INTEGER, client_ip TEXT, ts TEXT);
     INSERT INTO routes VALUES (1, 1, '2026-01-01 00:00:00', '2026-09-10 08:30:00'), (2, 0, '2026-01-01 00:00:00', '2026-09-10 08:30:00');`);
   const m = require('../src/db/migrationList').migrations.find((x) => x.version === 77);
   mem.exec(m.sql);
