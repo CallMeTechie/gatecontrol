@@ -39,6 +39,14 @@
     <button type="button" class="filter-chip" data-dim="state" data-value="disabled" aria-pressed="false">{{ t('zones.filter_disabled') }}</button>
     <button type="button" class="filter-chip" data-dim="state" data-value="problem" aria-pressed="false">{{ t('zones.filter_problems') }}</button>
   </div>
+  {# Risk filters (docs/feature-release-b.md §9): one at a time, combine with
+     the chips above and the search; state lives in the URL hash. #}
+  <div class="filter-chips sh-risk-chips" id="zn-risk" role="group" aria-label="{{ t('zones.filter.risk_label') }}">
+    <span class="sh-risk-label" aria-hidden="true">{{ t('zones.filter.risk_label') }}</span>
+    <button type="button" class="filter-chip sh-risk" data-risk="nowaf" aria-pressed="false">{{ t('zones.filter.public_nowaf') }}</button>
+    <button type="button" class="filter-chip sh-risk" data-risk="unprotected" aria-pressed="false">{{ t('zones.filter.public_unprotected') }}</button>
+    <button type="button" class="filter-chip sh-risk" data-risk="nohsts" aria-pressed="false">{{ t('zones.filter.https_nohsts') }}</button>
+  </div>
   <select class="sort-select zn-gw-select" id="zn-gateway-filter" aria-label="{{ t('zones.gateway_filter_label') }}">
     <option value="">{{ t('zones.gateway_filter_all') }}</option>
   </select>
@@ -50,6 +58,13 @@
 
 <div class="zn-zones" id="zn-zones">
   <div class="zn-empty">{{ t('common.loading') }}</div>
+</div>
+
+{# Bulk selection bar (zones-page.js; POST /api/v1/routes/bulk). Hidden until
+   an entry is selected; sticks to the bottom of the viewport. #}
+<div class="sh-bulkbar" id="zn-bulkbar" role="region" aria-label="{{ t('bulk.actions_label') }}" hidden>
+  <span class="sh-bulk-count" id="zn-bulk-count" aria-live="polite"></span>
+  <div class="sh-bulk-actions" id="zn-bulk-actions"></div>
 </div>
 
 {# Domain modal shell. Placed BEFORE the editor/confirm partials so the entry
@@ -158,7 +173,20 @@
   'waf.mode_block_hint', 'waf.mode_detect', 'waf.mode_detect_hint', 'waf.mode_label', 'waf.paranoia_1',
   'waf.paranoia_1_hint', 'waf.paranoia_2', 'waf.paranoia_2_hint', 'waf.paranoia_3', 'waf.paranoia_3_hint',
   'waf.paranoia_4', 'waf.paranoia_4_hint', 'waf.paranoia_label', 'waf.recommendation', 'waf.tag_block',
-  'waf.tag_detect', 'waf.tag_hint'
+  'waf.tag_detect', 'waf.tag_hint', 'waf.paranoia_level',
+  'zones.select_host', 'zones.select_zone', 'zones.wafdef.label', 'zones.wafdef.off', 'zones.wafdef.hint',
+  'zones.wafdef.hint_on', 'zones.wafdef.apply_title', 'zones.wafdef.apply_intro', 'zones.wafdef.apply_new_only',
+  'zones.wafdef.apply_existing', 'zones.wafdef.apply_existing_none', 'zones.wafdef.apply_ok',
+  'zones.wafdef.off_warning', 'zones.wafdef.saved', 'zones.wafdef.applied',
+  'shield.count', 'shield.active', 'shield.missing', 'shield.none', 'shield.internal', 'shield.fix', 'shield.auth',
+  'shield.auth_basic', 'shield.auth_route', 'shield.mtls', 'shield.ip_filter', 'shield.waf', 'shield.waf_detect',
+  'shield.waf_block', 'shield.hsts', 'shield.rate_limit',
+  'bulk.actions_label', 'bulk.selected', 'bulk.hidden', 'bulk.select_visible', 'bulk.clear', 'bulk.waf_on',
+  'bulk.hsts_on', 'bulk.monitoring_on', 'bulk.enable', 'bulk.disable', 'bulk.title_waf', 'bulk.title_hsts',
+  'bulk.title_monitoring', 'bulk.title_enable', 'bulk.title_disable', 'bulk.msg_waf', 'bulk.msg_hsts',
+  'bulk.msg_monitoring', 'bulk.msg_enable', 'bulk.msg_disable', 'bulk.affected', 'bulk.skipped',
+  'bulk.none_applicable', 'bulk.too_many', 'bulk.ok', 'bulk.done', 'bulk.done_none', 'bulk.err_title',
+  'bulk.err_intro', 'bulk.err_not_found', 'bulk.err_caddy', 'bulk.err_license'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
 {# TLS guard strings (tls-ui.js) #}

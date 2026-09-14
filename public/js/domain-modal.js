@@ -77,6 +77,8 @@
     refresh: [['polyline', { points: '23 4 23 10 17 10' }], ['path', { d: 'M20.49 15a9 9 0 11-2.12-9.36L23 10' }]],
     alert: [['path', { d: 'M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' }], ['line', { x1: 12, y1: 9, x2: 12, y2: 13 }], ['line', { x1: 12, y1: 17, x2: 12.01, y2: 17 }]],
     link: [['path', { d: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71' }], ['path', { d: 'M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71' }]],
+    shield: [['path', { d: 'M12 2 4 5v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V5l-8-3z' }]],
+    check: [['polyline', { points: '20 6 9 17 4 12' }]],
     settings: [['circle', { cx: 12, cy: 12, r: 3 }], ['path', { d: 'M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z' }]],
   };
   function icon(name, size) {
@@ -195,6 +197,49 @@
     }, [icon(iconName, 13)]);
   }
 
+  // ── Protection shield (docs/feature-release-b.md §9) ──
+  // Compact ".sh-shield" with the number of active protections; the title
+  // (hover) and the popup (click / keyboard / touch) list active and missing
+  // ones. opts.onPick(key, active) makes the popup items actionable.
+  function protectionLabel(key, p) {
+    if (key === 'auth') return p && p.auth === 'basic' ? t('shield.auth_basic') : p && p.auth === 'route_auth' ? t('shield.auth_route') : t('shield.auth');
+    if (key === 'waf') return p && p.waf === 'block' ? t('shield.waf_block') : p && p.waf === 'detect' ? t('shield.waf_detect') : t('shield.waf');
+    return t('shield.' + key);
+  }
+  function shieldText(s) {
+    const lines = [t('shield.count', { count: s.count })];
+    lines.push(t('shield.active') + ': ' + (s.active.length ? s.active.map((k) => protectionLabel(k, s.protections)).join(', ') : t('shield.none')));
+    if (s.missing.length) lines.push(t('shield.missing') + ': ' + s.missing.map((k) => protectionLabel(k, s.protections)).join(', '));
+    if (!s.public) lines.push(t('shield.internal'));
+    return lines.join('\n');
+  }
+  function shieldEl(entry, opts) {
+    const s = V.entryShield(entry);
+    // Internal entries without any protection have nothing to say — no "0" noise.
+    if (!s || (!s.public && !s.count)) return null;
+    const o = opts || {};
+    const text = shieldText(s);
+    const btn = el('button', {
+      type: 'button', class: 'sh-shield sh-shield-' + s.level + (s.count ? '' : ' sh-shield-zero'),
+      title: text, 'aria-label': text.split('\n').join('. '), 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      dataset: { count: String(s.count), level: s.level, missing: s.missing.join(' ') },
+    }, [icon('shield', 12), el('span', { class: 'sh-shield-n', text: String(s.count) })]);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pick = (k, act) => (o.onPick ? () => o.onPick(k, act) : () => {});
+      const items = [{ heading: t('shield.active') }];
+      if (s.active.length) s.active.forEach((k) => items.push({ icon: 'check', cls: 'sh-mi-on', label: protectionLabel(k, s.protections), onClick: pick(k, true) }));
+      else items.push({ label: t('shield.none'), disabled: true, cls: 'sh-mi-none' });
+      if (s.missing.length) {
+        items.push({ heading: t('shield.missing') });
+        s.missing.forEach((k) => items.push({ icon: 'alert', cls: 'sh-mi-off', label: protectionLabel(k, s.protections), sub: o.onPick ? t('shield.fix') : null, onClick: pick(k, false) }));
+      }
+      if (!s.public) items.push({ heading: t('shield.internal') });
+      openMenu(btn, items);
+    });
+    return btn;
+  }
+
   // ── Popup menu (one at a time, fixed-positioned so modal scroll never clips it) ──
   let menuState = null;
   const menuCloseHooks = [];
@@ -218,8 +263,9 @@
     if (same) return;
     const node = el('div', { class: 'zn-menu', role: 'menu' }, items.filter(Boolean).map((it) => {
       if (it === '-') return el('div', { class: 'zn-menu-sep', role: 'separator' });
+      if (it.heading) return el('div', { class: 'sh-menu-head', role: 'presentation', text: it.heading });
       return el('button', {
-        type: 'button', role: 'menuitem', class: 'zn-menu-item' + (it.danger ? ' danger' : ''), disabled: !!it.disabled,
+        type: 'button', role: 'menuitem', class: 'zn-menu-item' + (it.danger ? ' danger' : '') + (it.cls ? ' ' + it.cls : ''), disabled: !!it.disabled,
         title: it.hint || null,
         on: { click: (e) => { e.stopPropagation(); closeMenu(); it.onClick(); } },
       }, [it.icon ? icon(it.icon, 13) : null, el('span', { text: it.label }), it.sub ? el('span', { class: 'zn-menu-sub', text: it.sub }) : null]);
@@ -331,7 +377,7 @@
     t, el, append, icon, call, errMsg, toastOk, toastError, portConflict, fmtTime, busy,
     chipEl, tag, accessTag, verificationTag, healthDot, hostStatusText, gatewayIconName, gatewayLabel,
     toggleEl, ibtn, openMenu, closeMenu, menuOpen, onMenuClosed, dialog, confirm: confirmDialog, prompt: promptDialog,
-    lsGet, lsSet,
+    lsGet, lsSet, shieldEl, shieldText, protectionLabel,
   };
 
   // ─── Domain modal ──────────────────────────────────────────────────────
@@ -523,11 +569,14 @@
     const hsts = window.GCHstsUI && window.GCHstsUI.defaultsControl(zone, { onChanged: afterMutation });
     // TLS profile of the zone (secopt-ui.js, security options §E): confirm + PUT defaults.
     const tlsMin = window.GCSecOptUI && window.GCSecOptUI.tlsProfileControl(zone, { onChanged: afterMutation });
+    // WAF default of the zone next to the HSTS default (release B §2/§9).
+    const wafDef = wafDefaultControl(zone);
 
-    return el('div', { class: 'zn-panel' + (hsts ? ' hs-panel4' : '') + (tlsMin ? ' so-panel5' : '') }, [
+    return el('div', { class: 'zn-panel' + (hsts ? ' hs-panel4' : '') + (tlsMin ? ' so-panel5' : '') + ' sh-panel6' }, [
       el('div', { class: 'zn-field' }, [el('label', { class: 'form-label', text: t(peerKind(zone) ? 'zones.target_peer_label' : 'zones.gateway_label') }), el('div', { class: 'zn-select-wrap' }, [icon(gatewayIconName(zone.gateway && zone.gateway.kind), 13), sel]), gwHint]),
       el('div', { class: 'zn-field' }, [el('span', { class: 'form-label', text: t('zones.default_access') }), grp, el('span', { class: 'form-hint', text: t('zones.default_access_hint') })]),
       hsts || null,
+      wafDef,
       tlsMin || null,
       el('div', { class: 'zn-field zn-field-filter' }, [el('label', { class: 'form-label', text: t('zones.host_filter') }), el('div', { class: 'zn-search-wrap' }, [icon('search', 13), q])]),
     ]);
@@ -575,6 +624,113 @@
       toastOk(t('zones.defaults_saved'));
       await afterMutation();
     } catch (err) { toastError(err); } finally { busy(btn, false); }
+  }
+
+  // ── WAF default of the zone (docs/feature-release-b.md §2): select mode +
+  // level; a change asks "only new entries" / "also the n existing HTTP
+  // entries" and PUTs { waf_default, apply_waf_to_existing }. ──
+  const WAF_LEVELS = [1, 2, 3, 4];
+  function wafDefaultOf(zone) {
+    const d = zone && zone.waf_default;
+    const paranoia = d && WAF_LEVELS.indexOf(Number(d.paranoia)) !== -1 ? Number(d.paranoia) : 1;
+    if (!d || typeof d !== 'object' || !d.enabled) return { mode: 'off', paranoia };
+    return { mode: d.mode === 'block' ? 'block' : 'detect', paranoia };
+  }
+  function wafDefaultLabel(cfg) {
+    if (cfg.mode === 'off') return t('zones.wafdef.off');
+    return t(cfg.mode === 'block' ? 'waf.mode_block' : 'waf.mode_detect') + ' · ' + t('waf.paranoia_level', { n: cfg.paranoia });
+  }
+  function zoneHttpEntries(zone) {
+    const out = [];
+    ((zone && zone.hosts) || []).forEach((h) => (h.entries || []).forEach((e) => { if (!V.isL4(e) && !e.rdp_owned) out.push(e); }));
+    return out;
+  }
+
+  function wafDefaultControl(zone) {
+    const cur = wafDefaultOf(zone);
+    const locked = GC.features.waf === false;
+    const mode = el('select', {
+      class: 'form-select zn-select sh-wafdef-mode', 'data-zn-key': 'wafdefmode', disabled: locked,
+      'aria-label': t('zones.wafdef.label') + ' – ' + t('waf.mode_label'),
+    }, [
+      el('option', { value: 'off', text: t('zones.wafdef.off') }),
+      el('option', { value: 'detect', text: t('waf.mode_detect') }),
+      el('option', { value: 'block', text: t('waf.mode_block') }),
+    ]);
+    mode.value = cur.mode;
+    const level = el('select', {
+      class: 'form-select zn-select sh-wafdef-level', 'data-zn-key': 'wafdeflevel', disabled: locked || cur.mode === 'off',
+      'aria-label': t('zones.wafdef.label') + ' – ' + t('waf.paranoia_label'),
+    }, WAF_LEVELS.map((n) => el('option', { value: String(n), text: t('waf.paranoia_' + n) })));
+    level.value = String(cur.paranoia);
+    function reset() { mode.value = cur.mode; level.value = String(cur.paranoia); level.disabled = locked || cur.mode === 'off'; }
+    async function onChange() {
+      const next = { mode: mode.value, paranoia: parseInt(level.value, 10) || 1 };
+      level.disabled = locked || next.mode === 'off';
+      if (next.mode === cur.mode && (next.mode === 'off' || next.paranoia === cur.paranoia)) return;
+      const res = await openWafApplyDialog(zone, next);
+      if (!res) { reset(); return; }
+      await afterMutation();
+    }
+    mode.addEventListener('change', onChange);
+    level.addEventListener('change', onChange);
+    let hint;
+    if (locked) hint = t('waf.err.license');
+    else if (cur.mode === 'off') hint = t('zones.wafdef.hint');
+    else hint = t('zones.wafdef.hint_on', { value: wafDefaultLabel(cur) });
+    return el('div', { class: 'zn-field sh-wafdef' + (locked ? ' sh-locked' : ''), dataset: { wafDefault: cur.mode } }, [
+      el('span', { class: 'form-label', text: t('zones.wafdef.label') }),
+      el('div', { class: 'sh-wafdef-row' }, [mode, level]),
+      el('span', { class: 'form-hint sh-wafdef-hint', text: hint }),
+    ]);
+  }
+
+  // → Promise<PUT answer | null>
+  function openWafApplyDialog(zone, next) {
+    const n = zoneHttpEntries(zone).length;
+    const d = dialog({ title: t('zones.wafdef.apply_title') });
+    d.overlay.classList.add('sh-wafdef-dialog');
+    let applyMode = 'new';
+    const err = el('div', { class: 'zn-field-error', role: 'alert' });
+    err.hidden = true;
+    const warn = el('p', { class: 'zn-dialog-detail sh-warn', text: next.mode === 'off' ? t('zones.wafdef.off_warning') : t('waf.recommendation') });
+    const syncWarn = () => { warn.hidden = !(applyMode === 'existing' && next.mode !== 'detect'); };
+    const radio = (value, text, disabled) => {
+      const r = el('input', { type: 'radio', name: 'sh-wafdef-apply', value, checked: applyMode === value, disabled: !!disabled, class: 'sh-apply-' + value });
+      r.addEventListener('change', () => { if (r.checked) { applyMode = value; syncWarn(); } });
+      return el('label', { class: 'zn-radio' }, [r, text]);
+    };
+    d.body.appendChild(el('p', { class: 'zn-dialog-msg', text: t('zones.wafdef.apply_intro', { value: wafDefaultLabel(next) }) }));
+    d.body.appendChild(el('div', { class: 'form-group zn-radios' }, [
+      radio('new', t('zones.wafdef.apply_new_only')),
+      radio('existing', n ? t('zones.wafdef.apply_existing', { n }) : t('zones.wafdef.apply_existing_none'), !n),
+    ]));
+    d.body.appendChild(warn);
+    d.body.appendChild(err);
+    syncWarn();
+    const ok = el('button', { type: 'button', class: 'btn btn-primary sh-wafdef-ok', text: t('zones.wafdef.apply_ok') });
+    ok.addEventListener('click', async () => {
+      err.hidden = true;
+      busy(ok, true);
+      try {
+        const body = {
+          waf_default: next.mode === 'off' ? null : { enabled: true, mode: next.mode, paranoia: next.paranoia },
+          apply_waf_to_existing: applyMode === 'existing',
+        };
+        const res = await call(api.put('/api/v1/domains/' + zone.domain_id + '/defaults', body));
+        const applied = typeof res.applied_waf === 'number' ? res.applied_waf : (typeof res.applied === 'number' ? res.applied : 0);
+        toastOk(applyMode === 'existing' && applied ? t('zones.wafdef.applied', { n: applied }) : t('zones.wafdef.saved'));
+        d.close(res);
+      } catch (e2) {
+        err.textContent = errMsg(e2);
+        err.hidden = false;
+        busy(ok, false);
+      }
+    });
+    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } }));
+    d.foot.appendChild(ok);
+    ok.focus();
+    return d.promise.then((r) => (r && typeof r === 'object' ? r : null));
   }
 
   // ── Host card ──
@@ -646,6 +802,10 @@
     const opts = [];
     if (e.rdp_owned) opts.push(tag('purple', t('entry.rdp_tag'), false, 'zn-opt-tag'));
     opts.push(e.external_enabled ? tag('green', t('host.access_external'), false, 'zn-opt-tag') : tag('grey', t('host.access_internal'), false, 'zn-opt-tag'));
+    // Shield with the number of active protections; its popup lists the
+    // missing ones and opens the matching editor (docs/feature-release-b.md §9).
+    const shield = shieldEl(e, { onPick: (k) => fixProtection(e, k) });
+    if (shield) opts.push(shield);
     const pl = V.entryPortLabel(e);
     if (pl && !e.rdp_owned) opts.push(tag('grey', pl, false, 'zn-opt-tag'));
     if (c.note) opts.push(tag('grey', c.note, false, 'zn-opt-tag'));
@@ -654,8 +814,10 @@
     if (e.baseUnverified) opts.push(tag('amber', t('entry.unverified_tag'), false, 'zn-opt-tag'));
     const tlsTag = window.GCTlsUI && window.GCTlsUI.entryTag(e, { onChanged: afterMutation });
     if (tlsTag) opts.push(tlsTag);
+    // Only active protections become chips — no negative "HSTS aus" (§9);
+    // a missing HSTS is listed by the shield, whose popup opens this dialog.
     const hstsTag = window.GCHstsUI && window.GCHstsUI.entryTag(e, { onChanged: afterMutation });
-    if (hstsTag) opts.push(hstsTag);
+    if (hstsTag && hstsTag.dataset.hsts === 'on') opts.push(hstsTag);
     // Security options (secopt-ui.js): '≤ 50 MB' body limit and 'mTLS'.
     if (window.GCSecOptUI) opts.push(...window.GCSecOptUI.entryTags(e));
     // Web Application Firewall (waf-ui.js): 'WAF' (block) / 'WAF · erkennt'
@@ -1032,6 +1194,23 @@
         onDeleted: () => { afterMutation(); },
       }, extra || {}));
     } catch (err) { toastError(err); }
+  }
+
+  // Shield popup item → the place where that protection is configured.
+  const PROTECTION_TARGET = {
+    auth: { tab: 'auth' },
+    mtls: { tab: 'auth', focus: 'edit-mtls-block' },
+    ip_filter: { tab: 'security', focus: 'edit-route-ip-filter' },
+    waf: { tab: 'security', focus: 'edit-waf-block' },
+    hsts: { tab: 'security', focus: 'edit-hsts-block' },
+    rate_limit: { tab: 'security', focus: 'edit-route-rate-limit' },
+  };
+  function fixProtection(e, key) {
+    if (key === 'hsts' && window.GCHstsUI && typeof window.GCHstsUI.openEntryDialog === 'function') {
+      window.GCHstsUI.openEntryDialog(e, { onChanged: afterMutation });
+      return;
+    }
+    editEntry(e, PROTECTION_TARGET[key] || { tab: 'security' });
   }
 
   async function deleteEntry(e, host, zone, btn) {

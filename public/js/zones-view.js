@@ -123,6 +123,70 @@
     return String(w.mode || '').toLowerCase() === 'block' ? 'block' : 'detect';
   }
 
+  // ── Protections, shield, risk filters (docs/feature-release-b.md §9) ──
+  // Same classification as src/services/securityCheck.js protectionsOf():
+  // "öffentlich" = enabled AND external_enabled; auth, mTLS and IP filter are
+  // the access protections; L4 entries have none of them.
+  const PROTECTIONS = ['auth', 'mtls', 'ip_filter', 'waf', 'hsts', 'rate_limit'];
+  const HTTPS_ONLY = { mtls: 1, hsts: 1 };
+  const RISKS = ['nowaf', 'unprotected', 'nohsts'];
+  function on(v) { return v === true || v === 1 || v === '1' || v === 'true'; }
+
+  function isPublicEntry(e) { return !!e && on(e.enabled) && on(e.external_enabled); }
+  function isHttpsEntry(e) { return !!e && !isL4(e) && on(e.https_enabled); }
+
+  // → { auth: 'basic'|'route_auth'|null, mtls, ip_filter, waf: 'block'|'detect'|null, hsts, rate_limit }
+  function entryProtections(e) {
+    const http = !!e && !isL4(e);
+    const https = http && on(e.https_enabled);
+    let auth = null;
+    if (http && on(e.basic_auth_enabled)) auth = 'basic';
+    else if (http && on(e.route_auth_enabled)) auth = 'route_auth';
+    const hsts = e && e.hsts && typeof e.hsts === 'object' ? hstsActive(e) : https && on(e && e.hsts_enabled);
+    return {
+      auth,
+      // mtls_ca_pem is part of the zones rows; without a CA the switch does nothing.
+      mtls: https && on(e.mtls_enabled) && (e.mtls_ca_pem === undefined || !!e.mtls_ca_pem),
+      ip_filter: http && (on(e.ip_filter_enabled) || on(e.acl_enabled)),
+      waf: wafState(e),
+      hsts: !!hsts,
+      rate_limit: http && on(e.rate_limit_enabled),
+    };
+  }
+
+  function hasAccessProtection(p) { return !!(p.auth || p.mtls || p.ip_filter); }
+
+  // Shield of one HTTP entry: which protections apply, which are on, which
+  // are missing. Missing ones are only reported for public entries (for an
+  // internal entry nothing is "missing"). null for L4 and RDP-owned entries.
+  // level: 'internal' | 'open' (public, no auth/mTLS/IP filter) | 'ok'.
+  function entryShield(e) {
+    if (!e || isL4(e) || e.rdp_owned) return null;
+    const p = entryProtections(e);
+    const https = isHttpsEntry(e);
+    const pub = isPublicEntry(e);
+    const applicable = PROTECTIONS.filter((k) => https || !HTTPS_ONLY[k]);
+    const active = applicable.filter((k) => !!p[k]);
+    const missing = pub ? applicable.filter((k) => !p[k]) : [];
+    let level = 'ok';
+    if (!pub) level = 'internal';
+    else if (!hasAccessProtection(p)) level = 'open';
+    return { protections: p, applicable, active, missing, count: active.length, public: pub, https, level };
+  }
+
+  // Toolbar risk filters, evaluated per entry:
+  //   nowaf       public HTTP entry without WAF
+  //   unprotected public HTTP entry without auth, mTLS and IP filter
+  //   nohsts      active HTTPS entry without HSTS
+  function entryRisk(e, risk) {
+    if (!e || isL4(e) || e.rdp_owned) return false;
+    const p = entryProtections(e);
+    if (risk === 'nowaf') return isPublicEntry(e) && !p.waf;
+    if (risk === 'unprotected') return isPublicEntry(e) && !hasAccessProtection(p);
+    if (risk === 'nohsts') return on(e.enabled) && isHttpsEntry(e) && !p.hsts;
+    return false;
+  }
+
   // Language-neutral protocol names derived from the TARGET port (same table
   // as routes-view.js l4Label).
   const PORT_LABELS = {
@@ -258,11 +322,18 @@
     if (f.access === 'external' && !e.external_enabled) return false;
     if (f.access === 'internal' && e.external_enabled) return false;
     if (f.state === 'disabled' && e.enabled) return false;
+    if (f.risk && !entryRisk(e, f.risk)) return false;
     return true;
   }
 
+  // An entry-level filter is set (host rows then show only the entries that
+  // pass it — used by the bulk selection).
+  function entryFilterActive(f) {
+    return !!(f && (f.type || f.access || f.state === 'disabled' || f.risk));
+  }
+
   function hostMatches(host, zone, f) {
-    if ((f.type || f.access || f.state === 'disabled')
+    if (entryFilterActive(f)
       && !(host.entries || []).some((e) => entryPasses(e, f))) return false;
     if (f.state === 'problem') {
       const h = hostHealth(host);
@@ -274,7 +345,7 @@
 
   function isFilterActive(opts) {
     const o = opts || {};
-    return !!(str(o.q).trim() || o.type || o.access || o.state || o.gatewayKey);
+    return !!(str(o.q).trim() || o.type || o.access || o.state || o.risk || o.gatewayKey);
   }
 
   // → Zone[] with only the matching hosts; zones without hits drop out.
@@ -286,6 +357,7 @@
       type: o.type || null,
       access: o.access || null,
       state: o.state || null,
+      risk: RISKS.indexOf(o.risk) !== -1 ? o.risk : null,
       gatewayKey: o.gatewayKey || null,
     };
     const active = isFilterActive(o);
@@ -296,6 +368,94 @@
       out.push(Object.assign({}, z, { hosts }));
     }
     return out;
+  }
+
+  // ── Filter state in the URL hash (#q=nas&type=http&risk=nowaf&gw=pool:3) ──
+  const HASH_VALUES = {
+    type: ['http', 'l4'],
+    access: ['external', 'internal'],
+    state: ['disabled', 'problem'],
+    risk: RISKS,
+  };
+
+  function filtersToHash(f) {
+    const o = f || {};
+    const parts = [];
+    const q = str(o.q).trim();
+    if (q) parts.push('q=' + encodeURIComponent(q));
+    Object.keys(HASH_VALUES).forEach((k) => {
+      if (o[k] && HASH_VALUES[k].indexOf(o[k]) !== -1) parts.push(k + '=' + o[k]);
+    });
+    if (o.gatewayKey && parseGatewayKey(o.gatewayKey)) parts.push('gw=' + o.gatewayKey);
+    return parts.join('&');
+  }
+
+  // Unknown keys and values are dropped; never throws.
+  function filtersFromHash(hash) {
+    const out = { q: '', type: null, access: null, state: null, risk: null, gatewayKey: null };
+    const s = str(hash).replace(/^#/, '');
+    if (!s) return out;
+    s.split('&').forEach((pair) => {
+      const i = pair.indexOf('=');
+      if (i <= 0) return;
+      const k = pair.slice(0, i);
+      let v = pair.slice(i + 1);
+      try { v = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (_) { return; }
+      if (k === 'q') out.q = v.slice(0, 200);
+      else if (k === 'gw') out.gatewayKey = parseGatewayKey(v) ? v : null;
+      else if (HASH_VALUES[k] && HASH_VALUES[k].indexOf(v) !== -1) out[k] = v;
+    });
+    return out;
+  }
+
+  // ── Bulk selection (POST /api/v1/routes/bulk, feature-release-b §2) ──
+  const BULK_MAX = 200;
+  const HSTS_BULK_MAX_AGE = 31536000;   // 1 year, no includeSubDomains / preload (like the security check fix)
+
+  // Entries of a host that can be selected: everything but RDP-owned routes
+  // (the RDP page manages those). With an entry-level filter only the
+  // entries passing it (the row then stands for exactly those).
+  function selectableEntries(host, f) {
+    const list = ((host && host.entries) || []).filter((e) => !e.rdp_owned && e.id != null);
+    if (!entryFilterActive(f)) return list;
+    const ff = { type: f.type || null, access: f.access || null, state: f.state || null, risk: f.risk || null };
+    return list.filter((e) => entryPasses(e, ff));
+  }
+
+  // action → { ids, skipped, set }. set = the bulk body's `set` object.
+  //   waf        HTTP entries; opts { mode, paranoia }
+  //   hsts       HTTPS entries
+  //   monitoring / enable / disable  every selected entry
+  function bulkPlan(entries, action, opts) {
+    const o = opts || {};
+    let fits = () => true;
+    let set = null;
+    if (action === 'waf') {
+      fits = (e) => !isL4(e);
+      set = { waf_enabled: true, waf_mode: o.mode === 'block' ? 'block' : 'detect', waf_paranoia: [1, 2, 3, 4].indexOf(Number(o.paranoia)) !== -1 ? Number(o.paranoia) : 1 };
+    } else if (action === 'hsts') {
+      fits = isHttpsEntry;
+      set = { hsts_enabled: true, hsts_max_age: HSTS_BULK_MAX_AGE };
+    } else if (action === 'monitoring') set = { monitoring_enabled: true };
+    else if (action === 'enable') set = { enabled: true };
+    else if (action === 'disable') set = { enabled: false };
+    else return null;
+    const ids = [];
+    let skipped = 0;
+    (entries || []).forEach((e) => {
+      if (!e || e.rdp_owned || e.id == null) return;
+      if (fits(e)) { if (ids.indexOf(e.id) === -1) ids.push(e.id); } else skipped++;
+    });
+    return { ids, skipped, set, tooMany: ids.length > BULK_MAX };
+  }
+
+  // Every entry of the page by id (zones + "Ohne Domain") → { entry, host, zone }.
+  function entryIndex(zones) {
+    const map = new Map();
+    (zones || []).forEach((z) => (z.hosts || []).forEach((h) => (h.entries || []).forEach((e) => {
+      if (e && e.id != null) map.set(e.id, { entry: e, host: h, zone: z });
+    })));
+    return map;
   }
 
   // ── Aggregates ─────────────────────────────────────────────────────────
@@ -435,6 +595,8 @@
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
     isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,
     zoneKey, gatewayChoices, smbEntries, previewFqdn, validSubdomain, validIPv4, validPort,
+    PROTECTIONS, RISKS, BULK_MAX, HSTS_BULK_MAX_AGE, isPublicEntry, isHttpsEntry, entryProtections, entryShield, entryRisk,
+    entryFilterActive, filtersToHash, filtersFromHash, selectableEntries, bulkPlan, entryIndex,
   };
 });
 

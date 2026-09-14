@@ -24,10 +24,23 @@
     error: null,
     errorToasted: false,
     stale: false,
-    f: { q: '', type: null, access: null, state: null, gatewayKey: null },
+    // Filters live in the URL hash (#q=…&type=…&risk=…&gw=…), release B §9.
+    f: V.filtersFromHash(window.location.hash),
     collapsed: readCollapsed(),
     showAll: new Set(),
+    sel: new Set(),            // selected entry ids (bulk actions); survives reloads
+    bulkBusy: false,
   };
+
+  function emptyFilters() { return { q: '', type: null, access: null, state: null, risk: null, gatewayKey: null }; }
+
+  // Mirror the filters into the hash without adding history entries.
+  function writeHash() {
+    const h = V.filtersToHash(state.f);
+    const cur = window.location.hash.replace(/^#/, '');
+    if (h === cur) return;
+    try { history.replaceState(null, '', window.location.pathname + window.location.search + (h ? '#' + h : '')); } catch (_) { /* ignore */ }
+  }
 
   function readCollapsed() {
     try { return new Set(JSON.parse(UI.lsGet(LS_COLLAPSED, '[]'))); } catch (_) { return new Set(); }
@@ -59,6 +72,7 @@
           };
           state.lastSync = new Date();
         } while (rerun);
+        pruneSelection();
         state.error = null;
         state.errorToasted = false;
         render();
@@ -96,7 +110,7 @@
   }
 
   function render() {
-    if (UI.menuOpen() && root.querySelector('.zn-ibtn[aria-expanded="true"]')) { renderPending = true; return; }
+    if (UI.menuOpen() && root.querySelector('.zn-ibtn[aria-expanded="true"], .sh-shield[aria-expanded="true"]')) { renderPending = true; return; }
     renderPending = false;
     const sc = scroller();
     const top = sc.scrollTop;
@@ -130,6 +144,7 @@
     }
     root.replaceChildren(...nodes);
     updateCollapseAll(zones, active);
+    renderBulkBar(zones);
     sc.scrollTop = top;
   }
 
@@ -157,10 +172,18 @@
     const f = state.f;
     box.querySelectorAll('[data-dim]').forEach((b) => {
       const dim = b.dataset.dim;
-      const on = dim === 'all' ? !(f.type || f.access || f.state) : f[dim] === b.dataset.value;
+      const on = dim === 'all' ? !(f.type || f.access || f.state || f.risk) : f[dim] === b.dataset.value;
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    const risk = $('zn-risk');
+    if (risk) {
+      risk.querySelectorAll('[data-risk]').forEach((b) => {
+        const on = f.risk === b.dataset.risk;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
     const cnt = $('zn-chip-all-count');
     if (cnt) cnt.textContent = String(V.summarize(all).hosts);
   }
@@ -209,13 +232,16 @@
       on: { click: (e) => { e.stopPropagation(); openDomain(zone.domain_id); } },
     }, [icon('pencil', 13), zone.unassigned ? t('zones.edit_hosts') : t('zones.edit_domain')]);
 
+    const zoneEntries = [];
+    zone.hosts.forEach((h) => zoneEntries.push(...V.selectableEntries(h, state.f)));
     const head = el('div', {
       class: 'zn-zone-head', role: 'button', tabindex: '0', 'aria-expanded': collapsed ? 'false' : 'true',
       on: {
-        click: (e) => { if (!e.target.closest('button,a,.zn-ibtn')) toggleZone(key, filterActive); },
+        click: (e) => { if (!e.target.closest('button,a,.zn-ibtn,input,label')) toggleZone(key, filterActive); },
         keydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggleZone(key, filterActive); } },
       },
     }, [
+      selectBox(zoneEntries, t('zones.select_zone', { domain: zone.unassigned ? t('zones.unassigned') : zone.domain }), 'sh-sel-zone'),
       el('span', { class: 'zn-chev' }, [icon('down', 16)]),
       UI.healthDot(full.health || V.worstHealth(full.hosts.map(V.hostHealth))),
       el('span', { class: 'zn-domain', text: zone.unassigned ? t('zones.unassigned') : zone.domain }),
@@ -236,6 +262,7 @@
     if (collapsed) return card;
 
     const rows = [zone.hosts.length ? el('div', { class: 'zn-hrow zn-hrow-th', 'aria-hidden': 'true' }, [
+      el('div', { class: 'sh-sel sh-sel-th' }),
       el('div', { class: 'zn-col-name zn-th', text: t('zones.col_name') }),
       el('div', { class: 'zn-col-target zn-th', text: t('zones.col_target') }),
       el('div', { class: 'zn-col-entries zn-th', text: t('zones.col_entries') }),
@@ -301,14 +328,21 @@
         : null,
     ]);
 
+    // Shield per HTTP entry (count of active protections, popup = active/missing).
+    const shields = (host.entries || []).filter((e) => !V.isL4(e) && !e.rdp_owned)
+      .map((e) => UI.shieldEl(e, { onPick: () => openDomain(zone.domain_id, host.id) })).filter(Boolean);
+    const selected = V.selectableEntries(host, state.f);
+
     return el('div', {
-      class: 'zn-hrow zn-host' + (on ? '' : ' off'), role: 'button', tabindex: '0', title: host.fqdn || null,
+      class: 'zn-hrow zn-host' + (on ? '' : ' off') + (selected.length && selected.every((e) => state.sel.has(e.id)) ? ' sh-selected' : ''),
+      role: 'button', tabindex: '0', title: host.fqdn || null,
       dataset: { hostId: String(host.id) },
       on: {
-        click: (e) => { if (!e.target.closest('button,a')) openDomain(zone.domain_id, host.id); },
+        click: (e) => { if (!e.target.closest('button,a,input,label')) openDomain(zone.domain_id, host.id); },
         keydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openDomain(zone.domain_id, host.id); } },
       },
     }, [
+      selectBox(selected, t('zones.select_host', { host: host.fqdn || V.hostLabel(host) }), 'sh-sel-host'),
       el('div', { class: 'zn-col-name' }, [nameLine, desc.length ? el('div', { class: 'zn-desc', text: desc.join(' · ') }) : null]),
       el('div', { class: 'zn-col-target' }, [
         icon(UI.gatewayIconName((V.parseGatewayKey(V.hostGatewayKey(host, zone)) || {}).kind), 13),
@@ -317,7 +351,7 @@
       el('div', { class: 'zn-col-entries' }, V.sortEntries(host.entries).map((e) => (e.rdp_owned
         ? el('span', { class: 'zn-chip zn-chip-rdp', title: t('entry.rdp_hint') }, [icon('rdp', 11), el('span', { class: 'zn-chip-port', text: String(e.l4_listen_port || '') }), el('span', { class: 'zn-chip-note', text: t('entry.rdp_tag') })])
         : (TG ? TG.decorateChip(UI.chipEl(e), e) : UI.chipEl(e))))),
-      el('div', { class: 'zn-col-access' }, [UI.accessTag(V.hostAccess(host))]),
+      el('div', { class: 'zn-col-access' }, [UI.accessTag(V.hostAccess(host)), shields]),
       el('div', { class: 'zn-col-status' + (tlsText ? ' tg-host-problem' : '') }, [
         UI.healthDot(tlsText && health === 'ok' ? 'degraded' : health),
         el('span', { class: 'zn-status-text', text: tlsText || UI.hostStatusText(host, zone) }),
@@ -357,9 +391,185 @@
   }
 
   function resetFilters() {
-    state.f = { q: '', type: null, access: null, state: null, gatewayKey: null };
+    state.f = emptyFilters();
     const s = $('zn-search');
     if (s) s.value = '';
+    writeHash();
+    render();
+  }
+
+  // ─── Bulk selection (release B §2/§9) ──────────────────────────────────
+  // state.sel holds entry ids. A row checkbox stands for the host's
+  // selectable entries (with an entry-level filter: the matching ones), the
+  // zone checkbox for all rows of the zone; both are tri-state.
+  function selectBox(entries, label, cls) {
+    const ids = entries.map((e) => e.id);
+    const n = ids.filter((id) => state.sel.has(id)).length;
+    const cb = el('input', { type: 'checkbox', class: 'sh-sel-cb', checked: ids.length > 0 && n === ids.length, disabled: !ids.length, 'aria-label': label });
+    cb.indeterminate = n > 0 && n < ids.length;
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const all = ids.length > 0 && ids.every((id) => state.sel.has(id));
+      ids.forEach((id) => { if (all) state.sel.delete(id); else state.sel.add(id); });
+      render();
+      // keep keyboard users on the same checkbox after the rebuild
+      const again = window.CSS && CSS.escape ? root.querySelector('.sh-sel-cb[aria-label="' + CSS.escape(label) + '"]') : null;
+      if (again) again.focus();
+    });
+    return el('label', { class: 'sh-sel ' + (cls || ''), title: label, on: { click: (e) => e.stopPropagation() } }, [cb]);
+  }
+
+  // Drop ids that vanished or became RDP-owned after a reload (gc:routes).
+  function pruneSelection() {
+    if (!state.sel.size || !state.data) return;
+    const idx = V.entryIndex(V.pageZones(state.data));
+    Array.from(state.sel).forEach((id) => {
+      const hit = idx.get(id);
+      if (!hit || hit.entry.rdp_owned) state.sel.delete(id);
+    });
+  }
+
+  function selectedEntries() {
+    const idx = V.entryIndex(V.pageZones(state.data));
+    return Array.from(state.sel).map((id) => idx.get(id)).filter(Boolean).map((x) => x.entry);
+  }
+
+  function visibleSelectable(zones) {
+    const out = [];
+    zones.forEach((z) => z.hosts.forEach((h) => out.push(...V.selectableEntries(h, state.f))));
+    return out;
+  }
+
+  const BULK_ACTIONS = [
+    { id: 'waf', label: 'bulk.waf_on', icon: 'shield' },
+    { id: 'hsts', label: 'bulk.hsts_on', icon: 'shield' },
+    { id: 'monitoring', label: 'bulk.monitoring_on', icon: 'refresh' },
+    { id: 'enable', label: 'bulk.enable', icon: 'check' },
+    { id: 'disable', label: 'bulk.disable', icon: 'x' },
+  ];
+
+  function renderBulkBar(zones) {
+    const bar = $('zn-bulkbar');
+    if (!bar) return;
+    const n = state.sel.size;
+    bar.hidden = n === 0;
+    document.body.classList.toggle('sh-bulk-open', n > 0);
+    if (!n) return;
+    const vis = visibleSelectable(zones);
+    const visSel = vis.filter((e) => state.sel.has(e.id)).length;
+    const hidden = n - visSel;
+    const count = $('zn-bulk-count');
+    if (count) count.textContent = t('bulk.selected', { count: n }) + (hidden > 0 ? ' · ' + t('bulk.hidden', { count: hidden }) : '');
+    const sel = selectedEntries();
+    const box = $('zn-bulk-actions');
+    const btns = [];
+    if (vis.length > visSel) {
+      btns.push(el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm sh-bulk-all', text: t('bulk.select_visible', { count: vis.length }),
+        on: { click: () => { vis.forEach((e) => state.sel.add(e.id)); render(); } } }));
+    }
+    BULK_ACTIONS.forEach((a) => {
+      const plan = V.bulkPlan(sel, a.id, {});
+      const lockedWaf = a.id === 'waf' && window.GC.features && window.GC.features.waf === false;
+      const off = state.bulkBusy || !plan.ids.length || lockedWaf;
+      btns.push(el('button', {
+        type: 'button', class: 'btn ' + (a.id === 'disable' ? 'btn-ghost' : 'btn-secondary') + ' zn-btn-sm sh-bulk-btn', disabled: off,
+        dataset: { bulk: a.id }, title: lockedWaf ? t('waf.err.license') : (!plan.ids.length ? t('bulk.none_applicable') : null),
+        on: { click: () => runBulk(a.id) },
+      }, [icon(a.icon, 12), t(a.label)]));
+    });
+    btns.push(el('button', { type: 'button', class: 'zn-ibtn sh-bulk-clear', title: t('bulk.clear'), 'aria-label': t('bulk.clear'),
+      on: { click: () => { state.sel.clear(); render(); } } }, [icon('x', 13)]));
+    if (box) box.replaceChildren(...btns);
+  }
+
+  function bulkErrorText(f) {
+    const KEYS = {
+      HSTS_REQUIRES_HTTPS: 'hsts.err.requires_https', HSTS_MAX_AGE_INVALID: 'hsts.err.max_age_invalid',
+      HSTS_PRELOAD_REQUIREMENTS: 'hsts.err.preload_requirements', WAF_REQUIRES_HTTP: 'waf.err.requires_http',
+      WAF_MODE_INVALID: 'waf.err.mode_invalid', WAF_PARANOIA_INVALID: 'waf.err.paranoia_invalid', NOT_FOUND: 'bulk.err_not_found',
+    };
+    const k = f && KEYS[f.code];
+    return k && window.GC.t[k] ? t(k) : ((f && f.error) || t('zones.error_generic'));
+  }
+
+  function entryLabel(id) {
+    const hit = V.entryIndex(V.pageZones(state.data)).get(id);
+    if (!hit) return '#' + id;
+    const c = V.entryChip(hit.entry, { hsts: false, waf: false });
+    const host = hit.host.fqdn || V.hostLabel(hit.host) || hit.entry.domain || ('#' + id);
+    return host + ' · ' + c.proto + ' ' + (c.out || '') + (c.in ? ' → ' + c.in : '');
+  }
+
+  // Confirmation (+ WAF mode/level) → Promise<{ mode, paranoia } | null>
+  function bulkDialog(action, plan) {
+    const d = UI.dialog({ title: t('bulk.title_' + action) });
+    d.overlay.classList.add('sh-bulk-dialog');
+    d.overlay.dataset.bulk = action;
+    const pick = { mode: 'detect', paranoia: 1 };
+    d.body.appendChild(el('p', { class: 'zn-dialog-msg', text: t('bulk.msg_' + action) }));
+    if (action === 'waf') {
+      const mode = el('select', { class: 'form-select zn-select sh-bulk-mode', 'aria-label': t('waf.mode_label') }, [
+        el('option', { value: 'detect', text: t('waf.mode_detect') }), el('option', { value: 'block', text: t('waf.mode_block') })]);
+      const level = el('select', { class: 'form-select zn-select sh-bulk-level', 'aria-label': t('waf.paranoia_label') },
+        [1, 2, 3, 4].map((n) => el('option', { value: String(n), text: t('waf.paranoia_' + n) })));
+      const hint = el('p', { class: 'form-hint sh-bulk-hint', text: t('waf.recommendation') });
+      mode.addEventListener('change', () => { pick.mode = mode.value; hint.hidden = mode.value !== 'block'; });
+      level.addEventListener('change', () => { pick.paranoia = parseInt(level.value, 10) || 1; });
+      hint.hidden = true;
+      d.body.appendChild(el('div', { class: 'sh-bulk-fields' }, [
+        el('label', { class: 'zn-f' }, [el('span', { class: 'zn-f-label', text: t('waf.mode_label') }), mode]),
+        el('label', { class: 'zn-f' }, [el('span', { class: 'zn-f-label', text: t('waf.paranoia_label') }), level]),
+      ]));
+      d.body.appendChild(hint);
+    }
+    d.body.appendChild(el('p', { class: 'zn-dialog-detail sh-bulk-affected', text: t('bulk.affected', { n: plan.ids.length }) }));
+    if (plan.skipped) d.body.appendChild(el('p', { class: 'zn-dialog-detail sh-bulk-skipped', text: t('bulk.skipped', { count: plan.skipped }) }));
+    const ok = el('button', { type: 'button', class: 'btn ' + (action === 'disable' ? 'btn-danger' : 'btn-primary'), text: t('bulk.ok'), on: { click: () => d.close(pick) } });
+    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } }));
+    d.foot.appendChild(ok);
+    ok.focus();
+    return d.promise.then((r) => (r && typeof r === 'object' ? r : null));
+  }
+
+  function showBulkFailures(failed) {
+    const d = UI.dialog({ title: t('bulk.err_title') });
+    d.overlay.classList.add('sh-bulk-error');
+    d.body.appendChild(el('p', { class: 'zn-dialog-msg', text: t('bulk.err_intro') }));
+    d.body.appendChild(el('ul', { class: 'sh-bulk-fail-list' }, failed.map((f) => el('li', { dataset: { entryId: String(f.id) } }, [
+      el('span', { class: 'sh-bulk-fail-entry zn-mono', text: entryLabel(f.id) }),
+      el('span', { class: 'sh-bulk-fail-why', text: bulkErrorText(f) }),
+    ]))));
+    const close = el('button', { type: 'button', class: 'btn btn-secondary', text: t('common.close'), on: { click: () => d.close(null) } });
+    d.foot.appendChild(close);
+    close.focus();
+  }
+
+  async function runBulk(action) {
+    if (state.bulkBusy) return;
+    const plan = V.bulkPlan(selectedEntries(), action, {});
+    if (!plan || !plan.ids.length) { UI.toastError(t('bulk.none_applicable')); return; }
+    if (plan.tooMany) { UI.toastError(t('bulk.too_many', { max: V.BULK_MAX })); return; }
+    const pick = await bulkDialog(action, plan);
+    if (!pick) return;
+    const set = V.bulkPlan(selectedEntries(), action, pick).set;
+    state.bulkBusy = true;
+    render();
+    try {
+      const res = await UI.call(api.post('/api/v1/routes/bulk', { ids: plan.ids, set }));
+      const changed = typeof res.changed === 'number' ? res.changed : plan.ids.length;
+      if (changed) UI.toastOk(t('bulk.done', { changed, n: plan.ids.length }));
+      else UI.toastOk(t('bulk.done_none'));
+      state.sel.clear();
+    } catch (err) {
+      const data = (err && err.data) || {};
+      if (data.code === 'BULK_INVALID' && Array.isArray(data.failed) && data.failed.length) showBulkFailures(data.failed);
+      else if (data.code === 'CADDY_SYNC_FAILED') UI.toastError(t('bulk.err_caddy'));
+      else if (data.feature && !data.limit) UI.toastError(t('bulk.err_license') + (data.error ? ' (' + data.error + ')' : ''));
+      else UI.toastError(err);
+    } finally {
+      state.bulkBusy = false;
+    }
+    await load();
     render();
   }
 
@@ -439,9 +649,10 @@
     const search = $('zn-search');
     let qTimer = null;
     if (search) {
+      search.value = state.f.q || '';
       search.addEventListener('input', () => {
         clearTimeout(qTimer);
-        qTimer = setTimeout(() => { state.f.q = search.value; render(); }, 150);
+        qTimer = setTimeout(() => { state.f.q = search.value; writeHash(); render(); }, 150);
       });
     }
     const chips = $('zn-chips');
@@ -450,13 +661,30 @@
         const b = e.target.closest('[data-dim]');
         if (!b) return;
         const dim = b.dataset.dim;
-        if (dim === 'all') { state.f.type = null; state.f.access = null; state.f.state = null; }
+        if (dim === 'all') { state.f.type = null; state.f.access = null; state.f.state = null; state.f.risk = null; }
         else state.f[dim] = state.f[dim] === b.dataset.value ? null : b.dataset.value;
+        writeHash();
+        render();
+      });
+    }
+    const risk = $('zn-risk');
+    if (risk) {
+      risk.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-risk]');
+        if (!b) return;
+        state.f.risk = state.f.risk === b.dataset.risk ? null : b.dataset.risk;
+        writeHash();
         render();
       });
     }
     const gw = $('zn-gateway-filter');
-    if (gw) gw.addEventListener('change', () => { state.f.gatewayKey = gw.value || null; render(); });
+    if (gw) gw.addEventListener('change', () => { state.f.gatewayKey = gw.value || null; writeHash(); render(); });
+    // Back/forward or a link like /routes#risk=nowaf (quick search) while on the page.
+    window.addEventListener('hashchange', () => {
+      state.f = V.filtersFromHash(window.location.hash);
+      if (search) search.value = state.f.q || '';
+      render();
+    });
 
     const ca = $('zn-collapse-all');
     if (ca) {
@@ -484,7 +712,7 @@
       if (domainId != null && domainId !== '' && state.data) {
         const hostId = q.get('host');
         openDomain(Number(domainId), hostId != null && hostId !== '' ? Number(hostId) : undefined);
-        history.replaceState(null, '', window.location.pathname);
+        history.replaceState(null, '', window.location.pathname + window.location.hash);
       }
     } catch (_) { /* ignore */ }
   });
@@ -494,5 +722,9 @@
     if (!document.hidden && state.stale) { state.stale = false; scheduleLoad(); }
   });
 
-  window.GCZonesPage = { reload: load, openDomain, openAddDomain, getData: () => state.data };
+  window.GCZonesPage = {
+    reload: load, openDomain, openAddDomain, getData: () => state.data,
+    // Bulk selection, for scripts/tests: ids of the selected entries.
+    selection: () => Array.from(state.sel),
+  };
 })();
