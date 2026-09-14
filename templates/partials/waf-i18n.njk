@@ -4,7 +4,9 @@
   merged into GC.t by waf-ui.js. Shared by all three themes; included inside
   the content block of waf.njk before the scripts. The zones page ships the
   waf.* keys it needs in its own island (#zones-i18n).
-  tests/waf_ui_static.test.js checks the key list.
+  tests/waf_ui_static.test.js checks the key list. Release B §3 appends the
+  keys of the tabs, the assistant, own IPs, the scanner ban and the ban list
+  (waf-assistant.js; tests/waf_assistant_ui.test.js).
 #}
 {%- set wafI18nKeys = [
   'common.cancel', 'common.close', 'common.loading', 'common.refresh', 'common.error', 'waf.page_sub', 'waf.summary',
@@ -32,6 +34,31 @@
   'waf.err.caddy_sync', 'waf.err.mode_invalid', 'waf.err.paranoia_invalid',
   'waf.err.requires_http', 'waf.err.license', 'waf.err.route_not_found',
   'waf.detail_request', 'waf.detail_engine', 'waf.detail_interrupted_yes', 'waf.detail_interrupted_no', 'waf.detail_data',
-  'waf.detail_tags', 'waf.detail_others', 'waf.detail_none', 'waf.detail_json'
+  'waf.detail_tags', 'waf.detail_others', 'waf.detail_none', 'waf.detail_json',
+  'waf.tabs_label', 'waf.tab_events', 'waf.tab_assistant', 'waf.tab_protect', 'waf.summary_trusted',
+  'waf.hide_trusted', 'waf.show_trusted', 'waf.trusted_tag', 'waf.trusted_row_hint', 'waf.asst_intro',
+  'waf.asst_summary', 'waf.asst_ready', 'waf.asst_review', 'waf.asst_too_early', 'waf.asst_no_traffic',
+  'waf.asst_ready_hint', 'waf.asst_review_hint', 'waf.asst_too_early_hint', 'waf.asst_no_traffic_hint',
+  'waf.asst_block_active', 'waf.asst_hours', 'waf.asst_days', 'waf.asst_since', 'waf.asst_events',
+  'waf.asst_rules_title', 'waf.asst_rules_empty', 'waf.asst_col_rule', 'waf.asst_col_hits', 'waf.asst_col_ips',
+  'waf.asst_col_paths', 'waf.asst_col_verdict', 'waf.asst_verdict_attack', 'waf.asst_verdict_false_positive',
+  'waf.asst_verdict_unclear', 'waf.asst_reason_secret', 'waf.asst_reason_scanner', 'waf.asst_reason_series',
+  'waf.asst_reason_banned', 'waf.asst_reason_fp', 'waf.asst_reason_unclear', 'waf.asst_suggest_title',
+  'waf.asst_suggest_hint', 'waf.asst_suggest_rule', 'waf.asst_suggest_path', 'waf.asst_apply', 'waf.asst_apply_all',
+  'waf.asst_applied', 'waf.asst_apply_ok', 'waf.asst_to_block', 'waf.asst_block_title', 'waf.asst_block_msg',
+  'waf.asst_block_warn', 'waf.asst_block_ok', 'waf.asst_show_events', 'waf.asst_empty', 'waf.asst_load_error',
+  'waf.trusted_title', 'waf.trusted_desc', 'waf.trusted_label', 'waf.trusted_ph', 'waf.trusted_add',
+  'waf.trusted_remove', 'waf.trusted_empty', 'waf.trusted_count', 'waf.trusted_invalid', 'waf.trusted_duplicate',
+  'waf.trusted_limit', 'waf.bypass_label', 'waf.bypass_desc', 'waf.bypass_warn', 'waf.bypass_confirm_title',
+  'waf.bypass_confirm', 'waf.bypass_confirm_ok', 'waf.save', 'waf.saved', 'waf.saved_synced', 'waf.unsaved',
+  'waf.autoban_title', 'waf.autoban_desc', 'waf.autoban_enabled', 'waf.autoban_threshold', 'waf.autoban_window',
+  'waf.autoban_duration', 'waf.autoban_summary', 'waf.autoban_off', 'waf.autoban_range', 'waf.bans_title',
+  'waf.bans_empty', 'waf.bans_col_ip', 'waf.bans_col_reason', 'waf.bans_col_hits', 'waf.bans_col_since',
+  'waf.bans_col_until', 'waf.bans_col_kind', 'waf.bans_manual', 'waf.bans_auto', 'waf.bans_never',
+  'waf.bans_reason_manual', 'waf.bans_reason_scanner', 'waf.bans_unban', 'waf.bans_unban_title',
+  'waf.bans_unban_msg', 'waf.bans_unbanned', 'waf.bans_add', 'waf.bans_add_title', 'waf.bans_ip_label',
+  'waf.bans_duration_label', 'waf.bans_reason_label', 'waf.bans_reason_ph', 'waf.bans_add_hint', 'waf.bans_added',
+  'waf.err.trusted_invalid', 'waf.err.settings_invalid', 'waf.err.autoban_invalid', 'waf.err.ban_ip_invalid',
+  'waf.err.ban_trusted', 'waf.err.ban_duration', 'waf.err.ban_not_found', 'waf.err.token_forbidden'
 ] -%}
 <script type="application/json" id="waf-i18n" nonce="{{ cspNonce }}">{ {% for k in wafI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>

@@ -265,15 +265,14 @@
     const s = r.events_24h != null || r.blocked_24h != null ? r
       : (isObj(r.totals) ? r.totals : (isObj(r.summary) ? r.summary : (isObj(r.stats) ? r.stats : null)));
     const sum = (k) => routes.reduce((n, x) => n + x[k], 0);
-    return {
-      engine_available: r.engine_available !== false,
-      routes,
-      totals: {
-        events_24h: s && s.events_24h != null ? toInt(s.events_24h) : sum('events_24h'),
-        blocked_24h: s && s.blocked_24h != null ? toInt(s.blocked_24h) : sum('blocked_24h'),
-        routes: routes.length,
-      },
+    const totals = {
+      events_24h: s && s.events_24h != null ? toInt(s.events_24h) : sum('events_24h'),
+      blocked_24h: s && s.blocked_24h != null ? toInt(s.blocked_24h) : sum('blocked_24h'),
+      routes: routes.length,
     };
+    // Requests from own (trusted) IPs, left out of the counters (release B §3).
+    if (r.trusted_24h != null) totals.trusted_24h = toInt(r.trusted_24h);
+    return { engine_available: r.engine_available !== false, routes, totals };
   }
   // Route id for an event: its own route_id, else the WAF route of its host.
   function routeIdFor(ev, routes) {

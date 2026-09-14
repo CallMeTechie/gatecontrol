@@ -8,6 +8,10 @@
 // /waf/routes/:id/exclusions), live reload on gc:waf (debounced). Deep link
 // /waf?host=<fqdn>[&action=blocked|detected][&range=7d|30d]. A 404 of the
 // WAF API or engine_available:false degrade to hints. DOM via el() only.
+// Own IPs (release B §3): events with trusted:true carry the tag „eigene IP“
+// and can be hidden (#wf-hide-trusted, remembered per browser); the summary
+// names the requests from own IPs that the tiles leave out (trusted_24h).
+// gc:waf ban/unban events belong to the ban list (waf-assistant.js).
 (function () {
   const list = document.getElementById('wf-events-list');
   if (!list) return;
@@ -42,7 +46,9 @@
     expanded: new Set(),   // event keys with the raw record open
     excluded: new Set(),   // 'rule:<route>:<id>' / 'path:<route>:<path>' added on this page
     lastLoaded: null,
+    hideTrusted: readHideTrusted(),
   };
+  function readHideTrusted() { try { return window.localStorage.getItem('gc-waf-hide-trusted') === '1'; } catch (_) { return false; } }
 
   // ─── Loading ───────────────────────────────────────────────────────────
   let seq = 0;
@@ -124,6 +130,7 @@
   let pendingList = false;       // periodic / reconnect: refresh the first page
   function onWafEvent(e) {
     const d = e && e.detail;
+    if (d && (d.kind === 'ban' || d.kind === 'unban')) return;
     if (!d || eventAffectsList(d)) pendingNewEvent = true;
     schedule();
   }
@@ -199,12 +206,18 @@
     });
     const n = $('wf-new-events');
     if (n) n.hidden = !state.pendingNew;
+    const ht = $('wf-hide-trusted');
+    if (ht) {
+      ht.classList.toggle('on', state.hideTrusted);
+      ht.setAttribute('aria-pressed', state.hideTrusted ? 'true' : 'false');
+    }
   }
   function renderSummary() {
     const n = $('wf-summary');
     if (!n) return;
     const s = totals();
-    n.textContent = s ? t('waf.summary', { events: s.events_24h, blocked: s.blocked_24h, routes: s.routes }) : t('waf.page_sub');
+    n.textContent = s ? t('waf.summary', { events: s.events_24h, blocked: s.blocked_24h, routes: s.routes })
+      + (s.trusted_24h ? ' · ' + t('waf.summary_trusted', { n: s.trusted_24h }) : '') : t('waf.page_sub');
   }
 
   function messageRow(node, cls, cols) {
@@ -226,15 +239,17 @@
         : t('common.loading'), state.eventsError ? 'wf-error' : ''));
       return;
     }
-    if (!state.events.length) {
+    const shown = state.hideTrusted ? state.events.filter((e) => !e.trusted) : state.events;
+    if (!shown.length) {
       list.replaceChildren(messageRow(el('div', { class: 'wf-empty-box', dataset: { wf: 'empty' } }, [
         el('div', { class: 'wf-empty-title', text: t('waf.empty') }),
         el('div', { class: 'wf-empty-hint', text: t('waf.empty_hint') }),
         filterActive() ? el('button', { type: 'button', class: 'wf-link wf-reset', text: t('waf.reset_filters'), on: { click: () => setFilter({ host: '', action: 'all', range: '24h' }) } }) : null,
+        state.hideTrusted && state.events.length ? el('button', { type: 'button', class: 'wf-link wf-show-trusted', text: t('waf.show_trusted', { n: state.events.length }), on: { click: () => setHideTrusted(false) } }) : null,
       ])));
       return;
     }
-    list.replaceChildren(...state.events.flatMap(buildRow));
+    list.replaceChildren(...shown.flatMap(buildRow));
   }
 
   function buildRow(ev) {
@@ -294,14 +309,15 @@
     pathBtn.addEventListener('click', () => exclude('path', ev, routeId));
 
     const a = W.actionKey(ev.action);
-    tr = el('tr', { class: 'wf-row wf-row-' + a + (ruleDone || pathDone ? ' wf-row-excluded' : '') + (detailTr && !detailTr.hidden ? ' wf-open' : ''), dataset: { eventKey: key, action: a, host: ev.host } }, [
+    tr = el('tr', { class: 'wf-row wf-row-' + a + (ruleDone || pathDone ? ' wf-row-excluded' : '') + (detailTr && !detailTr.hidden ? ' wf-open' : '') + (ev.trusted ? ' wfa-row-trusted' : ''), dataset: { eventKey: key, action: a, host: ev.host } }, [
       el('td', { class: 'wf-cell-time', title: ev.ts ? W.fmtTime(ev.ts) : null }, timeParts(ev.ts)),
       el('td', { class: 'wf-cell-host' }, [el('button', { type: 'button', class: 'wf-host-link', title: t('waf.show_events'), text: ev.host || '—', on: { click: () => setFilter({ host: ev.host }) } })]),
       el('td', { class: 'wf-cell-action' }, [W.actionTag(ev.action)]),
       el('td', { class: 'wf-cell-rule' }, [hasRule ? el('code', { class: 'wf-rule', text: String(ev.rule_id) }) : el('span', { class: 'wf-muted', text: '—' }),
         ruleDone || pathDone ? el('span', { class: 'tag tag-grey wf-excluded-tag', text: t('waf.excluded_tag') }) : null]),
       el('td', { class: 'wf-cell-message' }, [msg]),
-      el('td', { class: 'wf-cell-client' }, [el('code', { class: 'wf-mono', text: ev.client_ip || '—' })]),
+      el('td', { class: 'wf-cell-client' }, [el('code', { class: 'wf-mono', text: ev.client_ip || '—' }),
+        ev.trusted ? el('span', { class: 'tag tag-blue wfa-trusted-tag', title: t('waf.trusted_row_hint'), text: t('waf.trusted_tag') }) : null]),
       el('td', { class: 'wf-cell-request' }, [el('code', { class: 'wf-req', title: W.requestLine(ev), text: W.requestLine(ev) })]),
       el('td', { class: 'wf-cell-actions' }, [el('div', { class: 'wf-actions' }, [ruleBtn, pathBtn])]),
     ]);
@@ -442,6 +458,14 @@
   if (fresh) fresh.addEventListener('click', () => { state.pendingNew = false; reload(); });
   const refreshBtn = $('btn-waf-refresh');
   if (refreshBtn) refreshBtn.addEventListener('click', () => reload());
+  function setHideTrusted(on) {
+    state.hideTrusted = !!on;
+    try { window.localStorage.setItem('gc-waf-hide-trusted', on ? '1' : '0'); } catch (_) { /* storage off */ }
+    renderFilters();
+    renderRows();
+  }
+  const hideTrusted = $('wf-hide-trusted');
+  if (hideTrusted) hideTrusted.addEventListener('click', () => setHideTrusted(!state.hideTrusted));
 
   // ─── Init ──────────────────────────────────────────────────────────────
   render();

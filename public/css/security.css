@@ -4,6 +4,7 @@
    Aurora tokens (--surface*, --line*, --teal, --amber*, …). Sections:
      lh-   licence hint (public/js/license-hint.js), every page
      sc-   Sicherheits-Check page (security.njk / security.js)
+     wfa-  WAF page tabs, assistant, own IPs, scanner ban, bans (waf-assistant.js)
    ========================================================================== */
 
 /* ─── Licence hint (lh-) ─── */
@@ -136,4 +137,113 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
   .sc-exp-table tr.sc-exp-unprotected { box-shadow: inset 3px 0 0 var(--amber); }
   .sc-group-head, .sc-check { padding-left: 14px; padding-right: 14px; }
   .sc-check-count { margin-left: 0; }
+}
+
+/* ─── WAF: tabs, assistant, own IPs, scanner ban, bans (wfa-) ─── */
+.wfa-tabs { margin-bottom: 16px; }
+.wfa-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 11px; font-weight: 700; font-family: var(--font-mono); }
+.wfa-count:empty { display: none; }
+.wfa-panel[hidden] { display: none; }
+.wfa-intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.wfa-intro p { margin: 0; flex: 1 1 420px; max-width: 90ch; }
+.wfa-summary { font-weight: 600; color: var(--text); font-size: 12.5px; }
+.wfa-routes { display: flex; flex-direction: column; gap: 14px; }
+.wfa-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; padding: 24px 16px; border: 1px dashed var(--line-2); border-radius: var(--r); color: var(--muted); font-size: 13.5px; text-align: center; }
+.wfa-state.wfa-error { border-color: var(--red-bd); color: var(--red); }
+.wf-empty td .wfa-state { border: 0; padding: 10px 4px; }
+.card.wfa-route { padding: 16px 18px; }
+.card.wfa-route::after { content: none; }
+.wfa-route.wfa-rd-ready { border-color: var(--green-bd); }
+.wfa-route.wfa-rd-review { border-color: var(--amber-bd); }
+.wfa-route-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.wfa-host { font-family: var(--font-mono); font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.wfa-spacer { flex: 1 1 auto; }
+.wfa-events-link { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.wfa-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--muted); font-size: 12.5px; }
+.wfa-fact { display: inline-flex; align-items: center; gap: 5px; }
+.wfa-hint { margin: 10px 0 0; padding: 8px 11px; border-radius: 9px; background: var(--chip); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.wfa-hint-ready { background: var(--green-bg); color: var(--green); }
+.wfa-hint-review { background: var(--amber-bg); color: var(--amber); }
+.wfa-hint-block { background: var(--red-bg); color: var(--red); }
+.wfa-sub-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.wfa-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.wfa-rules-table.data-table th, .wfa-rules-table.data-table td { padding: 9px 11px; font-size: 12.5px; vertical-align: top; }
+.wfa-msg { margin-top: 3px; color: var(--muted); font-size: 12px; max-width: 42ch; }
+.wfa-c-num { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.wfa-rules-table th:nth-child(2), .wfa-rules-table th:nth-child(3) { text-align: right; }
+.wfa-c-paths { max-width: 260px; }
+.wfa-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.wfa-reason { margin-top: 4px; color: var(--muted); font-size: 11.5px; line-height: 1.4; max-width: 34ch; }
+.tag.wfa-verdict, .tag.wfa-ready, .tag.wfa-ban-kind { font-size: 11px; padding: 2px 8px; }
+.wfa-rules-empty { margin-top: 12px; color: var(--faint); font-size: 12.5px; }
+.wfa-suggest-hint { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.wfa-suggest-list { display: flex; flex-direction: column; gap: 6px; }
+.wfa-suggest-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+.wfa-suggest-item.wfa-done { opacity: .65; }
+.wfa-suggest-value { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.wfa-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.wfa-actions .btn svg, .wfa-suggest .btn svg, .wfa-unban svg { width: 12px; height: 12px; }
+.wfa-row-trusted td { opacity: .72; }
+.tag.wfa-trusted-tag { margin-left: 6px; font-size: 10.5px; padding: 1px 7px; }
+/* own IPs + scanner ban */
+.wfa-settings-state { margin-bottom: 14px; }
+.wfa-settings-state[hidden] { display: none; }
+.wfa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.card.wfa-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
+.card.wfa-card.wfa-unavailable { opacity: .55; pointer-events: none; }
+.wfa-card-head { display: flex; align-items: center; gap: 8px; }
+.wfa-card-head .wfa-count { margin-left: auto; }
+.wfa-desc { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+.wfa-ip-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; align-items: center; }
+.wfa-ip-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--chip); font-family: var(--font-mono); font-size: 12px; max-width: 100%; }
+.wfa-ip-chip code { overflow-wrap: anywhere; }
+.wfa-ip-remove { width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--faint); cursor: pointer; flex: 0 0 auto; }
+.wfa-ip-remove:hover { background: var(--red-bg); color: var(--red); }
+.wfa-ip-empty { color: var(--faint); font-size: 12.5px; }
+.wfa-add-row { display: flex; gap: 8px; }
+.wfa-add-row .form-input { flex: 1 1 auto; min-width: 0; }
+.wfa-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--chip); }
+.wfa-switch-title { font-size: 13px; font-weight: 600; }
+.wfa-switch-desc { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.toggle[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.wfa-warn { padding: 9px 11px; border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.wfa-warn.wfa-warn-on { border-color: var(--amber-bd); border-left-color: var(--amber); background: var(--amber-bg); color: var(--amber); font-weight: 600; }
+.wfa-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.wfa-fields.wfa-fields-off { opacity: .6; }
+.wfa-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.wfa-field .form-input { width: 100%; }
+.form-input.wfa-invalid { border-color: var(--red); }
+.wfa-field-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+.wfa-card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: auto; padding-top: 4px; }
+.wfa-dirty { color: var(--amber); font-size: 12px; font-weight: 600; }
+.wfa-card .btn:disabled, .sc-page .btn:disabled, .lh-hint .btn:disabled, .wfa-route .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
+.wfa-dirty[hidden] { display: none; }
+.wfa-bans-card .card-head { display: flex; align-items: center; gap: 9px; }
+.wfa-bans-card .wfa-ban-add { margin-left: auto; }
+.wfa-ban-ip { font-weight: 600; }
+.wfa-ban-reason { color: var(--muted); font-size: 12.5px; max-width: 36ch; }
+.wfa-c-act { text-align: right; white-space: nowrap; }
+.wfa-dialog .wfa-field { margin-top: 10px; }
+.wfa-dialog .wf-hint { margin-top: 10px; }
+@media (max-width: 900px) {
+  .wfa-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .wfa-fields { grid-template-columns: minmax(0, 1fr); }
+  .wfa-field-row { grid-template-columns: minmax(0, 1fr); }
+  .card.wfa-route { padding: 14px; }
+  /* rule and ban tables → stacked rows */
+  .wfa-rules-table thead, .wfa-bans-table thead { display: none; }
+  .wfa-rules-table, .wfa-rules-table tbody, .wfa-bans-table, .wfa-bans-table tbody { display: block; }
+  .wfa-rules-table tr, .wfa-bans-table tr.wfa-ban-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .wfa-rules-table.data-table td, .wfa-bans-table.data-table td { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; text-align: left; min-width: 0; }
+  .wfa-rules-table td[data-label]::before, .wfa-bans-table td[data-label]::before { content: attr(data-label); color: var(--faint); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .wfa-rules-table td.wfa-c-rule, .wfa-rules-table td.wfa-c-paths, .wfa-rules-table td.wfa-c-verdict { grid-column: 1 / -1; }
+  .wfa-c-paths { max-width: none; }
+  .wfa-path { white-space: normal; overflow-wrap: anywhere; }
+  .wfa-bans-table td.wfa-c-act { grid-column: 1 / -1; align-items: flex-end; }
+  .wfa-bans-table tr.wf-empty, .wfa-bans-table tr.wf-empty td { display: block; }
+  .wfa-bans-table.data-table tr.wf-empty td { padding: 12px 14px; }
+  .wfa-c-num { text-align: left; }
+  .wfa-bans-card .card-head { flex-wrap: wrap; }
 }

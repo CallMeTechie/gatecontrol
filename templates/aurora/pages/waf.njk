@@ -5,7 +5,11 @@
   variant. Same ids as default/pro so waf.js needs no theme branch; Aurora
   keeps its KPI strip, the filter toolbar above the card, the .card.span12 +
   .data-table layout and the primary refresh button in .page-actions (like
-  certificates.njk). Without the waf license only the locked notice renders.
+  certificates.njk). Without the waf license only the locked notice renders
+  (with the licence hint, public/js/license-hint.js).
+  Release B §3 (docs/feature-release-b.md): three tabs — „Ereignisse“ (the
+  original page, waf.js), „Assistent“ and „Eigene IPs & Sperren“
+  (waf-assistant.js; deep links /waf#assistant, /waf#protect).
 #}
 
 {% block content %}
@@ -26,6 +30,13 @@
 </div>
 
 {% if license.features.waf %}
+<div class="tabs wfa-tabs" id="wf-tabs" role="tablist" aria-label="{{ t('waf.tabs_label') }}">
+  <button type="button" class="tab active" id="wf-tab-events" role="tab" aria-selected="true" aria-controls="wf-panel-events" data-wf-tab="events">{{ t('waf.tab_events') }}</button>
+  <button type="button" class="tab" id="wf-tab-assistant" role="tab" aria-selected="false" aria-controls="wf-panel-assistant" data-wf-tab="assistant" tabindex="-1">{{ t('waf.tab_assistant') }}</button>
+  <button type="button" class="tab" id="wf-tab-protect" role="tab" aria-selected="false" aria-controls="wf-panel-protect" data-wf-tab="protect" tabindex="-1">{{ t('waf.tab_protect') }}</button>
+</div>
+
+<section id="wf-panel-events" class="wfa-panel" role="tabpanel" aria-labelledby="wf-tab-events" data-wf-panel="events">
 {# KPI strip: static tiles, values filled by waf.js #}
 <div class="aurora-routes-kpis wf-tiles" id="wf-tiles">
   <div class="aurora-routes-kpi wf-tile" id="wf-tile-events" data-action="all" role="button" tabindex="0"><b id="wf-tile-events-val">–</b><span>{{ t('waf.tile_events') }}</span></div>
@@ -56,6 +67,9 @@
         <button type="button" class="filter-chip" data-range="7d" aria-pressed="false">{{ t('waf.range_7d') }}</button>
         <button type="button" class="filter-chip" data-range="30d" aria-pressed="false">{{ t('waf.range_30d') }}</button>
       </div>
+    </div>
+    <div class="wf-filter wfa-trusted-filter">
+      <button type="button" class="filter-chip wfa-trusted-chip" id="wf-hide-trusted" aria-pressed="false" title="{{ t('waf.trusted_row_hint') }}">{{ t('waf.hide_trusted') }}</button>
     </div>
   </div>
 </div>
@@ -114,6 +128,100 @@
     </table>
   </div>
 </div>
+</section>
+
+<section id="wf-panel-assistant" class="wfa-panel" role="tabpanel" aria-labelledby="wf-tab-assistant" data-wf-panel="assistant" hidden>
+  <div class="wfa-intro">
+    <p>{{ t('waf.asst_intro') }}</p>
+    <span class="wfa-summary" id="wfa-summary" role="status"></span>
+  </div>
+  <div class="wfa-routes" id="wfa-routes" aria-live="polite"></div>
+</section>
+
+<section id="wf-panel-protect" class="wfa-panel" role="tabpanel" aria-labelledby="wf-tab-protect" data-wf-panel="protect" hidden>
+  <div class="wfa-settings-state" id="wfa-settings-state" hidden></div>
+  <div class="wfa-grid">
+    <div class="card wfa-card" id="wfa-trusted-card">
+      <div class="wfa-card-head">
+        <span class="card-title">{{ t('waf.trusted_title') }}</span>
+        <span class="wfa-count" id="wfa-trusted-count"></span>
+      </div>
+      <p class="wfa-desc">{{ t('waf.trusted_desc') }}</p>
+      <div class="wfa-ip-list" id="wfa-trusted-list" role="list" aria-label="{{ t('waf.trusted_title') }}"></div>
+      <div class="wfa-add-row">
+        <input type="text" class="form-input wf-mono" id="wfa-trusted-input" maxlength="400" autocomplete="off" spellcheck="false" placeholder="{{ t('waf.trusted_ph') }}" aria-label="{{ t('waf.trusted_label') }}">
+        <button type="button" class="btn btn-sm" id="wfa-trusted-add">{{ t('waf.trusted_add') }}</button>
+      </div>
+      <div class="wfa-switch-row">
+        <div>
+          <div class="wfa-switch-title">{{ t('waf.bypass_label') }}</div>
+          <div class="wfa-switch-desc">{{ t('waf.bypass_desc') }}</div>
+        </div>
+        <div class="toggle" id="wfa-bypass" data-managed="true" role="switch" aria-checked="false" aria-label="{{ t('waf.bypass_label') }}" tabindex="0"></div>
+      </div>
+      <div class="wfa-warn" id="wfa-bypass-warn" role="note">{{ t('waf.bypass_warn') }}</div>
+      <div class="zn-field-error wf-field-error" id="wfa-trusted-error" role="alert" hidden></div>
+      <div class="wfa-card-foot">
+        <span class="wfa-dirty" id="wfa-trusted-dirty" hidden>{{ t('waf.unsaved') }}</span>
+        <button type="button" class="btn btn-primary btn-sm" id="wfa-trusted-save" disabled>{{ t('waf.save') }}</button>
+      </div>
+    </div>
+
+    <div class="card wfa-card" id="wfa-autoban-card">
+      <div class="wfa-card-head">
+        <span class="card-title">{{ t('waf.autoban_title') }}</span>
+      </div>
+      <p class="wfa-desc">{{ t('waf.autoban_desc') }}</p>
+      <div class="wfa-switch-row">
+        <div>
+          <div class="wfa-switch-title">{{ t('waf.autoban_enabled') }}</div>
+          <div class="wfa-switch-desc" id="wfa-autoban-summary">{{ t('waf.autoban_off') }}</div>
+        </div>
+        <div class="toggle" id="wfa-autoban" data-managed="true" role="switch" aria-checked="false" aria-label="{{ t('waf.autoban_enabled') }}" tabindex="0"></div>
+      </div>
+      <div class="wfa-fields" id="wfa-autoban-fields">
+        <label class="wfa-field" for="wfa-ab-threshold"><span class="wf-f-label">{{ t('waf.autoban_threshold') }}</span>
+          <input type="number" class="form-input" id="wfa-ab-threshold" min="1" max="1000" step="1" inputmode="numeric"></label>
+        <label class="wfa-field" for="wfa-ab-window"><span class="wf-f-label">{{ t('waf.autoban_window') }}</span>
+          <input type="number" class="form-input" id="wfa-ab-window" min="1" max="1440" step="1" inputmode="numeric"></label>
+        <label class="wfa-field" for="wfa-ab-duration"><span class="wf-f-label">{{ t('waf.autoban_duration') }}</span>
+          <input type="number" class="form-input" id="wfa-ab-duration" min="1" max="8760" step="1" inputmode="numeric"></label>
+      </div>
+      <div class="zn-field-error wf-field-error" id="wfa-autoban-error" role="alert" hidden></div>
+      <div class="wfa-card-foot">
+        <span class="wfa-dirty" id="wfa-autoban-dirty" hidden>{{ t('waf.unsaved') }}</span>
+        <button type="button" class="btn btn-primary btn-sm" id="wfa-autoban-save" disabled>{{ t('waf.save') }}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card span12 wf-card wfa-bans-card" id="wfa-bans-card">
+    <div class="card-head wf-card-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      <span class="card-title">{{ t('waf.bans_title') }}</span>
+      <span class="wfa-count" id="wfa-bans-count"></span>
+      <button type="button" class="btn btn-sm wfa-ban-add" id="wfa-ban-add">{{ t('waf.bans_add') }}</button>
+    </div>
+    <div class="wf-table-wrap">
+      <table class="data-table wf-table wfa-bans-table" id="wfa-bans-table">
+        <thead>
+          <tr>
+            <th>{{ t('waf.bans_col_ip') }}</th>
+            <th>{{ t('waf.bans_col_reason') }}</th>
+            <th>{{ t('waf.bans_col_hits') }}</th>
+            <th>{{ t('waf.bans_col_since') }}</th>
+            <th>{{ t('waf.bans_col_until') }}</th>
+            <th>{{ t('waf.bans_col_kind') }}</th>
+            <th><span class="sr-only">{{ t('waf.col_actions') }}</span></th>
+          </tr>
+        </thead>
+        <tbody id="wfa-bans-list">
+          <tr class="wf-empty"><td colspan="7">{{ t('common.loading') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
 {% include "partials/waf-i18n.njk" %}
 {% else %}
@@ -122,6 +230,7 @@
   <div>
     <div class="wf-locked-title">{{ t('waf.locked_title') }}</div>
     <div class="wf-locked-text">{{ t('waf.locked') }}</div>
+    <div class="wf-locked-hint-slot" id="wf-locked-hint" data-license-hint="waf" data-license-hint-compact></div>
   </div>
 </div>
 {% endif %}
@@ -130,6 +239,7 @@
 {% block scripts %}
 {% if license.features.waf %}
 <script src="/js/waf-ui.js?v={{ appVersion }}"></script>
+<script src="/js/waf-assistant.js?v={{ appVersion }}"></script>
 <script src="/js/waf.js?v={{ appVersion }}"></script>
 {% endif %}
 {% endblock %}
