@@ -83,8 +83,13 @@ function formatTimestamp(date) {
 
 /**
  * Run a backup now. Returns the filename.
+ *
+ * Afterwards the file is uploaded to every enabled off-site target
+ * (services/offsite, docs/feature-release-b.md §7) — asynchronously, the
+ * caller never waits for or fails with an upload. { offsite: false } skips
+ * that (POST /targets/:id/run uploads to one target itself).
  */
-function runBackup() {
+function runBackup({ offsite = true } = {}) {
   ensureDir();
 
   const data = backup.createBackup();
@@ -108,6 +113,13 @@ function runBackup() {
     source: 'system',
     severity: 'info',
   });
+
+  if (offsite) {
+    setImmediate(() => {
+      require('./offsite').uploadAfterBackup(filepath)
+        .catch((err) => logger.warn({ err: err.message }, 'Off-site upload hook failed'));
+    });
+  }
 
   return filename;
 }
