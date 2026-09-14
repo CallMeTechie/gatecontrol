@@ -36,12 +36,16 @@ RUN npm ci --production --ignore-scripts && \
 # Stage 3: Runtime
 FROM node:20-alpine
 
+# openssh-client-default (sftp/ssh/ssh-keygen) and samba-client (smbclient):
+# transports for off-site backups (docs/feature-release-b.md §7) — SFTP with
+# GateControl's own ed25519 key, SMB shares on a NAS. S3/WebDAV need nothing.
 RUN apk upgrade --no-cache && \
     apk add --no-cache \
     wireguard-tools \
     iptables ip6tables \
     supervisor curl procps openssl \
-    dnsmasq && \
+    dnsmasq \
+    openssh-client-default samba-client && \
     npm install -g npm@11
 
 COPY --from=caddy-builder /usr/bin/caddy /usr/local/bin/caddy
