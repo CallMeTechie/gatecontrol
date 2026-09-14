@@ -89,7 +89,7 @@ describe('layout wiring', () => {
     const aurora = layout.indexOf('/css/aurora.css?v=');
     const nav = layout.indexOf('/css/nav.css?v=');
     assert.ok(aurora > 0 && nav > aurora, 'nav.css is linked after aurora.css');
-    assert.ok(layout.slice(aurora, nav).split('\n').every((l) => !l.trim() || /<link rel="stylesheet" href="\/css\/[a-z-]+\.css\?v=/.test(l.trim())), 'only feature stylesheets in between');
+    assert.ok(layout.slice(aurora, nav).split('\n').slice(1, -1).every((l) => !l.trim() || /<link rel="stylesheet" href="\/css\/[a-z-]+\.css\?v=/.test(l.trim())), 'only feature stylesheets in between');
     assert.match(layout, /app\.js\?v=\{\{ appVersion \}\}"><\/script>\n<script src="\/js\/command-palette\.js\?v=\{\{ appVersion \}\}"><\/script>/);
   });
   it('every palette.* key and the settings tab labels are in the GC.t whitelist', () => {
