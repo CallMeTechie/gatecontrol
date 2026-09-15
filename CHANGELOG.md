@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.127.0] — 2026-09-15
 
 ### Features
 - **Sicherheits-Check** (Sidebar → Sicherheit): Eine Seite zeigt den Sicherheitsstand. Sie prüft Admins ohne 2FA, die 2FA-Pflicht, HTTPS-Einträge ohne HSTS, Domains ohne CAA-Record, öffentliche Einträge ohne WAF und WAF-Einträge, die bereit zum Blockieren sind. Außerdem prüft sie öffentliche Einträge ohne Schutz, Backups außer Haus, die TLS-Mindestversion und den Auto-Update-Status. Jeder Punkt hat eine passende Aktion: direkt beheben, zur richtigen Stelle springen oder den DNS-Eintrag kopieren. Der Reiter „Öffentlich erreichbar“ listet alle öffentlichen Einträge mit ihren Schutzfunktionen (Auth, mTLS, IP-Filter, WAF, HSTS, Rate-Limit).
