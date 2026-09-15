@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const { setup, teardown, getAgent } = require('./helpers/setup');
 
 let agent, db, license, assistantSvc, config;
+let origCaddyDataDir;
 let rMain, rEarly, rQuiet, rBusy, rBlock;
 
 const GET = (p) => agent.get('/api/v1' + p);
@@ -68,9 +69,11 @@ before(async () => {
   rBlock = insertRoute('block.assist.test', { waf_mode: 'block', waf_mode_changed_at: iso(100 * H) });
   insertRoute('off.assist.test', { waf_enabled: 0 });
 
-  // Access log: traffic for busy.assist.test after detect_since.
+  // Access log: traffic for busy.assist.test after detect_since. Written to a
+  // temp data dir — /data is not writable on CI runners.
+  origCaddyDataDir = config.caddy.dataDir;
+  config.caddy.dataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'gc-wafassist-'));
   const dir = config.caddy.dataDir;
-  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'access.log'), [
     JSON.stringify({ ts: (Date.now() - 5 * H) / 1000, request: { host: 'busy.assist.test', uri: '/' }, status: 200 }),
     JSON.stringify({ ts: (Date.now() - 60 * H) / 1000, request: { host: 'quiet.assist.test', uri: '/' }, status: 200 }),
@@ -79,7 +82,14 @@ before(async () => {
   assistantSvc._resetAccessCacheForTest();
 });
 
-after(() => { license._overrideForTest({ waf: false }); teardown(); });
+after(() => {
+  license._overrideForTest({ waf: false });
+  if (origCaddyDataDir !== undefined) {
+    try { fs.rmSync(config.caddy.dataDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    config.caddy.dataDir = origCaddyDataDir;
+  }
+  teardown();
+});
 
 test('response shape and route list (WAF routes only)', async () => {
   const r = await GET('/waf/assistant');
