@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.126.0] — 2026-09-15
 
 ### Änderungen
 - **Aurora ist das einzige Theme.** Die Themes „Standard“ und „Pro“ sind entfernt (rund 21.000 Zeilen Templates, Stile und Skripte). Die Auswahl „Standard-Design“ in den Einstellungen und das persönliche Theme im Profil entfallen; bestehende Einstellungen werden auf Aurora umgestellt (Migration v75). `GC_DEFAULT_THEME` wird ignoriert.
