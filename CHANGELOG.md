@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.127.1] — 2026-09-15
 
 ### Fixes
 - Nach jedem Neustart (also nach jedem Update) waren Gateway-Routen und VPN-Clients etwa eine Minute lang nicht erreichbar (502). WireGuard wird beim Start neu aufgebaut und kannte die Internet-Adressen der Peers hinter NAT nicht mehr. GateControl konnte dann selbst keine Verbindung aufbauen und musste warten, bis sich jeder Peer von sich aus meldet. Jetzt merkt sich GateControl laufend, wo aktive Peers zuletzt erreichbar waren (`/data/wireguard/last-endpoints`, nur für root lesbar). Direkt nach dem Start setzt es diese Adressen wieder und stößt den Verbindungsaufbau selbst an. Im Test war der Peer sofort wieder erreichbar statt erst nach über zwei Minuten. Adressen, die älter als 30 Minuten sind, werden nicht verwendet.
