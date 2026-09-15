@@ -44,6 +44,10 @@ if ! wg-quick up "$GC_WG_INTERFACE" 2>&1 | grep -vi "privatekey"; then
 fi
 WG_UP=1
 
+# Reach recently active peers at once instead of waiting ~1 minute until each
+# re-handshakes on its own (see src/services/wgEndpoints.js). Never fatal.
+sh /app/scripts/wg-restore-endpoints.sh || true
+
 # wg0 is now up — start dnsmasq so it can bind 10.8.0.1:53 (in addition
 # to 127.0.0.1:53 via interface=lo). Alpine dnsmasq 2.91 with
 # bind-dynamic does NOT reliably pick up interfaces that appear after

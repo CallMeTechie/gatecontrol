@@ -262,6 +262,10 @@ async function start() {
     const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);
     setInterval(retryPeerExpiry, 60 * 1000);
 
+    // Remember the endpoints of active WireGuard peers so the next container
+    // start reconnects them at once (scripts/wg-restore-endpoints.sh).
+    require('./services/wgEndpoints').start();
+
     // RDP stale session cleanup (every 2 minutes)
     const retryRdpCleanup = withRetry('rdp-session-cleanup', async () => cleanupStaleRdpSessions());
     setInterval(retryRdpCleanup, 120000);
