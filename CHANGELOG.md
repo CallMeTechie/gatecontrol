@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- **Sicherheits-Check** (Sidebar → Sicherheit): Eine Seite zeigt den Sicherheitsstand. Sie prüft Admins ohne 2FA, die 2FA-Pflicht, HTTPS-Einträge ohne HSTS, Domains ohne CAA-Record, öffentliche Einträge ohne WAF und WAF-Einträge, die bereit zum Blockieren sind. Außerdem prüft sie öffentliche Einträge ohne Schutz, Backups außer Haus, die TLS-Mindestversion und den Auto-Update-Status. Jeder Punkt hat eine passende Aktion: direkt beheben, zur richtigen Stelle springen oder den DNS-Eintrag kopieren. Der Reiter „Öffentlich erreichbar“ listet alle öffentlichen Einträge mit ihren Schutzfunktionen (Auth, mTLS, IP-Filter, WAF, HSTS, Rate-Limit).
+- **Sammelaktionen** auf der Seite Domains/Routen: Einträge per Checkbox auswählen und in einem Schritt WAF, HSTS oder Monitoring einschalten oder die Einträge aktivieren und deaktivieren. Alle Änderungen gehen mit einem einzigen Caddy-Reload durch. Scheitert die Prüfung bei einem Eintrag, wird nichts geändert. API: `POST /api/v1/routes/bulk`.
+- **WAF-Standard pro Domain**, wie beim HSTS-Standard: neue Hosts übernehmen ihn, auf Wunsch auch alle bestehenden.
+- **WAF-Assistent** (Seite WAF → Assistent): zeigt pro Route nach der Beobachtungsphase, welche Regeln angeschlagen haben. Er bewertet sie als Angriff, möglichen Fehlalarm oder unklar, schlägt Ausnahmen vor und stellt auf Klick auf „Blockieren“ um.
+- **Eigene IPs:** Diese Adressen zählen nicht in der WAF-Statistik und werden nie gesperrt. Auf Wunsch lassen sie sich ganz von der WAF ausnehmen.
+- **Scanner-Sperre** (Standard aus): IPs, die wiederholt nach Geheimnissen wie `.env` oder `.git` oder nach fremden Dateien suchen, werden für eine einstellbare Zeit auf allen HTTP-Routen gesperrt. Die Verwaltungsoberfläche und die Let's-Encrypt-Prüfung sind ausgenommen. Die Liste der gesperrten IPs erlaubt Freigeben und manuelles Sperren.
+- **Backups außer Haus** (Pro, wie geplante Backups): Nach jedem Backup landet eine verschlüsselte Kopie auf SFTP, SMB, S3-kompatiblem Speicher oder WebDAV.
+  - Die Kopie ist mit einer Passphrase verschlüsselt (scrypt + AES-256-GCM, Endung `.gcbk`). Auf Wunsch enthält sie den Datenschlüssel, dann reichen Passphrase und Archiv für eine Wiederherstellung auf neuer Hardware.
+  - Pro Ziel gibt es Aufbewahrung, Verbindungstest, „Jetzt hochladen“ und eine Dateiliste.
+  - Für SFTP erzeugt GateControl einen eigenen Schlüssel. Ein NAS im Heimnetz erreicht man über eine interne L4-Route.
+  - Wiederherstellen akzeptiert `.gcbk`; `node src/bin/offsite-decrypt.js` entschlüsselt ein Archiv von Hand.
+- **Automatische Datenbanksicherung vor Migrationen:** Stehen Migrationen an, sichert GateControl die Datenbank vorher (die letzten 3 bleiben). Schlägt die Sicherung fehl, startet GateControl nicht, und das Auto-Update rollt auf die Vorversion zurück. Die Sicherungen stehen in den Backup-Einstellungen zum Herunterladen. Notausgang: `GC_SKIP_PRE_MIGRATION_BACKUP=1`.
+- **Wartungsfenster für Auto-Updates** (Einstellungen → Erweitert): Updates nur zu einer festen Zeit, mit Zeitzone und auch über Mitternacht. „Jetzt aktualisieren“ geht immer.
+- **„Was ist neu“:** Nach einem Update zeigt das Dashboard die Neuerungen. Auf Wunsch kommt eine E-Mail bei Update und Rollback (an die Adresse der Monitoring-Benachrichtigungen).
+- **Navigation neu geordnet:** Übersicht, Netzwerk, Sicherheit, Integrationen, System. Auf dem Telefon gibt es eine Leiste mit „Mehr“.
+- **Schnellsuche:** `Strg+K` / `⌘K` oder `/` durchsucht Seiten, Einstellungen, Hosts, Einträge, Peers und Gateways.
+- **Ruhigere Eintragszeilen:** nur aktive Schutzfunktionen als Chips, dazu ein Schild mit der Zahl aktiver Schutzfunktionen und einer Liste der fehlenden. Neue Filter: „Öffentlich ohne WAF“, „Öffentlich ohne Schutz“, „HTTPS ohne HSTS“, „Backend gestört“.
+- **Lizenz-Hinweise:** Wo eine Funktion gesperrt ist, steht jetzt, warum. Mögliche Gründe: nicht im Plan, der Lizenzserver liefert die neue Funktion noch nicht, oder es ist keine Lizenz eingetragen. Ein Knopf „Lizenz aktualisieren“ hilft beim zweiten Fall.
+- **TLS-Fingerabdruck für Gateway-Ziele** (Vorbereitung): Im Eintrags-Editor lässt sich der SHA-256-Fingerabdruck des LAN-Zertifikats hinterlegen. Das Gateway prüft ihn ab einem kommenden Gateway-Update.
+
+### Fixes
+- Remote Desktops: Der Lizenzhinweis und der gesperrte „Hinzufügen“-Knopf wurden nie angezeigt (Template-Reihenfolge).
+- Dashboard auf schmalen Bildschirmen: Die Statusleiste lief über den Rand.
+
+### Hinweise für bestehende Installationen
+- **`update.sh` einmal neu installieren**, damit das Wartungsfenster greift: `install -m 755 <Quelle>/update.sh /opt/gatecontrol/update.sh`. Die Befehle stehen in INSTALL.md. Das alte Skript ignoriert das Fenster.
+- **Log-Rotation:** Neue Compose-Vorlagen begrenzen das Docker-Log (`max-size: 10m`, `max-file: 3`). Bestehende `docker-compose.yml` bitte von Hand ergänzen.
+- Das Image wird etwa 50 MB größer (OpenSSH- und Samba-Client für SFTP- und SMB-Backups).
+- Der WAF-Assistent meldet nach dem Update etwa einen Tag lang „zu früh“, weil die Beobachtungszeit ab jetzt gezählt wird.
+
+---
+
 ## [1.126.0] — 2026-09-15
 
 ### Änderungen
