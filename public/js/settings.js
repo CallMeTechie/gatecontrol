@@ -1302,7 +1302,7 @@
       }));
     }
     byId('au-window-waiting').hidden = !(saved && saved.last_action === 'waiting_window');
-    byId('au-reinstall').hidden = !w.enabled && !updateShMismatch();
+    byId('au-reinstall').hidden = !w.enabled;
   }
 
   // ── update.sh version of the host vs. the image (§S2.2) ────────────────

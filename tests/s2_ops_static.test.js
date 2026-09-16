@@ -77,8 +77,10 @@ describe('update.sh version hint (advanced tab)', () => {
     assert.match(SETTINGS_JS, /T\('updatesh\.mismatch'/);
     assert.match(SETTINGS_JS, /T\('updatesh\.unknown'/);
     assert.match(SETTINGS_JS, /renderUpdateSh\(\);/);
-    // The reinstall block opens even when the maintenance window is off.
-    assert.match(SETTINGS_JS, /byId\('au-reinstall'\)\.hidden = !w\.enabled && !updateShMismatch\(\);/);
+    // "Befehle zeigen" opens the reinstall block on demand — the block's own
+    // visibility rule (maintenance window) stays exactly as it was.
+    assert.match(SETTINGS_JS, /byId\('au-reinstall'\)\.hidden = !w\.enabled;/);
+    assert.match(SETTINGS_JS, /au-updatesh-show[\s\S]{0,300}det\.hidden = false;[\s\S]{0,60}det\.open = true;/);
   });
 });
 
