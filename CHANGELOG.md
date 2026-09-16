@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Änderungen
+- **Eine Stylesheet-Datei statt acht.** `pro.css`, `aurora.css` und die Funktionsdateien sind zu `app.css` zusammengefasst; jede Seite lädt nur noch eine Datei statt bis zu acht. Dabei sind rund 24 kB toter Code aus der Zeit der entfernten Themes „Standard“ und „Pro“ entfallen. Das Aussehen ändert sich nicht: Ein Vergleich aller Stilregeln im Browser zeigt sie Regel für Regel in derselben Reihenfolge, und die Anmeldeseiten sind pixelgleich.
+- **Keine Browser-Dialoge mehr.** Die 117 Stellen mit `confirm()`, `alert()` und `prompt()` nutzen jetzt den Dialog von GateControl, auf Deutsch, mit rotem Knopf bei gefährlichen Aktionen und mit Prüfung der Eingabe direkt im Dialog.
+- **Fehlende Übersetzungen ergänzt.** 57 neue Texte, und 197 vorhandene Texte kommen nun tatsächlich im Browser an. Bisher erschienen sie dort auf Englisch, etwa „No backup files yet“ in den Backup-Einstellungen oder sämtliche Meldungen der Profil-, Peers-, Benutzer- und Remote-Desktop-Seiten.
+- **Fehlercodes statt übersetzter Servertexte.** Der WAF-Assistent, die Sperrliste und die Backups außer Haus liefern der Oberfläche jetzt Codes, die sie selbst übersetzt. Vorher hat der Browser englische Sätze des Servers mit regulären Ausdrücken auseinandergenommen.
+
+### Fixes
+- `src/i18n/en.json` enthielt drei Schlüssel doppelt (`route_auth.method_*`). Sie sind entfernt, und eine Prüfung in der CI verhindert Wiederholungen.
+- Die Bestätigungen im Geräte-Portal erscheinen in der Sprache des Portals.
+
+### Tests und CI
+- Die lokale Testumgebung entspricht jetzt der CI: Läufe als normaler Benutzer mit schreibgeschütztem Projektverzeichnis, und alle Datenpfade zeigen in ein temporäres Verzeichnis. Zwei Releases waren zuvor an Tests gescheitert, die lokal durchliefen und erst in der CI fehlschlugen.
+- Die Liste bekannter Umgebungsfehler ist leer. Alle 53 Fälle hatten dieselbe Ursache: Dem lokalen Testaufruf fehlte `NODE_ENV=test`. Sieben Testdateien schrieben außerdem in den Projektordner und tun das nicht mehr.
+- Neu ist ein Browsertest in der CI (Anmeldung mit zweitem Faktor, Zonen-Seite, Sicherheitsseite) samt Screenshots als Artefakt.
+- Entwickler ohne Zugriff auf das private Paket `@callmetechie/gatecontrol-config-hash` können die Tests mit einem klar gekennzeichneten Ersatz laufen lassen (`npm run test:config-hash-stub`). Der Produktionscode bleibt unberührt, und die CI verweigert den Ersatz.
+
+---
+
 ## [1.128.0] — 2026-09-16
 
 ### Features
