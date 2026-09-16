@@ -3,13 +3,17 @@
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 
 // Isolated test DB (node --test runs each file in its own process, so setting
 // GC_DB_PATH here is safe and does not collide with other suites).
 process.env.NODE_ENV = 'test';
-const testDbPath = path.join(__dirname, `test-lockout-${Date.now()}.db`);
+// Die Test-DB liegt in os.tmpdir(), nicht im Repo-Baum: die CI checkt
+// unprivilegiert aus und der lokale Lauf mountet /app read-only —
+// eine DB neben den Testdateien schlägt dort fehl (und nur dort).
+const testDbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-lockout-')), 'test.db');
 process.env.GC_DB_PATH = testDbPath;
 process.env.GC_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
 process.env.GC_LOG_LEVEL = 'silent';

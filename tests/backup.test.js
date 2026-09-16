@@ -2,11 +2,15 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 
 // Use a temp DB for tests
-const tmpDb = path.join(__dirname, 'test-backup.db');
+// Die Test-DB liegt in os.tmpdir(), nicht im Repo-Baum: die CI checkt
+// unprivilegiert aus und der lokale Lauf mountet /app read-only —
+// eine DB neben den Testdateien schlägt dort fehl (und nur dort).
+const tmpDb = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-backup-')), 'test.db');
 process.env.GC_DB_PATH = tmpDb;
 process.env.GC_ENCRYPTION_KEY = 'a'.repeat(64);
 

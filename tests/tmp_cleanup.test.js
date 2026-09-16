@@ -86,14 +86,22 @@ test('with the preload the temp dir — including its contents — is gone on ex
 });
 
 test('the preload leaves directories outside the temp root alone', () => {
-  const outside = fs.mkdtempSync(path.join(ROOT, 'nicht-temp-'));
+  // „Außerhalb von os.tmpdir()“ wird über TMPDIR des Kindprozesses hergestellt,
+  // nicht über ein Verzeichnis im Repo-Baum: die CI checkt unprivilegiert aus
+  // und der lokale Lauf mountet /app read-only, ein mkdtemp neben package.json
+  // scheitert dort. Das Kind sieht `tmpRoot` als das eigens gesetzte TMPDIR,
+  // `outside` liegt daneben — genau die zu prüfende Eigenschaft.
+  const childTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-tmproot-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-outside-'));
   try {
     const child = `const fs = require('node:fs');
       process.stdout.write(fs.mkdtempSync(${JSON.stringify(path.join(outside, 'x-'))}));`;
-    const dir = execFileSync(process.execPath, ['--require', PRELOAD, '-e', child], { encoding: 'utf8' }).trim();
+    const dir = execFileSync(process.execPath, ['--require', PRELOAD, '-e', child],
+      { encoding: 'utf8', env: { ...process.env, TMPDIR: childTmp } }).trim();
     assert.equal(fs.existsSync(dir), true, 'ein Verzeichnis außerhalb von os.tmpdir() wurde entfernt');
   } finally {
     fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(childTmp, { recursive: true, force: true });
   }
 });
 
@@ -107,9 +115,13 @@ test('mkdtempSync still behaves normally while the process runs', () => {
   assert.match(dir, /gc-probe-rc-/);
 });
 
-test('the npm test script preloads the cleanup', () => {
+test('the npm test script preloads the test environment (and with it the cleanup)', () => {
   // Ohne diesen Eintrag greift die Bereinigung im Suite-Lauf nicht — und genau
-  // der Suite-Lauf hat /tmp gefüllt.
+  // der Suite-Lauf hat /tmp gefüllt. Vorgeladen wird seit Welle 2
+  // helpers/test-env.js: es setzt zusätzlich NODE_ENV=test und lenkt alle
+  // Datenpfade um; tmp-cleanup zieht es selbst nach.
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-  assert.match(pkg.scripts.test, /--require \.\/tests\/helpers\/tmp-cleanup\.js/);
+  assert.match(pkg.scripts.test, /--require \.\/tests\/helpers\/test-env\.js/);
+  const env = fs.readFileSync(path.join(ROOT, 'tests', 'helpers', 'test-env.js'), 'utf8');
+  assert.match(env, /require\('\.\/tmp-cleanup'\)/);
 });

@@ -95,7 +95,11 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
     assert.ok(skipOf(cfg).includes('jenny.example.com'), 'paused host in automatic_https.skip');
     assert.ok(!acmeSubjects(cfg).includes('jenny.example.com'), 'paused host absent from ACME subjects');
     assert.ok(cfg.logging.logs.tls, 'tls log block present');
-    assert.equal(cfg.logging.logs.tls.writer.filename, '/data/caddy/tls.log');
+    // Gegen das konfigurierte Caddy-Datenverzeichnis, nicht gegen '/data/caddy':
+    // die Testumgebung lenkt GC_CADDY_DATA_DIR in ein Temp-Verzeichnis
+    // (tests/helpers/test-env.js), damit kein Test nach /data schreibt.
+    assert.equal(cfg.logging.logs.tls.writer.filename,
+      path.join(process.env.GC_CADDY_DATA_DIR || '/data/caddy', 'tls.log'));
     assert.deepEqual(cfg.logging.logs.tls.include, ['tls.obtain', 'tls.renew', 'tls.issuance.acme', 'tls.issuance.acme.acme_client', 'tls.issuance.zerossl']);
   });
 

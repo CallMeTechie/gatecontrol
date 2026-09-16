@@ -1,0 +1,15 @@
+{
+  "name": "@callmetechie/gatecontrol-config-hash",
+  "version": "0.0.0-test-stub",
+  "description": "TEST STUB — not the real package. Installed by scripts/install-config-hash-stub.js so the test suite runs without access to the private registry. Refuses to load outside NODE_ENV=test.",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "require": "./index.cjs",
+      "default": "./index.cjs"
+    }
+  },
+  "gatecontrolTestStub": true
+}
