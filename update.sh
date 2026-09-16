@@ -21,6 +21,15 @@
 # and the container recreated from it (no pull, docker-compose.yml untouched).
 # The failed image ID is kept in $DATA_DIR/.auto-update-bad-image so auto mode
 # does not retry it every run; a newer :latest (different ID) is tried normally.
+# Self-update: after a successful update this script compares itself with
+# /app/update.sh of the NEW image, checks the syntax and replaces itself
+# atomically (temp + mv, mode 755, old version kept as update.sh.bak). Only on
+# a real difference; GC_UPDATE_SH_SELFUPDATE=0 switches it off. The new version
+# is never executed in the same run — it applies from the next cron run.
+# The marker line below is the version both sides compare; bump it whenever
+# this file changes in a way the host should pick up.
+# gc-update-sh: 1
+#
 # Exit: 0 ok/no-op/skipped, 1 update failed (rolled back if possible),
 #       2 no compose file, 3 wrong project dir, 4 update AND rollback failed.
 set -euo pipefail
@@ -59,12 +68,22 @@ write_atomic() { # $1=file, content on stdin
 # Image IDs / version labels end up in JSON: keep a strict charset so they can't break it.
 safe() { printf '%s' "$1" | tr -cd 'A-Za-z0-9._:+-'; }
 
+# Version marker of an update.sh file ("# gc-update-sh: <n>"); empty when the
+# file has none (an update.sh from before this feature).
+update_sh_version() {
+  sed -n 's/^# gc-update-sh: \([0-9][0-9]*\)$/\1/p' "$1" 2>/dev/null | head -n1
+}
+SELF_VERSION="$(update_sh_version "$SCRIPT_PATH")"
+[ -n "$SELF_VERSION" ] || SELF_VERSION=0
+
 write_state() { # $1=action $2=mode [$3=failed image ID $4=its version]
   local ok="true" extra=""
   case "$1" in failed|rolled_back) ok="false" ;; esac
   [ -n "${3:-}" ] && extra="$(printf ',"bad_image":"%s","bad_version":"%s"' "$(safe "$3")" "$(safe "${4:-}")")"
-  printf '{"checked_at":"%s","action":"%s","mode":"%s","ok":%s%s}\n' \
-    "$(date -Iseconds)" "$1" "$2" "$ok" "$extra" | write_atomic "$STATE_FILE"
+  # update_sh = version of THIS script, so the server can compare the host copy
+  # with the one shipped in the image (GET /api/v1/system/auto-update).
+  printf '{"checked_at":"%s","action":"%s","mode":"%s","ok":%s,"update_sh":%s%s}\n' \
+    "$(date -Iseconds)" "$1" "$2" "$ok" "$SELF_VERSION" "$extra" | write_atomic "$STATE_FILE"
 }
 
 # Overlap lock — only if flock is available; never abort the update because flock
@@ -165,6 +184,51 @@ prune_images() {
   docker image prune -f >>"$LOG" 2>&1 || true
 }
 
+self_update() {
+  # Replace THIS script with /app/update.sh of the new image — only after a
+  # successful update, only on a real difference, only when the new file parses.
+  # Never re-executed here: the running bash keeps the old inode (mv only swaps
+  # the directory entry), so the new version takes effect on the next cron run.
+  if [ "${GC_UPDATE_SH_SELFUPDATE:-1}" = "0" ]; then
+    log "update.sh self-update disabled (GC_UPDATE_SH_SELFUPDATE=0) — keeping version $SELF_VERSION"
+    return 0
+  fi
+  local tmp new_ver checker
+  if ! tmp="$(mktemp "$SCRIPT_PATH.new.XXXXXX" 2>/dev/null)"; then
+    log "WARN: update.sh self-update: no temporary file next to $SCRIPT_PATH (read-only dir?) — skipping"
+    return 0
+  fi
+  if ! docker run --rm --entrypoint sh "$IMAGE" -c 'cat /app/update.sh' >"$tmp" 2>>"$LOG"; then
+    log "WARN: update.sh self-update: could not read /app/update.sh from $IMAGE — keeping version $SELF_VERSION"
+    rm -f "$tmp"; return 0
+  fi
+  if [ ! -s "$tmp" ]; then
+    log "WARN: update.sh self-update: the image delivered an empty /app/update.sh — keeping version $SELF_VERSION"
+    rm -f "$tmp"; return 0
+  fi
+  if cmp -s "$tmp" "$SCRIPT_PATH"; then
+    log "update.sh is already the version from the image (v$SELF_VERSION) — nothing to do"
+    rm -f "$tmp"; return 0
+  fi
+  new_ver="$(update_sh_version "$tmp")"; [ -n "$new_ver" ] || new_ver=0
+  if command -v bash >/dev/null 2>&1; then checker=bash; else checker=sh; fi
+  if ! "$checker" -n "$tmp" 2>>"$LOG"; then
+    log "WARN: update.sh from the image has a syntax error ($checker -n failed) — NOT replacing, keeping version $SELF_VERSION"
+    rm -f "$tmp"; return 0
+  fi
+  if ! cp -p "$SCRIPT_PATH" "$SCRIPT_PATH.bak" 2>>"$LOG"; then
+    log "WARN: update.sh self-update: could not write $SCRIPT_PATH.bak — NOT replacing"
+    rm -f "$tmp"; return 0
+  fi
+  if ! { chmod 755 "$tmp" && mv -f "$tmp" "$SCRIPT_PATH"; } 2>>"$LOG"; then
+    log "WARN: update.sh self-update: replacing $SCRIPT_PATH failed — the old version stays in place"
+    rm -f "$tmp"; return 0
+  fi
+  log "update.sh replaced: v$SELF_VERSION → v$new_ver (previous version kept as $SCRIPT_PATH.bak); it takes effect on the next run"
+  SELF_VERSION="$new_ver"   # the marker written below describes the file on disk
+  return 0
+}
+
 image_id() { docker image inspect "$1" --format '{{.Id}}' 2>/dev/null || true; }
 image_version() { # OCI version label of image $1 (empty when the image has none)
   safe "$(docker image inspect "$1" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null || true)"
@@ -201,7 +265,7 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
 
   if recreate; then
     rm -f "$BAD_FILE" 2>/dev/null || true
-    ensure_guacd || true; prune_images || true; write_state updated "$mode"; exit 0
+    ensure_guacd || true; prune_images || true; self_update || true; write_state updated "$mode"; exit 0
   fi
   new_ver="$(image_version "$new_id")"
   log "recreate/health failed — image $new_id ${new_ver:+(v$new_ver)}"

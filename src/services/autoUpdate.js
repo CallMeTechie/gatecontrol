@@ -128,6 +128,27 @@ function requestUpdate() {
 // update.sh writes bad_image/bad_version with a strict charset; re-check here
 // anyway (the marker lives on a host-writable volume).
 function markerRef(v) { return typeof v === 'string' && /^[A-Za-z0-9._:+-]{1,128}$/.test(v) ? v : null; }
+
+// ── update.sh version (docs/feature-next-package.md §S2.2) ─────────────────
+// The host script writes its own marker version into the state file; the image
+// carries the same marker in the vendored copy. host_version === null means an
+// update.sh from before the marker (or no run yet) — the UI then asks for a
+// one-off reinstall. matches is only true when both numbers are known and equal.
+function markerVersion(v) {
+  return Number.isInteger(v) && v >= 0 && v <= 999999999 ? v : null;
+}
+function updateShInfo(marker) {
+  let imageVersion = null;
+  try { imageVersion = require('./systemSetup').updateShVersion(); } catch { imageVersion = null; }
+  const hostVersion = markerVersion(marker && marker.update_sh);
+  return {
+    update_sh: {
+      host_version: hostVersion,
+      image_version: imageVersion,
+      matches: hostVersion !== null && imageVersion !== null && hostVersion === imageVersion,
+    },
+  };
+}
 function readMarker() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
   catch { return null; }   // missing/unreadable/corrupt → not_configured
@@ -137,7 +158,7 @@ function getStatus() {
   const running_version = pkg.version;
   const marker = readMarker();
   if (!marker || !marker.checked_at) {
-    return { status: 'not_configured', mode, mode_mismatch: false, mode_pending: false, age_s: null, last_action: null, running_version, ...windowInfo() };
+    return { status: 'not_configured', mode, mode_mismatch: false, mode_pending: false, age_s: null, last_action: null, running_version, ...windowInfo(), ...updateShInfo(null) };
   }
   const checkedAt = new Date(marker.checked_at).getTime();
   const now = Date.now();
@@ -153,7 +174,7 @@ function getStatus() {
   // previous one was restored; "failed" + bad_image: the rollback failed too.
   return { status, mode, mode_mismatch, mode_pending, age_s, checked_at: marker.checked_at,
     last_action: marker.action || null, marker_mode: marker.mode || null, running_version,
-    bad_image: markerRef(marker.bad_image), bad_version: markerRef(marker.bad_version), ...windowInfo() };
+    bad_image: markerRef(marker.bad_image), bad_version: markerRef(marker.bad_version), ...windowInfo(), ...updateShInfo(marker) };
 }
 function windowInfo() {
   const window = getWindow();
@@ -173,5 +194,5 @@ function syncConfigFileOnBoot() {
 module.exports = {
   getStatus, getMode, setMode, requestUpdate, syncConfigFileOnBoot,
   getWindow, setWindow, validateWindow, isInWindow, getNotifyEmail, setNotifyEmail,
-  readMarker, STATE_FILE, CONFIG_FILE,
+  readMarker, updateShInfo, STATE_FILE, CONFIG_FILE,
 };

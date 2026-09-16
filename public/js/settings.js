@@ -1302,7 +1302,26 @@
       }));
     }
     byId('au-window-waiting').hidden = !(saved && saved.last_action === 'waiting_window');
-    byId('au-reinstall').hidden = !w.enabled;
+    byId('au-reinstall').hidden = !w.enabled && !updateShMismatch();
+  }
+
+  // ── update.sh version of the host vs. the image (§S2.2) ────────────────
+  // host_version === null: an update.sh from before the version marker (or no
+  // run yet) — it cannot self-update, so the host has to install it once more.
+  function updateShMismatch() {
+    var u = saved && saved.update_sh;
+    return !!(u && u.image_version !== null && u.image_version !== undefined && !u.matches);
+  }
+  function renderUpdateSh() {
+    var box = byId('au-updatesh');
+    if (!box) return;
+    var u = (saved && saved.update_sh) || null;
+    if (!updateShMismatch()) { box.hidden = true; return; }
+    byId('au-updatesh-text').textContent = u.host_version === null || u.host_version === undefined
+      ? T('updatesh.unknown', 'The update.sh on the server reports no version — install it once more.')
+      : T('updatesh.mismatch', 'The update.sh on the server is not the version from the image (version {host} instead of {image}).',
+        { host: u.host_version, image: u.image_version });
+    box.hidden = false;
   }
 
   function apply(d) {
@@ -1317,6 +1336,7 @@
     if (!w.enabled && tz === O.DEFAULT_TZ && browserTz && browserTz !== tz && O.timeIn(browserTz)) tz = browserTz;
     fillZones(tz);
     setToggle(notifyEl, d.notify_email !== false);
+    renderUpdateSh();
     renderClock();
   }
 
@@ -1384,6 +1404,15 @@
 
   byId('au-reinstall-copy').addEventListener('click', function () {
     copyText(byId('au-reinstall-cmd').textContent, T('autoupdate.reinstall_copied', 'Commands copied'));
+  });
+
+  // "Show commands" of the update.sh hint: open the reinstall block below it.
+  var updateShShow = byId('au-updatesh-show');
+  if (updateShShow) updateShShow.addEventListener('click', function () {
+    var det = byId('au-reinstall');
+    det.hidden = false;
+    det.open = true;
+    if (det.scrollIntoView) det.scrollIntoView({ block: 'nearest' });
   });
 
   function copyText(text, okMsg) {
