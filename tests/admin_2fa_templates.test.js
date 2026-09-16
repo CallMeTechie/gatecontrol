@@ -56,9 +56,11 @@ test('/login/2fa renders (code and recovery variants)', async () => {
     assert.match(code.text, /href="\/login\/2fa\?recovery=1"/, theme);
     assert.match(code.text, /id="tf-remaining"[^>]*>[^<{]*\d[^<{]*</, theme);
     assert.doesNotMatch(code.text, /replace\('',/, `${theme}: countdown placeholder must survive templating`);
-    assert.match(code.text, /\/css\/pro\.css/, theme);
-    assert.match(code.text, /\/css\/aurora\.css/, theme);
-    assert.doesNotMatch(code.text, /app\.css/, theme);
+    // One stylesheet since wave 2 (docs/feature-wave2.md): app.css, nothing else.
+    assert.match(code.text, /\/css\/app\.css/, theme);
+    for (const gone of ['pro.css', 'aurora.css', 'two-factor.css']) {
+      assert.doesNotMatch(code.text, new RegExp(gone.replace('.', '\\.')), `${theme}: ${gone}`);
+    }
 
     const rec = await a.get('/login/2fa?recovery=1').expect(200);
     assert.match(rec.text, /name="recovery_code"/, theme);
