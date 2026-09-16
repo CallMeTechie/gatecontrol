@@ -4,11 +4,12 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const supertest = require('supertest');
-// Räumt die temp-Verzeichnisse ALLER Testdateien auf, nicht nur das gc-test-
-// dieser Datei. Wird zusätzlich über --require aus dem test-Skript vorgeladen;
-// hier nochmals, damit auch ein direkter Einzeldatei-Lauf ohne npm aufräumt.
-// Der require-Cache sorgt dafür, dass die Umhüllung nur einmal greift.
-require('./tmp-cleanup');
+// Setzt NODE_ENV=test und räumt die temp-Verzeichnisse ALLER Testdateien auf,
+// nicht nur das gc-test- dieser Datei. Wird zusätzlich über --require aus dem
+// test-Skript vorgeladen; hier nochmals, damit auch ein direkter Einzeldatei-
+// Lauf ohne npm dieselbe Umgebung sieht. Der require-Cache sorgt dafür, dass
+// beides nur einmal greift.
+const testEnv = require('./test-env');
 
 // Set test env before any imports
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-'));
@@ -30,6 +31,14 @@ process.env.GC_WG_HOST = 'test.example.com';
 process.env.GC_BASE_URL = 'http://localhost:3000';
 process.env.GC_LOG_LEVEL = 'silent';
 process.env.GC_DATA_DIR = tmpDir;
+// ALLE übrigen Datenpfade (Caddy-Datenverzeichnis, Backups, DNS-Hosts-Datei,
+// WireGuard-Dateien, License-Token, Gateway-Cache …) in dasselbe Temp-
+// Verzeichnis. Vorher lenkte setup() nur GC_DATA_DIR um; alles andere zeigte
+// auf /data — als root lokal unauffällig, in der unprivilegierten CI ein
+// Fehlschlag. Eine Testdatei, die vor dem require ihren eigenen Pfad setzt
+// (z. B. dashboard_problems, secopt_api), behält ihn — genauso wie das
+// Temp-Verzeichnis, das helpers/test-env.js oben schon gesetzt hat.
+testEnv.applyDataDirEnv(tmpDir);
 // High rate-limit caps so the per-test login() calls don't trip 429
 // on suites that run many setup()/teardown() cycles.
 process.env.GC_RATE_LIMIT_LOGIN = '100000';

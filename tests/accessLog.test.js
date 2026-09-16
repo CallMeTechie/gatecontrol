@@ -3,10 +3,13 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
-// Set up test log file
-const testLogDir = path.join(__dirname, 'tmp-access-logs');
+// Set up test log file. Deliberately in os.tmpdir(), not in the repo tree:
+// the CI checkout and the unprivileged local run must both be able to write
+// it, and helpers/tmp-cleanup.js removes mkdtemp dirs at process exit.
+const testLogDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-accesslog-'));
 const testLogFile = path.join(testLogDir, 'access.log');
 
 process.env.GC_CADDY_DATA_DIR = testLogDir;

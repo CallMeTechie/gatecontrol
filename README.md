@@ -557,11 +557,25 @@ npm test
 ### Testing
 
 ```bash
-# Run API integration tests (30+ tests across all endpoint groups)
+# Full suite
 npm test
+
+# Single files
+npm run test:file tests/zones_api.test.js
 ```
 
 Tests cover Auth, Peers, Routes, Dashboard, Settings, Webhooks, Logs, System, Health, and Backup endpoints. Tests are CI-compatible and skip tests requiring WireGuard/Caddy when not available.
+
+`npm test` preloads `tests/helpers/test-env.js`: it sets `NODE_ENV=test` and
+redirects **every** data path into a temp dir, so a test can never write to
+`/data` or into the repository. Run the suite unprivileged — that is what CI
+does, and it is the only way to notice such a write.
+
+`npm ci` needs a GitHub token with `read:packages` for the private package
+`@callmetechie/gatecontrol-config-hash` (otherwise it fails with E401).
+Without access, `npm run test:config-hash-stub` installs a clearly marked
+test-only stub. Details, the unprivileged Docker invocation and the browser
+tests: **[docs/testing-local.md](docs/testing-local.md)**.
 
 ### Requirements
 
