@@ -23,7 +23,9 @@ const en = JSON.parse(enRaw);
 
 const KEYS = Object.keys(de).filter((k) => k.startsWith('zones.discovery.'));
 const USED_KEYS = Array.from(modalJs.matchAll(/'(zones\.discovery\.[a-z0-9_]+)'/g)).map((m) => m[1]);
-const CSS = { pro: read('public', 'css', 'pro.css') }; // Aurora's base stylesheet
+// Wave 2 §W2: one stylesheet; §1 of app.css is the former pro.css (base layer).
+const APP_CSS = read('public', 'css', 'app.css');
+const CSS = { 'app.css §1 (base)': APP_CSS.slice(APP_CSS.indexOf('\n * \u00a71 '), APP_CSS.indexOf('\n * \u00a72 ')) };
 const CSS_SECTION = '/* ─── Domain zones: LAN discovery (zn-disc-) ─── */';
 
 describe('zones.discovery i18n', () => {
@@ -97,7 +99,7 @@ describe('domain-modal.js: discovery wiring', () => {
     }
     assert.match(modalJs, /'data-zn-key': 'nhdisc'/);
   });
-  it('every layout-relevant zn-disc- class is styled in pro.css (aurora loads pro.css)', () => {
+  it('every layout-relevant zn-disc- class is styled in the base section of app.css', () => {
     // Hook-only classes (E2E selectors / text targets) inherit their look from
     // .btn, .zn-link, .zn-input, .modal-overlay etc. and need no rule.
     const HOOK_ONLY = new Set(['zn-disc-btn', 'zn-disc-link', 'zn-disc-dialog', 'zn-disc-filter', 'zn-disc-hintmsg', 'zn-disc-scanning', 'zn-disc-host', 'zn-disc-adopt']);
@@ -107,7 +109,7 @@ describe('domain-modal.js: discovery wiring', () => {
       const sec = css.indexOf(CSS_SECTION);
       assert.ok(sec > 0, `${theme}: CSS section present`);
       assert.equal(css.indexOf(CSS_SECTION, sec + 1), -1, `${theme}: section appears once`);
-      assert.ok(css.slice(sec).trim().length > 200, `${theme}: section is at the end of the file with content`);
+      assert.ok(css.slice(sec).trim().length > 200, `${theme}: section is at the end of the layer with content`);
       const tail = css.slice(sec);
       for (const cls of used) if (!HOOK_ONLY.has(cls)) assert.ok(tail.includes('.' + cls), `${theme}: .${cls} styled`);
     }

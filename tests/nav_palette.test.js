@@ -2,7 +2,7 @@
 
 // Release B §8 (docs/feature-release-b.md): grouped sidebar, mobile bottom
 // nav, the quick search (public/js/command-palette.js) — pure core, layout
-// wiring, i18n block placement and the shared stylesheet public/css/nav.css.
+// wiring, i18n block placement and the nav section of public/css/app.css.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -85,11 +85,13 @@ describe('sidebar groups (§8)', () => {
 
 describe('layout wiring', () => {
   const layout = read('templates/aurora/layout.njk');
-  it('nav.css after aurora.css (feature stylesheets follow it); command-palette.js after app.js', () => {
-    const aurora = layout.indexOf('/css/aurora.css?v=');
-    const nav = layout.indexOf('/css/nav.css?v=');
-    assert.ok(aurora > 0 && nav > aurora, 'nav.css is linked after aurora.css');
-    assert.ok(layout.slice(aurora, nav).split('\n').slice(1, -1).every((l) => !l.trim() || /<link rel="stylesheet" href="\/css\/[a-z-]+\.css\?v=/.test(l.trim())), 'only feature stylesheets in between');
+  it('the layout links only app.css; the nav section follows the Aurora section; command-palette.js after app.js', () => {
+    const links = Array.from(layout.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
+    assert.deepEqual(links, ['/css/app.css'], 'one stylesheet (docs/feature-wave2.md §W2)');
+    const css = read('public/css/app.css');
+    const aurora = css.indexOf('\n * \u00a72 ');
+    const nav = css.indexOf('\n * \u00a74 ');
+    assert.ok(aurora > 0 && nav > aurora, 'the nav section comes after the Aurora section');
     assert.match(layout, /app\.js\?v=\{\{ appVersion \}\}"><\/script>\n<script src="\/js\/command-palette\.js\?v=\{\{ appVersion \}\}"><\/script>/);
   });
   it('every palette.* key and the settings tab labels are in the GC.t whitelist', () => {

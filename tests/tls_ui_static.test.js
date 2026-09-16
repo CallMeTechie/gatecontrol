@@ -17,6 +17,17 @@ const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only
 const PREFIX_RE = /^(tls\.|dns_check\.|settings\.tls\.)/;
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2 (docs/feature-wave2.md): one stylesheet. §1 of public/css/app.css
+// is the former pro.css (base layer), §2 the former aurora.css.
+const APP_CSS = read('public/css/app.css');
+const APP_LAYERS = [['app.css §1 (base)', 1], ['app.css §2 (Aurora)', 2]];
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const tpl = (theme, page) => read(`templates/${theme}/pages/${page}.njk`);
 
@@ -178,9 +189,9 @@ describe('TLS guard: i18n', () => {
 });
 
 describe('TLS guard: styles', () => {
-  it('each theme stylesheet has exactly one appended tg- section and no tg- rules before it', () => {
-    for (const f of ['pro.css', 'aurora.css']) {
-      const css = read('public/css/' + f);
+  it('app.css §1 / §2 each have exactly one tg- section and no tg- rules before it', () => {
+    for (const [f, n] of APP_LAYERS) {
+      const css = appSection(n);
       const marker = '/* ─── TLS guard (tg-) ─── */';
       const at = css.indexOf(marker);
       assert.ok(at > 0, `${f}: section marker`);
@@ -189,8 +200,8 @@ describe('TLS guard: styles', () => {
       const zn = css.indexOf('/* ─── Domain zones (zn-) ─── */');
       assert.ok(zn > 0 && zn < at, `${f}: appended after the zn- section`);
     }
-    for (const f of ['pro.css']) {
-      const css = read('public/css/' + f);
+    for (const f of ['app.css §1 (base)']) {
+      const css = appSection(1);
       for (const cls of ['.tg-tiles', '.tg-banner', '.tg-chips', '.tg-table', '.tg-orig', '.tg-actions', '.tg-records', '.tg-preflight', '.tg-notice', '.tg-chip-warn', '.tg-entry-tag', '.toast-warning']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }

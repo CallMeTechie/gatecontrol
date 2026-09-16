@@ -182,9 +182,16 @@ describe('zones scripts and styles', () => {
     assert.match(src, /entry\.editor_missing/);
   });
 
-  it('each theme stylesheet has one appended zn- section', () => {
-    for (const f of ['pro.css', 'aurora.css']) {
-      const css = fs.readFileSync(path.join(ROOT, 'public/css', f), 'utf8');
+  // Wave 2 §W2: one stylesheet — §1 of app.css is the former pro.css, §2 the
+  // former aurora.css. Each layer still owns exactly one zn- section.
+  it('app.css §1 / §2 each have one zn- section', () => {
+    const app = fs.readFileSync(path.join(ROOT, 'public/css/app.css'), 'utf8');
+    for (const n of [1, 2]) {
+      const a = app.indexOf(`\n * \u00a7${n} `);
+      assert.ok(a > 0, `app.css section \u00a7${n}`);
+      const b = app.indexOf(`\n * \u00a7${n + 1} `);
+      const css = app.slice(a, b < 0 ? app.length : b);
+      const f = 'app.css §' + n;
       const at = css.indexOf('/* ─── Domain zones (zn-) ─── */');
       assert.ok(at > 0, `${f}: section marker`);
       assert.equal(css.indexOf('/* ─── Domain zones (zn-) ─── */', at + 1), -1, `${f}: only once`);

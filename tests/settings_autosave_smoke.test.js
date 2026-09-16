@@ -25,10 +25,11 @@ test('toggles dispatch a change event (setupManagedToggle)', async () => {
   assert.match(js.text, /dispatchEvent\(new Event\(['"]change['"]\)\)/);
 });
 
-test('field-saving style is served (pro.css, Aurora base); app.css is gone', async () => {
-  const proCss = await supertest(app).get('/css/pro.css').expect(200);
-  assert.match(proCss.text, /\.field-saving/);
-  await supertest(app).get('/css/app.css').expect(404);
+test('field-saving style is served (app.css, the single stylesheet); the merged files are gone', async () => {
+  const appCss = await supertest(app).get('/css/app.css').expect(200);
+  assert.match(appCss.text, /\.field-saving/);
+  await supertest(app).get('/css/pro.css').expect(404);
+  await supertest(app).get('/css/aurora.css').expect(404);
 });
 
 test('independent clusters migrated: buttons gone, autosave bound, mb fixed', async () => {

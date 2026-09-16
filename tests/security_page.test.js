@@ -6,7 +6,7 @@
 // the pure helpers of public/js/security.js (grouping, pills, safe fixes, item
 // links, exposure filters and marks), the i18n block (security.* +
 // license_hint.* right after certificates.*, identical in de/en), the layout
-// whitelist / stylesheet / script wiring and the security.css file.
+// whitelist / stylesheet / script wiring and the security section of app.css.
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -19,6 +19,17 @@ const en = require('../src/i18n/en.json');
 const S = require('../public/js/security.js');
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2: the admin stylesheets are one file now — §1 former pro.css (base),
+// §2 former aurora.css, §3 security.css, §4 nav.css, §5 ops.css, §6 problems.css,
+// §7 l4-protect.css, §8 two-factor.css.
+const APP_CSS = read('public/css/app.css');
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 // The page block: every security.* key except the older settings strings
 // (security.title / lockout / password / save(d) / machine_binding), plus license_hint.*.
@@ -304,21 +315,22 @@ describe('i18n: security.* + license_hint.* block', () => {
 });
 
 describe('layout wiring and stylesheet', () => {
-  it('security.css right after aurora.css, license-hint.js once after events.js', () => {
+  it('the layout links app.css once, license-hint.js once after events.js', () => {
     const layout = read('templates/aurora/layout.njk');
-    assert.match(layout, /<link rel="stylesheet" href="\/css\/aurora\.css\?v=\{\{ appVersion \}\}">\n {2}<link rel="stylesheet" href="\/css\/security\.css\?v=\{\{ appVersion \}\}">/);
+    assert.equal(layout.split('<link rel="stylesheet"').length - 1, 1, 'exactly one stylesheet link');
+    assert.match(layout, /<link rel="stylesheet" href="\/css\/app\.css\?v=\{\{ appVersion \}\}">/);
     assert.match(layout, /<script src="\/js\/events\.js\?v=\{\{ appVersion \}\}"><\/script>\n<script src="\/js\/license-hint\.js\?v=\{\{ appVersion \}\}"><\/script>/);
     assert.equal(layout.split('/js/license-hint.js').length, 2);
   });
 
-  it('security.css: sections, balanced braces, no rules for foreign prefixes', () => {
-    const css = read('public/css/security.css');
+  it('the security section of app.css: sections, balanced braces, no rules for foreign prefixes', () => {
+    const css = appSection(3);
     for (const m of ['/* ─── Licence hint (lh-) ─── */', '/* ─── Sicherheits-Check (sc-) ─── */']) assert.equal(css.split(m).length, 2, m);
     const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
     assert.equal((bare.match(/\{/g) || []).length, (bare.match(/\}/g) || []).length);
     assert.doesNotMatch(bare, /(^|[\s,}])\.(zn|hs|so|tg)-[a-z-]+\s*\{/m, 'no zones/hsts/secopt/tls rules');
     for (const cls of ['.lh-hint', '.feature-locked.lh-in-locked', '.sc-check', '.sc-exp-table', '.sc-mark.sc-on']) assert.ok(css.includes(cls), cls);
     assert.match(css, /@media \(max-width: 720px\)/, 'phone layout');
-    assert.ok(!read('public/css/aurora.css').includes('.sc-') && !read('public/css/aurora.css').includes('.lh-'), 'aurora.css untouched');
+    assert.ok(!appSection(2).includes('.sc-') && !appSection(2).includes('.lh-'), 'no sc-/lh- rules in the Aurora section');
   });
 });

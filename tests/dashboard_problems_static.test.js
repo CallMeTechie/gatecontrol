@@ -20,22 +20,28 @@ const en = require('../src/i18n/en.json');
 const LAYOUT = read('templates/aurora/layout.njk');
 const DASH_TPL = read('templates/aurora/pages/dashboard.njk');
 const EDITOR_TPL = read('templates/aurora/partials/modals/route-edit.njk');
-const PR_CSS = read('public/css/problems.css');
+const APP_CSS = read('public/css/app.css');
+// Wave 2 §W2: problems.css is now section §6 of the single stylesheet app.css.
+const PR_CSS = (() => {
+  const a = APP_CSS.indexOf('\n * \u00a76 ');
+  const b = APP_CSS.indexOf('\n * \u00a77 ');
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+})();
 const PR_JS = read('public/js/dashboard-problems.js');
 
 describe('S3: stylesheet and scripts', () => {
-  it('problems.css is linked exactly once, after aurora.css among the feature stylesheets', () => {
+  it('the layout links app.css exactly once and nothing else', () => {
     const links = Array.from(LAYOUT.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
-    assert.equal(links.filter((l) => l === '/css/problems.css').length, 1);
-    const a = links.indexOf('/css/aurora.css');
-    const p = links.indexOf('/css/problems.css');
-    assert.ok(p > a, 'after aurora.css');
-    assert.ok(links.slice(a + 1, p).every((l) => /^\/css\/[a-z-]+\.css$/.test(l)), 'only feature stylesheets in between');
+    assert.deepEqual(links, ['/css/app.css']);
   });
 
-  it('aurora.css is untouched by this strand (no pr- rules); problems.css braces balance', () => {
-    assert.doesNotMatch(read('public/css/aurora.css'), /\.pr-row|\.pr-card/);
-    assert.equal((PR_CSS.match(/\{/g) || []).length, (PR_CSS.match(/\}/g) || []).length);
+  it('the pr- section sits after the Aurora section, carries the rules and balances braces', () => {
+    const aurora = APP_CSS.indexOf('\n * \u00a72 ');
+    assert.ok(aurora > 0 && APP_CSS.indexOf('\n * \u00a76 ') > aurora, 'pr- section after the Aurora section');
+    assert.match(PR_CSS, /\.pr-row/);
+    assert.match(PR_CSS, /\.pr-card/);
+    const whole = APP_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, 'app.css braces balanced');
   });
 
   it('dashboard-problems.js loads after dashboard.js', () => {

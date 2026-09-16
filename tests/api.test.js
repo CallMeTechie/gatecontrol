@@ -328,7 +328,7 @@ describe('Backup API', () => {
   });
 });
 
-// ─── Aurora rendering (pro.css base + aurora.css) ────
+// ─── Aurora rendering (one stylesheet: app.css, docs/feature-wave2.md §W2) ────
 describe('Aurora rendering', () => {
   const pages = [
     'dashboard',
@@ -343,11 +343,12 @@ describe('Aurora rendering', () => {
   ];
 
   for (const page of pages) {
-    it(`GET /${page} renders with pro.css + aurora.css`, async () => {
+    it(`GET /${page} renders with app.css and no other admin stylesheet`, async () => {
       const res = await agent.get(`/${page}`).expect(200);
-      assert.ok(res.text.includes('/css/pro.css'), `Expected pro.css in /${page} response`);
-      assert.ok(res.text.includes('/css/aurora.css'), `Expected aurora.css in /${page} response`);
-      assert.ok(!res.text.includes('/css/app.css'), `No app.css in /${page} response`);
+      assert.ok(res.text.includes('/css/app.css'), `Expected app.css in /${page} response`);
+      for (const gone of ['pro', 'aurora', 'security', 'nav', 'ops', 'problems', 'l4-protect', 'two-factor']) {
+        assert.ok(!res.text.includes(`/css/${gone}.css`), `No ${gone}.css in /${page} response`);
+      }
     });
   }
 });

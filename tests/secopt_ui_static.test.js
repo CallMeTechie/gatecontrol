@@ -21,6 +21,17 @@ const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only
 const BLOCK_RE = /^(alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.)/;
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2 (docs/feature-wave2.md): one stylesheet. §1 of public/css/app.css
+// is the former pro.css (base layer), §2 the former aurora.css.
+const APP_CSS = read('public/css/app.css');
+const APP_LAYERS = [['app.css §1 (base)', 1], ['app.css §2 (Aurora)', 2]];
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const hasId = (html, id) => html.includes('id="' + id + '"');
 const editorTpl = (theme) => read(`templates/${theme}/partials/modals/route-edit.njk`);
@@ -302,9 +313,9 @@ describe('security options: i18n', () => {
 });
 
 describe('security options: styles and CSP', () => {
-  it('pro.css / aurora.css end with one so- section after hs-, braces balanced', () => {
-    for (const f of ['pro.css', 'aurora.css']) {
-      const css = read('public/css/' + f);
+  it('app.css §1 / §2 each end with one so- section after hs-, braces balanced', () => {
+    for (const [f, n] of APP_LAYERS) {
+      const css = appSection(n);
       const marker = '/* ─── Security options (so-) ─── */';
       const at = css.indexOf(marker);
       assert.ok(at > 0, `${f}: section marker`);
@@ -318,8 +329,8 @@ describe('security options: styles and CSP', () => {
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced`);
     }
-    for (const f of ['pro.css']) {
-      const css = read('public/css/' + f);
+    for (const f of ['app.css §1 (base)']) {
+      const css = appSection(1);
       for (const cls of ['.zn-panel.so-panel5', '.tag.so-alias-tag', '.so-alias-more', '.so-alias-row', '.so-radios', '.tag.so-body-tag', '.tag.so-mtls-tag',
         '.so-editor-block.so-locked', 'textarea.so-pem', '.so-switch-row', 'input.so-num', '.so-warn', '.so-caa-none', '.so-caa-ok', '.so-caa-record', '.btn.so-copy', '.so-alias-of', '.so-www-check']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);

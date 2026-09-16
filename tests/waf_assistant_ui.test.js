@@ -17,6 +17,17 @@ const A = require('../public/js/waf-assistant.js');
 const W = require('../public/js/waf-ui.js');
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2: the admin stylesheets are one file now — §1 former pro.css (base),
+// §2 former aurora.css, §3 security.css, §4 nav.css, §5 ops.css, §6 problems.css,
+// §7 l4-protect.css, §8 two-factor.css.
+const APP_CSS = read('public/css/app.css');
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'templates')), { autoescape: true });
@@ -208,14 +219,14 @@ describe('waf-assistant.js / waf.js integration', () => {
     assert.ok(!('trusted_24h' in W.statusFrom({ routes: [] }).totals));
   });
 
-  it('styles: one wfa- section at the end of security.css (not in pro.css / aurora.css)', () => {
-    const css = read('public/css/security.css');
+  it('styles: one wfa- section at the end of the security section of app.css (not in the base/Aurora sections)', () => {
+    const css = appSection(3);
     const marker = '/* ─── WAF: tabs, assistant, own IPs, scanner ban, bans (wfa-) ─── */';
     const at = css.indexOf(marker);
     assert.ok(at > css.indexOf('/* ─── Sicherheits-Check (sc-) ─── */') && css.indexOf('/* ─── ', at + 1) === -1, 'last section');
     assert.doesNotMatch(css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, ''), /\.wfa-[a-z]/, 'no wfa- rules before the section');
     for (const cls of ['.wfa-route', '.wfa-ip-chip', '.wfa-bans-table', '.wfa-warn.wfa-warn-on', '.wfa-row-trusted']) assert.ok(css.includes(cls), cls);
-    for (const f of ['pro.css', 'aurora.css']) assert.ok(!read('public/css/' + f).includes('.wfa-'), f);
+    for (const n of [1, 2]) assert.ok(!appSection(n).includes('.wfa-'), 'section §' + n);
   });
 
   it('German texts', () => {

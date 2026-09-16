@@ -12,6 +12,17 @@ const V = require('../public/js/zones-view.js');
 
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2: the admin stylesheets are one file now — §1 former pro.css (base),
+// §2 former aurora.css, §3 security.css, §4 nav.css, §5 ops.css, §6 problems.css,
+// §7 l4-protect.css, §8 two-factor.css.
+const APP_CSS = read('public/css/app.css');
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const de = require('../src/i18n/de.json');
 
@@ -178,11 +189,10 @@ describe('zones page + domain dialog wiring', () => {
   });
 
   it('nav.css styles the shield, bulk bar and palette; no zn-/sh- rules appended to aurora.css', () => {
-    const css = read('public/css/nav.css');
+    const css = appSection(4);
     for (const sel of ['.sh-shield', '.sh-shield-open', '.sh-bulkbar', '.sh-sel-cb', '.sh-risk-chips', '.sh-wafdef-row', '.cp-overlay', '.cp-opt[aria-selected="true"]', '.cp-trigger']) {
       assert.ok(css.includes(sel), sel);
     }
-    assert.doesNotMatch(read('public/css/aurora.css'), /\.sh-|\.cp-/);
-    assert.doesNotMatch(read('public/css/pro.css'), /\.sh-|\.cp-/);
+    for (const n of [1, 2]) assert.doesNotMatch(appSection(n).replace(/\/\*[\s\S]*?\*\//g, ''), /\.sh-|\.cp-/, 'section §' + n);
   });
 });

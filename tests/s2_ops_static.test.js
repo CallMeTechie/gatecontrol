@@ -13,6 +13,17 @@ const nunjucks = require('nunjucks');
 
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2: the admin stylesheets are one file now — §1 former pro.css (base),
+// §2 former aurora.css, §3 security.css, §4 nav.css, §5 ops.css, §6 problems.css,
+// §7 l4-protect.css, §8 two-factor.css.
+const APP_CSS = read('public/css/app.css');
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
@@ -100,14 +111,14 @@ describe('licence source note', () => {
   });
 
   it('security.css styles the note and stays balanced', () => {
-    const css = read('public/css/security.css');
+    const css = appSection(3);
     assert.match(css, /\.lh-src \{/);
     assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length);
-    const ops = read('public/css/ops.css');
+    const ops = appSection(5);
     assert.match(ops, /\.op-updatesh \{/);
     assert.match(ops, /\.op-t-verify-facts \{/);
     assert.equal((ops.match(/\{/g) || []).length, (ops.match(/\}/g) || []).length);
-    assert.doesNotMatch(read('public/css/aurora.css'), /\.op-t-verify|\.op-updatesh|\.lh-src/);
+    assert.doesNotMatch(appSection(2).replace(/\/\*[\s\S]*?\*\//g, ''), /\.op-t-verify|\.op-updatesh|\.lh-src/);
   });
 });
 

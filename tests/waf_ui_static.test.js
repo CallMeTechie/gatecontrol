@@ -20,6 +20,17 @@ const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only
 const BLOCK_RE = /^(waf\.|nav\.waf$)/;
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2 (docs/feature-wave2.md): one stylesheet. §1 of public/css/app.css
+// is the former pro.css (base layer), §2 the former aurora.css.
+const APP_CSS = read('public/css/app.css');
+const APP_LAYERS = [['app.css §1 (base)', 1], ['app.css §2 (Aurora)', 2]];
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const hasId = (html, id) => html.includes('id="' + id + '"');
 const editorTpl = (theme) => read(`templates/${theme}/partials/modals/route-edit.njk`);
@@ -313,9 +324,9 @@ describe('WAF: i18n', () => {
 });
 
 describe('WAF: styles', () => {
-  it('pro.css / aurora.css end with one wf- section after so-, braces balanced', () => {
-    for (const f of ['pro.css', 'aurora.css']) {
-      const css = read('public/css/' + f);
+  it('app.css §1 / §2 each end with one wf- section after so-, braces balanced', () => {
+    for (const [f, n] of APP_LAYERS) {
+      const css = appSection(n);
       const marker = '/* ─── WAF (wf-) ─── */';
       const at = css.indexOf(marker);
       assert.ok(at > 0, `${f}: section marker`);
@@ -323,21 +334,21 @@ describe('WAF: styles', () => {
       assert.doesNotMatch(css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, ''), /\.wf-[a-z]|#wf-/, `${f}: no wf- rules before the section`);
       const so = css.indexOf('/* ─── Security options (so-) ─── */');
       assert.ok(so > 0 && so < at, `${f}: after the so- section`);
-      // aurora.css: only the auth-pages section (docs/feature-aurora-only.md) may follow.
+      // §2: only the auth-pages section (docs/feature-aurora-only.md) may follow.
       const next = css.indexOf('/* ─── ', at + 1);
-      if (f === 'aurora.css') assert.ok(css.startsWith('/* ─── Auth pages (au-) ─── */', next) && css.indexOf('/* ─── ', next + 1) === -1, `${f}: only the au- section after wf-`);
+      if (n === 2) assert.ok(css.startsWith('/* ─── Auth pages (au-) ─── */', next) && css.indexOf('/* ─── ', next + 1) === -1, `${f}: only the au- section after wf-`);
       else assert.equal(next, -1, `${f}: wf- is the last section`);
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced`);
     }
-    for (const f of ['pro.css']) {
-      const css = read('public/css/' + f);
+    for (const f of ['app.css §1 (base)']) {
+      const css = appSection(1);
       for (const cls of ['.stats-grid.wf-tiles', '.wf-tile.on', '.wf-banner', '.wf-filters', '.wf-table-wrap', '#wf-table', '.wf-row-blocked', '.wf-raw', '.btn.wf-act',
         '.wf-pager', '.wf-locked', '.modal.wf-dialog-box', '.wf-editor-block.wf-locked', '.wf-editor-row', '.wf-recommendation', '.wf-excl-row', '.tag.wf-entry-tag']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
       assert.match(css, /@media \(max-width: 600px\) \{[^}]*\.stats-grid\.wf-tiles \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 8px; \}/, `${f}: compact tiles on phones`);
     }
-    assert.ok(read('public/css/aurora.css').includes('.aurora-routes-kpi.wf-tile.on'));
+    assert.ok(appSection(2).includes('.aurora-routes-kpi.wf-tile.on'));
   });
 });

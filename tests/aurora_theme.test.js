@@ -32,8 +32,8 @@ describe('aurora theme — every page renders', () => {
     it(`renders ${url} under aurora (200, loads both stylesheets)`, async () => {
       selectAurora(); // idempotent per-test; no cross-test ordering assumptions
       const res = await agent.get(url).expect(200);
-      assert.match(res.text, /\/css\/pro\.css/, 'loads pro.css base layer');
-      assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css override');
+      assert.match(res.text, /\/css\/app\.css/, 'loads the single stylesheet app.css');
+      assert.doesNotMatch(res.text, /\/css\/(pro|aurora)\.css/, 'the merged files are gone');
       assert.match(res.text, /data-theme=/, 'sets data-theme on <html>');
       assert.match(res.text, /class="app"/, 'uses the aurora .app shell');
       assert.match(res.text, /id="theme-btn"/, 'topbar has the mode toggle');
@@ -70,12 +70,12 @@ describe('aurora theme — mobile sidebar scrim contract', () => {
 });
 
 describe('aurora theme — A-global color leak regression (Task 3)', () => {
-  it('aurora.css has overrides for btn-primary:hover, btn-danger:hover, pool-mode-failover, and non-circular --blue-bd', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.btn-primary:hover\s*\{[^}]*box-shadow/, 'btn-primary:hover has a box-shadow override in aurora.css');
-    assert.match(css, /\.btn-danger:hover/, 'btn-danger:hover has an Aurora override in aurora.css');
-    assert.match(css, /\.pool-mode-failover/, 'pool-mode-failover has an Aurora override in aurora.css');
-    assert.match(css, /--blue-bd:\s*(?!var\(--blue-bd\))/, '--blue-bd is no longer self-referential in aurora.css');
+  it('app.css has overrides for btn-primary:hover, btn-danger:hover, pool-mode-failover, and non-circular --blue-bd', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.btn-primary:hover\s*\{[^}]*box-shadow/, 'btn-primary:hover has a box-shadow override in app.css');
+    assert.match(css, /\.btn-danger:hover/, 'btn-danger:hover has an Aurora override in app.css');
+    assert.match(css, /\.pool-mode-failover/, 'pool-mode-failover has an Aurora override in app.css');
+    assert.match(css, /--blue-bd:\s*(?!var\(--blue-bd\))/, '--blue-bd is no longer self-referential in app.css');
   });
 });
 
@@ -101,13 +101,13 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
     assert.match(res.text, /class="app"/, 'aurora .app shell used (isAurora() signal)');
   });
 
-  it('aurora.css carries the gateway Strang-A fixes', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+  it('app.css carries the gateway Strang-A fixes', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     // .gw-relnotes styled (not bare <a>)
-    assert.match(css, /\.gw-relnotes/, '.gw-relnotes rule present in aurora.css');
+    assert.match(css, /\.gw-relnotes/, '.gw-relnotes rule present in app.css');
     // .unit-grid and .resbar present (fleet card signature components)
-    assert.match(css, /\.unit-grid/, '.unit-grid present in aurora.css');
-    assert.match(css, /\.resbar/, '.resbar present in aurora.css');
+    assert.match(css, /\.unit-grid/, '.unit-grid present in app.css');
+    assert.match(css, /\.resbar/, '.resbar present in app.css');
   });
 
   it('gateways.js renders the Aurora fleet cards and detail view without a theme branch', () => {
@@ -210,7 +210,7 @@ describe('aurora theme — pihole layout (Task P2-2)', () => {
     selectAurora();
     const res = await agent.get('/pihole').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora grid structure and signature classes on /pihole', async () => {
@@ -282,7 +282,7 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
     selectAurora();
     const res = await agent.get('/peers').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora toolbar, toggle-group, card-title, and data-table on /peers', async () => {
@@ -382,8 +382,8 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
     assert.match(js, /class="icon-action/, 'icon-action buttons');
   });
 
-  it('aurora.css carries the peers-page additions', () => {
-    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+  it('app.css carries the peers-page additions', () => {
+    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /\.aurora-gw-empty/, '.aurora-gw-empty rule present');
     assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present');
   });
@@ -395,7 +395,7 @@ describe('aurora theme — routes page (domain zones)', () => {
     selectAurora();
     const res = await agent.get('/routes').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
     assert.match(res.text, /id="zn-zones"/, '#zn-zones present');
   });
 
@@ -435,20 +435,20 @@ describe('aurora theme — routes page (domain zones)', () => {
     assert.match(res.text, /id="btn-edit-route-submit"/, '#btn-edit-route-submit present');
   });
 
-  it('aurora.css carries toggle, data-table, row-actions, icon-action rules', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.toggle\b/, '.toggle rule present in aurora.css');
-    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
-    assert.match(css, /\.row-actions\b/, '.row-actions rule present in aurora.css');
-    assert.match(css, /\.icon-action\b/, '.icon-action rule present in aurora.css');
-    assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in aurora.css');
+  it('app.css carries toggle, data-table, row-actions, icon-action rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.toggle\b/, '.toggle rule present in app.css');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in app.css');
+    assert.match(css, /\.row-actions\b/, '.row-actions rule present in app.css');
+    assert.match(css, /\.icon-action\b/, '.icon-action rule present in app.css');
+    assert.match(css, /\.toggle-group\b/, '.toggle-group rule present in app.css');
   });
 
-  it('aurora.css keeps the wizard modal shell (RDP wizard) and drops the legacy route wizard rules', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.modal\.modal-xl/, '.modal.modal-xl present in aurora.css');
-    assert.match(css, /\.modal\.modal-wizard/, '.modal.modal-wizard present in aurora.css');
-    assert.match(css, /\.modal-foot\.wiz-foot/, '.modal-foot.wiz-foot present in aurora.css');
+  it('app.css keeps the wizard modal shell (RDP wizard) and drops the legacy route wizard rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.modal\.modal-xl/, '.modal.modal-xl present in app.css');
+    assert.match(css, /\.modal\.modal-wizard/, '.modal.modal-wizard present in app.css');
+    assert.match(css, /\.modal-foot\.wiz-foot/, '.modal-foot.wiz-foot present in app.css');
     assert.doesNotMatch(css, /\.route-step-dot|\.service-step-pill|\.aurora-routes-grid/, 'legacy route wizard/grid rules removed');
   });
 });
@@ -459,7 +459,7 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     selectAurora();
     const res = await agent.get('/users').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora data-table and card-title on /users', async () => {
@@ -548,11 +548,11 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.match(res.text, /class="mi"/, '<span class="mi"> icon wrapper present in modal-head');
   });
 
-  it('inline <style> block has been removed from aurora/pages/users.njk (styles moved to aurora.css)', () => {
+  it('inline <style> block has been removed from aurora/pages/users.njk (styles moved to the stylesheet)', () => {
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'users.njk'), 'utf8');
-    assert.doesNotMatch(njk, /\.tw-step\s*\{/, '.tw-step inline style block absent (moved to aurora.css)');
-    assert.doesNotMatch(njk, /\.tw-preset-label\s*\{/, '.tw-preset-label inline style block absent (moved to aurora.css)');
-    assert.doesNotMatch(njk, /<style>/, 'no <style> block in aurora users.njk (moved to aurora.css)');
+    assert.doesNotMatch(njk, /\.tw-step\s*\{/, '.tw-step inline style block absent (moved to the stylesheet)');
+    assert.doesNotMatch(njk, /\.tw-preset-label\s*\{/, '.tw-preset-label inline style block absent (moved to the stylesheet)');
+    assert.doesNotMatch(njk, /<style>/, 'no <style> block in aurora users.njk (moved to the stylesheet)');
   });
 
   it('users.js renders the Aurora table and cards without a theme branch', () => {
@@ -564,12 +564,12 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.match(js, /function mfaTag\(/, 'mfaTag() present');
   });
 
-  it('aurora.css carries the users-page additions', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.banner-amber\b/, '.banner-amber rule present in aurora.css');
-    assert.match(css, /\.aurora-user-card\b/, '.aurora-user-card rule present in aurora.css');
-    assert.match(css, /\.tw-step\b/, '.tw-step animation rule present in aurora.css');
-    assert.match(css, /\.tw-preset-label\b/, '.tw-preset-label rule present in aurora.css');
+  it('app.css carries the users-page additions', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.banner-amber\b/, '.banner-amber rule present in app.css');
+    assert.match(css, /\.aurora-user-card\b/, '.aurora-user-card rule present in app.css');
+    assert.match(css, /\.tw-step\b/, '.tw-step animation rule present in app.css');
+    assert.match(css, /\.tw-preset-label\b/, '.tw-preset-label rule present in app.css');
   });
 });
 
@@ -579,7 +579,7 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     selectAurora();
     const res = await agent.get('/certificates').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora grid structure and signature classes on /certificates', async () => {
@@ -640,14 +640,14 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     assert.match(js, /TG\.stateTag\(h, 'tag-dot'\)/, 'tag-dot status tags');
   });
 
-  it('aurora.css already carries data-table, row-actions, icon-action, tag-dot (no new rules needed)', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
-    assert.match(css, /\.row-actions\b/, '.row-actions rule present in aurora.css');
-    assert.match(css, /\.icon-action\b/, '.icon-action rule present in aurora.css');
-    assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present in aurora.css');
-    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in aurora.css');
-    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
+  it('app.css already carries data-table, row-actions, icon-action, tag-dot (no new rules needed)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in app.css');
+    assert.match(css, /\.row-actions\b/, '.row-actions rule present in app.css');
+    assert.match(css, /\.icon-action\b/, '.icon-action rule present in app.css');
+    assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present in app.css');
+    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in app.css');
+    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in app.css');
   });
 });
 
@@ -657,7 +657,7 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     selectAurora();
     const res = await agent.get('/dns').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora grid structure, data-table, and card-title on /dns', async () => {
@@ -728,12 +728,12 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     assert.doesNotMatch(js, /renderStatic|dns-static-tbody/, 'the separate static table (default/pro) is gone');
   });
 
-  it('aurora.css already carries feature-lock, data-table, cell-name, mono rules (no new rules needed)', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.feature-lock\b/, '.feature-lock rule present in aurora.css');
-    assert.match(css, /\.data-table\b/, '.data-table rule present in aurora.css');
-    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in aurora.css');
-    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in aurora.css');
+  it('app.css already carries feature-lock, data-table, cell-name, mono rules (no new rules needed)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.feature-lock\b/, '.feature-lock rule present in app.css');
+    assert.match(css, /\.data-table\b/, '.data-table rule present in app.css');
+    assert.match(css, /\.data-table .cell-name/, '.data-table .cell-name rule present in app.css');
+    assert.match(css, /\.data-table .mono/, '.data-table .mono rule present in app.css');
   });
 });
 
@@ -800,14 +800,14 @@ describe('aurora theme — logs page (Task 8)', () => {
     assert.match(js, /function renderAccessLogs\(/, 'renderAccessLogs() present');
   });
 
-  it('aurora.css has .log-row, .sev, .ts, .msg, .src, .toggle-group rules', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.log-row\b/, '.log-row rule in aurora.css');
-    assert.match(css, /\.log-row .sev\b/, '.log-row .sev rule in aurora.css');
-    assert.match(css, /\.log-row .ts\b/, '.log-row .ts rule in aurora.css');
-    assert.match(css, /\.log-row .msg\b/, '.log-row .msg rule in aurora.css');
-    assert.match(css, /\.log-row .src\b/, '.log-row .src rule in aurora.css');
-    assert.match(css, /\.toggle-group\b/, '.toggle-group rule in aurora.css');
+  it('app.css has .log-row, .sev, .ts, .msg, .src, .toggle-group rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.log-row\b/, '.log-row rule in app.css');
+    assert.match(css, /\.log-row .sev\b/, '.log-row .sev rule in app.css');
+    assert.match(css, /\.log-row .ts\b/, '.log-row .ts rule in app.css');
+    assert.match(css, /\.log-row .msg\b/, '.log-row .msg rule in app.css');
+    assert.match(css, /\.log-row .src\b/, '.log-row .src rule in app.css');
+    assert.match(css, /\.toggle-group\b/, '.toggle-group rule in app.css');
   });
 });
 
@@ -817,7 +817,7 @@ describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
     selectAurora();
     const res = await agent.get('/gateway-pools').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora grid structure and signature classes on /gateway-pools', async () => {
@@ -892,11 +892,11 @@ describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
     assert.doesNotMatch(js, /AURORA_COOLDOWN_PRESETS/, 'single preset list');
   });
 
-  it('aurora.css carries pool-member-row Aurora overrides', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.pool-member-row\b/, '.pool-member-row override in aurora.css');
-    assert.match(css, /\.pool-member-handle\b/, '.pool-member-handle rule in aurora.css');
-    assert.match(css, /\.pool-member-name\b/, '.pool-member-name rule in aurora.css');
+  it('app.css carries pool-member-row Aurora overrides', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.pool-member-row\b/, '.pool-member-row override in app.css');
+    assert.match(css, /\.pool-member-handle\b/, '.pool-member-handle rule in app.css');
+    assert.match(css, /\.pool-member-name\b/, '.pool-member-name rule in app.css');
   });
 
   it('i18n has common.pro, gateway_pools.active_member, gateway_pools.preset_docker', () => {
@@ -919,7 +919,7 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     selectAurora();
     const res = await agent.get('/rdp').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders page-header with page-actions and btn-add-rdp on /rdp', async () => {
@@ -994,16 +994,16 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     assert.match(js, /function renderGrid\(/, 'renderGrid() present');
   });
 
-  it('aurora.css has .rdp-step-dot and .rdp-step-line rules (extracted from inline style)', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.rdp-step-dot\b/, '.rdp-step-dot rule present in aurora.css');
-    assert.match(css, /\.rdp-step-line\b/, '.rdp-step-line rule present in aurora.css');
+  it('app.css has .rdp-step-dot and .rdp-step-line rules (extracted from inline style)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.rdp-step-dot\b/, '.rdp-step-dot rule present in app.css');
+    assert.match(css, /\.rdp-step-line\b/, '.rdp-step-line rule present in app.css');
   });
 
-  it('inline <style nonce> block has been removed from aurora/pages/rdp.njk (styles moved to aurora.css)', () => {
+  it('inline <style nonce> block has been removed from aurora/pages/rdp.njk (styles moved to the stylesheet)', () => {
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'rdp.njk'), 'utf8');
-    assert.doesNotMatch(njk, /\.rdp-step-dot\s*\{/, '.rdp-step-dot inline style block absent (moved to aurora.css)');
-    assert.doesNotMatch(njk, /<style\s+nonce/, 'no <style nonce> block in aurora rdp.njk (moved to aurora.css)');
+    assert.doesNotMatch(njk, /\.rdp-step-dot\s*\{/, '.rdp-step-dot inline style block absent (moved to the stylesheet)');
+    assert.doesNotMatch(njk, /<style\s+nonce/, 'no <style nonce> block in aurora rdp.njk (moved to the stylesheet)');
   });
 
   it('peer-traffic modal is included in /rdp aurora page', async () => {
@@ -1033,7 +1033,8 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
   it('renders /settings under aurora (200, aurora shell)', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /aurora/, 'aurora theme shell present');
+    assert.match(res.text, /\/css\/app\.css/, 'the single stylesheet is linked');
+    assert.match(res.text, /<div class="app">[\s\S]*class="app-brand"/, 'aurora theme shell present');
     assert.match(res.text, /settings-tabs/, 'settings-tabs present');
   });
 
@@ -1135,19 +1136,19 @@ describe('aurora theme — settings layout (Task P2-11)', () => {
       path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
       'utf8'
     );
-    assert.doesNotMatch(njk, /\.settings-tabs\s*\{/, 'no .settings-tabs rule in njk (moved to aurora.css)');
+    assert.doesNotMatch(njk, /\.settings-tabs\s*\{/, 'no .settings-tabs rule in njk (moved to the stylesheet)');
     assert.doesNotMatch(njk, /<style\s[^>]*nonce/, 'no <style nonce> block in aurora settings.njk');
   });
 
-  it('aurora.css has settings-tabs rules (Task P2-11)', () => {
+  it('app.css has settings-tabs rules (Task P2-11)', () => {
     const css = fs.readFileSync(
-      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      path.join(__dirname, '..', 'public', 'css', 'app.css'),
       'utf8'
     );
-    assert.match(css, /\.settings-tabs\b/, '.settings-tabs rule in aurora.css');
-    assert.match(css, /\.settings-tab-toggle\b/, '.settings-tab-toggle rule in aurora.css');
-    assert.match(css, /\.settings-tab-dropdown\b/, '.settings-tab-dropdown rule in aurora.css');
-    assert.match(css, /\.settings-panel\b/, '.settings-panel rule in aurora.css');
+    assert.match(css, /\.settings-tabs\b/, '.settings-tabs rule in app.css');
+    assert.match(css, /\.settings-tab-toggle\b/, '.settings-tab-toggle rule in app.css');
+    assert.match(css, /\.settings-tab-dropdown\b/, '.settings-tab-dropdown rule in app.css');
+    assert.match(css, /\.settings-panel\b/, '.settings-panel rule in app.css');
   });
 });
 
@@ -1157,7 +1158,7 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     selectAurora();
     const res = await agent.get('/profile').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/aurora\.css/, 'loads aurora.css');
+    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
   it('renders Aurora grid structure and signature classes on /profile', async () => {
@@ -1241,10 +1242,10 @@ describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
     assert.match(js, /function setResourceDonut\(/, 'setResourceDonut() present');
   });
 
-  it('aurora.css has .res-gauge-wrap and .res-gauge-info rules', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
-    assert.match(css, /\.res-gauge-wrap\b/, '.res-gauge-wrap rule in aurora.css');
-    assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in aurora.css');
+  it('app.css has .res-gauge-wrap and .res-gauge-info rules', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.res-gauge-wrap\b/, '.res-gauge-wrap rule in app.css');
+    assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in app.css');
   });
 });
 
@@ -1314,8 +1315,8 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
     assert.match(js, /uh\.appendChild\(right\)/, 'right container appended to uh header row (inside card)');
   });
 
-  it('Issue 9: aurora.css has .tag.tag-dot::after (dot after text) and suppresses ::before', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+  it('Issue 9: app.css has .tag.tag-dot::after (dot after text) and suppresses ::before', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /\.tag\.tag-dot::after/, '.tag.tag-dot::after present (dot positioned after text)');
     assert.match(css, /\.tag\.tag-dot::before\s*\{[^}]*content:\s*none/, '.tag.tag-dot::before has content:none (before-dot suppressed)');
   });
@@ -1328,7 +1329,7 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
 
   it('Issue 11: renderDetail uses gw-detail-grid with exactly 3 columns (1/3 each)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'renderDetail() uses gw-detail-grid class');
     assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,minmax\(0,1fr\)\)/, 'gw-detail-grid uses exactly 3 columns (1/3 each)');
   });
@@ -1338,13 +1339,13 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
 describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
   it('Issue 12: renderGrid uses rdp-card-grid container (not span6/full-width)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'rdp.js'), 'utf8');
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     // Container must use rdp-card-grid, not grid (which yields span6 half-width cards)
     assert.match(js, /container\.className\s*=\s*'rdp-card-grid'/, "renderGrid uses 'rdp-card-grid' container");
     // Cards must not use span6 (which is half-width in 12-col grid)
     assert.doesNotMatch(js, /card\.className\s*=\s*'card span6'/, "card.className no longer uses 'card span6'");
-    // aurora.css must define the grid rule with auto-fill
-    assert.match(css, /\.rdp-card-grid\s*\{[^}]*auto-fill/, 'aurora.css .rdp-card-grid uses auto-fill grid');
+    // app.css must define the grid rule with auto-fill
+    assert.match(css, /\.rdp-card-grid\s*\{[^}]*auto-fill/, 'app.css .rdp-card-grid uses auto-fill grid');
   });
 
   it('Issue 13: status badge built inside card header (cardTitle) with tag-dot (text-left-of-dot)', () => {
@@ -1352,7 +1353,7 @@ describe('aurora theme — rdp UX fixes (Issues 12/13/14/15/16)', () => {
     // Status tag is appended to cardTitle (inside header), not to a separate health kv row
     assert.match(js, /statusTag\.style\.marginLeft\s*=\s*'auto'/, 'statusTag has margin-left:auto (pushed to header right)');
     assert.match(js, /cardTitle\.appendChild\(statusTag\)/, 'statusTag appended to cardTitle (inside card header)');
-    // Uses tag-dot class (text left of dot via ::after in aurora.css)
+    // Uses tag-dot class (text left of dot via ::after in app.css)
     assert.match(js, /statusTag\.className\s*=\s*'tag tag-green tag-dot'/, 'online state uses tag-green tag-dot');
     assert.match(js, /statusTag\.className\s*=\s*'tag tag-red tag-dot'/, 'offline state uses tag-red tag-dot');
   });
@@ -1408,17 +1409,17 @@ describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () =>
     assert.doesNotMatch(njk, /data-default-theme=|settings\.default_theme/, 'no default-theme card in settings.njk');
   });
 
-  it('Issue 18: aurora.css scopes align-items:start to settings panels (no card stretching)', () => {
+  it('Issue 18: app.css scopes align-items:start to settings panels (no card stretching)', () => {
     const css = fs.readFileSync(
-      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      path.join(__dirname, '..', 'public', 'css', 'app.css'),
       'utf8'
     );
     assert.match(css, /\.settings-panel\s+\.grid\s*\{[^}]*align-items\s*:\s*start/, '.settings-panel .grid has align-items:start');
   });
 
-  it('Issue 19: aurora.css .sidebar rule has position:static (sidebar stays in grid flow)', () => {
+  it('Issue 19: app.css .sidebar rule has position:static (sidebar stays in grid flow)', () => {
     const css = fs.readFileSync(
-      path.join(__dirname, '..', 'public', 'css', 'aurora.css'),
+      path.join(__dirname, '..', 'public', 'css', 'app.css'),
       'utf8'
     );
     // Verify desktop .sidebar has position:static (overrides pro.css position:fixed)
@@ -1428,7 +1429,7 @@ describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () =>
     // Both position:static (desktop) and position:fixed (mobile drawer) must co-exist in the file
     assert.ok(
       css.includes('position:static') && css.includes('position:fixed'),
-      'aurora.css has both position:static (desktop sidebar) and position:fixed (mobile drawer)'
+      'app.css has both position:static (desktop sidebar) and position:fixed (mobile drawer)'
     );
   });
 
@@ -1442,25 +1443,25 @@ describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () =>
 });
 
 describe('users modals — Aurora-safe overlay open (regression)', () => {
-  // aurora.css base `.modal-overlay{display:none}` (loaded after pro.css, same
+  // The Aurora section's `.modal-overlay{display:none}` (it follows the base
   // specificity → wins). The shared users.js must therefore open overlays with an
   // explicit inline display:flex (inline beats the class rule), exactly like
-  // routes.js does. Opening with style.display='' falls back to aurora.css → none,
+  // routes.js does. Opening with style.display='' falls back to that rule → none,
   // so the Add User / Edit User (and token) modals never appear in Aurora.
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'users.js'), 'utf8');
 
-  it('aurora.css hides .modal-overlay by default (documents why flex is required)', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'aurora.css'), 'utf8');
+  it('app.css hides .modal-overlay by default (documents why flex is required)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /\.modal-overlay\s*\{[^}]*display\s*:\s*none/, 'aurora .modal-overlay base is display:none');
   });
 
   it('user modal overlay is opened with display:flex, not an empty string', () => {
     assert.match(js, /userOverlay\.style\.display\s*=\s*'flex'/, "openUserModal must set userOverlay display to 'flex'");
-    assert.doesNotMatch(js, /userOverlay\.style\.display\s*=\s*''/, "userOverlay must not be opened with '' (aurora.css → none)");
+    assert.doesNotMatch(js, /userOverlay\.style\.display\s*=\s*''/, "userOverlay must not be opened with '' (app.css → none)");
   });
 
   it('token modal overlay is opened with display:flex, not an empty string', () => {
     assert.match(js, /tokenOverlay\.style\.display\s*=\s*'flex'/, "token modal must set tokenOverlay display to 'flex'");
-    assert.doesNotMatch(js, /tokenOverlay\.style\.display\s*=\s*''/, "tokenOverlay must not be opened with '' (aurora.css → none)");
+    assert.doesNotMatch(js, /tokenOverlay\.style\.display\s*=\s*''/, "tokenOverlay must not be opened with '' (app.css → none)");
   });
 });

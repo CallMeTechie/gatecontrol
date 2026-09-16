@@ -17,6 +17,17 @@ const H = require('../public/js/hsts-ui.js');
 const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Wave 2 §W2 (docs/feature-wave2.md): one stylesheet. §1 of public/css/app.css
+// is the former pro.css (base layer), §2 the former aurora.css.
+const APP_CSS = read('public/css/app.css');
+const APP_LAYERS = [['app.css §1 (base)', 1], ['app.css §2 (Aurora)', 2]];
+function appSection(n) {
+  const a = APP_CSS.indexOf(`\n * \u00a7${n} `);
+  assert.ok(a > 0, `app.css section \u00a7${n}`);
+  const b = APP_CSS.indexOf(`\n * \u00a7${n + 1} `);
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+}
+
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const hasId = (html, id) => html.includes('id="' + id + '"');
 
@@ -168,9 +179,9 @@ describe('HSTS: i18n', () => {
 });
 
 describe('HSTS: styles', () => {
-  it('each theme stylesheet has exactly one appended hs- section after the tg- section', () => {
-    for (const f of ['pro.css', 'aurora.css']) {
-      const css = read('public/css/' + f);
+  it('app.css §1 / §2 each have exactly one hs- section after the tg- section', () => {
+    for (const [f, n] of APP_LAYERS) {
+      const css = appSection(n);
       const marker = '/* ─── HSTS (hs-) ─── */';
       const at = css.indexOf(marker);
       assert.ok(at > 0, `${f}: section marker`);
@@ -188,8 +199,8 @@ describe('HSTS: styles', () => {
       const whole = css.replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, `${f}: braces balanced overall`);
     }
-    for (const f of ['pro.css']) {
-      const css = read('public/css/' + f);
+    for (const f of ['app.css §1 (base)']) {
+      const css = appSection(1);
       for (const cls of ['.zn-panel.hs-panel4', '.hs-fields', '.hs-check', '.tag.hs-entry-tag', '.hs-warn', '.hs-radios', '.hs-editor-block.hs-locked', '.hs-editor-fields', '.hs-dialog-body', '.hs-preview']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }

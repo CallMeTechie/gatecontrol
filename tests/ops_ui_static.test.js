@@ -26,7 +26,13 @@ const SETTINGS_JS = read('public/js/settings.js');
 const DASH_JS = read('public/js/dashboard.js');
 const OPS_JS = read('public/js/ops-ui.js');
 const EDITOR_JS = read('public/js/entry-editor.js');
-const OPS_CSS = read('public/css/ops.css');
+const APP_CSS = read('public/css/app.css');
+// Wave 2 §W2: ops.css is now section §5 of the single stylesheet app.css.
+const OPS_CSS = (() => {
+  const a = APP_CSS.indexOf('\n * \u00a75 ');
+  const b = APP_CSS.indexOf('\n * \u00a76 ');
+  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+})();
 
 // The strand's own code sections in the shared scripts.
 function section(src, from, to) {
@@ -45,17 +51,16 @@ describe('ops UI: stylesheet + scripts', () => {
     assert.match(js, /addEventListener\('gc:backup'[\s\S]{0,200}loadTargets\(\{ ifChanged: true \}\)/);
     assert.match(js, /if \(opts && opts\.ifChanged && JSON\.stringify\(\[state\.targets, state\.loadError\]\) === before\) return;/);
   });
-  it('ops.css is linked exactly once, after aurora.css among the feature stylesheets', () => {
+  it('the layout links app.css exactly once and nothing else', () => {
     const links = Array.from(LAYOUT.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
-    assert.equal(links.filter((l) => l === '/css/ops.css').length, 1);
-    const a = links.indexOf('/css/aurora.css');
-    const o = links.indexOf('/css/ops.css');
-    assert.ok(o > a, 'after aurora.css');
-    assert.ok(links.slice(a + 1, o).every((l) => /^\/css\/[a-z-]+\.css$/.test(l)), 'only feature stylesheets in between');
+    assert.deepEqual(links, ['/css/app.css']);
   });
-  it('aurora.css is untouched by this strand (no op- rules); ops.css braces balance', () => {
-    assert.doesNotMatch(read('public/css/aurora.css'), /\.op-/);
-    assert.equal((OPS_CSS.match(/\{/g) || []).length, (OPS_CSS.match(/\}/g) || []).length);
+  it('the op- rules live in the ops section, not in the base or Aurora sections; app.css braces balance', () => {
+    const base = APP_CSS.slice(APP_CSS.indexOf('\n * \u00a71 '), APP_CSS.indexOf('\n * \u00a73 '));
+    assert.doesNotMatch(base.replace(/\/\*[\s\S]*?\*\//g, ''), /\.op-/);
+    assert.match(OPS_CSS, /\.op-/);
+    const whole = APP_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length);
     assert.match(OPS_CSS, /\.so-editor-block\.so-locked > \.so-fp \{ opacity: 1; pointer-events: auto; \}/);
   });
   it('ops-ui.js loads before settings.js and dashboard.js', () => {

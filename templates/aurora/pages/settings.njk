@@ -1,7 +1,5 @@
 {% extends theme + "/layout.njk" %}
 
-{% block head %}<link rel="stylesheet" href="/css/two-factor.css?v={{ appVersion }}">{% endblock %}
-
 {% block content %}
 {% include "partials/tls-i18n.njk" %}
 
@@ -510,7 +508,7 @@
     </div>
 
     {# ── Off-site backups (docs/feature-release-b.md §7, licence scheduled_backups).
-       Filled by settings.js (GCOpsUI helpers); styles in public/css/ops.css.
+       Filled by settings.js (GCOpsUI helpers); styles in the op- section of public/css/app.css.
        Secrets are write-only: nothing secret is ever rendered or read back. #}
     <div class="card span12 op-offsite" id="card-offsite" data-licensed="{{ '1' if license.hasFeature('scheduled_backups') else '0' }}">
       <div class="card-title">
