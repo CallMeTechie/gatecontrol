@@ -67,6 +67,19 @@ docker run --rm --user 1000:1000 -e HOME=/tmp -v <worktree>:/app:ro \
 
 → 30 Dateien, 275 Tests, 0 Fehlschläge, 0 abgebrochene.
 
+Zusätzlich sind rund 230 der 457 Testdateien quer durch die Suite
+unprivilegiert gelaufen (Stichproben über jede achte Datei plus die
+Bereiche Dateisystem, DNS, Offsite, Zonen, Sicherheit, Statik, config-hash
+mit echtem Paket UND mit Stub): 0 Fehlschläge. Der volle Lauf gehört dem
+Lead.
+
+Dabei ist eine Datei aufgefallen, die vorher nur deshalb grün war, weil
+`GC_CADDY_DATA_DIR` nicht gesetzt war: `tls_guard_repro` verglich den
+TLS-Logpfad mit dem Literal `/data/caddy/tls.log`. Sie vergleicht jetzt
+gegen das konfigurierte Verzeichnis. (`waf_directives` setzt
+`GC_CADDY_DATA_DIR` selbst auf `/data/caddy` und prüft nur einen
+zusammengesetzten Pfad — sie schreibt nichts und bleibt, wie sie ist.)
+
 ## Was weiterhin Zugriffe braucht
 
 Kein Test fällt mehr aus Umgebungsgründen aus, aber zwei Dinge muss man haben:
