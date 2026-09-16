@@ -1,6 +1,12 @@
 'use strict';
 
 (function () {
+  // Texts come from the whitelist in templates/aurora/layout.njk
+  // (docs/feature-wave2.md §W1.1); the English string is only the fallback.
+  function T(key, fallback) {
+    return (window.GC && window.GC.t && window.GC.t[key]) || fallback;
+  }
+
   // ─── Load profile ────────────────────────────────────────
   async function loadProfile() {
     try {
@@ -25,9 +31,9 @@
     try {
       const data = await api.put('/api/settings/profile', { display_name: display_name, email: email });
       if (data.ok) {
-        showMessage('profile-message', 'Profile saved', 'success');
+        showMessage('profile-message', T('profile.saved', 'Profile saved'), 'success');
       } else {
-        showMessage('profile-message', data.error || 'Failed to save', 'error');
+        showMessage('profile-message', data.error || T('profile.save_failed', 'Failed to save'), 'error');
       }
     } catch (err) {
       showMessage('profile-message', err.message, 'error');
@@ -44,17 +50,17 @@
     const confirm_pw = document.getElementById('settings-confirm-pw').value;
 
     if (!current_password || !new_password) {
-      showMessage('password-message', 'All fields are required', 'error');
+      showMessage('password-message', T('profile.pw_all_required', 'All fields are required'), 'error');
       return;
     }
 
     if (new_password !== confirm_pw) {
-      showMessage('password-message', 'Passwords do not match', 'error');
+      showMessage('password-message', T('profile.pw_mismatch', 'Passwords do not match'), 'error');
       return;
     }
 
     if (new_password.length < 8) {
-      showMessage('password-message', 'Password must be at least 8 characters', 'error');
+      showMessage('password-message', T('profile.pw_too_short', 'Password must be at least 8 characters'), 'error');
       return;
     }
 
@@ -62,12 +68,12 @@
     try {
       const data = await api.put('/api/settings/password', { current_password: current_password, new_password: new_password });
       if (data.ok) {
-        showMessage('password-message', 'Password changed successfully', 'success');
+        showMessage('password-message', T('profile.pw_changed', 'Password changed successfully'), 'success');
         document.getElementById('settings-current-pw').value = '';
         document.getElementById('settings-new-pw').value = '';
         document.getElementById('settings-confirm-pw').value = '';
       } else {
-        showMessage('password-message', data.error || 'Failed to change password', 'error');
+        showMessage('password-message', data.error || T('profile.pw_change_failed', 'Failed to change password'), 'error');
       }
     } catch (err) {
       showMessage('password-message', err.message, 'error');

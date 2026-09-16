@@ -3,6 +3,9 @@
   const GC = window.GC || {};
   const headers = { 'Content-Type': 'application/json', 'x-csrf-token': GC.csrfToken };
   const T = (k) => (GC.t && GC.t[k]) || k;
+  // In-app dialogs instead of alert() (docs/feature-wave2.md §W1.2).
+  const D = window.GCDialog;
+  const fail = (msg) => D.alert({ message: msg, danger: true });
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -356,7 +359,7 @@
         await api('POST', `/devices/${id}/state`, { patch: { [btn.dataset.act]: !(state && state[btn.dataset.act]) } });
         await refreshState(id, card);
       }
-    } catch (e) { alert(e.message); }
+    } catch (e) { fail(e.message); }
   });
 
   // Target-temp stepper: 1° steps (this AC rounds to whole degrees) + optimistic UI.
@@ -370,7 +373,7 @@
       try {
         await api('POST', `/devices/${id}/state`, { patch: { targetTemp: value } });
         await refreshState(id, card); // setCardState marks the confirmed setpoint green
-      } catch (e) { wrap.classList.remove('pending'); alert(e.message); }
+      } catch (e) { wrap.classList.remove('pending'); fail(e.message); }
     }, 500); // coalesce rapid +/- clicks into one command
   }
 
@@ -399,7 +402,7 @@
     try {
       await api('POST', `/devices/${id}/state`, { patch: { fanSpeed: val } });
       await refreshState(id, card);
-    } catch (e) { alert(e.message); }
+    } catch (e) { fail(e.message); }
   });
 
   $('#midea-cloud-form').addEventListener('submit', async (ev) => {
@@ -452,7 +455,7 @@
     if (!add) return;
     add.disabled = true;
     try { await api('POST', '/devices', { sn: add.dataset.add, name: add.dataset.name }); await loadDevices(); await loadCloudDevices(); window.closeModal('midea-add-modal'); }
-    catch (e) { alert(e.message); } finally { add.disabled = false; }
+    catch (e) { fail(e.message); } finally { add.disabled = false; }
   });
 
   document.addEventListener('click', async (ev) => {
@@ -462,12 +465,12 @@
     try {
       await api('POST', '/devices', { transport: 'cloud', cloud_appliance_id: btn.dataset.cloudId, name: btn.dataset.name });
       await loadDevices(); await loadCloudDevices(); window.closeModal('midea-add-modal');
-    } catch (e) { alert(e.message); } finally { btn.disabled = false; }
+    } catch (e) { fail(e.message); } finally { btn.disabled = false; }
   });
 
   $('#midea-discover').addEventListener('click', async () => {
-    try { const { devices } = await api('POST', '/discover'); alert(`${devices.length} ${T('midea.discover.result')}`); }
-    catch (e) { alert(e.message); }
+    try { const { devices } = await api('POST', '/discover'); await D.alert({ message: `${devices.length} ${T('midea.discover.result')}` }); }
+    catch (e) { fail(e.message); }
   });
 
   // Manual add by IP (when discovery can't reach the device). A selected cloud
@@ -523,7 +526,7 @@
       window.closeModal('midea-owner-modal');
       await loadDevices();
     } catch (e) {
-      alert(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message);
+      fail(e.code === 'MIDEA_OWNER_UNKNOWN_USER' ? T('midea.owners.error_unknown_user') : e.message);
     }
   });
 

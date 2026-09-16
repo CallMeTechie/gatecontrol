@@ -3,6 +3,10 @@
 
 (function () {
 
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
+  function dlgError(msg) { D.alert({ message: msg, danger: true }); }
+
   var currentView = 'grid';
   var currentFilter = 'all';
   var currentProtoFilter = 'all';
@@ -280,7 +284,7 @@
 
     var deleteBtn = e.target.closest('[data-delete]');
     if (deleteBtn) {
-      if (!confirm(GC.t['rdp.confirm_delete'] || 'Delete this RDP route?')) return;
+      if (!await D.confirm({ message: D.t('rdp.confirm_delete'), danger: true, okLabel: D.t('common.delete') })) return;
       try { await api.del('/api/v1/rdp/' + deleteBtn.dataset.delete); loadRoutes(); } catch {}
       return;
     }
@@ -293,7 +297,7 @@
 
     var disconnAllBtn = e.target.closest('[data-disconnect-all]');
     if (disconnAllBtn) {
-      if (!confirm(GC.t['rdp.confirm_disconnect_all'] || 'Alle aktiven Sessions trennen?')) return;
+      if (!await D.confirm({ message: D.t('rdp.confirm_disconnect_all'), danger: true, okLabel: D.t('rdp.disconnect_all') })) return;
       try { await api.post('/api/v1/rdp/' + disconnAllBtn.dataset.disconnectAll + '/sessions/disconnect-all'); loadRoutes(); } catch {}
       return;
     }
@@ -688,7 +692,7 @@
       container.appendChild(label);
     });
     if (!allUsers.length) {
-      container.textContent = 'No users available';
+      container.textContent = D.t('users.no_users');
       container.style.cssText = 'font-size:12px;color:var(--text-3)';
     }
   }
@@ -715,7 +719,7 @@
 
   async function openEditModal(id) {
     editingId = id;
-    modalTitle.textContent = 'Edit RDP Route';
+    modalTitle.textContent = D.t('rdp.edit');
     try {
       var res = await api.get('/api/v1/rdp/' + id);
       if (!res.ok) return;
@@ -831,7 +835,7 @@
 
       openModal('rdp-modal-overlay');
     } catch (err) {
-      alert(err.message || 'Failed to load route');
+      dlgError(err.message || D.t('rdp.load_failed'));
     }
   }
 
@@ -999,16 +1003,16 @@
           if (authPos !== -1) showWizardStep(authPos + 1);
           return;
         }
-        var msg = result.error || 'Failed to save RDP route';
+        var msg = result.error || D.t('rdp.save_failed');
         var firstField = Object.keys(fields)[0];
         if (firstField) msg = fields[firstField];
-        alert(msg);
+        dlgError(msg);
         return;
       }
       closeRdpModal();
       loadRoutes();
     } catch (err) {
-      alert(err.message || 'Failed to save RDP route');
+      dlgError(err.message || D.t('rdp.save_failed'));
     }
   });
 
@@ -1247,7 +1251,7 @@
   // Protocol segment-control click
   var protoSeg = document.getElementById('rdp-protocol-seg');
   if (protoSeg) {
-    protoSeg.addEventListener('click', function (e) {
+    protoSeg.addEventListener('click', async function (e) {
       var btn = e.target.closest('[data-protocol]');
       if (!btn) return;
       e.preventDefault();
@@ -1255,8 +1259,7 @@
       // Step 6: warn before a switch that would clear a field with content
       // (typed or stored). username/password are protocol-shared → never cleared.
       if (target !== currentProtocol && wouldClearSetFieldsOnSwitch(target)) {
-        if (!window.confirm(GC.t['rdp.proto_switch_confirm']
-          || 'Switching protocol clears settings that do not apply to the new protocol. Continue?')) return;
+        if (!await D.confirm({ message: D.t('rdp.proto_switch_confirm'), danger: true })) return;
       }
       selectProtocol(target, true);
     });
@@ -1294,12 +1297,12 @@
     if (key === 'connection') {
       var name = (document.getElementById('rdp-name') || {}).value || '';
       var host = (document.getElementById('rdp-host') || {}).value || '';
-      if (!name.trim()) { alert(GC.t['rdp.name_required'] || 'Name is required'); return false; }
-      if (!host.trim()) { alert(GC.t['rdp.host_required'] || 'Host is required'); return false; }
+      if (!name.trim()) { dlgError(D.t('rdp.name_required')); return false; }
+      if (!host.trim()) { dlgError(D.t('rdp.host_required')); return false; }
       var accessModeEl = document.getElementById('rdp-access-mode');
       if (accessModeEl && accessModeEl.value === 'gateway') {
         var peer = (document.getElementById('rdp-homegw-peer') || {}).value || '';
-        if (!peer) { alert(GC.t['rdp.gateway_peer_required'] || 'Please pick a Home Gateway peer'); return false; }
+        if (!peer) { dlgError(D.t('rdp.gateway_peer_required')); return false; }
       }
     }
     // Auth step — inline pre-validation (UX only; backend stays authoritative).
@@ -1308,14 +1311,14 @@
       var mode = (document.getElementById('rdp-credential-mode') || {}).value;
       if (mode !== 'none') {
         if (!credSatisfied('username')) {
-          alert(GC.t['rdp.auth.username_required'] || 'Username is required'); return false;
+          dlgError(D.t('rdp.auth.username_required')); return false;
         }
         if (!credSatisfied('password') && !credSatisfied('ssh_private_key')) {
-          alert(GC.t['rdp.auth.password_or_key'] || 'Enter a password or a private key'); return false;
+          dlgError(D.t('rdp.auth.password_or_key')); return false;
         }
         var passVal = (document.getElementById('rdp-ssh-passphrase') || {}).value || '';
         if (passVal.trim() && !credSatisfied('ssh_private_key')) {
-          alert(GC.t['rdp.auth.passphrase_needs_key'] || 'A passphrase requires a private key'); return false;
+          dlgError(D.t('rdp.auth.passphrase_needs_key')); return false;
         }
       }
     }

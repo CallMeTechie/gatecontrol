@@ -1,5 +1,10 @@
 'use strict';
 
+// In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+var D = window.GCDialog;
+var DT = function (k, p) { return D.t(k, p); };
+
+
 (function () {
   // ─── Gateway-Tokens Modal (shared helper for create + rotate flows) ──────
   // Source URL of the install-pve.sh script used in the LXC tab. Hardcoded
@@ -624,9 +629,7 @@
 
   // ─── Gateway env download (rotates tokens on server) ─────
   async function downloadGatewayEnv(peerId) {
-    var confirmMsg = GC.t['gateway_download_confirm']
-      || 'Downloading regenerates the gateway tokens. The currently running gateway will lose its connection. Continue?';
-    if (!window.confirm(confirmMsg)) return;
+    if (!await D.confirm({ message: DT('gateway_download_confirm'), danger: true, okLabel: DT('peers.gateway_env_download') })) return;
     try {
       var resp = await fetch('/api/v1/peers/' + encodeURIComponent(peerId) + '/gateway-env/rotate', {
         method: 'POST',
@@ -638,7 +641,7 @@
         body: '{}',
       });
       if (!resp.ok) {
-        alert('Download failed (' + resp.status + ')');
+        D.alert({ message: DT('peers.download_failed', { status: resp.status }), danger: true });
         return;
       }
       var text = await resp.text();
@@ -652,7 +655,7 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Download error: ' + err.message);
+      D.alert({ message: DT('peers.download_failed', { status: err.message }), danger: true });
     }
   }
   tbody.addEventListener('click', handlePeerAction);
@@ -1032,7 +1035,7 @@
         }
         if (gwBtn) {
           gwBtn.onclick = async function() {
-            if (!confirm((GC.t && GC.t['gateway_download_confirm']) || 'Gateway-Tokens werden regeneriert. Laufender Gateway wird ungültig. Fortfahren?')) return;
+            if (!await D.confirm({ message: DT('gateway_download_confirm'), danger: true, okLabel: DT('peers.gateway_env_download') })) return;
             try {
               // POST /rotate returns JSON { apiToken, pushToken, envContent }
               var data = await api.post('/api/peers/' + peer.id + '/gateway-env/rotate', {});
@@ -1136,7 +1139,7 @@
         openModal('modal-qr-peer');
       }
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
     }
   }
 
@@ -1190,7 +1193,7 @@
       loadPeers();
       loadGroups();
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
     } finally {
       btnReset(btn);
     }
@@ -1343,7 +1346,7 @@
         '  \u2191' + formatBytes(data.peer.total_tx || 0);
       renderTrafficChart(data.data);
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
     }
   }
 
@@ -1450,19 +1453,21 @@
           editingGroupId = null;
           loadGroups();
         } else {
-          alert(data.error);
+          D.alert({ message: data.error || DT('common.error'), danger: true });
         }
-      }).catch(function(err) { alert(err.message); });
+      }).catch(function(err) { D.alert({ message: err.message, danger: true }); });
     } else if (action === 'delete' && id) {
-      if (!confirm(GC.t['peer_groups.confirm_delete'] || 'Delete this peer group?')) return;
-      api.del('/api/peer-groups/' + id).then(function(data) {
-        if (data.ok) {
-          loadGroups();
-          loadPeers();
-        } else {
-          alert(data.error);
-        }
-      }).catch(function(err) { alert(err.message); });
+      D.confirm({ message: DT('peer_groups.confirm_delete'), danger: true, okLabel: DT('common.delete') }).then(function (ok) {
+        if (!ok) return;
+        api.del('/api/peer-groups/' + id).then(function(data) {
+          if (data.ok) {
+            loadGroups();
+            loadPeers();
+          } else {
+            D.alert({ message: data.error || DT('common.error'), danger: true });
+          }
+        }).catch(function(err) { D.alert({ message: err.message, danger: true }); });
+      });
     }
   });
 
@@ -1592,10 +1597,10 @@
         exitBatchMode();
         loadPeers();
       } else {
-        alert(data.error || (GC.t['common.error'] || 'Error'));
+        D.alert({ message: data.error || DT('common.error'), danger: true });
       }
     } catch (err) {
-      alert((GC.t['common.error'] || 'Error') + ': ' + err.message);
+      D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
     }
   }
 
@@ -1605,10 +1610,10 @@
   document.getElementById('batch-disable-peers').addEventListener('click', function() {
     executeBatchAction('disable');
   });
-  document.getElementById('batch-delete-peers').addEventListener('click', function() {
+  document.getElementById('batch-delete-peers').addEventListener('click', async function() {
     var count = batchSelected.size;
-    var msg = (GC.t['batch.confirm_delete_peers'] || 'Are you sure you want to delete {{count}} peer(s)?').replace('{{count}}', count);
-    if (confirm(msg)) {
+    var msg = DT('batch.confirm_delete_peers').replace('{{count}}', count);
+    if (await D.confirm({ message: msg, danger: true, okLabel: DT('common.delete') })) {
       executeBatchAction('delete');
     }
   });

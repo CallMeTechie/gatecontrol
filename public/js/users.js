@@ -1,6 +1,9 @@
 'use strict';
 
 (function () {
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
+  var DT = function (k, p) { return D.t(k, p); };
   var tbody = document.getElementById('users-tbody');
   var editId = null;
 
@@ -261,7 +264,7 @@
       var id = tfResetBtn.dataset.uid;
       var name = tfResetBtn.dataset.uname || '';
       if (!id) return;
-      if (!confirm(tfT('users_reset_confirm', 'Reset 2FA for {{name}}?').replace('{{name}}', name))) return;
+      if (!await D.confirm({ message: tfT('users_reset_confirm', 'Reset 2FA for {{name}}?').replace('{{name}}', name), danger: true })) return;
       btnLoading(tfResetBtn);
       try {
         var data = await api.del('/api/v1/users/' + id + '/2fa');
@@ -299,7 +302,7 @@
       renderUserTokens(data.tokens || []);
       openUserModal();
     } catch (err) {
-      alert((GC.t['error.users.get'] || 'Failed to load user') + ': ' + err.message);
+      D.alert({ message: DT('error.users.get') + ': ' + err.message, danger: true });
     }
   }
 
@@ -340,25 +343,25 @@
 
   // ─── Delete user ──────────────────────────────────────────
   async function deleteUser(id) {
-    if (!confirm(GC.t['users.confirm_delete'] || 'Delete this user? All their tokens will be revoked.')) return;
+    if (!await D.confirm({ message: DT('users.confirm_delete'), danger: true, okLabel: DT('common.delete') })) return;
     try {
       await api.del('/api/v1/users/' + id);
       loadUsers();
     } catch (err) {
-      alert((GC.t['error.users.delete'] || 'Failed to delete user') + ': ' + err.message);
+      D.alert({ message: DT('error.users.delete') + ': ' + err.message, danger: true });
     }
   }
 
   // ─── Toggle user ──────────────────────────────────────────
   async function toggleUser(id, currentlyEnabled) {
     if (currentlyEnabled) {
-      if (!confirm(GC.t['users.confirm_disable'] || 'Disable this user? All their tokens will stop working.')) return;
+      if (!await D.confirm({ message: DT('users.confirm_disable'), danger: true, okLabel: DT('users.disable') })) return;
     }
     try {
       await api.put('/api/v1/users/' + id + '/toggle');
       loadUsers();
     } catch (err) {
-      alert((GC.t['error.users.toggle'] || 'Failed to toggle user') + ': ' + err.message);
+      D.alert({ message: DT('error.users.toggle') + ': ' + err.message, danger: true });
     }
   }
 
@@ -370,7 +373,7 @@
     if (!tokens.length) {
       var empty = document.createElement('div');
       empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
-      empty.textContent = 'No tokens';
+      empty.textContent = DT('users.no_tokens');
       tokensList.appendChild(empty);
       return;
     }
@@ -401,7 +404,7 @@
 
       if (tk.last_used_at) {
         var lastUsed = document.createElement('span');
-        lastUsed.textContent = 'Used ' + relativeTime(tk.last_used_at);
+        lastUsed.textContent = DT('users.token_last_used', { when: relativeTime(tk.last_used_at) });
         meta.appendChild(lastUsed);
       }
 
@@ -429,12 +432,12 @@
   }
 
   async function revokeToken(tokenId) {
-    if (!confirm('Revoke this token?')) return;
+    if (!await D.confirm({ message: DT('users.token_revoke_confirm'), danger: true, okLabel: DT('users.token_revoke') })) return;
     try {
       await api.del('/api/v1/tokens/' + tokenId);
       reloadEditTokens();
     } catch (err) {
-      alert('Failed to revoke token: ' + err.message);
+      D.alert({ message: DT('users.token_revoke_failed') + ': ' + err.message, danger: true });
     }
   }
 
@@ -713,7 +716,7 @@
           loadUnassigned();
           loadUsers();
         } catch (err) {
-          alert(err.message || 'Failed to assign token');
+          D.alert({ message: err.message || DT('users.token_assign_failed'), danger: true });
         } finally {
           btnReset(assignBtn);
         }

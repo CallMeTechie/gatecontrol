@@ -18,7 +18,11 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/bricolage-grotesque-latin.woff2">
 <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/jetbrains-mono-latin.woff2">
 <link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
+{# confirmOk/confirmCancel: the in-app confirmation that replaced window.confirm
+   (docs/feature-wave2.md §W1.2). #}
 <script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ {
+  confirmOk: t('common.ok'),
+  confirmCancel: t('common.cancel'),
   fallbackUnknown: t('portal.fallback.unknown'),
   noServices: t('portal.services.none_shared'),
   unavailable: t('portal.widget.unavailable'),

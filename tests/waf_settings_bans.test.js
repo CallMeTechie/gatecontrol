@@ -201,8 +201,12 @@ test('manual ban: 201, synced at once, list, Caddy route after redirect + mTLS g
 
   const list = (await GET('/waf/bans')).body.bans;
   assert.deepEqual(list.map((b) => b.ip).sort(), ['198.51.100.7', '2001:db8:beef::/48']);
-  assert.deepEqual(Object.keys(list[0]).sort(), ['banned_at', 'expires_at', 'first_seen', 'hits', 'ip', 'manual', 'reason']);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['banned_at', 'expires_at', 'first_seen', 'hits', 'ip', 'manual', 'reason', 'reason_code', 'reason_params']);
   assert.ok(busEvents.some((e) => e.kind === 'ban' && e.ip === '198.51.100.7'));
+  // docs/feature-wave2.md §W1.3: the reason of a ban the service writes itself
+  // gets a code; `reason` keeps its plain text.
+  assert.deepEqual(list.map((b) => b.reason_code).sort(), ['manual', 'manual']);
+  assert.deepEqual(list[0].reason_params, {});
 
   // Route position: gc_https_redirect, the mTLS guard, then gc_waf_bans.
   const base = { route_type: 'http', target_kind: 'direct', target_ip: '127.0.0.1', target_port: 8081, enabled: 1, external_enabled: 1 };

@@ -2,6 +2,11 @@
 
 // Note: btn.innerHTML usage below is safe - only hardcoded SVG paths are inserted, no user input.
 
+// In-app dialogs instead of the browser's confirm()/alert()/prompt()
+// (docs/feature-wave2.md §W1.2). D.t() reads window.GC.t (layout.njk).
+var D = window.GCDialog;
+var DT = function (k, p) { return D.t(k, p); };
+
 // ─── Settings Tab Switching ──────────────────────────────
 (function () {
   var tabs = document.querySelectorAll('.settings-tabs .tab');
@@ -90,17 +95,17 @@
 (function () {
   // ─── Clear logs ──────────────────────────────────────────
   document.getElementById('btn-clear-logs').addEventListener('click', async function() {
-    if (!confirm(GC.t['settings.confirm_clear_logs'] || 'Clear all activity logs? This action cannot be undone.')) return;
     const btn = this;
+    if (!await D.confirm({ title: DT('settings.clear_logs_title'), message: DT('settings.confirm_clear_logs'), danger: true, okLabel: DT('common.delete') })) return;
 
     btnLoading(btn);
     try {
       const data = await api.post('/api/settings/clear-logs');
       if (data.ok) {
-        alert((GC.t['settings.logs_cleared'] || 'Logs cleared') + ': ' + data.deleted);
+        await D.alert({ message: DT('settings.logs_cleared') + ': ' + data.deleted });
       }
     } catch (err) {
-      alert('Error: ' + err.message);
+      D.alert({ message: err.message, danger: true });
     } finally {
       btnReset(btn);
     }
@@ -123,7 +128,7 @@
       webhooksList.textContent = '';
       const empty = document.createElement('div');
       empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
-      empty.textContent = 'No webhooks configured';
+      empty.textContent = DT('settings.webhooks_empty');
       webhooksList.appendChild(empty);
       return;
     }
@@ -190,12 +195,13 @@
       if (action === 'test') {
         try {
           const data = await api.post('/api/webhooks/' + id + '/test');
-          alert(data.ok ? 'Test sent (HTTP ' + data.status + ')' : 'Test failed: ' + data.error);
-        } catch (err) { alert('Test failed: ' + err.message); }
+          if (data.ok) D.alert({ message: DT('settings.webhook_test_ok', { status: data.status }) });
+          else D.alert({ message: DT('settings.webhook_test_failed', { error: data.error }), danger: true });
+        } catch (err) { D.alert({ message: DT('settings.webhook_test_failed', { error: err.message }), danger: true }); }
       } else if (action === 'toggle') {
         try { await api.put('/api/webhooks/' + id + '/toggle'); loadWebhooks(); } catch (err) { console.error(err); }
       } else if (action === 'delete') {
-        if (!confirm(GC.t['settings.confirm_delete_webhook'] || 'Delete this webhook?')) return;
+        if (!await D.confirm({ message: DT('settings.confirm_delete_webhook'), danger: true, okLabel: DT('common.delete') })) return;
         try { await api.del('/api/webhooks/' + id); loadWebhooks(); } catch (err) { console.error(err); }
       }
     });
@@ -206,7 +212,7 @@
     btnAddWebhook.addEventListener('click', async function() {
       const url = document.getElementById('webhook-url').value.trim();
       const description = document.getElementById('webhook-desc').value.trim();
-      if (!url) return alert('Webhook URL is required');
+      if (!url) return D.alert({ message: DT('settings.webhook_url_required'), danger: true });
       try {
         const data = await api.post('/api/webhooks', { url: url, description: description, events: '*' });
         if (data.ok) {
@@ -214,9 +220,9 @@
           document.getElementById('webhook-desc').value = '';
           loadWebhooks();
         } else {
-          alert(data.error || 'Failed to create webhook');
+          D.alert({ message: data.error || DT('settings.webhook_create_failed'), danger: true });
         }
-      } catch (err) { alert(err.message); }
+      } catch (err) { D.alert({ message: err.message, danger: true }); }
     });
   }
 
@@ -238,7 +244,7 @@
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Backup failed: ' + err.message);
+      D.alert({ message: DT('settings.backup_failed', { error: err.message }), danger: true });
     }
   });
 
@@ -338,7 +344,14 @@
 
   document.getElementById('btn-backup-restore').addEventListener('click', async function() {
     if (!pendingBackupFile) return;
-    if (!confirm('This will replace ALL existing peers, routes, settings and webhooks. Continue?')) return;
+    // Destructive: the restore drops everything that is there now.
+    if (!await D.confirm({
+      title: DT('settings.restore_confirm'),
+      message: DT('settings.restore_warning'),
+      detail: DT('settings.restore_warning_detail'),
+      okLabel: DT('settings.restore_confirm_ok'),
+      danger: true,
+    })) return;
 
     const formData = backupFormData(pendingBackupFile);
 
@@ -353,7 +366,10 @@
 
       if (data.ok) {
         const r = data.restored;
-        alert('Restore complete: ' + r.peers + ' peers, ' + r.routes + ' routes, ' + r.settings + ' settings, ' + r.webhooks + ' webhooks');
+        await D.alert({
+          title: DT('settings.restore_done_title'),
+          message: DT('settings.restore_done', { peers: r.peers, routes: r.routes, settings: r.settings, webhooks: r.webhooks }),
+        });
         window.location.reload();
       } else {
         onGcbkNeedsPassphrase(data);
@@ -448,8 +464,8 @@
   // SMTP password clear
   var smtpClear = document.getElementById('smtp-password-clear');
   if (smtpClear) {
-    smtpClear.addEventListener('click', function () {
-      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+    smtpClear.addEventListener('click', async function () {
+      if (!await D.confirm({ message: DT('settings.autosave.clear_secret_confirm'), danger: true })) return;
       SettingsAutosave.enqueue('smtp', function () {
         return api.put('/api/smtp/settings', {
           host: document.getElementById('smtp-host').value,
@@ -468,7 +484,7 @@
       var email = document.getElementById('smtp-test-email').value.trim();
       var resultEl = document.getElementById('smtp-test-result');
       if (!email) {
-        resultEl.textContent = 'Email address is required';
+        resultEl.textContent = DT('settings.smtp_test_email_required');
         resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
         return;
       }
@@ -477,10 +493,10 @@
       try {
         var data = await api.post('/api/smtp/test', { email: email });
         if (data.ok) {
-          resultEl.textContent = 'Test email sent to ' + email;
+          resultEl.textContent = DT('settings.smtp_test_sent', { email: email });
           resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--green-bg);color:var(--green)';
         } else {
-          resultEl.textContent = data.error || 'Test failed';
+          resultEl.textContent = data.error || DT('settings.smtp_test_failed');
           resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
         }
       } catch (err) {
@@ -583,7 +599,7 @@
           try {
             await api.del('/api/settings/lockout/' + encodeURIComponent(acc.identifier));
             loadLockedAccounts();
-          } catch (err) { alert(err.message); }
+          } catch (err) { D.alert({ message: err.message, danger: true }); }
         });
         row.appendChild(btn);
         listEl.appendChild(row);
@@ -872,8 +888,8 @@
   // ip2location clear
   var ip2lClear = document.getElementById('ip2location-clear');
   if (ip2lClear) {
-    ip2lClear.addEventListener('click', function () {
-      if (!window.confirm((window.GC.t || {})['settings.autosave.clear_secret_confirm'] || 'Remove the stored value?')) return;
+    ip2lClear.addEventListener('click', async function () {
+      if (!await D.confirm({ message: DT('settings.autosave.clear_secret_confirm'), danger: true })) return;
       SettingsAutosave.enqueue('ip2location', function () {
         return api.put('/api/v1/settings/ip2location', { api_key: '', clear: true });
       });
@@ -1002,12 +1018,12 @@
           { type: 'path', d: 'M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2' },
         ]));
         deleteBtn.addEventListener('click', async function() {
-          if (!confirm(GC.t['autobackup.confirm_delete'] || 'Delete this backup file?')) return;
+          if (!await D.confirm({ message: DT('autobackup.confirm_delete'), danger: true, okLabel: DT('common.delete') })) return;
           try {
             var res = await api.del('/api/settings/autobackup/' + encodeURIComponent(f.filename));
             if (res.ok) loadAutobackupFiles();
-            else alert(res.error || 'Failed');
-          } catch (err) { alert(err.message); }
+            else D.alert({ message: res.error || DT('autobackup.delete_failed'), danger: true });
+          } catch (err) { D.alert({ message: err.message, danger: true }); }
         });
         row.appendChild(deleteBtn);
 
@@ -1162,7 +1178,7 @@
 
   if (removeBtn) {
     removeBtn.addEventListener('click', async function () {
-      if (!confirm(t['license.remove_confirm'] || 'Remove license?')) return;
+      if (!await D.confirm({ message: DT('license.remove_confirm'), danger: true, okLabel: DT('common.delete') })) return;
       try {
         var data = await api.del('/api/v1/license');
         if (data.ok) {
@@ -2009,13 +2025,13 @@
   var btnRestart = document.getElementById('btn-svc-wg-restart');
   if (btnRestart) {
     btnRestart.addEventListener('click', async function () {
-      if (!confirm(GC.t['config.restart'] + ' WireGuard?')) return;
+      if (!await D.confirm({ message: DT('settings.svc.wg_restart_confirm'), okLabel: DT('config.restart') })) return;
       btnLoading(btnRestart);
       try {
         var data = await api.post('/api/wg/restart');
-        if (!data.success) alert('Failed to restart WireGuard');
+        if (!data.success) D.alert({ message: DT('settings.svc.wg_restart_failed'), danger: true });
       } catch (err) {
-        alert(err.message || 'Error');
+        D.alert({ message: err.message || DT('common.error'), danger: true });
       } finally {
         btnReset(btnRestart);
       }
@@ -2129,9 +2145,9 @@
       try {
         var data = await api.post('/api/caddy/reload');
         if (data.success) loadCaddyStatus();
-        else alert('Failed to reload Caddy');
+        else D.alert({ message: DT('settings.svc.caddy_reload_failed'), danger: true });
       } catch (err) {
-        alert(err.message || 'Error');
+        D.alert({ message: err.message || DT('common.error'), danger: true });
       } finally {
         btnReset(btnReload);
       }
@@ -2187,15 +2203,26 @@
     });
   }
 
-  document.getElementById('st-add-network').addEventListener('click', function () {
-    var label = prompt(GC.t['settings.split_tunnel_label_prompt'] || 'Label:');
+  document.getElementById('st-add-network').addEventListener('click', async function () {
+    var label = await D.prompt({
+      title: DT('settings.split_tunnel_add_title'),
+      label: DT('settings.split_tunnel_label_prompt'),
+      maxLength: 64,
+      okLabel: DT('common.next'),
+      validate: function (v) { return v ? null : DT('settings.split_tunnel_label_required'); },
+    });
     if (!label) return;
-    var cidr = prompt(GC.t['settings.split_tunnel_cidr_prompt'] || 'CIDR (e.g. 172.20.0.0/16):');
+    var cidr = await D.prompt({
+      title: DT('settings.split_tunnel_add_title'),
+      label: DT('settings.split_tunnel_cidr_prompt'),
+      placeholder: '172.20.0.0/16',
+      maxLength: 18,
+      validate: function (v) {
+        if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(v)) return DT('settings.split_tunnel_cidr_invalid');
+        return null;
+      },
+    });
     if (!cidr) return;
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(cidr)) {
-      alert('Invalid CIDR format');
-      return;
-    }
     customNets.push({ label: label, cidr: cidr });
     renderCustom();
     SettingsAutosave.enqueue('split-tunnel', stSave);
@@ -2456,7 +2483,7 @@
       if (!inst) return;
 
       if (action === 'delete') {
-        if (!confirm(t['pihole.cfg.confirm_delete'] || 'Delete this instance?')) return;
+        if (!await D.confirm({ message: DT('pihole.cfg.confirm_delete'), danger: true, okLabel: DT('common.delete') })) return;
         phInstances.splice(idx, 1);
         renderInstances();
         await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
@@ -2791,7 +2818,7 @@
   if (applyBtn) applyBtn.addEventListener('click', async function () {
     if (errEl) { errEl.classList.remove('autosave-error'); errEl.textContent = ''; errEl.style.display = 'none'; }
     if (effective() === currentHost) return;     // no-op: nothing changed
-    if (!window.confirm(t['settings.portal.switch_warning'] || 'The portal will be briefly unreachable while switching, and the previous name stops working. Continue?')) {
+    if (!await D.confirm({ title: DT('settings.portal.switch_title'), message: DT('settings.portal.switch_warning') })) {
       // Cancel: restore the persisted selection so the warning clears and a stray re-Apply is avoided.
       sel.value = curBase; prefix.value = curPrefix; renderPreview();
       return;

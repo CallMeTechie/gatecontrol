@@ -292,7 +292,9 @@ function requireAdminSession(req, res, next) {
 
 function sendOffsiteError(res, err, fallback) {
   if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED' });
-  if (err instanceof offsite().OffsiteError) return res.status(err.status).json({ ok: false, error: err.message, code: err.code });
+  if (err instanceof offsite().OffsiteError) {
+    return res.status(err.status).json({ ok: false, error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) });
+  }
   if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
   logger.error({ error: err && err.message }, fallback);
   return res.status(500).json({ ok: false, error: fallback, code: 'INTERNAL' });

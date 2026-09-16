@@ -89,6 +89,61 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ─── In-app confirmation ────────────────────────────────────────────────────
+  // Replaces window.confirm (docs/feature-wave2.md §W1.2). The portal loads only
+  // portal.css, so the few rules this needs are set as inline styles on the
+  // nodes — they use the portal's own tokens, so light/dark follow the page.
+  // → Promise<boolean>; Escape, the overlay and „Abbrechen“ answer false.
+  function portalConfirm(message, okLabel, danger) {
+    return new Promise(function (resolve) {
+      var done = false;
+      var prevFocus = document.activeElement;
+      function make(tag, style, text) {
+        var n = document.createElement(tag);
+        if (style) n.setAttribute('style', style);
+        if (text != null) n.textContent = text;
+        return n;
+      }
+      var box = make('div', 'background:var(--surface);color:var(--text);border:1px solid var(--line);'
+        + 'border-radius:var(--r);box-shadow:var(--shadow);max-width:min(420px,calc(100vw - 32px));'
+        + 'width:100%;padding:20px 20px 16px;font-size:15px;line-height:1.5');
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      var msg = make('p', 'margin:0 0 18px', String(message == null ? '' : message));
+      box.appendChild(msg);
+      box.setAttribute('aria-label', msg.textContent);
+      var foot = make('div', 'display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap');
+      var btnStyle = 'appearance:none;cursor:pointer;border-radius:var(--r-sm);padding:9px 16px;'
+        + 'font:inherit;font-weight:600;border:1px solid var(--line-2)';
+      var cancel = make('button', btnStyle + ';background:var(--chip);color:var(--text)', PT.confirmCancel || 'Abbrechen');
+      cancel.type = 'button';
+      var ok = make('button', btnStyle + ';border-color:transparent;color:var(--btn-text);background:'
+        + (danger ? 'var(--coral)' : 'var(--teal)'), okLabel || PT.confirmOk || 'OK');
+      ok.type = 'button';
+      foot.appendChild(cancel);
+      foot.appendChild(ok);
+      box.appendChild(foot);
+      var overlay = make('div', 'position:fixed;inset:0;z-index:1100;display:flex;align-items:center;'
+        + 'justify-content:center;padding:16px;background:rgba(0,0,0,.55)');
+      overlay.appendChild(box);
+      function close(result) {
+        if (done) return;
+        done = true;
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        if (prevFocus && prevFocus.focus && document.contains(prevFocus)) { try { prevFocus.focus(); } catch (_) {} }
+        resolve(result);
+      }
+      function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(false); } }
+      cancel.addEventListener('click', function () { close(false); });
+      ok.addEventListener('click', function () { close(true); });
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(overlay);
+      ok.focus();
+    });
+  }
+
   // ─── Shared state helpers ───────────────────────────────────────────────────
 
   function setLoading(card, on) {
@@ -889,8 +944,8 @@
   // ponytail: watchdog matches skodaCommand's own 3s settle path; 30s only
   // guards against a fetch that never resolves (dropped connection etc).
   function skodaMsg(text) { var m = document.getElementById('skodaMsg'); if (m) { m.textContent = text; m.style.display = 'block'; } }
-  function skodaCommand(vehicleId, action, args, el) {
-    if (action === 'unlock' && !window.confirm(PT.skodaCmdConfirmUnlock)) return;
+  async function skodaCommand(vehicleId, action, args, el) {
+    if (action === 'unlock' && !await portalConfirm(PT.skodaCmdConfirmUnlock, PT.skodaCmdUnlock, true)) return;
     if (el && el.disabled) return; // in-flight → no command storm
     var isBtn = el && el.tagName === 'BUTTON';
     var restore = isBtn ? el.textContent : null;

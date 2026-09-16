@@ -5,6 +5,9 @@
 (function () {
   const API = '/api/v1/smarthome';
   const T = (k) => (window.GC && GC.t && GC.t[k]) || k;
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  const D = window.GCDialog;
+  const fail = (msg) => D.alert({ message: msg, danger: true });
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   function esc(s) {
@@ -132,12 +135,12 @@
   async function toggleRule(r, el) {
     const on = !r.enabled;
     try { await api(`/rules/${r.id}/enabled`, { method: 'POST', body: JSON.stringify({ enabled: on }) }); r.enabled = on; el.classList.toggle('on', on); }
-    catch (e) { alert(e.message); }
+    catch (e) { fail(e.message); }
   }
   async function deleteRule(r) {
-    if (!confirm(T('smarthome.rules.confirm_delete'))) return;
+    if (!await D.confirm({ message: T('smarthome.rules.confirm_delete'), danger: true, okLabel: T('smarthome.rules.delete') })) return;
     try { await api(`/rules/${r.id}`, { method: 'DELETE' }); await loadRules(); }
-    catch (e) { alert(e.message); }
+    catch (e) { fail(e.message); }
   }
 
   // ── Builder ─────────────────────────────────────────────────────────────
@@ -292,7 +295,7 @@
   }
   async function saveRule() {
     const name = $('#shr-name').value.trim();
-    if (!name) { alert(T('smarthome.rules.name_required')); return; }
+    if (!name) { fail(T('smarthome.rules.name_required')); return; }
     const definition = buildDefinition();
     try {
       if (editingId) await api(`/rules/${editingId}`, { method: 'PUT', body: JSON.stringify({ name, definition }) });
@@ -300,7 +303,7 @@
       closeBuilder(); await loadRules();
     } catch (e) {
       if (e.status === 409) { showLimit(e.message); return; } // rule-limit / no-api-key → banner only
-      alert(e.message); // 400 = validation detail from the server
+      fail(e.message); // 400 = validation detail from the server
     }
   }
 
@@ -317,7 +320,7 @@
       const el = countHint();
       el.textContent = `${T('smarthome.rules.count_total')}: ${d.total_rules} · ${T('smarthome.rules.count_gc')}: ${d.gc_rules} · ${T('smarthome.rules.count_external')}: ${d.external_rules}`;
       el.style.display = '';
-    } catch (e) { alert(e.message); }
+    } catch (e) { fail(e.message); }
   }
 
   function wire() {

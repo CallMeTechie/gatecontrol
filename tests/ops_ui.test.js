@@ -118,9 +118,13 @@ describe('ops-ui: API code → UI text', () => {
   it('licence 403 {feature}, INVALID_CONFIG with the field label, fallback for unknown codes', () => {
     assert.equal(O.errorCode({ ok: false, feature: 'scheduled_backups' }), 'LICENSE');
     assert.equal(O.errorCode({ data: { code: 'NO_LOCAL_BACKUP' } }), 'NO_LOCAL_BACKUP', 'thrown api error body');
-    assert.equal(O.errorText({ code: 'INVALID_CONFIG', error: 'bucket: invalid bucket name' }), 'Please check the field “Bucket”.');
-    assert.equal(O.configField({ error: 'access_key_id: required' }), 'access_key_id');
-    assert.equal(O.configField({ error: 'nonsense: x' }), null);
+    // The field comes as a code (`field`), never out of the English message.
+    assert.equal(O.errorText({ code: 'INVALID_CONFIG', field: 'bucket', error: 'bucket: invalid bucket name' }), 'Please check the field “Bucket”.');
+    assert.equal(O.configField({ field: 'access_key_id', error: 'access_key_id: required' }), 'access_key_id');
+    assert.equal(O.configField({ data: { field: 'host', error: 'host: required' } }), 'host', 'thrown api error body');
+    assert.equal(O.configField({ field: 'nonsense' }), null);
+    assert.equal(O.configField({ error: 'bucket: invalid bucket name' }), null, 'the English text is not parsed');
+    assert.equal(O.errorText({ code: 'INVALID_CONFIG', error: 'bucket: x' }), 'Please check the field “—”.');
     assert.equal(O.errorText({ code: 'WHATEVER' }, ['x.y', 'Fallback']), 'Fallback');
     assert.equal(O.errorText({ code: 'WHATEVER' }), 'That did not work.');
   });

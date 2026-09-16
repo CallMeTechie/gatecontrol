@@ -92,6 +92,8 @@
 
 {# Strings for zones-page.js / domain-modal.js (merged into GC.t on load).
    Keep in sync with the scripts — tests/zones_templates.test.js checks it. #}
+{# The list ends with the wave 2 W1 block (docs/feature-wave2.md §W1.1): keys
+   entry-editor.js asked for but which nobody supplied. #}
 {%- set zonesI18nKeys = [
   'common.cancel', 'common.close', 'common.confirm', 'common.delete', 'common.loading', 'common.save', 'entry.add',
   'entry.add_submit', 'entry.auth_tag', 'entry.backend_https', 'entry.backend_https_hint', 'entry.col_active',
@@ -187,7 +189,11 @@
   'bulk.title_monitoring', 'bulk.title_enable', 'bulk.title_disable', 'bulk.msg_waf', 'bulk.msg_hsts',
   'bulk.msg_monitoring', 'bulk.msg_enable', 'bulk.msg_disable', 'bulk.affected', 'bulk.skipped',
   'bulk.none_applicable', 'bulk.too_many', 'bulk.ok', 'bulk.done', 'bulk.done_none', 'bulk.err_title',
-  'bulk.err_intro', 'bulk.err_not_found', 'bulk.err_caddy', 'bulk.err_license'
+  'bulk.err_intro', 'bulk.err_not_found', 'bulk.err_caddy', 'bulk.err_license',
+  'acl.no_peers_selected', 'acl.peers_selected', 'backend_tls.err.fingerprint_invalid', 'backend_tls.hint_gateway',
+  'backend_tls.hint_https', 'branding.upload_failed', 'circuit_breaker.reset_ok', 'circuit_breaker.status_closed',
+  'circuit_breaker.status_half_open', 'circuit_breaker.status_open', 'mtls.hint_https',
+  'route_auth.totp_setup_failed', 'routes.backends_port', 'routes.backends_weight', 'routes.mirror_target_port'
 ] -%}
 <script type="application/json" id="zones-i18n" nonce="{{ cspNonce }}">{ {% for k in zonesI18nKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{% if not loop.last %}, {% endif %}{% endfor %} }</script>
 {# TLS guard strings (tls-ui.js) #}

@@ -6,6 +6,8 @@
 // isn't present so it's safe to include on any page.
 
 (function () {
+  // In-app dialog instead of confirm() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
   var listEl = document.getElementById('tags-list');
   var addBtn = document.getElementById('btn-add-tag');
   var nameEl = document.getElementById('tag-name');
@@ -118,8 +120,8 @@
       if (!btn) return;
       var name = btn.dataset.tagName;
       if (!name) return;
-      var prompt = (t('tags.confirm_delete', 'Tag "{name}" aus allen Peers entfernen?')).replace('{name}', name);
-      if (!confirm(prompt)) return;
+      var msg = (t('tags.confirm_delete', 'Tag "{name}" aus allen Peers entfernen?')).replace('{name}', name);
+      if (!await D.confirm({ message: msg, danger: true, okLabel: t('common.delete', 'Delete') })) return;
       try {
         var res = await window.api.del('/api/tags/' + encodeURIComponent(name));
         if (res && res.ok) {
@@ -129,7 +131,7 @@
           }
           loadTags();
         } else if (typeof window.showToast === 'function') {
-          window.showToast((res && res.error) || 'Delete failed', 'error');
+          window.showToast((res && res.error) || t('tags.delete_failed', 'Delete failed'), 'error');
         }
       } catch (err) {
         if (typeof window.showToast === 'function') window.showToast(err.message, 'error');

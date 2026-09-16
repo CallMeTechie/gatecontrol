@@ -99,7 +99,7 @@ test('response shape and route list (WAF routes only)', async () => {
   assert.ok(!hosts.includes('off.assist.test'));
   const main = r.body.routes.find((x) => x.route_id === rMain);
   assert.deepEqual(Object.keys(main).sort(), ['detect_since', 'events_external', 'events_total', 'host', 'mode', 'observed_hours', 'paranoia', 'readiness', 'route_id', 'suggestion', 'top_rules'].sort());
-  assert.deepEqual(Object.keys(main.top_rules[0]).sort(), ['hits', 'ips', 'message', 'paths', 'reason', 'rule_id', 'verdict'].sort());
+  assert.deepEqual(Object.keys(main.top_rules[0]).sort(), ['hits', 'ips', 'message', 'paths', 'reason', 'reason_code', 'reason_params', 'rule_id', 'verdict'].sort());
   assert.deepEqual(Object.keys(main.suggestion).sort(), ['exclude_paths', 'exclude_rules']);
   assert.equal(main.mode, 'detect');
   assert.ok(main.observed_hours >= 71 && main.observed_hours <= 72);
@@ -111,15 +111,24 @@ test('verdicts, own IPs, counts, suggestion, readiness review', async () => {
   const v = Object.fromEntries(main.top_rules.map((x) => [x.rule_id, x]));
   assert.equal(v[930130].verdict, 'attack');
   assert.match(v[930130].reason, /secret path/);
+  // docs/feature-wave2.md §W1.3: the code carries the grounds, `reason` stays English.
+  assert.equal(v[930130].reason_code, 'secret_path');
+  assert.ok(v[930130].reason_params.path, 'the offending path as a parameter');
   assert.equal(v[941100].verdict, 'attack');
   assert.match(v[941100].reason, /single address/);
+  assert.equal(v[941100].reason_code, 'series');
+  assert.deepEqual(v[941100].reason_params, { hits: 4 });
   assert.equal(v[941100].hits, 4);
   assert.equal(v[941100].ips, 1);
   assert.equal(v[942100].verdict, 'false_positive');
   assert.deepEqual(v[942100].paths, ['/api/save'], 'query string stripped');
   assert.equal(v[942100].ips, 3);
+  assert.equal(v[942100].reason_code, 'shared_path');
+  assert.deepEqual(v[942100].reason_params, { path: '/api/save', ips: 3, days: 3 });
   assert.equal(v[942100].message, 'SQL Injection Attack Detected via libinjection', 'message of the newest hit');
   assert.equal(v[932100].verdict, 'unclear');
+  assert.equal(v[932100].reason_code, 'inconclusive');
+  assert.deepEqual(Object.keys(v[932100].reason_params).sort(), ['hits', 'ips']);
   assert.ok(!v[920350], 'own IP rule not in the list');
   assert.ok(!v[949110], 'scoring rule skipped');
   assert.ok(!v[921110], 'before detect_since');

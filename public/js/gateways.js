@@ -3,6 +3,8 @@
   var GCt = (window.GC && GC.t) || {};
   var csrf = (window.GC && GC.csrfToken) || '';
   function T(k, d) { return GCt[k] || d; }
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
   var grid = document.getElementById('fleet-grid');
   var kpis = document.getElementById('fleet-kpis');
   var warn = document.getElementById('version-warning');
@@ -838,8 +840,8 @@
         row.appendChild(info);
         var del = el('button', 'btn', T('egress.delete', 'Delete'));
         del.type = 'button'; del.style.cssText = 'font-size:12px;padding:4px 10px;color:var(--red,#dc2626)';
-        del.addEventListener('click', function () {
-          if (!confirm(T('egress.delete_confirm', 'Delete this scan target?'))) return;
+        del.addEventListener('click', async function () {
+          if (!await D.confirm({ message: T('egress.delete_confirm', 'Delete this scan target?'), danger: true, okLabel: T('common.delete', 'Delete') })) return;
           fetch('/api/v1/egress-routes/' + r.id, { method: 'DELETE', credentials: 'same-origin', headers: discCsrfHeaders() })
             .then(function () { load(); }).catch(function () {});
         });
@@ -1075,14 +1077,14 @@
     var c = e.target.closest('.gw'); if (!c) return;
     location.hash = '#gw/' + encodeURIComponent(c.dataset.id);
   });
-  detailView.addEventListener('click', function (e) {
+  detailView.addEventListener('click', async function (e) {
     if (e.target.closest('[data-act="back"]')) { goFleet(); return; }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
     var up = e.target.closest('[data-act="update"]');
     if (up) {
-      if (!confirm(T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'))) return;
+      if (!await D.confirm({ message: T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'), okLabel: T('gateways.update', 'Update') })) return;
       var id = up.dataset.id;
       fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/update', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
         .then(function (r) { return r.json(); })

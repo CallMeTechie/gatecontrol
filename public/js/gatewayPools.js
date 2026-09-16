@@ -9,6 +9,9 @@ function jsonHeaders() {
 function tr(key, fallback) {
   return (window.GC && window.GC.t && window.GC.t[key]) || fallback || key;
 }
+// In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+var D = window.GCDialog;
+function dlgError(msg) { D.alert({ message: msg, danger: true }); }
 
 async function createPool(data) {
   const r = await fetch('/api/v1/gateway-pools', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(data) });
@@ -539,19 +542,19 @@ async function handleFormSubmit(e) {
     closeFormModal();
     location.reload();
   } catch (err) {
-    alert(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
+    dlgError(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
   } finally {
     if (submitBtn) submitBtn.disabled = false;
   }
 }
 
 async function handleDelete(poolId) {
-  if (!confirm(tr('gateway_pools.confirm_delete', 'Delete pool?'))) return;
+  if (!await D.confirm({ message: tr('gateway_pools.confirm_delete', 'Delete pool?'), danger: true, okLabel: tr('common.delete', 'Delete') })) return;
   const r = await deletePool(poolId);
   if (r.ok || r.status === 204) location.reload();
   else {
     const j = await r.json().catch(function() { return {}; });
-    alert(tr('common.error', 'Error') + ': ' + (j.error || r.status));
+    dlgError(tr('common.error', 'Error') + ': ' + (j.error || r.status));
   }
 }
 
@@ -566,7 +569,7 @@ async function handleEditClick(poolId) {
     const pool = Array.isArray(pools) ? pools.find(function(p) { return String(p.id) === String(poolId); }) : null;
     if (pool) openEditModal(pool, Array.isArray(members) ? members : []);
   } catch (err) {
-    alert('Failed to load pool data');
+    dlgError(tr('gateway_pools.load_failed', 'Could not load the pool'));
   }
 }
 
@@ -586,7 +589,7 @@ function openMigrateModal() {
   while (list.firstChild) list.removeChild(list.firstChild);
   const loading = document.createElement('p');
   loading.style.color = 'var(--text-3)';
-  loading.textContent = 'Loading…';
+  loading.textContent = tr('common.loading', 'Loading…');
   list.appendChild(loading);
 
   fetch('/api/v1/gateway-pools/migration-candidates')
@@ -599,7 +602,7 @@ function openMigrateModal() {
       while (list.firstChild) list.removeChild(list.firstChild);
       const p = document.createElement('p');
       p.style.color = 'var(--red)';
-      p.textContent = 'Failed to load migration candidates.';
+      p.textContent = tr('gateway_pools.migrate_load_failed', 'Failed to load migration candidates.');
       list.appendChild(p);
     });
 }
@@ -630,14 +633,14 @@ async function handleMigrateSubmit() {
   const mode = (document.querySelector('input[name="migrate-mode"]:checked') || {}).value || 'pool';
   if (mode === 'relocate') {
     const gwSel = document.getElementById('relocate-target-gateway');
-    if (!gwSel || !gwSel.value) { alert(tr('gateway_pools.relocate_no_gateway', 'Select a target gateway')); return; }
+    if (!gwSel || !gwSel.value) { dlgError(tr('gateway_pools.relocate_no_gateway', 'Select a target gateway')); return; }
     const items = Array.from(document.querySelectorAll('input[name="migrate-route"]:checked')).map(function(cb) {
       const inp = document.querySelector('input[name="relocate-lan-host"][data-route-id="' + cb.value + '"]');
       return { id: parseInt(cb.value, 10),
                target_lan_host: inp ? inp.value.trim() : '',
                target_lan_port: inp ? parseInt(inp.dataset.lanPort, 10) : null };
     });
-    if (items.length === 0) { alert(tr('gateway_pools.migrate_no_selection', 'Select at least one route')); return; }
+    if (items.length === 0) { dlgError(tr('gateway_pools.migrate_no_selection', 'Select at least one route')); return; }
     const btn = document.getElementById('btn-migrate-submit'); if (btn) btn.disabled = true;
     try {
       const r = await fetch('/api/v1/routes/relocate', { method: 'POST', headers: jsonHeaders(),
@@ -646,21 +649,21 @@ async function handleMigrateSubmit() {
       if (!r.ok) throw new Error(body.error || ('http_' + r.status));
       closeMigrateModal(); location.reload();
     } catch (err) {
-      alert(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
+      dlgError(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
     } finally { if (btn) btn.disabled = false; }
     return;
   }
 
   const poolSel = document.getElementById('migrate-target-pool');
   if (!poolSel || !poolSel.value) {
-    alert(tr('gateway_pools.no_pools_for_migration', 'No pools available'));
+    dlgError(tr('gateway_pools.no_pools_for_migration', 'No pools available'));
     return;
   }
   const poolId = parseInt(poolSel.value, 10);
   const checked = Array.from(document.querySelectorAll('input[name="migrate-route"]:checked'))
     .map(function(c) { return parseInt(c.value, 10); });
   if (checked.length === 0) {
-    alert(tr('gateway_pools.migrate_no_selection', 'Select at least one route to migrate'));
+    dlgError(tr('gateway_pools.migrate_no_selection', 'Select at least one route to migrate'));
     return;
   }
   const btn = document.getElementById('btn-migrate-submit');
@@ -676,7 +679,7 @@ async function handleMigrateSubmit() {
     closeMigrateModal();
     location.reload();
   } catch (err) {
-    alert(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
+    dlgError(tr('gateway_pools.save_failed', 'Save failed') + ': ' + (err.message || err));
   } finally {
     if (btn) btn.disabled = false;
   }

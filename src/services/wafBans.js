@@ -297,10 +297,28 @@ function restoreBans(db, rows) {
   for (const r of rows) ins.run(r);
 }
 
+// The stored ban reason is free text (a manual ban may carry the operator's own
+// wording). The two reasons this service itself writes get a stable code so the
+// user interface translates the code instead of the English text
+// (docs/feature-wave2.md §W1.3); anything else keeps `reason_code: null` and is
+// shown verbatim. `reason` stays plain text for API users.
+const BAN_REASON_SCANNER_RE = /^scanner: (\d+) requests in (\d+) min \(rules ([0-9, ]*)\)$/;
+
+function banReason(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (s === 'manual') return { code: 'manual', params: {} };
+  const m = BAN_REASON_SCANNER_RE.exec(s);
+  if (m) return { code: 'scanner', params: { hits: Number(m[1]), window: Number(m[2]), rules: m[3] } };
+  return { code: null, params: null };
+}
+
 function toApi(b) {
+  const r = banReason(b.reason);
   return {
     ip: b.ip,
     reason: b.reason || null,
+    reason_code: r.code,
+    reason_params: r.params,
     hits: b.hits == null ? null : b.hits,
     first_seen: b.first_seen || null,
     banned_at: b.banned_at || null,
@@ -613,6 +631,7 @@ module.exports = {
   trustedMatcher,
   isTrusted,
   bypassList,
+  banReason,
   listBans,
   addBan,
   removeBan,

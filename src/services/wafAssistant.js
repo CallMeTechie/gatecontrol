@@ -32,6 +32,12 @@
 // on which ≥ 3 different rules are false positives (a whole endpoint the CRS
 // cannot judge, e.g. a JSON API) — a path exclusion switches the engine off
 // there, so it is only suggested when a rule exclusion would not do.
+//
+// Every rule carries the verdict's grounds twice (docs/feature-wave2.md §W1.3):
+//   reason         English plain text — unchanged, for API users and logs
+//   reason_code    stable code (REASON_CODES) the user interface translates
+//   reason_params  the values the translated sentence needs
+// The browser must never translate `reason` by matching its English wording.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -49,6 +55,10 @@ const TOP_RULES = 10;
 const PATHS_PER_RULE = 5;
 const MAX_EVENTS_PER_ROUTE = 20000;
 const PATH_EXCLUSION_MIN_RULES = 3;
+
+// Grounds for a rule verdict. The text stays English (API), the code is what
+// the user interface translates (waf.asst_reason_* in src/i18n/*.json).
+const REASON_CODES = ['secret_path', 'scanner_rule', 'series', 'all_banned', 'shared_path', 'inconclusive'];
 
 const ACCESS_TAIL_BYTES = 8 * 1024 * 1024;
 const ACCESS_CACHE_MS = 5 * 60 * 1000;
@@ -178,21 +188,31 @@ function analyseRoute(db, route, ctx) {
     const paths = [...rule.paths.entries()].sort((a, b) => b[1].hits.size - a[1].hits.size);
     let verdict = 'unclear';
     let reason = `${hits} request(s) from ${ips.length} address(es) — not conclusive`;
+    let reasonCode = 'inconclusive';
+    let reasonParams = { hits, ips: ips.length };
     const secret = paths.find(([p]) => isSecretPath(p));
     const fpPaths = paths.filter(([p, pe]) => !isSecretPath(p) && pe.cleanIps.size >= FP_MIN_IPS && pe.days.size >= FP_MIN_DAYS).map(([p]) => p);
     if (wafBans.isBanRule(rule.rule_id) || secret) {
       verdict = 'attack';
       reason = secret ? `hits a typical secret path (${secret[0]})` : 'scanner / file-inclusion rule';
+      reasonCode = secret ? 'secret_path' : 'scanner_rule';
+      reasonParams = secret ? { path: secret[0] } : {};
     } else if (ips.length === 1 && hits >= SERIES_MIN_HITS) {
       verdict = 'attack';
       reason = `series of ${hits} requests from a single address`;
+      reasonCode = 'series';
+      reasonParams = { hits };
     } else if (ips.length > 0 && ips.every((ip) => ctx.banned(ip))) {
       verdict = 'attack';
       reason = 'every source address is banned';
+      reasonCode = 'all_banned';
+      reasonParams = {};
     } else if (fpPaths.length > 0) {
       verdict = 'false_positive';
       const pe = rule.paths.get(fpPaths[0]);
       reason = `same path ${fpPaths[0]} from ${pe.cleanIps.size} different addresses on ${pe.days.size} days`;
+      reasonCode = 'shared_path';
+      reasonParams = { path: fpPaths[0], ips: pe.cleanIps.size, days: pe.days.size };
     }
     return {
       rule_id: rule.rule_id,
@@ -202,6 +222,8 @@ function analyseRoute(db, route, ctx) {
       paths: paths.slice(0, PATHS_PER_RULE).map(([p]) => p),
       verdict,
       reason,
+      reason_code: reasonCode,
+      reason_params: reasonParams,
       _fpPaths: fpPaths,
     };
   }).sort((a, b) => b.hits - a.hits || a.rule_id - b.rule_id);
@@ -266,6 +288,7 @@ module.exports = {
   FP_MIN_IPS,
   FP_MIN_DAYS,
   SECRET_PATH_RE,
+  REASON_CODES,
   isSecretPath,
   assistant,
   analyseRoute,
