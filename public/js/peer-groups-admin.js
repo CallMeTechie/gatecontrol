@@ -6,6 +6,8 @@
 // early if the expected DOM isn't on the page — safe to include anywhere.
 
 (function () {
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
   var pgList = document.getElementById('peer-groups-list');
   var btnAdd = document.getElementById('btn-add-peer-group');
   if (!pgList && !btnAdd) return;
@@ -182,7 +184,7 @@
   // listeners elsewhere (e.g. peers.js still carries its legacy code).
   var cardRoot = pgList ? pgList.closest('.card') : null;
   if (cardRoot) {
-    cardRoot.addEventListener('click', function(e) {
+    cardRoot.addEventListener('click', async function(e) {
       var btn = e.target.closest('[data-pg-action]');
       if (!btn || !cardRoot.contains(btn)) return;
       var action = btn.dataset.pgAction;
@@ -211,25 +213,25 @@
           } else if (typeof window.showToast === 'function') {
             window.showToast((data && data.error) || 'Save failed', 'error');
           } else {
-            alert((data && data.error) || 'Save failed');
+            D.alert({ message: (data && data.error) || t('peer_groups.save_failed', 'Save failed'), danger: true });
           }
         }).catch(function(err) {
           if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
-          else alert(err.message);
+          else D.alert({ message: err.message, danger: true });
         });
       } else if (action === 'delete' && id) {
-        if (!confirm(t('peer_groups.confirm_delete', 'Delete this peer group?'))) return;
+        if (!await D.confirm({ message: t('peer_groups.confirm_delete', 'Delete this peer group?'), danger: true, okLabel: t('common.delete', 'Delete') })) return;
         window.api.del('/api/peer-groups/' + id).then(function(data) {
           if (data && data.ok) {
             loadGroups();
           } else if (typeof window.showToast === 'function') {
-            window.showToast((data && data.error) || 'Delete failed', 'error');
+            window.showToast((data && data.error) || t('peer_groups.delete_failed', 'Delete failed'), 'error');
           } else {
-            alert((data && data.error) || 'Delete failed');
+            D.alert({ message: (data && data.error) || t('peer_groups.delete_failed', 'Delete failed'), danger: true });
           }
         }).catch(function(err) {
           if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
-          else alert(err.message);
+          else D.alert({ message: err.message, danger: true });
         });
       }
     });

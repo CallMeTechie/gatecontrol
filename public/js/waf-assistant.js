@@ -195,7 +195,9 @@
       retry ? el('button', { type: 'button', class: 'btn btn-sm wfa-retry', text: t('common.refresh'), on: { click: retry } }) : null,
     ]);
   }
-  function confirm(opts) {
+  // Named confirmDialog, not confirm: public/js/** must contain no call that
+  // reads as the browser's own dialog (docs/feature-wave2.md §W1.2, tests).
+  function confirmDialog(opts) {
     return new Promise((resolve) => {
       const d = W.dialog({ title: opts.title, kind: opts.kind || 'confirm' });
       d.overlay.classList.add('wfa-dialog');
@@ -368,7 +370,7 @@
     const ready = rd === 'ready';
     const btn = el('button', { type: 'button', class: 'btn btn-sm ' + (ready ? 'btn-primary' : 'btn-secondary') + ' wfa-to-block' }, [icon('shield', 12), t('waf.asst_to_block')]);
     btn.addEventListener('click', async () => {
-      const ok = await confirm({
+      const ok = await confirmDialog({
         kind: 'to-block', title: t('waf.asst_block_title'), ok: t('waf.asst_to_block'),
         message: t('waf.asst_block_msg', { host: str(r.host) }),
         warn: ready ? null : t('waf.asst_block_warn', { reason: t('waf.asst_' + rd + '_hint') }),
@@ -551,7 +553,7 @@
     ])));
   }
   async function unban(b, btn) {
-    const ok = await confirm({ kind: 'unban', title: t('waf.bans_unban_title'), message: t('waf.bans_unban_msg', { ip: str(b.ip) }), ok: t('waf.bans_unban') });
+    const ok = await confirmDialog({ kind: 'unban', title: t('waf.bans_unban_title'), message: t('waf.bans_unban_msg', { ip: str(b.ip) }), ok: t('waf.bans_unban') });
     if (!ok) return;
     W.busy(btn, true);
     try {
@@ -648,7 +650,7 @@
   toggleHandler($('wfa-bypass'), async () => {
     if (!state.draft) return;
     if (!state.draft.trusted_bypass) {
-      const ok = await confirm({
+      const ok = await confirmDialog({
         kind: 'bypass', title: t('waf.bypass_confirm_title'), danger: true, ok: t('waf.bypass_confirm_ok'),
         message: t('waf.bypass_confirm', { n: state.draft.trusted_ips.length }), warn: t('waf.bypass_warn'),
       });

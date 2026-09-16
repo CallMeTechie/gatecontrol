@@ -21,6 +21,9 @@
     return (window.GC && window.GC.t && window.GC.t[key]) || fallback;
   }
   function byId(id) { return document.getElementById(id); }
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  var D = window.GCDialog;
+  function dlgError(msg) { D.alert({ message: msg, danger: true }); }
   function warnColor() { return 'var(--amber)'; }
 
   // Tiny DOM builder so we never touch innerHTML (a hook blocks it).
@@ -223,7 +226,7 @@
       container.appendChild(label);
     });
     if (!list.length) {
-      container.textContent = 'No users available';
+      container.textContent = T('users.no_users', 'No users available');
       container.style.cssText = 'font-size:12px;color:var(--text-3)';
     }
   }
@@ -818,8 +821,8 @@
           }
           var verifyEl = byId(verifyElId);
           if (verifyEl) verifyEl.style.display = '';
-        } else { alert(data.error || 'Failed to generate TOTP setup'); }
-      } catch (err) { alert(err.message); } finally { window.btnReset(btn); }
+        } else { dlgError(data.error || T('route_auth.totp_setup_failed', 'Failed to generate TOTP setup')); }
+      } catch (err) { dlgError(err.message); } finally { window.btnReset(btn); }
     });
   }
 
@@ -839,7 +842,7 @@
           statusEl.style.color = data.ok ? 'var(--green)' : 'var(--red)';
           statusEl.textContent = data.ok ? 'TOTP verified successfully' : 'Invalid code. Try again.';
         }
-      } catch (err) { alert(err.message); } finally { window.btnReset(btn); }
+      } catch (err) { dlgError(err.message); } finally { window.btnReset(btn); }
     });
   }
 
@@ -1722,7 +1725,7 @@
         if (!pre.checked) return;
         var ask = (window.GCHstsUI && typeof window.GCHstsUI.confirmPreload === 'function')
           ? window.GCHstsUI.confirmPreload()
-          : Promise.resolve(window.confirm(hstsText('preloadConfirm', 'hsts.preload_warning', 'Preload is practically irreversible. Enable it?')));
+          : D.confirm({ message: hstsText('preloadConfirm', 'hsts.preload_warning', 'Preload is practically irreversible. Enable it?'), danger: true });
         ask.then(function (ok) { if (!ok) { pre.checked = false; syncHstsBlock(); } });
       });
     }
@@ -2184,9 +2187,9 @@
             byId(currentId).textContent = data.filename;
             byId(removeId).style.display = '';
           } else {
-            alert(data.error || 'Upload failed');
+            dlgError(data.error || T('branding.upload_failed', 'Upload failed'));
           }
-        } catch (err) { alert(err.message); }
+        } catch (err) { dlgError(err.message); }
       });
     }
     var removeBtn = byId(removeId);
@@ -2198,7 +2201,7 @@
           await window.api.del('/api/v1/routes/' + routeId + '/branding/' + urlPart);
           byId(currentId).textContent = '';
           removeBtn.style.display = 'none';
-        } catch (err) { alert(err.message); }
+        } catch (err) { dlgError(err.message); }
       });
     }
   }
@@ -2419,7 +2422,7 @@
       if (res.status === 409) {
         var conflict = await res.json().catch(function () { return {}; });
         if (conflict && conflict.error === 'needs_gate_confirm') {
-          if (window.confirm(T('route_auth.share_gate_warning', 'This route is currently public. A share link makes it reachable only via share links.'))) {
+          if (await D.confirm({ message: T('route_auth.share_gate_warning', 'This route is currently public. A share link makes it reachable only via share links.'), danger: true })) {
             return createShareLink(routeId, body, true, form);
           }
           return;

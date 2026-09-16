@@ -2,6 +2,9 @@
 (function () {
   const API = '/api/v1/smarthome';
   const T = (k) => (window.GC && GC.t && GC.t[k]) || k;
+  // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
+  const D = window.GCDialog;
+  const fail = (msg) => D.alert({ message: msg, danger: true });
   const $ = (s, r = document) => r.querySelector(s);
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
@@ -254,7 +257,7 @@
     btn.addEventListener('click', async () => {
       const body = { name: $('#sh-c-name').value, route_id: Number($('#sh-c-route').value), apiKey: $('#sh-c-key').value || undefined };
       try { await api('/gateways', { method: 'POST', body: JSON.stringify(body) }); $('#sh-connect-modal').style.display = 'none'; await loadGateways(); }
-      catch (e) { alert(e.message); }
+      catch (e) { fail(e.message); }
     });
     const sync = $('#sh-sync');
     if (sync) sync.addEventListener('click', async () => {
@@ -334,7 +337,7 @@
         await api(`/resources/${ownerTarget.id}/owners`, { method: 'PUT', body: JSON.stringify({ userIds: ids }) });
         $('#sh-owner-modal').style.display = 'none';
         const sel = $('#sh-gateway-select'); await loadResources(sel && sel.value ? Number(sel.value) : undefined);
-      } catch (e) { alert(e.message); }
+      } catch (e) { fail(e.message); }
     });
     document.querySelectorAll('[data-sh-close-owner]').forEach((el) =>
       el.addEventListener('click', () => { const m = $('#sh-owner-modal'); if (m) m.style.display = 'none'; }));

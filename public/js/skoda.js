@@ -6,6 +6,8 @@
     for (const [p, v] of Object.entries(params || {})) s = s.replace(`{{${p}}}`, v);
     return s;
   };
+  // In-app dialogs instead of confirm()/alert()/prompt() (docs/feature-wave2.md §W1.2).
+  const D = window.GCDialog;
   const headers = { 'Content-Type': 'application/json', 'x-csrf-token': GC.csrfToken };
   async function api(method, path, body) {
     const res = await fetch('/api/v1/skoda' + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
@@ -177,7 +179,7 @@
   }
 
   async function command(vehicleId, action, args, el) {
-    if (action === 'unlock' && !confirm(T('skoda.cmd.confirm_unlock'))) return;
+    if (action === 'unlock' && !await D.confirm({ message: T('skoda.cmd.confirm_unlock'), danger: true, okLabel: T('skoda.cmd.unlock') })) return;
     if (el && el.disabled) return; // already in flight → no command storm
     var isBtn = el && el.tagName === 'BUTTON';
     var restore = isBtn ? el.textContent : null;
@@ -188,7 +190,7 @@
       await api('POST', `/vehicles/${vehicleId}/command`, { action, args: args || {} });
       setTimeout(load, 3000); // let the 30s post-command refresh begin; reload state
     } catch (e) {
-      alert(e.code === 'SKODA_SPIN_REQUIRED' ? T('skoda.cmd.spin') + '?' : (e.message || T('skoda.cmd.failed')));
+      D.alert({ message: e.code === 'SKODA_SPIN_REQUIRED' ? T('skoda.cmd.spin_required') : (e.message || T('skoda.cmd.failed')), danger: true });
     } finally {
       clearTimeout(watchdog);
       setTimeout(reset, 3000);
@@ -281,7 +283,7 @@
     });
   }
 
-  function fail(e) { alert(e.code === 'SKODA_REFRESH_COOLDOWN' ? T('skoda.error.cooldown') : (e.message || T('skoda.error.generic'))); }
+  function fail(e) { D.alert({ message: e.code === 'SKODA_REFRESH_COOLDOWN' ? T('skoda.error.cooldown') : (e.message || T('skoda.error.generic')), danger: true }); }
 
   el('skoda-account-add-open').addEventListener('click', () => showModal('skoda-account-modal'));
   el('skoda-acc-cancel').addEventListener('click', () => hideModal('skoda-account-modal'));
@@ -301,7 +303,7 @@
     try {
       if (btn.dataset.action === 'remove') { await api('DELETE', `/accounts/${id}`); await load(); }
       if (btn.dataset.action === 'password') {
-        const pw = prompt(T('skoda.accounts.password'));
+        const pw = await D.prompt({ title: T('skoda.accounts.password'), label: T('skoda.accounts.password'), password: true, maxLength: 128 });
         if (pw) {
           await api('PUT', `/accounts/${id}`, { password: pw });
           api('POST', `/accounts/${id}/sync`).catch(() => {});

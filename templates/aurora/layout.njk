@@ -175,6 +175,9 @@
       'security.lockout.unlock': {{ t('security.lockout.unlock') | dump | safe }},
       'security.saved': {{ t('security.saved') | dump | safe }},
       {# Sicherheits-Check page (security.js) + licence hint (license-hint.js), release B §1/§10/§11 #}
+      {# The list below ends with the wave 2 W1 block (docs/feature-wave2.md §W1.1):
+         keys the page scripts ask for but which nobody put here — they used to
+         render in English. #}
       {%- for k in [
         'security.page_sub', 'security.summary', 'security.group_critical', 'security.group_warning', 'security.group_info',
         'security.group_open', 'security.status_pass', 'security.status_fail', 'security.status_info', 'security.status_na',
@@ -213,7 +216,61 @@
         'license_hint.unlocked', 'license_hint.refresh', 'license_hint.refreshed', 'license_hint.still_locked',
         'license_hint.rate_limited', 'license_hint.failed', 'license_hint.enter', 'license_hint.upgrade', 'license_hint.reload',
         'license_hint.plan_default',
-        'common.cancel'
+        'common.cancel',
+        'autobackup.confirm_delete', 'autobackup.delete_failed', 'autobackup.last_run_never',
+        'autobackup.no_files', 'autobackup.run_success', 'batch.confirm_delete_peers', 'common.confirm',
+        'common.delete', 'common.done', 'common.edit', 'common.next', 'common.no_data', 'common.ok',
+        'common.save', 'config.caddy_running', 'config.caddy_stopped', 'config.restart', 'dashboard.booted_on',
+        'dashboard.chart_no_data', 'dashboard.pihole_blocked', 'dashboard.pihole_enabled',
+        'dashboard.pihole_gravity', 'dashboard.pihole_total_queries', 'dashboard.pihole_unavailable',
+        'dns.disabled', 'dns.enabled', 'dns.no_peers', 'egress.loading_routes',
+        'error.peer_groups.name_required', 'error.users.delete', 'error.users.get', 'error.users.list',
+        'error.users.toggle', 'error.wireguard.password_required', 'gateway_info.hostname',
+        'gateway_info.last_seen', 'gateway_info.no_data', 'gateway_info.section_lan',
+        'gateway_info.section_resources', 'gateway_info.section_status', 'gateway_info.section_version',
+        'gateway_info.uptime', 'gateway_info.wg_handshake', 'gateway_pools.load_failed',
+        'gateway_pools.migrate_load_failed', 'gateway_pools.relocate_bulk_ip',
+        'gateway_pools.relocate_no_gateway', 'gateway_pools.relocate_target_gateway', 'gateways.update',
+        'gateways.update_check', 'license.remove_confirm', 'monitoring.dashboard_all_ok', 'peer_groups.all',
+        'peer_groups.confirm_delete', 'peer_groups.delete_failed', 'peer_groups.description_placeholder',
+        'peer_groups.no_groups', 'peer_groups.none', 'peer_groups.save_failed', 'peer_groups.ungrouped',
+        'peers.download', 'peers.download_failed', 'peers.expired', 'peers.expires_soon',
+        'peers.gateway_env_download', 'peers.hostname_source_admin', 'peers.hostname_source_agent',
+        'peers.hostname_source_stale', 'peers.owner.bulk_done', 'peers.owner.none', 'pihole.blocking_off',
+        'pihole.blocking_on', 'pihole.blocking_partial', 'pihole.cfg.confirm_delete', 'pihole.client_ip',
+        'pihole.peer', 'pihole.status_offline', 'pihole.status_online', 'profile.pw_all_required',
+        'profile.pw_change_failed', 'profile.pw_changed', 'profile.pw_mismatch', 'profile.pw_too_short',
+        'profile.save_failed', 'profile.saved', 'rdp.access_both', 'rdp.access_external',
+        'rdp.access_internal', 'rdp.access_mode', 'rdp.add', 'rdp.auth.passphrase_needs_key',
+        'rdp.auth.password_or_key', 'rdp.auth.username_required', 'rdp.browser.open',
+        'rdp.browser.sftp_native', 'rdp.browser.sftp_secondary', 'rdp.confirm_delete',
+        'rdp.confirm_disconnect_all', 'rdp.connect_test', 'rdp.cred.keep', 'rdp.cred.remove', 'rdp.cred.set',
+        'rdp.cred.will_remove', 'rdp.credential_full', 'rdp.credential_none', 'rdp.credential_user',
+        'rdp.credentials', 'rdp.delete', 'rdp.disconnect_all', 'rdp.edit', 'rdp.external_hostname',
+        'rdp.gateway_peer_required', 'rdp.health_checking', 'rdp.health_reachable', 'rdp.history_device',
+        'rdp.history_duration', 'rdp.history_time', 'rdp.host', 'rdp.host_required', 'rdp.kv.host',
+        'rdp.kv.mode', 'rdp.kv.name', 'rdp.kv.target', 'rdp.load_failed', 'rdp.maintenance', 'rdp.name',
+        'rdp.name_required', 'rdp.no_history', 'rdp.no_routes', 'rdp.offline', 'rdp.online',
+        'rdp.proto_switch_confirm', 'rdp.save_failed', 'rdp.sessions', 'rdp.status', 'rdp.status_active',
+        'rdp.status_ended', 'rdp.subtitle', 'rdp.wizard.step_of', 'rdp.wol_send', 'rdp.wol_sent',
+        'settings.autosave.clear_secret_confirm', 'settings.backup_failed', 'settings.clear_logs_title',
+        'settings.key_is_set', 'settings.portal.switch_title', 'settings.restore_confirm',
+        'settings.restore_confirm_ok', 'settings.restore_done', 'settings.restore_done_title',
+        'settings.restore_warning', 'settings.restore_warning_detail', 'settings.smtp_test_email_required',
+        'settings.smtp_test_failed', 'settings.smtp_test_sent', 'settings.split_tunnel_add_title',
+        'settings.split_tunnel_cidr_invalid', 'settings.split_tunnel_cidr_prompt',
+        'settings.split_tunnel_label_prompt', 'settings.split_tunnel_label_required',
+        'settings.svc.caddy_reload_failed', 'settings.svc.wg_restart_confirm',
+        'settings.svc.wg_restart_failed', 'settings.webhook_create_failed', 'settings.webhook_test_failed',
+        'settings.webhook_test_ok', 'settings.webhook_url_required', 'settings.webhooks_empty',
+        'skoda.cmd.spin_required', 'tags.confirm_delete', 'tags.delete_failed', 'tags.deleted',
+        'tags.error_name_required', 'tags.no_tags', 'tags.unused', 'users.add_user', 'users.assign',
+        'users.confirm_delete', 'users.confirm_disable', 'users.create_token', 'users.disable',
+        'users.edit_user', 'users.enable', 'users.mfa_off', 'users.mfa_totp', 'users.no_peer_binding',
+        'users.no_tokens', 'users.no_users', 'users.role_admin', 'users.role_user',
+        'users.token_assign_failed', 'users.token_last_used', 'users.token_name_required',
+        'users.token_revoke', 'users.token_revoke_confirm', 'users.token_revoke_failed',
+        'users.token_scopes_required'
       ] %}
       {{ k | dump | safe }}: {{ t(k) | dump | safe }},
       {%- endfor %}
@@ -791,6 +848,7 @@
     }
   };
 </script>
+<script src="/js/gc-dialog.js?v={{ appVersion }}"></script>
 <script src="/js/app.js?v={{ appVersion }}"></script>
 <script src="/js/command-palette.js?v={{ appVersion }}"></script>
 <script src="/js/events.js?v={{ appVersion }}"></script>

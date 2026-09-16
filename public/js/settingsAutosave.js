@@ -74,7 +74,9 @@
       } catch (e) {}
     }
 
-    function commit(triggerEl, triggerValue) {
+    // async because the confirmation is an in-app dialog now
+    // (docs/feature-wave2.md §W1.2); no caller awaits the result.
+    async function commit(triggerEl, triggerValue) {
       var values = valuesById();
       if (!Core.isAtomicReady(cfg, values, requiredOverride())) { showPending(statusEl); return; }
       if (!Core.isDirty(values, JSON.parse(snapshot || '{}'))) return;
@@ -82,7 +84,7 @@
         var msg = (cluster === 'machine-binding')
           ? (t['settings.autosave.confirm_mb_mode'] || 'This changes device binding and can affect access. Apply it?')
           : (t['settings.autosave.confirm_self'] || 'This change can affect your current session. Apply it?');
-        if (!window.confirm(msg)) { rollbackField(triggerEl); return; }
+        if (!await window.GCDialog.confirm({ message: msg, danger: true })) { rollbackField(triggerEl); return; }
       }
       var frozen = JSON.stringify(values);          // freeze what we send (spec: snapshot from sent values)
       enqueue(cluster, async function () {
