@@ -367,6 +367,17 @@
     if (redir) redir.style.display = action.value === 'redirect' ? '' : 'none';
   }
 
+  // L4 IP filter: which of the two mode hints is shown. `allow` only lets the
+  // list through, `deny` closes exactly the list — the difference decides
+  // whether a forgotten entry locks the admin out, so it is spelled out.
+  function updateL4FilterModeHint() {
+    var hint = byId('edit-l4-ip-filter-mode-hint');
+    if (!hint) return;
+    var mode = (byId('edit-l4-ip-filter-mode') || {}).value || 'whitelist';
+    var key = (mode === 'blacklist' || mode === 'deny') ? 'deny' : 'allow';
+    hint.textContent = hint.dataset['hint' + key.charAt(0).toUpperCase() + key.slice(1)] || '';
+  }
+
   // Bot blocker: mode-switch field visibility
   function updateBotBlockerFields(prefix) {
     var mode = (byId(prefix + '-bot-blocker-mode') || {}).value || 'block';
@@ -1082,6 +1093,10 @@
     var httpOnlyFeatures = byId('edit-http-only-features');
     if (l4Fields) l4Fields.style.display = isL4 ? 'block' : 'none';
     if (httpFields) httpFields.style.display = isL4 ? 'none' : 'block';
+    // Protection block: for every L4 entry, also for a locked target whose
+    // port fields stay hidden (docs/feature-next-package.md §S1.4).
+    var l4Protect = byId('edit-l4-protection');
+    if (l4Protect) l4Protect.style.display = isL4 ? '' : 'none';
     if (httpOnlyFeatures) httpOnlyFeatures.style.display = isL4 ? 'none' : '';
 
     // Hide HTTP-only tabs for L4 routes
@@ -1248,6 +1263,15 @@
   function setupFeatureControls() {
     setupAclToggle('edit', function () { return state.peers; });
     setupIpFilter('edit', editIpFilterRules);
+    // L4 protection block (docs/feature-next-package.md §S1.4). Same prefix
+    // convention as the HTTP block, same rules array — only one of the two is
+    // ever visible, the entry type decides which.
+    setupIpFilter('edit-l4', editIpFilterRules);
+    setupSimpleToggle('edit-l4-conn-rate', 'edit-l4-conn-rate-fields');
+    var l4ModeGroup = byId('edit-l4-ip-filter-mode-group');
+    if (l4ModeGroup) l4ModeGroup.addEventListener('click', function () { setTimeout(updateL4FilterModeHint, 0); });
+    var l4Toggle = byId('edit-l4-route-ip-filter');
+    if (l4Toggle) l4Toggle.addEventListener('click', function () { setTimeout(updateL4FilterModeHint, 0); });
     setupSimpleToggle('edit-route-rate-limit', 'edit-rate-limit-fields');
     setupSimpleToggle('edit-route-retry', 'edit-retry-fields');
     setupSimpleToggle('edit-route-backends', 'edit-backends-fields');
@@ -1522,6 +1546,18 @@
     if (Array.isArray(rules)) rules.forEach(function (r) { editIpFilterRules.push(r); });
     renderIpFilterRules('edit', editIpFilterRules);
 
+    // L4 protection: same values, own controls (the security tab is HTTP-only).
+    setToggle('edit-l4-route-ip-filter', route.ip_filter_enabled);
+    showIf('edit-l4-ip-filter-fields', route.ip_filter_enabled);
+    setToggleGroup('edit-l4-ip-filter-mode-group', 'edit-l4-ip-filter-mode', route.ip_filter_mode || 'whitelist');
+    renderIpFilterRules('edit-l4', editIpFilterRules);
+    var connOn = !!(route.l4_conn_limit && route.l4_conn_window_s);
+    setToggle('edit-l4-conn-rate', connOn);
+    showIf('edit-l4-conn-rate-fields', connOn);
+    setVal('edit-l4-conn-limit', connOn ? String(route.l4_conn_limit) : '20');
+    setVal('edit-l4-conn-window', connOn ? String(route.l4_conn_window_s) : '60');
+    updateL4FilterModeHint();
+
     // Branding
     setVal('edit-branding-title', route.branding_title || '');
     setVal('edit-branding-text', route.branding_text || '');
@@ -1560,6 +1596,19 @@
     return (block && block.dataset[name]) || T(key, fallback);
   }
   // German message for a contract error code, null for other codes.
+  // IP_FILTER_* / L4_CONN_RATE_* from services/routesValidation — the API
+  // passes the code through, the text comes from the translations.
+  var L4_PROTECT_ERROR_KEYS = {
+    IP_FILTER_MODE_INVALID: 'l4p.err.mode_invalid',
+    IP_FILTER_RULE_INVALID: 'l4p.err.rule_invalid',
+    IP_FILTER_COUNTRY_L4: 'l4p.err.country_l4',
+    L4_CONN_RATE_INVALID: 'l4p.err.conn_rate_invalid',
+  };
+  function l4ProtectErrorText(code) {
+    var key = code && L4_PROTECT_ERROR_KEYS[String(code).toUpperCase()];
+    return key ? T(key, '') || null : null;
+  }
+
   function hstsErrorText(code) {
     var k = code && HSTS_ERROR_CODES[String(code).toUpperCase()];
     if (!k) return null;
@@ -2747,7 +2796,9 @@
       var backendsEnabled = isOn('edit-route-backends');
       var stickyEnabled = isOn('edit-route-sticky');
       var cbEnabled = isOn('edit-route-circuit-breaker');
-      var ipFilterEnabled = isOn('edit-route-ip-filter');
+      // The L4 block carries its own controls — for a TCP/UDP entry they are
+      // the ones the user actually saw (the security tab is hidden there).
+      var ipFilterEnabled = isL4 ? isOn('edit-l4-route-ip-filter') : isOn('edit-route-ip-filter');
       var aclEnabled = isOn('edit-route-acl');
       var botBlockerEnabled = isOn('edit-route-bot-blocker');
       var botBlockerMode = val('edit-bot-blocker-mode', 'block');
@@ -2773,7 +2824,7 @@
         external_enabled: isOn('edit-route-external'),
         monitoring_enabled: isOn('edit-route-monitoring'),
         ip_filter_enabled: ipFilterEnabled,
-        ip_filter_mode: val('edit-ip-filter-mode', 'whitelist'),
+        ip_filter_mode: isL4 ? val('edit-l4-ip-filter-mode', 'whitelist') : val('edit-ip-filter-mode', 'whitelist'),
         ip_filter_rules: ipFilterEnabled ? JSON.stringify(editIpFilterRules) : null,
         branding_title: val('edit-branding-title', ''),
         branding_text: val('edit-branding-text', ''),
@@ -2823,6 +2874,9 @@
         payload.l4_protocol = target.l4_protocol;
         payload.l4_listen_port = target.l4_listen_port;
         payload.l4_tls_mode = target.l4_tls_mode;
+        var connRateOn = isOn('edit-l4-conn-rate');
+        payload.l4_conn_limit = connRateOn ? parseInt(val('edit-l4-conn-limit', '20'), 10) : 0;
+        payload.l4_conn_window_s = connRateOn ? parseInt(val('edit-l4-conn-window', '60'), 10) : 0;
       }
       if (isL4None) {
         // PUT /api/routes/:id validates any defined domain and rejects ''
@@ -2858,6 +2912,9 @@
           return;
         }
         if (showSecoptError(data.code)) return;
+        // Coded L4-protection errors (docs/feature-next-package.md §S1.2/§S1.3).
+        var l4Err = l4ProtectErrorText(data.code);
+        if (l4Err) { window.showError('edit-route-error', l4Err); return; }
         // 403 of the route_auth gate (requireFeatureField('mtls_enabled', 'route_auth')).
         if (data.feature === 'route_auth' && payload.mtls_enabled) { showSecoptError('MTLS_LICENSE'); return; }
         // 403 of the waf gate (requireFeatureField('waf_enabled', 'waf')).
