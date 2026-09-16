@@ -175,7 +175,9 @@
 .od-chip { opacity: 0.85; }
 
 @media (max-width: 640px) {
+  /* Dot and text stay on one line; timestamp and link wrap below. */
   .pr-row { flex-wrap: wrap; }
-  .pr-since { order: 3; }
-  .pr-link { order: 4; margin-left: auto; }
+  .pr-body { flex: 1 1 calc(100% - 18px); }
+  .pr-since { order: 3; margin-top: 4px; }
+  .pr-link { order: 4; margin-top: 4px; margin-left: auto; }
 }

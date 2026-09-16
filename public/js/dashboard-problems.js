@@ -158,8 +158,9 @@
   }
 
   function odRowEl(p) {
-    return el('div', { class: 'pr-od-row', dataset: { problemId: p.id } }, [
-      el('span', { class: 'pr-od-tag', text: t('entry.on_demand_tag') }),
+    // The section heading already says "nur bei Bedarf" — the row only names
+    // the entry.
+    return el('div', { class: 'pr-od-row', dataset: { problemId: p.id, kind: 'on_demand' } }, [
       el('span', { class: 'pr-od-text', text: t('problems.on_demand_note', { entry: entryTitle(p.entry) }) }),
       el('a', { class: 'pr-link', href: p.href, text: t('problems.open') }),
     ]);
