@@ -203,7 +203,7 @@ describe('waf-assistant.js / waf.js integration', () => {
     assert.match(src, /W\.request\('GET', '\/api\/v1\/waf\/bans'\)/);
     assert.match(src, /W\.request\('POST', '\/api\/v1\/waf\/bans', body\)/);
     assert.match(src, /W\.request\('DELETE', banUrl\(b\.ip\)\)/);
-    assert.match(src, /const ok = await confirm\(\{\s*kind: 'to-block'[\s\S]*?if \(!ok\) return;/, 'block switch confirmed');
+    assert.match(src, /const ok = await confirmDialog\(\{\s*kind: 'to-block'[\s\S]*?if \(!ok\) return;/, 'block switch confirmed');
     assert.match(src, /kind: 'bypass'[\s\S]*?warn: t\('waf\.bypass_warn'\)/, 'bypass switch confirmed with the warning');
     assert.match(src, /kind: 'unban'/);
     assert.match(src, /d\.kind === 'ban' \|\| d\.kind === 'unban'/);
