@@ -151,18 +151,16 @@ describe('TLS guard: i18n', () => {
     }
   });
 
-  it('the block is one contiguous tail of both files (contract: "am Dateiende")', () => {
-    // Later feature blocks that the contracts also put at the file end
-    // (docs/feature-hsts.md: hsts.*, docs/feature-security-options.md,
-    // docs/feature-waf.md: nav.waf + waf.*) may follow the TLS block.
-    const LATER_BLOCKS = /^(hsts\.|alias\.|backend_tls\.|headers\.preset_|body_limit\.|tls_profile\.|mtls\.|caa\.|waf\.|nav\.waf$)/;
-    for (const [name, loc] of [['de', de], ['en', en]]) {
+  it('the block is one contiguous block in both files', () => {
+    // Contract: the block stays CONTIGUOUS and identical in de/en. Its former
+    // "at the end of the file" clause was dropped once several feature blocks
+    // (problems.*, entry.*, l4p.* …) shared the tail — see
+    // docs/feature-next-package.md.
+    for (const [nm, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
-      const first = keys.findIndex((k) => PREFIX_RE.test(k));
-      assert.ok(first > 0, `${name}: block present`);
-      let i = first;
-      for (; i < keys.length && PREFIX_RE.test(keys[i]); i++) { /* TLS block */ }
-      for (; i < keys.length; i++) assert.ok(LATER_BLOCKS.test(keys[i]), `${name}: ${keys[i]} after the TLS block`);
+      const idx = keys.map((k, i) => (PREFIX_RE.test(k) ? i : -1)).filter((i) => i >= 0);
+      assert.ok(idx.length > 0, `${nm}: block present`);
+      assert.equal(idx[idx.length - 1] - idx[0], idx.length - 1, `${nm}: block is contiguous`);
     }
   });
 

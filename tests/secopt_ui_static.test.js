@@ -256,19 +256,19 @@ describe('security options: i18n', () => {
     }
   });
 
-  it('is ONE contiguous block at the end of both files, right after hsts.*', () => {
-    // The WAF block (docs/feature-waf.md: nav.waf + waf.*) may follow it.
-    const LATER_BLOCKS = /^(waf\.|nav\.waf$)/;
-    for (const [name, loc] of [['de', de], ['en', en]]) {
+  it('every key group of the block is contiguous in both files', () => {
+    // Contract: each group stays together and de/en agree. The former "at the
+    // end of the file" clause was dropped once several feature blocks share
+    // the tail (docs/feature-next-package.md); `headers.preset_` also exists
+    // in the older custom-header area, so groups are checked one by one.
+    const GROUPS = [/^alias\./, /^backend_tls\./, /^body_limit\./, /^tls_profile\./, /^mtls\./, /^caa\./];
+    for (const [nm, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
-      const first = keys.findIndex((k) => BLOCK_RE.test(k) && k !== 'headers.preset_cors');
-      assert.ok(first > 0, `${name}: block present`);
-      assert.ok(keys[first - 1].startsWith('hsts.'), `${name}: appended after the HSTS block (${keys[first - 1]})`);
-      let i = first;
-      for (; i < keys.length && BLOCK_RE.test(keys[i]); i++) { /* security options block */ }
-      for (; i < keys.length; i++) assert.ok(LATER_BLOCKS.test(keys[i]), `${name}: ${keys[i]} after the security options block`);
-      assert.ok(keys.indexOf('headers.preset_security') >= first, `${name}: the updated preset label moved into the block`);
-      assert.ok(keys.indexOf('headers.preset_cors') < first, `${name}: CORS label untouched`);
+      for (const rx of GROUPS) {
+        const idx = keys.map((k, n) => (rx.test(k) ? n : -1)).filter((n) => n >= 0);
+        assert.ok(idx.length > 0, `${nm}: ${rx} present`);
+        assert.equal(idx[idx.length - 1] - idx[0], idx.length - 1, `${nm}: ${rx} contiguous`);
+      }
     }
   });
 

@@ -270,14 +270,16 @@ describe('WAF: i18n', () => {
     }
   });
 
-  it('is ONE contiguous block at the end of both files, after the security options', () => {
-    for (const [name, loc] of [['de', de], ['en', en]]) {
+  it('is ONE contiguous block in both files', () => {
+    // Contract: the block stays CONTIGUOUS and identical in de/en. Its former
+    // "at the end of the file" clause was dropped once several feature blocks
+    // (problems.*, entry.*, l4p.* …) shared the tail — see
+    // docs/feature-next-package.md.
+    for (const [nm, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
-      const first = keys.findIndex((k) => BLOCK_RE.test(k));
-      assert.ok(first > 0, `${name}: block present`);
-      assert.equal(keys[first], 'nav.waf', `${name}: starts with nav.waf`);
-      assert.ok(/^(caa|mtls|alias|tls_profile|body_limit|backend_tls)\./.test(keys[first - 1]), `${name}: after the security options (${keys[first - 1]})`);
-      for (let i = first; i < keys.length; i++) assert.ok(BLOCK_RE.test(keys[i]), `${name}: ${keys[i]} inside the tail block`);
+      const idx = keys.map((k, i) => (BLOCK_RE.test(k) ? i : -1)).filter((i) => i >= 0);
+      assert.ok(idx.length > 0, `${nm}: block present`);
+      assert.equal(idx[idx.length - 1] - idx[0], idx.length - 1, `${nm}: block is contiguous`);
     }
   });
 
