@@ -13,8 +13,8 @@
 //   GCDialog.dialog ({ title, wide })  → { overlay, box, body, foot, close, promise }
 // A destructive action passes `danger: true` and gets the red button.
 //
-// Look and behaviour are the zones dialog (.modal-overlay.zn-dialog, styles in
-// pro.css — this module adds no CSS): Escape and the × close it, the overlay
+// Look and behaviour are the zones dialog (.modal-overlay.zn-dialog; this
+// module brings no CSS of its own): Escape and the × close it, the overlay
 // itself does not (a mis-click must not throw away what was typed), Enter in
 // the prompt field confirms, focus returns where it was.
 // Texts come from window.GC.t; each key also has an English fallback so a page
