@@ -134,7 +134,9 @@
   // ── Exposure ──
   function protectionsOf(e) { return isObj(e && e.protections) ? e.protections : {}; }
   function isHttp(e) { return str(e && e.type) !== 'l4'; }
-  // No access protection: no login, no mTLS, no IP filter (layer 4 has none of them).
+  // No access protection: no login, no mTLS, no IP filter. Layer 4 has only
+  // the IP filter to offer (feature-next-package §S1.2) — the server sends
+  // protections.ip_filter for L4 entries too, so the same rule applies.
   function isUnprotected(e) { const p = protectionsOf(e); return !p.auth && !p.mtls && !p.ip_filter; }
   function lacksWaf(e) { return isHttp(e) && !protectionsOf(e).waf; }
   function normFilter(f) { return FILTERS.indexOf(f) >= 0 ? f : 'all'; }

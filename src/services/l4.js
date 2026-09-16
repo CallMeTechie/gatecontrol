@@ -1,5 +1,6 @@
 'use strict';
 
+const ipaddr = require('ipaddr.js');
 const { parsePortRange, isPortBlocked } = require('../utils/validate');
 
 // Lazy: keeps requiring this module free of config/db side effects (it is
@@ -13,8 +14,15 @@ function getDb() {
 // VPN subnet). Passing an empty array disables the external-exposure gate for
 // internal-only routes (they become world-reachable) — the gate in
 // buildL4Route only applies when ranges are present. Never call with [].
-function buildL4Servers(routes, internalOnlyRanges) {
+//
+// `options.banRanges` (docs/feature-next-package.md §S1.1) are the addresses of
+// the scanner ban list (waf_bans) as CIDR ranges. They become the FIRST route
+// of every L4 server: a banned source is closed before any entry route can
+// match it. Empty (nothing banned) → no extra route at all, so a config
+// without bans stays byte-identical to the pre-S1 one.
+function buildL4Servers(routes, internalOnlyRanges, options = {}) {
   if (!routes || routes.length === 0) return {};
+  const banRanges = Array.isArray(options.banRanges) ? options.banRanges : [];
 
   const groups = {};
   for (const route of routes) {
@@ -33,15 +41,104 @@ function buildL4Servers(routes, internalOnlyRanges) {
       : 'l4-' + l4_protocol + '-' + portLabel;
 
     const listenPrefix = l4_protocol === 'udp' ? 'udp' : 'tcp';
+    const serverRoutes = [];
+    if (banRanges.length > 0) serverRoutes.push(banCloseRoute(banRanges));
+    for (const r of groupRoutes) {
+      // Per-entry IP filter: a `close` route in front of the entry's own
+      // route. Everything the filter rejects never reaches the proxy handler.
+      const guard = buildL4FilterRoute(r, l4_tls_mode);
+      if (guard) serverRoutes.push(guard);
+      serverRoutes.push(buildL4Route(r, l4_tls_mode, internalOnlyRanges));
+    }
     const server = {
       listen: [listenPrefix + '/:' + l4_listen_port],
-      routes: groupRoutes.map(function(r) { return buildL4Route(r, l4_tls_mode, internalOnlyRanges); }),
+      routes: serverRoutes,
     };
 
     servers[serverName] = server;
   }
 
   return servers;
+}
+
+// ─── Protection (docs/feature-next-package.md §S1) ──────
+
+// "1.2.3.4" → "1.2.3.4/32", "10.0.0.0/8" → "10.0.0.0/8"; null when the value
+// is not an address. layer4.matchers.remote_ip takes the same range syntax as
+// the HTTP client_ip matcher, and the ban route on the HTTP side normalises
+// single addresses to a /32 resp. /128 the same way.
+function toRange(value) {
+  const s = String(value == null ? '' : value).trim();
+  if (!s || s.length > 64) return null;
+  try {
+    if (s.includes('/')) {
+      const [addr, prefix] = ipaddr.parseCIDR(s);
+      return addr.toString() + '/' + prefix;
+    }
+    if (!ipaddr.isValid(s)) return null;
+    const a = ipaddr.process(s);
+    return a.toString() + '/' + (a.kind() === 'ipv4' ? 32 : 128);
+  } catch {
+    return null;
+  }
+}
+
+/** The ban route: banned sources are closed before any entry route runs. */
+function banCloseRoute(ranges) {
+  return {
+    match: [{ remote_ip: { ranges } }],
+    handle: [{ handler: 'close' }],
+  };
+}
+
+/**
+ * The entry's IP filter (ip_filter_enabled / ip_filter_mode / ip_filter_rules)
+ * reduced to what layer 4 can express: `ip` and `cidr` rules. caddy-l4 has no
+ * geo matcher, so `country` rules cannot work here — the API rejects them for
+ * L4 entries and this ignores any that a restore put in the row.
+ * → { mode: 'allow'|'deny', ranges } or null (no filter).
+ */
+function l4IpFilter(route) {
+  if (!route || !route.ip_filter_enabled) return null;
+  const raw = String(route.ip_filter_mode || 'whitelist');
+  const mode = (raw === 'blacklist' || raw === 'deny') ? 'deny' : 'allow';
+  let rules = route.ip_filter_rules;
+  if (typeof rules === 'string') {
+    try { rules = JSON.parse(rules || '[]'); } catch { rules = []; }
+  }
+  if (!Array.isArray(rules)) rules = [];
+  const ranges = [];
+  for (const r of rules) {
+    if (!r || (r.type !== 'ip' && r.type !== 'cidr')) continue;
+    const text = toRange(r.value);
+    if (text && !ranges.includes(text)) ranges.push(text);
+  }
+  // Nothing to deny → no route (the historical allow-all of an empty
+  // blacklist, see services/ipFilter.checkAccess). An empty allow list closes
+  // everything instead — fail closed, same rule as on the HTTP side.
+  if (mode === 'deny' && ranges.length === 0) return null;
+  return { mode, ranges };
+}
+
+/**
+ * `close` route placed directly in front of the entry's own route:
+ *   allow → everything that is NOT on the list (an empty list: everything)
+ *   deny  → exactly the listed addresses
+ * On a TLS listener several entries share the port, so the guard carries the
+ * entry's SNI match and only ever closes that entry's connections.
+ */
+function buildL4FilterRoute(route, tlsMode) {
+  const f = l4IpFilter(route);
+  if (!f) return null;
+  const match = {};
+  if (tlsMode !== 'none' && route.domain) match.tls = { sni: [route.domain] };
+  if (f.mode === 'allow') {
+    if (f.ranges.length > 0) match.not = [{ remote_ip: { ranges: f.ranges } }];
+  } else {
+    match.remote_ip = { ranges: f.ranges };
+  }
+  const handle = [{ handler: 'close' }];
+  return Object.keys(match).length === 0 ? { handle } : { match: [match], handle };
 }
 
 // caddy-l4's proxy handler accepts multiple upstreams + a load_balancing
@@ -223,6 +320,10 @@ function assertListenPortFree(listenPort, { protocol = 'tcp', excludeRouteIds = 
 module.exports = {
   buildL4Servers,
   buildL4Route,
+  buildL4FilterRoute,
+  banCloseRoute,
+  l4IpFilter,
+  toRange,
   validatePortConflicts,
   findListenPortConflict,
   suggestFreeListenPort,
