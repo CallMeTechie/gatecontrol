@@ -35,27 +35,40 @@
     WAF_BAN_NOT_FOUND: 'waf.err.ban_not_found',
     TOKEN_FORBIDDEN: 'waf.err.token_forbidden',
   };
-  // English reason texts of services/wafAssistant.js / wafBans.js → i18n key + params.
-  const REASONS = [
-    [/^hits a typical secret path \((.+)\)$/, 'waf.asst_reason_secret', (m) => ({ path: m[1] })],
-    [/^scanner \/ file-inclusion rule$/, 'waf.asst_reason_scanner', () => ({})],
-    [/^series of (\d+) requests from a single address$/, 'waf.asst_reason_series', (m) => ({ n: m[1] })],
-    [/^every source address is banned$/, 'waf.asst_reason_banned', () => ({})],
-    [/^same path (.+) from (\d+) different addresses on (\d+) days$/, 'waf.asst_reason_fp', (m) => ({ path: m[1], ips: m[2], days: m[3] })],
-    [/^(\d+) request\(s\) from (\d+) address\(es\) — not conclusive$/, 'waf.asst_reason_unclear', (m) => ({ hits: m[1], ips: m[2] })],
-    [/^scanner: (\d+) requests in (\d+) min \(rules ([0-9, ]*)\)$/, 'waf.bans_reason_scanner', (m) => ({ hits: m[1], window: m[2], rules: m[3] })],
-    [/^manual$/, 'waf.bans_reason_manual', () => ({})],
-  ];
+  // `reason_code` of the server (services/wafAssistant.js: rules, wafBans.js:
+  // bans) → i18n key. The English `reason` text is never parsed any more
+  // (docs/feature-wave2.md §W1.3); it is only the last fallback when an older
+  // server sends no code at all.
+  const REASON_KEYS = {
+    secret_path: 'waf.asst_reason_secret',
+    scanner_rule: 'waf.asst_reason_scanner',
+    series: 'waf.asst_reason_series',
+    all_banned: 'waf.asst_reason_banned',
+    shared_path: 'waf.asst_reason_fp',
+    inconclusive: 'waf.asst_reason_unclear',
+    scanner: 'waf.bans_reason_scanner',
+    manual: 'waf.bans_reason_manual',
+  };
+  // waf.asst_reason_series names its placeholder {{n}}, the server counts `hits`.
+  const REASON_PARAM_ALIAS = { series: { n: 'hits' } };
 
   function str(v) { return v == null ? '' : String(v); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function parseTab(hash) { const h = str(hash).replace(/^#/, ''); return TABS.indexOf(h) >= 0 ? h : 'events'; }
   function readinessOf(r) { return READINESS.indexOf(r && r.readiness) >= 0 ? r.readiness : 'too_early'; }
   function verdictOf(rule) { return VERDICTS.indexOf(rule && rule.verdict) >= 0 ? rule.verdict : 'unclear'; }
-  function reasonText(reason) {
-    const s = str(reason).trim();
-    for (const [re, key, params] of REASONS) { const m = re.exec(s); if (m) return { key, params: params(m) }; }
-    return null;
+  // { reason_code, reason_params } of a rule or ban → { key, params } or null
+  // (no/unknown code → the caller shows `reason` verbatim).
+  function reasonText(item) {
+    const o = isObj(item) ? item : {};
+    const key = REASON_KEYS[str(o.reason_code)];
+    if (!key) return null;
+    const src = isObj(o.reason_params) ? o.reason_params : {};
+    const alias = REASON_PARAM_ALIAS[o.reason_code] || null;
+    const params = {};
+    for (const k of Object.keys(src)) if (src[k] != null) params[k] = src[k];
+    if (alias) for (const k of Object.keys(alias)) if (src[alias[k]] != null) params[k] = src[alias[k]];
+    return { key, params };
   }
   // Order: detect routes ready → review → too_early → no_traffic, then block routes; by host.
   function sortRoutes(routes) {
@@ -172,9 +185,9 @@
     return win.GCLicenseHint ? win.GCLicenseHint.render('waf') : el('div', { class: 'wfa-state', text: t('waf.err.license') });
   }
   function localTime(iso) { return iso ? W.fmtTime(iso) : '—'; }
-  function reasonLabel(reason) {
-    const r = reasonText(reason);
-    return r ? t(r.key, r.params) : (str(reason) || '—');
+  function reasonLabel(item) {
+    const r = reasonText(item);
+    return r ? t(r.key, r.params) : (str(item && item.reason) || '—');
   }
   function stateBox(text, cls, retry) {
     return el('div', { class: 'wfa-state' + (cls ? ' ' + cls : '') }, [
@@ -295,7 +308,7 @@
         el('td', { class: 'wfa-c-paths', 'data-label': t('waf.asst_col_paths') }, paths.length ? paths.map((p) => el('code', { class: 'wfa-path', title: p, text: p })) : [el('span', { class: 'wf-muted', text: '—' })]),
         el('td', { class: 'wfa-c-verdict', 'data-label': t('waf.asst_col_verdict') }, [
           el('span', { class: 'tag ' + VERDICT_CLASS[v] + ' wfa-verdict', text: t('waf.asst_verdict_' + v) }),
-          el('div', { class: 'wfa-reason', text: reasonLabel(x.reason) }),
+          el('div', { class: 'wfa-reason', text: reasonLabel(x) }),
         ]),
       ]);
     });
@@ -529,7 +542,7 @@
     if (!state.bans.length) { body.replaceChildren(row(el('span', { class: 'wfa-bans-empty', text: t('waf.bans_empty') }))); return; }
     body.replaceChildren(...state.bans.map((b) => el('tr', { class: 'wfa-ban-row', dataset: { ip: str(b.ip), manual: b.manual ? '1' : '0' } }, [
       el('td', { 'data-label': t('waf.bans_col_ip') }, [el('code', { class: 'wf-mono wfa-ban-ip', text: str(b.ip) })]),
-      el('td', { class: 'wfa-ban-reason', 'data-label': t('waf.bans_col_reason'), text: reasonLabel(b.reason) }),
+      el('td', { class: 'wfa-ban-reason', 'data-label': t('waf.bans_col_reason'), text: reasonLabel(b) }),
       el('td', { class: 'wfa-c-num', 'data-label': t('waf.bans_col_hits'), text: b.hits == null ? '—' : String(b.hits) }),
       el('td', { 'data-label': t('waf.bans_col_since'), text: localTime(b.banned_at) }),
       el('td', { 'data-label': t('waf.bans_col_until'), text: b.expires_at ? localTime(b.expires_at) : t('waf.bans_never') }),

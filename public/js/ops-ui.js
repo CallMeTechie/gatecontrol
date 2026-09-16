@@ -135,7 +135,7 @@
     INVALID_NOTIFY_EMAIL: ['autoupdate.err.generic', 'Could not save.'],
   };
   const GENERIC = ['offsite.err.generic', 'That did not work.'];
-  // Config field names (INVALID_CONFIG "host: required") → label keys.
+  // Config field names (INVALID_CONFIG carries `field`) → label keys.
   const FIELD_KEYS = {
     host: ['offsite.field.host', 'Host'], port: ['offsite.field.port', 'Port'], username: ['offsite.field.username', 'User'],
     path: ['offsite.field.path', 'Path'], share: ['offsite.field.share', 'Share'], password: ['offsite.field.password', 'Password'],
@@ -152,10 +152,15 @@
     if (b.feature) return 'LICENSE';
     return b.code ? String(b.code).toUpperCase() : null;
   }
-  /** Field name of an INVALID_CONFIG answer ("bucket: invalid bucket name" → 'bucket'). */
+  /**
+   * Field name of an INVALID_CONFIG answer. The server names it in `field`
+   * (services/offsite/index.js `bad()`); the English `error` text is never
+   * parsed for it (docs/feature-wave2.md §W1.3).
+   */
   function configField(body) {
-    const m = /^([a-z_]+):/.exec(str(body && (body.error || (body.data && body.data.error))));
-    return m && FIELD_KEYS[m[1]] ? m[1] : null;
+    const b = body && body.data && !body.code && !body.field ? body.data : body;
+    const f = str(b && b.field);
+    return FIELD_KEYS[f] ? f : null;
   }
   function errorKey(code) { return (ERROR_KEYS[code] || GENERIC)[0]; }
   /** UI text for an API error. `fallback` = [key, english] used for unknown codes. */

@@ -43,7 +43,15 @@ const K_SSH_PRIV = 'backup.offsite.ssh_private_enc';
 const K_SSH_PUB = 'backup.offsite.ssh_public';
 
 class OffsiteError extends Error {
-  constructor(code, message, status = 400) { super(message); this.code = code; this.status = status; }
+  // `field` names the offending config field of an INVALID_CONFIG error as a
+  // stable identifier; the browser must not dig it out of the English message
+  // (docs/feature-wave2.md §W1.3).
+  constructor(code, message, status = 400, field = null) {
+    super(message);
+    this.code = code;
+    this.status = status;
+    if (field) this.field = field;
+  }
 }
 
 // ── Settings: passphrase + include_key ─────────────────────────────────────
@@ -110,7 +118,9 @@ const PATH_RE = /^[A-Za-z0-9._~@+=,()\/ -]{0,255}$/;
 const SHARE_RE = /^[A-Za-z0-9._$ -]{1,80}$/;
 const DOMAIN_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
-function bad(field, msg) { return new OffsiteError('INVALID_CONFIG', `${field}: ${msg}`); }
+// `error` keeps the English "field: message" wording for API users; `field`
+// carries the same field name as a code the user interface can translate.
+function bad(field, msg) { return new OffsiteError('INVALID_CONFIG', `${field}: ${msg}`, 400, field); }
 
 function str(v) { return typeof v === 'string' ? v.trim() : v; }
 

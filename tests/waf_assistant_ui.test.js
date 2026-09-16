@@ -104,26 +104,42 @@ describe('waf-assistant.js pure helpers', () => {
     assert.equal(A.parseTab('#x'), 'events');
   });
 
-  it('server reasons → German text keys, unknown text stays', () => {
-    assert.deepEqual(A.reasonText('hits a typical secret path (/.env)'), { key: 'waf.asst_reason_secret', params: { path: '/.env' } });
-    assert.deepEqual(A.reasonText('scanner / file-inclusion rule'), { key: 'waf.asst_reason_scanner', params: {} });
-    assert.deepEqual(A.reasonText('series of 7 requests from a single address'), { key: 'waf.asst_reason_series', params: { n: '7' } });
-    assert.deepEqual(A.reasonText('every source address is banned'), { key: 'waf.asst_reason_banned', params: {} });
-    assert.deepEqual(A.reasonText('same path /api/x from 4 different addresses on 3 days'), { key: 'waf.asst_reason_fp', params: { path: '/api/x', ips: '4', days: '3' } });
-    assert.deepEqual(A.reasonText('2 request(s) from 2 address(es) — not conclusive'), { key: 'waf.asst_reason_unclear', params: { hits: '2', ips: '2' } });
-    assert.deepEqual(A.reasonText('scanner: 6 requests in 10 min (rules 913100, 930120)'), { key: 'waf.bans_reason_scanner', params: { hits: '6', window: '10', rules: '913100, 930120' } });
-    assert.deepEqual(A.reasonText('manual'), { key: 'waf.bans_reason_manual', params: {} });
-    assert.equal(A.reasonText('Login-Scanner'), null);
+  // docs/feature-wave2.md §W1.3: the server sends `reason_code` + `reason_params`,
+  // the browser translates the code. The English `reason` is never parsed.
+  it('reason_code → text key with the server parameters, unknown code falls back', () => {
+    assert.deepEqual(A.reasonText({ reason_code: 'secret_path', reason_params: { path: '/.env' } }), { key: 'waf.asst_reason_secret', params: { path: '/.env' } });
+    assert.deepEqual(A.reasonText({ reason_code: 'scanner_rule', reason_params: {} }), { key: 'waf.asst_reason_scanner', params: {} });
+    assert.deepEqual(A.reasonText({ reason_code: 'series', reason_params: { hits: 7 } }), { key: 'waf.asst_reason_series', params: { hits: 7, n: 7 } });
+    assert.deepEqual(A.reasonText({ reason_code: 'all_banned', reason_params: {} }), { key: 'waf.asst_reason_banned', params: {} });
+    assert.deepEqual(A.reasonText({ reason_code: 'shared_path', reason_params: { path: '/api/x', ips: 4, days: 3 } }), { key: 'waf.asst_reason_fp', params: { path: '/api/x', ips: 4, days: 3 } });
+    assert.deepEqual(A.reasonText({ reason_code: 'inconclusive', reason_params: { hits: 2, ips: 2 } }), { key: 'waf.asst_reason_unclear', params: { hits: 2, ips: 2 } });
+    assert.deepEqual(A.reasonText({ reason_code: 'scanner', reason_params: { hits: 6, window: 10, rules: '913100, 930120' } }), { key: 'waf.bans_reason_scanner', params: { hits: 6, window: 10, rules: '913100, 930120' } });
+    assert.deepEqual(A.reasonText({ reason_code: 'manual', reason_params: {} }), { key: 'waf.bans_reason_manual', params: {} });
+    assert.equal(A.reasonText({ reason_code: null, reason: 'Login-Scanner' }), null, 'own ban reason stays verbatim');
+    assert.equal(A.reasonText({ reason: 'hits a typical secret path (/.env)' }), null, 'the English text is not parsed');
+    assert.equal(A.reasonText(null), null);
     for (const k of ['waf.asst_reason_secret', 'waf.asst_reason_fp', 'waf.bans_reason_scanner']) assert.ok(de[k] && en[k], k);
   });
 
-  it('the reason regexes match what services/wafAssistant.js and wafBans.js produce', () => {
+  it('every reason_code of the services has a text key, and the plain text stays', () => {
+    // Read the list out of the source; requiring the service would open the DB.
+    const codes = /const REASON_CODES = \[([^\]]+)\]/.exec(read('src/services/wafAssistant.js'))[1]
+      .split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+    assert.ok(codes.length >= 6, 'REASON_CODES found');
+    for (const c of codes) {
+      const r = A.reasonText({ reason_code: c, reason_params: {} });
+      assert.ok(r, `code ${c} known to the UI`);
+      assert.ok(de[r.key] && en[r.key], `${c} → ${r.key} in both languages`);
+    }
+    // `reason` keeps its English wording for API users.
     const svc = read('src/services/wafAssistant.js') + read('src/services/wafBans.js');
     for (const s of ['hits a typical secret path (', "'scanner / file-inclusion rule'", 'series of ${hits} requests from a single address', "'every source address is banned'",
       'same path ${fpPaths[0]} from ${pe.cleanIps.size} different addresses on ${pe.days.size} days', '${hits} request(s) from ${ips.length} address(es) — not conclusive',
       'scanner: ${c.hits} requests in ${s.autoban.window_min} min (rules ${rules})', "reason || 'manual'"]) {
       assert.ok(svc.includes(s), `server text: ${s}`);
     }
+    // No regex on server prose left in the assistant script.
+    assert.ok(!read('public/js/waf-assistant.js').includes('not conclusive'), 'no English reason regex in the browser');
   });
 
   it('routes sorted ready → review → too_early → no_traffic, block last; counts', () => {
