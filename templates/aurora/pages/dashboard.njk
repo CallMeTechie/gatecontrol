@@ -52,6 +52,26 @@
   <div class="op-wn-body" id="whats-new-body" tabindex="0" aria-label="{{ t('whatsnew.all') }}"></div>
 </section>
 
+{# Probleme (docs/feature-next-package.md S3 §1): assembled by
+   dashboard-problems.js from GET /api/v1/dashboard/problems, refreshed by the
+   existing SSE types. Hidden while there is nothing to report. #}
+<section class="card pr-card" id="dash-problems" hidden aria-labelledby="dash-problems-title">
+  <div class="pr-head">
+    <span class="pr-head-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+    <div class="pr-titles">
+      <h2 class="card-title pr-title" id="dash-problems-title">{{ t('problems.title') }}</h2>
+      <div class="pr-sub" id="dash-problems-sub">{{ t('problems.subtitle') }}</div>
+    </div>
+    <span class="pr-count" id="dash-problems-count" hidden></span>
+  </div>
+  <div class="pr-list" id="dash-problems-list"></div>
+  <div class="pr-note" id="dash-problems-hint" hidden></div>
+  <div class="pr-od" id="dash-problems-ondemand" hidden>
+    <div class="pr-od-title">{{ t('problems.on_demand_title') }}</div>
+    <div class="pr-od-list" id="dash-problems-ondemand-list"></div>
+  </div>
+</section>
+
 <!-- ── Row 1: KPI Cards (6-across down to 1200px, then progressively stacked) ── -->
 <div class="aurora-kpi-grid">
 
@@ -320,4 +340,5 @@
 {% block scripts %}
 <script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/dashboard.js?v={{ appVersion }}"></script>
+<script src="/js/dashboard-problems.js?v={{ appVersion }}"></script>
 {% endblock %}

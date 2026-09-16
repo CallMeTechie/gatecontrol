@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const wireguard = require('../../services/wireguard');
 const traffic = require('../../services/traffic');
+const logger = require('../../utils/logger');
 const { getDb } = require('../../db/connection');
 
 const router = Router();
@@ -61,6 +62,23 @@ router.get('/stats', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: req.t('error.dashboard.stats') });
+  }
+});
+
+/**
+ * GET /api/dashboard/problems
+ * Everything that currently needs attention, assembled from existing data
+ * (docs/feature-next-package.md S3 §1): offline gateways, entries whose LAN
+ * target does not answer, certificates, update, off-site backups, WAF module.
+ */
+router.get('/problems', async (req, res) => {
+  try {
+    const problems = require('../../services/dashboardProblems');
+    const data = await problems.list();
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    logger.error({ err: err.message }, 'Failed to assemble dashboard problems');
+    res.status(500).json({ ok: false, error: req.t('error.dashboard.problems') });
   }
 });
 

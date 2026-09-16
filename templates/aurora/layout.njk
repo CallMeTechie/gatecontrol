@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/css/security.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/nav.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/ops.css?v={{ appVersion }}">
+  <link rel="stylesheet" href="/css/problems.css?v={{ appVersion }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -722,6 +723,40 @@
       'skoda.details.score_as_of': {{ t('skoda.details.score_as_of') | dump | safe }},
       'skoda.details.load_error': {{ t('skoda.details.load_error') | dump | safe }},
       'skoda.details.rate_limited': {{ t('skoda.details.rate_limited') | dump | safe }},
+      'problems.title': {{ t('problems.title') | dump | safe }},
+      'problems.subtitle': {{ t('problems.subtitle') | dump | safe }},
+      'problems.none': {{ t('problems.none') | dump | safe }},
+      'problems.open': {{ t('problems.open') | dump | safe }},
+      'problems.ago_now': {{ t('problems.ago_now') | dump | safe }},
+      'problems.ago_minutes': {{ t('problems.ago_minutes') | dump | safe }},
+      'problems.ago_hours': {{ t('problems.ago_hours') | dump | safe }},
+      'problems.ago_days': {{ t('problems.ago_days') | dump | safe }},
+      'problems.gateway_offline': {{ t('problems.gateway_offline') | dump | safe }},
+      'problems.gateway_offline_detail': {{ t('problems.gateway_offline_detail') | dump | safe }},
+      'problems.gateway_offline_none': {{ t('problems.gateway_offline_none') | dump | safe }},
+      'problems.entry_refused': {{ t('problems.entry_refused') | dump | safe }},
+      'problems.entry_unreachable': {{ t('problems.entry_unreachable') | dump | safe }},
+      'problems.entry_unknown': {{ t('problems.entry_unknown') | dump | safe }},
+      'problems.detail_refused': {{ t('problems.detail_refused') | dump | safe }},
+      'problems.detail_unreachable': {{ t('problems.detail_unreachable') | dump | safe }},
+      'problems.detail_monitor': {{ t('problems.detail_monitor') | dump | safe }},
+      'problems.wol_hint': {{ t('problems.wol_hint') | dump | safe }},
+      'problems.wol_on': {{ t('problems.wol_on') | dump | safe }},
+      'problems.tls_failed': {{ t('problems.tls_failed') | dump | safe }},
+      'problems.tls_paused': {{ t('problems.tls_paused') | dump | safe }},
+      'problems.tls_attempts': {{ t('problems.tls_attempts') | dump | safe }},
+      'problems.update_failed': {{ t('problems.update_failed') | dump | safe }},
+      'problems.update_rolled_back': {{ t('problems.update_rolled_back') | dump | safe }},
+      'problems.update_detail': {{ t('problems.update_detail') | dump | safe }},
+      'problems.update_rollback_failed': {{ t('problems.update_rollback_failed') | dump | safe }},
+      'problems.backup_failed': {{ t('problems.backup_failed') | dump | safe }},
+      'problems.backup_detail': {{ t('problems.backup_detail') | dump | safe }},
+      'problems.waf_engine_missing': {{ t('problems.waf_engine_missing') | dump | safe }},
+      'problems.waf_engine_detail': {{ t('problems.waf_engine_detail') | dump | safe }},
+      'problems.on_demand_title': {{ t('problems.on_demand_title') | dump | safe }},
+      'problems.on_demand_note': {{ t('problems.on_demand_note') | dump | safe }},
+      'problems.access_log_unavailable': {{ t('problems.access_log_unavailable') | dump | safe }},
+      'problems.load_error': {{ t('problems.load_error') | dump | safe }},
       'entry.on_demand_tag': {{ t('entry.on_demand_tag') | dump | safe }},
       'settings.acme_email.push_failed': {{ t('settings.acme_email.push_failed') | dump | safe }},
       'settings.autosave.saved': {{ t('settings.autosave.saved') | dump | safe }}
