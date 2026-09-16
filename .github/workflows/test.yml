@@ -5,6 +5,12 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      browser_scenarios:
+        description: 'Browser scenarios to run (space separated, or "all")'
+        required: false
+        default: 'all'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -28,6 +34,11 @@ jobs:
 
       - name: Vendored template drift check
         run: node scripts/check-vendored-templates.js
+
+      # JSON.parse keeps the last value of a duplicate key — three of them sat
+      # in en.json for months without a single red test.
+      - name: Duplicate i18n keys
+        run: node scripts/check-i18n-duplicates.js
 
       - name: Run tests with coverage
         run: npx c8 --reporter=text --reporter=lcov --lines 40 npm test
@@ -94,6 +105,89 @@ jobs:
 
       - name: Run ESLint no-undef scan (src)
         run: npx eslint -c .eslintrc.noundef.json "src/**/*.js" --no-eslintrc --format stylish
+
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    # Der Playwright-Container bringt Chromium und alle Systembibliotheken
+    # mit; das npm-Paket selbst kommt mit --no-save dazu, damit package.json
+    # und package-lock.json unangetastet bleiben.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    env:
+      NODE_ENV: test
+      GC_DATA_DIR: /tmp/gc-e2e
+      GC_DB_PATH: /tmp/gc-e2e/gatecontrol.db
+      GC_CADDY_DATA_DIR: /tmp/gc-e2e/caddy
+      GC_BACKUP_DIR: /tmp/gc-e2e/backups
+      GC_DNS_HOSTS_FILE: /tmp/gc-e2e/dns/peers.hosts
+      GC_WG_CONFIG_PATH: /tmp/gc-e2e/wireguard/wg0.conf
+      GC_HOST: 127.0.0.1
+      GC_BASE_URL: http://127.0.0.1:3000
+      GC_ADMIN_USER: e2e_admin
+      GC_ADMIN_PASSWORD: 'E2eTest!Pass123'
+      GC_DEFAULT_LANGUAGE: en
+      GC_LOG_LEVEL: warn
+      GC_RATE_LIMIT_LOGIN: '100000'
+      GC_RATE_LIMIT_API: '100000'
+      GC_RATE_LIMIT_GATEWAY: '100000'
+      BASE: http://127.0.0.1:3000
+      E2E_OUT: /tmp/gc-e2e/shots
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
+
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      # Kein Eintrag in package.json/package-lock.json: Playwright ist Werkzeug
+      # des Jobs, keine Abhängigkeit des Projekts. Die Browser liegen schon im
+      # Container-Image.
+      - name: Add the Playwright client (not a project dependency)
+        run: npm install --no-save --no-package-lock playwright@1.63.0
+
+      # Ein Schlüsselpaar für Seed UND App: das TOTP-Geheimnis des
+      # Fixture-Benutzers liegt mit GC_ENCRYPTION_KEY verschlüsselt in der DB.
+      - name: Test keys for this run
+        run: |
+          rnd() { node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"; }
+          echo "GC_SECRET=$(rnd)" >> "$GITHUB_ENV"
+          echo "GC_ENCRYPTION_KEY=$(rnd)" >> "$GITHUB_ENV"
+
+      - name: Seed the test database
+        run: node tests/e2e/seed.js
+
+      - name: Start the app
+        run: |
+          nohup node src/server.js > /tmp/gc-e2e-app.log 2>&1 &
+          disown || true
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:3000/login >/dev/null && exit 0
+            sleep 1
+          done
+          echo "app did not come up:"; cat /tmp/gc-e2e-app.log; exit 1
+
+      # Pflichtsatz bei push/PR, bei workflow_dispatch der gewählte Satz.
+      - name: Browser scenarios
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security' }}
+
+      - name: App log
+        if: failure()
+        run: cat /tmp/gc-e2e-app.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-screenshots
+          path: /tmp/gc-e2e/shots/
+          if-no-files-found: ignore
 
   mutation:
     name: Mutation tests (gateway)
