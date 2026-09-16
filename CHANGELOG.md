@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.128.0] — 2026-09-16
 
 ### Features
 - **Schutz für TCP- und UDP-Routen.** Bisher galten WAF, Sperrliste und IP-Filter nur für HTTP.
