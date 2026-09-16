@@ -1229,9 +1229,23 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
 
     if (activeL4Routes.length > 0) {
+      // Scanner ban (docs/feature-next-package.md §S1.1): the same waf_bans
+      // list that produces the HTTP ban route becomes the FIRST route of every
+      // L4 listener — banned source, `close`. Empty list → no extra route.
+      let l4BanRanges = [];
+      try { l4BanRanges = require('./wafBans').banRanges(); }
+      catch (err) { logger.warn({ err: err.message }, 'waf: L4 ban list unavailable'); }
       caddyConfig.apps.layer4 = {
-        servers: buildL4Servers(activeL4Routes, INTERNAL_ONLY_RANGES),
+        servers: buildL4Servers(activeL4Routes, INTERNAL_ONLY_RANGES, { banRanges: l4BanRanges }),
       };
+      // Connection rate (§S1.3): caddy-l4 logs every connection on the
+      // `layer4` logger at DEBUG level; services/l4ConnGuard.js reads that
+      // file. The logger only exists while an entry actually has a limit, so
+      // a config without one is unchanged.
+      const connGuard = require('./l4ConnGuard');
+      if (activeL4Routes.some(connGuard.isArmed)) {
+        caddyConfig.logging.logs.l4conn = connGuard.logConfig();
+      }
     }
   }
 

@@ -9,11 +9,17 @@
 //   onIngested(rows)               audit-ingest hook: counts scanner hits per
 //                                  client IP in the window and bans at the threshold
 //   listBans / addBan / removeBan  ban list (waf_bans); manual bans sync at once
+//   autoBan({ ip, reason, … })     auto-ban from another source than the audit
+//                                  log (the L4 connection guard), same rules
 //   banRoute({ gcHost })           srv0 route `gc_waf_bans` (null without bans)
+//   banRanges()                    the same list as CIDR ranges — the L4
+//                                  generator turns them into a `close` route
 //   sweep / start / stop           expiry sweep every 5 min
 //
 // Ban-triggered syncs are coalesced: at most one Caddy sync per 60 s (an
-// attack wave produces a burst of bans). Only HTTP — layer 4 is untouched.
+// attack wave produces a burst of bans). Since
+// docs/feature-next-package.md §S1.1 a ban covers the TCP/UDP listeners too,
+// not just HTTP.
 
 const ipaddr = require('ipaddr.js');
 const { getDb } = require('../db/connection');
@@ -394,6 +400,19 @@ function activeBanIps() {
 }
 
 /**
+ * Active bans as CIDR ranges for a Caddy matcher (`client_ip` on the HTTP
+ * side, `layer4.matchers.remote_ip` on the L4 side). [] = nothing banned, and
+ * then neither side emits a route — the config stays byte-identical.
+ */
+function banRanges() {
+  return activeBanIps().map((ip) => {
+    const p = parseAddress(ip);
+    if (!p) return null;
+    return p.single ? `${p.text}/${p.kind === 'ipv4' ? 32 : 128}` : p.text;
+  }).filter(Boolean);
+}
+
+/**
  * srv0 route for the ban list, or null when nothing is banned (the config
  * then stays byte-identical). client_ip honours the server's trusted_proxies
  * (private ranges) — a direct client cannot talk itself out of (or another
@@ -401,16 +420,11 @@ function activeBanIps() {
  * forwarded address counts, the same address Coraza logs. The management host
  * and the ACME challenge path stay reachable. Answer: 403 with the WAF block
  * page, showing the client address as reference.
+ * The L4 side uses the same list, see services/l4.buildL4Servers.
  */
 function banRoute({ gcHost } = {}) {
-  let ips;
-  try { ips = activeBanIps(); } catch (err) { logger.warn({ err: err.message }, 'waf: ban list unavailable'); return null; }
-  if (ips.length === 0) return null;
-  const ranges = ips.map((ip) => {
-    const p = parseAddress(ip);
-    if (!p) return null;
-    return p.single ? `${p.text}/${p.kind === 'ipv4' ? 32 : 128}` : p.text;
-  }).filter(Boolean);
+  let ranges;
+  try { ranges = banRanges(); } catch (err) { logger.warn({ err: err.message }, 'waf: ban list unavailable'); return null; }
   if (ranges.length === 0) return null;
   const not = [];
   const host = String(gcHost || '').trim().toLowerCase();
@@ -428,6 +442,50 @@ function banRoute({ gcHost } = {}) {
     }],
     terminal: true,
   };
+}
+
+/**
+ * Auto-ban from a source other than the WAF audit log — currently the L4
+ * connection-rate guard (docs/feature-next-package.md §S1.3). Applies exactly
+ * the rules of the scanner ban: never a private/loopback address, never an own
+ * (trusted) address, never an address that is already banned, never beyond
+ * MAX_AUTO_BANS. Duration = the configured auto-ban duration unless given.
+ * The Caddy sync is coalesced (at most one per 60 s). Never throws.
+ * → the ban, or null when nothing was banned.
+ */
+function autoBan({ ip: raw, reason, hits = null, first_seen = null, duration_h } = {}) {
+  try {
+    const ip = canonIp(raw);
+    if (!ip || !isPublicIp(ip)) return null;
+    const s = getSettings();
+    if (trustedMatcher(s.trusted_ips)(ip)) return null;
+    const db = getDb();
+    const now = new Date();
+    const nowStr = now.toISOString();
+    if (db.prepare('SELECT ip FROM waf_bans WHERE ip = ? AND (expires_at IS NULL OR expires_at > ?)').get(ip, nowStr)) return null;
+    const autoCount = db.prepare('SELECT COUNT(*) AS n FROM waf_bans WHERE manual = 0 AND (expires_at IS NULL OR expires_at > ?)').get(nowStr).n;
+    if (autoCount >= MAX_AUTO_BANS) {
+      logger.warn({ ip, max: MAX_AUTO_BANS }, 'waf: auto-ban limit reached — not banning');
+      return null;
+    }
+    const hours = Number.isInteger(duration_h) && duration_h > 0 ? duration_h : s.autoban.duration_h;
+    const row = {
+      ip,
+      reason: String(reason || 'auto').slice(0, 200),
+      hits,
+      first_seen,
+      banned_at: nowStr,
+      expires_at: new Date(now.getTime() + hours * 3600000).toISOString(),
+      manual: 0,
+    };
+    restoreBans(db, [row]);
+    publishBan('ban', ip);
+    scheduleBanSync();
+    return toApi(row);
+  } catch (err) {
+    logger.warn({ err: err.message }, 'waf: auto-ban failed');
+    return null;
+  }
 }
 
 // ─── Coalesced sync ─────────────────────────────────────
@@ -559,7 +617,9 @@ module.exports = {
   addBan,
   removeBan,
   activeBanIps,
+  banRanges,
   banRoute,
+  autoBan,
   scheduleBanSync,
   onIngested,
   sweep,

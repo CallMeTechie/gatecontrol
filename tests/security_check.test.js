@@ -177,8 +177,23 @@ test('public_unprotected, tls_min, backup_offsite, auto_update', async () => {
   let c = byId((await GET('/security/check')).body);
   assert.equal(c.public_unprotected.status, 'fail');
   assert.equal(c.public_unprotected.severity, 'info');
-  assert.deepEqual(c.public_unprotected.items.map((i) => i.id).sort((a, b) => a - b), [rHttps, rNoHsts].sort((a, b) => a - b),
-    'basic auth / ip filter protect; internal, disabled and L4 are out');
+  assert.deepEqual(c.public_unprotected.items.map((i) => i.id).sort((a, b) => a - b), [rHttps, rNoHsts, rL4].sort((a, b) => a - b),
+    'basic auth / ip filter protect; internal and disabled are out — a public L4 entry without an IP filter is in (feature-next-package §S1.4)');
+  assert.equal(c.public_unprotected.items.find((i) => i.id === rL4).label, 'TCP 2222', 'a plain port forward has no domain to show');
+
+  // An IP filter that layer 4 can actually match takes the L4 entry out again.
+  db.prepare("UPDATE routes SET ip_filter_enabled = 1, ip_filter_mode = 'whitelist', ip_filter_rules = ? WHERE id = ?")
+    .run(JSON.stringify([{ type: 'cidr', value: '203.0.113.0/24' }]), rL4);
+  let cf = byId((await GET('/security/check')).body);
+  assert.deepEqual(cf.public_unprotected.items.map((i) => i.id).sort((a, b) => a - b), [rHttps, rNoHsts].sort((a, b) => a - b),
+    'an IP filter protects an L4 entry');
+  // A deny list made only of country rules protects nobody at layer 4.
+  db.prepare("UPDATE routes SET ip_filter_mode = 'blacklist', ip_filter_rules = ? WHERE id = ?")
+    .run(JSON.stringify([{ type: 'country', value: 'CN' }]), rL4);
+  cf = byId((await GET('/security/check')).body);
+  assert.ok(cf.public_unprotected.items.some((i) => i.id === rL4), 'country rules have no layer-4 matcher');
+  db.prepare('UPDATE routes SET ip_filter_enabled = 0, ip_filter_mode = NULL, ip_filter_rules = NULL WHERE id = ?').run(rL4);
+
   assert.equal(c.tls_min.status, 'fail');
   assert.deepEqual(c.tls_min.items, [{ kind: 'zone', id: zoneId, label: 'shop.example' }]);
   assert.equal(c.backup_offsite.status, 'fail', 'no off-site target');

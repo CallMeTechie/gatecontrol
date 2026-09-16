@@ -1566,6 +1566,22 @@ const migrations = [
     detect: (db) => hasColumn(db, 'routes', 'backend_tls_fingerprint'),
   },
   {
+    version: 78,
+    name: 'l4_protection',
+    // Package after 1.127.1, strand S1 (docs/feature-next-package.md §S1.3):
+    // connection rate per source IP for a TCP/UDP entry. caddy-l4 cannot rate
+    // limit itself; it logs every connection on the `layer4` logger, and
+    // services/l4ConnGuard.js counts those lines and hands an offender to the
+    // existing ban list (waf_bans, reason `l4_rate`).
+    //   routes.l4_conn_limit     more than N connections from one source IP …
+    //   routes.l4_conn_window_s  … within M seconds → ban
+    // Both NULL = off, which is the default for every existing entry.
+    sql: `
+      ALTER TABLE routes ADD COLUMN l4_conn_limit INTEGER;
+      ALTER TABLE routes ADD COLUMN l4_conn_window_s INTEGER;`,
+    detect: (db) => hasColumn(db, 'routes', 'l4_conn_limit'),
+  },
+  {
     version: 79,
     name: 'entry_labels_on_demand',
     // Dashboard problems + entry labels (docs/feature-next-package.md S3 §2/§3):

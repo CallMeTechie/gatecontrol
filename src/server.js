@@ -150,6 +150,12 @@ async function start() {
     try { require('./services/waf').start(); }
     catch (err) { logger.warn({ err: err.message }, 'WAF start failed'); }
 
+    // Layer-4 connection guard: reads the layer4 connection log and bans a
+    // source IP that exceeds an entry's rate (docs/feature-next-package.md
+    // §S1.3). No-op while no entry has a limit. Best-effort.
+    try { require('./services/l4ConnGuard').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'layer4 connection guard start failed'); }
+
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
     startPoller(config.intervals.peerPoller);
@@ -413,6 +419,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/accessReconciler').stop(),
     () => require('./services/tlsGuard').stop(),
     () => require('./services/waf').stop(),
+    () => require('./services/l4ConnGuard').stop(),
     () => require('./services/updateNotify').stop(),
   ],
   closeDb: () => { require('./db/connection').closeDb(); },

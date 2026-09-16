@@ -82,6 +82,136 @@ function validateBotBlockerConfig(data) {
     : JSON.stringify(data.bot_blocker_config);
 }
 
+// ─── L4 protection (docs/feature-next-package.md §S1) ────
+//
+// The IP filter columns (ip_filter_enabled / _mode / _rules) now apply to L4
+// entries as well. What changes for them:
+//   - the mode is validated (`whitelist`/`allow`, `blacklist`/`deny`; the
+//     historical spellings stay the stored ones)          → IP_FILTER_MODE_INVALID
+//   - every ip/cidr rule has to parse                     → IP_FILTER_RULE_INVALID
+//   - `country` rules are refused for L4 entries: caddy-l4 has no geo matcher
+//     and silently ignoring them would leave the entry open
+//                                                         → IP_FILTER_COUNTRY_L4
+//   - the connection rate needs both fields in range      → L4_CONN_RATE_INVALID
+// Errors carry statusCode 400 + code, like the HSTS ones.
+
+const ipaddrLib = require('ipaddr.js');
+
+const IP_FILTER_MODES = ['whitelist', 'blacklist', 'allow', 'deny'];
+const IP_FILTER_RULE_TYPES = ['ip', 'cidr', 'country'];
+const IP_FILTER_RULES_MAX = 200;
+const L4_CONN_LIMIT_RANGE = [1, 100000];
+const L4_CONN_WINDOW_RANGE = [1, 3600];
+
+function codedError(code, message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  err.code = code;
+  return err;
+}
+
+/** 'allow' → 'whitelist', 'deny' → 'blacklist'; everything else unchanged. */
+function normalizeIpFilterMode(mode) {
+  if (mode === 'allow') return 'whitelist';
+  if (mode === 'deny') return 'blacklist';
+  return mode;
+}
+
+function isAddressValue(type, value) {
+  const s = String(value == null ? '' : value).trim();
+  if (!s || s.length > 64) return false;
+  try {
+    if (type === 'cidr') {
+      if (!s.includes('/')) return false;
+      ipaddrLib.parseCIDR(s);
+      return true;
+    }
+    return !s.includes('/') && ipaddrLib.isValid(s);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate `ip_filter_mode` / `ip_filter_rules` on a create or update payload
+ * and normalise the mode in place. Only touches what the payload provides.
+ * `routeType` is the EFFECTIVE type of the row after the write.
+ */
+function validateIpFilter(data, { routeType } = {}) {
+  if (data.ip_filter_mode !== undefined && data.ip_filter_mode !== null && data.ip_filter_mode !== '') {
+    if (!IP_FILTER_MODES.includes(data.ip_filter_mode)) {
+      throw codedError('IP_FILTER_MODE_INVALID', `ip_filter_mode must be one of ${IP_FILTER_MODES.join(', ')}`);
+    }
+    data.ip_filter_mode = normalizeIpFilterMode(data.ip_filter_mode);
+  }
+
+  if (data.ip_filter_rules === undefined || data.ip_filter_rules === null || data.ip_filter_rules === '') return;
+  let rules = data.ip_filter_rules;
+  if (typeof rules === 'string') {
+    try { rules = JSON.parse(rules); }
+    catch { throw codedError('IP_FILTER_RULE_INVALID', 'ip_filter_rules must be a JSON array of { type, value }'); }
+  }
+  if (!Array.isArray(rules)) throw codedError('IP_FILTER_RULE_INVALID', 'ip_filter_rules must be an array of { type, value }');
+  if (rules.length > IP_FILTER_RULES_MAX) {
+    throw codedError('IP_FILTER_RULE_INVALID', `at most ${IP_FILTER_RULES_MAX} IP filter rules`);
+  }
+  for (const rule of rules) {
+    if (!rule || typeof rule !== 'object' || !IP_FILTER_RULE_TYPES.includes(rule.type)) {
+      throw codedError('IP_FILTER_RULE_INVALID', `every IP filter rule needs a type (${IP_FILTER_RULE_TYPES.join(', ')}) and a value`);
+    }
+    if (rule.type === 'country') {
+      if (routeType === 'l4') {
+        throw codedError('IP_FILTER_COUNTRY_L4', 'country rules are not available for TCP/UDP entries — use IP or CIDR rules');
+      }
+      if (!/^[A-Za-z]{2}$/.test(String(rule.value || '').trim())) {
+        throw codedError('IP_FILTER_RULE_INVALID', `"${String(rule.value).slice(0, 32)}" is not a two-letter country code`);
+      }
+      continue;
+    }
+    if (!isAddressValue(rule.type, rule.value)) {
+      throw codedError('IP_FILTER_RULE_INVALID', `"${String(rule.value).slice(0, 64)}" is not a valid ${rule.type === 'cidr' ? 'CIDR range' : 'IP address'}`);
+    }
+  }
+}
+
+/**
+ * Validate the connection rate (`l4_conn_limit`, `l4_conn_window_s`).
+ * Both off (0 / '' / null) is always fine; a limit needs a window and only
+ * exists on L4 entries. `current` is the stored row on update (so a patch may
+ * set just one of the two).
+ */
+function validateL4ConnRate(data, { routeType, current = null } = {}) {
+  const has = (f) => data[f] !== undefined;
+  if (!has('l4_conn_limit') && !has('l4_conn_window_s')) return;
+
+  const pick = (f) => {
+    if (has(f)) {
+      const raw = data[f];
+      if (raw === null || raw === '' || raw === false) return 0;
+      const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
+      if (!Number.isInteger(n) || n < 0) throw codedError('L4_CONN_RATE_INVALID', `${f} must be a non-negative integer`);
+      return n;
+    }
+    return current && current[f] ? Number(current[f]) : 0;
+  };
+  const limit = pick('l4_conn_limit');
+  const windowS = pick('l4_conn_window_s');
+
+  if (limit === 0 && windowS === 0) return;
+  if (routeType !== 'l4') {
+    throw codedError('L4_CONN_RATE_INVALID', 'a connection rate is only available for TCP/UDP entries');
+  }
+  if (limit === 0 || windowS === 0) {
+    throw codedError('L4_CONN_RATE_INVALID', 'l4_conn_limit and l4_conn_window_s belong together — set both or neither');
+  }
+  if (limit < L4_CONN_LIMIT_RANGE[0] || limit > L4_CONN_LIMIT_RANGE[1]) {
+    throw codedError('L4_CONN_RATE_INVALID', `l4_conn_limit must be an integer between ${L4_CONN_LIMIT_RANGE[0]} and ${L4_CONN_LIMIT_RANGE[1]}`);
+  }
+  if (windowS < L4_CONN_WINDOW_RANGE[0] || windowS > L4_CONN_WINDOW_RANGE[1]) {
+    throw codedError('L4_CONN_RATE_INVALID', `l4_conn_window_s must be an integer between ${L4_CONN_WINDOW_RANGE[0]} and ${L4_CONN_WINDOW_RANGE[1]}`);
+  }
+}
+
 // ─── HSTS (docs/feature-hsts.md) ─────────────────────────
 //
 // Rules shared by routes.create/update and domainZones.updateDefaults:
@@ -535,6 +665,13 @@ module.exports = {
   normalizeBackendFingerprint,
   resolveBackendFingerprint,
   validateIfProvided,
+  validateIpFilter,
+  validateL4ConnRate,
+  normalizeIpFilterMode,
+  IP_FILTER_MODES,
+  IP_FILTER_RULE_TYPES,
+  L4_CONN_LIMIT_RANGE,
+  L4_CONN_WINDOW_RANGE,
   WAF_MODES,
   WAF_PARANOIA_MIN,
   WAF_PARANOIA_MAX,

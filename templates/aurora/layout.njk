@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="/css/nav.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/ops.css?v={{ appVersion }}">
   <link rel="stylesheet" href="/css/problems.css?v={{ appVersion }}">
+  <link rel="stylesheet" href="/css/l4-protect.css?v={{ appVersion }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -759,7 +760,12 @@
       'problems.load_error': {{ t('problems.load_error') | dump | safe }},
       'entry.on_demand_tag': {{ t('entry.on_demand_tag') | dump | safe }},
       'settings.acme_email.push_failed': {{ t('settings.acme_email.push_failed') | dump | safe }},
-      'settings.autosave.saved': {{ t('settings.autosave.saved') | dump | safe }}
+      'settings.autosave.saved': {{ t('settings.autosave.saved') | dump | safe }},
+      {# L4 protection error codes — docs/feature-next-package.md §S1.2/§S1.3 #}
+      'l4p.err.mode_invalid': {{ t('l4p.err.mode_invalid') | dump | safe }},
+      'l4p.err.rule_invalid': {{ t('l4p.err.rule_invalid') | dump | safe }},
+      'l4p.err.country_l4': {{ t('l4p.err.country_l4') | dump | safe }},
+      'l4p.err.conn_rate_invalid': {{ t('l4p.err.conn_rate_invalid') | dump | safe }}
     }
   };
 </script>

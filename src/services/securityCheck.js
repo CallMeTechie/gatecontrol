@@ -74,14 +74,34 @@ function authOf(r) {
   return null;
 }
 
+// An L4 entry is only really filtered when its rule set holds something
+// layer 4 can match — `country` rules have no geo matcher in caddy-l4 and are
+// ignored by the generator, so a filter made of nothing but those protects
+// nobody and must not silence the check.
+function isL4Filterable(r) {
+  if (r.route_type !== 'l4' || !r.ip_filter_enabled) return false;
+  let rules = r.ip_filter_rules;
+  if (typeof rules === 'string') {
+    try { rules = JSON.parse(rules || '[]'); } catch { return false; }
+  }
+  if (!Array.isArray(rules)) return false;
+  // An allow list with no usable rule closes everything — that is protection.
+  const mode = String(r.ip_filter_mode || 'whitelist');
+  if (mode === 'whitelist' || mode === 'allow') return true;
+  return rules.some((x) => x && (x.type === 'ip' || x.type === 'cidr'));
+}
+
 function protectionsOf(r) {
   const http = isHttp(r);
   const https = http && !!r.https_enabled;
   return {
     auth: authOf(r),
     mtls: https && !!r.mtls_enabled && !!r.mtls_ca_pem,
-    // IP filter or a peer ACL — both limit who may reach the entry.
-    ip_filter: http && (!!r.ip_filter_enabled || !!r.acl_enabled),
+    // IP filter or a peer ACL — both limit who may reach the entry. Since
+    // docs/feature-next-package.md §S1.2 the IP filter also works for L4
+    // entries (a `close` route in front of the listener); the peer ACL is
+    // still HTTP-only, it runs through forward auth.
+    ip_filter: (!!r.ip_filter_enabled && (http || isL4Filterable(r))) || (http && !!r.acl_enabled),
     waf: http && r.waf_enabled ? (r.waf_mode === 'block' ? 'block' : 'detect') : null,
     hsts: https && !!r.hsts_enabled,
     rate_limit: http && !!r.rate_limit_enabled,
@@ -242,14 +262,22 @@ async function checkWafReady(wafLicensed) {
     { type: 'link', href: '/waf#assistant' });
 }
 
-// HTTP only: layer-4 entries have no auth, mTLS or IP filter to offer.
+// Public entries without any access control. HTTP: no auth, no mTLS, no IP
+// filter / peer ACL. L4 (docs/feature-next-package.md §S1.4): no usable IP
+// filter — a TCP/UDP forward has neither auth nor mTLS to offer, and a
+// connection rate is a brake, not access control. Entries that are internal
+// only (external_enabled = 0) never reach this check, they are not public.
 function checkPublicUnprotected(routes) {
-  const list = routes.filter((r) => isPublic(r) && isHttp(r)).filter((r) => {
+  const list = routes.filter(isPublic).filter((r) => {
     const p = protectionsOf(r);
     return !p.auth && !p.mtls && !p.ip_filter;
   });
   if (list.length === 0) return check('public_unprotected', 'info', 'pass');
-  return check('public_unprotected', 'info', 'fail', list.map((r) => item('route', r.id, r.domain)), null);
+  // A plain port forward has no domain — label it the way the entry list does.
+  const label = (r) => (isHttp(r)
+    ? r.domain
+    : `${String(r.l4_protocol || 'tcp').toUpperCase()} ${r.l4_listen_port || '?'}${r.domain ? ` (${r.domain})` : ''}`);
+  return check('public_unprotected', 'info', 'fail', list.map((r) => item('route', r.id, label(r))), null);
 }
 
 function checkBackupOffsite(db) {

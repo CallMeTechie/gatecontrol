@@ -140,6 +140,74 @@
             <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-passthrough="{{ t('routes.tls_passthrough_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
           </div>
         </div>
+        {# Protection for TCP/UDP entries — docs/feature-next-package.md §S1.4.
+           The security tab is HTTP-only (WAF, auth, mTLS all need HTTP), so the
+           pieces that do work at layer 4 live here, next to the port. Sibling of
+           edit-l4-fields on purpose: a locked target (RDP link, service bundle)
+           hides the port fields but must still be protectable. #}
+        <div class="gc-l4-protect" id="edit-l4-protection" style="display:none">
+          <div class="gc-l4-protect-head">
+            <span class="gc-l4-protect-title">{{ t('l4p.title') }}</span>
+            <span class="gc-l4-protect-note">{{ t('l4p.waf_http_only') }}</span>
+          </div>
+          {% if license.features.ip_access_control %}
+          <div class="gc-l4-protect-row">
+            <div>
+              <div class="gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
+              <div class="gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-l4-route-ip-filter"></div>
+          </div>
+          <div id="edit-l4-ip-filter-fields" style="display:none;margin-top:10px">
+            <div style="margin-bottom:8px">
+              <div class="toggle-group" id="edit-l4-ip-filter-mode-group" style="margin-bottom:8px">
+                <button type="button" class="toggle-btn on" data-value="whitelist">{{ t('l4p.mode_allow') }}</button>
+                <button type="button" class="toggle-btn" data-value="blacklist">{{ t('l4p.mode_deny') }}</button>
+              </div>
+              <input type="hidden" id="edit-l4-ip-filter-mode" value="whitelist">
+              <small class="form-hint" id="edit-l4-ip-filter-mode-hint" data-hint-allow="{{ t('l4p.mode_allow_hint') }}" data-hint-deny="{{ t('l4p.mode_deny_hint') }}"></small>
+            </div>
+            <div id="edit-l4-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" id="edit-l4-ip-filter-input" placeholder="{{ t('l4p.ip_filter_placeholder') }}" style="flex:1;min-width:0;padding:6px 10px;font-size:12px">
+              <select id="edit-l4-ip-filter-type" style="width:90px;flex-shrink:0;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
+                <option value="ip">IP</option>
+                <option value="cidr">CIDR</option>
+              </select>
+              <button type="button" class="btn btn-ghost" id="edit-l4-ip-filter-add" style="flex-shrink:0;padding:6px 10px;font-size:12px">+</button>
+            </div>
+          </div>
+          {% else %}
+          <div class="gc-l4-protect-row feature-locked" title="{{ t('license.requires_pro') }}">
+            <div>
+              <div class="gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="lock-icon"></span></div>
+              <div class="gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-l4-route-ip-filter"></div>
+          </div>
+          {% endif %}
+          <div class="gc-l4-protect-row" style="margin-top:10px">
+            <div>
+              <div class="gc-l4-protect-label">{{ t('l4p.conn_rate') }}</div>
+              <div class="gc-l4-protect-desc">{{ t('l4p.conn_rate_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-l4-conn-rate"></div>
+          </div>
+          <div id="edit-l4-conn-rate-fields" style="display:none;margin-top:10px">
+            <div style="display:flex;gap:8px">
+              <div style="flex:1">
+                <label class="gc-l4-protect-sublabel" for="edit-l4-conn-limit">{{ t('l4p.conn_limit') }}</label>
+                <input type="number" id="edit-l4-conn-limit" value="20" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
+              </div>
+              <div style="flex:1">
+                <label class="gc-l4-protect-sublabel" for="edit-l4-conn-window">{{ t('l4p.conn_window') }}</label>
+                <input type="number" id="edit-l4-conn-window" value="60" min="1" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
+              </div>
+            </div>
+            <small class="form-hint" id="edit-l4-conn-rate-hint">{{ t('l4p.conn_rate_hint') }}</small>
+          </div>
+          <small class="form-hint gc-l4-protect-foot">{{ t('l4p.internal_hint') }}</small>
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
           <div>
             <div style="font-size:13px;font-weight:600">{{ t('routes.external_label') }}</div>

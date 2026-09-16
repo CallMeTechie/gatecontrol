@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint, normalizeLabel, onDemandFlag } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint, normalizeLabel, onDemandFlag, validateIpFilter, validateL4ConnRate } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -365,6 +365,10 @@ async function create(data, opts = {}) {
 
   validateBotBlockerConfig(data);
 
+  // IP filter + connection rate (docs/feature-next-package.md §S1.2/§S1.3).
+  validateIpFilter(data, { routeType });
+  validateL4ConnRate(data, { routeType });
+
   validateTargetExclusivity(data);
 
   const targetKind = data.target_kind || 'peer';
@@ -413,7 +417,8 @@ async function create(data, opts = {}) {
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
                         https_enabled, backend_https, basic_auth_enabled, basic_auth_user, basic_auth_password_hash,
-                        route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
+                        route_type, l4_protocol, l4_listen_port, l4_tls_mode,
+                        l4_conn_limit, l4_conn_window_s, monitoring_enabled,
                         ip_filter_enabled, ip_filter_mode, ip_filter_rules,
                         branding_title, branding_text, branding_color, branding_bg, acl_enabled, compress_enabled,
                         custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
@@ -449,6 +454,10 @@ async function create(data, opts = {}) {
     routeType === 'l4' ? (data.l4_protocol || null) : null,
     routeType === 'l4' ? (data.l4_listen_port || null) : null,
     routeType === 'l4' ? (data.l4_tls_mode || null) : null,
+    // Connection rate per source IP (docs/feature-next-package.md §S1.3);
+    // NULL = off, and off is the default.
+    routeType === 'l4' && data.l4_conn_limit ? parseInt(data.l4_conn_limit, 10) : null,
+    routeType === 'l4' && data.l4_conn_limit && data.l4_conn_window_s ? parseInt(data.l4_conn_window_s, 10) : null,
     data.monitoring_enabled ? 1 : 0,
     data.ip_filter_enabled ? 1 : 0,
     data.ip_filter_mode || null,
@@ -705,6 +714,10 @@ async function update(id, data) {
 
   validateBotBlockerConfig(data);
 
+  // IP filter + connection rate (docs/feature-next-package.md §S1.2/§S1.3).
+  validateIpFilter(data, { routeType });
+  validateL4ConnRate(data, { routeType, current: route });
+
   validateTargetExclusivity(data);
 
   // TLS guard: preflight when this update turns the route into an HTTPS route
@@ -759,6 +772,8 @@ async function update(id, data) {
       l4_protocol = ?,
       l4_listen_port = ?,
       l4_tls_mode = ?,
+      l4_conn_limit = ?,
+      l4_conn_window_s = ?,
       enabled = COALESCE(?, enabled),
       monitoring_enabled = COALESCE(?, monitoring_enabled),
       ip_filter_enabled = COALESCE(?, ip_filter_enabled),
@@ -844,6 +859,10 @@ async function update(id, data) {
     routeType === 'l4' ? (data.l4_protocol !== undefined ? (data.l4_protocol || null) : route.l4_protocol) : null,
     routeType === 'l4' ? (data.l4_listen_port !== undefined ? (data.l4_listen_port || null) : route.l4_listen_port) : null,
     routeType === 'l4' ? (data.l4_tls_mode !== undefined ? (data.l4_tls_mode || null) : route.l4_tls_mode) : null,
+    // Connection rate (§S1.3): an explicit 0 / null / '' switches it off, so
+    // no COALESCE here — the field must be clearable.
+    routeType === 'l4' ? (data.l4_conn_limit !== undefined ? (parseInt(data.l4_conn_limit, 10) || null) : (route.l4_conn_limit || null)) : null,
+    routeType === 'l4' ? (data.l4_conn_window_s !== undefined ? (parseInt(data.l4_conn_window_s, 10) || null) : (route.l4_conn_window_s || null)) : null,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     data.monitoring_enabled !== undefined ? (data.monitoring_enabled ? 1 : 0) : null,
     data.ip_filter_enabled !== undefined ? (data.ip_filter_enabled ? 1 : 0) : null,
