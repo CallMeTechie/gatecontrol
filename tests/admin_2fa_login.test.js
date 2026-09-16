@@ -24,6 +24,15 @@ function totp(secret, offsetSec = 0) {
   }).generate({ timestamp: Date.now() + offsetSec * 1000 });
 }
 
+// TOTP steps are 30 s wide and the server accepts ±1 step. A test that mints a
+// code for the previous step (or reuses one across two requests) fails when the
+// step rolls over in between — it is then two steps away. Start such tests
+// early inside a fresh step instead of pinning the clock.
+async function inFreshStep(minLeftMs = 8000) {
+  const left = 30000 - (Date.now() % 30000);
+  if (left < minLeftMs) await new Promise((r) => setTimeout(r, left + 250));
+}
+
 async function enable2fa(a, token) {
   const s = await a.post('/api/v1/profile/2fa/setup').set('x-csrf-token', token).send({}).expect(200);
   assert.ok(s.body.data.secret && s.body.data.otpauth_url.startsWith('otpauth://totp/'));
@@ -131,6 +140,7 @@ test('invalid code is rejected with an error and keeps the pending step', async 
 });
 
 test('a used login code is rejected on replay (admin_totp_used)', async () => {
+  await inFreshStep();
   const { secret } = await enable2fa(agent, csrf);
   await logout(agent, csrf);
   const code = totp(secret, 30);
@@ -148,6 +158,7 @@ test('a used login code is rejected on replay (admin_totp_used)', async () => {
 });
 
 test('window: previous step accepted, two steps away rejected', async () => {
+  await inFreshStep();
   const { secret } = await enable2fa(agent, csrf);
   await logout(agent, csrf);
 
