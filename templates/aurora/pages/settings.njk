@@ -518,6 +518,10 @@
         {{ t('offsite.title') }}
       </div>
       <p class="op-sub">{{ t('offsite.subtitle') }}</p>
+      {# "Derived from your plan" when scheduled_backups is not in the licence
+         token but the paid plan switches it on (docs/feature-next-package.md
+         §S2.3). license-hint.js fills this; it stays empty otherwise. #}
+      <div id="offsite-plan-default" data-license-source="scheduled_backups"></div>
       <div id="offsite-license" class="op-license" hidden></div>
       <div id="offsite-autobackup-off" class="op-note op-note-warn" hidden>{{ t('offsite.autobackup_off') }}</div>
       <div class="op-offsite-grid">

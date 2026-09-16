@@ -35,7 +35,7 @@ test('unlicensed community mode: every locked boolean feature is "unlicensed", l
   assert.ok(Object.values(locked).every((v) => v === 'unlicensed'));
 });
 
-test('token applied: false in the token → plan, missing in the token → not_in_token', async () => {
+test('paid plan: false in the token → plan, missing in the token → on (plan_default)', async () => {
   const features = { ...license.COMMUNITY_FALLBACK, route_auth: true, waf: false };
   delete features.gateway_scan_egress;   // a key the licence server does not deliver yet
   license._applyLicenseForTest({ plan: 'pro', features });
@@ -44,9 +44,24 @@ test('token applied: false in the token → plan, missing in the token → not_i
   assert.equal(r.body.plan, 'pro');
   const locked = r.body.locked;
   assert.equal(locked.waf, 'plan');
-  assert.equal(locked.gateway_scan_egress, 'not_in_token');
+  // docs/feature-next-package.md §S2.3: on a paid plan a boolean the token does
+  // not carry counts as enabled — so it is not locked at all any more.
+  assert.ok(!('gateway_scan_egress' in locked));
+  assert.equal(r.body.features.gateway_scan_egress, true);
+  assert.equal(r.body.source.gateway_scan_egress, 'plan_default');
+  assert.equal(r.body.source.waf, 'token');
   assert.ok(!('route_auth' in locked));
   assert.ok(!Object.values(locked).includes('unlicensed'));
+});
+
+test('community plan with a token: a missing key stays not_in_token (no plan default)', async () => {
+  const features = { ...license.COMMUNITY_FALLBACK };
+  delete features.gateway_scan_egress;
+  license._applyLicenseForTest({ plan: 'community', features });
+  const r = await agent.get('/api/v1/license');
+  assert.equal(r.body.locked.gateway_scan_egress, 'not_in_token');
+  assert.equal(r.body.features.gateway_scan_egress, false);
+  assert.equal(r.body.source.gateway_scan_egress, 'community');
 });
 
 test('lockedFeatures() is sorted and only carries the three reasons', () => {

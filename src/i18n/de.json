@@ -177,6 +177,7 @@
   "license_hint.enter": "Lizenz eintragen",
   "license_hint.upgrade": "Tarife ansehen",
   "license_hint.reload": "Seite neu laden",
+  "license_hint.plan_default": "Aus deinem Plan abgeleitet – steht noch nicht im Lizenz-Token.",
   "nav.system": "System",
   "nav.logs": "Logs & Monitoring",
   "nav.settings": "Einstellungen",

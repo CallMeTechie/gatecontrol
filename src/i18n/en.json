@@ -177,6 +177,7 @@
   "license_hint.enter": "Enter licence",
   "license_hint.upgrade": "See plans",
   "license_hint.reload": "Reload page",
+  "license_hint.plan_default": "Derived from your plan — not yet in the licence token.",
   "nav.system": "System",
   "nav.logs": "Logs & Monitoring",
   "nav.settings": "Settings",
