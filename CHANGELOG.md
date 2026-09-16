@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- **Schutz für TCP- und UDP-Routen.** Bisher galten WAF, Sperrliste und IP-Filter nur für HTTP.
+  - Die Sperrliste der WAF wirkt jetzt auch auf L4-Routen: Eine gesperrte IP wird auf jedem TCP-/UDP-Listener sofort abgewiesen.
+  - Der IP-Filter (Positiv- oder Negativliste) lässt sich pro TCP-/UDP-Eintrag einschalten. Länder-Regeln gibt es dort nicht, weil sie auf dieser Ebene nichts bewirken.
+  - Neu ist ein Verbindungslimit: Mehr als N Verbindungen in M Sekunden von derselben IP führen zur automatischen Sperre (Standard aus). Dafür schreibt Caddy ein eigenes, begrenztes Verbindungsprotokoll; das Container-Log bleibt sauber.
+  - Der Eintrags-Editor hat für TCP-/UDP-Einträge einen Block „Schutz“, und der Sicherheits-Check zählt öffentliche TCP-/UDP-Einträge ohne Filter als ungeschützt.
+- **Probleme im Dashboard.** Ein neuer Abschnitt sammelt aus vorhandenen Daten, was gerade klemmt: Gateway offline, Dienst im LAN antwortet nicht, Zertifikatsprobleme, pausierte Hosts, fehlgeschlagenes oder zurückgerolltes Update, fehlgeschlagene Backups, fehlendes WAF-Modul. Jede Zeile führt direkt zur passenden Stelle. Ob der Dienst abgelehnt hat oder der Rechner aus ist, leitet GateControl aus Statuscode und Antwortzeit ab; das Protokoll nennt den Grund nicht.
+- **„Nur bei Bedarf“ pro Eintrag.** So markierte Einträge (etwa ein Rechner, der nur zeitweise läuft) erscheinen nicht als Problem, sondern mit einem Vermerk. Bei einem Gateway-Ziel weist die Oberfläche zusätzlich auf Wake-on-LAN hin.
+- **Namen für Einträge.** Jeder Eintrag kann einen sichtbaren Namen bekommen (Beispiel „SSH DS918+“). Er erscheint in der Zonen-Ansicht, im Domain-Dialog, in der Problem-Anzeige und in der Schnellsuche. Alte, unsichtbare Namen von TCP-Einträgen werden dabei übernommen (`ssh918.domaincaster.com` → „ssh918“).
+- **Wiederherstellung testen.** Bei den Backups außer Haus prüft ein Knopf das jüngste Archiv: herunterladen, entschlüsseln, Inhalt zählen. Es wird nichts verändert. Das Ergebnis zeigt Datum, Größe, GateControl-Fassung und Anzahl von Einträgen, Geräten, Benutzern und Einstellungen. Der Sicherheits-Check weist darauf hin, wenn ein Ziel seit über 30 Tagen nicht geprüft wurde.
+- **`update.sh` hält sich selbst aktuell.** Nach einem erfolgreichen Update vergleicht sich das Skript mit der Fassung im neuen Image, prüft sie auf Syntax und ersetzt sich dann selbst (mit Sicherung der alten Fassung). Abschaltbar über `GC_UPDATE_SH_SELFUPDATE=0`. Die Einstellungen zeigen an, wenn die Fassung auf dem Host von der im Image abweicht.
+- **Neue Pro-Funktionen sofort nutzbar.** Fehlt ein Schalter noch in der Lizenz, gilt er bei bezahlten Plänen als freigeschaltet, bis der Lizenzserver ihn liefert. Die Lizenzansicht zeigt dann „aus deinem Plan abgeleitet“. Zahlenwerte wie die Anzahl der Geräte bleiben unverändert, und die Community-Version ändert sich nicht.
+
+### Fixes
+- Die Prüfungen der Sprachdateien verlangten von jedem Funktionsblock, am Dateiende zu stehen. Da sich dort inzwischen mehrere Blöcke drängen, brach das bei jeder neuen Funktion. Geprüft wird jetzt, dass jeder Block zusammenhängt und in beiden Sprachen gleich ist.
+
+### Hinweise für bestehende Installationen
+- `update.sh` muss **einmal** von Hand neu installiert werden, danach hält es sich selbst aktuell. Die Befehle stehen in den Einstellungen unter „Erweitert“ und in INSTALL.md.
+- Nach dem Update meldet der Sicherheits-Check einen Hinweis, bis du die Wiederherstellung eines Backup-Ziels einmal getestet hast.
+- Die Caddy-Konfiguration bleibt unverändert, solange keine Sperre, kein IP-Filter und kein Verbindungslimit gesetzt ist.
+
+---
+
 ## [1.127.1] — 2026-09-15
 
 ### Fixes
