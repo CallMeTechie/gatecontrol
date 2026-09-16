@@ -1565,6 +1565,24 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_waf_events_route ON waf_events(route_id, ts);`,
     detect: (db) => hasColumn(db, 'routes', 'backend_tls_fingerprint'),
   },
+  {
+    version: 80,
+    name: 'backup_restore_test',
+    // Restore test (docs/feature-next-package.md §S2.1): the result of
+    // POST /settings/backup/targets/:id/verify per target. Nothing else is
+    // written by a verify run — it only reads the newest remote archive.
+    //   last_verify_at      ISO time of the last verify attempt
+    //   last_verify_status  'ok' | 'warning' | 'failed'
+    //   last_verify_detail  small JSON summary for the UI after a reload
+    //                       ({file,size,created_at,gc_version,include_key,
+    //                         counts,warnings} or {code,error} on failure)
+    // v78 is the L4 protection strand, v79 the dashboard/labels strand.
+    sql: `
+      ALTER TABLE backup_targets ADD COLUMN last_verify_at TEXT;
+      ALTER TABLE backup_targets ADD COLUMN last_verify_status TEXT;
+      ALTER TABLE backup_targets ADD COLUMN last_verify_detail TEXT;`,
+    detect: (db) => hasColumn(db, 'backup_targets', 'last_verify_at'),
+  },
 ];
 
 module.exports = { migrations };

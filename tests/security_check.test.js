@@ -194,6 +194,18 @@ test('public_unprotected, tls_min, backup_offsite, auto_update', async () => {
     enabled INTEGER NOT NULL DEFAULT 1, keep INTEGER NOT NULL DEFAULT 14, last_run_at TEXT, last_status TEXT, last_error TEXT, created_at TEXT NOT NULL)`);
   const t = db.prepare("INSERT INTO backup_targets (name, type, config_enc, last_run_at, last_status, created_at) VALUES ('NAS', 'sftp', 'x', ?, 'ok', 'now')")
     .run(new Date().toISOString()).lastInsertRowid;
+  // Upload fresh but the restore never tested (§S2.1): an info-level hint, not
+  // an error — with a recent successful restore test it is a plain pass.
+  c = byId((await GET('/security/check')).body).backup_offsite;
+  assert.equal(c.status, 'fail');
+  assert.equal(c.severity, 'info');
+  assert.equal(c.verify_stale, true);
+  assert.deepEqual(c.items, [{ kind: 'target', id: t, label: 'NAS' }]);
+  db.prepare("UPDATE backup_targets SET last_verify_at = ?, last_verify_status = 'ok' WHERE id = ?").run(new Date().toISOString(), t);
+  assert.equal(byId((await GET('/security/check')).body).backup_offsite.status, 'pass');
+  db.prepare('UPDATE backup_targets SET last_verify_at = ? WHERE id = ?').run(new Date(Date.now() - 31 * 86400000).toISOString(), t);
+  assert.equal(byId((await GET('/security/check')).body).backup_offsite.severity, 'info', 'older than 30 days → hint again');
+  db.prepare("UPDATE backup_targets SET last_verify_at = ?, last_verify_status = 'warning' WHERE id = ?").run(new Date().toISOString(), t);
   assert.equal(byId((await GET('/security/check')).body).backup_offsite.status, 'pass');
   db.prepare('UPDATE backup_targets SET last_run_at = ? WHERE id = ?').run(new Date(Date.now() - 49 * 3600000).toISOString(), t);
   c = byId((await GET('/security/check')).body).backup_offsite;

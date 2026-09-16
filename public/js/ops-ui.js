@@ -120,6 +120,7 @@
     TYPE_IMMUTABLE: ['offsite.err.type_immutable', 'The type of a target cannot change — create a new one.'],
     TOO_MANY_TARGETS: ['offsite.err.too_many', 'At most 10 targets.'],
     NOT_FOUND: ['offsite.err.not_found', 'This target no longer exists.'],
+    NO_REMOTE_BACKUP: ['offsite.err.no_remote_backup', 'There is no GateControl archive on this target yet.'],
     CONFIG_UNREADABLE: ['offsite.err.config_unreadable', 'The stored credentials cannot be read — enter them again.'],
     SESSION_REQUIRED: ['offsite.err.admin', 'Only for signed-in administrators.'],
     ADMIN_REQUIRED: ['offsite.err.admin', 'Only for signed-in administrators.'],
@@ -206,6 +207,34 @@
     if (t.last_status === 'running') return { cls: 'tag-blue', key: 'offsite.status_running', fallback: 'Running …' };
     return { cls: 'tag-red', key: 'offsite.status_failed', fallback: 'Failed' };
   }
+  // ─── Restore test (§S2.1) ────────────────────────────────────────────────
+  // Warning codes of POST /targets/:id/verify → text keys. Unknown codes are
+  // dropped (the server may learn new ones before the UI does).
+  const VERIFY_WARNING_KEYS = {
+    archive_old: ['offsite.verify_warn_archive_old', 'The newest archive is older than 48 hours.'],
+    no_encryption_key: ['offsite.verify_warn_no_encryption_key', 'Without the archived key a restore on new hardware also needs the GC_ENCRYPTION_KEY.'],
+    version_differs: ['offsite.verify_warn_version_differs', 'The archive comes from a different GateControl version.'],
+    no_routes: ['offsite.verify_warn_no_routes', 'The archive contains no entries.'],
+    no_users: ['offsite.verify_warn_no_users', 'The archive contains no users.'],
+  };
+  const VERIFY_WARNINGS = Object.keys(VERIFY_WARNING_KEYS);
+  function verifyWarningText(code) {
+    const e = VERIFY_WARNING_KEYS[str(code)];
+    return e ? tr(e[0], e[1]) : null;
+  }
+  /** Lines of a successful restore test: [size, created, version, counts]. */
+  function verifyLines(r, lang) {
+    if (!r) return [];
+    const c = r.counts || {};
+    const out = [tr('offsite.verify_size', 'size {x}', { x: fmtBytes(r.size) })];
+    if (r.created_at) out.push(tr('offsite.verify_created', 'as of {x}', { x: fmtDateTime(r.created_at, lang) }));
+    if (r.gc_version) out.push(tr('offsite.verify_version', 'version {x}', { x: str(r.gc_version) }));
+    out.push(tr('offsite.verify_counts', '{routes} entries · {peers} devices · {users} users · {settings} settings', {
+      routes: Number(c.routes) || 0, peers: Number(c.peers) || 0, users: Number(c.users) || 0, settings: Number(c.settings) || 0,
+    }));
+    return out;
+  }
+
   /** L4 candidates in picker order: suggested for `type` first, then internal, enabled, by port. */
   function sortCandidates(list, type) {
     const rank = (c) => (c.suggested_type === type ? 0 : c.suggested_type ? 2 : 1) * 4 + (c.internal ? 0 : 2) + (c.enabled ? 0 : 1);
@@ -347,6 +376,7 @@
     DEFAULT_TZ, isHHMM, overMidnight, windowProblem, timeZones, browserTimeZone, timeIn, inWindow,
     ERROR_KEYS, FIELD_KEYS, errorCode, configField, errorKey, errorText, errorDetail,
     TYPES, TYPE_LABELS, DEFAULT_PORTS, targetSummary, targetStatus, sortCandidates, targetPayload,
+    VERIFY_WARNINGS, verifyWarningText, verifyLines,
     fmtBytes, fmtDateTime, fmtDate, fmtAgo,
     el, tokenNodes, whatsNewNodes, confirmDialog,
   };

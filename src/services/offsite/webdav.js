@@ -125,6 +125,31 @@ async function list(cfg) {
   return files;
 }
 
+/** Read one file back (restore test). Returns a Buffer; never writes anything. */
+async function download(cfg, name) {
+  const url = new URL(encodeURIComponent(name), collectionUrl(cfg));
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: authHeader(cfg),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    const e = new Error(`WebDAV GET failed: ${(err.cause && err.cause.message) || err.message}`);
+    e.code = 'TRANSPORT';
+    throw e;
+  }
+  if (res.status < 200 || res.status >= 300) {
+    const e = new Error(`WebDAV GET ${res.status}`);
+    e.code = 'TRANSPORT';
+    e.remoteStatus = res.status;
+    throw e;
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function remove(cfg, name) {
   const url = new URL(encodeURIComponent(name), collectionUrl(cfg));
   await dav(cfg, 'DELETE', url, { okStatuses: [200, 204, 404] });
@@ -140,4 +165,4 @@ async function test(cfg) {
   return `${created ? 'folder created, ' : ''}write + delete ok (${files.length} file(s) in the folder)`;
 }
 
-module.exports = { upload, list, remove, test, parseMultistatus, collectionUrl };
+module.exports = { upload, download, list, remove, test, parseMultistatus, collectionUrl };

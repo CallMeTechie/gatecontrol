@@ -243,8 +243,19 @@ function toApi(row) {
     last_run_at: row.last_run_at,
     last_status: row.last_status,
     last_error: row.last_error,
+    last_verify_at: row.last_verify_at || null,
+    last_verify_status: row.last_verify_status || null,
+    last_verify: parseVerifyDetail(row.last_verify_detail),
     created_at: row.created_at,
   };
+}
+
+function parseVerifyDetail(raw) {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  } catch { return null; }
 }
 
 function getRow(id) {
@@ -360,6 +371,133 @@ async function listRemoteFiles(id) {
     .filter((f) => REMOTE_NAME_RE.test(f.name))
     .sort((a, b) => b.name.localeCompare(a.name))
     .map((f) => ({ name: f.name, size: f.size, modified: f.modified || null }));
+}
+
+// ── Restore test (docs/feature-next-package.md §S2.1) ──────────────────────
+// Fetch the newest archive from the target, decrypt it with the stored
+// passphrase and validate it — READ ONLY: nothing on the target and nothing in
+// this installation changes (the only write is the result below).
+// Warnings are stable codes; the UI has a text per code.
+
+const MAX_VERIFY_BYTES = 128 * 1024 * 1024; // a GateControl archive is gzip'd JSON
+const VERIFY_STALE_MS = 30 * 24 * 3600 * 1000;
+const ARCHIVE_OLD_MS = 48 * 3600 * 1000;
+
+function recordVerify(id, status, detail) {
+  try {
+    getDb().prepare('UPDATE backup_targets SET last_verify_at = ?, last_verify_status = ?, last_verify_detail = ? WHERE id = ?')
+      .run(new Date().toISOString(), status, detail ? JSON.stringify(detail).slice(0, 4000) : null, id);
+  } catch (err) {
+    logger.warn({ target: id, err: shortError(err) }, 'Could not record the restore-test result');
+  }
+}
+
+/** Timestamp encoded in gatecontrol-YYYYMMDD-HHmmss.gcbk → ms, or NaN. */
+function remoteNameTime(name) {
+  const m = /^gatecontrol-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.gcbk$/.exec(String(name || ''));
+  if (!m) return NaN;
+  return Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
+}
+
+/**
+ * POST /targets/:id/verify — restore test.
+ * @returns {Promise<{file,size,created_at,gc_version,include_key,counts,warnings}>}
+ * @throws {OffsiteError} NO_REMOTE_BACKUP | PASSPHRASE_NOT_SET | DECRYPT_FAILED
+ *                        | CORRUPT | TRANSPORT_FAILED | NOT_FOUND
+ */
+async function verifyTarget(id) {
+  const row = getRow(id);
+  if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
+  try {
+    const passphrase = getPassphrase();
+    if (!passphrase) throw new OffsiteError('PASSPHRASE_NOT_SET', 'set the off-site passphrase first', 409);
+    const { cfg, t, ctx } = transportFor(row);
+    if (typeof t.download !== 'function') throw new OffsiteError('TRANSPORT_FAILED', 'this target type cannot read archives back', 502);
+
+    const files = (await t.list(cfg, ctx))
+      .filter((f) => REMOTE_NAME_RE.test(f.name))
+      .sort((a, b) => b.name.localeCompare(a.name));
+    if (files.length === 0) throw new OffsiteError('NO_REMOTE_BACKUP', 'no GateControl archive on this target yet', 409);
+    const newest = files[0];
+    if (Number(newest.size) > MAX_VERIFY_BYTES) {
+      throw new OffsiteError('CORRUPT', `archive is larger than ${Math.round(MAX_VERIFY_BYTES / 1048576)} MB — not read back`, 400);
+    }
+
+    const buf = await t.download(cfg, newest.name, ctx);
+    if (!Buffer.isBuffer(buf) || buf.length === 0) throw new OffsiteError('CORRUPT', 'the archive came back empty', 400);
+    if (buf.length > MAX_VERIFY_BYTES) throw new OffsiteError('CORRUPT', 'archive too large', 400);
+
+    let archive;
+    try {
+      archive = await gcbk.decryptBackup(buf, passphrase);
+    } catch (err) {
+      if (err instanceof gcbk.GcbkError) {
+        const code = err.code === 'DECRYPT_FAILED' ? 'DECRYPT_FAILED' : 'CORRUPT';
+        throw new OffsiteError(code, err.message, 400);
+      }
+      throw err;
+    }
+
+    const data = archive.payload.backup;
+    const errors = require('../backup').validateBackup(data);
+    if (errors.length > 0) {
+      throw new OffsiteError('CORRUPT', `the archive is not a usable backup: ${errors.slice(0, 3).join('; ')}`, 400);
+    }
+    const summary = require('../backup').getBackupSummary(data);
+    const counts = {
+      routes: summary.routes, peers: summary.peers, users: summary.users, settings: summary.settings,
+    };
+
+    const includeKey = !!archive.payload.encryption_key;
+    const gcVersion = archive.header.gc_version || archive.payload.gc_version || null;
+    const createdAt = archive.header.created_at || archive.payload.created_at || null;
+
+    const warnings = [];
+    const at = Date.parse(createdAt) || remoteNameTime(newest.name);
+    if (Number.isFinite(at) && Date.now() - at > ARCHIVE_OLD_MS) warnings.push('archive_old');
+    if (!includeKey) warnings.push('no_encryption_key');
+    if (gcVersion && gcVersion !== require('../../../package.json').version) warnings.push('version_differs');
+    if (!counts.routes) warnings.push('no_routes');
+    if (!counts.users) warnings.push('no_users');
+
+    const result = {
+      file: newest.name,
+      size: buf.length,
+      created_at: createdAt,
+      gc_version: gcVersion,
+      include_key: includeKey,
+      counts,
+      warnings,
+    };
+    recordVerify(row.id, warnings.length ? 'warning' : 'ok', result);
+    logger.info({ target: row.id, type: row.type, file: newest.name, size: buf.length, warnings: warnings.length },
+      'Off-site restore test passed');
+    publish(row.id, 'verified', { file: newest.name, verify_status: warnings.length ? 'warning' : 'ok' });
+    return result;
+  } catch (err) {
+    const code = err instanceof OffsiteError ? err.code
+      : (err && err.code === 'TRANSPORT' ? 'TRANSPORT_FAILED' : 'INTERNAL');
+    recordVerify(row.id, 'failed', { code, error: shortError(err) });
+    publish(row.id, 'verified', { verify_status: 'failed' });
+    if (err && err.code === 'TRANSPORT') {
+      const e = new OffsiteError('TRANSPORT_FAILED', shortError(err), 502);
+      throw e;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Targets whose restore test is missing or older than 30 days (security check).
+ * @returns {{id:number,name:string,last_verify_at:string|null}[]}
+ */
+function staleVerifications(rows) {
+  const now = Date.now();
+  return (rows || []).filter((r) => {
+    if (String(r.last_verify_status || '') !== 'ok' && String(r.last_verify_status || '') !== 'warning') return true;
+    const at = Date.parse(r.last_verify_at || '');
+    return !Number.isFinite(at) || now - at > VERIFY_STALE_MS;
+  });
 }
 
 async function applyRetention(row, cfg, t, ctx) {
@@ -528,6 +666,9 @@ module.exports = {
   deleteTarget,
   testTarget,
   listRemoteFiles,
+  verifyTarget,
+  staleVerifications,
+  VERIFY_STALE_MS,
   runTarget,
   uploadAfterBackup,
   buildArchive,

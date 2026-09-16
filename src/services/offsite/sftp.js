@@ -127,6 +127,17 @@ async function list(cfg, ctx) {
   return parseLs(out);
 }
 
+/** Read one file back (restore test) into a Buffer; the remote side is read-only here. */
+async function download(cfg, name, ctx) {
+  const local = writeTemp('download', '');
+  try {
+    await batch(cfg, ctx, [...cdScript(cfg.path), `get ${q(name)} ${q(local)}`]);
+    return require('node:fs').readFileSync(local);
+  } finally {
+    rmQuiet(local);
+  }
+}
+
 async function remove(cfg, name, ctx) {
   await batch(cfg, ctx, [...cdScript(cfg.path), `rm ${q(name)}`], 60000);
 }
@@ -158,4 +169,4 @@ async function forgetHost(cfg) {
   } catch { /* no ssh-keygen / no file — nothing to forget */ }
 }
 
-module.exports = { upload, list, remove, test, forgetHost, parseLs, cdScript, sshOptions };
+module.exports = { upload, download, list, remove, test, forgetHost, parseLs, cdScript, sshOptions };
