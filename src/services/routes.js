@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint, normalizeLabel, onDemandFlag } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -406,6 +406,9 @@ async function create(data, opts = {}) {
   const backendFingerprint = resolveBackendFingerprint(data, null, {
     route_type: routeType, target_kind: targetKind, backend_https: !!data.backend_https,
   });
+  // Entry name + "nur bei Bedarf" (docs/feature-next-package.md S3 §2/§3).
+  const entryLabel = normalizeLabel(data.label);
+  const onDemand = onDemandFlag(data.on_demand);
 
   const result = db.prepare(`
     INSERT INTO routes (domain, target_ip, target_port, description, peer_id,
@@ -425,8 +428,9 @@ async function create(data, opts = {}) {
                         backend_tls_verify, backend_tls_server_name, backend_tls_ca_pem, max_body_mb,
                         mtls_enabled, mtls_ca_pem, mtls_mode,
                         waf_enabled, waf_mode, waf_paranoia, waf_mode_changed_at, backend_tls_fingerprint,
+                        label, on_demand,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -501,6 +505,8 @@ async function create(data, opts = {}) {
     waf.waf_paranoia,
     wafChangedAt,
     backendFingerprint,
+    entryLabel,
+    onDemand,
   );
 
   const routeId = result.lastInsertRowid;
@@ -813,6 +819,8 @@ async function update(id, data) {
       waf_paranoia = ?,
       waf_mode_changed_at = ?,
       backend_tls_fingerprint = ?,
+      label = ?,
+      on_demand = COALESCE(?, on_demand),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -896,6 +904,9 @@ async function update(id, data) {
     waf.waf_paranoia,
     wafChangedAt,
     backendFingerprint,
+    // Entry name: sent = set/clear it, absent = keep the stored one.
+    data.label !== undefined ? normalizeLabel(data.label) : (route.label || null),
+    data.on_demand !== undefined ? onDemandFlag(data.on_demand) : null,
     id
   );
 

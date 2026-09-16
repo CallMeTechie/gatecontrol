@@ -1565,6 +1565,36 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_waf_events_route ON waf_events(route_id, ts);`,
     detect: (db) => hasColumn(db, 'routes', 'backend_tls_fingerprint'),
   },
+  {
+    version: 79,
+    name: 'entry_labels_on_demand',
+    // Dashboard problems + entry labels (docs/feature-next-package.md S3 §2/§3):
+    //   routes.on_demand  "nur bei Bedarf": the entry is meant to be off most of
+    //                     the time — it never becomes a dashboard problem, it
+    //                     only carries the note.
+    //   routes.label      visible name of an entry ("SSH DS918+"); empty = the
+    //                     old behaviour (port/target is the name).
+    // Backfill: L4 entries carry a legacy `routes.domain` that is NOT the FQDN
+    // of their host (SNI/naming leftover, e.g. ssh918.domaincaster.com on the
+    // host nas2.domaincaster.com) — its first DNS label becomes the name
+    // ("ssh918"). Entries whose domain IS the host FQDN keep an empty label.
+    sql: `
+      ALTER TABLE routes ADD COLUMN on_demand INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN label TEXT;
+      UPDATE routes SET label = substr(domain, 1, instr(domain, '.') - 1)
+        WHERE route_type = 'l4'
+          AND domain IS NOT NULL AND domain != ''
+          AND instr(domain, '.') > 1
+          AND lower(domain) != lower(COALESCE((
+                SELECT CASE
+                         WHEN sb.subdomain IS NOT NULL AND sb.subdomain != '' AND d.domain IS NOT NULL
+                           THEN (CASE WHEN sb.subdomain = '@' THEN d.domain ELSE sb.subdomain || '.' || d.domain END)
+                         ELSE sb.domain
+                       END
+                  FROM service_bundles sb LEFT JOIN domains d ON d.id = sb.domain_id
+                 WHERE sb.id = routes.bundle_id), ''));`,
+    detect: (db) => hasColumn(db, 'routes', 'on_demand'),
+  },
 ];
 
 module.exports = { migrations };

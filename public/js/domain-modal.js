@@ -137,8 +137,11 @@
   const PROTO_CLASS = { HTTPS: 'zn-proto-https', HTTP: 'zn-proto-http', TCP: 'zn-proto-tcp', UDP: 'zn-proto-udp' };
   function chipEl(entry) {
     const c = V.entryChip(entry, { wafLabel: (state) => t(state === 'block' ? 'waf.chip_block' : 'waf.chip_detect') });
-    return el('span', { class: 'zn-chip' + (entry.enabled ? '' : ' off'), title: entry.description || null }, [
+    // Entry name (S3 §3): shown in front of the ports when the entry has one.
+    const name = V.entryName(entry);
+    return el('span', { class: 'zn-chip' + (entry.enabled ? '' : ' off') + (V.isOnDemand(entry) ? ' od-chip' : ''), title: entry.description || null }, [
       el('span', { class: 'zn-proto ' + PROTO_CLASS[c.proto], text: c.proto }),
+      name ? el('span', { class: 'zn-chip-name od-name', text: name }) : null,
       c.out ? el('span', { class: 'zn-chip-port', text: c.out }) : null,
       c.out ? el('span', { class: 'zn-arrow', text: '→' }) : null,
       c.out ? el('span', { class: 'zn-chip-port', text: c.in }) : null,
@@ -800,6 +803,8 @@
   function renderEntryLine(e, host, zone) {
     const c = V.entryChip(e, { hsts: false, waf: false }); // HSTS and WAF get their own tags below
     const opts = [];
+    // "Nur bei Bedarf" (S3 §2): the note instead of a problem.
+    if (V.isOnDemand(e)) opts.push(tag('grey', t('entry.on_demand_tag'), false, 'zn-opt-tag od-tag'));
     if (e.rdp_owned) opts.push(tag('purple', t('entry.rdp_tag'), false, 'zn-opt-tag'));
     opts.push(e.external_enabled ? tag('green', t('host.access_external'), false, 'zn-opt-tag') : tag('grey', t('host.access_internal'), false, 'zn-opt-tag'));
     // Shield with the number of active protections; its popup lists the
@@ -849,7 +854,11 @@
       el('div', { class: 'zn-cell-type' }, [el('span', { class: 'zn-tsel ' + PROTO_CLASS[c.proto], text: c.proto })]),
       target,
       el('div', { class: 'zn-prt', 'data-label': t('entry.col_listen') }, [c.out || '—']),
-      el('div', { class: 'zn-opt' }, [opts, e.description && e.description !== host.description ? el('span', { class: 'zn-edesc', text: e.description }) : null]),
+      el('div', { class: 'zn-opt' }, [
+        V.entryName(e) ? el('span', { class: 'zn-ename od-name', text: V.entryName(e) }) : null,
+        opts,
+        e.description && e.description !== host.description ? el('span', { class: 'zn-edesc', text: e.description }) : null,
+      ]),
       el('div', { class: 'zn-cell-active' }, [active]),
       tools,
     ]);

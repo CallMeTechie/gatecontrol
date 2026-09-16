@@ -498,7 +498,35 @@ function resolveBackendFingerprint(data, current, { route_type, target_kind, bac
   return value;
 }
 
+// ─── Entry name + "nur bei Bedarf" ──────────────────────
+//
+// docs/feature-next-package.md S3 §2/§3. `label` is a display name only — it
+// never reaches the Caddy config, so there is nothing to escape here; it is
+// only bounded and stripped of control characters. Empty → null (the entry
+// falls back to today's port/target name).
+
+const LABEL_MAX = 64;
+
+/** Normalised label or null; throws LABEL_INVALID (400) when too long. */
+function normalizeLabel(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw secError('LABEL_INVALID', 'label must be a string');
+  // eslint-disable-next-line no-control-regex
+  const clean = value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ');
+  if (clean === '') return null;
+  if (clean.length > LABEL_MAX) throw secError('LABEL_INVALID', `label must be at most ${LABEL_MAX} characters`);
+  return clean;
+}
+
+/** 0/1 for routes.on_demand from any truthy input ('true', '1', on, …). */
+function onDemandFlag(v) {
+  return hstsFlag(v);
+}
+
 module.exports = {
+  normalizeLabel,
+  onDemandFlag,
+  LABEL_MAX,
   hasWafInput,
   wafModeChanged,
   normalizeWafDefault,

@@ -142,6 +142,13 @@
     return out.slice(0, max || RECENT_MAX);
   }
 
+  // Entry name (docs/feature-next-package.md S3 §3): the label wins over the
+  // port/target text, which then becomes the sub-line.
+  function entryName(e) {
+    const s = e && e.label != null ? String(e.label).trim() : '';
+    return s || null;
+  }
+
   function entryText(e) {
     if (e.route_type === 'l4') {
       const out = str(e.l4_listen_port);
@@ -162,18 +169,24 @@
       const domainId = z ? z.domain_id : null;
       const target = h.lan_host || (h.target && (h.target.ip || h.target.name)) || '';
       const ports = [];
-      (h.entries || []).forEach((e) => { ports.push(str(e.l4_listen_port), str(e.target_lan_port || e.target_port)); });
+      const names = [];
+      (h.entries || []).forEach((e) => {
+        ports.push(str(e.l4_listen_port), str(e.target_lan_port || e.target_port));
+        const n = entryName(e);
+        if (n) names.push(n);
+      });
       out.push({
         key: 'host:' + h.id, kind: 'host', label: fqdn, sub: [target, h.description, z ? null : tr('palette.unassigned')].filter(Boolean).join(' · '),
-        keywords: [h.name, h.subdomain, h.description, target].concat(ports).filter(Boolean),
+        keywords: [h.name, h.subdomain, h.description, target].concat(names).concat(ports).filter(Boolean),
         domainId, hostId: h.id, hostName: fqdn,
       });
       (h.entries || []).forEach((e) => {
         if (e.rdp_owned) return;
+        const name = entryName(e);
         out.push({
-          key: 'entry:' + e.id, kind: 'entry', ownOnly: true, label: entryText(e),
-          sub: [fqdn, e.description && e.description !== h.description ? e.description : null].filter(Boolean).join(' · '),
-          keywords: [e.description && e.description !== h.description ? e.description : null, e.l4_listen_port, e.target_lan_port, e.target_port, e.target_lan_host, e.route_type === 'l4' ? e.l4_protocol : 'http https'].filter((x) => x != null && x !== ''),
+          key: 'entry:' + e.id, kind: 'entry', ownOnly: true, label: name || entryText(e),
+          sub: [name ? entryText(e) : null, fqdn, e.description && e.description !== h.description ? e.description : null].filter(Boolean).join(' · '),
+          keywords: [name, name ? entryText(e) : null, e.description && e.description !== h.description ? e.description : null, e.l4_listen_port, e.target_lan_port, e.target_port, e.target_lan_host, e.route_type === 'l4' ? e.l4_protocol : 'http https'].filter((x) => x != null && x !== ''),
           domainId, hostId: h.id, hostName: fqdn,
         });
       });

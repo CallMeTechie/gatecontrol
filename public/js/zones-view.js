@@ -108,6 +108,18 @@
     return chip;
   }
 
+  // Visible name of an entry (docs/feature-next-package.md S3 §3): the label
+  // from GET /zones, trimmed; null = no name, the port/target stays the name.
+  function entryName(e) {
+    const s = e && e.label != null ? String(e.label).trim() : '';
+    return s || null;
+  }
+
+  // "Nur bei Bedarf" (S3 §2): never a problem, only the note.
+  function isOnDemand(e) {
+    return !!(e && e.on_demand);
+  }
+
   // entry.hsts = { enabled, … } from GET /zones; unknown shape → off.
   function hstsActive(e) {
     return !!(e && e.https_enabled && e.hsts && typeof e.hsts === 'object' && e.hsts.enabled === true);
@@ -298,6 +310,7 @@
   // ── Filtering ──────────────────────────────────────────────────────────
   function entryMatchesQuery(e, needle) {
     return lc(e.domain).includes(needle)
+      || lc(e.label).includes(needle)
       || lc(e.description).includes(needle)
       || lc(entryTargetHost(e)).includes(needle)
       || str(e.l4_listen_port).includes(needle)
@@ -590,7 +603,7 @@
   return {
     UNASSIGNED_KEY,
     isApex, hostLabel, sortHosts, sortEntries, isL4,
-    entryTargetHost, entryTargetPort, entryListenPort, entryChip, hstsActive, wafState, entryPortLabel, entryHealth,
+    entryTargetHost, entryTargetPort, entryListenPort, entryChip, entryName, isOnDemand, hstsActive, wafState, entryPortLabel, entryHealth,
     worstHealth, hostHealth, hostEnabled, hostAccess, hostTarget, hostSinglePort,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
     isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,

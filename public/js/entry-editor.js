@@ -1227,6 +1227,25 @@
     }
     var blockActionSel = byId('edit-route-block-action');
     if (blockActionSel) blockActionSel.addEventListener('change', function () { syncBlockVisibility('edit'); });
+
+    // "Nur bei Bedarf" (S3 §2): the Wake-on-LAN note only makes sense for a
+    // gateway target with the licence.
+    var odToggle = byId('edit-route-on-demand');
+    if (odToggle) odToggle.addEventListener('click', function () { setTimeout(syncOnDemandHint, 0); });
+    if (tkSelect) tkSelect.addEventListener('change', syncOnDemandHint);
+    if (wolCb) wolCb.addEventListener('change', syncOnDemandHint);
+  }
+
+  // Wake-on-LAN note under the "nur bei Bedarf" switch: shown when the entry
+  // targets a gateway, the licence has gateway_wol and WoL is still off.
+  function syncOnDemandHint() {
+    var hint = byId('edit-route-on-demand-wol');
+    if (!hint) return;
+    var on = isOn('edit-route-on-demand');
+    var kind = (byId('edit-route-target-kind') || {}).value;
+    var wolCb = byId('edit-route-wol-enabled');
+    var licensed = !!(window.GC && GC.features && GC.features.gateway_wol);
+    hint.style.display = (on && kind === 'gateway' && licensed && !(wolCb && wolCb.checked)) ? '' : 'none';
   }
 
   // ═══ Security / feature toggles ════════════════════════════════════════════
@@ -2596,7 +2615,10 @@
     if (dnsHint) dnsHint.style.display = 'none';
     populateDomain(route, seq);
     setVal('edit-route-desc', route.description || '');
+    setVal('edit-route-label', route.label || '');
+    setToggle('edit-route-on-demand', route.on_demand);
     populateTarget(route);
+    syncOnDemandHint();
     applyLockTarget(route);
 
     var debugTab = modal.querySelector('[data-edit-tab="debug"]');
@@ -2716,6 +2738,8 @@
     var id = byId('edit-route-id').value;
     var target = readTargetFields();
     var description = byId('edit-route-desc').value.trim();
+    var labelEl = byId('edit-route-label');
+    var label = labelEl ? labelEl.value.trim() : '';
     var httpsToggle = byId('edit-route-https');
     var https_enabled = httpsToggle ? httpsToggle.classList.contains('on') : true;
     var backend_https = isOn('edit-route-backend-https');
@@ -2763,6 +2787,9 @@
       var payload = {
         domain: target.domain,
         description: description,
+        // Entry name + "nur bei Bedarf" (docs/feature-next-package.md S3 §2/§3).
+        label: label,
+        on_demand: isOn('edit-route-on-demand'),
         target_port: target.target_port,
         peer_id: target.peer_id,
         target_ip: target.target_ip,
@@ -2852,6 +2879,11 @@
       }
       var data = await window.api.put('/api/routes/' + id, payload);
       if (!data.ok) {
+        if (data.code === 'LABEL_INVALID') {
+          window.showError('edit-route-error', T('entry.err_label', 'Name too long (max 64 characters)'));
+          window.showFieldErrors({ label: data.error }, { label: 'edit-route-label' });
+          return;
+        }
         var hstsErr = hstsErrorText(data.code);
         if (hstsErr) {
           window.showError('edit-route-error', hstsErr);

@@ -27,6 +27,13 @@
           <div id="edit-route-locked-target" style="font-family:var(--font-mono);font-size:13px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);word-break:break-all"></div>
           <small class="form-hint">{{ t('entry_editor.locked_hint') }}</small>
         </div>
+        {# Entry name (docs/feature-next-package.md S3 §3): a visible name for
+           this entry ("SSH DS918+"); empty keeps today's port/target name. #}
+        <div class="form-group" id="edit-route-label-group">
+          <label class="form-label" for="edit-route-label">{{ t('entry.label_field') }}</label>
+          <input type="text" id="edit-route-label" placeholder="{{ t('entry.label_placeholder') }}" maxlength="64">
+          <small class="form-hint">{{ t('entry.label_hint') }}</small>
+        </div>
         <div class="form-row">
           <div class="form-group" id="edit-route-domain-wrap">
             <label class="form-label" id="edit-route-domain-label"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
@@ -140,6 +147,17 @@
           </div>
           <div class="toggle" id="edit-route-external"></div>
         </div>
+        {# "Nur bei Bedarf" (docs/feature-next-package.md S3 §2): the target is
+           meant to be off most of the time, so it never becomes a dashboard
+           problem — it only carries the note. #}
+        <div class="od-row" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ t('entry.on_demand_label') }}</div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('entry.on_demand_hint') }}</div>
+          </div>
+          <div class="toggle" id="edit-route-on-demand"></div>
+        </div>
+        <div id="edit-route-on-demand-wol" class="od-wol" style="display:none;margin:-8px 0 14px 0;font-size:11px;color:var(--text-2)">{{ t('entry.on_demand_wol_hint') }}</div>
         <div id="edit-route-block-wrap" class="route-block-wrap" style="display:none;margin-bottom:14px">
           <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.block_action_label') }}</label>
           <select id="edit-route-block-action" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-base);color:var(--text-1)">
