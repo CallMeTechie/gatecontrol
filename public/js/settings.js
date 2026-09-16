@@ -1305,6 +1305,25 @@
     byId('au-reinstall').hidden = !w.enabled;
   }
 
+  // ── update.sh version of the host vs. the image (§S2.2) ────────────────
+  // host_version === null: an update.sh from before the version marker (or no
+  // run yet) — it cannot self-update, so the host has to install it once more.
+  function updateShMismatch() {
+    var u = saved && saved.update_sh;
+    return !!(u && u.image_version !== null && u.image_version !== undefined && !u.matches);
+  }
+  function renderUpdateSh() {
+    var box = byId('au-updatesh');
+    if (!box) return;
+    var u = (saved && saved.update_sh) || null;
+    if (!updateShMismatch()) { box.hidden = true; return; }
+    byId('au-updatesh-text').textContent = u.host_version === null || u.host_version === undefined
+      ? T('updatesh.unknown', 'The update.sh on the server reports no version — install it once more.')
+      : T('updatesh.mismatch', 'The update.sh on the server is not the version from the image (version {host} instead of {image}).',
+        { host: u.host_version, image: u.image_version });
+    box.hidden = false;
+  }
+
   function apply(d) {
     saved = d;
     var w = d.window || {};
@@ -1317,6 +1336,7 @@
     if (!w.enabled && tz === O.DEFAULT_TZ && browserTz && browserTz !== tz && O.timeIn(browserTz)) tz = browserTz;
     fillZones(tz);
     setToggle(notifyEl, d.notify_email !== false);
+    renderUpdateSh();
     renderClock();
   }
 
@@ -1384,6 +1404,15 @@
 
   byId('au-reinstall-copy').addEventListener('click', function () {
     copyText(byId('au-reinstall-cmd').textContent, T('autoupdate.reinstall_copied', 'Commands copied'));
+  });
+
+  // "Show commands" of the update.sh hint: open the reinstall block below it.
+  var updateShShow = byId('au-updatesh-show');
+  if (updateShShow) updateShShow.addEventListener('click', function () {
+    var det = byId('au-reinstall');
+    det.hidden = false;
+    det.open = true;
+    if (det.scrollIntoView) det.scrollIntoView({ block: 'nearest' });
   });
 
   function copyText(text, okMsg) {
@@ -1566,6 +1595,13 @@
     return el('div', { class: 'op-t-result ' + (res.ok ? 'op-ok' : 'op-bad'), role: 'status' }, [
       el('span', { class: 'op-t-result-text', text: res.text }),
       res.detail ? el('code', { class: 'op-t-detail', text: res.detail }) : null,
+      res.lines && res.lines.length
+        ? el('div', { class: 'op-t-verify-facts' }, res.lines.map(function (x) { return el('span', { text: x }); }))
+        : null,
+      res.warnings && res.warnings.length
+        ? el('ul', { class: 'op-t-verify-warn' }, res.warnings.map(function (w) { return el('li', { text: w }); }))
+        : null,
+      res.note ? el('p', { class: 'op-note op-t-verify-note', text: res.note }) : null,
     ]);
   }
   function filesEl(t) {
@@ -1611,12 +1647,23 @@
           el('span', { class: 'tag tag-dot ' + st.cls, 'data-status': t.last_status || 'never', text: T(st.key, st.fallback) }),
         ]),
       ]),
-      el('div', { class: 'op-t-meta' }, [lastRun, el('span', { text: T('offsite.keep', 'keeps {n}', { n: t.keep }) })]),
+      el('div', { class: 'op-t-meta' }, [
+        lastRun,
+        el('span', { text: T('offsite.keep', 'keeps {n}', { n: t.keep }) }),
+        t.last_verify_at
+          ? el('span', {
+            class: 'op-t-verify-age' + (t.last_verify_status === 'failed' ? ' op-bad' : ''),
+            title: O.fmtDateTime(t.last_verify_at, lang),
+            text: T('offsite.verify_last', 'Last tested {x}', { x: O.fmtAgo(t.last_verify_at, lang) }),
+          })
+          : el('span', { class: 'op-t-verify-age', text: T('offsite.verify_never', 'Restore never tested') }),
+      ]),
       t.config_error ? el('div', { class: 'op-t-error', text: T('offsite.config_error', 'Credentials unreadable — enter them again (different GC_ENCRYPTION_KEY).') }) : null,
       t.last_status === 'failed' && t.last_error ? el('code', { class: 'op-t-error op-t-detail', text: t.last_error }) : null,
       el('div', { class: 'op-t-actions' }, [
         actionButton(t, 'test', T('offsite.act_test', 'Test'), testTarget),
         actionButton(t, 'run', T('offsite.act_run', 'Upload now'), runTarget),
+        actionButton(t, 'verify', T('offsite.act_verify', 'Test restore'), verifyTarget),
         actionButton(t, 'files', T('offsite.act_files', 'Files'), toggleFiles, { 'aria-expanded': state.files[t.id] ? 'true' : 'false', 'aria-controls': 'offsite-files-' + t.id }),
         actionButton(t, 'edit', T('offsite.act_edit', 'Edit'), openDialog),
         actionButton(t, 'delete', T('offsite.act_delete', 'Delete'), deleteTarget),
@@ -1665,6 +1712,32 @@
         state.results[t.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r) };
         checkLicense(r);
         if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') { pass1.focus(); }
+      }
+    }).then(function () { delete state.busy[t.id]; return loadTargets(); });
+  }
+  // Restore test (§S2.1): fetch the newest archive, decrypt it, validate it —
+  // read-only. The row then shows date, size, content counts and warnings.
+  function verifyTarget(t) {
+    state.busy[t.id] = 'verify';
+    state.results[t.id] = { ok: true, text: T('offsite.verify_running', 'Fetching and checking the archive …') };
+    renderTargets();
+    return call(window.api.post(BASE + '/targets/' + t.id + '/verify', {})).then(function (r) {
+      if (r.ok) {
+        state.results[t.id] = {
+          ok: true,
+          text: T('offsite.verify_ok', 'Restore verified: {file}', { file: r.file || '' }),
+          lines: O.verifyLines(r, lang),
+          warnings: (r.warnings || []).map(O.verifyWarningText).filter(Boolean),
+          note: T('offsite.verify_note', 'Nothing is changed — the archive is only read and decrypted.'),
+        };
+      } else {
+        state.results[t.id] = {
+          ok: false,
+          text: T('offsite.verify_failed', 'Restore not verified') + ' · ' + O.errorText(r),
+          detail: O.errorDetail(r),
+        };
+        checkLicense(r);
+        if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') pass1.focus();
       }
     }).then(function () { delete state.busy[t.id]; return loadTargets(); });
   }

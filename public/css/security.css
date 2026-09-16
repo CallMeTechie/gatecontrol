@@ -25,6 +25,10 @@
 .lh-hint.lh-compact { padding: 8px 10px; margin-top: 8px; }
 .lh-hint.lh-compact .lh-ic { width: 22px; height: 22px; }
 .lh-host:empty { display: none; }
+/* "Derived from your plan" (docs/feature-next-package.md §S2.3): a quiet line,
+   not a lock — the feature IS on. Hidden unless the source is plan_default. */
+.lh-src { display: inline-block; margin-top: 6px; font-size: 11.5px; color: var(--muted, var(--text)); }
+[data-license-source]:empty { display: none; }
 /* A locked block is dimmed and click-through (.feature-locked in pro.css):
    keep the hint inside readable and clickable, dim the rest instead. */
 .feature-locked.lh-in-locked { opacity: 1; }

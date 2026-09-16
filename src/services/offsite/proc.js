@@ -18,7 +18,7 @@ function dataDir() {
   return process.env.GC_DATA_PATH || process.env.GC_DATA_DIR || '/data';
 }
 
-const TEMP_RE = /^(?:upload|probe|smbauth|id_ed25519)-[0-9a-f]{16}$/;
+const TEMP_RE = /^(?:upload|download|probe|smbauth|id_ed25519)-[0-9a-f]{16}$/;
 let swept = false;
 
 function workDir() {

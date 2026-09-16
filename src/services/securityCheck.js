@@ -48,6 +48,11 @@ function tableExists(db, name) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
 }
 
+function columnExists(db, table, column) {
+  try { return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column); }
+  catch { return false; }
+}
+
 // ─── Route classification ───────────────────────────────
 
 const isHttp = (r) => r.route_type !== 'l4';
@@ -283,8 +288,9 @@ function checkPublicUnprotected(routes) {
 function checkBackupOffsite(db) {
   if (!license.hasFeature('scheduled_backups')) return check('backup_offsite', 'warning', 'na');
   const fix = { type: 'link', href: '/settings#backup' };
+  const hasVerify = tableExists(db, 'backup_targets') && columnExists(db, 'backup_targets', 'last_verify_at');
   const targets = tableExists(db, 'backup_targets')
-    ? db.prepare('SELECT id, name, enabled, last_run_at, last_status FROM backup_targets WHERE enabled = 1 ORDER BY id').all()
+    ? db.prepare(`SELECT id, name, enabled, last_run_at, last_status${hasVerify ? ', last_verify_at, last_verify_status' : ''} FROM backup_targets WHERE enabled = 1 ORDER BY id`).all()
     : [];
   if (targets.length === 0) return check('backup_offsite', 'warning', 'fail', [], fix);
   const now = Date.now();
@@ -293,7 +299,15 @@ function checkBackupOffsite(db) {
     const at = t.last_run_at ? new Date(/^\d{4}-\d{2}-\d{2} /.test(t.last_run_at) ? t.last_run_at.replace(' ', 'T') + 'Z' : t.last_run_at).getTime() : NaN;
     return !okStatus || !Number.isFinite(at) || now - at > BACKUP_MAX_AGE_MS;
   });
-  if (bad.length === 0) return check('backup_offsite', 'warning', 'pass');
+  if (bad.length === 0) {
+    // Uploads are fine — but has a restore ever been tried? (§S2.1: info-level
+    // hint after 30 days without a successful test, never tested included.)
+    const stale = hasVerify ? require('./offsite').staleVerifications(targets) : [];
+    if (stale.length > 0) {
+      return check('backup_offsite', 'info', 'fail', stale.map((t) => item('target', t.id, t.name)), fix, { verify_stale: true });
+    }
+    return check('backup_offsite', 'warning', 'pass');
+  }
   return check('backup_offsite', 'warning', 'fail', bad.map((t) => item('target', t.id, t.name)), fix);
 }
 

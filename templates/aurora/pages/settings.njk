@@ -518,6 +518,10 @@
         {{ t('offsite.title') }}
       </div>
       <p class="op-sub">{{ t('offsite.subtitle') }}</p>
+      {# "Derived from your plan" when scheduled_backups is not in the licence
+         token but the paid plan switches it on (docs/feature-next-package.md
+         §S2.3). license-hint.js fills this; it stays empty otherwise. #}
+      <div id="offsite-plan-default" data-license-source="scheduled_backups"></div>
       <div id="offsite-license" class="op-license" hidden></div>
       <div id="offsite-autobackup-off" class="op-note op-note-warn" hidden>{{ t('offsite.autobackup_off') }}</div>
       <div class="op-offsite-grid">
@@ -1011,6 +1015,15 @@
             <button type="button" class="btn btn-primary btn-sm" id="au-window-trigger" title="{{ t('autoupdate.trigger_now_window') }}">{{ t('autoupdate.trigger') }}</button>
           </div>
           <div id="au-window-status" class="autosave-status"></div>
+          {# update.sh on the host older than the one in the image
+             (docs/feature-next-package.md §S2.2). The dashboard belongs to
+             another strand, so the hint lives here next to the reinstall
+             commands it refers to. Filled by settings.js from
+             GET /system/auto-update update_sh. #}
+          <div id="au-updatesh" class="op-note op-note-warn op-updatesh" hidden>
+            <span id="au-updatesh-text"></span>
+            <button type="button" class="btn btn-ghost btn-sm" id="au-updatesh-show">{{ t('updatesh.show') }}</button>
+          </div>
           <details class="op-reinstall" id="au-reinstall">
             <summary>{{ t('autoupdate.reinstall_title') }}</summary>
             <p class="op-note">{{ t('autoupdate.reinstall_hint') }}</p>

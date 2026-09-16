@@ -189,6 +189,38 @@ async function list(cfg) {
   return files;
 }
 
+/**
+ * Read one object back (restore test) as a Buffer. Own fetch instead of
+ * request(): that one reads the body as text, which would mangle the binary
+ * archive. Nothing is written on the remote side.
+ */
+async function download(cfg, name) {
+  const key = prefixOf(cfg) + name;
+  const url = objectUrl(cfg, key);
+  const signed = signRequest({
+    method: 'GET', url, headers: {}, payloadHash: sha256hex(Buffer.alloc(0)),
+    region: cfg.region || 'us-east-1', accessKeyId: cfg.access_key_id, secretAccessKey: cfg.secret_access_key,
+  });
+  delete signed.host;
+  let res;
+  try {
+    res = await fetch(url, { method: 'GET', headers: signed, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    const e = new Error(`S3 GET failed: ${(err.cause && err.cause.message) || err.message}`);
+    e.code = 'TRANSPORT';
+    throw e;
+  }
+  if (res.status >= 300) {
+    const text = await res.text().catch(() => '');
+    const code = xmlValue(text, 'Code');
+    const e = new Error(`S3 GET ${res.status}${code ? ` ${code}` : ''}`);
+    e.code = 'TRANSPORT';
+    e.remoteStatus = res.status;
+    throw e;
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function remove(cfg, name) {
   await request(cfg, 'DELETE', prefixOf(cfg) + name, { timeoutMs: 30000 });
 }
@@ -201,4 +233,4 @@ async function test(cfg) {
   return `bucket reachable, write + delete ok (${files.length} file(s) under the prefix)`;
 }
 
-module.exports = { signRequest, uriEncode, objectUrl, upload, list, remove, test, _sha256hex: sha256hex };
+module.exports = { signRequest, uriEncode, objectUrl, upload, download, list, remove, test, _sha256hex: sha256hex };

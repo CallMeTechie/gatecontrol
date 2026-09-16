@@ -111,6 +111,17 @@ async function list(cfg) {
   return parseLs(res.stdout);
 }
 
+/** Read one file back (restore test) into a Buffer; nothing on the share changes. */
+async function download(cfg, name) {
+  const local = writeTemp('download', '');
+  try {
+    await smb(cfg, [...cd(cfg), `get ${q(name)} ${q(local)}`]);
+    return require('node:fs').readFileSync(local);
+  } finally {
+    rmQuiet(local);
+  }
+}
+
 async function remove(cfg, name) {
   await smb(cfg, [...cd(cfg), `del ${q(name)}`], { timeoutMs: 60000 });
 }
@@ -128,4 +139,4 @@ async function test(cfg) {
   }
 }
 
-module.exports = { upload, list, remove, test, parseLs, baseArgs };
+module.exports = { upload, download, list, remove, test, parseLs, baseArgs };

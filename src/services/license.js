@@ -295,14 +295,40 @@ function setCommunityMode() {
   // Note: unlicensed flag is NOT set here — caller decides
 }
 
+/**
+ * Boolean features the token does not mention at all (docs/feature-next-
+ * package.md §S2.3). On every PAID plan (everything but `community`) they
+ * count as enabled: a feature newer than the licence server would otherwise
+ * fall back to the community value and look "not included" on a Pro licence.
+ * Community keeps COMMUNITY_FALLBACK. Numeric limits (vpn_peers,
+ * http_routes, …) are never derived — only booleans.
+ * The derivation is a bridge, not a substitute for the licence server
+ * (docs/release-checklist.md).
+ * @param {string} plan
+ * @param {object} tokenFeatures features the token carries
+ * @returns {object} { <key>: true } for the derived keys
+ */
+function planDefaults(plan, tokenFeatures) {
+  const out = {};
+  if (!plan || plan === 'community') return out;
+  const carried = tokenFeatures && typeof tokenFeatures === 'object' ? tokenFeatures : {};
+  for (const [key, fallback] of Object.entries(COMMUNITY_FALLBACK)) {
+    if (typeof fallback !== 'boolean') continue;                                  // limits stay as they are
+    if (Object.prototype.hasOwnProperty.call(carried, key)) continue;             // the token decides
+    out[key] = true;
+  }
+  return out;
+}
+
 function applyLicense(data) {
   previousPlan = cachedPlan;
   unlicensed = false;
   cachedPlan = data.plan;
   // Merge COMMUNITY_FALLBACK as base so features NEW to the client
   // (not yet known to the license server) still work. License-returned
-  // values override the fallback.
-  cachedFeatures = { ...COMMUNITY_FALLBACK, ...data.features };
+  // values override the fallback; in between, paid plans get the
+  // plan default for booleans the token does not carry.
+  cachedFeatures = { ...COMMUNITY_FALLBACK, ...planDefaults(data.plan, data.features), ...data.features };
   tokenFeatureKeys = new Set(Object.keys(data.features || {}));
   cachedLicenseInfo = {
     expires_at: data.expires_at || null,
@@ -511,6 +537,28 @@ function lockedFeatures() {
   return out;
 }
 
+/**
+ * Where each feature's value comes from (docs/feature-next-package.md §S2.3):
+ *   'token'         the applied licence token carries the key
+ *   'plan_default'  a boolean the token does not carry, derived from a paid
+ *                   plan (planDefaults) — the UI says "derived from your plan"
+ *   'community'     COMMUNITY_FALLBACK (no token, community plan, or a key
+ *                   neither side knows)
+ * Every key of cachedFeatures appears, limits included (their source is only
+ * ever 'token' or 'community' — numbers are never derived).
+ */
+function featureSources() {
+  const out = {};
+  const keys = new Set([...Object.keys(COMMUNITY_FALLBACK), ...Object.keys(cachedFeatures || {})]);
+  const derived = tokenFeatureKeys === null || unlicensed ? {} : planDefaults(cachedPlan, Object.fromEntries([...tokenFeatureKeys].map((k) => [k, true])));
+  for (const key of [...keys].sort()) {
+    if (tokenFeatureKeys && tokenFeatureKeys.has(key)) out[key] = 'token';
+    else if (Object.prototype.hasOwnProperty.call(derived, key)) out[key] = 'plan_default';
+    else out[key] = 'community';
+  }
+  return out;
+}
+
 function getLicenseInfo() {
   const keyRaw = config.license.key;
   let masked = null;
@@ -531,6 +579,7 @@ function getLicenseInfo() {
     max_activations: cachedLicenseInfo?.max_activations || null,
     license_key_masked: masked,
     locked: lockedFeatures(),
+    source: featureSources(),
   };
 }
 
@@ -594,4 +643,6 @@ module.exports = {
   _overrideForTest,
   _applyLicenseForTest,
   lockedFeatures,
+  featureSources,
+  planDefaults,
 };

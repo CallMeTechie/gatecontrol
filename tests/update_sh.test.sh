@@ -9,6 +9,10 @@
 #   pullflag      present → `compose up --help` advertises --pull
 #   ver_<id>      OCI version label of an image
 #   tz            TZ the script passed to `date +%H:%M` (fake clock, see $FAKE_NOW)
+#   image_sh      content `docker run … cat /app/update.sh` serves (self-update);
+#                 missing → the run fails, as with an image without the file
+# The script under test is a COPY in the sandbox ($SBX/update.sh): the
+# self-update replaces the file it runs from, which must never be the repo copy.
 # shellcheck disable=SC2015  # `cond && ok .. || no ..`: ok/no always return 0
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,6 +33,7 @@ newbox(){ # $1=running $2=remote latest $3=workdir label (__SELF__ = sandbox) [$
   echo "$2" >"$SHIM_ST/remote"
   if [ "$3" = __SELF__ ]; then echo "$SBX" >"$SHIM_ST/label"; else echo "$3" >"$SHIM_ST/label"; fi
   [ "${4:-0}" = 1 ] && : >"$SHIM_ST/race"
+  cp "$ROOT/update.sh" "$SBX/update.sh"; chmod 755 "$SBX/update.sh"
   cat >"$SBX/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 S="$SHIM_ST"; IMG=ghcr.io/callmetechie/gatecontrol:latest
@@ -36,6 +41,7 @@ echo "$*" >>"$S/calls"
 tf(){ printf '%s/tag_%s' "$S" "$(printf '%s' "$1" | tr '/:@' '___')"; }
 res(){ case "$1" in sha256:*) echo "$1" ;; *) cat "$(tf "$1")" 2>/dev/null ;; esac; }   # ref → image ID
 case "$1" in
+  run) [ -f "$S/image_sh" ] || exit 1; cat "$S/image_sh"; exit 0 ;;   # --entrypoint sh <img> -c 'cat /app/update.sh'
   pull) cat "$S/remote" >"$(tf "$2")"; exit 0 ;;
   tag) id="$(res "$2")"; [ -n "$id" ] || exit 1; echo "$id" >"$(tf "$3")"; exit 0 ;;
   image)
@@ -65,7 +71,7 @@ exec $REAL_DATE "\$@"
 DATESHIM
   chmod +x "$SBX/bin/date"; export PATH="$SBX/bin:$ORIG_PATH"
 }
-run(){ GC_DATA_DIR="$SBX/data" GC_UPDATE_LOG="$SBX/log" COMPOSE_DIR="$SBX" GC_CONTAINER=gatecontrol TMPDIR="$SBX" bash "$ROOT/update.sh" >/dev/null 2>&1; echo $?; }
+run(){ GC_DATA_DIR="$SBX/data" GC_UPDATE_LOG="$SBX/log" COMPOSE_DIR="$SBX" GC_CONTAINER=gatecontrol TMPDIR="$SBX" bash "$SBX/update.sh" >/dev/null 2>&1; echo $?; }
 st(){ cat "$SBX/data/.auto-update-state.json" 2>/dev/null; }
 tagof(){ cat "$SHIM_ST/tag_$(printf '%s' "$1" | tr '/:@' '___')" 2>/dev/null; }
 ups(){ grep -c '^compose up -d' "$CALLS" | tr -d ' '; }   # compose up calls (gatecontrol + guacd)
@@ -245,6 +251,89 @@ export FAKE_NOW=12:00; run >/dev/null
 st | grep -q '"action":"rolled_back"' && ok "known-bad image outside window stays rolled_back" || no "bad+window: $(st)"
 rm -rf "$SBX"
 unset FAKE_NOW
+
+# ── update.sh updates itself (docs/feature-next-package.md §S2.2) ──────────
+# The image copy is read with `docker run --rm --entrypoint sh <img> -c
+# 'cat /app/update.sh'` and replaces the host copy only after a successful
+# update, only on a real difference, only when it parses.
+selfbox(){ # $1=content of /app/update.sh in the image ('' = image has no file)
+  newbox sha256:old sha256:new __SELF__; auto
+  [ -n "$1" ] && printf '%s' "$1" >"$SHIM_ST/image_sh"
+  BEFORE="$(cat "$SBX/update.sh")"
+}
+SELFV="$(sed -n 's/^# gc-update-sh: \([0-9][0-9]*\)$/\1/p' "$ROOT/update.sh" | head -n1)"
+
+# 20) the script carries a version marker and reports it in the state marker
+[ -n "$SELFV" ] && ok "update.sh carries a '# gc-update-sh: <n>' marker (v$SELFV)" || no "no gc-update-sh marker"
+cmp -s "$ROOT/update.sh" "$ROOT/src/services/systemSetup/templates/update.sh" \
+  && ok "both copies share the marker" || no "copies differ"
+
+# 21) identical content → nothing replaced, no .bak, marker carries the version
+selfbox ''
+cp "$SBX/update.sh" "$SHIM_ST/image_sh"
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SBX/update.sh")" = "$BEFORE" ] && [ ! -f "$SBX/update.sh.bak" ]; } \
+  && ok "identical update.sh → not replaced, no backup" || no "identical self-update (code=$code)"
+grep -q 'already the version from the image' "$SBX/log" && ok "log says it is already current" || no "no 'already the version' log line"
+st | grep -q "\"update_sh\":$SELFV" && ok "state marker carries update_sh:$SELFV" || no "state marker without update_sh: $(st)"
+rm -rf "$SBX"
+
+# 22) new content → replaced atomically, mode 755, old version kept as .bak
+selfbox '#!/bin/bash
+# gc-update-sh: 999
+echo new
+'
+code="$(run)"
+{ [ "$code" = 0 ] && grep -q '^echo new$' "$SBX/update.sh"; } && ok "different update.sh → replaced" || no "not replaced (code=$code)"
+[ "$(stat -c %a "$SBX/update.sh")" = 755 ] && ok "replacement is mode 755" || no "mode is $(stat -c %a "$SBX/update.sh")"
+{ [ -f "$SBX/update.sh.bak" ] && [ "$(cat "$SBX/update.sh.bak")" = "$BEFORE" ]; } \
+  && ok "old version kept as update.sh.bak" || no "no/incorrect update.sh.bak"
+grep -q "update.sh replaced: v$SELFV → v999" "$SBX/log" && ok "log names both versions" || no "no replace log line"
+st | grep -q '"update_sh":999' && ok "state marker reports the new version" || no "state marker after replace: $(st)"
+# No re-exec: the OLD script finished this run — its state marker is there and
+# the trivial replacement (which writes nothing) never ran.
+st | grep -q '"action":"updated"' && ok "no re-exec: the running script finished the run" || no "state after replace: $(st)"
+ls "$SBX"/update.sh.new.* >/dev/null 2>&1 && no "temp file left behind" || ok "no temp file left behind"
+rm -rf "$SBX"
+
+# 23) syntax error in the image copy → not replaced, warning, no .bak
+selfbox '#!/bin/bash
+# gc-update-sh: 999
+if [ 1 = 1 ; then echo broken
+'
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SBX/update.sh")" = "$BEFORE" ]; } && ok "broken update.sh → not replaced" || no "broken file replaced (code=$code)"
+grep -q 'syntax error' "$SBX/log" && ok "log warns about the syntax error" || no "no syntax-error warning"
+[ -f "$SBX/update.sh.bak" ] && no "no backup when nothing is replaced" || ok "no backup when nothing is replaced"
+ls "$SBX"/update.sh.new.* >/dev/null 2>&1 && no "broken temp file left behind" || ok "broken temp file removed"
+rm -rf "$SBX"
+
+# 24) GC_UPDATE_SH_SELFUPDATE=0 → nothing happens at all
+selfbox '#!/bin/bash
+# gc-update-sh: 999
+echo new
+'
+code="$(GC_UPDATE_SH_SELFUPDATE=0 GC_DATA_DIR="$SBX/data" GC_UPDATE_LOG="$SBX/log" COMPOSE_DIR="$SBX" GC_CONTAINER=gatecontrol TMPDIR="$SBX" bash "$SBX/update.sh" >/dev/null 2>&1; echo $?)"
+{ [ "$code" = 0 ] && [ "$(cat "$SBX/update.sh")" = "$BEFORE" ] && [ ! -f "$SBX/update.sh.bak" ]; } \
+  && ok "GC_UPDATE_SH_SELFUPDATE=0 → untouched" || no "disabled self-update ran (code=$code)"
+grep -q 'self-update disabled' "$SBX/log" && ok "log says the self-update is off" || no "no 'disabled' log line"
+grep -q '^run ' "$CALLS" && no "disabled self-update must not read the image" || ok "disabled self-update does not read the image"
+rm -rf "$SBX"
+
+# 25) image without /app/update.sh → warning, host copy untouched
+selfbox ''
+code="$(run)"
+{ [ "$code" = 0 ] && [ "$(cat "$SBX/update.sh")" = "$BEFORE" ]; } && ok "unreadable image copy → untouched" || no "unreadable image copy (code=$code)"
+grep -q 'could not read /app/update.sh' "$SBX/log" && ok "log warns that the image copy is unreadable" || no "no unreadable warning"
+rm -rf "$SBX"
+
+# 26) no self-update without a successful update (rollback run)
+newbox sha256:old sha256:bad __SELF__; auto
+printf '#!/bin/bash\n# gc-update-sh: 999\necho new\n' >"$SHIM_ST/image_sh"
+BEFORE="$(cat "$SBX/update.sh")"; echo sha256:bad >"$SHIM_ST/bad"
+run >/dev/null
+[ "$(cat "$SBX/update.sh")" = "$BEFORE" ] && ok "no self-update after a rollback" || no "self-update ran after a rollback"
+rm -rf "$SBX"
 
 echo "update_sh.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

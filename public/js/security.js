@@ -71,6 +71,8 @@
     let desc = base + s;
     if (s === 'fail' && id === 'auto_update' && severityOf(c) !== 'info') desc = base + 'fail_failed';
     if (s === 'fail' && id === 'backup_offsite' && !(Array.isArray(c.items) && c.items.length)) desc = base + 'fail_none';
+    // Uploads fine, restore never (or long ago) tested — an info finding, not an error.
+    if (s === 'fail' && id === 'backup_offsite' && c.verify_stale) desc = base + 'fail_verify';
     return { title: base + 'title', desc };
   }
   function relPath(v) {

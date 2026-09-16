@@ -18,7 +18,14 @@ test('v76 is recorded as ops_center', () => {
 
 test('backup_targets columns, defaults and the type CHECK', () => {
   const cols = Object.fromEntries(db.prepare('PRAGMA table_info(backup_targets)').all().map((c) => [c.name, c]));
-  assert.deepEqual(Object.keys(cols), ['id', 'name', 'type', 'config_enc', 'enabled', 'keep', 'last_run_at', 'last_status', 'last_error', 'created_at']);
+  // v80 (docs/feature-next-package.md §S2.1) appends the restore-test columns.
+  assert.deepEqual(Object.keys(cols), ['id', 'name', 'type', 'config_enc', 'enabled', 'keep', 'last_run_at', 'last_status', 'last_error', 'created_at',
+    'last_verify_at', 'last_verify_status', 'last_verify_detail']);
+  for (const n of ['last_verify_at', 'last_verify_status', 'last_verify_detail']) {
+    assert.equal(cols[n].type.toUpperCase(), 'TEXT', n);
+    assert.equal(cols[n].notnull, 0, n);
+    assert.equal(cols[n].dflt_value, null, n);
+  }
   for (const n of ['name', 'type', 'config_enc', 'enabled', 'keep', 'created_at']) assert.equal(cols[n].notnull, 1, n);
   assert.equal(String(cols.enabled.dflt_value), '1');
   assert.equal(String(cols.keep.dflt_value), '14');

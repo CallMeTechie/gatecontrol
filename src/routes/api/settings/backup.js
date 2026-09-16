@@ -445,6 +445,28 @@ router.post('/backup/targets/:id/run', requireAdminSession, licensed, async (req
   }
 });
 
+/**
+ * POST /api/settings/backup/targets/:id/verify — restore test
+ * (docs/feature-next-package.md §S2.1). Fetches the newest archive from the
+ * target, decrypts it with the stored passphrase and validates it. Nothing is
+ * changed — not on the target, not in this installation.
+ * 200 { ok, file, size, created_at, gc_version, include_key, counts, warnings }
+ * 409 PASSPHRASE_NOT_SET / NO_REMOTE_BACKUP · 400 DECRYPT_FAILED / CORRUPT
+ * 502 TRANSPORT_FAILED · 404 NOT_FOUND · 409 CONFIG_UNREADABLE
+ */
+router.post('/backup/targets/:id/verify', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const r = await offsite().verifyTarget(id);
+    activity.log('offsite_restore_tested', `Restore test passed for off-site target ${id}: ${r.file}`, {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+    });
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    sendOffsiteError(res, err, 'restore test failed');
+  }
+});
+
 router.get('/backup/targets/:id/files', requireAdminSession, licensed, async (req, res) => {
   const id = targetId(req, res); if (id === null) return;
   try {

@@ -48,7 +48,19 @@
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
-  const pure = { REASONS, PRICING_URL, reasonOf, viewOf, planLabel };
+  // 'token' | 'plan_default' | 'community' | null — GET /api/v1/license
+  // `source[feature]` (docs/feature-next-package.md §S2.3). 'plan_default'
+  // means: the licence token does not carry the key, the paid plan switched it
+  // on. The licence server should learn the key; this is only the bridge.
+  const SOURCES = ['token', 'plan_default', 'community'];
+  function sourceOf(info, key) {
+    const src = info && info.source && typeof info.source === 'object' ? info.source : null;
+    if (!src) return null;
+    const s = src[key];
+    return SOURCES.indexOf(s) >= 0 ? s : null;
+  }
+
+  const pure = { REASONS, PRICING_URL, SOURCES, reasonOf, sourceOf, viewOf, planLabel };
   if (!win || !win.document) return pure;
 
   // ─── Browser part ──────────────────────────────────────────────────────
@@ -68,6 +80,7 @@
     'license_hint.enter': 'Enter licence',
     'license_hint.upgrade': 'See plans',
     'license_hint.reload': 'Reload page',
+    'license_hint.plan_default': 'Derived from your plan — not yet in the licence token.',
   };
   function t(key, params) {
     const dict = (win.GC && win.GC.t) || {};
@@ -204,6 +217,26 @@
     return node;
   }
 
+  /**
+   * Small note for a feature that is only on because of the plan default
+   * (source 'plan_default'). Stays empty for every other source, so it can sit
+   * permanently next to an unlocked feature. Auto-mounted on elements with
+   * data-license-source="<feature>".
+   */
+  function sourceNote(featureKey) {
+    const key = String(featureKey || '');
+    const node = el('span', { class: 'lh-src', dataset: { feature: key, source: 'pending' } });
+    node.hidden = true;
+    load().then((info) => {
+      const src = sourceOf(info, key);
+      node.dataset.source = src || 'unknown';
+      if (src !== 'plan_default') { node.hidden = true; return; }
+      node.replaceChildren(doc.createTextNode(t('license_hint.plan_default')));
+      node.hidden = false;
+    }, () => { node.dataset.source = 'unknown'; });
+    return node;
+  }
+
   function mount(container, featureKey, opts) {
     if (!container || !featureKey) return null;
     if (container.dataset.lhMounted === String(featureKey) && container.firstElementChild) return container.firstElementChild;
@@ -224,6 +257,12 @@
     scope.querySelectorAll('[data-license-hint]').forEach((n) => {
       const key = n.getAttribute('data-license-hint');
       if (key) mount(n, key, { compact: n.hasAttribute('data-license-hint-compact') });
+    });
+    scope.querySelectorAll('[data-license-source]').forEach((n) => {
+      const key = n.getAttribute('data-license-source');
+      if (!key || n.dataset.lhSource === key) return;
+      n.dataset.lhSource = key;
+      n.replaceChildren(sourceNote(key));
     });
   }
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', () => mountAll());
