@@ -128,3 +128,23 @@ test('the fingerprint never reaches the Caddy config', () => {
   const cfg = JSON.stringify(require('../src/services/caddyConfig').buildCaddyConfig());
   assert.ok(!cfg.includes(HEX));
 });
+
+// config-hash >= 1.3.0 knows the field and REJECTS a malformed value, which
+// would make the whole gateway-config response throw. Writes normalise, so
+// this only guards rows from a hand-edited database or an old restore.
+test('gateway config drops a malformed fingerprint instead of shipping it', () => {
+  const { getDb } = require('../src/db/connection');
+  const db = getDb();
+  const id = db.prepare(`INSERT INTO routes (domain, target_ip, target_port, route_type, target_kind, target_peer_id,
+      target_lan_host, target_lan_port, backend_https, backend_tls_fingerprint, enabled)
+    VALUES ('fp-bad.example.com', '127.0.0.1', 8080, 'http', 'gateway', ?, '192.168.1.10', 443, 1, ?, 1)`)
+    .run(gw, "NOT-A-FINGERPRINT").lastInsertRowid;
+  try {
+    const cfg = require('../src/services/gateways').getGatewayConfig(gw);
+    const row = cfg.routes.find((r) => r.id === id);
+    assert.ok(row, 'route is in the config');
+    assert.equal('backend_tls_fingerprint' in row, false, 'malformed value is not shipped');
+  } finally {
+    db.prepare('DELETE FROM routes WHERE id = ?').run(id);
+  }
+});

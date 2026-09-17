@@ -19,6 +19,10 @@ const {
 } = require('@callmetechie/gatecontrol-config-hash');
 
 /** Extract the bare IP (drop CIDR) from peers.allowed_ips. */
+// A fingerprint that does not match this never reaches the gateway config
+// (config-hash >= 1.3.0 would reject the whole payload).
+const GATEWAY_FINGERPRINT_RE = /^[0-9a-f]{64}$/;
+
 function _peerIp(allowedIps) {
   return (allowedIps || '').split('/')[0].split(',')[0].trim();
 }
@@ -157,11 +161,16 @@ function getGatewayConfig(peerId) {
       // gateway never picks up the new route → "No route for domain X".
       protocol: r.backend_https ? 'https' : 'http',
       // Pinned SHA-256 of the LAN certificate (docs/feature-release-b.md
-      // §13b), only when set. The config-hash schema (HttpRouteSchema, zod
-      // .strip()) drops unknown keys before hashing, so the hash of every
-      // route — with or without a fingerprint — stays byte-identical and
-      // older gateways simply ignore the field.
-      ...(r.backend_https && r.backend_tls_fingerprint ? { backend_tls_fingerprint: r.backend_tls_fingerprint } : {}),
+      // §13b), only when set. Since config-hash 1.3.0 the schema KNOWS the
+      // field: a route without it hashes exactly as before, a route with it
+      // hashes differently (that is what makes the gateway re-fetch). The
+      // schema also REJECTS a malformed value now — the whole gateway-config
+      // response would throw — so the shape is checked here as well. Writes
+      // normalise to 64 lowercase hex (routesValidation), this guards a row
+      // that came from a hand-edited database or an old restore.
+      ...(r.backend_https && GATEWAY_FINGERPRINT_RE.test(String(r.backend_tls_fingerprint || ''))
+        ? { backend_tls_fingerprint: r.backend_tls_fingerprint }
+        : {}),
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
