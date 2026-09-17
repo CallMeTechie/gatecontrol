@@ -151,7 +151,17 @@ jobs:
       # des Jobs, keine Abhängigkeit des Projekts. Die Browser liegen schon im
       # Container-Image.
       - name: Add the Playwright client (not a project dependency)
-        run: npm install --no-save --no-package-lock playwright@1.63.0
+        # In its own directory with its own npm config: inside the project,
+        # npm resolves the whole tree and fails with E401 on the private
+        # @callmetechie package (the job's registry auth is only set for the
+        # `npm ci` step above). The browsers are already in the image.
+        run: |
+          mkdir -p /tmp/pw
+          cd /tmp/pw
+          printf '{"name":"pw-client","private":true}\n' > package.json
+          : > .npmrc
+          npm install --no-package-lock --userconfig /tmp/pw/.npmrc --registry https://registry.npmjs.org/ playwright@1.63.0
+          node -e "require('/tmp/pw/node_modules/playwright');console.log('playwright ready')"
 
       # Ein Schlüsselpaar für Seed UND App: das TOTP-Geheimnis des
       # Fixture-Benutzers liegt mit GC_ENCRYPTION_KEY verschlüsselt in der DB.
@@ -176,6 +186,8 @@ jobs:
 
       # Pflichtsatz bei push/PR, bei workflow_dispatch der gewählte Satz.
       - name: Browser scenarios
+        env:
+          NODE_PATH: /tmp/pw/node_modules
         run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security' }}
 
       - name: App log
