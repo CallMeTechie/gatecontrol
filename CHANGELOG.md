@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.129.0] — 2026-09-17
 
 ### Änderungen
 - **Eine Stylesheet-Datei statt acht.** `pro.css`, `aurora.css` und die Funktionsdateien sind zu `app.css` zusammengefasst; jede Seite lädt nur noch eine Datei statt bis zu acht. Dabei sind rund 24 kB toter Code aus der Zeit der entfernten Themes „Standard“ und „Pro“ entfallen. Das Aussehen ändert sich nicht: Ein Vergleich aller Stilregeln im Browser zeigt sie Regel für Regel in derselben Reihenfolge, und die Anmeldeseiten sind pixelgleich.
