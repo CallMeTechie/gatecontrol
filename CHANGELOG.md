@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.129.1] — 2026-09-17
 
 ### Fixes
 - Der neue Browsertest in der CI brach beim Einrichten ab: npm wollte im Projektverzeichnis den kompletten Abhängigkeitsbaum auflösen und scheiterte an der Anmeldung für das private Paket. Das Testwerkzeug wird jetzt in einem eigenen Verzeichnis mit eigener npm-Konfiguration installiert.
