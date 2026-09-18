@@ -98,7 +98,7 @@ test('POST /routes accepts it for a new gateway route', async () => {
   assert.equal(fp(r.body.route.id), HEX);
 });
 
-test('gateway config: field only when set; config hash identical with and without it', () => {
+test('gateway config: field only when set; it reaches the gateway and changes the hash', () => {
   const lib = require('@callmetechie/gatecontrol-config-hash');
   db.prepare('UPDATE routes SET backend_tls_fingerprint = NULL WHERE id = ?').run(rGw);
   const cfgWithout = gateways.getGatewayConfig(gw);
@@ -112,15 +112,19 @@ test('gateway config: field only when set; config hash identical with and withou
   for (const other of cfg.routes.filter((x) => x.id !== rGw)) {
     if (other.id !== rGw && !other.backend_tls_fingerprint) assert.ok(!('backend_tls_fingerprint' in other));
   }
-  // The shared schema strips unknown keys (zod .strip()): the payload parses,
-  // and the hash does not see the field.
+  // Since config-hash 1.3.0 the schema KNOWS the field: it survives parsing
+  // (that is how the gateway learns the pin at all) and it changes the config
+  // hash — otherwise the gateway would answer 304 and never pick up a changed
+  // fingerprint. Routes without the field keep their old hash (CONFIG_HASH_VERSION
+  // is still 2), which the package's own contract tests pin.
   const parsed = lib.GatewayConfigSchema.parse(cfg);
-  assert.ok(!('backend_tls_fingerprint' in parsed.routes.find((x) => x.id === rGw)));
-  assert.equal(gateways.computeConfigHash(gw), hashWithout);
+  assert.equal(parsed.routes.find((x) => x.id === rGw).backend_tls_fingerprint, HEX);
+  assert.notEqual(gateways.computeConfigHash(gw), hashWithout, 'a set fingerprint changes the hash');
 
   // A stored value on a route that no longer has backend_https is not emitted.
   db.prepare('UPDATE routes SET backend_https = 0 WHERE id = ?').run(rGw);
   assert.ok(!('backend_tls_fingerprint' in gateways.getGatewayConfig(gw).routes.find((x) => x.id === rGw)));
+  db.prepare('UPDATE routes SET backend_https = 1 WHERE id = ?').run(rGw);
   db.prepare('UPDATE routes SET backend_https = 1 WHERE id = ?').run(rGw);
 });
 

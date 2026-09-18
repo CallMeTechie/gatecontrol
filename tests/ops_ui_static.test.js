@@ -123,7 +123,11 @@ describe('ops UI: templates', () => {
     assert.match(block, /<input type="text" class="form-input so-mono" id="edit-route-backend-tls-fingerprint"/);
     assert.ok(block.includes("t('backend_tls.fp_gateway_note')"));
     assert.match(EDITOR_TPL, /data-err-backend-tls-fingerprint-invalid="\{\{ t\('backend_tls\.err\.fingerprint_invalid'\) \}\}"/);
-    assert.equal(de['backend_tls.fp_gateway_note'], 'Das Gateway prüft den Fingerabdruck ab einem kommenden Gateway-Update.');
+    // The note must name the gateway version that starts verifying (the pin
+    // shipped with gateway 1.16.10) — pinning the exact sentence only breaks
+    // on wording changes.
+    assert.match(de['backend_tls.fp_gateway_note'], /Gateway-Version \d+\.\d+\.\d+/);
+    assert.match(en['backend_tls.fp_gateway_note'], /gateway version \d+\.\d+\.\d+/i);
   });
   it('settings.njk and dashboard.njk render (German) with the new hooks', () => {
     const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'templates')), { autoescape: true });

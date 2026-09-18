@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- **Das Gateway prüft jetzt das Zertifikat im LAN.** Bisher war der hinterlegte Fingerabdruck nur gespeichert. Mit dem Paket `config-hash` 1.3.0 erreicht er das Gateway, und ab Gateway-Version 1.16.10 wird er geprüft: Passt das Zertifikat des Ziels nicht, kommt keine Verbindung zustande, es geht kein Byte der Anfrage dorthin, und der Aufrufer bekommt 502. Ohne hinterlegten Fingerabdruck bleibt alles wie bisher. Der Hinweis im Eintrags-Editor nennt jetzt die Gateway-Version.
+
+### Fixes
+- Ein ungültiger Fingerabdruck in der Datenbank (etwa aus einer von Hand bearbeiteten Datei oder einer alten Sicherung) hätte die gesamte Gateway-Konfiguration scheitern lassen, seit das Schema das Feld kennt. Solche Werte werden nicht mehr ausgeliefert.
+
+---
+
 ## [1.129.1] — 2026-09-17
 
 ### Fixes

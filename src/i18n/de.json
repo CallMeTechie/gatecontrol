@@ -3184,7 +3184,7 @@
   "backend_tls.fp_label": "Zertifikat-Fingerabdruck (SHA-256, optional)",
   "backend_tls.fp_ph": "AB:CD:…:EF (64 Hex-Zeichen)",
   "backend_tls.fp_hint": "Pinnt das Zertifikat des Ziels im LAN, z. B. ein selbst signiertes. 64 Hex-Zeichen, mit oder ohne Doppelpunkte. Ermitteln im LAN:",
-  "backend_tls.fp_gateway_note": "Das Gateway prüft den Fingerabdruck ab einem kommenden Gateway-Update.",
+  "backend_tls.fp_gateway_note": "Das Gateway prüft den Fingerabdruck ab Gateway-Version 1.16.10. Ältere Gateways ignorieren ihn.",
   "backend_tls.err.fingerprint_invalid": "Der Fingerabdruck ist kein SHA-256-Wert (64 Hex-Zeichen, Doppelpunkte erlaubt).",
   "headers.preset_security": "Sicherheits-Header (modern)",
   "headers.preset_csp": "CSP (nur eigene Quellen)",

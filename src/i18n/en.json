@@ -3236,7 +3236,7 @@
   "backend_tls.fp_label": "Certificate fingerprint (SHA-256, optional)",
   "backend_tls.fp_ph": "AB:CD:…:EF (64 hex characters)",
   "backend_tls.fp_hint": "Pins the certificate of the target in the LAN, e.g. a self-signed one. 64 hex characters, with or without colons. To read it in the LAN:",
-  "backend_tls.fp_gateway_note": "The gateway checks the fingerprint starting with an upcoming gateway update.",
+  "backend_tls.fp_gateway_note": "The gateway verifies the fingerprint from gateway version 1.16.10 on. Older gateways ignore it.",
   "backend_tls.err.fingerprint_invalid": "The fingerprint is not a SHA-256 value (64 hex characters, colons allowed).",
   "headers.preset_security": "Security headers (modern)",
   "headers.preset_csp": "CSP (own sources only)",
