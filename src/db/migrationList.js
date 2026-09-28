@@ -1629,6 +1629,37 @@ const migrations = [
       ALTER TABLE backup_targets ADD COLUMN last_verify_detail TEXT;`,
     detect: (db) => hasColumn(db, 'backup_targets', 'last_verify_at'),
   },
+  {
+    version: 81,
+    name: 'create_client_enrollment_codes',
+    // One-scan app setup (services/clientEnrollment.js): the admin issues a
+    // short-lived code, the Android app trades it for a ready API token bound
+    // to the peer. Same storage model as gateway_pairing_codes (v40): only
+    // the SHA-256 hash at rest, single-active per peer, 10-min TTL, one-shot.
+    //   peer_id   target peer; NULL = a new peer is created on redeem
+    //   user_id   owner whose role caps the token scopes (NULL = no owner)
+    //   scopes    JSON array chosen by the admin at issue time
+    //   token_id  the api_tokens row minted on redeem (audit)
+    // api_tokens.enrolled marks tokens minted by a redeem, so re-enrolling a
+    // peer can revoke the previous app token without touching hand-made ones.
+    sql: `
+      CREATE TABLE IF NOT EXISTS client_enrollment_codes (
+        code_hash TEXT PRIMARY KEY,
+        peer_id INTEGER REFERENCES peers(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        scopes TEXT NOT NULL,
+        machine_binding INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        consumed_from_ip TEXT,
+        token_id INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+      );
+      CREATE INDEX IF NOT EXISTS idx_client_enrollment_codes_peer ON client_enrollment_codes(peer_id);
+      CREATE INDEX IF NOT EXISTS idx_client_enrollment_codes_expires ON client_enrollment_codes(expires_at);
+      ALTER TABLE api_tokens ADD COLUMN enrolled INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => tableExists(db, 'client_enrollment_codes') && hasColumn(db, 'api_tokens', 'enrolled'),
+  },
 ];
 
 module.exports = { migrations };

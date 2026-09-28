@@ -68,11 +68,19 @@ module.exports = (ctx) => {
 
       // Der echte Code schon. Zwei Versuche: der erste kann an der
       // Schrittgrenze scheitern (Code im alten Schritt erzeugt, im neuen
-      // abgeschickt = zwei Schritte entfernt). Der zweite startet garantiert
-      // in einem frischen Schritt — schlägt auch der fehl, ist es kein Timing.
+      // abgeschickt = zwei Schritte entfernt) oder am Replay-Schutz — der
+      // Seed hat beim Einrichten den Code seines Schritts verbraucht, und
+      // läuft der Login im selben Schritt, ist genau dieser Code gesperrt.
+      // Der zweite Versuch wartet deshalb auf den nächsten Schritt; schlägt
+      // auch der fehl, ist es kein Timing.
+      let lastStep = -1;
       for (let attempt = 0; attempt < 2; attempt++) {
         if (/\/dashboard/.test(page.url())) break;
         await inFreshStep(page, 12000);
+        if (Math.floor(Date.now() / 30000) === lastStep) {
+          await page.waitForTimeout(30000 - (Date.now() % 30000) + 250);
+        }
+        lastStep = Math.floor(Date.now() / 30000);
         await page.fill('input[name="code"]', totp(FIXTURES.tfa.secret));
         await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
       }

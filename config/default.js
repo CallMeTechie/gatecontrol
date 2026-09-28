@@ -48,6 +48,8 @@ const config = {
     // gateways behind the admin's NAT don't share the dashboard's bucket).
     // Idle load is ~33 req/15 min per gateway at GC_HEARTBEAT_INTERVAL_S=30.
     rateLimitGateway: envInt('GC_RATE_LIMIT_GATEWAY', 300),
+    // Public app setup-code redeem (POST /api/v1/client/enroll), per IP / 5 min.
+    rateLimitEnroll: envInt('GC_RATE_LIMIT_ENROLL', 10),
   },
 
   wireguard: {

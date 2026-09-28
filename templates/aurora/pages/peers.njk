@@ -106,6 +106,7 @@
 {% include theme + "/partials/modals/peer-add.njk" %}
 {% include theme + "/partials/modals/peer-edit.njk" %}
 {% include theme + "/partials/modals/peer-qr.njk" %}
+{% include theme + "/partials/modals/client-enrollment.njk" %}
 {% include theme + "/partials/modals/peer-traffic.njk" %}
 {% include theme + "/partials/modals/peer-gateway-tokens.njk" %}
 {% include theme + "/partials/modals/peer-gateway-delete.njk" %}
@@ -113,5 +114,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/client-enrollment.js?v={{ appVersion }}"></script>
 <script src="/js/peers.js?v={{ appVersion }}"></script>
 {% endblock %}

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- **Android-App mit einem Scan einrichten.** Bisher enthielt der QR-Code eines Peers nur die WireGuard-Konfiguration: Die App bekam den Tunnel, aber keine Server-Adresse und keinen API-Token. Für Dienste, RDP, Pi-hole und Traffic musste ein 96-stelliger Token aus der Benutzerverwaltung von Hand abgetippt werden, und selbst dann war er nicht an den Peer gebunden. Jetzt gibt es im QR-Dialog eines Peers den Knopf „Android-App einrichten“ (und in „Benutzer bearbeiten“ „Android-Gerät einrichten“ für ein neues Gerät). Er zeigt einen QR-Code und einen abtippbaren Code; die App tauscht ihn gegen einen Token, der sofort an den Peer und bei aktiver Gerätebindung an das Gerät gebunden ist, samt WireGuard-Konfiguration. Der Code gilt 10 Minuten, ist nur einmal nutzbar und wird nur als Hash gespeichert. Die Rechte beschränken sich auf Client- und Pi-hole-Rechte und werden durch die Rolle des Besitzers begrenzt; Admin-Rechte lassen sich so nie vergeben. Wird ein Peer neu eingerichtet, verliert das vorherige App-Gerät seinen Token; von Hand erstellte Tokens bleiben unberührt. Neuer öffentlicher Endpunkt `POST /api/v1/client/enroll` (Limit per `GC_RATE_LIMIT_ENROLL`, Standard 10 pro 5 Minuten). Benötigt Android-App ab 1.10.0.
+
+### Fixes
+- Der Browsertest für die Anmeldung mit zweitem Faktor scheiterte zufällig, wenn der Login in dasselbe 30-Sekunden-Fenster fiel, in dem die Testdaten den 2FA-Benutzer eingerichtet hatten: Der Code dieses Fensters war schon verbraucht, und der zweite Versuch schickte denselben Code noch einmal. Er wartet jetzt auf das nächste Fenster.
+
+---
+
 ## [1.130.0] — 2026-09-18
 
 ### Features

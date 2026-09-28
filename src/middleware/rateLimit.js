@@ -130,6 +130,20 @@ const gatewayPairLimiter = rateLimit({
   },
 });
 
+// Android app setup-code redeem (POST /api/v1/client/enroll). Public, so
+// keyed by IP; the 64-bit code plus 10-min TTL defeats guessing, this caps
+// noise. Same budget as gateway pairing.
+const clientEnrollLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: () => config.auth.rateLimitEnroll,
+  standardHeaders: true,
+  legacyHeaders: true,
+  keyGenerator: (req) => `enroll:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
 // Guest share-link redeem. Generous (the 256-bit token defeats brute force;
 // this is anti-noise/anti-DoS) and SEPARATE from the 5/15-min login limiter so
 // legitimate guests behind one NAT don't 429 each other. req.ip is the real
@@ -142,4 +156,4 @@ const shareRedeemLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
 });
 
-module.exports = { loginLimiter, twoFactorSetupLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, shareRedeemLimiter };
+module.exports = { loginLimiter, twoFactorSetupLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter };
