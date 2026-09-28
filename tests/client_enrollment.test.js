@@ -171,3 +171,79 @@ describe('client enrollment — app redeems the code', () => {
     assert.equal(res.body.error, 'invalid_or_expired');
   });
 });
+
+describe('client enrollment — token codes (wizard, scripts, Windows)', () => {
+  const issueToken = (body) => issue({ kind: 'token', ...body });
+
+  it('a token code carries any scope, including full-access, and mints on redeem', async () => {
+    const res = await issueToken({ name: 'Home Assistant', scopes: ['full-access'], userId: 1 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.scopes, ['full-access']);
+    assert.match(res.body.link, /^gatecontrol:\/\/enroll\?/);
+
+    const before = db.prepare("SELECT COUNT(*) c FROM api_tokens WHERE name = 'Home Assistant'").get().c;
+    assert.equal(before, 0, 'nothing is minted before redeem');
+
+    const red = await supertest(app).post('/api/v1/client/enroll').send({ code: res.body.code });
+    assert.equal(red.status, 200, JSON.stringify(red.body));
+    assert.equal(red.body.kind, 'token');
+    assert.equal(red.body.peerId, null);
+    assert.equal(red.body.config, null);
+    const row = tokens.authenticate(red.body.token);
+    assert.deepEqual(row.scopes, ['full-access']);
+    assert.equal(row.name, 'Home Assistant');
+    assert.equal(row.user_id, 1);
+    // A script can use it right away.
+    const peersRes = await supertest(app).get('/api/v1/peers').set('X-API-Token', red.body.token);
+    assert.equal(peersRes.status, 200);
+  });
+
+  it('keeps expiry, peer binding and split-tunnel preset of the wizard', async () => {
+    const peer = await peers.create({ name: 'enroll-token-peer' });
+    const expires = new Date(Date.now() + 30 * 86400000).toISOString();
+    const res = await issueToken({
+      name: 'Laptop', scopes: ['client', 'client:rdp'], userId: 1, peer_id: peer.id,
+      expires_at: expires, split_tunnel_override: { mode: 'exclude', networks: [{ cidr: '192.168.0.0/16', label: 'LAN' }], locked: true },
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const red = await supertest(app).post('/api/v1/client/enroll').send({ code: res.body.code });
+    assert.equal(red.status, 200, JSON.stringify(red.body));
+    assert.equal(red.body.peerId, peer.id);
+    assert.match(red.body.config, /\[Interface\]/);
+    const row = tokens.getById(tokens.authenticate(red.body.token).id);
+    assert.equal(row.peer_id, peer.id);
+    assert.equal(new Date(row.expires_at).toISOString(), expires);
+    assert.equal(JSON.parse(row.split_tunnel_override).mode, 'exclude');
+  });
+
+  it('a Windows client registers with an unbound token after redeeming', async () => {
+    const res = await issueToken({ name: 'Desktop', scopes: ['client'], userId: 1 });
+    const red = await supertest(app).post('/api/v1/client/enroll').send({ code: res.body.code });
+    const reg = await supertest(app).post('/api/v1/client/register')
+      .set('X-API-Token', red.body.token).set('X-Client-Platform', 'windows')
+      .send({ hostname: 'DESKTOP-42', platform: 'win32 10.0', clientVersion: '1.21.0' });
+    assert.equal(reg.status, 201, JSON.stringify(reg.body));
+    assert.equal(tokens.authenticate(red.body.token).peer_id, reg.body.peerId);
+  });
+
+  it('role user cannot receive admin scopes through a code', async () => {
+    const u = await users.create({ username: 'enroll-token-user', role: 'user', password: 'Secret123!x' });
+    const res = await issueToken({ name: 'x', scopes: ['full-access'], userId: u.id });
+    assert.equal(res.status, 400);
+  });
+
+  it('validates name, scopes, expiry and split-tunnel preset', async () => {
+    assert.equal((await issueToken({ scopes: ['client'], userId: 1 })).status, 400);
+    assert.equal((await issueToken({ name: 'x', scopes: ['nope'], userId: 1 })).status, 400);
+    assert.equal((await issueToken({ name: 'x', scopes: ['client'], userId: 1, expires_at: '2000-01-01T00:00:00Z' })).status, 400);
+    assert.equal((await issueToken({ name: 'x', scopes: ['client'], userId: 1, split_tunnel_override: { mode: 'bogus' } })).status, 400);
+  });
+
+  it('redeeming a token code does not revoke app tokens of a peer', async () => {
+    const peer = await peers.create({ name: 'enroll-token-mixed' });
+    const app1 = await redeem({ code: enrollment.createCode({ peerId: peer.id }).code });
+    const res = await issueToken({ name: 'script-on-peer', scopes: ['client'], userId: 1, peer_id: peer.id });
+    await supertest(app).post('/api/v1/client/enroll').send({ code: res.body.code });
+    assert.ok(tokens.authenticate(app1.body.token), 'app token survives');
+  });
+});

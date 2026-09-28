@@ -12,6 +12,7 @@ const enrollment = require('../../services/clientEnrollment');
 const qrcode = require('../../services/qrcode');
 const logger = require('../../utils/logger');
 const config = require('../../../config/default');
+const { validateSplitTunnelPreset } = require('../../utils/validate');
 
 const router = Router();
 
@@ -50,24 +51,55 @@ const ERROR_STATUS = {
   peer_not_client: 400,
   target_required: 400,
   no_valid_scopes: 400,
+  name_required: 400,
+  name_too_long: 400,
+  expiry_in_past: 400,
 };
 
 /**
+ * kind 'token' — the token wizard. Same fields as POST /users/:id/tokens,
+ * but the token is minted on redeem instead of being shown here.
+ */
+function createTokenCodeFromBody(body) {
+  return enrollment.createTokenCode({
+    name: body.name,
+    scopes: body.scopes,
+    userId: body.userId != null && body.userId !== '' ? Number(body.userId) : null,
+    peerId: body.peer_id != null && body.peer_id !== '' ? Number(body.peer_id) : null,
+    expiresAt: body.expires_at || null,
+    machineBinding: !!body.machine_binding_enabled,
+    splitTunnelOverride: body.split_tunnel_override || null,
+  });
+}
+
+/**
  * POST /api/v1/enrollment
- * Body: { peerId?, userId?, scopes?, machineBinding? }
+ * Body (device, default): { peerId?, userId?, scopes?, machineBinding? }
  *   peerId  → the app takes over this peer (IP + config stay)
  *   userId only → a new peer owned by that user is created on redeem
+ * Body (kind 'token', the token wizard): { kind:'token', name, scopes, userId,
+ *   peer_id?, expires_at?, machine_binding_enabled?, split_tunnel_override? }
  * Returns: { ok, code, expiresAt, url, link, qr, scopes }
  */
 router.post('/', async (req, res) => {
   try {
-    const { peerId, userId, scopes, machineBinding } = req.body || {};
-    const result = enrollment.createCode({
-      peerId: peerId != null && peerId !== '' ? Number(peerId) : null,
-      userId: userId != null && userId !== '' ? Number(userId) : undefined,
-      scopes: Array.isArray(scopes) ? scopes : undefined,
-      machineBinding: !!machineBinding,
-    });
+    const body = req.body || {};
+    let result;
+    if (body.kind === 'token') {
+      if (body.split_tunnel_override) {
+        const stErr = validateSplitTunnelPreset(body.split_tunnel_override);
+        if (stErr) return res.status(400).json({ ok: false, error: stErr });
+      }
+      result = createTokenCodeFromBody(body);
+    } else {
+      const { peerId, userId, scopes, machineBinding } = body;
+      result = enrollment.createCode({
+        peerId: peerId != null && peerId !== '' ? Number(peerId) : null,
+        userId: userId != null && userId !== '' ? Number(userId) : undefined,
+        scopes: Array.isArray(scopes) ? scopes : undefined,
+        machineBinding: !!machineBinding,
+      });
+    }
     const url = publicServerUrl(req);
     const link = `gatecontrol://enroll?url=${encodeURIComponent(url)}&code=${result.code}`;
     const qr = await qrcode.toDataUrl(link);

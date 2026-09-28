@@ -18,6 +18,15 @@
  *
  * Storage mirrors gateway pairing codes: only the SHA-256 hash at rest,
  * single-active per peer, 10-minute TTL, consumed atomically.
+ *
+ * Two kinds of code:
+ *   device  (createCode)      app setup for a peer or a new device; client
+ *                             scopes only, token bound to the peer
+ *   token   (createTokenCode) the token wizard: any scopes incl. full-access,
+ *                             expiry, optional peer, split-tunnel preset —
+ *                             for Windows clients, scripts and automation.
+ *                             The raw token is only ever handed to whoever
+ *                             redeems the code.
  */
 
 const crypto = require('node:crypto');
@@ -144,9 +153,65 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false } = 
   return { code, expiresAt, scopes: resolvedScopes, peerId: peer ? peer.id : null, userId: ownerId };
 }
 
+/**
+ * Issue a code for a token as the wizard defines it (kind 'token').
+ *   name, scopes (any valid scopes incl. full-access), userId (owner, caps
+ *   scopes by role), peerId (optional binding), expiresAt (ISO, optional),
+ *   machineBinding, splitTunnelOverride (validated preset object, optional).
+ * Returns { code, expiresAt, scopes } — cleartext code once.
+ */
+function createTokenCode({ name, scopes, userId = null, peerId = null, expiresAt = null,
+  machineBinding = false, splitTunnelOverride = null } = {}) {
+  const db = getDb();
+  if (!name || typeof name !== 'string' || !name.trim()) throw _error('name_required');
+  if (name.trim().length > 100) throw _error('name_too_long');
+  const ownerId = userId != null ? Number(userId) : null;
+  const resolvedScopes = resolveTokenScopes(scopes, ownerId);
+  if (peerId != null && !peers.getById(Number(peerId))) throw _error('peer_not_found');
+  if (expiresAt) {
+    const d = new Date(expiresAt);
+    if (isNaN(d.getTime()) || d <= new Date()) throw _error('expiry_in_past');
+  }
+
+  db.prepare('DELETE FROM client_enrollment_codes WHERE expires_at <= ?').run(Date.now());
+  const code = _generateCode();
+  const codeExpiresAt = Date.now() + CODE_TTL_MS;
+  db.prepare(`
+    INSERT INTO client_enrollment_codes
+      (code_hash, kind, peer_id, user_id, scopes, machine_binding, expires_at,
+       token_name, token_expires_at, split_tunnel_override)
+    VALUES (?, 'token', ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(_hashCode(code), peerId != null ? Number(peerId) : null, ownerId,
+    JSON.stringify(resolvedScopes), machineBinding ? 1 : 0, codeExpiresAt,
+    name.trim(), expiresAt || null,
+    splitTunnelOverride ? JSON.stringify(splitTunnelOverride) : null);
+
+  try {
+    activity.log('client_enrollment_created', `Setup code created for token "${name.trim()}"`,
+      { source: 'admin', severity: 'info', details: { userId: ownerId, peerId, scopes: resolvedScopes, expiresAt: codeExpiresAt } });
+  } catch {}
+
+  return { code, expiresAt: codeExpiresAt, scopes: resolvedScopes };
+}
+
+/** Wizard scopes: any valid scope (full-access included), capped by the owner's role. */
+function resolveTokenScopes(requested, userId) {
+  if (!Array.isArray(requested) || !requested.length || tokens.validateScopes(requested)) {
+    throw _error('no_valid_scopes');
+  }
+  let scopes = [...new Set(requested)];
+  if (userId != null) {
+    const user = users.getById(userId);
+    if (!user) throw _error('user_not_found');
+    scopes = users.filterScopesForRole(scopes, user.role);
+  }
+  if (!scopes.length) throw _error('no_valid_scopes');
+  return scopes;
+}
+
 function _uniquePeerName(hostname) {
   const db = getDb();
-  const baseName = String(hostname || '').replace(/[^\w.\-]/g, '_').substring(0, 50) || 'android';
+  const baseName = String(hostname || '').replace(/[^\w.\-]/g, '_').substring(0, 50) || 'device';
   if (validatePeerName(baseName)) throw _error('invalid_hostname');
   let name = baseName;
   for (let suffix = 2; db.prepare('SELECT 1 FROM peers WHERE name = ?').get(name); suffix++) {
@@ -156,9 +221,14 @@ function _uniquePeerName(hostname) {
   return name;
 }
 
+function _isAndroid(platform) {
+  return String(platform || '').toLowerCase() === 'android';
+}
+
 function _clientLabel(platform, clientVersion) {
   const p = String(platform || 'unknown').substring(0, 20);
-  const label = p.toLowerCase() === 'android' ? 'Android Client' : 'Client';
+  const label = _isAndroid(p) ? 'Android Client'
+    : /^win/i.test(p) ? 'Desktop Client' : 'Client';
   return `${label} (${p}, v${String(clientVersion || '?').substring(0, 20)})`;
 }
 
@@ -172,7 +242,9 @@ function _hashConfig(config) {
  *   invalid_or_expired  unknown, expired or already used (never says which)
  *   fingerprint_required  binding is active but no valid fingerprint sent
  *   user_disabled, limit_reached, invalid_hostname, peer_not_found
- * On success returns { token, peerId, peerName, config, hash, scopes }.
+ * On success returns { kind, token, peerId, peerName, config, hash, scopes };
+ * a 'token' code without a peer returns peerId/config null — the client then
+ * registers with the token as before.
  */
 async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerprint } = {}, sourceIp = null) {
   const code = normalizeCode(rawCode);
@@ -207,11 +279,51 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
       if (!owner) throw _error('user_not_found');
       if (!users.isEnabled(row.user_id)) throw _error('user_disabled');
     }
-    const scopes = resolveScopes(JSON.parse(row.scopes), row.user_id);
+    const isTokenCode = row.kind === 'token';
+    const scopes = isTokenCode
+      ? resolveTokenScopes(JSON.parse(row.scopes), row.user_id)
+      : resolveScopes(JSON.parse(row.scopes), row.user_id);
 
     const fp = typeof fingerprint === 'string' ? fingerprint.trim().toLowerCase() : '';
     const bindingWanted = _bindingActive({ machine_binding_enabled: row.machine_binding === 1 });
     if (bindingWanted && !FINGERPRINT_RE.test(fp)) throw _error('fingerprint_required');
+
+    if (isTokenCode) {
+      // Wizard token: minted exactly as the wizard defined it. No peer is
+      // created here — without a peer the client registers afterwards.
+      const boundPeer = row.peer_id != null ? peers.getById(row.peer_id) : null;
+      if (row.peer_id != null && !boundPeer) throw _error('peer_not_found');
+      const created = tokens.create({
+        name: row.token_name,
+        scopes,
+        expiresAt: row.token_expires_at || null,
+        machineBindingEnabled: row.machine_binding === 1,
+        userId: row.user_id,
+        peerId: row.peer_id,
+        splitTunnelOverride: row.split_tunnel_override || null,
+      }, sourceIp);
+      createdTokenId = created.token.id;
+      db.prepare('UPDATE client_enrollment_codes SET token_id = ? WHERE code_hash = ?').run(created.token.id, codeHash);
+      if (bindingWanted) tokens.bindMachineFingerprint(created.token.id, fp);
+      const tokenConfig = boundPeer ? await peers.getClientConfig(boundPeer.id) : null;
+
+      try {
+        activity.log('client_enrollment_redeemed',
+          `Setup code redeemed for token "${row.token_name}"${sourceIp ? ` from ${sourceIp}` : ''}`,
+          { source: 'api', severity: 'info', details: { tokenId: created.token.id, peerId: row.peer_id, platform, clientVersion } });
+      } catch {}
+      logger.info({ tokenId: created.token.id }, 'Token setup code redeemed');
+
+      return {
+        kind: 'token',
+        token: created.rawToken,
+        peerId: boundPeer ? boundPeer.id : null,
+        peerName: boundPeer ? boundPeer.name : null,
+        config: tokenConfig,
+        hash: tokenConfig ? _hashConfig(tokenConfig) : null,
+        scopes,
+      };
+    }
 
     let peer;
     if (row.peer_id != null) {
@@ -223,7 +335,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
       peer = await peers.create({
         name: _uniquePeerName(hostname),
         description: _clientLabel(platform, clientVersion),
-        tags: 'mobile-client',
+        tags: _isAndroid(platform) ? 'mobile-client' : 'desktop-client',
         userId: row.user_id,
       });
       createdPeerId = peer.id;
@@ -269,6 +381,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     logger.info({ peerId: peer.id, tokenId: created.token.id }, 'Client enrollment redeemed');
 
     return {
+      kind: 'device',
       token: created.rawToken,
       peerId: peer.id,
       peerName: peer.name,
@@ -294,6 +407,8 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
 
 module.exports = {
   createCode,
+  createTokenCode,
+  resolveTokenScopes,
   redeemCode,
   normalizeCode,
   resolveScopes,
