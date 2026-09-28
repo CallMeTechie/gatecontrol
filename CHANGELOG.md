@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.131.1] — 2026-09-28
+
+### Fixes
+- give every test process its own data directory
+
+---
+
 ## [1.131.0] — 2026-09-28
 
 ### Features
