@@ -1127,6 +1127,18 @@ var DT = function (k, p) { return D.t(k, p); };
   });
 
   // ─── QR modal ────────────────────────────────────────────
+  // "Set up Android app": swaps the bare WireGuard QR for a one-shot setup
+  // code that gives the app VPN plus API access (public/js/client-enrollment.js).
+  var qrPeerEnrollTarget = null;
+  document.getElementById('qr-peer-enroll').addEventListener('click', function () {
+    if (!qrPeerEnrollTarget || !window.openClientEnrollment) return;
+    closeModal('modal-qr-peer');
+    window.openClientEnrollment({
+      peerId: qrPeerEnrollTarget.peerId,
+      title: qrPeerEnrollTarget.name + ' \u2014 ' + document.getElementById('client-enroll-title').textContent,
+    });
+  });
+
   async function showQrModal(id) {
     try {
       var data = await api.get('/api/peers/' + id + '/qr');
@@ -1136,6 +1148,7 @@ var DT = function (k, p) { return D.t(k, p); };
         document.getElementById('qr-peer-config').textContent = data.config;
         document.getElementById('qr-peer-download').href = '/api/v1/peers/' + id + '/config?download=1';
         document.getElementById('qr-peer-download').download = data.name + '.conf';
+        qrPeerEnrollTarget = { peerId: id, name: data.name };
         openModal('modal-qr-peer');
       }
     } catch (err) {

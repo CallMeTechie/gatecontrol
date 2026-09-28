@@ -741,7 +741,14 @@
     e.preventDefault();
     openTokenWizard(editId);
   });
-  // Standalone token creation from page header
+  // One-scan app setup for a new device of this user: the app creates its own
+  // peer on redeem, owned by the user (public/js/client-enrollment.js).
+  document.getElementById('btn-user-enroll-device').addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!editId || !window.openClientEnrollment) return;
+    window.openClientEnrollment({ userId: editId });
+  });
+    // Standalone token creation from page header
   document.getElementById('btn-create-token-standalone').addEventListener('click', function (e) {
     e.preventDefault();
     openTokenWizard(null);

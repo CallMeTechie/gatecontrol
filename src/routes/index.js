@@ -324,6 +324,11 @@ router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
 const clientRoutes = require('./api/client');
 router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Router());
 
+// App setup-code redeem — public like the update check: the app has no token
+// yet, the one-shot code is the credential. Must stay before requireAuth.
+const { clientEnrollLimiter } = require('../middleware/rateLimit');
+router.use('/api/v1/client/enroll', clientEnrollLimiter, require('./api/client/enroll'));
+
 // ─── Gateway API (uses own Bearer-token auth, not admin/session auth) ──
 // No apiLimiter here: it is keyed by IP and would make gateways behind the
 // admin's NAT share the dashboard's bucket. The router applies its own
