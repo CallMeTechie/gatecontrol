@@ -46,7 +46,12 @@ module.exports = (ctx) => {
       await shot(page, 'dashboard');
 
       // ── Abmelden ─────────────────────────────────────────────────────────
+      // Erst weg vom Dashboard, dann abmelden: seine Kennzahlen laden
+      // nacheinander und per Timer nach. Eine Anfrage, die zwischen Logout
+      // und nächster Navigation beim Server ankommt, endet mit 401 und zählt
+      // als Seitenproblem — reines Timing, in der CI mehrfach aufgetreten.
       const csrf = await page.evaluate(() => window.GC && window.GC.csrfToken);
+      await page.goto('about:blank');
       await page.request.fetch(BASE + '/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
       await page.goto(BASE + '/dashboard');
       step('logout ends the session', page.url().includes('/login'), page.url());
@@ -90,6 +95,7 @@ module.exports = (ctx) => {
 
       // Zurück auf den Admin ohne zweiten Faktor für die folgenden Szenarien.
       const csrf2 = await page.evaluate(() => window.GC && window.GC.csrfToken);
+      await page.goto('about:blank');
       await page.request.fetch(BASE + '/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrf2 } });
       await ctx.login(page);
       step('back on the admin session', /\/dashboard/.test(page.url()), page.url());
