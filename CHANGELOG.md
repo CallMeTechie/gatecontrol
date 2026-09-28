@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- **Kein langer API-Token mehr zum Abtippen – auch nicht für Windows-Clients, Skripte und Automatisierungen.** Der Assistent „Token hinzufügen“ zeigt am Ende jetzt einen Einrichtungscode mit QR-Code statt des 96-stelligen Tokens. Der Token wird erst erzeugt, wenn ein Client oder Skript den Code einlöst, und erscheint nirgends in der Oberfläche. Alle Optionen des Assistenten bleiben erhalten: Rechte (auch `full-access`), Ablaufdatum, Peer-Bindung, Gerätebindung und Split-Tunnel-Vorgabe. Android-App und Windows-Clients nehmen den Code direkt an (QR scannen oder Code eintippen), Skripte lösen ihn einmal per `curl` ein – der Befehl steht fertig im Dialog. Für Sonderfälle zeigt „Erweitert → Klassischen Token direkt anzeigen“ weiterhin den Token wie bisher. Der Knopf „App einrichten“ am Peer und „Neues Gerät einrichten“ beim Benutzer gelten jetzt auch für Windows-Clients.
+
+### Fixes
+- Im Token-Assistenten stand im letzten Schritt „Token erstellen“ statt „Fertig“ auf dem Knopf.
+
+---
+
 ## [1.131.1] — 2026-09-28
 
 ### Fixes

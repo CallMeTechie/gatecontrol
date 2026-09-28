@@ -475,6 +475,8 @@
     document.getElementById('tw-name').value = '';
     document.getElementById('tw-copy-confirm').style.display = 'none';
     document.getElementById('tw-token-value').textContent = '';
+    document.getElementById('tw-classic').checked = false;
+    document.getElementById('tw-advanced').open = false;
 
     // Reset split-tunnel override
     document.getElementById('tw-st-override').checked = false;
@@ -607,15 +609,32 @@
       }
       hideError(tokenFormError);
       btnLoading(btn);
+      var classic = document.getElementById('tw-classic').checked;
+      document.getElementById('tw-code-result').style.display = classic ? 'none' : '';
+      document.getElementById('tw-classic-result').style.display = classic ? '' : 'none';
       try {
-        var data = await api.post('/api/v1/users/' + userId + '/tokens', body);
-        document.getElementById('tw-token-value').textContent = data.token || '';
+        if (classic) {
+          // Erweitert: the classic flow — the raw token is shown once.
+          var data = await api.post('/api/v1/users/' + userId + '/tokens', body);
+          if (!data.ok) { showError(tokenFormError, data.error || 'Token-Erstellung fehlgeschlagen'); return; }
+          document.getElementById('tw-token-value').textContent = data.token || '';
+          reloadEditTokens();
+        } else {
+          // Default: a one-shot setup code; the token is minted when a
+          // client or script redeems it and never appears here.
+          body.kind = 'token';
+          body.userId = parseInt(userId, 10);
+          var code = await api.post('/api/v1/enrollment', body);
+          if (!code.ok) { showError(tokenFormError, code.error || 'Code-Erstellung fehlgeschlagen'); return; }
+          showTokenCode(code);
+        }
         twShowStep(4);
-        reloadEditTokens();
       } catch (err) {
         showError(tokenFormError, err.message || 'Token-Erstellung fehlgeschlagen');
       } finally {
         btnReset(btn);
+        // btnReset restores the pre-click label ("Create") — step 4 needs "Done".
+        if (twStep === 4) twShowStep(4);
       }
     } else if (twStep === 4) {
       closeTokenModal();
@@ -623,7 +642,43 @@
     }
   }
 
-  function closeTokenModal() { tokenOverlay.style.display = 'none'; }
+  var twCodeTimer = null;
+  function showTokenCode(data) {
+    document.getElementById('tw-code-qr').src = data.qr;
+    document.getElementById('tw-code-qr').style.opacity = '1';
+    document.getElementById('tw-code-value').textContent = data.code;
+    document.getElementById('tw-code-value').style.textDecoration = '';
+    document.getElementById('tw-code-curl').textContent =
+      'curl -s -X POST ' + data.url + '/api/v1/client/enroll -H "Content-Type: application/json" -d \'{"code":"' + data.code + '"}\'';
+    document.getElementById('tw-code-expiry').style.display = '';
+    document.getElementById('tw-code-expired').style.display = 'none';
+    if (twCodeTimer) clearInterval(twCodeTimer);
+    var tick = function () {
+      var left = Math.max(0, Math.floor((data.expiresAt - Date.now()) / 1000));
+      if (left === 0) {
+        clearInterval(twCodeTimer); twCodeTimer = null;
+        document.getElementById('tw-code-qr').style.opacity = '0.2';
+        document.getElementById('tw-code-value').style.textDecoration = 'line-through';
+        document.getElementById('tw-code-expiry').style.display = 'none';
+        document.getElementById('tw-code-expired').style.display = '';
+        return;
+      }
+      var m = Math.floor(left / 60), sec = left % 60;
+      document.getElementById('tw-code-countdown').textContent = m + ':' + (sec < 10 ? '0' : '') + sec;
+    };
+    tick();
+    twCodeTimer = setInterval(tick, 1000);
+  }
+
+  document.getElementById('tw-code-curl-copy').addEventListener('click', function () {
+    var cmd = document.getElementById('tw-code-curl').textContent;
+    if (cmd) navigator.clipboard.writeText(cmd);
+  });
+
+  function closeTokenModal() {
+    if (twCodeTimer) { clearInterval(twCodeTimer); twCodeTimer = null; }
+    tokenOverlay.style.display = 'none';
+  }
 
   // Copy button
   document.getElementById('tw-copy-btn').addEventListener('click', function () {

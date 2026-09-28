@@ -1660,6 +1660,23 @@ const migrations = [
       ALTER TABLE api_tokens ADD COLUMN enrolled INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => tableExists(db, 'client_enrollment_codes') && hasColumn(db, 'api_tokens', 'enrolled'),
   },
+  {
+    version: 82,
+    name: 'enrollment_codes_for_any_token',
+    // Setup codes replace showing the raw API token (services/clientEnrollment.js
+    // createTokenCode): the token wizard stores the token's parameters on the
+    // code and the token is only minted when a client or script redeems it.
+    //   kind                   'device' (v81 app setup) | 'token' (wizard)
+    //   token_name             name of the token to mint
+    //   token_expires_at       expiry of the minted token (ISO), NULL = none
+    //   split_tunnel_override  JSON preset for the minted token, NULL = none
+    sql: `
+      ALTER TABLE client_enrollment_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'device';
+      ALTER TABLE client_enrollment_codes ADD COLUMN token_name TEXT;
+      ALTER TABLE client_enrollment_codes ADD COLUMN token_expires_at TEXT;
+      ALTER TABLE client_enrollment_codes ADD COLUMN split_tunnel_override TEXT;`,
+    detect: (db) => hasColumn(db, 'client_enrollment_codes', 'kind'),
+  },
 ];
 
 module.exports = { migrations };
