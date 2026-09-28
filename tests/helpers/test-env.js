@@ -92,6 +92,23 @@ applyBaseEnv();
 // hart abgeschossen wurde.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-env-'));
 process.on('exit', () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ } });
+// `node --require … --test` lädt diesen Vorlader auch im Runner-Prozess, und
+// jede Testdatei erbt dessen Umgebung. Ohne diesen Schritt ließ setIfUnset die
+// geerbten Pfade stehen: alle parallel laufenden Testdateien teilten sich ein
+// Datenverzeichnis und schrieben sich gegenseitig z. B. die Auto-Update-
+// Statusdatei um (update_sh_version.test.js scheiterte sporadisch in der CI).
+// Geerbte Werte erkennt man am Verzeichnis des Elternprozesses; sie werden
+// verworfen. Was eine Testdatei selbst setzt, passiert erst nach dem Vorlader
+// und bleibt unberührt.
+const inheritedDir = process.env.GC_TEST_ENV_DIR;
+if (inheritedDir && inheritedDir !== tmpDir) {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key !== 'GC_TEST_ENV_DIR' && typeof value === 'string' && value.startsWith(inheritedDir)) {
+      delete process.env[key];
+    }
+  }
+}
+process.env.GC_TEST_ENV_DIR = tmpDir;
 applyDataDirEnv(tmpDir);
 // Ohne setup() gibt es keine eigene DB — eine im Temp-Verzeichnis ist immer
 // noch besser als die Vorgabe <repo>/data/gatecontrol.db (Arbeitskopie in der
