@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.132.1] — 2026-09-29
 
 ### Security
 - **API-Tokens mit `read-only` lesen keine Geheimnisse mehr.** Bisher durfte ein `read-only`-Token jeden GET-Endpunkt aufrufen – auch solche, die entschlüsselte Geheimnisse ausliefern. Ausgenommen sind jetzt: WireGuard-Konfiguration und QR-Code eines Peers (`GET /api/v1/peers/:id/config`, `…/qr`, enthalten den privaten Schlüssel), entschlüsselte RDP-Zugangsdaten (`GET /api/v1/rdp/:id/credentials`) und die RDP-Verbindungsdaten für Clients (`GET /api/v1/client/rdp/:id/connect`), Webhooks (deren URLs oft das Geheimnis des Empfängers enthalten), Backups (`/api/v1/settings/backup…`, `/autobackup…`, `/restore`) sowie Token-, Benutzer- und Einrichtungscode-Verwaltung. Dafür braucht es jetzt das passende Recht (`peers`, `webhooks`, `client:rdp`) oder `full-access`; RDP-Zugangsdaten über die Admin-API nur mit `full-access`. Alle anderen GET-Endpunkte bleiben mit `read-only` lesbar, Client-Tokens sind nicht betroffen.
