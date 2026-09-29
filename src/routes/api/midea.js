@@ -1,8 +1,8 @@
 'use strict';
 
 const { Router } = require('express');
+const { requireAdminSession } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/license');
-const users = require('../../services/users');
 const midea = require('../../services/midea');
 const mideaOwners = require('../../services/midea/mideaOwners');
 const mideaDevices = require('../../services/midea/mideaDevices');
@@ -10,23 +10,8 @@ const mideaDevices = require('../../services/midea/mideaDevices');
 const router = Router();
 
 // Admin-only (Spec §9): reject token auth, require an admin session.
-// Guard order: admin check FIRST, then requireFeature — mirrors routes/api/users.js lines 35-50.
-router.use((req, res, next) => {
-  if (req.tokenAuth) {
-    return res.status(403).json({ ok: false, error: req.t('error.users.session_required') });
-  }
-
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ ok: false, error: req.t('error.users.unauthorized') });
-  }
-
-  const user = users.getById(req.session.userId);
-  if (!user || user.role !== 'admin') {
-    return res.status(403).json({ ok: false, error: req.t('error.users.admin_required') });
-  }
-
-  next();
-});
+// Guard order: admin check FIRST, then requireFeature (shared middleware/auth requireAdminSession).
+router.use(requireAdminSession);
 
 router.use(requireFeature('midea_integration'));
 

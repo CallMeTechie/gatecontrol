@@ -147,7 +147,27 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
       }
     }
 
+    const { getDb: getDbForRestore } = require('../../../db/connection');
+    const actor = req.session && req.session.userId
+      ? getDbForRestore().prepare('SELECT username FROM users WHERE id = ?').get(req.session.userId)
+      : null;
+
     const result = await backup.restoreBackup(data);
+
+    // A backup with users replaces the users table and the rows get new ids.
+    // Sessions only store the numeric userId, so every other session could now
+    // point at a different account: drop them. The restoring admin keeps the
+    // session when the backup contains the same username as an enabled admin
+    // (re-mapped to the new id); otherwise requireAuth ends it on the next
+    // request and the operator logs in with the restored credentials.
+    if (result && result.users > 0) {
+      const db = getDbForRestore();
+      if (req.sessionID) db.prepare('DELETE FROM sessions WHERE sid != ?').run(req.sessionID);
+      const same = actor
+        ? db.prepare("SELECT id FROM users WHERE username = ? AND enabled = 1 AND role = 'admin'").get(actor.username)
+        : null;
+      if (same) req.session.userId = same.id;
+    }
 
     activity.log('backup_restored', `Backup restored: ${result.peers} peers, ${result.routes} routes`, {
       source: 'admin',

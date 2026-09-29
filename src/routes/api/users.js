@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const { requireAdminSession } = require('../../middleware/auth');
 const users = require('../../services/users');
 const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
@@ -8,25 +9,18 @@ const { validateSplitTunnelPreset } = require('../../utils/validate');
 
 const router = Router();
 
+/** Destroy every login session of a user (sessionStore.destroyByUserId). */
+function revokeSessions(req, userId, reason) {
+  if (req.sessionStore && typeof req.sessionStore.destroyByUserId === 'function') {
+    const removed = req.sessionStore.destroyByUserId(userId);
+    if (removed > 0) logger.info({ userId, removed, reason }, 'Revoked user sessions');
+  }
+}
+
 /**
  * Middleware: Block token auth and require admin role
  */
-router.use((req, res, next) => {
-  if (req.tokenAuth) {
-    return res.status(403).json({ ok: false, error: req.t('error.users.session_required') });
-  }
-
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ ok: false, error: req.t('error.users.unauthorized') });
-  }
-
-  const user = users.getById(req.session.userId);
-  if (!user || user.role !== 'admin') {
-    return res.status(403).json({ ok: false, error: req.t('error.users.admin_required') });
-  }
-
-  next();
-});
+router.use(requireAdminSession);
 
 /**
  * GET /api/v1/users — List all users with enrichment
@@ -110,7 +104,15 @@ router.get('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
+    const before = users.getById(id);
     const user = users.update(id, req.body);
+    // A role change (e.g. admin → user) must not survive in sessions that
+    // were opened under the old role: log the account out everywhere.
+    // API tokens stay; their scopes are capped by the current role on every
+    // request (filterScopesForRole in requireAuth).
+    if (before && user && before.role !== user.role) {
+      revokeSessions(req, id, 'role changed');
+    }
     res.json({ ok: true, user });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update user');
@@ -135,9 +137,7 @@ router.delete('/:id', (req, res) => {
     }
     users.remove(id);
     // Invalidate the deleted user's sessions (route-level, like the password-change flow).
-    if (req.sessionStore && typeof req.sessionStore.destroyByUserId === 'function') {
-      req.sessionStore.destroyByUserId(id);
-    }
+    revokeSessions(req, id, 'user deleted');
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete user');
@@ -161,6 +161,12 @@ router.put('/:id/toggle', (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('error.users.self_disable') });
     }
     const user = users.toggle(id);
+    // Disabling logs the account out on every device. Its API tokens are
+    // refused while the account is disabled (requireAuth checks the owner)
+    // and work again once it is re-enabled.
+    if (user && user.enabled !== 1) {
+      revokeSessions(req, id, 'user disabled');
+    }
     res.json({ ok: true, user });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle user');

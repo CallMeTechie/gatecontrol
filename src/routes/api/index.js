@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const { csrfProtection } = require('../../middleware/csrf');
+const { requireAdmin } = require('../../middleware/auth');
 
 const router = Router();
 
@@ -16,6 +17,11 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+// Role gate: a session without the admin role only reaches its own
+// profile/password/language/2FA endpoints and /ping (SELF_SERVICE_PATHS in
+// middleware/auth.js). Token requests pass through — scopes decide.
+router.use(requireAdmin);
 
 // Lightweight authed probe — the SSE client fetches this after repeated
 // reconnect failures: 200 = session alive, 401 = expired (client logs out).

@@ -20,8 +20,16 @@ function ownerOfPeer(peerId) {
  * Device-owner trust only applies when there is no session AND the admin enabled it.
  * The owner id never comes from the request body/query/header (no IDOR).
  */
+/** True when the session's account still exists and is enabled. */
+function sessionUserActive(userId) {
+  const row = getDb().prepare('SELECT enabled FROM users WHERE id = ?').get(userId);
+  return !!(row && row.enabled === 1);
+}
+
 function portalOwner(req, _res, next) {
-  req.portalLoggedIn = !!(req.session && req.session.userId);
+  // A session of a deleted/disabled account counts as logged out here too
+  // (the portal is mounted outside requireAuth).
+  req.portalLoggedIn = !!(req.session && req.session.userId && sessionUserActive(req.session.userId));
   if (req.portalLoggedIn) {
     req.portalOwnerId = req.session.userId;
     req.portalOwnerSource = 'session';

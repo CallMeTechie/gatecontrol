@@ -1,7 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const { requireAuth, guestOnly } = require('../middleware/auth');
+const { requireAuth, requireAdmin, guestOnly } = require('../middleware/auth');
 const { csrfProtection } = require('../middleware/csrf');
 const { loginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
@@ -64,9 +64,10 @@ router.get('/metrics', async (req, res) => {
   // Authenticate: session, Bearer token, or ?token= query param
   let authenticated = false;
 
-  // 1. Session auth
+  // 1. Session auth — only an existing, enabled admin account
   if (req.session && req.session.userId) {
-    authenticated = true;
+    const u = require('../services/users').getById(req.session.userId);
+    if (u && u.enabled === 1 && u.role === 'admin') authenticated = true;
   }
 
   // 2. Bearer / X-API-Token header
@@ -87,7 +88,14 @@ router.get('/metrics', async (req, res) => {
     if (rawToken) {
       const tokenRecord = tokens.authenticate(rawToken);
       if (tokenRecord) {
-        const scopes = tokenRecord.scopes;
+        let scopes = tokenRecord.scopes;
+        // Same owner checks as requireAuth: a disabled owner's token is dead,
+        // and the owner's role caps the scopes.
+        if (tokenRecord.user_id) {
+          const users = require('../services/users');
+          const owner = users.getById(tokenRecord.user_id);
+          scopes = owner && owner.enabled === 1 ? users.filterScopesForRole(scopes, owner.role) : [];
+        }
         if (scopes.includes('system') || scopes.includes('read-only') || scopes.includes('full-access')) {
           authenticated = true;
         }
@@ -336,7 +344,8 @@ router.use('/api/v1/client/enroll', clientEnrollLimiter, require('./api/client/e
 router.use('/api/v1/gateway', require('./api/gateway'));
 
 // ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
-router.get('/api/v1/events', requireAuth, require('./api/events'));
+// Admin event feed: same role gate as the admin API below.
+router.get('/api/v1/events', requireAuth, requireAdmin, require('./api/events'));
 
 // ─── Portal API (source-IP identity, no session auth) ──────────
 const portalIdentity = require('../middleware/portalIdentity');

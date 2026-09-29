@@ -1,8 +1,8 @@
 'use strict';
 
 const { Router } = require('express');
+const { requireAdminSession } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/license');
-const users = require('../../services/users');
 const smarthome = require('../../services/smarthome');
 const smarthomeOwners = require('../../services/smarthome/smarthomeOwners');
 const smarthomeRules = require('../../services/smarthome/smarthomeRules');
@@ -17,13 +17,7 @@ const RULE_ERR_I18N = {
 };
 
 // Admin-only: reject token auth, require an admin session.
-router.use((req, res, next) => {
-  if (req.tokenAuth) return res.status(403).json({ ok: false, error: req.t('error.users.session_required') });
-  if (!req.session || !req.session.userId) return res.status(401).json({ ok: false, error: req.t('error.users.unauthorized') });
-  const user = users.getById(req.session.userId);
-  if (!user || user.role !== 'admin') return res.status(403).json({ ok: false, error: req.t('error.users.admin_required') });
-  next();
-});
+router.use(requireAdminSession);
 
 router.use(requireFeature('smarthome'));
 
