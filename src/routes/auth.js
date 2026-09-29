@@ -122,7 +122,10 @@ const authRoutes = {
       const hashToCheck = user ? user.password_hash : DUMMY_PASSWORD_HASH;
       let passwordOk = false;
       try { passwordOk = await argon2.verify(hashToCheck, password); } catch { passwordOk = false; }
-      if (!user || !passwordOk) {
+      // A disabled account is refused exactly like a wrong password (same
+      // flash, same lockout accounting, argon2 already ran) so the response
+      // does not reveal whether the account exists or is disabled.
+      if (!user || !passwordOk || user.enabled !== 1) {
         logger.warn({ username, ip: req.ip }, 'Failed login attempt');
 
         // Record failed attempt for lockout

@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+- **API-Tokens mit `read-only` lesen keine Geheimnisse mehr.** Bisher durfte ein `read-only`-Token jeden GET-Endpunkt aufrufen – auch solche, die entschlüsselte Geheimnisse ausliefern. Ausgenommen sind jetzt: WireGuard-Konfiguration und QR-Code eines Peers (`GET /api/v1/peers/:id/config`, `…/qr`, enthalten den privaten Schlüssel), entschlüsselte RDP-Zugangsdaten (`GET /api/v1/rdp/:id/credentials`) und die RDP-Verbindungsdaten für Clients (`GET /api/v1/client/rdp/:id/connect`), Webhooks (deren URLs oft das Geheimnis des Empfängers enthalten), Backups (`/api/v1/settings/backup…`, `/autobackup…`, `/restore`) sowie Token-, Benutzer- und Einrichtungscode-Verwaltung. Dafür braucht es jetzt das passende Recht (`peers`, `webhooks`, `client:rdp`) oder `full-access`; RDP-Zugangsdaten über die Admin-API nur mit `full-access`. Alle anderen GET-Endpunkte bleiben mit `read-only` lesbar, Client-Tokens sind nicht betroffen.
+- **Deaktivierte Benutzer werden sofort abgemeldet.** Die Anmeldung mit Passwort prüfte nicht, ob ein Konto deaktiviert ist, und eine bestehende Sitzung galt weiter, auch wenn das Konto inzwischen deaktiviert oder gelöscht war. Jetzt wird ein deaktiviertes Konto bei der Anmeldung mit derselben Meldung abgewiesen wie ein falsches Passwort, jede Anfrage prüft das Konto hinter der Sitzung, und beim Deaktivieren oder bei einem Rollenwechsel eines Benutzers werden alle seine Sitzungen beendet. API-Tokens eines deaktivierten Kontos werden weiterhin abgelehnt (auch am Prometheus-Endpunkt `/metrics`) und funktionieren nach dem Reaktivieren wieder.
+- **Die Admin-API verlangt die Rolle Admin.** Eine Sitzung mit der Rolle `user` (etwa ein zum Benutzer herabgestufter Admin) kam bisher an fast alle Endpunkte unter `/api/v1`, darunter Peers, Routen, Einstellungen und das Anlegen von API-Tokens. Die Rollenprüfung sitzt jetzt zentral vor der Admin-API; ohne Admin-Rolle bleiben nur das eigene Profil, Passwort, Sprache, Zwei-Faktor-Anmeldung und `/api/v1/ping` erreichbar. Der Live-Ereignisstrom `/api/v1/events` ist ebenfalls Admins vorbehalten. Das Portal und API-Tokens (deren Rechte über Scopes geregelt sind) sind nicht betroffen.
+- **Wiederherstellen eines Backups beendet fremde Sitzungen.** Enthält das Backup Benutzer, bekommen diese neue IDs; bestehende Sitzungen hätten danach auf ein anderes Konto zeigen können. Alle anderen Sitzungen werden jetzt beendet, der wiederherstellende Admin bleibt angemeldet, wenn das Backup ein aktives Admin-Konto mit demselben Benutzernamen enthält.
+- **Offene Weiterleitung nach der Routen-Anmeldung geschlossen.** Das Weiterleitungsziel nach dem Login an einer geschützten Route blockierte `//host`, aber nicht `/\host` oder Steuerzeichen wie `/<Tab>/host`, die Browser ebenfalls als fremde Adresse deuten. Admin-Login und Routen-Anmeldung prüfen das Ziel jetzt mit derselben Funktion.
+
+### Fixes
+- `npm test` findet die Testdateien unter Node 22 wieder (`tests/*.test.js` statt des Verzeichnisses).
+
+---
+
 ## [1.132.0] — 2026-09-28
 
 ### Features

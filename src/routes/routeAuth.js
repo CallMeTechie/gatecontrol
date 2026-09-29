@@ -22,6 +22,7 @@ const { isSmtpConfigured } = require('../services/email');
 const { decrypt } = require('../utils/crypto');
 const lockout = require('../services/lockout');
 const ipFilter = require('../services/ipFilter');
+const { safeLocalPath } = require('../utils/safePath');
 
 const router = Router();
 
@@ -37,10 +38,12 @@ const CSRF_MAX_AGE = 15 * 60 * 1000; // 15 min
 /**
  * Validate that a redirect target is a safe relative path (no open redirect)
  */
+// Shares the checks with the admin login's safeReturnTo (utils/safePath):
+// protocol-relative '//host', backslash tricks ('/\\host') and control
+// characters (browsers drop tab/CR/LF, turning '/\t/host' into '//host')
+// all fall back to '/'.
 function safeRedirect(url) {
-  if (!url || typeof url !== 'string') return '/';
-  if (url.startsWith('//') || /^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(url)) return '/';
-  return url.startsWith('/') ? url : '/';
+  return safeLocalPath(url) || '/';
 }
 
 // Recover the full redirect target from the raw request URL. Caddy's

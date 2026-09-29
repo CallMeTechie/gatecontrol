@@ -7,7 +7,7 @@
  */
 
 const { Router } = require('express');
-const users = require('../../services/users');
+const { requireAdminSession } = require('../../middleware/auth');
 const enrollment = require('../../services/clientEnrollment');
 const qrcode = require('../../services/qrcode');
 const logger = require('../../utils/logger');
@@ -16,19 +16,7 @@ const { validateSplitTunnelPreset } = require('../../utils/validate');
 
 const router = Router();
 
-router.use((req, res, next) => {
-  if (req.tokenAuth) {
-    return res.status(403).json({ ok: false, error: req.t('error.users.session_required') });
-  }
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ ok: false, error: req.t('error.users.unauthorized') });
-  }
-  const user = users.getById(req.session.userId);
-  if (!user || user.role !== 'admin') {
-    return res.status(403).json({ ok: false, error: req.t('error.users.admin_required') });
-  }
-  next();
-});
+router.use(requireAdminSession);
 
 /**
  * The URL the app should talk to. GC_BASE_URL when it is a real public

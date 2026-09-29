@@ -59,6 +59,40 @@ const SCOPE_MAP = [
 ];
 
 /**
+ * GET endpoints that return secrets (decrypted key material, credentials,
+ * credential-bearing URLs, full backups) or manage identities. `read-only`
+ * does NOT cover them: they need `full-access` or the resource scope from
+ * SCOPE_MAP (e.g. `peers` for a peer config; /api/v1/rdp has no resource
+ * scope, so RDP credentials need `full-access`). Matched against the
+ * normalised path (lower case, no duplicate or trailing slashes) because
+ * Express routes case-insensitively and ignores a trailing slash.
+ */
+const READ_ONLY_DENY = [
+  // WireGuard client config incl. private + preshared key (download and QR)
+  /^\/api\/v1\/peers\/[^/]+\/(?:config|qr)(?:\/|$)/,
+  // Decrypted RDP credentials (admin API) and the client connect endpoint,
+  // which hands out route credentials E2EE-wrapped to a caller-chosen key
+  // (needs `client:rdp`, like the RDP clients have)
+  /^\/api\/v1\/rdp\/[^/]+\/credentials(?:\/|$)/,
+  /^\/api\/v1\/client\/rdp\/[^/]+\/connect(?:\/|$)/,
+  // Webhook target URLs routinely embed the receiver's secret token
+  /^\/api\/v1\/webhooks(?:\/|$)/,
+  // Full database backups, autobackup files, off-site targets / SSH key
+  /^\/api\/v1\/settings\/(?:backup|autobackup|restore)(?:\/|$)/,
+  // Identity + token management (session-only anyway; defence in depth)
+  /^\/api\/v1\/(?:tokens|users|enrollment)(?:\/|$)/,
+];
+
+function normalizeApiPath(path) {
+  return String(path || '').toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
+}
+
+function isReadOnlyDenied(path) {
+  const p = normalizeApiPath(path);
+  return READ_ONLY_DENY.some((rx) => rx.test(p));
+}
+
+/**
  * Hash a raw token string with SHA-256
  */
 function hashToken(rawToken) {
@@ -123,8 +157,9 @@ function checkScope(scopes, path, method) {
   // full-access allows everything
   if (scopes.includes('full-access')) return true;
 
-  // read-only allows GET on any endpoint
-  if (scopes.includes('read-only') && method === 'GET') return true;
+  // read-only allows GET on any endpoint except the secret-returning ones
+  // (READ_ONLY_DENY) — those fall through to the per-resource scopes below.
+  if (scopes.includes('read-only') && method === 'GET' && !isReadOnlyDenied(path)) return true;
 
   // Check per-resource scopes (ordered: specific paths first)
   for (const [prefix, scope] of SCOPE_MAP) {
@@ -400,6 +435,8 @@ module.exports = {
   listByUserId,
   listUnassigned,
   assignToUser,
+  isReadOnlyDenied,
   VALID_SCOPES,
   SCOPE_MAP,
+  READ_ONLY_DENY,
 };

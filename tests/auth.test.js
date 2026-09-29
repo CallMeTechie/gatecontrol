@@ -1,8 +1,14 @@
 'use strict';
 
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+// requireAuth re-checks the session's account in the DB, so the unit tests
+// need the migrated test DB with the seeded admin (id 1).
+const { setup, teardown } = require('./helpers/setup');
 const { requireAuth, guestOnly } = require('../src/middleware/auth');
+
+before(async () => { await setup(); });
+after(() => teardown());
 
 function mockReq(overrides = {}) {
   const req = {
@@ -50,6 +56,15 @@ describe('requireAuth', () => {
     const res = mockRes();
     requireAuth(req, res, () => { assert.fail('should not call next'); });
     assert.equal(res.redirectUrl, '/login');
+  });
+
+  it('rejects and destroys a session whose user does not exist', async () => {
+    let destroyed = false;
+    const req = mockReq({ path: '/api/peers', session: { userId: 999999, destroy(cb) { destroyed = true; cb(); } } });
+    const res = mockRes();
+    requireAuth(req, res, () => { assert.fail('should not call next'); });
+    assert.equal(destroyed, true);
+    assert.equal(res.statusCode, 401);
   });
 
   it('handles missing session gracefully', () => {
