@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.133.2] — 2026-09-30
+
+### Änderungen
+- Toolchain von Node 20 (EOL) auf Node 24 LTS umstellen (#248)
+
+---
+
 ## [1.133.1] — 2026-09-30
 
 ### Security
