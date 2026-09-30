@@ -150,6 +150,15 @@ const config = {
     monitorTcp: envInt('GC_MONITOR_TCP_TIMEOUT', 5000),            // TCP health check timeout (ms)
   },
 
+  webhooks: {
+    // Webhooks an private Ziele (RFC1918, CGNAT, IPv6-ULA, WireGuard-Subnetz)
+    // nur nach ausdrücklichem Opt-in — z. B. für Home Assistant im LAN.
+    // Loopback, Link-Local/Cloud-Metadaten, Multicast und die eigene
+    // WireGuard-Adresse bleiben auch dann gesperrt (src/utils/outboundGuard.js).
+    allowPrivate: /^(1|true|yes|on)$/i.test(env('GC_WEBHOOK_ALLOW_PRIVATE', 'false')),
+    maxRedirects: Math.max(0, Math.min(5, envInt('GC_WEBHOOK_MAX_REDIRECTS', 3))),
+  },
+
   client: {
     repoCommunity: env('GC_CLIENT_REPO_COMMUNITY', 'CallMeTechie/GateControl-Community-Client'),
     repoPro:       env('GC_CLIENT_REPO_PRO', 'CallMeTechie/GateControl-Pro-Client'),

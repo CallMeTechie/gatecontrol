@@ -1,94 +1,54 @@
 'use strict';
 
-const dns = require('node:dns');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
+const outbound = require('../utils/outboundGuard');
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB
+const MAX_RESPONSE_BYTES = 64 * 1024; // Antwort wird nur fürs Logging/Test gelesen
+
+function webhookConfig() {
+  const cfg = require('../../config/default');
+  return {
+    allowPrivate: !!(cfg.webhooks && cfg.webhooks.allowPrivate),
+    maxRedirects: cfg.webhooks ? cfg.webhooks.maxRedirects : 3,
+    timeoutMs: cfg.timeouts.webhookDelivery,
+  };
+}
 
 /**
- * Validate webhook URL: must be http(s) and not target private/internal networks
+ * Validate webhook URL at save time (no DNS): must be http(s) and not an
+ * IP literal / localhost name in a blocked range. Authoritative check is
+ * the one at delivery time (deliver()), which resolves DNS, pins the
+ * connection to the validated address and re-validates every redirect.
  */
 function validateWebhookUrl(urlStr) {
-  let parsed;
-  try { parsed = new URL(urlStr); } catch { throw new Error('Invalid webhook URL'); }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Webhook URL must use http or https');
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-
-  // Block loopback
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') {
-    throw new Error('Webhook URL must not target localhost');
-  }
-
-  // Block private/reserved IPv6 ranges
-  const bare = hostname.replace(/^\[|\]$/g, '');
-  if (bare.startsWith('fc') || bare.startsWith('fd') ||    // fc00::/7 ULA
-      bare.startsWith('fe80') ||                            // fe80::/10 link-local
-      bare.startsWith('::ffff:')) {                         // IPv4-mapped IPv6
-    throw new Error('Webhook URL must not target private or reserved IP addresses');
-  }
-
-  // Block private/reserved IPv4 ranges
-  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b] = ipv4Match.map(Number);
-    if (a === 10 ||                          // 10.0.0.0/8
-        (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
-        (a === 192 && b === 168) ||           // 192.168.0.0/16
-        (a === 169 && b === 254) ||           // 169.254.0.0/16 (link-local, cloud metadata)
-        (a === 100 && b >= 64 && b <= 127) || // 100.64.0.0/10 (CGNAT / shared address space)
-        a === 127 ||                          // 127.0.0.0/8
-        a === 0) {                            // 0.0.0.0/8
-      throw new Error('Webhook URL must not target private or reserved IP addresses');
-    }
-  }
-
-  return parsed;
+  return outbound.validateUrlSyntax(urlStr, { allowPrivate: webhookConfig().allowPrivate });
 }
 
 /**
- * Check if an IP address is private/reserved (used for DNS rebinding protection)
- */
-function isPrivateIp(ip) {
-  const match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (match) {
-    const [, a, b] = match.map(Number);
-    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
-           (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ||
-           a === 127 || a === 0;
-  }
-  // IPv6 private ranges
-  const bare = ip.toLowerCase().replace(/^\[|\]$/g, '');
-  return bare === '::1' || bare.startsWith('fc') || bare.startsWith('fd') ||
-         bare.startsWith('fe80') || bare.startsWith('::ffff:');
-}
-
-/**
- * Resolve hostname and verify all IPs are public (DNS rebinding protection)
+ * Resolve hostname and verify all IPs are allowed (fails closed on DNS errors).
  */
 async function validateResolvedIps(hostname) {
-  // Skip validation for direct IP addresses (already checked by validateWebhookUrl)
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return;
-  if (hostname.startsWith('[') || hostname === '::1') return;
+  return outbound.resolveAndValidate(hostname, { allowPrivate: webhookConfig().allowPrivate });
+}
 
-  try {
-    const addresses = await dns.promises.resolve4(hostname).catch(() => []);
-    const addresses6 = await dns.promises.resolve6(hostname).catch(() => []);
-    const allAddresses = [...addresses, ...addresses6];
-
-    for (const addr of allAddresses) {
-      if (isPrivateIp(addr)) {
-        throw new Error('Webhook URL resolves to a private or reserved IP address');
-      }
-    }
-  } catch (err) {
-    if (err.message.includes('private or reserved')) throw err;
-    // DNS resolution failure — allow the request (may be a temporary DNS issue)
-  }
+/**
+ * POST a JSON payload to a webhook URL through the outbound guard.
+ * Resolves to { status, statusText, ... }; rejects with OutboundUrlError
+ * when the target (or a redirect hop) is not allowed.
+ */
+async function deliver(url, payload, { timeoutMs } = {}) {
+  const cfg = webhookConfig();
+  return outbound.safeRequest(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'GateControl-Webhook' },
+    body: payload,
+    timeoutMs: timeoutMs || cfg.timeoutMs,
+    maxBytes: MAX_RESPONSE_BYTES,
+    maxRedirects: cfg.maxRedirects,
+    allowPrivate: cfg.allowPrivate,
+  });
 }
 
 /**
@@ -225,27 +185,18 @@ async function notify(eventType, message, details = null) {
       if (!subscribed.includes(eventType)) continue;
     }
 
-    // Validate URL before making request (guards against pre-existing unsafe URLs)
-    try { validateWebhookUrl(wh.url); } catch { continue; }
-
-    // DNS rebinding protection: re-validate resolved IPs at request time
-    try { await validateResolvedIps(new URL(wh.url).hostname); } catch {
-      logger.warn({ webhookId: wh.id, url: wh.url }, 'Webhook blocked: DNS resolves to private IP');
-      continue;
-    }
-
-    // Fire-and-forget — don't block the caller
-    fetch(wh.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: finalPayload,
-      signal: AbortSignal.timeout(require('../../config/default').timeouts.webhookDelivery),
-    }).then(res => {
-      if (!res.ok) {
+    // Fire-and-forget — don't block the caller. deliver() validates the
+    // URL, resolves + pins DNS and re-checks every redirect hop.
+    deliver(wh.url, finalPayload).then((res) => {
+      if (res.status < 200 || res.status >= 300) {
         logger.warn({ webhookId: wh.id, status: res.status, url: wh.url }, 'Webhook delivery failed');
       }
-    }).catch(err => {
-      logger.warn({ webhookId: wh.id, error: err.message, url: wh.url }, 'Webhook delivery error');
+    }).catch((err) => {
+      if (err instanceof outbound.OutboundUrlError) {
+        logger.warn({ webhookId: wh.id, url: wh.url, reason: err.message }, 'Webhook blocked by outbound URL guard');
+      } else {
+        logger.warn({ webhookId: wh.id, error: err.message, url: wh.url }, 'Webhook delivery error');
+      }
     });
   }
 }
@@ -260,4 +211,5 @@ module.exports = {
   notify,
   validateWebhookUrl,
   validateResolvedIps,
+  deliver,
 };

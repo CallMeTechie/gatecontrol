@@ -600,6 +600,8 @@ Environment variables for tuning all operational timeouts and background task in
 | `GC_WG_COMMAND_TIMEOUT` | WireGuard CLI timeout | 10000 ms |
 | `GC_CADDY_API_TIMEOUT` | Caddy admin API timeout | 10000 ms |
 | `GC_WEBHOOK_TIMEOUT` | Webhook delivery timeout | 10000 ms |
+| `GC_WEBHOOK_ALLOW_PRIVATE` | Allow webhooks to private/LAN targets (RFC1918, CGNAT, ULA, WireGuard subnet); loopback, link-local/metadata stay blocked | false |
+| `GC_WEBHOOK_MAX_REDIRECTS` | Redirects followed per webhook delivery, each re-validated (0-5) | 3 |
 | `GC_MONITOR_HTTP_TIMEOUT` | HTTP health check timeout | 10000 ms |
 | `GC_MONITOR_TCP_TIMEOUT` | TCP health check timeout | 5000 ms |
 | `GC_TRAFFIC_INTERVAL` | Traffic snapshot interval | 60000 ms |

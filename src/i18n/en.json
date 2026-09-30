@@ -928,6 +928,8 @@
   "error.webhooks.url_protocol": "Webhook URL must use http or https",
   "error.webhooks.url_localhost": "Webhook URL must not target localhost",
   "error.webhooks.url_private": "Webhook URL must not target private or reserved IP addresses",
+  "error.webhooks.url_dns": "Webhook URL hostname could not be resolved",
+  "error.webhooks.url_redirects": "Webhook URL exceeded the redirect limit",
 
   "error.rate_limit.login": "Too many login attempts, please try again later",
   "error.rate_limit.api": "Too many requests, please try again later",

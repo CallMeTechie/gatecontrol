@@ -120,7 +120,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 ### Webhooks
 - Ereignisgesteuerte Benachrichtigungen an externe Dienste
 - Abonnement für spezifische Ereignisse oder Wildcard (`*`) für alle Ereignisse
-- URL-Validierung blockiert private/interne IP-Bereiche zur SSRF-Prävention mit DNS-Rebinding-Schutz
+- URL-Validierung blockiert private/interne IP-Bereiche zur SSRF-Prävention, mit DNS-Pinning (Rebinding-Schutz) und erneut geprüften Weiterleitungen; LAN-Ziele per `GC_WEBHOOK_ALLOW_PRIVATE=true` freischaltbar
 - JSON-Payloads mit Ereignistyp, Nachricht, Details und Zeitstempel
 
 ### Internationalisierung
@@ -302,7 +302,7 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 | **CSP-Nonces** | Pro Request `crypto.randomBytes(16)` Nonce für Inline-Scripts |
 | **Session-Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, konfigurierbares Max-Age |
 | **Eingabevalidierung** | Serverseitige Validierung für Domains, IPs, Namen, Beschreibungen mit Feld-Level-Fehler-Feedback |
-| **Webhook-SSRF-Schutz** | Blockiert Requests an localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) mit DNS-Rebinding-Schutz |
+| **Webhook-SSRF-Schutz** | Blockiert Loopback, Link-Local/Cloud-Metadaten, Multicast und private Ziele (10.x, 172.16-31.x, 192.168.x, 100.64/10 CGNAT, IPv6-ULA, WireGuard-Subnetz, auch in IPv4-mapped-/NAT64-/6to4-Schreibweise); DNS wird einmal aufgelöst und die Verbindung an die geprüfte Adresse gebunden, jede Weiterleitung wird erneut geprüft; LAN-Ziele nur mit `GC_WEBHOOK_ALLOW_PRIVATE=true` |
 | **Fehler-Bereinigung** | Detaillierte Fehler nur in der Entwicklung; generische Meldungen in Produktion |
 
 ### Container-Sicherheit
