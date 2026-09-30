@@ -1,5 +1,7 @@
 'use strict';
 
+const { lanFetch } = require('../../utils/lanFetch');
+
 function briToDeconz(pct) {
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
   return Math.round((p / 100) * 254);
@@ -28,11 +30,12 @@ function createClient({ baseUrl, apiKey, headers: extraHeaders = {} } = {}) {
       ...extraHeaders,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     };
-    const res = await fetch(`${base}${path}`, {
+    // Redirects nur innerhalb desselben Origins (siehe utils/lanFetch.js).
+    const res = await lanFetch(`${base}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, { label: 'deconz' });
     if (!res.ok) { const e = new Error(`deconz_http_${res.status}`); e.code = `DECONZ_HTTP_${res.status}`; throw e; }
     return res.json();
   }

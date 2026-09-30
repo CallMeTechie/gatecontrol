@@ -1,5 +1,7 @@
 'use strict';
 
+const { lanFetch } = require('../utils/lanFetch');
+
 /**
  * Pi-hole v6 REST client.
  * One client instance per Pi-hole server; caches the session SID.
@@ -27,9 +29,10 @@ function createClient(instance) {
   let authInFlight = null;
 
   function makeDispatcher() {
-    // Only inject a custom dispatcher when TLS verification is disabled AND the
-    // URL is HTTPS — for plain HTTP the option has no effect anyway.
-    if (!verifyTls && baseUrl.startsWith('https://')) {
+    // Only inject a custom dispatcher when TLS verification is disabled. Also
+    // for http:// URLs: Pi-hole v6 may upgrade them to https (self-signed
+    // certificate), and lanFetch follows exactly that redirect.
+    if (!verifyTls && /^https?:\/\//.test(baseUrl)) {
       try {
         const { Agent } = require('undici');
         return new Agent({ connect: { rejectUnauthorized: false } });
@@ -48,7 +51,9 @@ function createClient(instance) {
     if (dispatcher) {
       fetchOptions.dispatcher = dispatcher;
     }
-    return fetch(url, fetchOptions);
+    // Keine automatischen Redirects: eine gefälschte Pi-hole könnte sonst auf
+    // interne Endpunkte (Caddy-Admin-API, Metadaten) umlenken.
+    return lanFetch(url, fetchOptions, { label: 'pihole' });
   }
 
   async function authenticate() {
