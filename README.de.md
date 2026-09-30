@@ -517,7 +517,7 @@ Aktiviere **Backend-HTTPS** auf der Route für Dienste, die selbstsignierte Zert
 
 | Komponente | Technologie |
 |------------|------------|
-| **Laufzeitumgebung** | Node.js 20 (Alpine Linux) |
+| **Laufzeitumgebung** | Node.js 24 LTS (Alpine Linux) |
 | **Framework** | Express.js 4.21 |
 | **Datenbank** | SQLite (better-sqlite3, WAL-Modus) |
 | **VPN** | WireGuard (wireguard-tools) |
@@ -579,7 +579,7 @@ Einzelheiten, der unprivilegierte Docker-Aufruf und die Browser-Tests:
 
 ### Voraussetzungen
 
-- Node.js >= 20.0.0
+- Node.js >= 22 (Docker-Image: Node.js 24 LTS)
 - WireGuard Tools (für volle Funktionalität)
 - Caddy (für Reverse-Proxy-Funktionen)
 

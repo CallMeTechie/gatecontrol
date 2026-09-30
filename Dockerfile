@@ -25,16 +25,27 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
     --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies
-FROM node:20-alpine AS builder
+#
+# Node 24 LTS (Node 20 is EOL since 2026-04). better-sqlite3 needs >= 12.x
+# for node-v137 prebuilds (linuxmusl-x64/arm64); the alpine image has no
+# compiler, so a missing prebuild would fail the build here instead of
+# silently shipping a broken binding. argon2 uses N-API prebuilds (musl
+# included) and is ABI-independent.
+FROM node:24-alpine AS builder
 WORKDIR /app
 ARG NODE_AUTH_TOKEN
 COPY package*.json .npmrc ./
-RUN npm ci --production --ignore-scripts && \
+RUN npm ci --omit=dev --ignore-scripts && \
     npm rebuild argon2 better-sqlite3 && \
     rm -f .npmrc
 
-# Stage 3: Runtime
-FROM node:20-alpine
+# Stage 3: Runtime — same Node major as the builder (native ABI must match).
+#
+# Runs as root on purpose: src/services/wireguard.js calls wg-quick up/down,
+# wg syncconf/set (netlink, CAP_NET_ADMIN, writes /etc/wireguard), and
+# dns.js / caddyAdminClient.js signal the root-owned dnsmasq/caddy via
+# pkill. The container is confined by cap_add: [NET_ADMIN] in compose.
+FROM node:24-alpine
 
 # openssh-client-default (sftp/ssh/ssh-keygen) and samba-client (smbclient):
 # transports for off-site backups (docs/feature-release-b.md §7) — SFTP with

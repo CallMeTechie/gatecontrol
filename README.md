@@ -517,7 +517,7 @@ Enable **Backend HTTPS** on the route for services that use self-signed certific
 
 | Component | Technology |
 |-----------|-----------|
-| **Runtime** | Node.js 20 (Alpine Linux) |
+| **Runtime** | Node.js 24 LTS (Alpine Linux) |
 | **Framework** | Express.js 4.21 |
 | **Database** | SQLite (better-sqlite3, WAL mode) |
 | **VPN** | WireGuard (wireguard-tools) |
@@ -579,7 +579,7 @@ tests: **[docs/testing-local.md](docs/testing-local.md)**.
 
 ### Requirements
 
-- Node.js >= 20.0.0
+- Node.js >= 22 (Docker image: Node.js 24 LTS)
 - WireGuard tools (for full functionality)
 - Caddy (for reverse proxy features)
 

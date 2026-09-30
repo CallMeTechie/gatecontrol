@@ -62,7 +62,7 @@ Lauf sollte deshalb ebenfalls unprivilegiert sein — im Container:
 ```bash
 docker run --rm --user 1000:1000 -e HOME=/tmp \
   -v "$PWD":/app:ro -v "$PWD/node_modules":/app/node_modules:ro \
-  -w /app node:20-alpine \
+  -w /app node:24-alpine \
   node --require ./tests/helpers/test-env.js --test --test-force-exit tests/zones_api.test.js
 ```
 
