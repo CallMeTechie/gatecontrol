@@ -120,7 +120,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 ### Webhooks
 - Event-driven notifications to external services
 - Subscribe to specific events or use wildcard (`*`) for all events
-- URL validation blocks private/internal IP ranges to prevent SSRF with DNS rebinding protection
+- URL validation blocks private/internal IP ranges to prevent SSRF, with DNS pinning (rebinding protection) and re-validated redirects; LAN targets can be allowed with `GC_WEBHOOK_ALLOW_PRIVATE=true`
 - JSON payloads with event type, message, details, and timestamp
 
 ### Internationalization
@@ -302,7 +302,7 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 | **CSP Nonces** | Per-request `crypto.randomBytes(16)` nonce for inline scripts |
 | **Session Cookies** | `HttpOnly`, `Secure`, `SameSite=Strict`, configurable max age |
 | **Input Validation** | Server-side validation for domains, IPs, names, descriptions with field-level error feedback |
-| **Webhook SSRF Protection** | Blocks requests to localhost, private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x, 100.64-127.x CGNAT) with DNS rebinding protection |
+| **Webhook SSRF Protection** | Blocks loopback, link-local/cloud metadata, multicast and private targets (10.x, 172.16-31.x, 192.168.x, 100.64/10 CGNAT, IPv6 ULA, WireGuard subnet, incl. IPv4-mapped/NAT64/6to4 forms); resolves DNS once and pins the connection to the checked address, re-validates every redirect hop; LAN targets only with `GC_WEBHOOK_ALLOW_PRIVATE=true` |
 | **Error Sanitization** | Detailed errors in development only; generic messages in production |
 
 ### Container Security

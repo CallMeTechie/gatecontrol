@@ -907,6 +907,8 @@
   "error.webhooks.url_protocol": "Webhook-URL muss http oder https verwenden",
   "error.webhooks.url_localhost": "Webhook-URL darf nicht auf localhost zeigen",
   "error.webhooks.url_private": "Webhook-URL darf nicht auf private oder reservierte IP-Adressen zeigen",
+  "error.webhooks.url_dns": "Hostname der Webhook-URL konnte nicht aufgelöst werden",
+  "error.webhooks.url_redirects": "Webhook-URL hat das Redirect-Limit überschritten",
   "error.rate_limit.login": "Zu viele Anmeldeversuche, bitte versuchen Sie es später erneut",
   "error.rate_limit.api": "Zu viele Anfragen, bitte versuchen Sie es später erneut",
   "error.rate_limit.route_auth_login": "Zu viele Anmeldeversuche. Bitte später erneut versuchen.",
