@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.133.4] — 2026-09-30
+
+### Fixes
+- Pi-hole/deCONZ folgen keinen fremden Redirects, access.log inkrementell und asynchron (#249)
+
+---
+
 ## [1.133.3] — 2026-09-30
 
 ### Fixes
