@@ -63,6 +63,18 @@ const logoUpload = multer({
   },
 });
 
+/**
+ * Best-effort removal of a rejected or unused branding upload. The path is
+ * rebuilt from the multer-generated file name and must stay inside
+ * BRANDING_DIR, so a tampered req.file can never point the unlink elsewhere.
+ */
+function removeUpload(file) {
+  if (!file || typeof file.filename !== 'string') return;
+  const target = path.resolve(BRANDING_DIR, path.basename(file.filename));
+  if (!target.startsWith(path.resolve(BRANDING_DIR) + path.sep)) return;
+  try { fs.unlinkSync(target); } catch { /* already gone; the request is refused either way */ }
+}
+
 function validateBrandingUpload(req, res) {
   if (!req.file) {
     res.status(400).json({ ok: false, error: 'No file uploaded' });
@@ -70,12 +82,12 @@ function validateBrandingUpload(req, res) {
   }
   const magic = verifyImageMagic(req.file.path);
   if (!magic) {
-    try { fs.unlinkSync(req.file.path); } catch { /* best-effort removal of the rejected upload; the request is refused either way */ }
+    removeUpload(req.file);
     res.status(400).json({ ok: false, error: 'Invalid or unsupported image' });
     return false;
   }
   if (!/^\d+$/.test(String(req.params.id))) {
-    try { fs.unlinkSync(req.file.path); } catch { /* best-effort removal of the rejected upload; the request is refused either way */ }
+    removeUpload(req.file);
     res.status(400).json({ ok: false, error: 'Invalid route id' });
     return false;
   }
@@ -885,7 +897,7 @@ router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding
     const db = getDb();
     const route = db.prepare('SELECT branding_logo FROM routes WHERE id = ?').get(req.params.id);
     if (!route) {
-      try { fs.unlinkSync(req.file.path); } catch { /* best-effort removal of the unused upload */ }
+      removeUpload(req.file);
       return res.status(404).json({ ok: false, error: 'Route not found' });
     }
 
@@ -940,7 +952,7 @@ router.post('/:id/branding/bg-image', uploadLimiter, requireFeature('custom_bran
     const db = getDb();
     const route = db.prepare('SELECT branding_bg_image FROM routes WHERE id = ?').get(req.params.id);
     if (!route) {
-      try { fs.unlinkSync(req.file.path); } catch { /* best-effort removal of the unused upload */ }
+      removeUpload(req.file);
       return res.status(404).json({ ok: false, error: 'Route not found' });
     }
 
