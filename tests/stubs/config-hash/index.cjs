@@ -26,7 +26,8 @@
 //
 // Wer Hashes gegen ein echtes Gateway vergleichen will, braucht das echte
 // Paket. Für alles, was die Testsuite prüft (Selbstkonsistenz von
-// gateways.computeConfigHash, Hash-Format, Schema-Strip, CONFIG_HASH_VERSION),
+// gateways.computeConfigHash, Hash-Format, Schema-Strip, backend_tls_fingerprint
+// seit 1.3.0, CONFIG_HASH_VERSION),
 // genügt der Stub.
 
 if (process.env.NODE_ENV !== 'test') {
@@ -123,6 +124,7 @@ class ConfigSchemaError extends Error {
 
 const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
 const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+const FINGERPRINT_RE = /^[0-9a-f]{64}$/;
 
 const isInt = (v) => typeof v === 'number' && Number.isInteger(v);
 const isPort = (v) => isInt(v) && v >= 1 && v <= 65535;
@@ -131,9 +133,15 @@ const nullish = (v) => v === null || v === undefined;
 
 /**
  * Nimmt nur die bekannten Felder (strip), setzt Vorgabewerte und prüft die
- * Typen. Unbekannte Schlüssel — z. B. backend_https oder
- * backend_tls_fingerprint — fallen hier heraus und gehen damit nicht in den
- * Hash ein; genau darauf verlässt sich src/services/gateways.js.
+ * Typen. Unbekannte Schlüssel — z. B. backend_https — fallen hier heraus und
+ * gehen damit nicht in den Hash ein; genau darauf verlässt sich
+ * src/services/gateways.js.
+ *
+ * Stand: Paketversion 1.3.0 (package-lock.json). Seit 1.3.0 KENNT das Schema
+ * backend_tls_fingerprint auf HTTP-Routen: optional, genau 64 Hex-Zeichen in
+ * Kleinbuchstaben (wie GATEWAY_FINGERPRINT_RE in gateways.js). Ist es gesetzt,
+ * bleibt es beim Parsen erhalten und ändert den Hash; ein falsch geformter
+ * Wert lässt parse() werfen. Routen ohne das Feld hashen wie vorher.
  */
 function shape(obj, fields, where, issues) {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -161,6 +169,8 @@ const HTTP_ROUTE = {
   target_lan_host: { check: isStr, optional: true },
   target_lan_port: { check: isPort, optional: true },
   protocol: { check: (v) => v === 'http' || v === 'https', default: 'http' },
+  // config-hash >= 1.3.0 (tests/backend_fingerprint.test.js).
+  backend_tls_fingerprint: { check: (v) => typeof v === 'string' && FINGERPRINT_RE.test(v), optional: true },
   wol_enabled: { check: (v) => typeof v === 'boolean', default: false },
   wol_mac: { check: (v) => isStr(v) && MAC_RE.test(v), optional: true },
 };

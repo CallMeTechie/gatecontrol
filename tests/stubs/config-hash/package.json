@@ -11,5 +11,6 @@
       "default": "./index.cjs"
     }
   },
-  "gatecontrolTestStub": true
+  "gatecontrolTestStub": true,
+  "gatecontrolTestStubMirrors": "1.3.0"
 }
