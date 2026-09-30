@@ -17,10 +17,37 @@ permissions:
   packages: write
 
 jobs:
+  decide:
+    name: Release needed?
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - name: Check commit type
+        id: check
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # Squash merges put the PR title on the first line. ci/docs/test/style
+          # and chore commits (incl. our own "chore: bump version") land on the
+          # default branch without a release and ship with the next fix/feat.
+          # chore(deps) stays releasable: dependency updates can carry fixes.
+          FIRST_LINE=$(printf '%s\n' "$COMMIT_MSG" | head -n1)
+          if printf '%s' "$FIRST_LINE" | grep -qE '^chore\(deps(-dev)?\)!?:'; then
+            RELEASE=true
+          elif printf '%s' "$FIRST_LINE" | grep -qE '^(ci|docs|test|style|chore)(\([^)]*\))?!?:'; then
+            RELEASE=false
+          else
+            RELEASE=true
+          fi
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "First line: $FIRST_LINE -> release=$RELEASE"
+
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,10 +80,10 @@ jobs:
           NODE_ENV: test
 
   release:
-    needs: [test, security-gate]
+    needs: [decide, test, security-gate]
     runs-on: ubuntu-latest
-    # Skip version-bump commits to prevent infinite loop
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    # decide skips ci/docs/test/style/chore commits, incl. our own version bump (no loop)
+    if: needs.decide.outputs.release == 'true'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
