@@ -41,6 +41,11 @@ RUN npm ci --omit=dev --ignore-scripts && \
 
 # Stage 3: Runtime — same Node major as the builder (native ABI must match).
 #
+# npm/npx are removed from the runtime image: supervisord starts the app
+# with plain `node`, and npm's own bundled dependencies (undici,
+# brace-expansion, picomatch, ...) only ever tripped the image scan.
+# Dependencies are installed in the builder stage above.
+#
 # Runs as root on purpose: src/services/wireguard.js calls wg-quick up/down,
 # wg syncconf/set (netlink, CAP_NET_ADMIN, writes /etc/wireguard), and
 # dns.js / caddyAdminClient.js signal the root-owned dnsmasq/caddy via
@@ -57,7 +62,7 @@ RUN apk upgrade --no-cache && \
     supervisor curl procps openssl \
     dnsmasq \
     openssh-client-default samba-client && \
-    npm install -g npm@11
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=caddy-builder /usr/bin/caddy /usr/local/bin/caddy
 
