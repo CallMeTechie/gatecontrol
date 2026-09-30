@@ -30,11 +30,12 @@ test('normal request passes through (loopback target allowed)', async () => {
 test('same-origin redirect is followed', async () => {
   const base = await listen((req, res) => {
     if (req.url === '/old') { res.writeHead(302, { Location: '/new' }); res.end(); return; }
-    res.end(JSON.stringify({ url: req.url }));
+    // Nur feste Werte zurückgeben, nichts aus der Anfrage spiegeln.
+    res.end(JSON.stringify({ reachedNew: req.url === '/new' }));
   });
   const res = await lanFetch(`${base}/old`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { url: '/new' });
+  assert.deepEqual(await res.json(), { reachedNew: true });
 });
 
 test('redirect to another origin is rejected and never requested', async () => {
@@ -63,10 +64,10 @@ test('303 after POST continues as GET without body', async () => {
     if (req.url === '/post') { res.writeHead(303, { Location: '/done' }); res.end(); return; }
     let body = '';
     req.on('data', (c) => { body += c; });
-    req.on('end', () => res.end(JSON.stringify({ method: req.method, body })));
+    req.on('end', () => res.end(JSON.stringify({ isGet: req.method === 'GET', bodyEmpty: body.length === 0 })));
   });
   const res = await lanFetch(`${base}/post`, { method: 'POST', body: '{"a":1}', headers: { 'Content-Type': 'application/json' } });
-  assert.deepEqual(await res.json(), { method: 'GET', body: '' });
+  assert.deepEqual(await res.json(), { isGet: true, bodyEmpty: true });
 });
 
 test('metadata addresses are forbidden as configured target', async () => {
