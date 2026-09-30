@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.133.1] — 2026-09-30
 
 ### Security
 - **Webhooks erreichen keine internen Dienste mehr (SSRF).** Die Prüfung der Webhook-URL sah bisher nur die URL selbst und eine separate DNS-Abfrage an – `fetch` folgte danach aber Weiterleitungen ungeprüft und löste den Namen ein zweites Mal auf. Ein Webhook-Ziel konnte so per HTTP-Redirect oder DNS-Rebinding z. B. die Caddy-Admin-API auf `127.0.0.1:2019` oder Cloud-Metadaten (`169.254.169.254`) erreichen. Zustellung und „Test senden“ laufen jetzt über einen zentralen Wächter (`src/utils/outboundGuard.js`): nur http/https, der Hostname wird aufgelöst und **jede** Adresse geprüft, die Verbindung geht fest an die geprüfte Adresse, höchstens 3 Weiterleitungen (`GC_WEBHOOK_MAX_REDIRECTS`, 0–5), jede davon erneut geprüft, dazu Timeout und eine Obergrenze für die gelesene Antwort. Gesperrt sind Loopback, `0.0.0.0/8`/`::`, Link-Local und Metadaten-Adressen, Multicast, reservierte Bereiche, die eigene WireGuard-Adresse sowie IPv4-mapped-, NAT64- und 6to4-Schreibweisen davon. DNS-Fehler führen jetzt zur Ablehnung statt zur Zustellung.
