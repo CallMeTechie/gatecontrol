@@ -10,7 +10,17 @@ const logger = require('../../../utils/logger');
 const releaseCache = {};
 const CACHE_TTL = 120000;
 
-const CLIENT_GITHUB_TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
+// Read per request so tests (and a restarted env) see the current value.
+const githubToken = () => process.env.GC_CLIENT_GITHUB_TOKEN || '';
+
+// Signed update manifests (Windows clients): the release workflow of the
+// Pro/Community client uploads update-manifest.json plus a detached Ed25519
+// signature. The server hands both through byte for byte; only the client
+// verifies them (the signing key never leaves GitHub Actions).
+const MANIFEST_ASSET = 'update-manifest.json';
+const SIGNATURE_ASSET = 'update-manifest.json.sig';
+const MAX_MANIFEST_BYTES = 16 * 1024;
+const signedCache = {};
 
 const CLIENT_REPOS = {
   community: process.env.GC_CLIENT_REPO_COMMUNITY || 'CallMeTechie/GateControl-Community-Client',
@@ -59,8 +69,8 @@ async function fetchLatestRelease(clientType = 'community') {
     'User-Agent': 'GateControl-Server',
     'Accept': 'application/vnd.github+json',
   };
-  if (CLIENT_GITHUB_TOKEN) {
-    headers['Authorization'] = `Bearer ${CLIENT_GITHUB_TOKEN}`;
+  if (githubToken()) {
+    headers['Authorization'] = `Bearer ${githubToken()}`;
   }
 
   const fetchUrl = (targetUrl, redirectCount = 0) => new Promise((resolve) => {
@@ -94,6 +104,112 @@ async function fetchLatestRelease(clientType = 'community') {
   return fetchUrl(url);
 }
 
+/**
+ * Download a small release asset (manifest/signature). Public repos use the
+ * browser_download_url, private repos the API URL with the token. Redirects
+ * are followed (https only); the Authorization header is dropped as soon as
+ * the host changes (GitHub redirects to a pre-signed storage URL). Resolves
+ * to the exact bytes as a utf8 string, or null on any error / >maxBytes.
+ */
+function fetchSmallAsset(asset, maxBytes = MAX_MANIFEST_BYTES) {
+  const token = githubToken();
+  const startUrl = token ? asset.url : asset.browser_download_url;
+  if (!startUrl) return Promise.resolve(null);
+  const baseHeaders = { 'User-Agent': 'GateControl-Server', 'Accept': 'application/octet-stream' };
+  const startHost = (() => { try { return new URL(startUrl).host; } catch { return null; } })();
+
+  const get = (targetUrl, redirectCount) => new Promise((resolve) => {
+    let parsed;
+    try { parsed = new URL(targetUrl); } catch { return resolve(null); }
+    if (parsed.protocol !== 'https:' || redirectCount > 5) return resolve(null);
+    const headers = { ...baseHeaders };
+    if (token && parsed.host === startHost) headers['Authorization'] = `Bearer ${token}`;
+
+    const req = https.get(targetUrl, { headers, timeout: 15000 }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        let next;
+        try { next = new URL(res.headers.location, targetUrl).toString(); } catch { return resolve(null); }
+        return resolve(get(next, redirectCount + 1));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        logger.warn({ statusCode: res.statusCode, asset: asset.name }, 'Update manifest asset download failed');
+        return resolve(null);
+      }
+      const chunks = [];
+      let size = 0;
+      let aborted = false;
+      res.on('data', (chunk) => {
+        if (aborted) return;
+        size += chunk.length;
+        if (size > maxBytes) {
+          aborted = true;
+          logger.warn({ asset: asset.name }, 'Update manifest asset too large');
+          res.destroy();
+          return resolve(null);
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => { if (!aborted) resolve(Buffer.concat(chunks).toString('utf8')); });
+      res.on('error', () => resolve(null));
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', (err) => {
+      logger.warn({ error: err.message, asset: asset.name }, 'Update manifest asset fetch failed');
+      resolve(null);
+    });
+  });
+
+  return get(startUrl, 0);
+}
+
+/**
+ * Manifest + signature of a Windows client release, cached per client type
+ * and release (same TTL as the release itself). null when the release has no
+ * signed manifest (old releases) or the download failed.
+ */
+async function fetchSignedManifest(clientType, release) {
+  if (clientType === 'android' || !release) return null;
+  const assets = release.assets || [];
+  const manifestAsset = assets.find(a => a.name === MANIFEST_ASSET);
+  const signatureAsset = assets.find(a => a.name === SIGNATURE_ASSET);
+  if (!manifestAsset || !signatureAsset) return null;
+
+  const key = `${release.id || ''}:${release.tag_name || ''}:${manifestAsset.id || ''}:${signatureAsset.id || ''}`;
+  const cached = signedCache[clientType];
+  if (cached && cached.key === key && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
+    return cached.value;
+  }
+
+  const [manifest, signature] = await Promise.all([
+    fetchSmallAsset(manifestAsset),
+    fetchSmallAsset(signatureAsset),
+  ]);
+  const value = manifest && signature ? { manifest, signature } : null;
+  signedCache[clientType] = { key, value, fetchedAt: Date.now() };
+  return value;
+}
+
+/**
+ * Installer asset of a release. For Windows clients with a signed manifest
+ * the asset named in the manifest wins; otherwise (old releases, Android) the
+ * previous heuristic applies.
+ */
+function pickInstallerAsset(clientType, release, signed) {
+  const assets = release.assets || [];
+  if (clientType === 'android') {
+    return assets.find(a => a.name.endsWith('.apk') && !a.name.includes('debug'));
+  }
+  if (signed) {
+    let fileName = null;
+    try { fileName = JSON.parse(signed.manifest).fileName; } catch { /* client rejects it */ }
+    const named = typeof fileName === 'string' && assets.find(a => a.name === fileName);
+    if (named) return named;
+  }
+  return assets.find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
+}
+
 // ─── Public update routes (mounted WITHOUT auth in routes/index.js) ───
 const updateRouter = Router();
 
@@ -122,22 +238,16 @@ updateRouter.get('/check', async (req, res) => {
       return res.json({ ok: true, available: false });
     }
 
+    // Signed manifest (Windows clients only; passed through unchanged)
+    const signed = await fetchSignedManifest(clientType, release);
+
     // Find installer asset based on client type
-    let installerAsset;
-    if (clientType === 'android') {
-      installerAsset = (release.assets || []).find(a =>
-        a.name.endsWith('.apk') && !a.name.includes('debug')
-      );
-    } else {
-      installerAsset = (release.assets || []).find(a =>
-        a.name.endsWith('.exe') && a.name.includes('Setup')
-      );
-    }
+    const installerAsset = pickInstallerAsset(clientType, release, signed);
 
     // For public repos, link directly to GitHub; for private, proxy through server
     let downloadUrl = null;
     if (installerAsset) {
-      downloadUrl = CLIENT_GITHUB_TOKEN
+      downloadUrl = githubToken()
         ? `${config.app.baseUrl}/api/v1/client/update/download?client=${clientType}`
         : installerAsset.browser_download_url;
     }
@@ -146,7 +256,7 @@ updateRouter.get('/check', async (req, res) => {
       ? `GateControl-Android-${latestVersion}.apk`
       : `GateControl-Setup-${latestVersion}.exe`;
 
-    res.json({
+    const body = {
       ok: true,
       available: true,
       version: latestVersion,
@@ -154,7 +264,12 @@ updateRouter.get('/check', async (req, res) => {
       fileName: installerAsset?.name || defaultFileName,
       fileSize: installerAsset?.size || null,
       releaseNotes: release.body || '',
-    });
+    };
+    if (signed) {
+      body.manifest = signed.manifest;
+      body.signature = signed.signature;
+    }
+    res.json(body);
   } catch (err) {
     logger.error({ error: err.message }, 'Update check failed');
     res.status(500).json({ ok: false, error: 'Update check failed' });
@@ -173,22 +288,14 @@ updateRouter.get('/download', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'No release found' });
     }
 
-    let asset;
-    if (clientType === 'android') {
-      asset = (release.assets || []).find(a =>
-        a.name.endsWith('.apk') && !a.name.includes('debug')
-      );
-    } else {
-      asset = (release.assets || []).find(a =>
-        a.name.endsWith('.exe') && a.name.includes('Setup')
-      );
-    }
+    const signed = await fetchSignedManifest(clientType, release);
+    const asset = pickInstallerAsset(clientType, release, signed);
     if (!asset) {
       return res.status(404).json({ ok: false, error: 'No installer asset found' });
     }
 
     // Redirect to browser_download_url for public repos
-    if (!CLIENT_GITHUB_TOKEN) {
+    if (!githubToken()) {
       return res.redirect(asset.browser_download_url);
     }
 
@@ -196,7 +303,7 @@ updateRouter.get('/download', async (req, res) => {
     const headers = {
       'User-Agent': 'GateControl-Server',
       'Accept': 'application/octet-stream',
-      'Authorization': `Bearer ${CLIENT_GITHUB_TOKEN}`,
+      'Authorization': `Bearer ${githubToken()}`,
     };
 
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -239,3 +346,8 @@ function isNewerVersion(latest, current) {
 }
 
 module.exports = updateRouter;
+// Test hook: drop cached releases/manifests.
+module.exports._resetCache = () => {
+  for (const k of Object.keys(releaseCache)) delete releaseCache[k];
+  for (const k of Object.keys(signedCache)) delete signedCache[k];
+};
