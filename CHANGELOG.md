@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.133.5] — 2026-09-30
+
+### Änderungen
+- log instead of swallowing errors, config-hash test stub for 1.3.0 (#254)
+
+---
+
 ## [1.133.4] — 2026-09-30
 
 ### Fixes
