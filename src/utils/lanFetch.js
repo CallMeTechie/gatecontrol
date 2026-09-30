@@ -14,7 +14,10 @@
  *
  *   - Redirects werden nie automatisch verfolgt (`redirect: 'manual'`).
  *   - Ein Redirect auf denselben Origin (Schema + Host + Port) wird höchstens
- *     `maxRedirects`-mal verfolgt; alles andere ist ein Fehler.
+ *     `maxRedirects`-mal verfolgt. Zusätzlich erlaubt ist genau das
+ *     Schema-Upgrade http://host(:80) → https://host(:443) auf demselben
+ *     Hostnamen (Pi-hole v6 und manche Reverse-Proxies leiten so um).
+ *     Alles andere — fremder Host oder Port, https → http — ist ein Fehler.
  *   - Bekannte Cloud-Metadaten-Adressen sind als Ziel immer gesperrt
  *     (nur als IP-Literal — ein Hostname, der dorthin auflöst, wäre eine
  *     bewusste Admin-Konfiguration, und Redirects dorthin sind ohnehin
@@ -75,6 +78,14 @@ function parseTarget(url, label) {
   return u;
 }
 
+/** Erlaubter Hop: gleicher Origin oder http:80 → https:443 auf demselben Host. */
+function isAllowedHop(from, to) {
+  if (to.origin === from.origin) return true;
+  return from.protocol === 'http:' && to.protocol === 'https:'
+    && from.hostname === to.hostname
+    && from.port === '' && to.port === ''; // WHATWG-URL normalisiert :80/:443 zu ''
+}
+
 function discardBody(res) {
   try { if (res.body && typeof res.body.cancel === 'function') res.body.cancel().catch(() => {}); } catch { /* ignore */ }
 }
@@ -87,7 +98,7 @@ function discardBody(res) {
  * @param {string} [opts.label='lan'] Präfix der Fehlermeldungen
  */
 async function lanFetch(url, options = {}, { maxRedirects = DEFAULT_MAX_REDIRECTS, label = 'lan' } = {}) {
-  const origin = parseTarget(url, label).origin;
+  parseTarget(url, label);
   let current = String(url);
   let init = { ...options, redirect: 'manual' };
 
@@ -99,11 +110,12 @@ async function lanFetch(url, options = {}, { maxRedirects = DEFAULT_MAX_REDIRECT
     if (!location) return res;
 
     discardBody(res);
+    const from = new URL(current);
     let next;
     try { next = new URL(location, current); } catch {
       throw new LanFetchError(`${label}_redirect_invalid`, 'LAN_REDIRECT_INVALID');
     }
-    if (next.origin !== origin) {
+    if (!isAllowedHop(from, next)) {
       throw new LanFetchError(
         `${label}_redirect_blocked: ${res.status} to ${next.origin} (enter the final URL)`,
         'LAN_REDIRECT_CROSS_ORIGIN',
@@ -121,4 +133,4 @@ async function lanFetch(url, options = {}, { maxRedirects = DEFAULT_MAX_REDIRECT
   }
 }
 
-module.exports = { lanFetch, LanFetchError, isMetadataHost, DEFAULT_MAX_REDIRECTS };
+module.exports = { lanFetch, LanFetchError, isMetadataHost, isAllowedHop, DEFAULT_MAX_REDIRECTS };

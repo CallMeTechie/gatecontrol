@@ -29,9 +29,10 @@ function createClient(instance) {
   let authInFlight = null;
 
   function makeDispatcher() {
-    // Only inject a custom dispatcher when TLS verification is disabled AND the
-    // URL is HTTPS — for plain HTTP the option has no effect anyway.
-    if (!verifyTls && baseUrl.startsWith('https://')) {
+    // Only inject a custom dispatcher when TLS verification is disabled. Also
+    // for http:// URLs: Pi-hole v6 may upgrade them to https (self-signed
+    // certificate), and lanFetch follows exactly that redirect.
+    if (!verifyTls && /^https?:\/\//.test(baseUrl)) {
       try {
         const { Agent } = require('undici');
         return new Agent({ connect: { rejectUnauthorized: false } });

@@ -119,3 +119,80 @@ test('deCONZ client: normal request ok', async () => {
   const lights = await deconz.createClient({ baseUrl: base, apiKey: 'K' }).getLights();
   assert.equal(lights['1'].name, 'L');
 });
+
+// ─── Schema-Upgrade http → https (Pi-hole v6, Reverse-Proxies) ────────
+// https auf :443 lässt sich im Test nicht binden → fetch wird gemockt.
+function mockFetchSequence(routes) {
+  const orig = global.fetch;
+  const seen = [];
+  global.fetch = async (url, opts) => {
+    seen.push(url);
+    assert.equal(opts.redirect, 'manual');
+    const r = routes[url];
+    if (!r) throw new Error(`unexpected fetch ${url}`);
+    return {
+      status: r.status, ok: r.status >= 200 && r.status < 300,
+      headers: new Headers(r.location ? { location: r.location } : {}),
+      body: null, async json() { return r.body; },
+    };
+  };
+  return { seen, restore: () => { global.fetch = orig; } };
+}
+
+test('http → https upgrade on the same host (default ports) is allowed', async () => {
+  const m = mockFetchSequence({
+    'http://pi.hole/api/auth': { status: 308, location: 'https://pi.hole/api/auth' },
+    'https://pi.hole/api/auth': { status: 200, body: { ok: 1 } },
+  });
+  try {
+    const res = await lanFetch('http://pi.hole/api/auth', { method: 'POST', body: '{}' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(m.seen, ['http://pi.hole/api/auth', 'https://pi.hole/api/auth']);
+  } finally { m.restore(); }
+});
+
+test('upgrade with explicit :80 → :443 is allowed, then same-origin hops continue', async () => {
+  const m = mockFetchSequence({
+    'http://pi.hole:80/admin': { status: 301, location: 'https://pi.hole:443/admin' },
+    'https://pi.hole/admin': { status: 302, location: '/admin/' },
+    'https://pi.hole/admin/': { status: 200, body: {} },
+  });
+  try {
+    const res = await lanFetch('http://pi.hole:80/admin');
+    assert.equal(res.status, 200);
+  } finally { m.restore(); }
+});
+
+test('https → http downgrade is blocked', async () => {
+  const m = mockFetchSequence({ 'https://pi.hole/api': { status: 302, location: 'http://pi.hole/api' } });
+  try {
+    await assert.rejects(() => lanFetch('https://pi.hole/api'), (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN');
+    assert.equal(m.seen.length, 1);
+  } finally { m.restore(); }
+});
+
+test('upgrade followed by a downgrade back to http is blocked', async () => {
+  const m = mockFetchSequence({
+    'http://pi.hole/x': { status: 301, location: 'https://pi.hole/x' },
+    'https://pi.hole/x': { status: 302, location: 'http://pi.hole/y' },
+  });
+  try {
+    await assert.rejects(() => lanFetch('http://pi.hole/x'), (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN');
+  } finally { m.restore(); }
+});
+
+test('upgrade to another host or a non-default port is blocked', async () => {
+  for (const [from, to] of [
+    ['http://pi.hole/', 'https://evil.example/'],
+    ['http://pi.hole/', 'https://127.0.0.1/'],
+    ['http://pi.hole/', 'https://pi.hole:2019/'],
+    ['http://pi.hole:8080/', 'https://pi.hole/'],
+    ['http://pi.hole/', 'http://pi.hole:2019/'],
+  ]) {
+    const m = mockFetchSequence({ [from]: { status: 302, location: to } });
+    try {
+      await assert.rejects(() => lanFetch(from), (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN', `${from} → ${to}`);
+      assert.equal(m.seen.length, 1);
+    } finally { m.restore(); }
+  }
+});
