@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.133.0] — 2026-09-30
 
 ### Security
 - **Signierte Updates für die Windows-Clients.** Die Release-Pipelines von Pro- und Community-Client legen jedem Release ein Update-Manifest (`update-manifest.json`: Produkt, Version, Dateiname, SHA-256 und Größe des Installers) samt Ed25519-Signatur (`update-manifest.json.sig`) bei. `GET /api/v1/client/update/check` liefert beides jetzt als Felder `manifest` und `signature` mit aus – unverändert, Byte für Byte (bei privaten Repos über die GitHub-API mit `GC_CLIENT_GITHUB_TOKEN`, höchstens 16 KB, zusammen mit dem Release zwischengespeichert) – und wählt den Installer anhand des Dateinamens im Manifest. Geprüft wird die Signatur ausschließlich im Client; neue Clients installieren nur noch signierte Updates. Ältere Releases ohne Manifest, ältere Clients und die Android-App verhalten sich wie bisher.
