@@ -17,14 +17,21 @@ env:
 
 jobs:
   test:
+    name: test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    # 24 = Laufzeit im Image (Dockerfile node:24-alpine); 22 = kleinste
+    # Version aus engines.node, damit die Untergrenze nicht nur behauptet ist.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           registry-url: https://npm.pkg.github.com/
           scope: '@callmetechie'
 
@@ -47,20 +54,20 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-report-node${{ matrix.node }}
           path: coverage/
 
   eslint-security:
     name: ESLint Security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://npm.pkg.github.com/
           scope: '@callmetechie'
 
@@ -135,11 +142,11 @@ jobs:
       BASE: http://127.0.0.1:3000
       E2E_OUT: /tmp/gc-e2e/shots
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://npm.pkg.github.com/
           scope: '@callmetechie'
 
@@ -194,7 +201,7 @@ jobs:
         if: failure()
         run: cat /tmp/gc-e2e-app.log
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: browser-screenshots
@@ -209,10 +216,10 @@ jobs:
       github.event_name == 'push' ||
       contains(github.event.pull_request.labels.*.name, 'mutation-test')
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://npm.pkg.github.com/
           scope: '@callmetechie'
       - name: Install deps
@@ -221,7 +228,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
       - name: Mutation test
         run: npx stryker run || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report
