@@ -1,5 +1,7 @@
 'use strict';
 
+const { lanFetch } = require('../utils/lanFetch');
+
 /**
  * Pi-hole v6 REST client.
  * One client instance per Pi-hole server; caches the session SID.
@@ -48,7 +50,9 @@ function createClient(instance) {
     if (dispatcher) {
       fetchOptions.dispatcher = dispatcher;
     }
-    return fetch(url, fetchOptions);
+    // Keine automatischen Redirects: eine gefälschte Pi-hole könnte sonst auf
+    // interne Endpunkte (Caddy-Admin-API, Metadaten) umlenken.
+    return lanFetch(url, fetchOptions, { label: 'pihole' });
   }
 
   async function authenticate() {
