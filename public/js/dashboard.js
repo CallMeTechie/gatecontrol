@@ -140,7 +140,7 @@
     window.api.get('/api/system/auto-update').then(function (d) {
       renderAutoUpdate(d);
       revealAutoUpdate(d);
-    }).catch(function () {});
+    }).catch(function (err) { console.warn('[dashboard] loading auto-update status failed', err); });
   }
 
   // /dashboard#auto-update (fix link of the security check): there is no
@@ -176,7 +176,7 @@
       var r = !queued && j && TRIGGER_REASONS[j.reason];
       if (window.showToast) window.showToast(r ? T(r[0], r[1]) : T('autoupdate.trigger_queued', 'Update queued'), queued ? 'success' : 'error');
       loadAutoUpdate();
-    }).catch(function () {});
+    }).catch(function (err) { console.warn('[dashboard] triggering update failed', err); });
   }
 
   // ─── "Was ist neu" card (release B §6) ─────────────────────────────────────
@@ -222,7 +222,7 @@
     var card = document.getElementById('whats-new');
     if (card) card.hidden = true;
     var body = whatsNewCurrent ? { version: whatsNewCurrent } : {};
-    window.api.post('/api/system/whats-new/seen', body).catch(function () {});
+    window.api.post('/api/system/whats-new/seen', body).catch(function () { /* marking "what's new" as seen is best-effort; the card is already hidden */ });
   }
   (function initWhatsNew() {
     var allBtn = document.getElementById('whats-new-all');

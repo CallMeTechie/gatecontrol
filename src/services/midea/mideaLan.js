@@ -188,7 +188,7 @@ function discover({ timeoutMs = 3000, broadcast = '255.255.255.255', ports = [64
         if (info.deviceType === 0xac) found.set(info.deviceId, info);
       } catch { /* ignore malformed */ }
     });
-    sock.on('error', () => { try { sock.close(); } catch {} resolve([]); });
+    sock.on('error', () => { try { sock.close(); } catch { /* socket already closed or never bound — nothing to release */ } resolve([]); });
     sock.bind(() => {
       sock.setBroadcast(true);
       // Global broadcast + every interface's subnet-directed broadcast, deduped.
@@ -204,7 +204,7 @@ function discover({ timeoutMs = 3000, broadcast = '255.255.255.255', ports = [64
         }
       }
     });
-    setTimeout(() => { try { sock.close(); } catch {} resolve([...found.values()]); }, timeoutMs);
+    setTimeout(() => { try { sock.close(); } catch { /* socket already closed by the error handler — nothing to release */ } resolve([...found.values()]); }, timeoutMs);
   });
 }
 
@@ -294,7 +294,7 @@ class LanDevice {
       }
       return mideaAc.parseState(reply);
     } finally {
-      try { sock.destroy(); } catch {}
+      try { sock.destroy(); } catch { /* best-effort socket cleanup; the result/error above is what matters */ }
     }
   }
 

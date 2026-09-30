@@ -229,7 +229,7 @@ function notifyGateways(peerIds) {
   if (!peerIds || peerIds.size === 0) return;
   try {
     const gateways = require('./gateways');
-    for (const pid of peerIds) gateways.notifyConfigChanged(pid).catch(() => {});
+    for (const pid of peerIds) gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
   } catch { /* module load guard */ }
 }
 

@@ -16,6 +16,7 @@
 const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const { clientLabel } = require('./client/helpers');
+const logger = require('../../utils/logger');
 
 const router = Router();
 
@@ -36,7 +37,7 @@ router.use((req, res, next) => {
           db.prepare('UPDATE peers SET description = ?, updated_at = datetime(\'now\') WHERE id = ?')
             .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${version})`, req.tokenPeerId);
           _descriptionUpdated.set(req.tokenPeerId, now);
-        } catch {}
+        } catch (err) { logger.debug({ err: err.message, peerId: req.tokenPeerId }, 'updating peer description from client headers failed'); }
       }
     }
   }

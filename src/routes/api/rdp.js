@@ -436,7 +436,7 @@ router.post('/:id/sessions/disconnect-all', (req, res) => {
       try {
         rdpSessions.endSession(s.id, 'admin_disconnect');
         ended++;
-      } catch {}
+      } catch (err) { logger.warn({ err: err.message, sessionId: s.id }, 'admin disconnect: ending RDP session failed'); }
     }
     res.json({ ok: true, ended });
   } catch (err) {
@@ -472,7 +472,7 @@ router.get('/:id/maintenance', (req, res) => {
     const route = rdp.getById(parseInt(req.params.id, 10));
     if (!route) return res.status(404).json({ ok: false, error: req.t('error.rdp.not_found') });
     let schedule = null;
-    try { schedule = route.maintenance_schedule ? JSON.parse(route.maintenance_schedule) : null; } catch {}
+    try { schedule = route.maintenance_schedule ? JSON.parse(route.maintenance_schedule) : null; } catch (err) { logger.debug({ err: err.message, rdpId: route.id }, 'malformed maintenance_schedule JSON — returning null'); }
     res.json({
       ok: true,
       maintenance: {

@@ -399,7 +399,7 @@ var DT = function (k, p) { return D.t(k, p); };
         sel.appendChild(new Option((window.GC && GC.t && GC.t['peers.owner.none']) || '(no owner)', ''));
         users.forEach(function (u) { sel.appendChild(new Option(u.username, String(u.id))); });
       });
-    }).catch(function () {});
+    }).catch(function (err) { console.warn('[peers] loading users for select failed', err); });
   }
 
   // ─── Load peers ──────────────────────────────────────────

@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(requireFeature('gateway_scan_egress'));
 
 const { getDb } = require('../../db/connection');
+const logger = require('../../utils/logger');
 // notifyConfigChanged(peerId) takes a SINGLE peerId — call once per affected peer
 // (near_peer_id + each pool member of near_pool_id).  Fire-and-forget like routes.js.
 function pushNear(row) {
@@ -17,7 +18,7 @@ function pushNear(row) {
     for (const m of getDb().prepare('SELECT peer_id FROM gateway_pool_members WHERE pool_id=?').all(row.near_pool_id))
       peers.add(m.peer_id);
   }
-  for (const pid of peers) gateways.notifyConfigChanged(pid).catch(() => {});
+  for (const pid of peers) gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
 }
 
 router.get('/', (req, res) => res.json({ ok: true, data: svc.list() }));

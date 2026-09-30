@@ -316,14 +316,14 @@ function _onStatusTransition(peerId, from, to, health) {
     });
     try {
       if (typeof email.sendMonitoringAlert === 'function') {
-        email.sendMonitoringAlert({ subject: `Gateway ${peerName} offline`, body: JSON.stringify(health || {}, null, 2) }).catch(() => {});
+        email.sendMonitoringAlert({ subject: `Gateway ${peerName} offline`, body: JSON.stringify(health || {}, null, 2) }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline alert email failed'); });
       }
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline alert email failed'); }
     try {
       if (typeof webhook.notify === 'function') {
-        webhook.notify('gateway.offline', { peer_id: peerId, peer_name: peerName, health }).catch(() => {});
+        webhook.notify('gateway.offline', { peer_id: peerId, peer_name: peerName, health }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline webhook failed'); });
       }
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline webhook failed'); }
   } else if (to === 'online') {
     activity.log('gateway_recovered', `Gateway ${peerName} is back online`, {
       source: 'system',
@@ -332,14 +332,14 @@ function _onStatusTransition(peerId, from, to, health) {
     });
     try {
       if (typeof email.sendMonitoringAlert === 'function') {
-        email.sendMonitoringAlert({ subject: `Gateway ${peerName} wieder online`, body: '' }).catch(() => {});
+        email.sendMonitoringAlert({ subject: `Gateway ${peerName} wieder online`, body: '' }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway recovered alert email failed'); });
       }
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway recovered alert email failed'); }
     try {
       if (typeof webhook.notify === 'function') {
-        webhook.notify('gateway.recovered', { peer_id: peerId, peer_name: peerName }).catch(() => {});
+        webhook.notify('gateway.recovered', { peer_id: peerId, peer_name: peerName }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway recovered webhook failed'); });
       }
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway recovered webhook failed'); }
   }
 }
 
@@ -665,7 +665,7 @@ function rotateGatewayTokens(peerId) {
     activity.log('gateway_tokens_rotated',
       `Gateway tokens rotated for peer "${row.name}"`,
       { source: 'admin', severity: 'warning', details: { peerId, peerName: row.name } });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message, peerId }, 'activity log write failed (gateway_tokens_rotated)'); }
 
   const envContent = buildEnvContent(row, apiToken, pushToken);
   return { apiToken, pushToken, envContent };
@@ -745,7 +745,7 @@ function createPairingCode(peerId) {
     activity.log('gateway_pairing_code_created',
       `Pairing code generated for gateway "${peer.name}"`,
       { source: 'admin', severity: 'info', details: { peerId, peerName: peer.name, expires_at: expiresAt } });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message, peerId }, 'activity log write failed (gateway_pairing_code_created)'); }
 
   return { code, token, expiresAt };
 }
@@ -800,7 +800,7 @@ function redeemPairingCode(rawCode, sourceIp) {
     activity.log('gateway_pairing_code_redeemed',
       `Pairing code redeemed for gateway "${peer ? peer.name : peerId}"${sourceIp ? ` from ${sourceIp}` : ''}`,
       { source: 'system', severity: 'info', details: { peerId, peerName: peer ? peer.name : null, sourceIp } });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message, peerId }, 'activity log write failed (gateway_pairing_code_redeemed)'); }
 
   return { envContent };
 }

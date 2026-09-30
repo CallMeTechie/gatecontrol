@@ -16,7 +16,7 @@
     es = new EventSource('/api/v1/events');
     ['gateway', 'peer', 'activity', 'monitor', 'gateway_discovery', 'pihole', 'waf', 'security', 'routes', 'tls', 'backup'].forEach(function (t) {
       es.addEventListener(t, function (e) {
-        try { dispatch(t, JSON.parse(e.data)); } catch (_) {}
+        try { dispatch(t, JSON.parse(e.data)); } catch (err) { console.warn('[events] malformed or failing SSE event handler', err); }
       });
     });
     es.onopen = function () {

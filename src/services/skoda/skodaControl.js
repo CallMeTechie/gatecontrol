@@ -105,7 +105,7 @@ async function runCommand(vehicleId, action, args, { fetchImpl } = {}) {
   });
 
   // command-triggered refresh in its own 30s window (never blocks the response)
-  skoda.refreshVehicle(vehicleId, { afterCommand: true }).catch(() => {});
+  skoda.refreshVehicle(vehicleId, { afterCommand: true }).catch(() => { /* refresh is best-effort; refreshVehicle logs its own failures and the next poll catches up */ });
   return { ok: true };
 }
 

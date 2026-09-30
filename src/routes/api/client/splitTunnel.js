@@ -22,7 +22,7 @@ router.get('/split-tunnel', (req, res) => {
         try {
           preset = JSON.parse(token.split_tunnel_override);
           source = 'token';
-        } catch {}
+        } catch (err) { logger.warn({ err: err.message, tokenId: req.tokenId }, 'malformed split_tunnel_override JSON — ignoring token override'); }
       }
     }
 
@@ -33,7 +33,7 @@ router.get('/split-tunnel', (req, res) => {
         try {
           preset = JSON.parse(raw);
           source = 'global';
-        } catch {}
+        } catch (err) { logger.warn({ err: err.message }, 'malformed split_tunnel_preset JSON — ignoring global preset'); }
       }
     }
 

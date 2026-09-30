@@ -161,7 +161,7 @@ async function syncConfig() {
       const result = await run('wg', ['syncconf', iface, tmpFile]);
       return result;
     } finally {
-      try { fs.unlinkSync(tmpFile); } catch {}
+      try { fs.unlinkSync(tmpFile); } catch { /* tmp file may already be gone; nothing else to clean up */ }
     }
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to sync WireGuard config');

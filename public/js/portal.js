@@ -15,7 +15,7 @@
   try {
     var _pt = document.getElementById('portal-i18n');
     if (_pt) PT = JSON.parse(_pt.textContent || '{}');
-  } catch (_) {}
+  } catch { /* missing/invalid i18n JSON — PT stays empty and the fallback strings are used */ }
 
   // ─── Theme toggle ───────────────────────────────────────────────────────────
   (function initTheme() {
@@ -38,7 +38,7 @@
       btn.addEventListener('click', function () {
         const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
         html.setAttribute('data-theme', next);
-        try { localStorage.setItem('gc-portal-theme', next); } catch (_) {}
+        try { localStorage.setItem('gc-portal-theme', next); } catch { /* storage unavailable (private mode / blocked) — theme just won't persist */ }
       });
     }
   })();
@@ -131,7 +131,7 @@
         done = true;
         document.removeEventListener('keydown', onKey, true);
         overlay.remove();
-        if (prevFocus && prevFocus.focus && document.contains(prevFocus)) { try { prevFocus.focus(); } catch (_) {} }
+        if (prevFocus && prevFocus.focus && document.contains(prevFocus)) { try { prevFocus.focus(); } catch { /* element may no longer be focusable — focus restore is cosmetic */ } }
         resolve(result);
       }
       function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(false); } }
@@ -746,7 +746,7 @@
       body: JSON.stringify({ patch: patch })
     }).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.reason === 'login_required') { showSmarthomeLogin(card); }
-    }).catch(function () {});
+    }).catch(function (err) { console.warn('[portal] smarthome action failed', err); });
   }
   function showSmarthomeLogin(card) {
     var msg = document.getElementById('smarthomeMsg');
@@ -892,7 +892,7 @@
           fetch('/api/v1/portal/midea/' + Number(d.id) + '/state', { signal: _mideaCtl.signal })
             .then(function (r) { if (r.status === 429) { if (gen === _mideaPollGen) { clearInterval(_mideaTimer); _mideaTimer = null; } return null; } return r.json(); })
             .then(function (body) { if (body && body.ok && body.data && body.data.state) patchMideaCard(Number(d.id), body.data.state); })
-            .catch(function () {});
+            .catch(function () { /* periodic poll — a failed tick is retried on the next interval */ });
         });
       }, 120000);
     };
@@ -1303,7 +1303,7 @@
       // failure/null — a transient hiccup must never blank the whole section.
       fetch('/api/v1/portal/skoda').then(function (r) { return r.json(); }).then(function (body) {
         if (body && body.ok && body.data) renderSkoda(body.data.vehicles, body.data.loggedIn);
-      }).catch(function () {});
+      }).catch(function (err) { console.warn('[portal] loading skoda data failed', err); });
     }, 120000);
   }
 

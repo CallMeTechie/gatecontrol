@@ -63,7 +63,7 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       try {
         db.prepare('UPDATE peers SET description = ? WHERE id = ?')
           .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`, boundPeer.id);
-      } catch {}
+      } catch (err) { logger.debug({ err: err.message, peerId: boundPeer.id }, 'updating peer description failed'); }
 
       const peerConfig = await peers.getClientConfig(boundPeer.id);
       const hash = hashConfig(peerConfig);
@@ -159,7 +159,7 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       try {
         db.prepare('UPDATE peers SET description = ? WHERE id = ?')
           .run(`${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`, peer.id);
-      } catch {}
+      } catch (err) { logger.debug({ err: err.message, peerId: peer.id }, 'updating peer description failed'); }
     }
 
     // Generate client config

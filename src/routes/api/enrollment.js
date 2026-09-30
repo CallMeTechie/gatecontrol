@@ -29,7 +29,7 @@ function publicServerUrl(req) {
     if (u.protocol === 'https:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname)) {
       return u.origin;
     }
-  } catch {}
+  } catch (err) { logger.debug({ err: err.message }, 'invalid app.baseUrl — falling back to request host'); }
   return `https://${req.get('host')}`;
 }
 

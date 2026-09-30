@@ -2234,7 +2234,7 @@
     if (lastTraceSince) url += '&since=' + encodeURIComponent(lastTraceSince);
     window.api.get(url).then(function (res) {
       if (res.ok && res.data && res.data.entries) renderTraceEntries(res.data.entries);
-    }).catch(function () {});
+    }).catch(function (err) { console.warn('[entry-editor] loading trace entries failed', err); });
   }
 
   function renderTraceEntries(entries) {
@@ -2482,7 +2482,7 @@
         setTimeout(function () { copyBtn.textContent = ''; copyBtn.appendChild(copyIcon()); }, 1500);
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(urlField.value).then(showCopied).catch(function () {});
+        navigator.clipboard.writeText(urlField.value).then(showCopied).catch(function () { /* clipboard write denied or unavailable — the URL stays selectable in the field */ });
       } else {
         try { document.execCommand('copy'); showCopied(); } catch (e) { /* clipboard unavailable */ }
       }
