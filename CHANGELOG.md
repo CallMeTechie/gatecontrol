@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.133.3] — 2026-09-30
+
+### Fixes
+- pin GitHub Actions to commit SHAs, drop npm from runtime image (#250)
+
+---
+
 ## [1.133.2] — 2026-09-30
 
 ### Änderungen
