@@ -145,6 +145,13 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
   const hits = [];
   let connects = [];
   const realRequest = http.request;
+  const redirectTargets = new Map();
+  /** Pfad, der mit `code` nach `location` weiterleitet. */
+  const redirectPath = (location, code = 302) => {
+    const id = String(redirectTargets.size + 1);
+    redirectTargets.set(id, { location, code });
+    return `/redirect?id=${id}`;
+  };
 
   before(async () => {
     server = http.createServer((req, res) => {
@@ -154,9 +161,11 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
       req.on('end', () => {
         hits[hits.length - 1].body = body;
         const u = new URL(req.url, 'http://x');
-        const to = u.searchParams.get('to');
         if (u.pathname === '/redirect') {
-          res.writeHead(Number(u.searchParams.get('code') || 302), { Location: to });
+          // Ziele kommen aus der Test-Tabelle, nicht aus der Anfrage (kein offener Redirect).
+          const target = redirectTargets.get(u.searchParams.get('id'));
+          if (!target) { res.writeHead(404); return res.end(); }
+          res.writeHead(target.code, { Location: target.location });
           return res.end();
         }
         if (u.pathname === '/loop') {
@@ -216,7 +225,7 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
   });
 
   it('does not follow redirects by default (3xx is returned)', async () => {
-    const res = await safeRequest(`http://hook.example:${port}/redirect?to=${encodeURIComponent(`http://other.example:${port}/ok`)}`, { lookup });
+    const res = await safeRequest(`http://hook.example:${port}${redirectPath(`http://other.example:${port}/ok`)}`, { lookup });
     assert.equal(res.status, 302);
     assert.equal(hits.length, 1);
   });
@@ -224,11 +233,11 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
   it('blocks a redirect to 127.0.0.1 (Caddy admin API)', async () => {
     const target = `http://127.0.0.1:${port}/ok`;
     await assert.rejects(
-      safeRequest(`http://hook.example:${port}/redirect?to=${encodeURIComponent(target)}`, { lookup, maxRedirects: 3 }),
+      safeRequest(`http://hook.example:${port}${redirectPath(target)}`, { lookup, maxRedirects: 3 }),
       /localhost/,
     );
     await assert.rejects(
-      safeRequest(`http://hook.example:${port}/redirect?to=${encodeURIComponent('http://localhost:2019/config/')}`, { lookup, maxRedirects: 3, allowPrivate: true }),
+      safeRequest(`http://hook.example:${port}${redirectPath('http://localhost:2019/config/')}`, { lookup, maxRedirects: 3, allowPrivate: true }),
       /localhost/,
     );
     assert.equal(hits.length, 2, 'only the two redirecting hops were requested');
@@ -237,14 +246,14 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
 
   it('blocks a redirect to a hostname resolving to the metadata address', async () => {
     await assert.rejects(
-      safeRequest(`http://hook.example:${port}/redirect?to=${encodeURIComponent(`http://internal.example:${port}/ok`)}`, { lookup, maxRedirects: 3 }),
+      safeRequest(`http://hook.example:${port}${redirectPath(`http://internal.example:${port}/ok`)}`, { lookup, maxRedirects: 3 }),
       /resolves to a private or reserved/,
     );
     assert.equal(hits.length, 1);
   });
 
   it('blocks a redirect to a private LAN host unless allowPrivate is set', async () => {
-    const url = `http://hook.example:${port}/redirect?to=${encodeURIComponent(`http://lan.example:${port}/ok`)}`;
+    const url = `http://hook.example:${port}${redirectPath(`http://lan.example:${port}/ok`)}`;
     await assert.rejects(safeRequest(url, { lookup, maxRedirects: 3 }), /private or reserved/);
     const res = await safeRequest(url, { lookup, maxRedirects: 3, allowPrivate: true });
     assert.equal(res.status, 200);
@@ -252,7 +261,7 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
 
   it('follows allowed redirects re-validating (and re-pinning) each hop', async () => {
     const res = await safeRequest(
-      `http://hook.example:${port}/redirect?code=307&to=${encodeURIComponent(`http://other.example:${port}/ok`)}`,
+      `http://hook.example:${port}${redirectPath(`http://other.example:${port}/ok`, 307)}`,
       { method: 'POST', body: 'x', lookup, maxRedirects: 3 },
     );
     assert.equal(res.status, 200);
@@ -262,7 +271,7 @@ describe('outboundGuard.safeRequest (pinning + redirects)', () => {
 
   it('POST + 302 continues as GET without body', async () => {
     const res = await safeRequest(
-      `http://hook.example:${port}/redirect?to=${encodeURIComponent('/ok')}`,
+      `http://hook.example:${port}${redirectPath('/ok')}`,
       { method: 'POST', body: 'secret', lookup, maxRedirects: 3 },
     );
     assert.equal(res.body.toString(), 'ok GET ');
