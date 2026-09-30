@@ -428,7 +428,7 @@
     try {
       var data = await api.get('/api/v1/users/' + editId);
       renderUserTokens(data.tokens || []);
-    } catch {}
+    } catch (err) { console.warn('[users] loading user tokens failed', err); }
   }
 
   async function revokeToken(tokenId) {
@@ -497,7 +497,7 @@
         if (twUserId && u.id === twUserId) opt.selected = true;
         sel.appendChild(opt);
       });
-    } catch {}
+    } catch (err) { console.warn('[users] loading users for token owner select failed', err); }
 
     // Populate peer dropdown
     var peerSel = document.getElementById('tw-peer');
@@ -514,7 +514,7 @@
         opt.textContent = p.name + ' (' + p.allowed_ips + ')';
         peerSel.appendChild(opt);
       });
-    } catch {}
+    } catch (err) { console.warn('[users] loading peers for select failed', err); }
 
     // Custom scopes checkboxes
     renderCustomScopes();
@@ -715,7 +715,7 @@
       } else {
         unassignedBanner.style.display = 'none';
       }
-    } catch {}
+    } catch (err) { console.warn('[users] loading unassigned tokens failed', err); }
   }
 
   function renderUnassignedTokens(tokens) {

@@ -63,6 +63,18 @@ const logoUpload = multer({
   },
 });
 
+/**
+ * Best-effort removal of a rejected or unused branding upload. The path is
+ * rebuilt from the multer-generated file name and must stay inside
+ * BRANDING_DIR, so a tampered req.file can never point the unlink elsewhere.
+ */
+function removeUpload(file) {
+  if (!file || typeof file.filename !== 'string') return;
+  const target = path.resolve(BRANDING_DIR, path.basename(file.filename));
+  if (!target.startsWith(path.resolve(BRANDING_DIR) + path.sep)) return;
+  try { fs.unlinkSync(target); } catch { /* already gone; the request is refused either way */ }
+}
+
 function validateBrandingUpload(req, res) {
   if (!req.file) {
     res.status(400).json({ ok: false, error: 'No file uploaded' });
@@ -70,12 +82,12 @@ function validateBrandingUpload(req, res) {
   }
   const magic = verifyImageMagic(req.file.path);
   if (!magic) {
-    try { fs.unlinkSync(req.file.path); } catch {}
+    removeUpload(req.file);
     res.status(400).json({ ok: false, error: 'Invalid or unsupported image' });
     return false;
   }
   if (!/^\d+$/.test(String(req.params.id))) {
-    try { fs.unlinkSync(req.file.path); } catch {}
+    removeUpload(req.file);
     res.status(400).json({ ok: false, error: 'Invalid route id' });
     return false;
   }
@@ -565,7 +577,7 @@ router.post('/',
     });
     // Trigger immediate check if monitoring enabled on create
     if (monitoring_enabled) {
-      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id).catch(() => {}); } catch {}
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(route.id).catch((err) => { logger.debug({ err: err.message, routeId: route.id }, 'immediate monitoring check failed'); }); } catch (err) { logger.warn({ err: err.message, routeId: route.id }, 'scheduling immediate monitoring check failed'); }
     }
     res.status(201).json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
@@ -750,15 +762,15 @@ router.put('/:id',
     // Mutual exclusivity: enabling Basic Auth removes any existing route_auth row
     // (symmetric to createOrUpdateAuth, which clears basic_auth_enabled when route-auth is set).
     if (route.basic_auth_enabled) {
-      try { require('../../services/routeAuth').deleteAuth(req.params.id, req.ip); } catch {}
+      try { require('../../services/routeAuth').deleteAuth(req.params.id, req.ip); } catch (err) { logger.warn({ err: err.message, routeId: req.params.id }, 'clearing route-auth after enabling basic auth failed'); }
     }
     // Reset circuit breaker status when settings change
     if (circuit_breaker_enabled !== undefined) {
-      try { const cb = require('../../services/circuitBreaker'); cb.resetStatus(req.params.id); } catch {}
+      try { const cb = require('../../services/circuitBreaker'); cb.resetStatus(req.params.id); } catch (err) { logger.warn({ err: err.message, routeId: req.params.id }, 'resetting circuit breaker status failed'); }
     }
     // Trigger immediate check if monitoring was just enabled
     if (monitoring_enabled) {
-      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id).catch(() => {}); } catch {}
+      try { const { checkRouteById } = require('../../services/monitor'); checkRouteById(req.params.id).catch((err) => { logger.debug({ err: err.message, routeId: req.params.id }, 'immediate monitoring check failed'); }); } catch (err) { logger.warn({ err: err.message, routeId: req.params.id }, 'scheduling immediate monitoring check failed'); }
     }
     res.json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
@@ -885,14 +897,14 @@ router.post('/:id/branding/logo', uploadLimiter, requireFeature('custom_branding
     const db = getDb();
     const route = db.prepare('SELECT branding_logo FROM routes WHERE id = ?').get(req.params.id);
     if (!route) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      removeUpload(req.file);
       return res.status(404).json({ ok: false, error: 'Route not found' });
     }
 
     // Delete old logo if exists
     if (route.branding_logo) {
       const oldPath = path.join(BRANDING_DIR, route.branding_logo);
-      try { fs.unlinkSync(oldPath); } catch {}
+      try { fs.unlinkSync(oldPath); } catch (err) { logger.debug({ err: err.message, routeId: req.params.id }, 'removing old branding logo failed (may already be gone)'); }
     }
 
     db.prepare("UPDATE routes SET branding_logo = ?, updated_at = datetime('now') WHERE id = ?")
@@ -917,7 +929,7 @@ router.delete('/:id/branding/logo', (req, res) => {
 
     if (route.branding_logo) {
       const filePath = path.join(BRANDING_DIR, route.branding_logo);
-      try { fs.unlinkSync(filePath); } catch {}
+      try { fs.unlinkSync(filePath); } catch (err) { logger.debug({ err: err.message, routeId: req.params.id }, 'removing branding logo file failed (may already be gone)'); }
     }
 
     db.prepare("UPDATE routes SET branding_logo = NULL, updated_at = datetime('now') WHERE id = ?")
@@ -940,13 +952,13 @@ router.post('/:id/branding/bg-image', uploadLimiter, requireFeature('custom_bran
     const db = getDb();
     const route = db.prepare('SELECT branding_bg_image FROM routes WHERE id = ?').get(req.params.id);
     if (!route) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      removeUpload(req.file);
       return res.status(404).json({ ok: false, error: 'Route not found' });
     }
 
     if (route.branding_bg_image) {
       const oldPath = path.join(BRANDING_DIR, route.branding_bg_image);
-      try { fs.unlinkSync(oldPath); } catch {}
+      try { fs.unlinkSync(oldPath); } catch (err) { logger.debug({ err: err.message, routeId: req.params.id }, 'removing old background image failed (may already be gone)'); }
     }
 
     db.prepare("UPDATE routes SET branding_bg_image = ?, updated_at = datetime('now') WHERE id = ?")
@@ -971,7 +983,7 @@ router.delete('/:id/branding/bg-image', (req, res) => {
 
     if (route.branding_bg_image) {
       const filePath = path.join(BRANDING_DIR, route.branding_bg_image);
-      try { fs.unlinkSync(filePath); } catch {}
+      try { fs.unlinkSync(filePath); } catch (err) { logger.debug({ err: err.message, routeId: req.params.id }, 'removing background image file failed (may already be gone)'); }
     }
 
     db.prepare("UPDATE routes SET branding_bg_image = NULL, updated_at = datetime('now') WHERE id = ?")

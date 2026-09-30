@@ -742,7 +742,7 @@
           // 403 (license-locked) or 404 — surface so the admin knows why the card is empty.
           render([], false, false, null);
           return _discErrText(r, '').then(function (t) { if (t) status.textContent = t; });
-        }).catch(function () {});
+        }).catch(function (err) { console.warn('[gateways] discovery request failed', err); });
     }
     scanBtn.addEventListener('click', function () {
       setScanRunning(true);
@@ -843,7 +843,7 @@
         del.addEventListener('click', async function () {
           if (!await D.confirm({ message: T('egress.delete_confirm', 'Delete this scan target?'), danger: true, okLabel: T('common.delete', 'Delete') })) return;
           fetch('/api/v1/egress-routes/' + r.id, { method: 'DELETE', credentials: 'same-origin', headers: discCsrfHeaders() })
-            .then(function () { load(); }).catch(function () {});
+            .then(function () { load(); }).catch(function (err) { console.warn('[gateways] deleting scan target failed', err); });
         });
         row.appendChild(del);
         listEl.appendChild(row);
@@ -1069,8 +1069,8 @@
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
   }
-  function load() { fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(render).catch(function () {}); }
-  function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function () {}); }
+  function load() { fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(render).catch(function (err) { console.warn('[gateways] loading gateways failed', err); }); }
+  function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function (err) { console.warn('[gateways] probe failed', err); }); }
 
   grid.addEventListener('click', function (e) {
     var rc = e.target.closest('.recheck'); if (rc) { e.stopPropagation(); probe(rc.dataset.id); return; }
@@ -1099,7 +1099,7 @@
             showUpdateToast(id, 'updating', latest);
           }
           load();
-        }).catch(function () {});
+        }).catch(function (err) { console.warn('[gateways] triggering gateway update failed', err); });
       return;
     }
   });

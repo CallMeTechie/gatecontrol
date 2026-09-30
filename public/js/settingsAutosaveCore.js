@@ -54,7 +54,7 @@
     return function enqueue(key, fn) {
       const prev = chains[key] || Promise.resolve();
       const next = prev.then(fn, fn);          // runs even after a prior rejection
-      chains[key] = next.catch(function () {});
+      chains[key] = next.catch(function () { /* keeps the save chain alive; the caller sees the error via its own promise */ });
       return next;
     };
   }

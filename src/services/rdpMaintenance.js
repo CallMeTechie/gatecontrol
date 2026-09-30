@@ -67,7 +67,7 @@ function parseMaintenanceActive(schedule, now = new Date()) {
   // Backwards compatibility: older rows were JSON.stringify'd, so the string
   // is wrapped in double-quotes. Unwrap it so the regex parses cleanly.
   if (typeof schedule === 'string' && schedule.startsWith('"') && schedule.endsWith('"')) {
-    try { schedule = JSON.parse(schedule); } catch {}
+    try { schedule = JSON.parse(schedule); } catch { /* not JSON-wrapped after all — keep the raw string and let the parser below decide */ }
   }
 
   const dayIndex = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat

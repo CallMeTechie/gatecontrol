@@ -1,4 +1,5 @@
 'use strict';
+const logger = require('../utils/logger');
 
 /**
  * Sliding-window hysteresis state machine for Gateway health.
@@ -204,7 +205,7 @@ async function _notifyAffected(affectedPeerIds) {
   if (affectedPeerIds.size === 0) return;
   const gateways = require('./gateways');
   for (const id of affectedPeerIds) {
-    gateways.notifyConfigChanged(id).catch(() => {});
+    gateways.notifyConfigChanged(id).catch((err) => { logger.debug({ err: err.message, peerId: id }, 'gateway config push failed (gateway re-polls anyway)'); });
   }
 }
 
@@ -286,7 +287,7 @@ async function _onTransition(peerId, transition) {
       activity.log('gateway_down', `Gateway ${peerLabel} is offline`, {
         source: 'system', severity: 'warn', details: { peerId },
       });
-      webhook.notify('gateway_state_change', `Gateway ${peerLabel} offline`, { peer_id: peerId, alive: false }).catch(() => {});
+      webhook.notify('gateway_state_change', `Gateway ${peerLabel} offline`, { peer_id: peerId, alive: false }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
 
       // Pivot routes pinned to this peer onto the highest-priority alive
       // sibling in each pool the peer belongs to. If multiple pools, each
@@ -335,7 +336,7 @@ async function _onTransition(peerId, transition) {
       activity.log('gateway_alive', `Gateway ${peerLabel} is online`, {
         source: 'system', severity: 'info', details: { peerId },
       });
-      webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch(() => {});
+      webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
 
       // Restore routes that were pivoted away from this peer while it was
       // down. Idempotent — does nothing if no routes are parked.

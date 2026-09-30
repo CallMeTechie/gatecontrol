@@ -290,7 +290,7 @@
   el('skoda-acc-save').addEventListener('click', async () => {
     try {
       const created = await api('POST', '/accounts', { email: el('skoda-acc-email').value, password: el('skoda-acc-password').value });
-      api('POST', `/accounts/${created.account.id}/sync`).catch(() => {}); // fire and forget, status lands on the account row
+      api('POST', `/accounts/${created.account.id}/sync`).catch(function (err) { console.warn('[skoda] initial account sync failed', err); }); // fire and forget, status lands on the account row
       hideModal('skoda-account-modal');
       el('skoda-acc-email').value = ''; el('skoda-acc-password').value = '';
       await load();
@@ -306,7 +306,7 @@
         const pw = await D.prompt({ title: T('skoda.accounts.password'), label: T('skoda.accounts.password'), password: true, maxLength: 128 });
         if (pw) {
           await api('PUT', `/accounts/${id}`, { password: pw });
-          api('POST', `/accounts/${id}/sync`).catch(() => {});
+          api('POST', `/accounts/${id}/sync`).catch(function (err) { console.warn('[skoda] account sync after password change failed', err); });
           await load();
         }
       }

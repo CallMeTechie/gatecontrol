@@ -24,7 +24,7 @@ function canAccessRoute(route, tokenId, userId) {
       if (Array.isArray(allowed) && allowed.length > 0) {
         return userId ? allowed.includes(userId) : false;
       }
-    } catch {}
+    } catch { /* malformed user_ids JSON → treated as "no restriction" (documented above) */ }
   }
 
   if (route.token_ids) {
@@ -33,7 +33,7 @@ function canAccessRoute(route, tokenId, userId) {
       if (Array.isArray(allowed) && allowed.length > 0) {
         return tokenId ? allowed.includes(tokenId) : false;
       }
-    } catch {}
+    } catch { /* malformed token_ids JSON → treated as "no restriction" (documented above) */ }
   }
 
   return true;

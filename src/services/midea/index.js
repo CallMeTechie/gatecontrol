@@ -34,7 +34,7 @@ function withDeviceLock(id, fn) {
   };
   const next = prev.then(fn, fn);
   next.then(done, done);
-  locks.set(id, next.catch(() => {}));
+  locks.set(id, next.catch(() => { /* keeps the lock chain alive; the caller sees the error via its own promise */ }));
   return next;
 }
 
@@ -79,7 +79,7 @@ function refreshCloudState(id, d) {
   cloudRefreshInFlight.add(id);
   Promise.resolve()
     .then(() => fetchCloudState(id, d))
-    .catch(() => {})
+    .catch((err) => { logger.debug({ err: err.message, deviceId: id }, 'midea cloud state refresh failed'); })
     .finally(() => cloudRefreshInFlight.delete(id));
 }
 
@@ -344,7 +344,7 @@ function ensurePolling() {
   if (pollTimer) return;                            // idempotent
   if (!license.hasFeature(FEATURE)) return;
   if (devices.listDevices().length === 0) return;
-  pollTimer = setInterval(() => { pollTick().catch(() => {}); }, POLL_INTERVAL_MS);
+  pollTimer = setInterval(() => { pollTick().catch((err) => { logger.debug({ err: err.message }, 'midea poll tick failed'); }); }, POLL_INTERVAL_MS);
   if (pollTimer.unref) pollTimer.unref();           // never hold the process open
 }
 

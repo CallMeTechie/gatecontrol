@@ -71,7 +71,7 @@
         }
         else if (el.type === 'checkbox') el.checked = !!snap[el.id];
         else if (el.tagName === 'SELECT' && snap[el.id] != null) el.value = snap[el.id];
-      } catch (e) {}
+      } catch { /* element vanished/changed type since the snapshot — skip it */ }
     }
 
     // async because the confirmation is an in-app dialog now

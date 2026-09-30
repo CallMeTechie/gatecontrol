@@ -125,7 +125,7 @@ function createBackup() {
       delete entry.id;
       return entry;
     });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: users skipped'); }
 
   // ── api_tokens (resolve peer_id/user_id via names) ──────────
   let apiTokens = [];
@@ -142,7 +142,7 @@ function createBackup() {
       delete entry.user_id;
       return entry;
     });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: api_tokens skipped'); }
 
   // ── tags registry ───────────────────────────────────────────
   let tags = [];
@@ -150,7 +150,7 @@ function createBackup() {
     const tagCols = columnsOf(db, 'tags');
     const rawTags = db.prepare('SELECT * FROM tags').all();
     tags = rawTags.map(t => { const e = pickColumns(t, tagCols); delete e.id; return e; });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: tags skipped'); }
 
   // ── gateway_meta (resolve peer_id → peer_name) ──────────────
   let gatewayMeta = [];
@@ -163,7 +163,7 @@ function createBackup() {
       delete entry.peer_id;
       return entry;
     });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: gateway_meta skipped'); }
 
   // ── settings / webhooks / route_auth (unchanged) ────────────
   const settings = db.prepare('SELECT key, value FROM settings').all();
@@ -400,22 +400,22 @@ async function restoreBackup(backup) {
     db.prepare('DELETE FROM route_auth_otp').run();
     db.prepare('DELETE FROM route_auth_sessions').run();
     db.prepare('DELETE FROM route_auth').run();
-    try { db.prepare('DELETE FROM rdp_sessions').run(); } catch {}
-    try { db.prepare('DELETE FROM rdp_routes').run(); } catch {}
-    try { db.prepare('DELETE FROM service_bundles').run(); } catch {}
-    try { db.prepare('DELETE FROM api_tokens').run(); } catch {}
-    try { db.prepare('DELETE FROM gateway_meta').run(); } catch {}
+    try { db.prepare('DELETE FROM rdp_sessions').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing rdp_sessions failed (table may be absent)'); }
+    try { db.prepare('DELETE FROM rdp_routes').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing rdp_routes failed (table may be absent)'); }
+    try { db.prepare('DELETE FROM service_bundles').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing service_bundles failed (table may be absent)'); }
+    try { db.prepare('DELETE FROM api_tokens').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing api_tokens failed (table may be absent)'); }
+    try { db.prepare('DELETE FROM gateway_meta').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing gateway_meta failed (table may be absent)'); }
     db.prepare('DELETE FROM routes').run();
     db.prepare('DELETE FROM peers').run();
     db.prepare('DELETE FROM peer_groups').run();
     db.prepare('DELETE FROM settings').run();
     db.prepare('DELETE FROM webhooks').run();
-    try { db.prepare('DELETE FROM tags').run(); } catch {}
+    try { db.prepare('DELETE FROM tags').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing tags failed (table may be absent)'); }
     // users: keep the admin if no users in backup so the operator
     // never locks themselves out. If the backup DOES include users,
     // replace the full set.
     if (Array.isArray(users) && users.length > 0) {
-      try { db.prepare('DELETE FROM users').run(); } catch {}
+      try { db.prepare('DELETE FROM users').run(); } catch (err) { logger.warn({ err: err.message }, 'backup restore: clearing users failed'); }
     }
 
     // Restore peer_groups

@@ -521,7 +521,7 @@ async function applyRetention(row, cfg, t, ctx) {
 /** Upload one archive buffer to one target (serialised per target). */
 async function uploadTo(id, name, buf) {
   const prevRun = running.get(id) || Promise.resolve();
-  const job = prevRun.catch(() => {}).then(async () => {
+  const job = prevRun.catch(() => { /* previous upload's failure was already reported to its own caller; only serialisation matters here */ }).then(async () => {
     const row = getRow(id);
     if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
     publish(row.id, 'running', { file: name });

@@ -97,7 +97,7 @@ async function record({ now = Date.now() } = {}) {
 function start({ intervalMs = INTERVAL_MS, file } = {}) {
   if (_state.timer) return;
   if (file) _state.file = file;
-  _state.timer = setInterval(() => { record().catch(() => {}); }, intervalMs);
+  _state.timer = setInterval(() => { record().catch((err) => { logger.debug({ err: err.message }, 'wg endpoint snapshot failed'); }); }, intervalMs);
   if (_state.timer.unref) _state.timer.unref();
 }
 

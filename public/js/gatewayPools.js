@@ -337,7 +337,7 @@ function renderMigrateForm() {
         });
         if (gwSel.value) loadRelocateHosts(gwSel.value);
       })
-      .catch(function() {});
+      .catch(function (err) { console.warn('[gateway-pools] loading gateways for relocate failed', err); });
 
     const bulk = document.createElement('input');
     bulk.type = 'text';
@@ -393,7 +393,7 @@ function attachDragHandlers(row) {
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       // Firefox needs setData to start the drag.
-      try { e.dataTransfer.setData('text/plain', row.dataset.peerId); } catch (_) {}
+      try { e.dataTransfer.setData('text/plain', row.dataset.peerId); } catch { /* some browsers reject setData types; drag still works where it matters (Firefox) */ }
     }
   });
   row.addEventListener('dragend', function() {

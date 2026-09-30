@@ -121,6 +121,11 @@ Er ist trotzdem ausdrücklich **kein Ersatz für das echte Paket**:
 * **`src/` bekommt keinen Fallback.** Produktionscode kennt den Stub nicht;
   der Guard-Test prüft auch das.
 
+* Der Stub bildet eine bestimmte Paketversion nach (`gatecontrolTestStubMirrors`
+  in `tests/stubs/config-hash/package.json`). Wird das Paket in
+  `package-lock.json` angehoben, schlägt der Guard-Test in Stub-Läufen fehl,
+  bis der Stub nachgezogen ist (in der CI wird dieser Test übersprungen).
+
 Wer Hashes gegen ein echtes Gateway vergleicht, braucht das echte Paket.
 
 ## Browser-Tests

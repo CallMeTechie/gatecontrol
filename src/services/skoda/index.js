@@ -29,7 +29,7 @@ const accountLocks = new Map(); // accountId -> promise chain tail
 function withAccountLock(id, fn) {
   const prev = accountLocks.get(id) || Promise.resolve();
   const next = prev.then(fn, fn);
-  accountLocks.set(id, next.catch(() => {}));
+  accountLocks.set(id, next.catch(() => { /* keeps the lock chain alive; the caller sees the error via its own promise */ }));
   return next;
 }
 

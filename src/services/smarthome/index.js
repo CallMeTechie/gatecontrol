@@ -3,6 +3,7 @@
 const dev = require('./smarthomeDevices');
 const { createClient, briFromDeconz } = require('./deconzClient');
 const license = require('../license');
+const logger = require('../../utils/logger');
 
 const FEATURE = 'smarthome';
 const POLL_INTERVAL_MS = 30000;
@@ -173,7 +174,7 @@ async function pollTick() {
   try {
     for (const gw of dev.listGateways()) {
       if (!gw.enabled) continue;
-      await syncGateway(gw.id).catch(() => {});
+      await syncGateway(gw.id).catch((err) => { logger.debug({ err: err.message, gatewayId: gw.id }, 'smarthome gateway sync failed'); });
     }
   } finally { pollRunning = false; }
 }
@@ -182,7 +183,7 @@ function startPolling() {
   if (pollTimer) return;
   if (!license.hasFeature(FEATURE)) return;
   if (dev.listGateways().length === 0) return;
-  pollTimer = setInterval(() => { pollTick().catch(() => {}); }, POLL_INTERVAL_MS);
+  pollTimer = setInterval(() => { pollTick().catch((err) => { logger.debug({ err: err.message }, 'smarthome poll tick failed'); }); }, POLL_INTERVAL_MS);
   if (pollTimer.unref) pollTimer.unref();
 }
 

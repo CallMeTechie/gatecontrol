@@ -148,7 +148,7 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false } = 
     activity.log('client_enrollment_created',
       peer ? `App setup code created for peer "${peer.name}"` : 'App setup code created for a new device',
       { source: 'admin', severity: 'info', details: { peerId: peer ? peer.id : null, userId: ownerId, scopes: resolvedScopes, expiresAt } });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_created)'); }
 
   return { code, expiresAt, scopes: resolvedScopes, peerId: peer ? peer.id : null, userId: ownerId };
 }
@@ -189,7 +189,7 @@ function createTokenCode({ name, scopes, userId = null, peerId = null, expiresAt
   try {
     activity.log('client_enrollment_created', `Setup code created for token "${name.trim()}"`,
       { source: 'admin', severity: 'info', details: { userId: ownerId, peerId, scopes: resolvedScopes, expiresAt: codeExpiresAt } });
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_created)'); }
 
   return { code, expiresAt: codeExpiresAt, scopes: resolvedScopes };
 }
@@ -268,7 +268,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     try {
       db.prepare('UPDATE client_enrollment_codes SET consumed_at = NULL, consumed_from_ip = NULL WHERE code_hash = ? AND token_id IS NULL')
         .run(codeHash);
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message }, 'enrollment: releasing setup code failed'); }
   };
 
   let createdPeerId = null;
@@ -311,7 +311,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
         activity.log('client_enrollment_redeemed',
           `Setup code redeemed for token "${row.token_name}"${sourceIp ? ` from ${sourceIp}` : ''}`,
           { source: 'api', severity: 'info', details: { tokenId: created.token.id, peerId: row.peer_id, platform, clientVersion } });
-      } catch {}
+      } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_redeemed)'); }
       logger.info({ tokenId: created.token.id }, 'Token setup code redeemed');
 
       return {
@@ -363,21 +363,21 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     const previous = db.prepare('SELECT id FROM api_tokens WHERE peer_id = ? AND enrolled = 1 AND id != ?')
       .all(peer.id, created.token.id);
     for (const t of previous) {
-      try { tokens.revoke(t.id, sourceIp); } catch {}
+      try { tokens.revoke(t.id, sourceIp); } catch (err) { logger.warn({ err: err.message, tokenId: t.id }, 'enrollment: revoking previous app token failed'); }
     }
 
     if (row.peer_id != null) {
       try {
         db.prepare("UPDATE peers SET description = ?, updated_at = datetime('now') WHERE id = ?")
           .run(_clientLabel(platform, clientVersion), peer.id);
-      } catch {}
+      } catch (err) { logger.debug({ err: err.message, peerId: peer.id }, 'enrollment: updating peer description failed'); }
     }
 
     try {
       activity.log('client_enrollment_redeemed',
         `App set up for peer "${peer.name}"${sourceIp ? ` from ${sourceIp}` : ''}`,
         { source: 'api', severity: 'info', details: { peerId: peer.id, tokenId: created.token.id, platform, clientVersion, newPeer: createdPeerId != null } });
-    } catch {}
+    } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_redeemed)'); }
     logger.info({ peerId: peer.id, tokenId: created.token.id }, 'Client enrollment redeemed');
 
     return {
@@ -395,10 +395,10 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
       try {
         db.prepare('DELETE FROM api_tokens WHERE id = ?').run(createdTokenId);
         db.prepare('UPDATE client_enrollment_codes SET token_id = NULL WHERE code_hash = ?').run(codeHash);
-      } catch {}
+      } catch (cleanupErr) { logger.warn({ err: cleanupErr.message, tokenId: createdTokenId }, 'enrollment rollback: removing token failed'); }
     }
     if (createdPeerId != null) {
-      try { await peers.remove(createdPeerId); } catch {}
+      try { await peers.remove(createdPeerId); } catch (cleanupErr) { logger.warn({ err: cleanupErr.message, peerId: createdPeerId }, 'enrollment rollback: removing peer failed'); }
     }
     release();
     throw err;

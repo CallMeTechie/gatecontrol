@@ -313,7 +313,7 @@ async function createBundle(input, opts = {}) {
   if (target.target_kind === 'gateway' && target.target_peer_id) {
     try {
       const gateways = require('./gateways');
-      gateways.notifyConfigChanged(target.target_peer_id).catch(() => {});
+      gateways.notifyConfigChanged(target.target_peer_id).catch((err) => { logger.debug({ err: err.message, peerId: target.target_peer_id }, 'gateway config push failed (gateway re-polls anyway)'); });
     } catch { /* module load guard */ }
   }
 

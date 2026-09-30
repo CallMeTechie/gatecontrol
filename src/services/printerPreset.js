@@ -5,6 +5,7 @@ const { assertListenPortFree, suggestFreeListenPort, findListenPortConflict } = 
 const routes = require('./routes');
 const serviceBundle = require('./serviceBundle');
 const egressRoutes = require('./egressRoutes');
+const logger = require('../utils/logger');
 
 // Print listen-port: prefer target port (9100->9100); if taken, next free.
 function allocatePrintListenPort(targetPort, { protocol = 'tcp', excludeRouteIds = [] } = {}) {
@@ -139,8 +140,8 @@ async function createPreset(input, db = getDb()) {
 async function createScanToFolder(input, db = getDb()) {
   let nasRouteId = null; let egressId = null;
   const rollback = () => {
-    if (egressId) { try { egressRoutes.remove(egressId, db); } catch (_e) {} }
-    if (nasRouteId) { try { db.prepare('DELETE FROM routes WHERE id = ?').run(nasRouteId); } catch (_e) {} }
+    if (egressId) { try { egressRoutes.remove(egressId, db); } catch (err) { logger.warn({ err: err.message, egressId }, 'scan-to-folder rollback: removing egress route failed'); } }
+    if (nasRouteId) { try { db.prepare('DELETE FROM routes WHERE id = ?').run(nasRouteId); } catch (err) { logger.warn({ err: err.message, nasRouteId }, 'scan-to-folder rollback: removing NAS route failed'); } }
   };
   try {
     // 1. optional NAS route — DB-only (skipSync), so a later failure rolls back sync-free.

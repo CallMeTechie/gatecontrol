@@ -30,7 +30,7 @@ function getMode() {
 function writeAtomic(file, content) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   try { fs.writeFileSync(tmp, content, { mode: 0o644 }); fs.renameSync(tmp, file); }
-  catch (err) { try { fs.unlinkSync(tmp); } catch {} throw err; }
+  catch (err) { try { fs.unlinkSync(tmp); } catch { /* tmp file may not exist (write failed early); the original error is rethrown */ } throw err; }
 }
 // ── Maintenance window (docs/feature-release-b.md §6) ──────────────────────
 // Setting auto_update.window = JSON {enabled,start,end,tz}. In auto mode the
@@ -108,7 +108,7 @@ function setMode(mode) {
   writeConfigFile(mode);
   settings.set('auto_update.mode', mode);
   settings.set('auto_update.mode_changed_at', new Date().toISOString());
-  if (mode === 'auto') { try { fs.unlinkSync(FLAG_FILE); } catch {} } // drop orphan trigger
+  if (mode === 'auto') { try { fs.unlinkSync(FLAG_FILE); } catch { /* no orphan flag file is the normal case */ } } // drop orphan trigger
   return { mode };
 }
 function requestUpdate() {

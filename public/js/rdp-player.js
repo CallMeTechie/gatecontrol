@@ -76,7 +76,7 @@
 
     function emitState(newState, detail) {
       currentState = newState;
-      try { onStateCb(newState, detail || {}); } catch (e) {}
+      try { onStateCb(newState, detail || {}); } catch (err) { console.warn('[rdp-player] state callback threw', err); }
     }
 
     function transition(event, detail) {
@@ -228,7 +228,7 @@
           reader.ontext = function (text) { buf += text; };
           reader.onend = function () {
             if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(buf).catch(function () {});
+              navigator.clipboard.writeText(buf).catch(function () { /* clipboard write denied or unavailable — remote clipboard is best-effort */ });
             }
           };
         };
@@ -350,7 +350,7 @@
       clearTimer();
 
       if (activeClient) {
-        try { activeClient.disconnect(); } catch (e) {}
+        try { activeClient.disconnect(); } catch { /* client may already be disconnected; tearing down anyway */ }
         activeClient = null;
       }
 

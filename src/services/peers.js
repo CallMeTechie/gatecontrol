@@ -284,19 +284,19 @@ async function remove(id) {
   // shows a clear "not configured" state instead of a broken gateway.
   try {
     db.prepare("UPDATE rdp_routes SET gateway_peer_id = NULL, access_mode = 'internal' WHERE gateway_peer_id = ?").run(id);
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message, peerId: id }, 'peer delete: clearing rdp_routes gateway link failed'); }
   // Drop state-machine cache for this gateway so a later peer reusing
   // the id (unlikely but possible) doesn't start with stale transitions.
   try {
     const gw = require('./gateways');
     if (gw && gw._smCache && typeof gw._smCache.delete === 'function') gw._smCache.delete(id);
-  } catch {}
+  } catch { /* cache cleanup only; a missing/unloaded gateways module has nothing cached */ }
 
   await rewriteWgConfig();
 
   // Explicitly remove from running interface (syncconf doesn't remove peers)
   if (publicKey) {
-    try { await wireguard.removePeer(publicKey); } catch {}
+    try { await wireguard.removePeer(publicKey); } catch (err) { logger.debug({ err: err.message, peerId: id }, 'removing peer from running WireGuard interface failed'); }
   }
 
   // Push the disabled-route state to Caddy so requests to those domains
@@ -479,7 +479,7 @@ async function getClientConfig(id) {
       const { derivePublicKey } = require('../utils/crypto');
       serverPublicKey = await derivePublicKey(privKeyMatch[1].trim());
     }
-  } catch {}
+  } catch (err) { logger.debug({ err: err.message }, 'could not derive server public key; config keeps the placeholder'); }
 
   const ip = peer.allowed_ips.split('/')[0];
   const settings = require('./settings');
@@ -631,7 +631,7 @@ async function checkExpiredPeers() {
     // Remove expired peers from running interface
     for (const peer of expired) {
       if (peer.public_key) {
-        try { await wireguard.removePeer(peer.public_key); } catch {}
+        try { await wireguard.removePeer(peer.public_key); } catch (err) { logger.debug({ err: err.message, peerId: peer.id }, 'removing expired peer from running WireGuard interface failed'); }
       }
     }
   }
@@ -692,7 +692,7 @@ async function batch(action, ids) {
 
   // Explicitly remove peers from running interface (syncconf doesn't remove)
   for (const pk of pubKeys) {
-    try { await wireguard.removePeer(pk); } catch {}
+    try { await wireguard.removePeer(pk); } catch (err) { logger.debug({ err: err.message }, 'removing peer from running WireGuard interface failed'); }
   }
 
   const actionPast = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';

@@ -316,7 +316,7 @@ function handleRouteDownDetected(routeId) {
     mac: route.wol_mac,
     lan_host: route.target_lan_host,
     timeout_ms: 60000,
-  }).catch(() => {});
+  }).catch((err) => { logger.debug({ err: err.message, routeId: route.id }, 'WoL request via gateway failed'); });
 }
 
 module.exports = {

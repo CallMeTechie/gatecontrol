@@ -777,7 +777,7 @@ async function update(id, data) {
         activity.log('rdp_gateway_sync_failed',
           `RDP route ${id} gateway-link sync failed — L4 route may be stale`,
           { source: 'system', severity: 'error', details: { rdpId: id, err: err.message } });
-      } catch {}
+      } catch (logErr) { logger.warn({ err: logErr.message, rdpId: id }, 'activity log write failed (rdp_gateway_sync_failed)'); }
     }
   }
 

@@ -899,7 +899,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         }],
       };
     }
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'caddy config: adding management-UI vhost failed'); }
 
   // Home portal site — internal-only reverse proxy to the local Node app.
   // SECURITY-CRITICAL: This is the trusted-IP control for the VPN landing

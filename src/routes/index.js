@@ -13,6 +13,7 @@ const router = Router();
 // ─── Branding assets (public, no auth) ─────────────
 // Only serves whitelisted image extensions to prevent stored-XSS if a file slips past upload validation.
 const path = require('node:path');
+const logger = require('../utils/logger');
 const BRANDING_ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 router.use('/branding', (req, res, next) => {
   const ext = path.extname(req.path).toLowerCase();
@@ -233,7 +234,7 @@ pages.forEach(({ path, template, nav, titleKey }) => {
       const rdpService = require('../services/rdp');
       const counts = rdpService.getCount();
       extraLocals.rdpRouteCount = counts.total;
-    } catch {}
+    } catch (err) { logger.debug({ err: err.message }, 'rdp route count for sidebar unavailable'); }
 
     if (template === 'zones') {
       try {

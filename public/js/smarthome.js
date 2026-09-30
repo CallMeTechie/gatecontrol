@@ -76,14 +76,14 @@
     pwr.querySelector('.sh-switch').addEventListener('click', (e) => {
       const on = !e.currentTarget.classList.contains('on');
       e.currentTarget.classList.toggle('on', on);
-      send(r.id, { on }).catch(() => {});
+      send(r.id, { on }).catch(function (err) { console.warn('[smarthome] switching failed', err); });
     });
     body.appendChild(pwr);
     // Brightness
     if (caps.bri) {
       const wrap = document.createElement('div');
       wrap.innerHTML = `<div class="sh-ctl-lbl">${T('smarthome.brightness')}</div><input class="sh-bri" type="range" min="0" max="100" value="${(r.state && r.state.bri != null) ? Number(r.state.bri) : 0}">`;
-      wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { bri: Number(e.target.value) }).catch(() => {}));
+      wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { bri: Number(e.target.value) }).catch(function (err) { console.warn('[smarthome] setting brightness failed', err); }));
       body.appendChild(wrap);
     }
     // Color
@@ -93,14 +93,14 @@
       const row = wrap.querySelector('.sh-swatches');
       SWATCHES.forEach((sw) => {
         const dot = document.createElement('span'); dot.className = 'sh-sw'; dot.style.background = sw.c;
-        dot.addEventListener('click', () => send(r.id, { hue: sw.hue, sat: sw.sat }).catch(() => {}));
+        dot.addEventListener('click', () => send(r.id, { hue: sw.hue, sat: sw.sat }).catch(function (err) { console.warn('[smarthome] setting colour failed', err); }));
         row.appendChild(dot);
       });
       body.appendChild(wrap);
     } else if (caps.color === 'ct') {
       const wrap = document.createElement('div');
       wrap.innerHTML = `<div class="sh-ctl-lbl">${T('smarthome.warmth')}</div><input class="sh-bri" type="range" min="153" max="500" value="300">`;
-      wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { ct: Number(e.target.value) }).catch(() => {}));
+      wrap.querySelector('input').addEventListener('change', (e) => send(r.id, { ct: Number(e.target.value) }).catch(function (err) { console.warn('[smarthome] setting colour temperature failed', err); }));
       body.appendChild(wrap);
     }
     if (r.kind === 'light' || r.kind === 'plug' || r.kind === 'group') {
@@ -121,7 +121,7 @@
     const el = cardShell(r);
     const btn = document.createElement('button'); btn.className = 'btn btn-sm btn-primary'; btn.style.marginTop = '12px';
     btn.textContent = T('smarthome.activate');
-    btn.addEventListener('click', () => send(r.id, {}).catch(() => {}));
+    btn.addEventListener('click', () => send(r.id, {}).catch(function (err) { console.warn('[smarthome] activating scene failed', err); }));
     el.appendChild(btn);
     if (r.owners && r.owners.length) {
       const chip = document.createElement('div'); chip.className = 'sh-owner-chips';
@@ -262,7 +262,7 @@
     const sync = $('#sh-sync');
     if (sync) sync.addEventListener('click', async () => {
       const sel = $('#sh-gateway-select'); if (!sel || !sel.value) return;
-      await api(`/gateways/${sel.value}/sync`, { method: 'POST' }).catch(() => {});
+      await api(`/gateways/${sel.value}/sync`, { method: 'POST' }).catch(function (err) { console.warn('[smarthome] gateway sync failed', err); });
       await loadResources(Number(sel.value));
     });
   }

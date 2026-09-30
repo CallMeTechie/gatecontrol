@@ -28,11 +28,11 @@ var DT = function (k, p) { return D.t(k, p); };
       var activeTab = document.querySelector('.settings-tabs > .tab.active');
       if (activeTab) label.textContent = activeTab.textContent;
     }
-    try { localStorage.setItem('settings-active-tab', tabName); } catch (e) {}
+    try { localStorage.setItem('settings-active-tab', tabName); } catch { /* storage unavailable (private mode / blocked) — tab memory is optional */ }
     // Keep the address in sync (links like /settings#backup from the security
     // check); replaceState: no history entry per tab, no scroll jump.
     if (window.history && history.replaceState && location.hash !== '#' + tabName) {
-      try { history.replaceState(null, '', location.pathname + location.search + '#' + tabName); } catch (e) {}
+      try { history.replaceState(null, '', location.pathname + location.search + '#' + tabName); } catch { /* replaceState can throw in sandboxed frames — hash sync is cosmetic */ }
     }
   }
 
@@ -47,7 +47,7 @@ var DT = function (k, p) { return D.t(k, p); };
     if (!panel) return false;
     var name = panel.dataset.settingsPanel;
     switchTab(name);
-    try { history.replaceState(null, '', location.pathname + location.search + '#' + h); } catch (e) {}
+    try { history.replaceState(null, '', location.pathname + location.search + '#' + h); } catch { /* replaceState can throw in sandboxed frames — hash sync is cosmetic */ }
     setTimeout(function () { if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
     return true;
   }
@@ -85,7 +85,7 @@ var DT = function (k, p) { return D.t(k, p); };
   // Tab from the address first, else the last active tab
   if (!fromHash()) {
     var saved = null;
-    try { saved = localStorage.getItem('settings-active-tab'); } catch (e) {}
+    try { saved = localStorage.getItem('settings-active-tab'); } catch { /* storage unavailable (private mode / blocked) — fall back to default tab */ }
     if (saved && document.querySelector('[data-settings-panel="' + saved + '"]')) {
       switchTab(saved);
     }
@@ -1204,7 +1204,7 @@ var DT = function (k, p) { return D.t(k, p); };
         dnsInput.value = data.data.dns || '';
         if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('dns');
       }
-    }).catch(function() {});
+    }).catch(function (err) { console.warn('[settings] loading DNS settings failed', err); });
 
     SettingsAutosave.bind({
       cluster: 'dns',
@@ -1224,7 +1224,7 @@ var DT = function (k, p) { return D.t(k, p); };
     var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
     if (el) el.checked = true;
     if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('auto-update');
-  }).catch(function () {});
+  }).catch(function (err) { console.warn('[settings] loading auto-update settings failed', err); });
   var auRadios = Array.prototype.slice.call(document.querySelectorAll('input[name="au-mode"]'));
   if (auRadios.length) {
     function auVal() { var c = document.querySelector('input[name="au-mode"]:checked'); return c ? c.value : ''; }
@@ -1361,7 +1361,7 @@ var DT = function (k, p) { return D.t(k, p); };
     apply(d);
     SettingsAutosave.resync('au-window');
     SettingsAutosave.resync('au-notify');
-  }).catch(function () {});
+  }).catch(function (err) { console.warn('[settings] loading auto-update window/notify settings failed', err); });
 
   [startEl, endEl].forEach(function (n) { n.addEventListener('input', renderState); });
   tzEl.addEventListener('change', renderClock);
@@ -2008,7 +2008,7 @@ var DT = function (k, p) { return D.t(k, p); };
   try {
     var res = await api.get('/api/v1/settings/machine-binding');
     if (res.ok) modeSelect.value = res.data.mode;
-  } catch {}
+  } catch (err) { console.warn('[settings] loading machine-binding mode failed', err); }
 
   SettingsAutosave.bind({
     cluster: 'machine-binding',
@@ -2252,7 +2252,7 @@ var DT = function (k, p) { return D.t(k, p); };
       });
       renderCustom();
       if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('split-tunnel');
-    } catch {}
+    } catch (err) { console.warn('[settings] loading split-tunnel preset failed', err); }
   }
 
   function stSave() {
@@ -2463,7 +2463,7 @@ var DT = function (k, p) { return D.t(k, p); };
         try {
           var hostname = new URL(this.value.trim()).hostname;
           if (hostname) dnsEl.value = hostname;
-        } catch (e) {}
+        } catch { /* URL still being typed / invalid — leave the DNS field alone */ }
       }
     });
   }
@@ -2807,7 +2807,7 @@ var DT = function (k, p) { return D.t(k, p); };
     // Empty state: no verified domains → only "Internal (default)" + a hint pointing to the registry.
     if (noDomainsHint) noDomainsHint.style.display = verified.length ? 'none' : '';
     renderPreview();
-  }).catch(function () {});
+  }).catch(function (err) { console.warn('[settings] loading domains for preview failed', err); });
 
   // Preview only — selecting/typing does NOT switch the live host.
   sel.addEventListener('change', renderPreview);

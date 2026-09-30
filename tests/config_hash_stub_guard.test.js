@@ -54,3 +54,17 @@ test('the stub and the real package agree on the public surface', () => {
   const expected = ['CONFIG_HASH_VERSION', 'GatewayConfigSchema', 'canonicalize', 'canonicalizeValue', 'computeConfigHash', 'computeHash', 'validateWgConfig'];
   for (const name of expected) assert.ok(name in lib, `missing export: ${name}`);
 });
+
+test('the stub mirrors the package version pinned in package-lock.json', (t) => {
+  // Nur relevant, wenn der Stub geladen ist (lokal ohne Registry-Zugriff).
+  // Wird das echte Paket angehoben, ohne den Stub nachzuziehen, laufen
+  // lokale Stub-Läufe auseinander (so geschehen mit 1.3.0 /
+  // backend_tls_fingerprint) — das soll hier auffallen statt als
+  // rätselhafter Fehler in einem Fachtest.
+  if (lib.__isTestStub !== true) { t.skip('real package installed — nothing to compare'); return; }
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
+  const pinned = lock.packages['node_modules/@callmetechie/gatecontrol-config-hash'].version;
+  const stubPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests', 'stubs', 'config-hash', 'package.json'), 'utf8'));
+  assert.equal(stubPkg.gatecontrolTestStubMirrors, pinned,
+    `tests/stubs/config-hash mirrors ${stubPkg.gatecontrolTestStubMirrors}, package-lock pins ${pinned} — update the stub (and its gatecontrolTestStubMirrors)`);
+});

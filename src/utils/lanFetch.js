@@ -87,7 +87,7 @@ function isAllowedHop(from, to) {
 }
 
 function discardBody(res) {
-  try { if (res.body && typeof res.body.cancel === 'function') res.body.cancel().catch(() => {}); } catch { /* ignore */ }
+  try { if (res.body && typeof res.body.cancel === 'function') res.body.cancel().catch(() => { /* body already consumed/closed — nothing to discard */ }); } catch { /* ignore */ }
 }
 
 /**

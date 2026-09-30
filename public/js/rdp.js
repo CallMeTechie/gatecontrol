@@ -285,26 +285,26 @@
     var deleteBtn = e.target.closest('[data-delete]');
     if (deleteBtn) {
       if (!await D.confirm({ message: D.t('rdp.confirm_delete'), danger: true, okLabel: D.t('common.delete') })) return;
-      try { await api.del('/api/v1/rdp/' + deleteBtn.dataset.delete); loadRoutes(); } catch {}
+      try { await api.del('/api/v1/rdp/' + deleteBtn.dataset.delete); loadRoutes(); } catch (err) { console.warn('[rdp] deleting route failed', err); }
       return;
     }
 
     var toggleBtn = e.target.closest('[data-toggle]');
     if (toggleBtn) {
-      try { await api.put('/api/v1/rdp/' + toggleBtn.dataset.toggle + '/toggle'); loadRoutes(); } catch {}
+      try { await api.put('/api/v1/rdp/' + toggleBtn.dataset.toggle + '/toggle'); loadRoutes(); } catch (err) { console.warn('[rdp] toggling route failed', err); }
       return;
     }
 
     var disconnAllBtn = e.target.closest('[data-disconnect-all]');
     if (disconnAllBtn) {
       if (!await D.confirm({ message: D.t('rdp.confirm_disconnect_all'), danger: true, okLabel: D.t('rdp.disconnect_all') })) return;
-      try { await api.post('/api/v1/rdp/' + disconnAllBtn.dataset.disconnectAll + '/sessions/disconnect-all'); loadRoutes(); } catch {}
+      try { await api.post('/api/v1/rdp/' + disconnAllBtn.dataset.disconnectAll + '/sessions/disconnect-all'); loadRoutes(); } catch (err) { console.warn('[rdp] disconnecting sessions failed', err); }
       return;
     }
 
     var wolBtn = e.target.closest('[data-wol]');
     if (wolBtn) {
-      try { await api.post('/api/v1/rdp/' + wolBtn.dataset.wol + '/wol'); wolBtn.textContent = GC.t['rdp.wol_sent'] || 'Sent'; } catch {}
+      try { await api.post('/api/v1/rdp/' + wolBtn.dataset.wol + '/wol'); wolBtn.textContent = GC.t['rdp.wol_sent'] || 'Sent'; } catch (err) { console.warn('[rdp] Wake-on-LAN failed', err); }
       return;
     }
 
@@ -318,7 +318,7 @@
         checkBtn.innerHTML = result.online
           ? '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
           : '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      } catch {}
+      } catch (err) { console.warn('[rdp] status check failed', err); }
       return;
     }
   });
@@ -1039,7 +1039,7 @@
       if (res.ok && res.pending) {
         document.getElementById('rdp-stat-rotation').textContent = res.pending.length;
       }
-    } catch {}
+    } catch (err) { console.warn('[rdp] loading rotation count failed', err); }
   }
 
   // -- Init -----------------------------------------------------

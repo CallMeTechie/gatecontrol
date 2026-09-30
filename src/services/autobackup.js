@@ -229,7 +229,7 @@ function startScheduler() {
     if (!lastRun || Date.now() - lastRun >= intervalMs) {
       setImmediate(() => { try { runBackup(); } catch (err) { logger.warn({ err: err.message }, 'catch-up autobackup failed'); } });
     }
-  } catch {}
+  } catch (err) { logger.warn({ err: err.message }, 'autobackup catch-up check failed'); }
 
   timer = setInterval(() => {
     try {

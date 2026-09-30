@@ -561,7 +561,7 @@ async function create(data, opts = {}) {
   if (!opts.skipSync && targetKind === 'gateway' && targetPeerId) {
     try {
       const gateways = require('./gateways');
-      gateways.notifyConfigChanged(targetPeerId).catch(() => {});
+      gateways.notifyConfigChanged(targetPeerId).catch((err) => { logger.debug({ err: err.message, peerId: targetPeerId }, 'gateway config push failed (gateway re-polls anyway)'); });
     } catch { /* fallback when module load fails */ }
   }
 
@@ -997,7 +997,7 @@ async function update(id, data) {
     try {
       const gateways = require('./gateways');
       for (const pid of touchedGwPeers) {
-        gateways.notifyConfigChanged(pid).catch(() => {});
+        gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
       }
     } catch { /* module load guard */ }
   }
@@ -1090,7 +1090,7 @@ async function toggle(id) {
   if (route.target_kind === 'gateway' && route.target_peer_id) {
     try {
       const gateways = require('./gateways');
-      gateways.notifyConfigChanged(route.target_peer_id).catch(() => {});
+      gateways.notifyConfigChanged(route.target_peer_id).catch((err) => { logger.debug({ err: err.message, peerId: route.target_peer_id }, 'gateway config push failed (gateway re-polls anyway)'); });
     } catch { /* fallback when module load fails */ }
   }
 
@@ -1352,7 +1352,7 @@ async function bulkUpdate(input) {
   if (gwPeers.size > 0) {
     try {
       const gateways = require('./gateways');
-      for (const pid of gwPeers) gateways.notifyConfigChanged(pid).catch(() => {});
+      for (const pid of gwPeers) gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
     } catch { /* module load guard */ }
   }
   if (todo.some((p) => p.next.enabled !== (p.row.enabled ? 1 : 0) || p.next.external_enabled !== (p.row.external_enabled ? 1 : 0))) {
@@ -1361,7 +1361,7 @@ async function bulkUpdate(input) {
   // Monitoring newly on → first check right away (like PUT).
   for (const p of todo) {
     if (p.next.monitoring_enabled && !p.row.monitoring_enabled) {
-      try { require('./monitor').checkRouteById(p.row.id).catch(() => {}); } catch { /* best-effort */ }
+      try { require('./monitor').checkRouteById(p.row.id).catch((err) => { logger.debug({ err: err.message, routeId: p.row.id }, 'immediate monitoring check failed'); }); } catch { /* best-effort */ }
     }
   }
   publishRoutesEvent(hostRefs(db, todo.map((p) => p.row.bundle_id)));
@@ -1398,7 +1398,7 @@ function getForUser(userId) {
         if (Array.isArray(allowed) && allowed.length > 0) {
           return userId ? allowed.includes(userId) : false;
         }
-      } catch {}
+      } catch { /* malformed user_ids JSON → treated as "no restriction" (same as rdpAcl) */ }
     }
     return true;
   });
