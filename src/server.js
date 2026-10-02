@@ -288,6 +288,8 @@ async function start() {
       cleanLoginAttempts(1);
       // WAF events: data.retention_waf_days (default 14) + row cap.
       require('./services/waf').cleanup();
+      // Support bundles: newest N per peer, max age, orphaned files.
+      require('./services/supportBundles').cleanup();
     });
     setInterval(retryCleanup, 6 * 60 * 60 * 1000);
 

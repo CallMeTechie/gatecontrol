@@ -31,6 +31,8 @@ router.use('/dashboard', require('./dashboard'));
 router.use('/system', require('./system'));
 router.use('/logs', require('./logs'));
 router.use('/peers/:id/access-rules', require('./accessRules')('peer'));
+// Support bundles of a peer (admin session only, docs/feature-support-bundle.md)
+router.use('/peers/:id/support-bundles', require('./supportBundles'));
 router.use('/peers', require('./peers'));
 router.use('/peer-groups', require('./peerGroups'));
 router.use('/gateways', require('./gateways'));

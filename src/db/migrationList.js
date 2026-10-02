@@ -1701,6 +1701,37 @@ const migrations = [
       ALTER TABLE peers ADD COLUMN client_seen_at TEXT;`,
     detect: (db) => hasColumn(db, 'peers', 'update_channel') && hasColumn(db, 'peers', 'client_seen_at'),
   },
+  {
+    version: 84,
+    name: 'create_support_bundles',
+    // Support bundles (services/supportBundles.js): redacted diagnostics a
+    // client uploads after the user confirmed it. The bundle itself lives on
+    // disk (<support dir>/<peer_id>/<file_name>, gzip), this row is the index.
+    //   size_bytes      stored (gzip) size
+    //   json_bytes      uncompressed JSON size
+    //   client_*/os     copied from the bundle for the admin list
+    //   reason          'user' | 'admin_request'
+    // peers.support_bundle_requested_at: an admin asked the device for a
+    // bundle; heartbeat / peer-info answer supportBundleRequested until the
+    // next upload (or until the admin withdraws the request).
+    sql: `
+      CREATE TABLE IF NOT EXISTS support_bundles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        json_bytes INTEGER NOT NULL,
+        client_version TEXT,
+        client_product TEXT,
+        client_platform TEXT,
+        os TEXT,
+        reason TEXT NOT NULL DEFAULT 'user',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_support_bundles_peer ON support_bundles(peer_id, created_at);
+      ALTER TABLE peers ADD COLUMN support_bundle_requested_at TEXT;`,
+    detect: (db) => tableExists(db, 'support_bundles') && hasColumn(db, 'peers', 'support_bundle_requested_at'),
+  },
 ];
 
 module.exports = { migrations };

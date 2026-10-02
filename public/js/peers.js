@@ -1020,6 +1020,9 @@ var DT = function (k, p) { return D.t(k, p); };
       }
     }
 
+    // Support bundles of this device (public/js/support-bundles.js)
+    if (window.GCSupportBundles) window.GCSupportBundles.open(peer);
+
     var editExpiresSel = document.getElementById('edit-peer-expires');
     var editExpiresDate = document.getElementById('edit-peer-expires-date');
     if (peer.expires_at) {
