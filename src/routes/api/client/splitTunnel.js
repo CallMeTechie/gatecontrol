@@ -1,8 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const tokens = require('../../../services/tokens');
-const settings = require('../../../services/settings');
+const clientPolicy = require('../../../services/clientPolicy');
 const logger = require('../../../utils/logger');
 
 const router = Router();
@@ -12,43 +11,11 @@ const router = Router();
 // Resolution: token override > global preset > empty.
 router.get('/split-tunnel', (req, res) => {
   try {
-    let preset = null;
-    let source = 'none';
-
-    // 1. Check token-specific override
-    if (req.tokenAuth && req.tokenId) {
-      const token = tokens.getById(req.tokenId);
-      if (token && token.split_tunnel_override) {
-        try {
-          preset = JSON.parse(token.split_tunnel_override);
-          source = 'token';
-        } catch (err) { logger.warn({ err: err.message, tokenId: req.tokenId }, 'malformed split_tunnel_override JSON — ignoring token override'); }
-      }
-    }
-
-    // 2. Fall back to global preset
-    if (!preset) {
-      const raw = settings.get('split_tunnel_preset', '');
-      if (raw) {
-        try {
-          preset = JSON.parse(raw);
-          source = 'global';
-        } catch (err) { logger.warn({ err: err.message }, 'malformed split_tunnel_preset JSON — ignoring global preset'); }
-      }
-    }
-
-    // 3. No preset
-    if (!preset || preset.mode === 'off') {
+    const preset = clientPolicy.resolveSplitTunnelPreset(req.tokenAuth ? req.tokenId : null);
+    if (preset.mode === 'off') {
       return res.json({ ok: true, mode: 'off', networks: [], locked: false, source: 'none' });
     }
-
-    res.json({
-      ok: true,
-      mode: preset.mode || 'exclude',
-      networks: preset.networks || [],
-      locked: !!preset.locked,
-      source,
-    });
+    res.json({ ok: true, ...preset });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get split-tunnel config');
     res.status(500).json({ ok: false, error: 'Failed to load split-tunnel config' });

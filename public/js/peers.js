@@ -969,6 +969,29 @@ var DT = function (k, p) { return D.t(k, p); };
     }
   }
 
+  // ─── Client policy (peer override) ───────────────────────
+  var peerPolicyForm = null;
+  var peerPolicyLoaded = null; // JSON of the override as loaded (change detection)
+  function loadPeerPolicy(peer) {
+    var box = document.getElementById('edit-peer-policy-form');
+    var wrap = document.getElementById('edit-peer-policy-group');
+    var badge = document.getElementById('edit-peer-policy-badge');
+    peerPolicyLoaded = null;
+    if (!box || !wrap || !window.ClientPolicyForm) return;
+    wrap.style.display = peer.peer_type === 'gateway' ? 'none' : '';
+    wrap.open = false;
+    if (peer.peer_type === 'gateway') return;
+    peerPolicyForm = ClientPolicyForm.create(box, { mode: 'override', idPrefix: 'edit-peer-cp' });
+    var n = peer.client_policy ? Object.keys(peer.client_policy).length : 0;
+    if (badge) { badge.style.display = n ? '' : 'none'; badge.textContent = String(n); }
+    api.get('/api/peers/' + peer.id + '/client-policy').then(function (r) {
+      if (!r || !r.ok || String(document.getElementById('edit-peer-id').value) !== String(peer.id)) return;
+      peerPolicyForm.setInherited(r.data.inherited, r.data.inherited_sources);
+      peerPolicyForm.setValue(r.data.override || {});
+      peerPolicyLoaded = JSON.stringify(peerPolicyForm.getValue());
+    }).catch(function (err) { console.warn('[peers] loading client policy failed', err); });
+  }
+
   async function showEditModal(id) {
     var peer = allPeers.find(function(p) { return String(p.id) === String(id); });
     if (!peer) return;
@@ -982,6 +1005,10 @@ var DT = function (k, p) { return D.t(k, p); };
     document.getElementById('edit-peer-group').value = peer.group_id ? String(peer.group_id) : '';
     var editOwnerSel = document.getElementById('edit-peer-owner');
     if (editOwnerSel) editOwnerSel.value = peer.user_id != null ? String(peer.user_id) : '';
+
+    // Client policy override (inherited values from group/global shown in
+    // the "Erben (…)" options; loaded per peer).
+    loadPeerPolicy(peer);
 
     // Update channel (admin-assigned) + last reported client version
     var updGroup = document.getElementById('edit-peer-update-group');
@@ -1174,6 +1201,15 @@ var DT = function (k, p) { return D.t(k, p); };
         var prevPeer = allPeers.find(function(p) { return String(p.id) === String(id); }) || {};
         var prevChannel = prevPeer.update_channel || '';
         if (updSelEl.value !== prevChannel) payload.update_channel = updSelEl.value || null;
+      }
+      // Client policy override: only when loaded and changed (own audit entry).
+      if (peerPolicyForm && peerPolicyLoaded !== null) {
+        if (!peerPolicyForm.isValid()) {
+          showError('edit-peer-error', GC.t['error.client_policy.invalid'] || 'Invalid client policy');
+          return;
+        }
+        var policyNow = JSON.stringify(peerPolicyForm.getValue());
+        if (policyNow !== peerPolicyLoaded) payload.client_policy = peerPolicyForm.getValue();
       }
       var data = await api.put('/api/peers/' + id, payload);
       if (!data.ok) {

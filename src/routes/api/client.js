@@ -67,6 +67,7 @@ router.use(require('./client/status'));
 router.use(require('./client/traffic'));
 router.use(require('./client/rdp'));
 router.use(require('./client/splitTunnel'));
+router.use(require('./client/policy'));
 
 module.exports = router;
 module.exports.updateRouter = require('./client/update');

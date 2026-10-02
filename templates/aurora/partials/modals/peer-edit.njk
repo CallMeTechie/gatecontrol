@@ -34,6 +34,11 @@
         <small class="form-hint">{{ t('client_updates.peer_channel_hint') }}</small>
         <div id="edit-peer-client-info" style="font-size:12px;margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>
       </div>
+      <details class="form-group" id="edit-peer-policy-group">
+        <summary class="form-label" style="cursor:pointer">{{ t('client_policy.peer_title') }} <span id="edit-peer-policy-badge" class="tag tag-blue" style="font-size:10px;display:none"></span></summary>
+        <small class="form-hint" style="display:block;margin:4px 0 8px">{{ t('client_policy.peer_hint') }}</small>
+        <div id="edit-peer-policy-form"></div>
+      </details>
       <div class="form-group">
         <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">

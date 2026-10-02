@@ -5,6 +5,8 @@ const { hasFeature } = require('../../../services/license');
 const tokens = require('../../../services/tokens');
 const portalConfig = require('../../../services/portalConfig');
 const settings = require('../../../services/settings');
+const peers = require('../../../services/peers');
+const clientPolicy = require('../../../services/clientPolicy');
 
 const router = Router();
 
@@ -37,6 +39,11 @@ router.get('/permissions', (req, res) => {
       piholeControl: tokens.checkScope(scopes, '/api/v1/pihole/blocking', 'POST') && hasFeature('pihole_integration'),
     },
     scopes,
+    // Client policy version (see GET /api/v1/client/policy)
+    policyVersion: clientPolicy.versionFor(
+      req.tokenPeerId != null ? (peers.getById(req.tokenPeerId) || null) : null,
+      { tokenId: req.tokenAuth ? req.tokenId : null },
+    ),
   });
 });
 

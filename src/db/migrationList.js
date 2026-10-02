@@ -1701,6 +1701,19 @@ const migrations = [
       ALTER TABLE peers ADD COLUMN client_seen_at TEXT;`,
     detect: (db) => hasColumn(db, 'peers', 'update_channel') && hasColumn(db, 'peers', 'client_seen_at'),
   },
+  {
+    version: 84,
+    name: 'client_policies',
+    // Client policies (services/clientPolicy.js): what the clients enforce
+    // locally (kill switch, auto-connect, autostart, allowed split-tunnel
+    // modes, settings / server lock). JSON with only the overridden fields,
+    // NULL = inherit everything. Resolution: defaults <- global (setting
+    // client_policy) <- peer group <- peer. Admin session only.
+    sql: `
+      ALTER TABLE peer_groups ADD COLUMN client_policy TEXT;
+      ALTER TABLE peers ADD COLUMN client_policy TEXT;`,
+    detect: (db) => hasColumn(db, 'peer_groups', 'client_policy') && hasColumn(db, 'peers', 'client_policy'),
+  },
 ];
 
 module.exports = { migrations };

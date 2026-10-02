@@ -36,6 +36,9 @@ const TOKEN_FORBIDDEN = [
   // Update-Kanal und Mindestversion der Clients: nur eine Admin-Session darf
   // festlegen, welche Builds Clients angeboten bekommen.
   /^\/client-updates$/,
+  // Client-Richtlinien (Kill-Switch, Auto-Connect, Einstellungs-Sperre …):
+  // nur eine Admin-Session darf sie festlegen.
+  /^\/client-policy(\/|$)/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -63,5 +66,7 @@ router.use('/', require('./domains'));
 router.use('/', require('./waf'));
 // Client updates: default channel, minimum versions, version overview
 router.use('/', require('./clientUpdates'));
+// Client policies: global defaults + per-group overrides
+router.use('/', require('./clientPolicy'));
 
 module.exports = router;

@@ -7,6 +7,7 @@ const logger = require('../../../utils/logger');
 const { hasFeature } = require('../../../services/license');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
 const { getDb } = require('../../../db/connection');
+const clientPolicy = require('../../../services/clientPolicy');
 
 const router = Router();
 
@@ -48,6 +49,9 @@ router.post('/heartbeat', (req, res) => {
     res.json({
       ok: true,
       peerEnabled: peer.enabled === 1,
+      // Client policy version — a client whose cached version differs
+      // fetches GET /api/v1/client/policy (additive, old clients ignore it).
+      policyVersion: clientPolicy.versionFor(peer, { tokenId: req.tokenAuth ? req.tokenId : null }),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Heartbeat failed');

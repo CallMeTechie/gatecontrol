@@ -10,6 +10,7 @@ const { validatePeerName, validateDescription } = require('../../utils/validate'
 const { requireLimit, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
 const clientUpdates = require('../../services/clientUpdates');
+const clientPolicy = require('../../services/clientPolicy');
 const activity = require('../../services/activity');
 
 const router = Router();
@@ -95,7 +96,7 @@ router.get('/', async (req, res) => {
     const list = await peers.getAll({ limit, offset });
     const uMap = new Map(getDb().prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
     const policy = clientUpdates.getPolicy();
-    const enriched = list.map(p => clientUpdates.decoratePeer({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }, policy));
+    const enriched = list.map(p => clientPolicy.decoratePeer(clientUpdates.decoratePeer({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }, policy)));
     res.json({
       ok: true,
       peers: enriched.map(stripPeer),
@@ -110,13 +111,41 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/peers/:id/client-policy — override, inherited and effective policy
+ * (for the peer edit dialog; "inherited" = what applies without the peer's
+ * own override).
+ */
+router.get('/:id/client-policy', (req, res) => {
+  try {
+    const peer = peers.getById(req.params.id);
+    if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
+    const inherited = clientPolicy.resolveEffective({ ...peer, client_policy: null });
+    const effective = clientPolicy.resolveEffective(peer);
+    res.json({
+      ok: true,
+      data: {
+        override: clientPolicy.parseOverride(peer.client_policy),
+        inherited: inherited.policy,
+        inherited_sources: inherited.sources,
+        effective: effective.policy,
+        sources: effective.sources,
+        version: clientPolicy.forClient(peer).version,
+      },
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to get peer client policy');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * GET /api/peers/:id — Get single peer
  */
 router.get('/:id', (req, res) => {
   try {
     const peer = peers.getById(req.params.id);
     if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
-    res.json({ ok: true, peer: stripPeer(clientUpdates.decoratePeer(peer)) });
+    res.json({ ok: true, peer: stripPeer(clientPolicy.decoratePeer(clientUpdates.decoratePeer(peer))) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get peer');
     res.status(500).json({ ok: false, error: req.t('error.peers.get') });
@@ -188,7 +217,21 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id, user_id, update_channel } = req.body;
+    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id, user_id, update_channel, client_policy } = req.body;
+
+    // Client policy override: admin session only, like the update channel.
+    let policyResult = null;
+    if (client_policy !== undefined) {
+      if (req.tokenAuth) {
+        return res.status(403).json({ ok: false, error: req.t('error.client_policy.session_required') });
+      }
+      const existing = peers.getById(req.params.id);
+      if (!existing) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
+      policyResult = clientPolicy.validateInput(client_policy, { mode: 'override', current: clientPolicy.parseOverride(existing.client_policy) });
+      if (policyResult.error) {
+        return res.status(400).json({ ok: false, error: req.t(policyResult.error === 'unknown_field' ? 'error.client_policy.unknown_field' : 'error.client_policy.invalid_value', { field: policyResult.field || '' }), field: policyResult.field || null });
+      }
+    }
 
     // Update channel: admin session only (an API token — even one with the
     // peers scope — must not move a client to beta builds).
@@ -239,7 +282,15 @@ router.put('/:id', async (req, res) => {
         peer = peers.getById(peer.id);
       }
     }
-    res.json({ ok: true, peer: stripPeer(clientUpdates.decoratePeer(peer)) });
+    if (policyResult && peer && Object.keys(policyResult.changes).length > 0) {
+      clientPolicy.setPeerOverride(peer.id, policyResult.next);
+      activity.log('peer_client_policy_changed', `Client policy of peer "${peer.name}" changed`, {
+        source: 'admin', ipAddress: req.ip, severity: 'info',
+        details: { peerId: peer.id, changes: policyResult.changes },
+      });
+      peer = peers.getById(peer.id);
+    }
+    res.json({ ok: true, peer: stripPeer(clientPolicy.decoratePeer(clientUpdates.decoratePeer(peer))) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');
     const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.update');
