@@ -27,6 +27,7 @@
     <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
     <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
     <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
+    <div class="tab" data-settings-tab="client-policy">{{ t('settings.tab_client_policy') }}</div>
     {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
     <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
   </div>
@@ -39,6 +40,7 @@
   <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
   <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
   <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
+  <div class="tab" data-settings-tab="client-policy">{{ t('settings.tab_client_policy') }}</div>
   {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
   <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
 </div>
@@ -1242,6 +1244,50 @@ chmod +x update.sh</pre>
   </div>
 </div>
 
+{# ─── Client-Richtlinien Tab ────────────────────────── #}
+<div class="settings-panel" data-settings-panel="client-policy" style="display:none">
+  <div class="grid">
+    <div class="card span6" id="card-client-policy">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        {{ t('client_policy.global_title') }}
+      </div>
+      <div style="margin-top:14px">
+        <p style="font-size:13px;color:var(--text-3);margin:0 0 10px">{{ t('client_policy.desc') }}</p>
+        <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">{{ t('client_policy.security_note') }}</p>
+        <div id="cp-warning" class="tag tag-amber" style="display:none;white-space:normal;margin-bottom:12px"></div>
+        <div id="cp-global-form"></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-primary" id="cp-global-save" type="button">{{ t('client_policy.save') }}</button>
+          <span id="cp-global-status" style="font-size:12px"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card span6" id="card-client-policy-groups">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></span>
+        {{ t('client_policy.groups_title') }}
+      </div>
+      <div style="margin-top:14px">
+        <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">{{ t('client_policy.groups_desc') }}</p>
+        <div id="cp-groups-empty" style="font-size:13px;color:var(--text-3);display:none">{{ t('client_policy.groups_empty') }}</div>
+        <div id="cp-groups-body">
+          <div class="form-group">
+            <label class="form-label" for="cp-group-select">{{ t('client_policy.group_select') }}</label>
+            <select id="cp-group-select" style="width:100%"></select>
+          </div>
+          <div id="cp-group-form"></div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="cp-group-save" type="button">{{ t('client_policy.save') }}</button>
+            <button class="btn" id="cp-group-reset" type="button">{{ t('client_policy.reset') }}</button>
+            <span id="cp-group-status" style="font-size:12px"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ─── Pi-hole Tab ───────────────────────────────────── #}
 {% if license.features.pihole_integration %}
 <div class="settings-panel" data-settings-panel="pihole" style="display:none">
@@ -1421,5 +1467,7 @@ chmod +x update.sh</pre>
 <script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 <script src="/js/peer-groups-admin.js?v={{ appVersion }}"></script>
+<script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
+<script src="/js/client-policy-admin.js?v={{ appVersion }}"></script>
 <script src="/js/tags-admin.js?v={{ appVersion }}"></script>
 {% endblock %}
