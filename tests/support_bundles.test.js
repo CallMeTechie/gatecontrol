@@ -173,6 +173,33 @@ describe('client upload', () => {
     assert.equal(empty.status, 400);
   });
 
+  it('rejects array bodies (JSON and gzip) instead of treating them as a bundle', async () => {
+    const peerId = seedPeer('sb-array');
+    const token = tokenFor(peerId);
+    const asJson = await upload(token, peerId, [bundle(), bundle()], { gzip: false });
+    assert.equal(asJson.status, 400);
+    assert.equal(asJson.body.error, 'invalid_bundle');
+    const asGzip = await upload(token, peerId, zlib.gzipSync(JSON.stringify([{ schema: 1 }])));
+    assert.equal(asGzip.status, 400);
+    assert.equal(asGzip.body.error, 'invalid_bundle');
+    assert.equal(svc.list(peerId).length, 0);
+  });
+
+  it('drops __proto__ / constructor / prototype keys and pollutes nothing', async () => {
+    const peerId = seedPeer('sb-proto');
+    const raw = '{"schema":1,"client":{"version":"1.0.0"},"__proto__":{"polluted":"yes"},'
+      + '"settings":{"constructor":{"prototype":{"polluted":"yes"}},"nested":{"__proto__":{"polluted":"yes"},"ok":1}}}';
+    const res = await upload(tokenFor(peerId), peerId, zlib.gzipSync(raw));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal({}.polluted, undefined);
+    assert.equal(Object.prototype.polluted, undefined);
+    const stored = JSON.parse(svc.readJson(peerId, res.body.bundle.id).toString('utf8'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(stored, '__proto__'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(stored.settings, 'constructor'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(stored.settings.nested, '__proto__'));
+    assert.equal(stored.settings.nested.ok, 1);
+  });
+
   it('rejects bodies over the upload limit (413)', async () => {
     const peerId = seedPeer('sb-big');
     const big = crypto.randomBytes(config.supportBundles.maxUploadBytes + 1024);

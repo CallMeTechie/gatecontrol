@@ -70,10 +70,13 @@ router.post('/support-bundle', tokenOnly, attemptLimiter, rawBody, bodyErrors, (
       return res.status(429).json({ ok: false, error: 'rate_limited' });
     }
 
-    const hasBody = Buffer.isBuffer(req.body) ? req.body.length > 0 : (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0);
-    if (!hasBody) return res.status(400).json({ ok: false, error: 'empty_body' });
+    const body = req.body;
+    const hasBody = Buffer.isBuffer(body)
+      ? body.byteLength > 0
+      : (body !== null && typeof body === 'object' && !Array.isArray(body) && Object.keys(body).length > 0);
+    if (!hasBody && !Array.isArray(body)) return res.status(400).json({ ok: false, error: 'empty_body' });
 
-    const bundle = supportBundles.parseBundle(req.body);
+    const bundle = supportBundles.parseBundle(body);
     const saved = supportBundles.store(peerId, bundle, {
       version: req.headers['x-client-version'],
       product: req.headers['x-client-type'],

@@ -59,27 +59,35 @@ function shortString(v, max) {
  * @returns {object}
  */
 function parseBundle(body) {
+  // Only two shapes are accepted: raw bytes (express.raw) or a parsed JSON
+  // object (express.json). Arrays and anything else are rejected up front.
+  if (Buffer.isBuffer(body)) return checkBundle(parseBytes(body));
+  if (Array.isArray(body) || !body || typeof body !== 'object') throw new BundleError('invalid_bundle', 400);
+  return checkBundle(body);
+}
+
+function parseBytes(bytes) {
   const { maxJsonBytes } = opts();
-  let obj = body;
-  if (Buffer.isBuffer(body)) {
-    let json = body;
-    if (body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b) {
-      try {
-        json = zlib.gunzipSync(body, { maxOutputLength: maxJsonBytes });
-      } catch (err) {
-        if (err && (err.code === 'ERR_BUFFER_TOO_LARGE' || err instanceof RangeError)) {
-          throw new BundleError('too_large', 413);
-        }
-        throw new BundleError('invalid_gzip', 400);
-      }
-    }
-    if (json.length > maxJsonBytes) throw new BundleError('too_large', 413);
+  let json = bytes;
+  if (bytes.byteLength >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
     try {
-      obj = JSON.parse(json.toString('utf8'));
-    } catch {
-      throw new BundleError('invalid_json', 400);
+      json = zlib.gunzipSync(bytes, { maxOutputLength: maxJsonBytes });
+    } catch (err) {
+      if (err && (err.code === 'ERR_BUFFER_TOO_LARGE' || err instanceof RangeError)) {
+        throw new BundleError('too_large', 413);
+      }
+      throw new BundleError('invalid_gzip', 400);
     }
   }
+  if (json.byteLength > maxJsonBytes) throw new BundleError('too_large', 413);
+  try {
+    return JSON.parse(json.toString('utf8'));
+  } catch {
+    throw new BundleError('invalid_json', 400);
+  }
+}
+
+function checkBundle(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new BundleError('invalid_bundle', 400);
   if (obj.schema !== SCHEMA_VERSION) throw new BundleError('unsupported_schema', 400);
   return obj;
@@ -121,7 +129,7 @@ function store(peerId, bundle, meta = {}) {
     redaction: 'server-v1',
   };
   const json = Buffer.from(JSON.stringify(redacted, null, 2), 'utf8');
-  if (json.length > opts().maxJsonBytes) throw new BundleError('too_large', 413);
+  if (json.byteLength > opts().maxJsonBytes) throw new BundleError('too_large', 413);
   const gz = zlib.gzipSync(json, { level: 9 });
 
   const client = (bundle.client && typeof bundle.client === 'object') ? bundle.client : {};
@@ -148,7 +156,7 @@ function store(peerId, bundle, meta = {}) {
       const info = db.prepare(`
         INSERT INTO support_bundles (peer_id, file_name, size_bytes, json_bytes, client_version, client_product, client_platform, os, reason)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(peer.id, fileName, gz.length, json.length, row.client_version, row.client_product, row.client_platform, row.os, row.reason);
+      `).run(peer.id, fileName, gz.byteLength, json.byteLength, row.client_version, row.client_product, row.client_platform, row.os, row.reason);
       // The upload answers an open admin request.
       db.prepare('UPDATE peers SET support_bundle_requested_at = NULL WHERE id = ?').run(peer.id);
       return info.lastInsertRowid;
