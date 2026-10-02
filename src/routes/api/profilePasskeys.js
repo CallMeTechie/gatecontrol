@@ -1,8 +1,9 @@
 'use strict';
 
 // Own-account passkey management (docs/feature-admin-passkeys.md), mounted at
-// /api/v1/profile/passkeys behind profile.js's session-only guard; CSRF via
-// the /api/v1 aggregator.
+// /api/v1/profile/passkeys behind profile.js's session-only guard. CSRF is
+// checked by the /api/v1 aggregator and once more on each POST here
+// (idempotent; makes the protection visible at the route).
 //
 // Adding and removing a passkey needs a fresh authentication: either the
 // session was established less than REAUTH_WINDOW_MS ago, or the request
@@ -13,6 +14,7 @@ const argon2 = require('argon2');
 const { getDb } = require('../../db/connection');
 const passkeys = require('../../services/adminPasskeys');
 const { passkeyManageLimiter } = require('../../middleware/rateLimit');
+const { csrfProtection } = require('../../middleware/csrf');
 const logger = require('../../utils/logger');
 
 const REAUTH_WINDOW_MS = 5 * 60 * 1000;
@@ -82,7 +84,7 @@ router.get('/', (req, res) => {
 });
 
 /** POST /api/v1/profile/passkeys/register/options { password? } → PublicKeyCredentialCreationOptionsJSON */
-router.post('/register/options', passkeyManageLimiter, async (req, res) => {
+router.post('/register/options', passkeyManageLimiter, csrfProtection, async (req, res) => {
   try {
     if (!(await requireReauth(req, res))) return;
     const { options, challenge } = await passkeys.beginRegistration(req.session.userId);
@@ -94,7 +96,7 @@ router.post('/register/options', passkeyManageLimiter, async (req, res) => {
 });
 
 /** POST /api/v1/profile/passkeys/register { name, response } → stored passkey */
-router.post('/register', passkeyManageLimiter, async (req, res) => {
+router.post('/register', passkeyManageLimiter, csrfProtection, async (req, res) => {
   const pending = req.session.passkeyRegistration;
   delete req.session.passkeyRegistration; // single use, also on failure
   try {
@@ -115,7 +117,7 @@ router.post('/register', passkeyManageLimiter, async (req, res) => {
 });
 
 /** POST /api/v1/profile/passkeys/:id/delete { password? } */
-router.post('/:id/delete', passkeyManageLimiter, async (req, res) => {
+router.post('/:id/delete', passkeyManageLimiter, csrfProtection, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id) || id <= 0) return fail(res, { code: 'NOT_FOUND' }, req);

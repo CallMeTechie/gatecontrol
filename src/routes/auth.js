@@ -291,8 +291,21 @@ const authRoutes = {
   async passkeyOptions(req, res) {
     try {
       const { options, challenge } = await passkeys.beginAuthentication();
-      req.session.passkeyLogin = { challenge, at: Date.now() };
-      return res.json({ ok: true, data: options });
+      // A login ceremony starts on a fresh session id (fixation): a session
+      // id planted before this point never carries the challenge. The
+      // anonymous CSRF token is carried over so the login page's forms (and
+      // the verify call) keep working; it is no authentication secret, and
+      // establishSession() regenerates once more on success.
+      const csrfToken = req.session.csrfToken;
+      return req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          logger.error({ err: regenErr.message }, 'Session regeneration failed (passkey options)');
+          return res.status(500).json({ ok: false, error: res.locals.t('auth.error_generic') });
+        }
+        if (csrfToken) req.session.csrfToken = csrfToken;
+        req.session.passkeyLogin = { challenge, at: Date.now() };
+        return res.json({ ok: true, data: options });
+      });
     } catch (err) {
       if (err.code === 'UNAVAILABLE') {
         return res.status(503).json({ ok: false, error: res.locals.t('passkey.error_unavailable'), code: 'UNAVAILABLE' });

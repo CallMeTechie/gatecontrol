@@ -402,3 +402,25 @@ test('profile page renders the passkey card with its scripts and i18n', async ()
     await agent.get(`/js/${f}`).expect(200).expect('Content-Type', /javascript/);
   }
 });
+
+test('passkey options start on a fresh session id; the page CSRF token stays valid', async () => {
+  await addPasskey();
+  const { a, token } = await anonAgent();
+  const before = (await a.get('/login').expect(200)).headers['set-cookie'];
+  const r = await a.post('/login/passkey/options').set('x-csrf-token', token).send({}).expect(200);
+  const sid = (r.headers['set-cookie'] || []).find((c) => c.startsWith('gc.sid='));
+  assert.ok(sid, 'options answer sets a new session cookie');
+  assert.ok(!before || !before.some((c) => c.split(';')[0] === sid.split(';')[0]), 'session id changed');
+  // A fixated (pre-ceremony) session id does not carry the challenge.
+  const fixated = supertest.agent(app);
+  const fx = await fixated.get('/login').expect(200);
+  const fxToken = fx.text.match(/name="_csrf"\s+value="([^"]+)"/)[1];
+  const opt = r.body.data;
+  await loginFinish(fixated, fxToken, auth.get(opt, { keepCounter: true })).expect(400);
+  // The same CSRF token works for the verify call and the password form.
+  await loginFinish(a, token, auth.get(opt)).expect(200);
+  const b = await anonAgent();
+  await b.a.post('/login/passkey/options').set('x-csrf-token', b.token).send({}).expect(200);
+  const pw = await b.a.post('/login').type('form').send({ username: 'admin', password: 'TestPass123!', _csrf: b.token }).expect(302);
+  assert.equal(pw.headers.location, '/dashboard');
+});
