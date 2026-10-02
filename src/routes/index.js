@@ -239,6 +239,14 @@ pages.forEach(({ path, template, nav, titleKey }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch (err) { logger.debug({ err: err.message }, 'rdp route count for sidebar unavailable'); }
 
+    // Peers: retention of support bundles for the hint in the edit modal.
+    if (template === 'peers') {
+      extraLocals.supportRetention = {
+        days: config.supportBundles.maxAgeDays,
+        keep: config.supportBundles.keepPerPeer,
+      };
+    }
+
     if (template === 'zones') {
       try {
         extraLocals.gatewayPools = require('../services/gatewayPool').listPools();

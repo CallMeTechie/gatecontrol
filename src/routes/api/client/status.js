@@ -48,6 +48,10 @@ router.post('/heartbeat', (req, res) => {
     res.json({
       ok: true,
       peerEnabled: peer.enabled === 1,
+      // An admin asked this device for a support bundle (the client asks
+      // its user before sending anything).
+      supportBundleRequested: !!peer.support_bundle_requested_at,
+      supportBundleRequestedAt: peer.support_bundle_requested_at || null,
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Heartbeat failed');
@@ -113,6 +117,8 @@ router.get('/peer-info', (req, res) => {
         expiresAt: peer.expires_at || null,
         createdAt: peer.created_at,
       },
+      supportBundleRequested: !!peer.support_bundle_requested_at,
+      supportBundleRequestedAt: peer.support_bundle_requested_at || null,
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get peer info');

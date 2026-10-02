@@ -165,6 +165,18 @@ const config = {
     githubToken:   env('GC_CLIENT_GITHUB_TOKEN', ''),
   },
 
+  // Support bundles (POST /api/v1/client/support-bundle, docs/feature-support-bundle.md):
+  // redacted diagnostics a client uploads after the user confirmed it.
+  // Stored as <dir>/<peerId>/<file>.json.gz plus a support_bundles row.
+  supportBundles: {
+    dir: env('GC_SUPPORT_BUNDLE_DIR', path.join(env('GC_DATA_PATH', '/data'), 'support')),
+    maxUploadBytes: envInt('GC_SUPPORT_BUNDLE_MAX_BYTES', 5 * 1024 * 1024),       // request body (gzip)
+    maxJsonBytes: envInt('GC_SUPPORT_BUNDLE_MAX_JSON_BYTES', 20 * 1024 * 1024),   // after gunzip
+    perHour: envInt('GC_SUPPORT_BUNDLE_PER_HOUR', 3),                             // uploads per peer and hour
+    keepPerPeer: envInt('GC_SUPPORT_BUNDLE_KEEP', 10),                            // newest N per peer
+    maxAgeDays: envInt('GC_SUPPORT_BUNDLE_MAX_AGE_DAYS', 30),
+  },
+
   rdp: {
     publicHost: env('GC_RDP_PUBLIC_HOST', ''),
     healthCheckInterval: envInt('GC_RDP_HEALTH_CHECK_INTERVAL', 60000),
