@@ -73,18 +73,8 @@ function rotateCsrfToken(req) {
   return generateToken(req, true);
 }
 
-/**
- * Route middleware that rejects state-changing requests without a valid
- * synchroniser token. A named wrapper (rather than re-exporting the
- * csrf-sync function directly) so static analysis such as CodeQL's
- * missing-CSRF-middleware query recognises it as CSRF protection.
- */
-function csrfProtection(req, res, next) {
-  return csrfSynchronisedProtection(req, res, next);
-}
-
 module.exports = {
-  csrfProtection,
+  csrfProtection: csrfSynchronisedProtection,
   injectCsrfToken,
   ensureCsrfToken,
   rotateCsrfToken,
