@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.135.0] — 2026-10-02
+
+### Features
+- passkey (WebAuthn) login for the admin UI (#258)
+
+---
+
 ## [1.134.0] — 2026-10-02
 
 ### Features
