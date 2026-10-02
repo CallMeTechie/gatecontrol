@@ -12,6 +12,8 @@ run.js                  Playwright-Treiber: meldet an, fährt die Szenarien,
 scenarios/01-login.js   Anmeldung, falsches Passwort, TOTP-Zweitfaktor
 scenarios/02-zones.js   /routes: Zonenliste, Suche, Domain-Dialog, 400 px
 scenarios/03-security.js /security: Prüfungen gegen die API, hell/dunkel, 400 px
+scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
+                        entfernen (virtueller Authenticator über CDP)
 ```
 
 ## Ablauf
@@ -22,6 +24,9 @@ export GC_DATA_DIR=/tmp/gc-e2e GC_DB_PATH=/tmp/gc-e2e/gatecontrol.db
 export GC_CADDY_DATA_DIR=$GC_DATA_DIR/caddy GC_BACKUP_DIR=$GC_DATA_DIR/backups
 export GC_DNS_HOSTS_FILE=$GC_DATA_DIR/dns/peers.hosts
 export GC_ADMIN_USER=e2e_admin GC_ADMIN_PASSWORD='E2eTest!Pass123'
+# Hostname statt IP: das Passkey-Szenario läuft gegen GC_BASE_URL (WebAuthn
+# lehnt IP-Adressen als RP-ID ab), die übrigen gegen BASE.
+export GC_BASE_URL=http://localhost:3000 BASE=http://127.0.0.1:3000
 # EIN Schlüsselpaar für Seed UND App: das TOTP-Geheimnis des Fixture-Benutzers
 # wird mit GC_ENCRYPTION_KEY verschlüsselt abgelegt. Zwei verschiedene
 # Schlüssel und der zweite Faktor schlägt fehl, ohne dass es danach aussieht.
@@ -29,7 +34,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security
+node tests/e2e/run.js all          # oder: login zones security passkey
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

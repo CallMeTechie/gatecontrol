@@ -39,6 +39,15 @@
         <small class="form-hint" style="display:block;margin:4px 0 8px">{{ t('client_policy.peer_hint') }}</small>
         <div id="edit-peer-policy-form"></div>
       </details>
+      <div class="form-group" id="edit-peer-support-group" style="display:none">
+        <label class="form-label">{{ t('support_bundles.title') }}</label>
+        <small class="form-hint">{{ t('support_bundles.hint', { days: supportRetention.days if supportRetention else 30, keep: supportRetention.keep if supportRetention else 10 }) }}</small>
+        <div id="edit-peer-support-list" style="margin-top:6px"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm" id="btn-edit-peer-support-request">{{ t('support_bundles.request') }}</button>
+          <span id="edit-peer-support-request-state" style="font-size:12px;color:var(--text-3)"></span>
+        </div>
+      </div>
       <div class="form-group">
         <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">

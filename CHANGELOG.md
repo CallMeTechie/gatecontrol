@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.136.0] — 2026-10-02
+
+### Features
+- client support bundles with admin request, download and retention (#257)
+
+---
+
+## [1.135.0] — 2026-10-02
+
+### Features
+- passkey (WebAuthn) login for the admin UI (#258)
+
+---
+
 ## [1.134.0] — 2026-10-02
 
 ### Features

@@ -4,6 +4,7 @@
 // have 2FA. An admin who logged in without it may only reach the profile
 // page (to set it up), the endpoints the setup needs, and logout. Everything
 // else redirects to the setup (pages) or answers 403 TWO_FA_REQUIRED (API).
+// A session that was established with a passkey satisfies the policy.
 // Token-authenticated API calls, the desktop client, gateways and the portal
 // carry no session userId and are therefore never affected.
 
@@ -13,7 +14,7 @@ const { getDb } = require('../db/connection');
 const SETUP_REDIRECT = '/profile?setup2fa=1';
 
 const ALLOWED_PAGE = /^\/(profile|logout)\/?$/;
-const ALLOWED_API = /^\/api\/v1\/(profile\/2fa(\/|$)|settings\/(profile|language|password)\/?$|ping\/?$|events\/?$)/;
+const ALLOWED_API = /^\/api\/v1\/(profile\/(2fa|passkeys)(\/|$)|settings\/(profile|language|password)\/?$|ping\/?$|events\/?$)/;
 
 function isRequired() {
   return settings.get('security.require_2fa', 'false') === 'true';
@@ -22,6 +23,9 @@ function isRequired() {
 function twoFactorPolicy(req, res, next) {
   if (!req.session || !req.session.userId) return next();
   if (!isRequired()) return next();
+  // A passkey login is multi-factor on its own (possession + user
+  // verification, phishing-resistant) — docs/feature-admin-passkeys.md.
+  if (req.session.authMethod === 'passkey') return next();
 
   const path = req.path;
   if (ALLOWED_PAGE.test(path) || ALLOWED_API.test(path)) return next();

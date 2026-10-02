@@ -131,7 +131,9 @@ jobs:
       GC_DNS_HOSTS_FILE: /tmp/gc-e2e/dns/peers.hosts
       GC_WG_CONFIG_PATH: /tmp/gc-e2e/wireguard/wg0.conf
       GC_HOST: 127.0.0.1
-      GC_BASE_URL: http://127.0.0.1:3000
+      # Host name, not IP: WebAuthn refuses IP addresses as RP ID, and the
+      # passkey scenario runs against this origin (same server as BASE).
+      GC_BASE_URL: http://localhost:3000
       GC_ADMIN_USER: e2e_admin
       GC_ADMIN_PASSWORD: 'E2eTest!Pass123'
       GC_DEFAULT_LANGUAGE: en
@@ -195,7 +197,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey' }}
 
       - name: App log
         if: failure()

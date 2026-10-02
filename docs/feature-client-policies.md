@@ -59,7 +59,7 @@ Clients fallen auf einen erlaubten Modus zurück. Windows kennt nur
   `GET /api/v1/peers/:id/client-policy` (Override, geerbt, effektiv).
   Jede Änderung landet im Aktivitätsprotokoll (`client_policy_updated`,
   `client_policy_group_updated`, `peer_client_policy_changed`).
-* Migration **84** (`client_policies`).
+* Migration **86** (`client_policies`).
 
 ## Verhalten der Clients
 
