@@ -3,7 +3,7 @@
 const { Router } = require('express');
 const { requireAuth, requireAdmin, guestOnly } = require('../middleware/auth');
 const { csrfProtection } = require('../middleware/csrf');
-const { loginLimiter, apiLimiter } = require('../middleware/rateLimit');
+const { loginLimiter, passkeyLoginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
 const { hasFeature } = require('../services/license');
 
@@ -189,6 +189,9 @@ router.post('/login', guestOnly, loginLimiter, csrfProtection, authRoutes.login)
 // POST /login after the password check); requireAuth itself is untouched.
 router.get('/login/2fa', guestOnly, authRoutes.twoFactorPage);
 router.post('/login/2fa', guestOnly, loginLimiter, csrfProtection, authRoutes.twoFactor);
+// Passkey (WebAuthn) login — JSON endpoints driven by /js/login-passkey.js.
+router.post('/login/passkey/options', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyOptions);
+router.post('/login/passkey', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyLogin);
 router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
 
 // security.require_2fa: admins without 2FA are confined to the profile setup.

@@ -70,7 +70,7 @@ Mandatory on the client **and** repeated on the server
 ## Storage and retention
 
 * File: `<GC_DATA_PATH>/support/<peerId>/<YYYYMMDDTHHMMSSZ>-<rand>.json.gz`
-  (dir 0700, file 0600), index row in `support_bundles` (migration 84),
+  (dir 0700, file 0600), index row in `support_bundles` (migration 85),
   `peers.support_bundle_requested_at` for the admin request.
 * Retention: newest `GC_SUPPORT_BUNDLE_KEEP` (10) per peer, nothing older than
   `GC_SUPPORT_BUNDLE_MAX_AGE_DAYS` (30). Applied on every upload and in the

@@ -28,6 +28,34 @@ const twoFactorSetupLimiter = rateLimit({
   },
 });
 
+// Passkey login (options + verify, POST /login/passkey*). Own bucket per IP so
+// a passkey ceremony (two requests) does not eat the password form's budget
+// and vice versa. A passkey cannot be guessed, so this is anti-noise/anti-DoS;
+// failed attempts count (no skipFailedRequests).
+const passkeyLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `passkey-login:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
+  },
+});
+
+// Profile passkey management (add/remove). The re-auth password check rides
+// on these requests, so budget them like the 2FA setup, per session user.
+const passkeyManageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `passkey-manage:${(req.session && req.session.userId) || req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
+  },
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: (req) => (req.session && req.session.userId)
@@ -156,4 +184,4 @@ const shareRedeemLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
 });
 
-module.exports = { loginLimiter, twoFactorSetupLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter };
+module.exports = { loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter };

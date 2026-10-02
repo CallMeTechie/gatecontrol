@@ -1703,6 +1703,40 @@ const migrations = [
   },
   {
     version: 84,
+    name: 'admin_passkeys',
+    // Passkey (WebAuthn) login for the admin UI (docs/feature-admin-passkeys.md).
+    //   users.webauthn_user_id  random 32-byte user handle (base64url) handed to
+    //                           authenticators as user.id — never the DB id, so
+    //                           a discoverable credential carries no account
+    //                           number; NULL until the first passkey is added.
+    //   admin_passkeys          one row per registered credential:
+    //     credential_id   base64url credential id (as sent by the browser)
+    //     public_key      COSE public key (BLOB, as verified at registration)
+    //     sign_count      last signature counter; a regression is rejected
+    //     transports      JSON array of hints (usb, nfc, ble, internal, hybrid)
+    //     aaguid / device_type / backed_up   informational (list view)
+    sql: `
+      ALTER TABLE users ADD COLUMN webauthn_user_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_webauthn_user_id ON users(webauthn_user_id);
+      CREATE TABLE IF NOT EXISTS admin_passkeys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key BLOB NOT NULL,
+        sign_count INTEGER NOT NULL DEFAULT 0,
+        transports TEXT,
+        name TEXT NOT NULL,
+        aaguid TEXT,
+        device_type TEXT,
+        backed_up INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_passkeys_user ON admin_passkeys(user_id);`,
+    detect: (db) => tableExists(db, 'admin_passkeys') && hasColumn(db, 'users', 'webauthn_user_id'),
+  },
+  {
+    version: 85,
     name: 'create_support_bundles',
     // Support bundles (services/supportBundles.js): redacted diagnostics a
     // client uploads after the user confirmed it. The bundle itself lives on
