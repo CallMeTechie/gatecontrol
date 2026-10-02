@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.134.0] — 2026-10-02
+
+### Features
+- server-controlled client update channels and minimum versions (#255)
+
+---
+
 ## [1.133.5] — 2026-09-30
 
 ### Änderungen
