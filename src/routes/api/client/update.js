@@ -5,8 +5,11 @@ const https = require('node:https');
 const http = require('node:http');
 const config = require('../../../../config/default');
 const logger = require('../../../utils/logger');
+const clientUpdates = require('../../../services/clientUpdates');
+const { extractToken } = require('../../../middleware/auth');
 
-// Per-client-type release cache (2 min TTL). Used by both /check and /download.
+// Per client type + channel release cache (2 min TTL). Used by both /check
+// and /download.
 const releaseCache = {};
 const CACHE_TTL = 120000;
 
@@ -55,16 +58,39 @@ function resolveClientType(req) {
 }
 
 /**
- * Fetch latest release from GitHub API (cached 2min per client type, follows redirects)
+ * Newest release of a /releases listing for the beta channel: drafts are
+ * skipped, pre-releases count; the highest x.y.z tag wins (GitHub orders by
+ * creation date, not by version). null when nothing usable is listed.
  */
-async function fetchLatestRelease(clientType = 'community') {
-  const cached = releaseCache[clientType];
+function pickBetaRelease(list) {
+  if (!Array.isArray(list)) return null;
+  let best = null;
+  for (const rel of list) {
+    if (!rel || rel.draft || typeof rel.tag_name !== 'string') continue;
+    if (!clientUpdates.parseVersion(rel.tag_name)) continue;
+    if (!best || clientUpdates.compareVersions(rel.tag_name, best.tag_name) === 1) best = rel;
+  }
+  return best;
+}
+
+/**
+ * Fetch the newest release of a channel from the GitHub API (cached 2 min per
+ * client type and channel, follows redirects).
+ *   stable: /releases/latest (GitHub never returns pre-releases or drafts)
+ *   beta:   /releases listing incl. pre-releases, highest version
+ */
+async function fetchLatestRelease(clientType = 'community', channel = 'stable') {
+  const cacheKey = `${clientType}:${channel}`;
+  const cached = releaseCache[cacheKey];
   if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
     return cached.data;
   }
 
   const repo = CLIENT_REPOS[clientType] || CLIENT_REPOS.community;
-  const url = `https://api.github.com/repos/${repo}/releases/latest`;
+  const beta = channel === 'beta';
+  const url = beta
+    ? `https://api.github.com/repos/${repo}/releases?per_page=30`
+    : `https://api.github.com/repos/${repo}/releases/latest`;
   const headers = {
     'User-Agent': 'GateControl-Server',
     'Accept': 'application/vnd.github+json',
@@ -88,8 +114,9 @@ async function fetchLatestRelease(clientType = 'community') {
           return resolve(null);
         }
         try {
-          const data = JSON.parse(body);
-          releaseCache[clientType] = { data, fetchedAt: Date.now() };
+          const parsed = JSON.parse(body);
+          const data = beta ? pickBetaRelease(parsed) : parsed;
+          releaseCache[cacheKey] = { data, fetchedAt: Date.now() };
           resolve(data);
         } catch {
           resolve(null);
@@ -169,15 +196,16 @@ function fetchSmallAsset(asset, maxBytes = MAX_MANIFEST_BYTES) {
  * and release (same TTL as the release itself). null when the release has no
  * signed manifest (old releases) or the download failed.
  */
-async function fetchSignedManifest(clientType, release) {
+async function fetchSignedManifest(clientType, release, channel = 'stable') {
   if (clientType === 'android' || !release) return null;
   const assets = release.assets || [];
   const manifestAsset = assets.find(a => a.name === MANIFEST_ASSET);
   const signatureAsset = assets.find(a => a.name === SIGNATURE_ASSET);
   if (!manifestAsset || !signatureAsset) return null;
 
+  const cacheKey = `${clientType}:${channel}`;
   const key = `${release.id || ''}:${release.tag_name || ''}:${manifestAsset.id || ''}:${signatureAsset.id || ''}`;
-  const cached = signedCache[clientType];
+  const cached = signedCache[cacheKey];
   if (cached && cached.key === key && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
     return cached.value;
   }
@@ -187,7 +215,7 @@ async function fetchSignedManifest(clientType, release) {
     fetchSmallAsset(signatureAsset),
   ]);
   const value = manifest && signature ? { manifest, signature } : null;
-  signedCache[clientType] = { key, value, fetchedAt: Date.now() };
+  signedCache[cacheKey] = { key, value, fetchedAt: Date.now() };
   return value;
 }
 
@@ -210,36 +238,90 @@ function pickInstallerAsset(clientType, release, signed) {
   return assets.find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
 }
 
+/**
+ * The peer behind an optional API token on the (public) update routes. The
+ * Windows clients send X-API-Token with every check, Android its token too.
+ * A missing, unknown, expired or out-of-scope token is not an error here —
+ * the request simply counts as anonymous (global default channel, nothing
+ * recorded). Never throws.
+ */
+function resolveRequester(req) {
+  try {
+    const raw = extractToken(req);
+    if (!raw) return null;
+    return clientUpdates.resolveTokenPeer(raw, '/api/v1/client/update/check');
+  } catch (err) {
+    logger.debug({ err: err.message }, 'Update check: token lookup failed, treating as anonymous');
+    return null;
+  }
+}
+
+/**
+ * Channel + minimum version for this request. The channel comes from the
+ * server only (peer override, else global default) — a client cannot ask for
+ * beta via query or header.
+ */
+function resolveUpdatePolicy(req, clientType) {
+  const policy = clientUpdates.getPolicy();
+  const requester = resolveRequester(req);
+  const peer = requester && requester.peer;
+  return {
+    peer,
+    channel: peer ? clientUpdates.effectiveChannel(peer, policy) : policy.defaultChannel,
+    minVersion: clientUpdates.minVersionFor(clientType, policy),
+  };
+}
+
 // ─── Public update routes (mounted WITHOUT auth in routes/index.js) ───
 const updateRouter = Router();
 
 /**
  * GET /api/v1/client/update/check
  * Query: ?version=1.2.1&platform=windows&client=pro|community
- * Returns: { ok, available, version?, downloadUrl?, releaseNotes? }
+ * Returns: { ok, available, version?, downloadUrl?, releaseNotes?,
+ *            manifest?, signature?, channel, minVersion, mandatory }
+ *
+ * channel / minVersion / mandatory are unsigned UX hints (older clients
+ * ignore them). mandatory = an update is available and the client is below
+ * the minimum version of its product. The client still verifies the signed
+ * manifest and never installs anything that is not strictly newer.
  */
 updateRouter.get('/check', async (req, res) => {
   try {
     const clientVersion = req.query.version;
-    if (!clientVersion) {
+    if (!clientVersion || typeof clientVersion !== 'string') {
       return res.status(400).json({ ok: false, error: 'Version parameter required' });
     }
 
     const clientType = resolveClientType(req);
-    const release = await fetchLatestRelease(clientType);
+    const { peer, channel, minVersion } = resolveUpdatePolicy(req, clientType);
+
+    // Remember which version this peer runs (token-bound clients only).
+    if (peer) {
+      clientUpdates.recordClientVersion(peer.id, {
+        version: clientVersion,
+        product: clientType,
+        platform: req.query.platform || req.headers['x-client-platform'],
+      });
+    }
+
+    const policyFields = { channel, minVersion };
+    const release = await fetchLatestRelease(clientType, channel);
     if (!release || !release.tag_name) {
-      return res.json({ ok: true, available: false });
+      return res.json({ ok: true, available: false, ...policyFields, mandatory: false });
     }
 
     const latestVersion = release.tag_name.replace(/^v/, '');
 
     // Compare versions
     if (!isNewerVersion(latestVersion, clientVersion)) {
-      return res.json({ ok: true, available: false });
+      return res.json({ ok: true, available: false, ...policyFields, mandatory: false });
     }
 
+    const mandatory = !!minVersion && clientUpdates.compareVersions(clientVersion, minVersion) === -1;
+
     // Signed manifest (Windows clients only; passed through unchanged)
-    const signed = await fetchSignedManifest(clientType, release);
+    const signed = await fetchSignedManifest(clientType, release, channel);
 
     // Find installer asset based on client type
     const installerAsset = pickInstallerAsset(clientType, release, signed);
@@ -264,6 +346,9 @@ updateRouter.get('/check', async (req, res) => {
       fileName: installerAsset?.name || defaultFileName,
       fileSize: installerAsset?.size || null,
       releaseNotes: release.body || '',
+      prerelease: !!release.prerelease,
+      ...policyFields,
+      mandatory,
     };
     if (signed) {
       body.manifest = signed.manifest;
@@ -283,12 +368,15 @@ updateRouter.get('/check', async (req, res) => {
 updateRouter.get('/download', async (req, res) => {
   try {
     const clientType = resolveClientType(req);
-    const release = await fetchLatestRelease(clientType);
+    // Same channel as the check that produced the download URL (resolved
+    // from the token again — never from the query).
+    const { channel } = resolveUpdatePolicy(req, clientType);
+    const release = await fetchLatestRelease(clientType, channel);
     if (!release) {
       return res.status(404).json({ ok: false, error: 'No release found' });
     }
 
-    const signed = await fetchSignedManifest(clientType, release);
+    const signed = await fetchSignedManifest(clientType, release, channel);
     const asset = pickInstallerAsset(clientType, release, signed);
     if (!asset) {
       return res.status(404).json({ ok: false, error: 'No installer asset found' });
@@ -346,6 +434,7 @@ function isNewerVersion(latest, current) {
 }
 
 module.exports = updateRouter;
+module.exports._pickBetaRelease = pickBetaRelease;
 // Test hook: drop cached releases/manifests.
 module.exports._resetCache = () => {
   for (const k of Object.keys(releaseCache)) delete releaseCache[k];

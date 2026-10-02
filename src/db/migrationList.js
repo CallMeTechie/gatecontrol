@@ -1677,6 +1677,30 @@ const migrations = [
       ALTER TABLE client_enrollment_codes ADD COLUMN split_tunnel_override TEXT;`,
     detect: (db) => hasColumn(db, 'client_enrollment_codes', 'kind'),
   },
+  {
+    version: 83,
+    name: 'client_update_channels',
+    // Server-controlled client updates (services/clientUpdates.js):
+    //   update_channel   'stable' | 'beta' per peer, NULL = global default
+    //                    (setting client_update.default_channel). Only an
+    //                    admin session can change it — the client never
+    //                    picks its channel itself.
+    //   client_version   last version the client reported (update check /
+    //                    X-Client-Version header), e.g. '1.22.3'
+    //   client_product   'pro' | 'community' | 'android' (NULL = unknown)
+    //   client_platform  'windows' | 'android' | … (NULL = unknown)
+    //   client_seen_at   when the version was last reported (UTC, SQLite
+    //                    datetime format like updated_at)
+    // The per-product minimum versions live in settings
+    // (client_update.min_version.pro / .community), no table needed.
+    sql: `
+      ALTER TABLE peers ADD COLUMN update_channel TEXT;
+      ALTER TABLE peers ADD COLUMN client_version TEXT;
+      ALTER TABLE peers ADD COLUMN client_product TEXT;
+      ALTER TABLE peers ADD COLUMN client_platform TEXT;
+      ALTER TABLE peers ADD COLUMN client_seen_at TEXT;`,
+    detect: (db) => hasColumn(db, 'peers', 'update_channel') && hasColumn(db, 'peers', 'client_seen_at'),
+  },
 ];
 
 module.exports = { migrations };

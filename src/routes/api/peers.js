@@ -9,6 +9,8 @@ const stripFields = require('../../utils/stripFields');
 const { validatePeerName, validateDescription } = require('../../utils/validate');
 const { requireLimit, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
+const clientUpdates = require('../../services/clientUpdates');
+const activity = require('../../services/activity');
 
 const router = Router();
 
@@ -92,8 +94,15 @@ router.get('/', async (req, res) => {
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const list = await peers.getAll({ limit, offset });
     const uMap = new Map(getDb().prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
-    const enriched = list.map(p => ({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }));
-    res.json({ ok: true, peers: enriched.map(stripPeer), limit, offset });
+    const policy = clientUpdates.getPolicy();
+    const enriched = list.map(p => clientUpdates.decoratePeer({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }, policy));
+    res.json({
+      ok: true,
+      peers: enriched.map(stripPeer),
+      limit,
+      offset,
+      update_policy: { default_channel: policy.defaultChannel, min_versions: policy.minVersions },
+    });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list peers');
     res.status(500).json({ ok: false, error: req.t('error.peers.list') });
@@ -107,7 +116,7 @@ router.get('/:id', (req, res) => {
   try {
     const peer = peers.getById(req.params.id);
     if (!peer) return res.status(404).json({ ok: false, error: req.t('error.peers.not_found') });
-    res.json({ ok: true, peer: stripPeer(peer) });
+    res.json({ ok: true, peer: stripPeer(clientUpdates.decoratePeer(peer)) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get peer');
     res.status(500).json({ ok: false, error: req.t('error.peers.get') });
@@ -179,7 +188,18 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id, user_id } = req.body;
+    const { name, description, dns, persistentKeepalive, enabled, tags, expires_at, group_id, user_id, update_channel } = req.body;
+
+    // Update channel: admin session only (an API token — even one with the
+    // peers scope — must not move a client to beta builds).
+    if (update_channel !== undefined) {
+      if (req.tokenAuth) {
+        return res.status(403).json({ ok: false, error: req.t('error.client_updates.session_required') });
+      }
+      if (update_channel !== null && update_channel !== '' && !clientUpdates.isValidChannel(update_channel)) {
+        return res.status(400).json({ ok: false, error: req.t('error.client_updates.invalid_channel') });
+      }
+    }
 
     // Field-level validation
     const fields = {};
@@ -208,8 +228,18 @@ router.put('/:id', async (req, res) => {
       updateData.userId = user_id;
     }
 
-    const peer = await peers.update(req.params.id, updateData);
-    res.json({ ok: true, peer: stripPeer(peer) });
+    let peer = await peers.update(req.params.id, updateData);
+    if (update_channel !== undefined && peer) {
+      const result = clientUpdates.setPeerChannel(peer.id, update_channel);
+      if (result.changed) {
+        activity.log('peer_update_channel_changed', `Update channel of peer "${peer.name}" changed`, {
+          source: 'admin', ipAddress: req.ip, severity: 'info',
+          details: { peerId: peer.id, from: result.from, to: result.to },
+        });
+        peer = peers.getById(peer.id);
+      }
+    }
+    res.json({ ok: true, peer: stripPeer(clientUpdates.decoratePeer(peer)) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to update peer');
     const { status, error } = resolveError(req, err, VALIDATION_ERROR_MAP, 'error.peers.update');

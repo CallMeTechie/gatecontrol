@@ -164,6 +164,7 @@ describe('update check: signed manifests', () => {
   it('reports no update when already current', async () => {
     githubLatest(release());
     const res = await check('version=1.22.0&platform=windows&client=pro');
-    assert.deepEqual(res.body, { ok: true, available: false });
+    // channel/minVersion/mandatory are additive (old clients ignore them)
+    assert.deepEqual(res.body, { ok: true, available: false, channel: 'stable', minVersion: null, mandatory: false });
   });
 });

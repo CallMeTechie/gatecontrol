@@ -26,6 +26,7 @@
     <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
     <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
     <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
+    <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
     {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
     <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
   </div>
@@ -37,6 +38,7 @@
   <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
   <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
   <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
+  <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
   {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
   <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
 </div>
@@ -1196,6 +1198,46 @@ chmod +x update.sh</pre>
         </div>
       </div>
       <div id="st-status" class="autosave-status"></div>
+    </div>
+  </div>
+</div>
+
+{# ─── Client-Updates Tab ────────────────────────────── #}
+<div class="settings-panel" data-settings-panel="client-updates" style="display:none">
+  <div class="grid">
+    <div class="card span6" id="card-client-updates">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+        {{ t('client_updates.title') }}
+      </div>
+      <div style="margin-top:14px">
+        <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">{{ t('client_updates.desc') }}</p>
+        <div class="form-group">
+          <label class="form-label" for="cu-default-channel">{{ t('client_updates.default_channel') }}</label>
+          <select id="cu-default-channel">
+            <option value="stable">{{ t('client_updates.channel_stable') }}</option>
+            <option value="beta">{{ t('client_updates.channel_beta') }}</option>
+          </select>
+          <small class="form-hint">{{ t('client_updates.default_channel_hint') }}</small>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="cu-min-pro">{{ t('client_updates.min_version_pro') }}</label>
+          <input type="text" id="cu-min-pro" autocomplete="off" maxlength="20" placeholder="{{ t('client_updates.min_version_placeholder') }}" pattern="v?[0-9]+\.[0-9]+\.[0-9]+" style="font-family:var(--font-mono)">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="cu-min-community">{{ t('client_updates.min_version_community') }}</label>
+          <input type="text" id="cu-min-community" autocomplete="off" maxlength="20" placeholder="{{ t('client_updates.min_version_placeholder') }}" pattern="v?[0-9]+\.[0-9]+\.[0-9]+" style="font-family:var(--font-mono)">
+          <small class="form-hint">{{ t('client_updates.min_version_hint') }}</small>
+        </div>
+        <div id="cu-status" class="autosave-status"></div>
+      </div>
+    </div>
+    <div class="card span6">
+      <div class="card-title">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg></span>
+        {{ t('client_updates.overview_title') }}
+      </div>
+      <div id="cu-overview" style="margin-top:14px;font-size:13px">{{ t('common.loading') }}</div>
     </div>
   </div>
 </div>
