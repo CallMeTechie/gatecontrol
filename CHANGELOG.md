@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.137.0] — 2026-10-02
+
+### Features
+- server-defined client policies (global, per group, per peer) (#256)
+
+---
+
 ## [1.136.0] — 2026-10-02
 
 ### Features
