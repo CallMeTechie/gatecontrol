@@ -51,11 +51,33 @@
         </div>
         <button type="submit" class="btn btn-primary au-submit">{{ t('auth.submit') }}</button>
       </form>
+
+      {% if passkeyOrigin %}
+      {# Passkey login (docs/feature-admin-passkeys.md) — shown by /js/login-passkey.js #}
+      <div class="au-passkey" id="pk-login" data-origin="{{ passkeyOrigin }}" hidden>
+        <div class="au-divider"><span>{{ t('passkey.login_or') }}</span></div>
+        <button type="button" class="btn btn-ghost au-submit au-passkey-btn" id="pk-login-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="M2 21c0-3.3 2.7-6 6-6 1.4 0 2.6.4 3.6 1.2"/><circle cx="17.5" cy="12.5" r="2.5"/><path d="M17.5 15v6l1.5-1.5M17.5 18.5l1.5-1"/></svg>
+          <span>{{ t('passkey.login_button') }}</span>
+        </button>
+        <p class="au-passkey-msg" id="pk-login-msg" role="status" hidden></p>
+        <script type="application/json" id="pk-login-i18n">{
+          "failed": {{ t('passkey.error_login_failed') | dump | safe }},
+          "cancelled": {{ t('passkey.login_cancelled') | dump | safe }},
+          "unsupported": {{ t('passkey.error_browser_unsupported') | dump | safe }},
+          "wrong_origin": {{ t('passkey.error_wrong_origin') | dump | safe }}
+        }</script>
+      </div>
+      {% endif %}
     </div>
 
     <div class="au-foot">{{ appName }} v{{ appVersion }}</div>
   </main>
 
+  {% if passkeyOrigin %}
+  <script src="/js/webauthn.js?v={{ appVersion }}"></script>
+  <script src="/js/login-passkey.js?v={{ appVersion }}"></script>
+  {% endif %}
   <script nonce="{{ cspNonce }}">
     (function () {
       var btn = document.getElementById('au-pw-toggle');
