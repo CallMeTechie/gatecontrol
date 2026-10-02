@@ -23,8 +23,8 @@ dialog and can download or delete it.
   `403` (not bound / wrong peer / no token), `413 too_large`, `429 rate_limited`.
 
 Admin request: heartbeat (`POST /api/v1/client/heartbeat`) and
-`GET /api/v1/client/peer-info` answer `supportBundleRequested: true` while an
-admin request is open. The client then asks its user (same confirmation
+`GET /api/v1/client/peer-info` answer `supportBundleRequested: true` (and
+`supportBundleRequestedAt`, the request time) while an admin request is open. The client then asks its user (same confirmation
 dialog) — nothing is ever sent without consent. The next upload clears the
 request and is marked `reason = admin_request`.
 

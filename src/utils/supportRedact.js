@@ -26,7 +26,6 @@ const SECRET_KEY_RE = /(pass(word|wd|phrase)?|pwd|secret|token|api[-_]?key|apike
 
 // Order matters: specific structures first, generic patterns last.
 const TEXT_RULES = [
-  // PEM private keys (any type)
   // PEM private keys: everything base64 after the BEGIN line (linear, no
   // lazy scan to the END line), plus long base64 lines (encrypted PEM bodies)
   [/(-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----)[A-Za-z0-9+/=\s]*/g, `$1${MASK}\n`],

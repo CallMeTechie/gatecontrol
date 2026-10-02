@@ -316,7 +316,9 @@ describe('admin API', () => {
     assert.equal(req.status, 200);
     assert.ok(req.body.requestedAt);
     assert.equal((await hb()).body.supportBundleRequested, true);
+    assert.equal((await hb()).body.supportBundleRequestedAt, req.body.requestedAt);
     assert.equal((await info()).body.supportBundleRequested, true);
+    assert.equal((await info()).body.supportBundleRequestedAt, req.body.requestedAt);
 
     const up = await upload(token, peerId, bundle());
     assert.equal(up.status, 201);
