@@ -5,7 +5,7 @@
 //
 //   node tests/e2e/seed.js                     # Fixtures in die DB
 //   node src/server.js &                       # App mit Test-Umgebung
-//   node tests/e2e/run.js login zones security # oder: all
+//   node tests/e2e/run.js login zones security passkey # oder: all
 //
 // Playwright ist KEINE Abhängigkeit des Projekts (package.json bleibt
 // unverändert). Der Lauf braucht es im Modulpfad — in der CI über den

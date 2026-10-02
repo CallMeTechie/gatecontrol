@@ -79,6 +79,9 @@
 
   <span id="two-factor" class="anchor-target" aria-hidden="true"></span>
   {% include theme + "/partials/two-factor-card.njk" %}
+
+  <span id="passkeys" class="anchor-target" aria-hidden="true"></span>
+  {% include theme + "/partials/passkeys-card.njk" %}
 </div>
 {% endblock %}
 
@@ -86,4 +89,6 @@
 <script src="/js/profile.js?v={{ appVersion }}"></script>
 <script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
 <script src="/js/profile-2fa.js?v={{ appVersion }}"></script>
+<script src="/js/webauthn.js?v={{ appVersion }}"></script>
+<script src="/js/profile-passkeys.js?v={{ appVersion }}"></script>
 {% endblock %}

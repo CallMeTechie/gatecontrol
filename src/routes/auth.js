@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
 const { safeReturnTo } = require('../middleware/auth');
 const twoFactor = require('../services/adminTwoFactor');
+const passkeys = require('../services/adminPasskeys');
 
 // A password-verified login that still awaits the second factor lives in
 // req.session.pending2fa = { userId, at, returnTo } for at most this long.
@@ -29,31 +30,56 @@ function lockoutId(userId) {
 }
 
 /**
- * Final step shared by the password-only and the 2FA path: last_login,
- * activity log, session regeneration (fixation), userId + language.
+ * Final step shared by the password-only, the 2FA and the passkey path:
+ * last_login, activity log, session regeneration (fixation), userId +
+ * language + how/when the session was authenticated. `done(err)` runs after
+ * the regenerated session is populated.
+ *
+ * method: 'password' | 'totp' | 'passkey'. A 'passkey' session counts as
+ * multi-factor (phishing-resistant, user verification required) for the
+ * security.require_2fa policy; `authAt` drives the "recent login" re-auth
+ * window of the passkey management endpoints.
  */
-function completeLogin(req, res, user, returnTo) {
+function establishSession(req, user, { method, passkeyName } = {}, done) {
   const db = getDb();
   lockout.clearAttempts(user.username);
   lockout.clearAttempts(lockoutId(user.id));
 
   db.prepare('UPDATE users SET last_login_at = datetime(\'now\') WHERE id = ?').run(user.id);
-  db.prepare(`
-    INSERT INTO activity_log (event_type, message, source, ip_address, severity)
-    VALUES ('login', ?, 'system', ?, 'info')
-  `).run(`User ${user.username} logged in`, req.ip);
+  if (method === 'passkey') {
+    db.prepare(`
+      INSERT INTO activity_log (event_type, message, source, ip_address, severity)
+      VALUES ('passkey_login', ?, 'system', ?, 'info')
+    `).run(`User ${user.username} logged in with passkey "${passkeyName || ''}"`, req.ip);
+  } else {
+    db.prepare(`
+      INSERT INTO activity_log (event_type, message, source, ip_address, severity)
+      VALUES ('login', ?, 'system', ?, 'info')
+    `).run(`User ${user.username} logged in`, req.ip);
+  }
 
   const language = user.language || config.i18n.defaultLanguage;
   req.session.regenerate((err) => {
     if (err) {
       logger.error({ err }, 'Session regeneration failed');
-      setFlash(req, 'error', res.locals.t('auth.error_generic'));
-      return res.redirect('/login');
+      return done(err);
     }
     req.session.userId = user.id;
     req.session.language = language;
+    req.session.authMethod = method || 'password';
+    req.session.authAt = Date.now();
 
-    logger.info({ username: user.username, ip: req.ip, twoFactor: user.totp_enabled === 1 }, 'Successful login');
+    logger.info({ username: user.username, ip: req.ip, twoFactor: user.totp_enabled === 1, method: method || 'password' }, 'Successful login');
+    return done(null);
+  });
+}
+
+function completeLogin(req, res, user, returnTo, method) {
+  establishSession(req, user, { method: method || 'password' }, (err) => {
+    if (err) {
+      setFlash(req, 'error', res.locals.t('auth.error_generic'));
+      return res.redirect('/login');
+    }
     return res.redirect(returnTo || '/dashboard');
   });
 }
@@ -89,6 +115,10 @@ const authRoutes = {
       // Carry a validated portal returnTo through the form so the POST can
       // send the user back to the portal after login (empty = admin default).
       returnTo: safeReturnTo(req.query && req.query.returnTo) || '',
+      // Passkey button only when GC_BASE_URL allows WebAuthn at all; the
+      // page script additionally hides it when the browser is on another
+      // origin (the RP ID is pinned to GC_BASE_URL).
+      passkeyOrigin: (passkeys.getRelyingParty() || {}).origin || '',
     });
   },
 
@@ -244,12 +274,70 @@ const authRoutes = {
 
       const returnTo = safeReturnTo(pending.returnTo);
       delete req.session.pending2fa;
-      return completeLogin(req, res, user, returnTo);
+      return completeLogin(req, res, user, returnTo, 'totp');
     } catch (err) {
       logger.error({ err }, '2FA login error');
       setFlash(req, 'error', res.locals.t('auth.error_generic'));
       return res.redirect('/login');
     }
+  },
+
+  // ─── Passkey (WebAuthn) ──────────────────────────────────────────────
+  // Usernameless: options carry no allowCredentials; the authenticator
+  // picks the account. The challenge sits in the (anonymous) session,
+  // expires after CHALLENGE_TTL_MS and is consumed by the first verify
+  // attempt, successful or not.
+
+  async passkeyOptions(req, res) {
+    try {
+      const { options, challenge } = await passkeys.beginAuthentication();
+      req.session.passkeyLogin = { challenge, at: Date.now() };
+      return res.json({ ok: true, data: options });
+    } catch (err) {
+      if (err.code === 'UNAVAILABLE') {
+        return res.status(503).json({ ok: false, error: res.locals.t('passkey.error_unavailable'), code: 'UNAVAILABLE' });
+      }
+      logger.error({ err: err.message }, 'Passkey login options failed');
+      return res.status(500).json({ ok: false, error: res.locals.t('auth.error_generic') });
+    }
+  },
+
+  async passkeyLogin(req, res) {
+    const pending = req.session.passkeyLogin;
+    delete req.session.passkeyLogin; // single use
+    const expectedChallenge = pending && typeof pending.at === 'number'
+      && Date.now() - pending.at <= passkeys.CHALLENGE_TTL_MS ? pending.challenge : null;
+    const returnTo = safeReturnTo(req.body && req.body.returnTo);
+    const fail = (status, key, code) => res.status(status).json({ ok: false, error: res.locals.t(key), code });
+
+    if (!expectedChallenge) return fail(400, 'passkey.error_expired', 'NO_CHALLENGE');
+
+    let result;
+    try {
+      result = await passkeys.finishAuthentication({ response: req.body && req.body.response, expectedChallenge });
+    } catch (err) {
+      if (err.code === 'UNAVAILABLE') return fail(503, 'passkey.error_unavailable', 'UNAVAILABLE');
+      if (!err.code) {
+        logger.error({ err: err.message }, 'Passkey login error');
+        return fail(500, 'auth.error_generic', 'ERROR');
+      }
+      // One generic answer for every failure: unknown credential, bad
+      // signature, counter regression and disabled account look the same.
+      logger.warn({ ip: req.ip, code: err.code }, 'Failed passkey login');
+      try {
+        getDb().prepare(`
+          INSERT INTO activity_log (event_type, message, source, ip_address, severity)
+          VALUES ('passkey_login_failed', ?, 'system', ?, 'warning')
+        `).run(`Failed passkey login (${err.code})`, req.ip);
+      } catch (e) { logger.warn({ err: e.message }, 'Could not log failed passkey login'); }
+      return fail(400, 'passkey.error_login_failed', 'LOGIN_FAILED');
+    }
+
+    delete req.session.pending2fa;
+    return establishSession(req, result.user, { method: 'passkey', passkeyName: result.passkey.name }, (err) => {
+      if (err) return fail(500, 'auth.error_generic', 'ERROR');
+      return res.json({ ok: true, redirect: returnTo || '/dashboard' });
+    });
   },
 
   logout(req, res) {

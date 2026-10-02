@@ -34,6 +34,9 @@ function fail(res, err, req) {
   return res.status(status).json({ ok: false, error: status === 500 ? req.t('common.error') : err.message, code: err.code || 'ERROR' });
 }
 
+// Passkeys (WebAuthn): own router, same session-only guard as above.
+router.use('/passkeys', require('./profilePasskeys'));
+
 /** GET /api/v1/profile/2fa — status for the profile card */
 router.get('/2fa', (req, res) => {
   const status = twoFactor.getStatus(req.session.userId);
