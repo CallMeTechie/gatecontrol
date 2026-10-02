@@ -33,6 +33,9 @@ const TOKEN_FORBIDDEN = [
   // Let's-Encrypt-Konto ALLE öffentlichen Zertifikate ausgestellt werden,
   // und jedes Schreiben löst ein Caddy /load aus. Session-only, wie /dns.
   /^\/acme-email$/,
+  // Update-Kanal und Mindestversion der Clients: nur eine Admin-Session darf
+  // festlegen, welche Builds Clients angeboten bekommen.
+  /^\/client-updates$/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -58,5 +61,7 @@ router.use('/', require('./portal'));
 router.use('/', require('./domains'));
 // WAF: own IPs, trusted bypass, scanner ban (docs/feature-release-b.md §3)
 router.use('/', require('./waf'));
+// Client updates: default channel, minimum versions, version overview
+router.use('/', require('./clientUpdates'));
 
 module.exports = router;

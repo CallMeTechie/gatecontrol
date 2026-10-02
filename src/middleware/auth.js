@@ -202,4 +202,4 @@ function guestOnly(req, res, next) {
   return next();
 }
 
-module.exports = { requireAuth, requireAdmin, requireAdminSession, guestOnly, safeReturnTo, SELF_SERVICE_PATHS };
+module.exports = { requireAuth, requireAdmin, requireAdminSession, guestOnly, safeReturnTo, SELF_SERVICE_PATHS, extractToken };

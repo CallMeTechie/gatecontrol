@@ -24,6 +24,16 @@
         <label class="form-label" for="edit-peer-owner">{{ t('peers.owner.label') }}</label>
         <select id="edit-peer-owner" style="width:100%"></select>
       </div>
+      <div class="form-group" id="edit-peer-update-group">
+        <label class="form-label" for="edit-peer-update-channel">{{ t('client_updates.peer_channel') }}</label>
+        <select id="edit-peer-update-channel" style="width:100%">
+          <option value="">{{ t('client_updates.peer_channel_default', { channel: t('client_updates.channel_stable') }) }}</option>
+          <option value="stable">{{ t('client_updates.channel_stable') }}</option>
+          <option value="beta">{{ t('client_updates.channel_beta') }}</option>
+        </select>
+        <small class="form-hint">{{ t('client_updates.peer_channel_hint') }}</small>
+        <div id="edit-peer-client-info" style="font-size:12px;margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>
+      </div>
       <div class="form-group">
         <label class="form-label" for="edit-peer-tags">{{ t('peers.tags') or 'Tags' }}</label>
         <input type="text" id="edit-peer-tags" placeholder="{{ t('peers.tags_placeholder') or 'e.g. server, production' }}" autocomplete="off" maxlength="255">

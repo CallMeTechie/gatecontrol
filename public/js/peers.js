@@ -408,12 +408,13 @@ var DT = function (k, p) { return D.t(k, p); };
       const data = await api.get('/api/peers');
       if (data.ok) {
         allPeers = data.peers;
+        updatePolicy = data.update_policy || updatePolicy;
         applyFilters();
         renderStatusTags(allPeers);
         renderTagFilters(allPeers);
       }
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:40px">' +
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--red);padding:40px">' +
         escapeHtml(err.message) + '</td></tr>';
     }
   }
@@ -424,6 +425,45 @@ var DT = function (k, p) { return D.t(k, p); };
   // Note: All innerHTML assignments below use only escapeHtml()-sanitized user values
   // and static SVG/HTML strings. This follows the existing pattern throughout the codebase.
   var peersMobile = document.getElementById('peers-mobile');
+
+  // ─── Client version / update channel ─────────────────────
+  // Server-side policy from GET /api/peers (default channel, min versions).
+  var updatePolicy = { default_channel: 'stable', min_versions: {} };
+
+  function cuT(key, params) {
+    var str = (GC.t && GC.t[key]) || key;
+    Object.keys(params || {}).forEach(function (k) { str = str.split('{{' + k + '}}').join(String(params[k])); });
+    return str;
+  }
+
+  function clientProductLabel(product) {
+    if (product === 'pro') return 'Pro';
+    if (product === 'community') return 'Community';
+    if (product === 'android') return 'Android';
+    return '';
+  }
+
+  // Version cell: "Pro 1.22.3" (+ red tag below the minimum, + beta tag).
+  // Values are client-reported → escapeHtml.
+  function getClientCell(peer) {
+    if (peer.peer_type === 'gateway') return '<span style="color:var(--muted)">—</span>';
+    var parts = [];
+    if (peer.client_version) {
+      var label = (clientProductLabel(peer.client_product) + ' ' + peer.client_version).trim();
+      var title = peer.client_seen_at ? cuT('client_updates.peer_last_seen', { time: peer.client_seen_at + ' UTC' }) : '';
+      parts.push('<span class="mono" title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</span>');
+      if (peer.client_below_min) {
+        parts.push('<span class="tag tag-red" style="font-size:10px;margin-left:4px" title="' + escapeHtml(cuT('client_updates.overview_min', { version: peer.client_min_version || '' })) + '">' +
+          escapeHtml(cuT('client_updates.overview_below_min')) + '</span>');
+      }
+    } else {
+      parts.push('<span style="color:var(--muted)">—</span>');
+    }
+    if (peer.update_channel_effective === 'beta') {
+      parts.push('<span class="tag tag-purple" style="font-size:10px;margin-left:4px">' + escapeHtml(cuT('client_updates.channel_beta')) + '</span>');
+    }
+    return parts.join('');
+  }
 
   // ─── Gateway badge ───────────────────────────────────────
   function getGatewayBadge(peer) {
@@ -943,6 +983,43 @@ var DT = function (k, p) { return D.t(k, p); };
     var editOwnerSel = document.getElementById('edit-peer-owner');
     if (editOwnerSel) editOwnerSel.value = peer.user_id != null ? String(peer.user_id) : '';
 
+    // Update channel (admin-assigned) + last reported client version
+    var updGroup = document.getElementById('edit-peer-update-group');
+    var updSel = document.getElementById('edit-peer-update-channel');
+    if (updGroup && updSel) {
+      updGroup.style.display = peer.peer_type === 'gateway' ? 'none' : '';
+      var defLabel = cuT('client_updates.channel_' + (updatePolicy.default_channel || 'stable'));
+      if (updSel.options[0]) updSel.options[0].textContent = cuT('client_updates.peer_channel_default', { channel: defLabel });
+      updSel.value = peer.update_channel === 'stable' || peer.update_channel === 'beta' ? peer.update_channel : '';
+      var info = document.getElementById('edit-peer-client-info');
+      if (info) {
+        while (info.firstChild) info.removeChild(info.firstChild);
+        var span = document.createElement('span');
+        if (peer.client_version) {
+          span.className = 'mono';
+          span.textContent = (clientProductLabel(peer.client_product) + ' ' + peer.client_version).trim();
+          info.appendChild(span);
+          if (peer.client_below_min) {
+            var tag = document.createElement('span');
+            tag.className = 'tag tag-red';
+            tag.style.fontSize = '10px';
+            tag.textContent = cuT('client_updates.overview_below_min') + (peer.client_min_version ? ' (' + peer.client_min_version + ')' : '');
+            info.appendChild(tag);
+          }
+          if (peer.client_seen_at) {
+            var seen = document.createElement('span');
+            seen.style.color = 'var(--text-3)';
+            seen.textContent = cuT('client_updates.peer_last_seen', { time: peer.client_seen_at + ' UTC' });
+            info.appendChild(seen);
+          }
+        } else {
+          span.style.color = 'var(--text-3)';
+          span.textContent = cuT('client_updates.peer_client_none');
+          info.appendChild(span);
+        }
+      }
+    }
+
     var editExpiresSel = document.getElementById('edit-peer-expires');
     var editExpiresDate = document.getElementById('edit-peer-expires-date');
     if (peer.expires_at) {
@@ -1088,8 +1165,17 @@ var DT = function (k, p) { return D.t(k, p); };
       var dns = document.getElementById('edit-peer-dns') ? document.getElementById('edit-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('edit-peer-expires', 'edit-peer-expires-date');
       var editOwnerEl = document.getElementById('edit-peer-owner');
-      var data = await api.put('/api/peers/' + id, { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined,
-        user_id: editOwnerEl ? (editOwnerEl.value === '' ? null : Number(editOwnerEl.value)) : null });
+      var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined,
+        user_id: editOwnerEl ? (editOwnerEl.value === '' ? null : Number(editOwnerEl.value)) : null };
+      // Only send the channel when it changed (separate audit entry server-side).
+      var updSelEl = document.getElementById('edit-peer-update-channel');
+      var updGroupEl = document.getElementById('edit-peer-update-group');
+      if (updSelEl && (!updGroupEl || updGroupEl.style.display !== 'none')) {
+        var prevPeer = allPeers.find(function(p) { return String(p.id) === String(id); }) || {};
+        var prevChannel = prevPeer.update_channel || '';
+        if (updSelEl.value !== prevChannel) payload.update_channel = updSelEl.value || null;
+      }
+      var data = await api.put('/api/peers/' + id, payload);
       if (!data.ok) {
         if (data.fields) {
           showFieldErrors(data.fields, { name: 'edit-peer-name', description: 'edit-peer-desc' });
@@ -1763,7 +1849,7 @@ var DT = function (k, p) { return D.t(k, p); };
 
   function renderPeers(peers) {
     if (!peers.length) {
-      var colSpan = batchMode ? 7 : 6;
+      var colSpan = batchMode ? 8 : 7;
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
       return;
     }
@@ -1780,6 +1866,7 @@ var DT = function (k, p) { return D.t(k, p); };
         '<td class="cell-name">' + escapeHtml(p.name) + getExpiryTag(p) + getGroupBadge(p) + getGatewayBadge(p) + '</td>' +
         '<td class="mono">' + escapeHtml(ip) + '</td>' +
         '<td>' + lastContact + '</td>' +
+        '<td>' + getClientCell(p) + '</td>' +
         '<td class="mono">↓' + rx + ' ↑' + tx + '</td>' +
         '<td>' + statusTag + '</td>' +
         '<td><div class="row-actions">' + actionBtns(p) + '</div></td>' +

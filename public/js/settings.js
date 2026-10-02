@@ -3110,3 +3110,108 @@ var DT = function (k, p) { return D.t(k, p); };
 
   loadDomains();
 })();
+
+// ─── Client Updates (default channel, minimum versions, overview) ─────
+(function initClientUpdates() {
+  var channelSel = document.getElementById('cu-default-channel');
+  var minPro = document.getElementById('cu-min-pro');
+  var minCommunity = document.getElementById('cu-min-community');
+  var overviewEl = document.getElementById('cu-overview');
+  if (!channelSel || !minPro || !minCommunity || !overviewEl) return;
+
+  function tr(key, params) {
+    var s = (window.GC && GC.t && GC.t[key]) || key;
+    Object.keys(params || {}).forEach(function (k) { s = s.split('{{' + k + '}}').join(String(params[k])); });
+    return s;
+  }
+  function el(tag, attrs, text) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  var PRODUCT_KEYS = {
+    pro: 'client_updates.product_pro',
+    community: 'client_updates.product_community',
+    android: 'client_updates.product_android',
+    unknown: 'client_updates.product_unknown',
+  };
+
+  // Overview: per product one block, one row per reported version.
+  // All values go through textContent (versions are client-reported).
+  function renderOverview(ov) {
+    while (overviewEl.firstChild) overviewEl.removeChild(overviewEl.firstChild);
+    var products = (ov && ov.products) || [];
+    if (!products.length) {
+      overviewEl.appendChild(el('div', { style: 'color:var(--text-3)' }, tr('client_updates.overview_empty')));
+    }
+    products.forEach(function (p) {
+      var block = el('div', { style: 'margin-bottom:14px' });
+      var head = el('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600;margin-bottom:6px' });
+      head.appendChild(el('span', null, tr(PRODUCT_KEYS[p.product] || 'client_updates.product_unknown')));
+      head.appendChild(el('span', { class: 'tag tag-grey', style: 'font-size:10px' }, tr('client_updates.overview_devices', { count: p.total })));
+      if (p.min_version) head.appendChild(el('span', { class: 'tag tag-blue', style: 'font-size:10px' }, tr('client_updates.overview_min', { version: p.min_version })));
+      if (p.below_min > 0) head.appendChild(el('span', { class: 'tag tag-red', style: 'font-size:10px' }, p.below_min + ' ' + tr('client_updates.overview_below_min')));
+      block.appendChild(head);
+      var table = el('table', { class: 'data-table' });
+      var tbody = el('tbody');
+      p.versions.forEach(function (v) {
+        var tr_ = el('tr', v.below_min ? { 'data-below-min': '1' } : null);
+        var tdV = el('td', { class: 'mono' }, v.version);
+        if (v.below_min) {
+          tdV.appendChild(document.createTextNode(' '));
+          tdV.appendChild(el('span', { class: 'tag tag-red', style: 'font-size:10px' }, tr('client_updates.overview_below_min')));
+        }
+        tr_.appendChild(tdV);
+        tr_.appendChild(el('td', { style: 'text-align:right' }, String(v.count)));
+        tbody.appendChild(tr_);
+      });
+      table.appendChild(tbody);
+      block.appendChild(table);
+      overviewEl.appendChild(block);
+    });
+    if (ov && ov.unreported > 0) {
+      overviewEl.appendChild(el('div', { style: 'color:var(--text-3);font-size:12px' }, tr('client_updates.overview_unreported', { count: ov.unreported })));
+    }
+  }
+
+  function apply(data) {
+    channelSel.value = data.default_channel || 'stable';
+    minPro.value = (data.min_versions && data.min_versions.pro) || '';
+    minCommunity.value = (data.min_versions && data.min_versions.community) || '';
+    renderOverview(data.overview);
+  }
+
+  api.get('/api/v1/settings/client-updates').then(function (r) {
+    if (r && r.ok) {
+      apply(r.data);
+      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('client-updates');
+    }
+  }).catch(function (err) {
+    overviewEl.textContent = err.message || '';
+    console.warn('[settings] loading client update policy failed', err);
+  });
+
+  SettingsAutosave.bind({
+    cluster: 'client-updates',
+    fields: [channelSel, minPro, minCommunity],
+    statusEl: document.getElementById('cu-status'),
+    valuesById: function () {
+      return {
+        'cu-default-channel': channelSel.value,
+        'cu-min-pro': minPro.value.trim(),
+        'cu-min-community': minCommunity.value.trim(),
+      };
+    },
+    save: function () {
+      return api.put('/api/v1/settings/client-updates', {
+        default_channel: channelSel.value,
+        min_versions: { pro: minPro.value.trim(), community: minCommunity.value.trim() },
+      }).then(function (r) {
+        if (r && r.ok && r.data) renderOverview(r.data.overview);
+        return r;
+      });
+    },
+  });
+})();

@@ -17,8 +17,23 @@ const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const { clientLabel } = require('./client/helpers');
 const logger = require('../../utils/logger');
+const clientUpdates = require('../../services/clientUpdates');
 
 const router = Router();
+
+// Remember the client version / product / platform per peer (peers list,
+// version overview). Throttled inside recordClientVersion: a write only when
+// something changed or the last one is older than 5 minutes.
+router.use((req, res, next) => {
+  if (req.tokenAuth && req.tokenPeerId) {
+    clientUpdates.recordClientVersion(req.tokenPeerId, {
+      version: req.headers['x-client-version'],
+      product: req.headers['x-client-type'],
+      platform: req.headers['x-client-platform'],
+    });
+  }
+  next();
+});
 
 // Update peer description with current client version on every
 // authenticated request. Runs at most once per 5 minutes per peer to
