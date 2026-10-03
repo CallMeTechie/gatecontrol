@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.138.0] — 2026-10-03
+
+### Features
+- redesigned profile page (identity header, grouped security, status rail) (#259)
+
+---
+
 ## [1.137.0] — 2026-10-02
 
 ### Features
