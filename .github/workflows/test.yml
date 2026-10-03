@@ -58,6 +58,7 @@ jobs:
         with:
           name: coverage-report-node${{ matrix.node }}
           path: coverage/
+          retention-days: 3
 
   eslint-security:
     name: ESLint Security
@@ -208,6 +209,7 @@ jobs:
         with:
           name: browser-screenshots
           path: /tmp/gc-e2e/shots/
+          retention-days: 3
           if-no-files-found: ignore
 
   mutation:
@@ -235,3 +237,4 @@ jobs:
         with:
           name: mutation-report
           path: reports/mutation/
+          retention-days: 3
