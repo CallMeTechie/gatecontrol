@@ -1,262 +1,193 @@
 {% import theme + "/partials/_tip.njk" as ui with context %}
-<div class="modal-overlay" id="modal-edit-route" style="display:none" data-load-failed="{{ t('entry_editor.load_failed') }}">
-  <div class="modal modal-wide">
-    <div class="modal-head">
-      <span class="modal-title">{{ t('routes.edit_title') }}</span>
-      <button class="modal-close" data-close-modal>&times;</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="edit-route-id">
-
-      {# ─── Tabs ─────────────────────────────────────── #}
-      <div class="tabs edit-route-tabs" style="margin-bottom:16px">
-        <button class="tab active" data-edit-tab="general">{{ t('routes.tab_general') or 'General' }}</button>
-        <button class="tab" data-edit-tab="auth">{{ t('routes.tab_auth') or 'Auth' }}</button>
-        <button class="tab" data-edit-tab="security">{{ t('routes.tab_security') or 'Security' }}</button>
-        <button class="tab" data-edit-tab="headers">{{ t('headers.title') or 'Headers' }}</button>
-        <button class="tab" data-edit-tab="branding">{{ t('routes.tab_branding') or 'Branding' }}</button>
-        <button class="tab" data-edit-tab="debug">{{ t('debug.tab') }}</button>
+{#
+  "Weiterleitung bearbeiten" (docs/feature-domain-zones.md, "Eintrags-Editor").
+  Header with type chip, "Weg der Verbindung", a section nav with one-line live
+  summaries and a sticky footer with the change summary. Every former option
+  is still here; HTTPS-only sections stay visible but greyed for TCP/UDP
+  (.rt-ee-http-only, "nur HTTPS"). Pro options are visible but locked
+  without the licence (Pro chip). Filled/read by entry-editor.js.
+#}
+{% set ee_sections = [
+  ['target', t('entry_editor.sec_target'), false],
+  ['access', t('entry_editor.sec_access'), false],
+  ['auth', t('entry_editor.sec_auth'), true],
+  ['security', t('entry_editor.sec_security'), false],
+  ['reliability', t('entry_editor.sec_reliability'), false],
+  ['headers', t('entry_editor.sec_headers'), true],
+  ['branding', t('entry_editor.sec_branding'), true],
+  ['diagnose', t('entry_editor.sec_diagnose'), false]
+] %}
+<div class="modal-overlay rt-ee-overlay" id="modal-edit-route" style="display:none" data-load-failed="{{ t('entry_editor.load_failed') }}">
+  <div class="modal rt-ee" role="dialog" aria-modal="true" aria-labelledby="ee-title">
+    <input type="hidden" id="edit-route-id">
+    <div class="rt-ee-head">
+      <span class="rt-chip rt-chip-https rt-ee-chip" id="ee-type-chip">HTTPS</span>
+      <div class="rt-ee-titles">
+        <h2 class="rt-dlg-title" id="ee-title">{{ t('entry_editor.title') }}</h2>
+        <div class="rt-dlg-sub"><span class="rt-mono rt-strong" id="ee-host"></span><span id="ee-name-sub"></span></div>
       </div>
+      <button type="button" class="rt-dlg-close" id="ee-close" aria-label="{{ t('common.close') }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="rt-ee-flow" id="ee-flow" role="group" aria-label="{{ t('entry_editor.flow') }}"></div>
 
-      {# ═══ TAB: General ═══════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="general">
-        {# Read-only target line, shown instead of the domain/target fields when
-           GCEntryEditor.open() runs with lockTarget (zones page). #}
-        <div class="form-group" id="edit-route-locked-summary" style="display:none">
-          <label class="form-label">{{ t('entry_editor.locked_label') }}</label>
-          <div id="edit-route-locked-target" style="font-family:var(--font-mono);font-size:13px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);word-break:break-all"></div>
-          <small class="form-hint">{{ t('entry_editor.locked_hint') }}</small>
-        </div>
-        {# Entry name (docs/feature-next-package.md S3 §3): a visible name for
-           this entry ("SSH DS918+"); empty keeps today's port/target name. #}
-        <div class="form-group" id="edit-route-label-group">
-          <label class="form-label" for="edit-route-label">{{ t('entry.label_field') }}</label>
-          <input type="text" id="edit-route-label" placeholder="{{ t('entry.label_placeholder') }}" maxlength="64">
-          <small class="form-hint">{{ t('entry.label_hint') }}</small>
-        </div>
-        <div class="form-row">
-          <div class="form-group" id="edit-route-domain-wrap">
-            <label class="form-label" id="edit-route-domain-label"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
-            {# required is inert on edit: submit reads values via JS #}
-            <select id="edit-route-base-domain" style="width:100%;padding:8px 12px;margin-bottom:6px"></select>
-            <input type="text" id="edit-route-prefix" placeholder="{{ t('routes.prefix') }}" style="width:100%;padding:8px 12px;margin-bottom:4px" maxlength="63">
-            <small class="form-hint">{{ t('routes.prefix_hint') }}</small>
-            <small id="edit-route-unverified-warning" class="form-hint" style="display:none;color:var(--amber)"></small>
-            <input type="text" id="edit-route-domain-freetext" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253" style="display:none"
-              data-dns-checking="{{ t('routes.dns_checking') }}"
-              data-dns-ok="{{ t('routes.dns_ok') }}"
-              data-dns-warning="{{ t('routes.dns_warning') }}">
-            <small id="edit-route-domain-preview" class="form-hint" style="display:none"></small>
-            <small id="edit-route-domain-ctx-hint" class="form-hint" style="display:none"></small>
-            <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
+    <div class="rt-ee-main">
+      <nav class="rt-ee-nav" id="ee-nav" aria-label="{{ t('entry_editor.sections') }}">
+        {% for s in ee_sections %}
+        <button type="button" class="rt-ee-tab{% if s[2] %} rt-ee-tab-http{% endif %}" data-ee-section="{{ s[0] }}" aria-controls="ee-panel-{{ s[0] }}" aria-current="{{ 'page' if loop.first else 'false' }}">
+          <span class="rt-ee-tab-label">{{ s[1] }}</span>
+          <span class="rt-ee-tab-sum" id="ee-sum-{{ s[0] }}"></span>
+          {% if s[2] %}<span class="rt-ee-tab-note">{{ t('entry_editor.https_only') }}</span>{% endif %}
+        </button>
+        {% endfor %}
+      </nav>
+
+      <div class="rt-ee-panels" id="ee-panels">
+
+      {# ═══ Ziel & Ports ═══════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel" data-panel="target" id="ee-panel-target" aria-labelledby="ee-h-target">
+        <h3 class="rt-ee-panel-title" id="ee-h-target">{{ t('entry_editor.sec_target') }}</h3>
+        <div class="rt-grid2">
+          {# Entry name (docs/feature-next-package.md S3 §3) #}
+          <div class="rt-field" id="edit-route-label-group">
+            <label class="rt-label" for="edit-route-label">{{ t('entry.label_field') }}</label>
+            <input type="text" class="rt-input" id="edit-route-label" placeholder="{{ t('entry.label_placeholder') }}" maxlength="64">
+            <small class="rt-hint">{{ t('entry.label_hint') }}</small>
           </div>
-          <div class="form-group">
-            <label class="form-label">{{ t('routes.description') or 'Description' }}</label>
-            <input type="text" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
+          <div class="rt-field">
+            <div class="rt-label" id="ee-kind-lbl">{{ t('entry_editor.type') }}</div>
+            <div class="rt-seg" id="ee-kind-group" role="group" aria-labelledby="ee-kind-lbl">
+              <button type="button" class="rt-seg-btn rt-mono" data-value="http" aria-pressed="true">HTTPS</button>
+              <button type="button" class="rt-seg-btn rt-mono" data-value="tcp" aria-pressed="false">TCP</button>
+              <button type="button" class="rt-seg-btn rt-mono" data-value="udp" aria-pressed="false">UDP</button>
+            </div>
+            <input type="hidden" id="edit-route-type" value="http">
+            <input type="hidden" id="edit-l4-protocol" value="tcp">
+            <small class="rt-hint" id="ee-kind-hint"></small>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('route_target_kind') }}</label>
-          <select id="edit-route-target-kind" style="width:100%">
-            <option value="peer">{{ t('route_target_peer') }}</option>
-            <option value="gateway">{{ t('route_target_gateway') }}</option>
-          </select>
+        <div class="rt-field">
+          <label class="rt-label" for="edit-route-desc">{{ t('routes.description') or 'Description' }}</label>
+          <input type="text" class="rt-input" id="edit-route-desc" placeholder="{{ t('routes.description_placeholder') or 'Optional description' }}" maxlength="255">
         </div>
-        <div id="edit-route-peer-fields">
+
+        {# Domain picker for entries without a domain zone (legacy hosts). Zone
+           hosts take their name from the host (rename in "Host bearbeiten"). #}
+        <div class="rt-ee-card" id="ee-domain-legacy">
           <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">{{ t('routes.target_peer') }}</label>
-              <select id="edit-route-peer" style="width:100%">
+            <div class="form-group" id="edit-route-domain-wrap">
+              <label class="form-label" id="edit-route-domain-label"><span class="gc-label-text">{{ t('routes.domain') }}</span>{{ ui.tip('routes.tip_domain') }}</label>
+              <select id="edit-route-base-domain" class="rt-select" aria-label="{{ t('routes.domain') }}"></select>
+              <input type="text" class="rt-input" id="edit-route-prefix" placeholder="{{ t('routes.prefix') }}" maxlength="63" aria-label="{{ t('routes.prefix') }}">
+              <small class="form-hint">{{ t('routes.prefix_hint') }}</small>
+              <small id="edit-route-unverified-warning" class="form-hint" style="display:none;color:var(--amber)"></small>
+              <input type="text" class="rt-input" id="edit-route-domain-freetext" placeholder="{{ t('routes.domain_placeholder') }}" maxlength="253" style="display:none" aria-label="{{ t('routes.domain') }}"
+                data-dns-checking="{{ t('routes.dns_checking') }}"
+                data-dns-ok="{{ t('routes.dns_ok') }}"
+                data-dns-warning="{{ t('routes.dns_warning') }}">
+              <small id="edit-route-domain-preview" class="form-hint" style="display:none"></small>
+              <small id="edit-route-domain-ctx-hint" class="form-hint" style="display:none"></small>
+              <small id="edit-route-dns-hint" class="form-hint" style="display:none"></small>
+            </div>
+          </div>
+        </div>
+
+        <fieldset class="rt-fs" id="ee-fs-target">
+          <legend>{{ t('entry_editor.target_lan') }}</legend>
+          {# Target kind: only for entries outside a domain zone (or with a legacy override). #}
+          <div class="rt-field" id="ee-row-kind">
+            <label class="rt-label" for="edit-route-target-kind">{{ t('route_target_kind') }}</label>
+            <select id="edit-route-target-kind" class="rt-select">
+              <option value="peer">{{ t('route_target_peer') }}</option>
+              <option value="gateway">{{ t('route_target_gateway') }}</option>
+            </select>
+          </div>
+          <div class="rt-grid3">
+            {# Zone-managed target: read-only, changed in "Domain-Einstellungen". #}
+            <div class="rt-field" id="ee-zone-target">
+              <div class="rt-label" id="ee-zone-target-label">{{ t('entry_editor.gateway') }}</div>
+              <div class="rt-readonly" id="ee-zone-target-name"></div>
+              <button type="button" class="rt-link-btn" id="ee-zone-settings-link">{{ t('entry_editor.change_in_settings') }}</button>
+            </div>
+            <div class="rt-field" id="edit-route-gateway-fields">
+              <label class="rt-label" for="edit-route-gateway-peer">{{ t('route_gateway_peer') }}</label>
+              <select id="edit-route-gateway-peer" class="rt-select">
+                <option value="">—</option>
+              </select>
+            </div>
+            <div class="rt-field" id="edit-route-peer-fields">
+              <label class="rt-label" for="edit-route-peer">{{ t('routes.target_peer') }}</label>
+              <select id="edit-route-peer" class="rt-select">
                 <option value="">— {{ t('routes.direct_ip') }} —</option>
               </select>
             </div>
-            <div class="form-group" id="edit-route-ip-group">
-              <label class="form-label">Target IP</label>
-              <input type="text" id="edit-route-ip" placeholder="10.8.0.2">
+            <div class="rt-field" id="edit-route-ip-group">
+              <label class="rt-label" for="edit-route-ip">{{ t('entry_editor.target_ip') }}</label>
+              <input type="text" class="rt-input rt-mono" id="edit-route-ip" placeholder="10.8.0.2">
             </div>
-            <div class="form-group">
-              <label class="form-label">{{ t('routes.target_port') }}</label>
-              <input type="text" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+            <div class="rt-field" id="ee-row-lan">
+              <label class="rt-label" for="edit-route-lan-host">{{ t('route_lan_host') }}</label>
+              <input type="text" class="rt-input rt-mono" id="edit-route-lan-host" placeholder="192.168.1.10">
+              <small class="rt-hint" id="ee-lan-hint"></small>
             </div>
-          </div>
-        </div>
-        <div id="edit-route-gateway-fields" style="display:none">
-          <div class="form-group">
-            <label class="form-label">{{ t('route_gateway_peer') }}</label>
-            <select id="edit-route-gateway-peer" style="width:100%">
-              <option value="">—</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">{{ t('route_lan_host') }}</label>
-              <input type="text" id="edit-route-lan-host" placeholder="192.168.1.10">
-            </div>
-            <div class="form-group">
-              <label class="form-label">{{ t('route_lan_port') }}</label>
-              <input type="number" id="edit-route-lan-port" placeholder="8080" min="1" max="65535">
+            <div class="rt-field">
+              <label class="rt-label" for="edit-route-port">{{ t('entry.target_port') }}</label>
+              <input type="text" inputmode="numeric" class="rt-input rt-mono rt-input-accent" id="edit-route-port" placeholder="{{ t('routes.target_port_placeholder') }}" maxlength="5">
+              <small class="rt-hint">1–65535</small>
             </div>
           </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <div class="rt-ee-wol" id="ee-row-wol">
+            <label class="rt-check">
               <input type="checkbox" id="edit-route-wol-enabled" name="wol_enabled">
               <span>{{ t('route_wol_enabled') }}</span>
             </label>
-          </div>
-          <div class="form-group" id="edit-route-wol-mac-field" style="display:none">
-            <label class="form-label">{{ t('route_wol_mac') }}</label>
-            <input type="text" id="edit-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$">
-          </div>
-        </div>
-        <div class="form-group">
-          <div class="toggle-group" id="edit-route-type-group">
-            <button type="button" class="toggle-btn on" data-value="http">{{ t('routes.type_http') }}</button>
-            <button type="button" class="toggle-btn" data-value="l4">{{ t('routes.type_l4') }}</button>
-          </div>
-          <input type="hidden" id="edit-route-type" value="http">
-        </div>
-        <div id="edit-l4-fields" style="display:none">
-          <div class="form-group">
-            <label>{{ t('routes.l4_protocol') }}{{ ui.tip('routes.tip_l4_protocol') }}</label>
-            <div class="toggle-group" id="edit-l4-protocol-group">
-              <button type="button" class="toggle-btn on" data-value="tcp">{{ t('routes.l4_protocol_tcp') }}</button>
-              <button type="button" class="toggle-btn" data-value="udp">{{ t('routes.l4_protocol_udp') }}</button>
+            <div class="rt-field" id="edit-route-wol-mac-field" style="display:none">
+              <label class="rt-label" for="edit-route-wol-mac">{{ t('route_wol_mac') }}</label>
+              <input type="text" class="rt-input rt-mono" id="edit-route-wol-mac" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$">
             </div>
-            <input type="hidden" id="edit-l4-protocol" value="tcp">
           </div>
-          <div class="form-group">
-            <label>{{ t('routes.l4_listen_port') }}{{ ui.tip('routes.tip_l4_listen_port') }}</label>
-            <input type="text" id="edit-l4-listen-port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}" data-blocked-ports="{{ (l4BlockedPorts or []) | join(',') }}">
-            {% if l4BlockedPorts %}<small class="form-hint">{{ t('routes.l4_blocked_ports_prefix') }} {{ l4BlockedPorts | join(', ') }} {{ t('routes.l4_blocked_ports_suffix') }}</small>{% endif %}
-            <small id="edit-l4-listen-port-error" class="form-hint" style="display:none;color:var(--red)"></small>
-          </div>
-          <div class="form-group">
-            <label>{{ t('routes.l4_tls_mode') }}{{ ui.tip('routes.tip_l4_tls_mode') }}</label>
-            <select id="edit-l4-tls-mode" class="form-select">
-              <option value="none">{{ t('routes.tls_none') }}</option>
-              <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
-              <option value="terminate">{{ t('routes.tls_terminate') }}</option>
-            </select>
-            <small id="edit-l4-tls-hint" class="form-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-passthrough="{{ t('routes.tls_passthrough_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
-          </div>
-        </div>
-        {# Protection for TCP/UDP entries — docs/feature-next-package.md §S1.4.
-           The security tab is HTTP-only (WAF, auth, mTLS all need HTTP), so the
-           pieces that do work at layer 4 live here, next to the port. Sibling of
-           edit-l4-fields on purpose: a locked target (RDP link, service bundle)
-           hides the port fields but must still be protectable. #}
-        <div class="gc-l4-protect" id="edit-l4-protection" style="display:none">
-          <div class="gc-l4-protect-head">
-            <span class="gc-l4-protect-title">{{ t('l4p.title') }}</span>
-            <span class="gc-l4-protect-note">{{ t('l4p.waf_http_only') }}</span>
-          </div>
-          {% if license.features.ip_access_control %}
-          <div class="gc-l4-protect-row">
-            <div>
-              <div class="gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
-              <div class="gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-l4-route-ip-filter"></div>
-          </div>
-          <div id="edit-l4-ip-filter-fields" style="display:none;margin-top:10px">
-            <div style="margin-bottom:8px">
-              <div class="toggle-group" id="edit-l4-ip-filter-mode-group" style="margin-bottom:8px">
-                <button type="button" class="toggle-btn on" data-value="whitelist">{{ t('l4p.mode_allow') }}</button>
-                <button type="button" class="toggle-btn" data-value="blacklist">{{ t('l4p.mode_deny') }}</button>
+        </fieldset>
+
+        <fieldset class="rt-fs" id="ee-fs-outer">
+          <legend>{{ t('entry_editor.from_outside') }}</legend>
+          <div id="edit-l4-fields" style="display:none">
+            <div class="rt-grid2">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-l4-listen-port">{{ t('entry.listen_port') }}{{ ui.tip('routes.tip_l4_listen_port') }}</label>
+                <input type="text" class="rt-input rt-mono" id="edit-l4-listen-port" maxlength="11" placeholder="{{ t('routes.l4_listen_port_placeholder') }}" data-blocked-ports="{{ (l4BlockedPorts or []) | join(',') }}">
+                <small class="rt-hint" id="ee-listen-state">{{ t('entry_editor.listen_hint') }}</small>
+                {% if l4BlockedPorts %}<small class="rt-hint">{{ t('routes.l4_blocked_ports_prefix') }} {{ l4BlockedPorts | join(', ') }} {{ t('routes.l4_blocked_ports_suffix') }}</small>{% endif %}
+                <small id="edit-l4-listen-port-error" class="rt-hint rt-err" style="display:none"></small>
               </div>
-              <input type="hidden" id="edit-l4-ip-filter-mode" value="whitelist">
-              <small class="form-hint" id="edit-l4-ip-filter-mode-hint" data-hint-allow="{{ t('l4p.mode_allow_hint') }}" data-hint-deny="{{ t('l4p.mode_deny_hint') }}"></small>
-            </div>
-            <div id="edit-l4-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="text" id="edit-l4-ip-filter-input" placeholder="{{ t('l4p.ip_filter_placeholder') }}" style="flex:1;min-width:0;padding:6px 10px;font-size:12px">
-              <select id="edit-l4-ip-filter-type" style="width:90px;flex-shrink:0;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-                <option value="ip">IP</option>
-                <option value="cidr">CIDR</option>
-              </select>
-              <button type="button" class="btn btn-ghost" id="edit-l4-ip-filter-add" style="flex-shrink:0;padding:6px 10px;font-size:12px">+</button>
-            </div>
-          </div>
-          {% else %}
-          <div class="gc-l4-protect-row feature-locked" title="{{ t('license.requires_pro') }}">
-            <div>
-              <div class="gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="lock-icon"></span></div>
-              <div class="gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-l4-route-ip-filter"></div>
-          </div>
-          {% endif %}
-          <div class="gc-l4-protect-row" style="margin-top:10px">
-            <div>
-              <div class="gc-l4-protect-label">{{ t('l4p.conn_rate') }}</div>
-              <div class="gc-l4-protect-desc">{{ t('l4p.conn_rate_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-l4-conn-rate"></div>
-          </div>
-          <div id="edit-l4-conn-rate-fields" style="display:none;margin-top:10px">
-            <div style="display:flex;gap:8px">
-              <div style="flex:1">
-                <label class="gc-l4-protect-sublabel" for="edit-l4-conn-limit">{{ t('l4p.conn_limit') }}</label>
-                <input type="number" id="edit-l4-conn-limit" value="20" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
-              </div>
-              <div style="flex:1">
-                <label class="gc-l4-protect-sublabel" for="edit-l4-conn-window">{{ t('l4p.conn_window') }}</label>
-                <input type="number" id="edit-l4-conn-window" value="60" min="1" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-l4-tls-mode">{{ t('routes.l4_tls_mode') }}{{ ui.tip('routes.tip_l4_tls_mode') }}</label>
+                <select id="edit-l4-tls-mode" class="rt-select">
+                  <option value="none">{{ t('routes.tls_none') }}</option>
+                  <option value="passthrough">{{ t('routes.tls_passthrough') }}</option>
+                  <option value="terminate">{{ t('routes.tls_terminate') }}</option>
+                </select>
+                <small id="edit-l4-tls-hint" class="rt-hint" data-hint-none="{{ t('routes.tls_none_hint') }}" data-hint-passthrough="{{ t('routes.tls_passthrough_hint') }}" data-hint-terminate="{{ t('routes.tls_terminate_hint') }}"></small>
               </div>
             </div>
-            <small class="form-hint" id="edit-l4-conn-rate-hint">{{ t('l4p.conn_rate_hint') }}</small>
+            <div class="rt-err rt-err-row" id="ee-listen-conflict" role="alert" hidden><span id="ee-listen-conflict-text"></span><button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="ee-listen-use"></button></div>
           </div>
-          <small class="form-hint gc-l4-protect-foot">{{ t('l4p.internal_hint') }}</small>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.external_label') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.external_hint') }}</div>
+          <div id="ee-outer-http">
+            <div class="rt-readonly rt-mono" id="ee-outer-url"></div>
+            <small class="rt-hint">{{ t('entry_editor.outer_http_hint') }}</small>
           </div>
-          <div class="toggle" id="edit-route-external"></div>
-        </div>
-        {# "Nur bei Bedarf" (docs/feature-next-package.md S3 §2): the target is
-           meant to be off most of the time, so it never becomes a dashboard
-           problem — it only carries the note. #}
-        <div class="od-row" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('entry.on_demand_label') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('entry.on_demand_hint') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-on-demand"></div>
-        </div>
-        <div id="edit-route-on-demand-wol" class="od-wol" style="display:none;margin:-8px 0 14px 0;font-size:11px;color:var(--text-2)">{{ t('entry.on_demand_wol_hint') }}</div>
-        <div id="edit-route-block-wrap" class="route-block-wrap" style="display:none;margin-bottom:14px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.block_action_label') }}</label>
-          <select id="edit-route-block-action" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-base);color:var(--text-1)">
-            <option value="inherit">{{ t('routes.block_inherit') }}</option>
-            <option value="not_found">{{ t('routes.block_not_found') }}</option>
-            <option value="custom">{{ t('routes.block_custom') }}</option>
-            <option value="redirect">{{ t('routes.block_redirect') }}</option>
-            <option value="empty">{{ t('routes.block_empty') }}</option>
-          </select>
-          <textarea id="edit-route-block-body" style="display:none;margin-top:8px;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
-          <input id="edit-route-block-redirect" type="url" style="display:none;margin-top:8px;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg-base);color:var(--text-1)" placeholder="{{ t('routes.block_redirect_ph') or 'https://…' }}">
-        </div>
+        </fieldset>
+
         <div id="edit-http-fields">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.force_https') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.force_https_desc') }}</div>
+          <div class="rt-ee-card">
+            <div class="rt-ee-row">
+              <div>
+                <div class="rt-ee-ttl">{{ t('routes.backend_https') }}</div>
+                <div class="rt-ee-desc">{{ t('routes.backend_https_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-route-backend-https" aria-label="{{ t('routes.backend_https') }}"></div>
             </div>
-            <div class="toggle on" id="edit-route-https"></div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.backend_https') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backend_https_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-route-backend-https"></div>
-          </div>
           {# Backend certificate check (docs/feature-security-options.md §B), under
-             "Backend HTTPS". Filled/read by entry-editor.js; greyed out while
-             Backend HTTPS is off and for gateway/pool targets (the gateway
-             dials the target, the fields are stored but not applied). #}
+             "Backend HTTPS". Greyed out while Backend HTTPS is off and for
+             gateway/pool targets (the gateway dials the target). #}
           <div id="edit-backend-tls-block" class="so-editor-block so-backend-tls"
                data-hint-gateway="{{ t('backend_tls.hint_gateway') }}" data-hint-https="{{ t('backend_tls.hint_https') }}"
                data-err-backend-ca-invalid="{{ t('backend_tls.err.ca_invalid') }}" data-err-backend-server-name-invalid="{{ t('backend_tls.err.server_name_invalid') }}"
@@ -287,219 +218,285 @@
             </div>
             <div id="edit-backend-tls-error" class="so-editor-error" role="alert" hidden></div>
           </div>
-          {% if license.features.compression %}
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-route-compress"></div>
           </div>
-          {% else %}
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)" class="feature-locked" title="{{ t('license.requires_pro') }}">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.compress') }} <span class="lock-icon"></span></div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.compress_desc') }}</div>
-            </div>
-            <div class="toggle" id="edit-route-compress"></div>
-          </div>
-          {% endif %}
         </div>
-        <div id="edit-http-only-features">
-        {# ─── Multiple Backends ─── #}
-        {% if license.features.load_balancing %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.backends') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backends_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-backends"></div>
-        </div>
-        <div id="edit-backends-fields" style="display:none;margin-top:10px">
-          <div id="edit-backends-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-          <button type="button" class="btn btn-ghost" id="edit-backends-add" style="font-size:12px;padding:6px 12px">+ {{ t('routes.backends_add') }}</button>
-          {# ─── Sticky Sessions ─── #}
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
+      </section>
+
+      {# ═══ Zugriff ═══════════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel" data-panel="access" id="ee-panel-access" aria-labelledby="ee-h-access" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-access">{{ t('entry_editor.sec_access') }}</h3>
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
             <div>
-              <div style="font-size:13px;font-weight:600">{{ t('routes.sticky') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.sticky_desc') }}</div>
+              <div class="rt-ee-ttl">{{ t('routes.external_label') }}</div>
+              <div class="rt-ee-desc">{{ t('routes.external_hint') }}</div>
             </div>
-            <div class="toggle" id="edit-route-sticky"></div>
+            <div class="toggle" id="edit-route-external" aria-label="{{ t('routes.external_label') }}"></div>
           </div>
-          <div id="edit-sticky-fields" style="display:none;margin-top:10px">
-            <div style="display:flex;gap:8px">
-              <div style="flex:1">
-                <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.sticky_cookie_name') }}</label>
-                <input type="text" id="edit-sticky-cookie-name" value="gc_sticky" style="width:100%;padding:6px 10px;font-size:12px">
-              </div>
-              <div style="flex:1">
-                <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.sticky_cookie_ttl') }}</label>
-                <select id="edit-sticky-cookie-ttl" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-                  <option value="3600">{{ t('routes.sticky_ttl_1h') }}</option>
-                  <option value="14400">{{ t('routes.sticky_ttl_4h') }}</option>
-                  <option value="86400">{{ t('routes.sticky_ttl_24h') }}</option>
-                  <option value="604800">{{ t('routes.sticky_ttl_7d') }}</option>
-                </select>
-              </div>
+          <div id="edit-route-block-wrap" class="route-block-wrap rt-ee-http-only" style="display:none">
+            <label class="rt-label" for="edit-route-block-action">{{ t('routes.block_action_label') }}</label>
+            <select id="edit-route-block-action" class="rt-select">
+              <option value="inherit">{{ t('routes.block_inherit') }}</option>
+              <option value="not_found">{{ t('routes.block_not_found') }}</option>
+              <option value="custom">{{ t('routes.block_custom') }}</option>
+              <option value="redirect">{{ t('routes.block_redirect') }}</option>
+              <option value="empty">{{ t('routes.block_empty') }}</option>
+            </select>
+            <textarea id="edit-route-block-body" class="rt-input rt-textarea rt-mono" style="display:none" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}" aria-label="{{ t('routes.block_custom') }}"></textarea>
+            <input id="edit-route-block-redirect" type="url" class="rt-input" style="display:none" placeholder="{{ t('routes.block_redirect_ph') or 'https://…' }}" aria-label="{{ t('routes.block_redirect') }}">
+          </div>
+        </div>
+        {# "Nur bei Bedarf" (docs/feature-next-package.md S3 §2) #}
+        <div class="rt-ee-card od-row">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('entry.on_demand_label') }}</div>
+              <div class="rt-ee-desc">{{ t('entry.on_demand_hint') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-on-demand" aria-label="{{ t('entry.on_demand_label') }}"></div>
+          </div>
+          <div id="edit-route-on-demand-wol" class="od-wol rt-hint" style="display:none">{{ t('entry.on_demand_wol_hint') }}</div>
+        </div>
+
+        <div class="rt-ee-http-only" id="edit-ip-filter-block">
+        {% if license.features.ip_access_control %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+            </div>
+            <div class="toggle" id="edit-route-ip-filter" aria-label="{{ t('ip_filter.title') or 'IP Access Control' }}"></div>
+          </div>
+          <div id="edit-ip-filter-fields" style="display:none" class="rt-ee-sub">
+            <div class="toggle-group" id="edit-ip-filter-mode-group">
+              <button type="button" class="toggle-btn on" data-value="whitelist">{{ t('l4p.mode_allow') }}</button>
+              <button type="button" class="toggle-btn" data-value="blacklist">{{ t('l4p.mode_deny') }}</button>
+            </div>
+            <input type="hidden" id="edit-ip-filter-mode" value="whitelist">
+            <div id="edit-ip-filter-rules-list" class="rt-ee-rules"></div>
+            <div class="rt-ee-addrow">
+              <input type="text" class="rt-input" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" aria-label="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}">
+              <select id="edit-ip-filter-type" class="rt-select rt-select-auto" aria-label="{{ t('entry_editor.rule_type') }}">
+                <option value="ip">IP</option>
+                <option value="cidr">CIDR</option>
+                <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
+              </select>
+              <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-ip-filter-add" aria-label="{{ t('entry_editor.add_rule') }}">+</button>
             </div>
           </div>
         </div>
         {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.backends') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.backends_desc') }}</div>
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
+            </div>
+            <div class="toggle" id="edit-route-ip-filter" data-managed="true" aria-disabled="true" aria-label="{{ t('ip_filter.title') or 'IP Access Control' }}"></div>
           </div>
-          <div class="toggle" id="edit-route-backends"></div>
         </div>
         {% endif %}
         </div>
-      </div>
 
-      {# ═══ TAB: Auth ══════════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="auth" style="display:none">
-        <div class="form-group">
-          <label class="form-label">{{ t('route_auth.auth_type') }}</label>
-          <div class="toggle-group" id="edit-auth-type-group">
+        <div class="rt-ee-http-only">
+        {% if license.features.peer_acl %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('acl.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('acl.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-acl" data-managed="true" aria-label="{{ t('acl.title') }}"></div>
+          </div>
+          <div id="edit-acl-fields" style="display:none" class="rt-ee-sub">
+            <div class="rt-label">{{ t('acl.select_peers') }}</div>
+            <div id="edit-acl-peers-list" class="rt-ee-checklist"></div>
+            <div id="edit-acl-hint" class="rt-hint"></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('acl.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('acl.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-acl" data-managed="true" aria-disabled="true" aria-label="{{ t('acl.title') }}"></div>
+          </div>
+        </div>
+        {% endif %}
+        </div>
+
+        <div class="rt-ee-http-only">
+        {% if license.features.access_windows %}
+        <div class="rt-ee-card form-section" id="access-windows-section" data-target-id="">
+          <div class="rt-ee-ttl">
+            {{ t('access.title') }} <span class="rt-pro">Pro</span>
+            <span id="access-state-badge" class="rt-ee-badge"></span>
+          </div>
+          <div class="rt-ee-desc">{{ t('entry_editor.access_windows_desc') }}</div>
+          <div id="access-rules-list"></div>
+          <div id="access-rules-form"></div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-ttl">{{ t('access.title') }} <span class="rt-pro">Pro</span></div>
+          <div class="rt-ee-desc">{{ t('entry_editor.access_windows_desc') }}</div>
+        </div>
+        {% endif %}
+        </div>
+
+        {# Section: Sichtbarkeit (portal) #}
+        <div class="rt-ee-card">
+          <div class="rt-ee-ttl">{{ t('routes.visible_to_users') }}</div>
+          <div class="rt-ee-desc">{{ t('routes.visible_to_users_hint') }}</div>
+          <div id="route-user-ids" class="rt-ee-chips"></div>
+        </div>
+      </section>
+
+      {# ═══ Anmeldung (HTTPS) ══════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel rt-ee-http-panel" data-panel="auth" id="ee-panel-auth" aria-labelledby="ee-h-auth" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-auth">{{ t('entry_editor.sec_auth') }}</h3>
+        <p class="rt-ee-l4note" hidden>{{ t('entry_editor.l4_note_auth') }}</p>
+        <div class="rt-field">
+          <div class="rt-label" id="ee-auth-lbl">{{ t('route_auth.auth_type') }}</div>
+          <div class="toggle-group rt-seg-like" id="edit-auth-type-group" role="group" aria-labelledby="ee-auth-lbl">
             <button type="button" class="toggle-btn on" data-value="none">{{ t('route_auth.auth_none') }}</button>
             <button type="button" class="toggle-btn" data-value="basic">{{ t('route_auth.auth_basic') }}</button>
             <button type="button" class="toggle-btn" data-value="route">{{ t('route_auth.auth_route') }}</button>
           </div>
           <input type="hidden" id="edit-auth-type" value="none">
+          <small class="rt-hint" id="ee-auth-hint" data-none="{{ t('entry_editor.auth_hint_none') }}" data-basic="{{ t('entry_editor.auth_hint_basic') }}" data-route="{{ t('entry_editor.auth_hint_route') }}"></small>
         </div>
 
-        <div id="edit-basic-auth-fields" style="display:none;margin-bottom:14px">
-          <div class="form-group">
-            <label class="form-label">{{ t('routes.basic_auth_user') or 'Username' }}</label>
-            <input type="text" id="edit-route-auth-user" placeholder="admin" autocomplete="off" maxlength="64">
+        <div id="edit-basic-auth-fields" class="rt-ee-card" style="display:none">
+          <div class="rt-grid2">
+            <div class="rt-field">
+              <label class="rt-label" for="edit-route-auth-user">{{ t('routes.basic_auth_user') or 'Username' }}</label>
+              <input type="text" class="rt-input" id="edit-route-auth-user" placeholder="admin" autocomplete="off" maxlength="64">
+            </div>
+            <div class="rt-field">
+              <label class="rt-label" for="edit-route-auth-pass">{{ t('routes.basic_auth_password') or 'Password' }}</label>
+              <input type="password" class="rt-input" id="edit-route-auth-pass" placeholder="{{ t('routes.basic_auth_password_hint') or 'Leave empty to keep current' }}" autocomplete="new-password" maxlength="128">
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">{{ t('routes.basic_auth_password') or 'Password' }}</label>
-            <input type="password" id="edit-route-auth-pass" placeholder="{{ t('routes.basic_auth_password_hint') or 'Leave empty to keep current' }}" autocomplete="new-password" maxlength="128">
-          </div>
+          <small class="rt-hint">{{ t('entry_editor.basic_hint') }}</small>
         </div>
 
-        <div id="edit-route-auth-fields" style="display:none">
+        <div id="edit-route-auth-fields" class="rt-ee-card" style="display:none">
           <input type="hidden" id="edit-ra-method" value="email_password">
           <div id="edit-ra-single-factor">
-            <div class="form-group">
-              <label class="form-label">{{ t('route_auth.method') }}</label>
-              <div class="toggle-group" id="edit-ra-method-group" style="width:100%">
-                <button type="button" class="toggle-btn on" data-value="email_password" style="flex:1">{{ t('route_auth.method_email_password') }}</button>
-                <button type="button" class="toggle-btn" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
-                <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
+            <div class="rt-label" id="ee-ra-method-lbl">{{ t('route_auth.method') }}</div>
+            <div class="toggle-group rt-ee-methods" id="edit-ra-method-group" role="group" aria-labelledby="ee-ra-method-lbl">
+              <button type="button" class="toggle-btn on" data-value="email_password"><span class="rt-ee-m-ttl">{{ t('route_auth.method_email_password') }}</span><span class="rt-ee-m-desc">{{ t('entry_editor.method_pw_hint') }}</span></button>
+              <button type="button" class="toggle-btn" data-value="email_code"><span class="rt-ee-m-ttl">{{ t('route_auth.method_email_code') }}</span><span class="rt-ee-m-desc">{{ t('entry_editor.method_code_hint') }}</span></button>
+              <button type="button" class="toggle-btn" data-value="totp"><span class="rt-ee-m-ttl">{{ t('route_auth.method_totp') }}</span><span class="rt-ee-m-desc">{{ t('entry_editor.method_totp_hint') }}</span></button>
+            </div>
+            <div class="rt-grid2">
+              <div id="edit-ra-sf-email-group" class="rt-field">
+                <label class="rt-label" for="edit-ra-email">{{ t('route_auth.email') }}</label>
+                <input type="email" class="rt-input" id="edit-ra-email" placeholder="name@example.com">
+              </div>
+              <div id="edit-ra-sf-password-group" class="rt-field">
+                <label class="rt-label" for="edit-ra-password">{{ t('route_auth.password') }}</label>
+                <input type="password" class="rt-input" id="edit-ra-password" autocomplete="new-password">
+                <small class="rt-hint">{{ t('route_auth.password_hint') }}</small>
               </div>
             </div>
-            <div class="form-row">
-              <div id="edit-ra-sf-email-group" class="form-group">
-                <label class="form-label">{{ t('route_auth.email') }}</label>
-                <input type="email" id="edit-ra-email" placeholder="name@example.com">
-              </div>
-              <div id="edit-ra-sf-password-group" class="form-group">
-                <label class="form-label">{{ t('route_auth.password') }}</label>
-                <input type="password" id="edit-ra-password" autocomplete="new-password">
-                <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
-              </div>
-            </div>
-            <div id="edit-ra-sf-totp-group" style="display:none;margin-bottom:14px">
-              <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
-                <div style="font-size:13px;font-weight:600;margin-bottom:2px">{{ t('route_auth.totp_setup') }}</div>
-                <div style="font-size:11px;color:var(--text-3)">{{ t('route_auth.totp_scan_qr') }}</div>
-                <div id="edit-ra-totp-qr" style="margin:10px auto;display:none"></div>
-                <div id="edit-ra-totp-secret" style="font-family:var(--font-mono);font-size:12px;background:var(--bg-input);padding:6px 10px;border-radius:var(--radius-xs);border:1px solid var(--border);letter-spacing:2px;display:none;margin:6px auto;word-break:break-all"></div>
-                <button type="button" class="btn btn-primary" id="btn-ra-totp-generate" style="margin-top:8px">{{ t('route_auth.totp_generate') }}</button>
-                <div id="edit-ra-totp-verify" style="display:none;margin-top:10px">
-                  <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">{{ t('route_auth.totp_confirm_code') }}</div>
-                  <div style="display:flex;gap:8px">
-                    <input type="text" id="edit-ra-totp-code" placeholder="000000" style="flex:1;text-align:center;letter-spacing:4px;font-family:var(--font-mono)">
-                    <button type="button" class="btn btn-primary" id="btn-ra-totp-confirm" style="padding:8px 14px">{{ t('route_auth.totp_confirm') }}</button>
-                  </div>
-                  <div id="edit-ra-totp-status" style="font-size:11px;margin-top:6px;display:none"></div>
+            <div id="edit-ra-sf-totp-group" class="rt-ee-totp" style="display:none">
+              <div class="rt-ee-ttl">{{ t('route_auth.totp_setup') }}</div>
+              <div class="rt-ee-desc">{{ t('route_auth.totp_scan_qr') }}</div>
+              <div id="edit-ra-totp-qr" class="rt-ee-qr" style="display:none"></div>
+              <div id="edit-ra-totp-secret" class="rt-ee-secret" style="display:none"></div>
+              <button type="button" class="btn btn-secondary rt-btn" id="btn-ra-totp-generate">{{ t('route_auth.totp_generate') }}</button>
+              <div id="edit-ra-totp-verify" style="display:none">
+                <label class="rt-label" for="edit-ra-totp-code">{{ t('route_auth.totp_confirm_code') }}</label>
+                <div class="rt-ee-addrow">
+                  <input type="text" inputmode="numeric" class="rt-input rt-mono rt-input-code" id="edit-ra-totp-code" placeholder="000000">
+                  <button type="button" class="btn btn-primary rt-btn" id="btn-ra-totp-confirm">{{ t('route_auth.totp_confirm') }}</button>
                 </div>
+                <div id="edit-ra-totp-status" class="rt-hint" style="display:none"></div>
               </div>
             </div>
           </div>
 
           <div id="edit-ra-2fa-view" style="display:none">
-            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
-              <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px">{{ t('route_auth.factor_1') }}</div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">{{ t('route_auth.email') }}</label>
-                  <input type="email" id="edit-ra-2fa-email" placeholder="name@example.com">
+            <div class="rt-ee-card rt-ee-card-inner">
+              <div class="rt-ee-kicker">{{ t('route_auth.factor_1') }}</div>
+              <div class="rt-grid2">
+                <div class="rt-field">
+                  <label class="rt-label" for="edit-ra-2fa-email">{{ t('route_auth.email') }}</label>
+                  <input type="email" class="rt-input" id="edit-ra-2fa-email" placeholder="name@example.com">
                 </div>
-                <div class="form-group" style="margin-bottom:0">
-                  <label class="form-label">{{ t('route_auth.password') }}</label>
-                  <input type="password" id="edit-ra-2fa-password" autocomplete="new-password">
-                  <small class="form-hint">{{ t('route_auth.password_hint') }}</small>
+                <div class="rt-field">
+                  <label class="rt-label" for="edit-ra-2fa-password">{{ t('route_auth.password') }}</label>
+                  <input type="password" class="rt-input" id="edit-ra-2fa-password" autocomplete="new-password">
+                  <small class="rt-hint">{{ t('route_auth.password_hint') }}</small>
                 </div>
               </div>
             </div>
-            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px">
-              <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--font-mono);margin-bottom:12px" id="edit-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
-              <div class="form-group">
-                <div class="toggle-group" id="edit-ra-2fa-method-group" style="width:100%">
-                  <button type="button" class="toggle-btn on" data-value="email_code" style="flex:1">{{ t('route_auth.method_email_code') }}</button>
-                  <button type="button" class="toggle-btn" data-value="totp" style="flex:1">{{ t('route_auth.method_totp') }}</button>
-                </div>
+            <div class="rt-ee-card rt-ee-card-inner">
+              <div class="rt-ee-kicker" id="edit-ra-2fa-factor2-label" data-email="{{ t('route_auth.factor_2_email') }}" data-totp="{{ t('route_auth.factor_2_totp') }}">{{ t('route_auth.factor_2_email') }}</div>
+              <div class="toggle-group rt-seg-like" id="edit-ra-2fa-method-group" role="group" aria-labelledby="edit-ra-2fa-factor2-label">
+                <button type="button" class="toggle-btn on" data-value="email_code">{{ t('route_auth.method_email_code') }}</button>
+                <button type="button" class="toggle-btn" data-value="totp">{{ t('route_auth.method_totp') }}</button>
               </div>
-              <div id="edit-ra-2fa-email-hint" style="font-size:11px;color:var(--text-3);padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-xs)">
-                {{ t('route_auth.code_sent_to_same_email') }}
-              </div>
-              <div id="edit-ra-2fa-totp-group" style="display:none">
-                <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
-                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">{{ t('route_auth.totp_setup') }}</div>
-                  <div style="font-size:11px;color:var(--text-3)">{{ t('route_auth.totp_scan_qr') }}</div>
-                  <div id="edit-ra-2fa-totp-qr" style="margin:10px auto;display:none"></div>
-                  <div id="edit-ra-2fa-totp-secret" style="font-family:var(--font-mono);font-size:12px;background:var(--bg-input);padding:6px 10px;border-radius:var(--radius-xs);border:1px solid var(--border);letter-spacing:2px;display:none;margin:6px auto;word-break:break-all"></div>
-                  <button type="button" class="btn btn-primary" id="btn-ra-2fa-totp-generate" style="margin-top:8px">{{ t('route_auth.totp_generate') }}</button>
-                  <div id="edit-ra-2fa-totp-verify" style="display:none;margin-top:10px">
-                    <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">{{ t('route_auth.totp_confirm_code') }}</div>
-                    <div style="display:flex;gap:8px">
-                      <input type="text" id="edit-ra-2fa-totp-code" placeholder="000000" style="flex:1;text-align:center;letter-spacing:4px;font-family:var(--font-mono)">
-                      <button type="button" class="btn btn-primary" id="btn-ra-2fa-totp-confirm" style="padding:8px 14px">{{ t('route_auth.totp_confirm') }}</button>
-                    </div>
-                    <div id="edit-ra-2fa-totp-status" style="font-size:11px;margin-top:6px;display:none"></div>
+              <div id="edit-ra-2fa-email-hint" class="rt-hint">{{ t('route_auth.code_sent_to_same_email') }}</div>
+              <div id="edit-ra-2fa-totp-group" class="rt-ee-totp" style="display:none">
+                <div class="rt-ee-ttl">{{ t('route_auth.totp_setup') }}</div>
+                <div class="rt-ee-desc">{{ t('route_auth.totp_scan_qr') }}</div>
+                <div id="edit-ra-2fa-totp-qr" class="rt-ee-qr" style="display:none"></div>
+                <div id="edit-ra-2fa-totp-secret" class="rt-ee-secret" style="display:none"></div>
+                <button type="button" class="btn btn-secondary rt-btn" id="btn-ra-2fa-totp-generate">{{ t('route_auth.totp_generate') }}</button>
+                <div id="edit-ra-2fa-totp-verify" style="display:none">
+                  <label class="rt-label" for="edit-ra-2fa-totp-code">{{ t('route_auth.totp_confirm_code') }}</label>
+                  <div class="rt-ee-addrow">
+                    <input type="text" inputmode="numeric" class="rt-input rt-mono rt-input-code" id="edit-ra-2fa-totp-code" placeholder="000000">
+                    <button type="button" class="btn btn-primary rt-btn" id="btn-ra-2fa-totp-confirm">{{ t('route_auth.totp_confirm') }}</button>
                   </div>
+                  <div id="edit-ra-2fa-totp-status" class="rt-hint" style="display:none"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="form-row" style="align-items:stretch">
-            <div style="flex:1;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-              <div>
-                <div style="font-size:13px;font-weight:600">{{ t('route_auth.two_factor') }}</div>
-                <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.two_factor_desc') }}</div>
-              </div>
-              <div class="toggle" id="edit-ra-2fa" data-managed="true"></div>
+          <div class="rt-ee-row rt-ee-row-sep">
+            <div>
+              <div class="rt-ee-ttl">{{ t('route_auth.two_factor') }}</div>
+              <div class="rt-ee-desc">{{ t('route_auth.two_factor_desc') }}</div>
             </div>
-            <div class="form-group" style="flex:1">
-              <label class="form-label">{{ t('route_auth.session_duration') }}</label>
-              <select id="edit-ra-session-duration" class="form-select">
-                <option value="3600000">{{ t('route_auth.session_1h') }}</option>
-                <option value="43200000">{{ t('route_auth.session_12h') }}</option>
-                <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
-                <option value="604800000">{{ t('route_auth.session_7d') }}</option>
-                <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
-              </select>
-            </div>
+            <div class="toggle" id="edit-ra-2fa" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-label="{{ t('route_auth.two_factor') }}"></div>
           </div>
+          <div class="rt-ee-row">
+            <div>
+              <label class="rt-ee-ttl" for="edit-ra-session-duration">{{ t('route_auth.session_duration') }}</label>
+              <div class="rt-ee-desc">{{ t('entry_editor.session_hint') }}</div>
+            </div>
+            <select id="edit-ra-session-duration" class="rt-select rt-select-auto">
+              <option value="3600000">{{ t('route_auth.session_1h') }}</option>
+              <option value="43200000">{{ t('route_auth.session_12h') }}</option>
+              <option value="86400000" selected>{{ t('route_auth.session_24h') }}</option>
+              <option value="604800000">{{ t('route_auth.session_7d') }}</option>
+              <option value="2592000000">{{ t('route_auth.session_30d') }}</option>
+            </select>
+          </div>
+          <div class="rt-hint">{{ t('entry_editor.branding_link_pre') }} <button type="button" class="rt-link-btn" data-ee-goto="branding">{{ t('entry_editor.sec_branding') }}</button></div>
         </div>
 
         {# Client certificates (docs/feature-security-options.md §F) — part of
-           route_auth (Pro). Filled/read by entry-editor.js; greyed out while
-           "HTTPS erzwingen" is off; locked (and never sent) without the license. #}
+           route_auth (Pro). Greyed out while "HTTPS erzwingen" is off; locked
+           (and never sent) without the license. #}
         <div id="edit-mtls-block" class="so-editor-block so-mtls{% if not license.features.route_auth %} feature-locked so-license-locked{% endif %}"
              data-licensed="{{ '1' if license.features.route_auth else '0' }}"{% if not license.features.route_auth %} title="{{ t('license.requires_pro') }}"{% endif %}
              data-hint-https="{{ t('mtls.hint_https') }}" data-err-ca-required="{{ t('mtls.err.ca_required') }}" data-err-license="{{ t('mtls.err.license') }}"
              data-err-mtls-ca-invalid="{{ t('mtls.err.ca_invalid') }}" data-err-mtls-requires-https="{{ t('mtls.err.requires_https') }}" data-err-mtls-mode-invalid="{{ t('mtls.err.mode_invalid') }}">
           <div class="so-switch-row">
             <div>
-              <div class="so-switch-title">{{ t('mtls.title') }}{% if not license.features.route_auth %} <span class="lock-icon"></span>{% endif %}</div>
+              <div class="so-switch-title">{{ t('mtls.title') }} <span class="rt-pro">Pro</span></div>
               <div class="so-switch-desc">{{ t('mtls.desc') }}</div>
             </div>
-            <div class="toggle" id="edit-route-mtls"{% if not license.features.route_auth %} data-managed="true" aria-disabled="true" tabindex="-1"{% endif %}></div>
+            <div class="toggle" id="edit-route-mtls"{% if not license.features.route_auth %} data-managed="true" aria-disabled="true" tabindex="-1"{% endif %} aria-label="{{ t('mtls.title') }}"></div>
           </div>
           <div id="edit-mtls-fields" class="so-editor-fields">
             <label class="so-editor-f" for="edit-route-mtls-ca"><span class="so-f-label">{{ t('mtls.ca') }}</span>
@@ -513,40 +510,49 @@
         </div>
 
         {% if license.features.share_links %}
-        <div class="form-section" id="share-links-section" data-route-id="">
-          <label class="form-label">{{ t('route_auth.share_links_title') }}</label>
+        <div class="rt-ee-card form-section" id="share-links-section" data-route-id="">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('route_auth.share_links_title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('entry_editor.share_desc') }}</div>
+            </div>
+            <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="share-link-create">+ {{ t('route_auth.share_create') }}</button>
+          </div>
           <div id="share-links-list"></div>
-          <button type="button" class="btn btn-sm" id="share-link-create">{{ t('route_auth.share_create') }}</button>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-ttl">{{ t('route_auth.share_links_title') }} <span class="rt-pro">Pro</span></div>
+          <div class="rt-ee-desc">{{ t('entry_editor.share_desc') }}</div>
         </div>
         {% endif %}
+      </section>
 
-        {% if license.features.access_windows %}
-        <div class="form-section" id="access-windows-section" data-target-id="">
-          <label class="form-label">
-            {{ t('access.title') }}
-            <span id="access-state-badge" style="margin-left:8px;font-size:12px"></span>
-          </label>
-          <div id="access-rules-list"></div>
-          <div id="access-rules-form"></div>
+      {# ═══ Sicherheit ═════════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel" data-panel="security" id="ee-panel-security" aria-labelledby="ee-h-security" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-security">{{ t('entry_editor.sec_security') }}</h3>
+        <div id="ee-sec-http" class="rt-ee-stack">
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.force_https') }}</div>
+              <div class="rt-ee-desc">{{ t('routes.force_https_desc') }}</div>
+            </div>
+            <div class="toggle on" id="edit-route-https" aria-label="{{ t('routes.force_https') }}"></div>
+          </div>
         </div>
-        {% endif %}
-      </div>
-
-      {# ═══ TAB: Security ══════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="security" style="display:none">
-        {# HSTS per host (docs/feature-hsts.md). Populated/read by entry-editor.js;
-           greyed out while "HTTPS erzwingen" is off. Texts as data attributes
-           like data-load-failed on the modal. #}
-        <div id="edit-hsts-block" class="hs-editor-block" style="margin-bottom:14px"
+        {# HSTS per host (docs/feature-hsts.md). Greyed out while "HTTPS
+           erzwingen" is off. Texts as data attributes. #}
+        <div id="edit-hsts-block" class="hs-editor-block rt-ee-card"
              data-hint-https="{{ t('hsts.hint_https') }}" data-hint-preload="{{ t('hsts.preload_hint') }}"
              data-preload-confirm="{{ t('hsts.preload_warning') }}"
              data-err-preload-requirements="{{ t('hsts.err.preload_requirements') }}" data-err-requires-https="{{ t('hsts.err.requires_https') }}" data-err-max-age-invalid="{{ t('hsts.err.max_age_invalid') }}">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div class="rt-ee-row">
             <div>
-              <div style="font-size:13px;font-weight:600">{{ t('hsts.title') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('hsts.editor_desc') }}</div>
+              <div class="rt-ee-ttl">{{ t('hsts.title') }}</div>
+              <div class="rt-ee-desc">{{ t('hsts.editor_desc') }}</div>
             </div>
-            <div class="toggle" id="edit-route-hsts"></div>
+            <div class="toggle" id="edit-route-hsts" aria-label="{{ t('hsts.title') }}"></div>
           </div>
           <div id="edit-hsts-fields" class="hs-editor-fields">
             <label class="hs-editor-f" for="edit-route-hsts-max-age"><span class="hs-f-label">{{ t('hsts.age_label') }}</span>
@@ -559,7 +565,7 @@
             <label class="hs-check"><input type="checkbox" id="edit-route-hsts-subdomains"> {{ t('hsts.include_subdomains') }}</label>
             <label class="hs-check" title="{{ t('hsts.preload_hint') }}"><input type="checkbox" id="edit-route-hsts-preload"> {{ t('hsts.preload') }}</label>
           </div>
-          <div id="edit-hsts-hint" class="hs-editor-hint" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+          <div id="edit-hsts-hint" class="hs-editor-hint rt-hint"></div>
         </div>
         {# Request body limit (docs/feature-security-options.md §D). #}
         <div id="edit-body-limit-block" class="so-editor-block so-body-limit" data-err-max-body-invalid="{{ t('body_limit.err.invalid') }}">
@@ -572,10 +578,8 @@
           </div>
           <div id="edit-body-limit-error" class="so-editor-error" role="alert" hidden></div>
         </div>
-        {# Web Application Firewall (docs/feature-waf.md). Populated/read by
-           entry-editor.js, the exclusion list is built by waf-ui.js
-           (GCWafUI.exclusionsEditor). The toggle is always managed by
-           entry-editor.js; locked (and never sent) without the waf license. #}
+        {# Web Application Firewall (docs/feature-waf.md). The toggle is always
+           managed by entry-editor.js; locked (and never sent) without the licence. #}
         <div id="edit-waf-block" class="wf-editor-block{% if not license.features.waf %} feature-locked wf-license-locked{% endif %}"
              data-licensed="{{ '1' if license.features.waf else '0' }}"{% if not license.features.waf %} title="{{ t('license.requires_pro') }}"{% endif %}
              data-hint-http="{{ t('waf.hint_http') }}" data-mode-hint-detect="{{ t('waf.mode_detect_hint') }}" data-mode-hint-block="{{ t('waf.mode_block_hint') }}"
@@ -583,7 +587,7 @@
              data-err-license="{{ t('waf.err.license') }}" data-err-waf-mode-invalid="{{ t('waf.err.mode_invalid') }}" data-err-waf-paranoia-invalid="{{ t('waf.err.paranoia_invalid') }}" data-err-waf-requires-http="{{ t('waf.err.requires_http') }}">
           <div class="so-switch-row wf-switch-row">
             <div>
-              <div class="so-switch-title">{{ t('waf.title') }} <span class="lock-icon wf-lock"></span></div>
+              <div class="so-switch-title">{{ t('waf.title') }} <span class="rt-pro">Pro</span></div>
               <div class="so-switch-desc">{{ t('waf.editor_desc') }}</div>
             </div>
             <div class="toggle" id="edit-route-waf" data-managed="true" role="switch" aria-checked="false" aria-label="{{ t('waf.title') }}"{% if license.features.waf %} tabindex="0"{% else %} aria-disabled="true" tabindex="-1"{% endif %}></div>
@@ -619,369 +623,519 @@
           <a id="edit-waf-events-link" class="wf-events-link" href="/waf"{% if not license.features.waf %} hidden{% endif %}>{{ t('waf.events_link') }} →</a>
           <div id="edit-waf-error" class="so-editor-error" role="alert" hidden></div>
         </div>
-        {% if license.features.peer_acl %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-acl" data-managed="true"></div>
-        </div>
-        <div id="edit-acl-fields" style="display:none;margin-bottom:14px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('acl.select_peers') }}</label>
-          <div id="edit-acl-peers-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
-          </div>
-          <div id="edit-acl-hint" style="font-size:11px;color:var(--text-3);margin-top:6px"></div>
-        </div>
-        {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('acl.title') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('acl.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-acl" data-managed="true"></div>
-        </div>
-        {% endif %}
-        {% if license.features.uptime_monitoring %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
-          </div>
-          <div class="toggle" id="edit-route-monitoring"></div>
-        </div>
-        {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('monitoring.title') or 'Uptime Monitoring' }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
-          </div>
-          <div class="toggle" id="edit-route-monitoring"></div>
-        </div>
-        {% endif %}
-        {% if license.features.ip_access_control %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
-          </div>
-          <div class="toggle" id="edit-route-ip-filter"></div>
-        </div>
-        <div id="edit-ip-filter-fields" style="display:none;margin-top:10px">
-          <div style="margin-bottom:8px">
-            <div class="toggle-group" id="edit-ip-filter-mode-group" style="margin-bottom:8px">
-              <button type="button" class="toggle-btn on" data-value="whitelist">Whitelist</button>
-              <button type="button" class="toggle-btn" data-value="blacklist">Blacklist</button>
-            </div>
-            <input type="hidden" id="edit-ip-filter-mode" value="whitelist">
-          </div>
-          <div id="edit-ip-filter-rules-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input type="text" id="edit-ip-filter-input" placeholder="{{ t('ip_filter.add_placeholder') or 'IP, CIDR, or country code (DE)' }}" style="flex:1;min-width:0;padding:6px 10px;font-size:12px">
-            <select id="edit-ip-filter-type" style="width:90px;flex-shrink:0;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-              <option value="ip">IP</option>
-              <option value="cidr">CIDR</option>
-              <option value="country">{{ t('ip_filter.country') or 'Country' }}</option>
-            </select>
-            <button type="button" class="btn btn-ghost" id="edit-ip-filter-add" style="flex-shrink:0;padding:6px 10px;font-size:12px">+</button>
-          </div>
-        </div>
-        {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm)" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('ip_filter.toggle_desc') or 'Restrict access by IP, CIDR range, or country' }}</div>
-          </div>
-          <div class="toggle" id="edit-route-ip-filter"></div>
-        </div>
-        {% endif %}
+        <div id="edit-rate-limit-block">
         {% if license.features.rate_limiting %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-rate-limit"></div>
-        </div>
-        <div id="edit-rate-limit-fields" style="display:none;margin-top:10px">
-          <div style="display:flex;gap:8px">
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_requests') }}</label>
-              <input type="number" id="edit-rate-limit-requests" value="100" min="1" max="100000" style="width:100%;padding:6px 10px;font-size:12px">
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.rate_limit') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.rate_limit_desc') }}</div>
             </div>
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.rate_limit_window') }}</label>
-              <select id="edit-rate-limit-window" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-                <option value="1s">{{ t('routes.rate_limit_window_1s') }}</option>
-                <option value="1m">{{ t('routes.rate_limit_window_1m') }}</option>
-                <option value="5m">{{ t('routes.rate_limit_window_5m') }}</option>
-                <option value="1h">{{ t('routes.rate_limit_window_1h') }}</option>
+            <div class="toggle" id="edit-route-rate-limit" aria-label="{{ t('routes.rate_limit') }}"></div>
+          </div>
+          <div id="edit-rate-limit-fields" style="display:none" class="rt-ee-sub">
+            <div class="rt-grid2">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-rate-limit-requests">{{ t('routes.rate_limit_requests') }}</label>
+                <input type="number" class="rt-input rt-mono" id="edit-rate-limit-requests" value="100" min="1" max="100000">
+              </div>
+              <div class="rt-field">
+                <label class="rt-label" for="edit-rate-limit-window">{{ t('routes.rate_limit_window') }}</label>
+                <select id="edit-rate-limit-window" class="rt-select">
+                  <option value="1s">{{ t('routes.rate_limit_window_1s') }}</option>
+                  <option value="1m">{{ t('routes.rate_limit_window_1m') }}</option>
+                  <option value="5m">{{ t('routes.rate_limit_window_5m') }}</option>
+                  <option value="1h">{{ t('routes.rate_limit_window_1h') }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.rate_limit') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.rate_limit_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-rate-limit" data-managed="true" aria-disabled="true" aria-label="{{ t('routes.rate_limit') }}"></div>
+          </div>
+        </div>
+        {% endif %}
+        </div>
+        {% if license.features.bot_blocking %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('bot_blocker.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('bot_blocker.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-bot-blocker" aria-label="{{ t('bot_blocker.title') }}"></div>
+          </div>
+          <div id="edit-bot-blocker-fields" style="display:none" class="rt-ee-sub">
+            <div class="rt-field">
+              <label class="rt-label" for="edit-bot-blocker-mode">{{ t('bot_blocker.mode') }}</label>
+              <select id="edit-bot-blocker-mode" class="rt-select">
+                <option value="block">{{ t('bot_blocker.mode_block') }}</option>
+                <option value="tarpit">{{ t('bot_blocker.mode_tarpit') }}</option>
+                <option value="drop">{{ t('bot_blocker.mode_drop') }}</option>
+                <option value="garbage">{{ t('bot_blocker.mode_garbage') }}</option>
+                <option value="redirect">{{ t('bot_blocker.mode_redirect') }}</option>
+                <option value="custom">{{ t('bot_blocker.mode_custom') }}</option>
               </select>
             </div>
+            <div id="edit-bot-blocker-redirect" class="rt-field" style="display:none">
+              <label class="rt-label" for="edit-bot-blocker-url">{{ t('bot_blocker.url') }}</label>
+              <input type="url" class="rt-input" id="edit-bot-blocker-url" placeholder="https://example.com">
+            </div>
+            <div id="edit-bot-blocker-custom" class="rt-grid2" style="display:none">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-bot-blocker-message">{{ t('bot_blocker.message') }}</label>
+                <input type="text" class="rt-input" id="edit-bot-blocker-message" placeholder="Access denied" maxlength="500">
+              </div>
+              <div class="rt-field">
+                <label class="rt-label" for="edit-bot-blocker-status">{{ t('bot_blocker.status_code') }}</label>
+                <input type="number" class="rt-input rt-mono" id="edit-bot-blocker-status" value="403" min="100" max="599">
+              </div>
+            </div>
           </div>
         </div>
         {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.rate_limit') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.rate_limit_desc') }}</div>
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('bot_blocker.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('bot_blocker.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-bot-blocker" data-managed="true" aria-disabled="true" aria-label="{{ t('bot_blocker.title') }}"></div>
           </div>
-          <div class="toggle" id="edit-route-rate-limit"></div>
         </div>
         {% endif %}
-        {% if license.features.retry_on_error %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-retry"></div>
         </div>
-        <div id="edit-retry-fields" style="display:none;margin-top:10px">
-          <div style="display:flex;gap:8px">
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_count') }}</label>
-              <input type="number" id="edit-retry-count" value="3" min="1" max="10" style="width:100%;padding:6px 10px;font-size:12px">
+
+        {# Protection for TCP/UDP entries — docs/feature-next-package.md §S1.4.
+           WAF, auth and mTLS need HTTP; IP filter and connection rate work at
+           layer 4. Shown instead of the HTTP blocks above for TCP/UDP. #}
+        <div class="gc-l4-protect rt-ee-stack" id="edit-l4-protection" style="display:none">
+          <p class="rt-ee-l4note gc-l4-protect-note">{{ t('l4p.waf_http_only') }}</p>
+          {% if license.features.ip_access_control %}
+          <div class="rt-ee-card">
+            <div class="rt-ee-row gc-l4-protect-row">
+              <div>
+                <div class="rt-ee-ttl gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="rt-pro">Pro</span></div>
+                <div class="rt-ee-desc gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-l4-route-ip-filter" aria-label="{{ t('ip_filter.title') or 'IP Access Control' }}"></div>
             </div>
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('routes.retry_status_codes') }}</label>
-              <input type="text" id="edit-retry-status" value="502,503,504" style="width:100%;padding:6px 10px;font-size:12px" placeholder="502,503,504">
-              <small class="form-hint" style="font-size:10px;color:var(--text-3)">{{ t('routes.retry_status_codes_hint') }}</small>
+            <div id="edit-l4-ip-filter-fields" style="display:none" class="rt-ee-sub">
+              <div class="toggle-group" id="edit-l4-ip-filter-mode-group">
+                <button type="button" class="toggle-btn on" data-value="whitelist">{{ t('l4p.mode_allow') }}</button>
+                <button type="button" class="toggle-btn" data-value="blacklist">{{ t('l4p.mode_deny') }}</button>
+              </div>
+              <input type="hidden" id="edit-l4-ip-filter-mode" value="whitelist">
+              <small class="rt-hint" id="edit-l4-ip-filter-mode-hint" data-hint-allow="{{ t('l4p.mode_allow_hint') }}" data-hint-deny="{{ t('l4p.mode_deny_hint') }}"></small>
+              <div id="edit-l4-ip-filter-rules-list" class="rt-ee-rules"></div>
+              <div class="rt-ee-addrow">
+                <input type="text" class="rt-input" id="edit-l4-ip-filter-input" placeholder="{{ t('l4p.ip_filter_placeholder') }}" aria-label="{{ t('l4p.ip_filter_placeholder') }}">
+                <select id="edit-l4-ip-filter-type" class="rt-select rt-select-auto" aria-label="{{ t('entry_editor.rule_type') }}">
+                  <option value="ip">IP</option>
+                  <option value="cidr">CIDR</option>
+                </select>
+                <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-l4-ip-filter-add" aria-label="{{ t('entry_editor.add_rule') }}">+</button>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+            <div class="rt-ee-row gc-l4-protect-row">
+              <div>
+                <div class="rt-ee-ttl gc-l4-protect-label">{{ t('ip_filter.title') or 'IP Access Control' }} <span class="rt-pro">Pro</span></div>
+                <div class="rt-ee-desc gc-l4-protect-desc">{{ t('l4p.ip_filter_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-l4-route-ip-filter" data-managed="true" aria-disabled="true" aria-label="{{ t('ip_filter.title') or 'IP Access Control' }}"></div>
+            </div>
+          </div>
+          {% endif %}
+          <div class="rt-ee-card">
+            <div class="rt-ee-row gc-l4-protect-row">
+              <div>
+                <div class="rt-ee-ttl gc-l4-protect-label">{{ t('l4p.conn_rate') }}</div>
+                <div class="rt-ee-desc gc-l4-protect-desc">{{ t('l4p.conn_rate_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-l4-conn-rate" aria-label="{{ t('l4p.conn_rate') }}"></div>
+            </div>
+            <div id="edit-l4-conn-rate-fields" style="display:none" class="rt-ee-sub">
+              <div class="rt-grid2">
+                <div class="rt-field">
+                  <label class="rt-label gc-l4-protect-sublabel" for="edit-l4-conn-limit">{{ t('l4p.conn_limit') }}</label>
+                  <input type="number" class="rt-input rt-mono" id="edit-l4-conn-limit" value="20" min="1" max="100000">
+                </div>
+                <div class="rt-field">
+                  <label class="rt-label gc-l4-protect-sublabel" for="edit-l4-conn-window">{{ t('l4p.conn_window') }}</label>
+                  <input type="number" class="rt-input rt-mono" id="edit-l4-conn-window" value="60" min="1" max="3600">
+                </div>
+              </div>
+              <small class="rt-hint" id="edit-l4-conn-rate-hint">{{ t('l4p.conn_rate_hint') }}</small>
+            </div>
+          </div>
+          <small class="rt-hint gc-l4-protect-foot">{{ t('l4p.internal_hint') }}</small>
+        </div>
+      </section>
+
+      {# ═══ Zuverlässigkeit ════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel" data-panel="reliability" id="ee-panel-reliability" aria-labelledby="ee-h-reliability" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-reliability">{{ t('entry_editor.sec_reliability') }}</h3>
+        {% if license.features.uptime_monitoring %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('monitoring.title') or 'Uptime Monitoring' }}</div>
+              <div class="rt-ee-desc" id="ee-monitor-desc">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+            </div>
+            <div class="toggle" id="edit-route-monitoring" aria-label="{{ t('monitoring.title') or 'Uptime Monitoring' }}"></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('monitoring.title') or 'Uptime Monitoring' }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc" id="ee-monitor-desc">{{ t('monitoring.toggle_desc') or 'Periodically check if this route is reachable' }}</div>
+            </div>
+            <div class="toggle" id="edit-route-monitoring" data-managed="true" aria-disabled="true" aria-label="{{ t('monitoring.title') or 'Uptime Monitoring' }}"></div>
+          </div>
+        </div>
+        {% endif %}
+        <div id="edit-http-only-features" class="rt-ee-stack rt-ee-http-only">
+        <p class="rt-ee-l4note" hidden>{{ t('entry_editor.l4_note_reliability') }}</p>
+        {# ─── Multiple Backends ─── #}
+        {% if license.features.load_balancing %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.backends') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.backends_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-backends" aria-label="{{ t('routes.backends') }}"></div>
+          </div>
+          <div id="edit-backends-fields" style="display:none" class="rt-ee-sub">
+            <div id="edit-backends-list" class="rt-ee-rules"></div>
+            <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-backends-add">+ {{ t('routes.backends_add') }}</button>
+            {# ─── Sticky Sessions ─── #}
+            <div class="rt-ee-row rt-ee-row-sep">
+              <div>
+                <div class="rt-ee-ttl">{{ t('routes.sticky') }}</div>
+                <div class="rt-ee-desc">{{ t('routes.sticky_desc') }}</div>
+              </div>
+              <div class="toggle" id="edit-route-sticky" aria-label="{{ t('routes.sticky') }}"></div>
+            </div>
+            <div id="edit-sticky-fields" style="display:none">
+              <div class="rt-grid2">
+                <div class="rt-field">
+                  <label class="rt-label" for="edit-sticky-cookie-name">{{ t('routes.sticky_cookie_name') }}</label>
+                  <input type="text" class="rt-input rt-mono" id="edit-sticky-cookie-name" value="gc_sticky">
+                </div>
+                <div class="rt-field">
+                  <label class="rt-label" for="edit-sticky-cookie-ttl">{{ t('routes.sticky_cookie_ttl') }}</label>
+                  <select id="edit-sticky-cookie-ttl" class="rt-select">
+                    <option value="3600">{{ t('routes.sticky_ttl_1h') }}</option>
+                    <option value="14400">{{ t('routes.sticky_ttl_4h') }}</option>
+                    <option value="86400">{{ t('routes.sticky_ttl_24h') }}</option>
+                    <option value="604800">{{ t('routes.sticky_ttl_7d') }}</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
         </div>
         {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.retry') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.retry_desc') }}</div>
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.backends') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.backends_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-backends" data-managed="true" aria-disabled="true" aria-label="{{ t('routes.backends') }}"></div>
           </div>
-          <div class="toggle" id="edit-route-retry"></div>
+        </div>
+        {% endif %}
+        <div class="rt-grid2 rt-ee-grid-cards">
+        {% if license.features.retry_on_error %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.retry') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.retry_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-retry" aria-label="{{ t('routes.retry') }}"></div>
+          </div>
+          <div id="edit-retry-fields" style="display:none" class="rt-ee-sub">
+            <div class="rt-grid2">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-retry-count">{{ t('routes.retry_count') }}</label>
+                <input type="number" class="rt-input rt-mono" id="edit-retry-count" value="3" min="1" max="10">
+              </div>
+              <div class="rt-field">
+                <label class="rt-label" for="edit-retry-status">{{ t('routes.retry_status_codes') }}</label>
+                <input type="text" class="rt-input rt-mono" id="edit-retry-status" value="502,503,504" placeholder="502,503,504">
+                <small class="rt-hint">{{ t('routes.retry_status_codes_hint') }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.retry') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.retry_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-retry" data-managed="true" aria-disabled="true" aria-label="{{ t('routes.retry') }}"></div>
+          </div>
         </div>
         {% endif %}
         {# ─── Circuit Breaker ─── #}
         {% if license.features.circuit_breaker %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-circuit-breaker"></div>
-        </div>
-        <div id="edit-circuit-breaker-fields" style="display:none;margin-top:10px">
-          <div id="edit-cb-requires-monitoring" style="display:none;font-size:11px;color:var(--amber);margin-bottom:8px;padding:6px 10px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs)">
-            {{ t('circuit_breaker.requires_monitoring') }}
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.threshold') }}</label>
-              <input type="number" id="edit-cb-threshold" value="5" min="1" max="100" style="width:100%;padding:6px 10px;font-size:12px">
-              <small class="form-hint" style="font-size:10px;color:var(--text-3)">{{ t('circuit_breaker.threshold_hint') }}</small>
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('circuit_breaker.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('circuit_breaker.toggle_desc') }}</div>
             </div>
-            <div style="flex:1">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('circuit_breaker.timeout') }}</label>
-              <input type="number" id="edit-cb-timeout" value="30" min="5" max="3600" style="width:100%;padding:6px 10px;font-size:12px">
-              <small class="form-hint" style="font-size:10px;color:var(--text-3)">{{ t('circuit_breaker.timeout_hint') }}</small>
+            <div class="toggle" id="edit-route-circuit-breaker" aria-label="{{ t('circuit_breaker.title') }}"></div>
+          </div>
+          <div id="edit-circuit-breaker-fields" style="display:none" class="rt-ee-sub">
+            <div id="edit-cb-requires-monitoring" class="rt-hint rt-hint-warn" style="display:none">{{ t('circuit_breaker.requires_monitoring') }}</div>
+            <div class="rt-grid2">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-cb-threshold">{{ t('circuit_breaker.threshold') }}</label>
+                <input type="number" class="rt-input rt-mono" id="edit-cb-threshold" value="5" min="1" max="100">
+                <small class="rt-hint">{{ t('circuit_breaker.threshold_hint') }}</small>
+              </div>
+              <div class="rt-field">
+                <label class="rt-label" for="edit-cb-timeout">{{ t('circuit_breaker.timeout') }}</label>
+                <input type="number" class="rt-input rt-mono" id="edit-cb-timeout" value="30" min="5" max="3600">
+                <small class="rt-hint">{{ t('circuit_breaker.timeout_hint') }}</small>
+              </div>
             </div>
+            <div id="edit-cb-status-indicator" class="rt-ee-cb-status" style="display:none"></div>
+            <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-cb-reset" style="display:none">{{ t('circuit_breaker.reset') or 'Circuit-Breaker zurücksetzen' }}</button>
           </div>
-          <div id="edit-cb-status-indicator" style="display:none;padding:6px 10px;border-radius:var(--radius-xs);font-size:12px;font-weight:600;text-align:center;margin-bottom:4px">
-          </div>
-          <button type="button" class="btn btn-ghost btn-sm" id="edit-cb-reset" style="display:none;width:100%;justify-content:center;margin-top:6px">
-            {{ t('circuit_breaker.reset') or 'Circuit-Breaker zurücksetzen' }}
-          </button>
         </div>
         {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('circuit_breaker.title') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('circuit_breaker.toggle_desc') }}</div>
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('circuit_breaker.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('circuit_breaker.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-circuit-breaker" data-managed="true" aria-disabled="true" aria-label="{{ t('circuit_breaker.title') }}"></div>
           </div>
-          <div class="toggle" id="edit-route-circuit-breaker"></div>
+        </div>
+        {% endif %}
+        </div>
+        <div class="rt-grid2 rt-ee-grid-cards">
+        {% if license.features.compression %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.compress') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-compress" aria-label="{{ t('routes.compress') }}"></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.compress') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.compress_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-compress" data-managed="true" aria-disabled="true" aria-label="{{ t('routes.compress') }}"></div>
+          </div>
         </div>
         {% endif %}
         {% if license.features.request_mirroring %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-mirror"></div>
-        </div>
-        <div id="edit-mirror-fields" style="display:none;margin-top:10px">
-          <div id="edit-mirror-targets-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-          <button type="button" class="btn btn-ghost" id="edit-mirror-add-target" style="font-size:12px">+ {{ t('routes.mirror_add_target') }}</button>
-          <div id="edit-mirror-max-hint" style="display:none;font-size:11px;color:var(--text-3);margin-top:4px">{{ t('routes.mirror_max') }}</div>
-        </div>
-        {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('routes.mirror') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('routes.mirror_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-mirror"></div>
-        </div>
-        {% endif %}
-        {% if license.features.bot_blocking %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-bot-blocker"></div>
-        </div>
-        <div id="edit-bot-blocker-fields" style="display:none;margin-top:10px">
-          <div style="margin-bottom:8px">
-            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.mode') }}</label>
-            <select id="edit-bot-blocker-mode" style="width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-              <option value="block">{{ t('bot_blocker.mode_block') }}</option>
-              <option value="tarpit">{{ t('bot_blocker.mode_tarpit') }}</option>
-              <option value="drop">{{ t('bot_blocker.mode_drop') }}</option>
-              <option value="garbage">{{ t('bot_blocker.mode_garbage') }}</option>
-              <option value="redirect">{{ t('bot_blocker.mode_redirect') }}</option>
-              <option value="custom">{{ t('bot_blocker.mode_custom') }}</option>
-            </select>
-          </div>
-          <div id="edit-bot-blocker-redirect" style="display:none;margin-bottom:8px">
-            <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.url') }}</label>
-            <input type="url" id="edit-bot-blocker-url" placeholder="https://example.com" style="width:100%;padding:6px 10px;font-size:12px">
-          </div>
-          <div id="edit-bot-blocker-custom" style="display:none">
-            <div style="margin-bottom:8px">
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.message') }}</label>
-              <input type="text" id="edit-bot-blocker-message" placeholder="Access denied" maxlength="500" style="width:100%;padding:6px 10px;font-size:12px">
-            </div>
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
             <div>
-              <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('bot_blocker.status_code') }}</label>
-              <input type="number" id="edit-bot-blocker-status" value="403" min="100" max="599" style="width:100%;padding:6px 10px;font-size:12px">
+              <div class="rt-ee-ttl">{{ t('routes.mirror') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.mirror_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-mirror" aria-label="{{ t('routes.mirror') }}"></div>
+          </div>
+          <div id="edit-mirror-fields" style="display:none" class="rt-ee-sub">
+            <div id="edit-mirror-targets-list" class="rt-ee-rules"></div>
+            <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-mirror-add-target">+ {{ t('routes.mirror_add_target') }}</button>
+            <div id="edit-mirror-max-hint" class="rt-hint" style="display:none">{{ t('routes.mirror_max') }}</div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('routes.mirror') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('routes.mirror_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-mirror" data-managed="true" aria-disabled="true" aria-label="{{ t('routes.mirror') }}"></div>
+          </div>
+        </div>
+        {% endif %}
+        </div>
+        </div>
+      </section>
+
+      {# ═══ Header (HTTPS) ═════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel rt-ee-http-panel" data-panel="headers" id="ee-panel-headers" aria-labelledby="ee-h-headers" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-headers">{{ t('entry_editor.sec_headers') }}</h3>
+        <p class="rt-ee-l4note" hidden>{{ t('entry_editor.l4_note_headers') }}</p>
+        <div class="rt-ee-ttl">{{ t('entry_editor.presets') }}</div>
+        <div class="rt-hint">{{ t('entry_editor.presets_hint') }}</div>
+        {# Preset cards (secopt-ui.js HEADER_PRESETS / HEADER_PRESETS_REQUEST). #}
+        <div class="rt-ee-presets" id="edit-headers-presets" role="group" aria-label="{{ t('entry_editor.presets') }}">
+          {% for p in [['security', t('headers.preset_security'), t('entry_editor.preset_security_hint'), false],
+                      ['cors', t('headers.preset_cors'), t('entry_editor.preset_cors_hint'), false],
+                      ['csp', t('headers.preset_csp'), t('entry_editor.preset_csp_hint'), false],
+                      ['proxy', t('entry_editor.preset_proxy'), t('entry_editor.preset_proxy_hint'), true],
+                      ['noindex', t('entry_editor.preset_noindex'), t('entry_editor.preset_noindex_hint'), true],
+                      ['noframe', t('entry_editor.preset_noframe'), t('entry_editor.preset_noframe_hint'), true],
+                      ['nocache', t('entry_editor.preset_nocache'), t('entry_editor.preset_nocache_hint'), true],
+                      ['hideserver', t('entry_editor.preset_hideserver'), t('entry_editor.preset_hideserver_hint'), true],
+                      ['websocket', t('entry_editor.preset_websocket'), t('entry_editor.preset_websocket_hint'), true]] %}
+          <button type="button" class="rt-ee-preset" data-preset="{{ p[0] }}" aria-pressed="false">
+            <span class="rt-ee-preset-ttl">{{ p[1] }}{% if p[3] %} <span class="rt-new">{{ t('entry_editor.new') }}</span>{% endif %}</span>
+            <span class="rt-ee-preset-desc">{{ p[2] }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        <div id="edit-headers-hsts-hint" class="hs-editor-hint hs-preset-hint rt-hint" style="display:none">{{ t('hsts.preset_hint') }}</div>
+        <div id="edit-headers-csp-warning" class="so-warn so-csp-warning" role="alert" hidden>{{ t('headers.preset_csp_warning') }}</div>
+        <div class="rt-ee-card">
+          <div class="rt-ee-ttl">{{ t('headers.request_headers') or 'Request Headers' }} <span class="rt-ee-desc">{{ t('entry_editor.request_headers_hint') }}</span></div>
+          <div id="edit-headers-request-list" class="rt-ee-hlist"></div>
+          <button type="button" class="rt-add-row rt-add-row-sm" id="edit-headers-req-add">+ {{ t('entry_editor.add_header') }}</button>
+        </div>
+        <div class="rt-ee-card">
+          <div class="rt-ee-ttl">{{ t('headers.response_headers') or 'Response Headers' }} <span class="rt-ee-desc">{{ t('entry_editor.response_headers_hint') }}</span></div>
+          <div id="edit-headers-response-list" class="rt-ee-hlist"></div>
+          <button type="button" class="rt-add-row rt-add-row-sm" id="edit-headers-resp-add">+ {{ t('entry_editor.add_header') }}</button>
+        </div>
+        <div id="ee-headers-hsts-dup" class="so-warn" role="alert" hidden>{{ t('entry_editor.hsts_duplicate') }}</div>
+      </section>
+
+      {# ═══ Branding (HTTPS, only with Route Auth) ═════════ #}
+      <section class="rt-ee-panel edit-route-panel rt-ee-http-panel" data-panel="branding" id="ee-panel-branding" aria-labelledby="ee-h-branding" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-branding">{{ t('entry_editor.sec_branding') }}</h3>
+        <p class="rt-ee-l4note" hidden>{{ t('entry_editor.l4_note_branding') }}</p>
+        <div class="rt-ee-brand">
+          <div class="rt-ee-brand-fields">
+            <div class="rt-ee-info" id="ee-branding-inactive" hidden>{{ t('entry_editor.branding_inactive') }}</div>
+            {% if not license.features.custom_branding %}<div class="rt-ee-info feature-locked-note">{{ t('entry_editor.branding_locked') }} <span class="rt-pro">Pro</span></div>{% endif %}
+            <div class="rt-field">
+              <label class="rt-label" for="edit-branding-title">{{ t('branding.page_title') or 'Title' }}</label>
+              <input type="text" class="rt-input" id="edit-branding-title" placeholder="GateControl" maxlength="100">
+            </div>
+            <div class="rt-field">
+              <label class="rt-label" for="edit-branding-text">{{ t('branding.text') or 'Welcome text' }}</label>
+              <input type="text" class="rt-input" id="edit-branding-text" placeholder="{{ t('branding.text_placeholder') or 'Please sign in to continue' }}" maxlength="255">
+            </div>
+            <div class="rt-field">
+              <div class="rt-label">{{ t('branding.logo') or 'Logo' }}</div>
+              <div class="rt-ee-upload">
+                <label class="btn btn-secondary rt-btn rt-btn-sm rt-file-btn">{{ t('entry_editor.upload') }}<input type="file" id="edit-branding-logo-file" accept="image/*" class="rt-file-input" aria-label="{{ t('branding.logo') or 'Logo' }}"></label>
+                <span id="edit-branding-logo-current" class="rt-hint rt-mono"></span>
+                <button type="button" class="btn btn-ghost rt-btn rt-btn-sm" id="edit-branding-logo-remove" style="display:none">{{ t('common.delete') or 'Delete' }}</button>
+              </div>
+            </div>
+            <div class="rt-grid2">
+              <div class="rt-field">
+                <label class="rt-label" for="edit-branding-color">{{ t('branding.color') or 'Accent color' }}</label>
+                <div class="rt-ee-color"><input type="color" id="edit-branding-color" value="#0a6e4f"><span class="rt-mono" id="ee-color-val"></span></div>
+              </div>
+              <div class="rt-field">
+                <label class="rt-label" for="edit-branding-bg">{{ t('branding.bg_color') or 'Background color' }}</label>
+                <div class="rt-ee-color"><input type="color" id="edit-branding-bg" value="#f2f0eb"><span class="rt-mono" id="ee-bg-val"></span></div>
+              </div>
+            </div>
+            <div class="rt-field">
+              <div class="rt-label">{{ t('branding.bg_image') or 'Background image (optional, overrides color)' }}</div>
+              <div class="rt-ee-upload">
+                <label class="btn btn-secondary rt-btn rt-btn-sm rt-file-btn">{{ t('entry_editor.upload') }}<input type="file" id="edit-branding-bg-file" accept="image/*" class="rt-file-input" aria-label="{{ t('branding.bg_image') or 'Background image' }}"></label>
+                <span id="edit-branding-bg-current" class="rt-hint rt-mono"></span>
+                <button type="button" class="btn btn-ghost rt-btn rt-btn-sm" id="edit-branding-bg-remove" style="display:none">{{ t('common.delete') or 'Delete' }}</button>
+              </div>
+            </div>
+          </div>
+          <div class="rt-ee-brand-preview-wrap">
+            <div class="rt-label">{{ t('entry_editor.branding_preview') }}</div>
+            <div class="rt-ee-brand-preview" id="ee-brand-preview" aria-hidden="true">
+              <div class="rt-ee-bp-card">
+                <div class="rt-ee-bp-logo" id="ee-bp-logo"></div>
+                <div class="rt-ee-bp-title" id="ee-bp-title"></div>
+                <div class="rt-ee-bp-text" id="ee-bp-text"></div>
+                <div class="rt-ee-bp-input">{{ t('route_auth.email') }}</div>
+                <div class="rt-ee-bp-input">{{ t('route_auth.password') }}</div>
+                <div class="rt-ee-bp-btn" id="ee-bp-btn">{{ t('entry_editor.bp_login') }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ═══ Diagnose ══════════════════════════════════════ #}
+      <section class="rt-ee-panel edit-route-panel" data-panel="diagnose" id="ee-panel-diagnose" aria-labelledby="ee-h-diagnose" hidden>
+        <h3 class="rt-ee-panel-title" id="ee-h-diagnose">{{ t('entry_editor.sec_diagnose') }}</h3>
+        <div class="rt-grid3 rt-ee-stats">
+          <div class="rt-ee-card"><div class="rt-ee-kicker">{{ t('entry_editor.diag_status') }}</div><div class="rt-ee-stat" id="ee-diag-status"></div></div>
+          <div class="rt-ee-card"><div class="rt-ee-kicker">{{ t('entry_editor.diag_time') }}</div><div class="rt-ee-stat rt-mono" id="ee-diag-time"></div></div>
+          <div class="rt-ee-card"><div class="rt-ee-kicker">{{ t('entry_editor.diag_cert') }}</div><div class="rt-ee-stat" id="ee-diag-cert"></div></div>
+        </div>
+        <div class="rt-ee-http-only">
+        <p class="rt-ee-l4note" hidden>{{ t('entry_editor.l4_note_trace') }}</p>
+        {% if license.features.request_debugging %}
+        <div class="rt-ee-card">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('debug.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('debug.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-debug" aria-label="{{ t('debug.title') }}"></div>
+          </div>
+          <div id="edit-debug-container" style="display:none" class="rt-ee-sub">
+            <div class="rt-ee-row">
+              <span class="rt-hint">{{ t('debug.auto_refresh') }}</span>
+              <button type="button" class="btn btn-secondary rt-btn rt-btn-sm" id="edit-debug-clear">{{ t('debug.clear') }}</button>
+            </div>
+            <div id="edit-debug-log" class="rt-ee-log" role="log" aria-live="polite">
+              <div id="edit-debug-empty" class="rt-hint rt-ee-log-empty">{{ t('debug.no_entries') }}</div>
             </div>
           </div>
         </div>
         {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('bot_blocker.title') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('bot_blocker.toggle_desc') }}</div>
+        <div class="rt-ee-card feature-locked" title="{{ t('license.requires_pro') }}">
+          <div class="rt-ee-row">
+            <div>
+              <div class="rt-ee-ttl">{{ t('debug.title') }} <span class="rt-pro">Pro</span></div>
+              <div class="rt-ee-desc">{{ t('debug.toggle_desc') }}</div>
+            </div>
+            <div class="toggle" id="edit-route-debug" data-managed="true" aria-disabled="true" aria-label="{{ t('debug.title') }}"></div>
           </div>
-          <div class="toggle" id="edit-route-bot-blocker"></div>
         </div>
         {% endif %}
-      </div>
+        </div>
+      </section>
 
-      {# ═══ TAB: Headers ═══════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="headers" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div style="font-size:13px;font-weight:600">{{ t('headers.title') or 'Custom Headers' }}</div>
-          <div style="display:flex;gap:6px">
-            <select id="edit-headers-preset" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-              <option value="">{{ t('headers.preset') or 'Presets' }}...</option>
-              <option value="cors">{{ t('headers.preset_cors') or 'CORS Headers' }}</option>
-              <option value="security">{{ t('headers.preset_security') or 'Security Headers' }}</option>
-              <option value="csp">{{ t('headers.preset_csp') }}</option>
-            </select>
-          </div>
-        </div>
-        <div id="edit-headers-hsts-hint" class="hs-editor-hint hs-preset-hint" style="display:none;margin-bottom:12px;font-size:11px;color:var(--text-2)">{{ t('hsts.preset_hint') }}</div>
-        <div id="edit-headers-csp-warning" class="so-warn so-csp-warning" role="alert" hidden>{{ t('headers.preset_csp_warning') }}</div>
-        <div style="margin-bottom:16px">
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.request_headers') or 'Request Headers' }}</label>
-          <div id="edit-headers-request-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="edit-headers-req-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <input type="text" id="edit-headers-req-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <button type="button" class="btn btn-ghost" id="edit-headers-req-add" style="padding:6px 10px;font-size:12px">+</button>
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;font-family:var(--font-mono);color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px;font-weight:600">{{ t('headers.response_headers') or 'Response Headers' }}</label>
-          <div id="edit-headers-response-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="edit-headers-resp-name" placeholder="{{ t('headers.name') or 'Header Name' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <input type="text" id="edit-headers-resp-value" placeholder="{{ t('headers.value') or 'Value' }}" style="flex:1;padding:6px 10px;font-size:12px">
-            <button type="button" class="btn btn-ghost" id="edit-headers-resp-add" style="padding:6px 10px;font-size:12px">+</button>
-          </div>
-        </div>
       </div>
-
-      {# ═══ TAB: Branding ══════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="branding" style="display:none">
-        <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label" for="edit-branding-title">{{ t('branding.page_title') or 'Title' }}</label>
-          <input type="text" id="edit-branding-title" placeholder="GateControl" maxlength="100" style="width:100%">
-        </div>
-        <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label" for="edit-branding-text">{{ t('branding.text') or 'Welcome text' }}</label>
-          <input type="text" id="edit-branding-text" placeholder="{{ t('branding.text_placeholder') or 'Please sign in to continue' }}" maxlength="255" style="width:100%">
-        </div>
-        <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label">{{ t('branding.logo') or 'Logo' }}</label>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input type="file" id="edit-branding-logo-file" accept="image/*" style="font-size:12px;flex:1">
-            <span id="edit-branding-logo-current" style="font-size:11px;color:var(--text-3)"></span>
-            <button type="button" class="btn btn-ghost" id="edit-branding-logo-remove" style="font-size:11px;padding:3px 8px;color:var(--red);display:none">{{ t('common.delete') or 'Delete' }}</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px">
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <label class="form-label" for="edit-branding-color">{{ t('branding.color') or 'Accent color' }}</label>
-            <input type="color" id="edit-branding-color" value="#0a6e4f" style="width:100%;height:32px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-          </div>
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <label class="form-label" for="edit-branding-bg">{{ t('branding.bg_color') or 'Background color' }}</label>
-            <input type="color" id="edit-branding-bg" value="#f2f0eb" style="width:100%;height:32px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-xs)">
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:8px">
-          <label class="form-label">{{ t('branding.bg_image') or 'Background image (optional, overrides color)' }}</label>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input type="file" id="edit-branding-bg-file" accept="image/*" style="flex:1">
-            <span id="edit-branding-bg-current" style="font-size:11px;color:var(--text-3)"></span>
-            <button type="button" class="btn btn-ghost" id="edit-branding-bg-remove" style="font-size:11px;padding:3px 8px;color:var(--red);display:none">{{ t('common.delete') or 'Delete' }}</button>
-          </div>
-        </div>
-      </div>
-
-      {# ═══ TAB: Debug ═══════════════════════════════ #}
-      <div class="edit-route-panel" data-panel="debug" style="display:none">
-        {% if license.features.request_debugging %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-debug"></div>
-        </div>
-        <div id="edit-debug-container" style="display:none">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ t('debug.auto_refresh') }}</div>
-            <button type="button" class="btn btn-ghost" id="edit-debug-clear" style="font-size:11px;padding:4px 8px">{{ t('debug.clear') }}</button>
-          </div>
-          <div id="edit-debug-log" style="max-height:400px;overflow-y:auto;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-family:var(--font-mono);font-size:11px">
-            <div id="edit-debug-empty" style="color:var(--text-3);text-align:center;padding:20px 0">{{ t('debug.no_entries') }}</div>
-          </div>
-        </div>
-        {% else %}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:14px" class="feature-locked" title="{{ t('license.requires_pro') }}">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('debug.title') }} <span class="lock-icon"></span></div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('debug.toggle_desc') }}</div>
-          </div>
-          <div class="toggle" id="edit-route-debug"></div>
-        </div>
-        {% endif %}
-      </div>
-
-      {# Section: Sichtbarkeit #}
-      <div style="margin-top:16px">
-        <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('routes.visible_to_users') }}</div>
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">{{ t('routes.visible_to_users_hint') }}</div>
-        <div id="route-user-ids" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-      </div>
-
-      <div id="edit-route-error" class="form-error" style="display:none"></div>
     </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
-      <button class="btn btn-primary" id="btn-edit-route-submit">{{ t('common.save') }}</button>
+
+    <div class="rt-ee-foot">
+      <div class="rt-ee-foot-msg">
+        <div id="edit-route-error" class="form-error rt-err" role="alert" style="display:none"></div>
+        <span class="rt-ee-changes" id="ee-changes" aria-live="polite"></span>
+      </div>
+      <button type="button" class="btn btn-ghost rt-btn" id="ee-cancel">{{ t('common.cancel') }}</button>
+      <button type="button" class="btn btn-primary rt-btn" id="btn-edit-route-submit">{{ t('common.save') }}</button>
     </div>
   </div>
 </div>

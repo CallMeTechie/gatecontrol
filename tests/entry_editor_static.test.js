@@ -92,8 +92,7 @@ const EDITOR_PREFIXED_IDS = [
   'edit-ip-filter-add', 'edit-ip-filter-input', 'edit-ip-filter-type', 'edit-ip-filter-rules-list',
   'edit-route-external', 'edit-route-block-wrap', 'edit-route-block-action', 'edit-route-block-body',
   'edit-route-block-redirect', 'edit-bot-blocker-mode', 'edit-bot-blocker-redirect', 'edit-bot-blocker-custom',
-  'edit-headers-request-list', 'edit-headers-response-list', 'edit-headers-req-add', 'edit-headers-req-name',
-  'edit-headers-req-value', 'edit-headers-resp-add', 'edit-headers-resp-name', 'edit-headers-resp-value',
+  'edit-headers-request-list', 'edit-headers-response-list', 'edit-headers-req-add', 'edit-headers-resp-add',
   'edit-route-type', 'edit-l4-protocol',
 ];
 
@@ -107,10 +106,20 @@ for (const theme of THEMES) {
     assert.deepEqual(missingPrefixed, [], 'prefixed ids missing from ' + theme);
   });
 
-  test(`[${theme}] route-edit.njk carries the lockTarget summary`, () => {
+  test(`[${theme}] route-edit.njk: type chip, flow strip, section nav with summaries, sticky footer`, () => {
     const html = modalTpl(theme);
-    for (const id of ['edit-route-locked-summary', 'edit-route-locked-target']) assert.ok(hasId(html, id), id);
-    assert.match(html, /t\('entry_editor\.locked_hint'\)/);
+    for (const id of ['ee-type-chip', 'ee-flow', 'ee-nav', 'ee-panels', 'ee-changes', 'ee-cancel', 'ee-close', 'ee-kind-group',
+      'ee-zone-target', 'ee-listen-conflict']) assert.ok(hasId(html, id), id);
+    for (const sec of ['target', 'access', 'auth', 'security', 'reliability', 'headers', 'branding', 'diagnose']) {
+      assert.ok(hasId(html, 'ee-panel-' + sec), 'panel ' + sec);
+      assert.ok(html.includes("['" + sec + "', t('entry_editor.sec_" + sec + "')"), 'nav entry ' + sec);
+    }
+    assert.ok(html.includes('id="ee-sum-{{ s[0] }}"'), 'one live summary per nav entry');
+    // HTTPS-only sections carry the "nur HTTPS" note and the greying hook.
+    assert.match(html, /rt-ee-tab-http/);
+    assert.match(html, /t\('entry_editor\.https_only'\)/);
+    assert.ok((html.match(/rt-ee-http-panel/g) || []).length >= 3, 'auth / headers / branding panels');
+    assert.doesNotMatch(html, /edit-route-locked-summary|edit-route-locked-target|entry_editor\.locked_hint/, 'lockTarget summary removed');
     assert.match(html, /id="modal-edit-route"[^>]*data-load-failed="\{\{ t\('entry_editor\.load_failed'\) \}\}"/);
   });
 
@@ -140,12 +149,17 @@ test('entry_editor.* i18n keys exist in de and en with identical key sets', () =
     assert.ok(typeof de[k] === 'string' && de[k].length, 'de missing ' + k);
     assert.ok(typeof en[k] === 'string' && en[k].length, 'en missing ' + k);
   }
-  assert.equal(de['entry_editor.locked_hint'], 'Ziel und Domain werden im Domain-Dialog festgelegt.');
 });
 
-test('lockTarget: summary format and unchanged target fields in the PUT', () => {
-  assert.match(editorJs, /' → ' \+ target/);
-  assert.match(editorJs, /toUpperCase\(\) \+ ' ' \+ \(r\.l4_listen_port/);
-  // Locked target fields come from the route object, not from the (hidden) form.
-  assert.match(editorJs, /if \(state\.lockTarget && state\.route\) \{\s*var r = state\.route;/);
+test('lockTarget is gone: ports, protocol and type are editable; zone targets stay with the zone', () => {
+  const code = editorJs.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /lockTarget/, 'no lockTarget option any more');
+  // Gateway targets: the editor shows target_lan_port and sends both port fields.
+  assert.match(editorJs, /target_lan_port/);
+  // Zone-managed entries never send peer/gateway ids (the zone owns the target).
+  assert.match(editorJs, /state\.zoneManaged/);
+  // Type changes go to the server, which validates them (HOST_HAS_HTTP etc.).
+  assert.match(editorJs, /HOST_HAS_HTTP/);
+  // A taken listen port shows the server's suggestion inline.
+  assert.match(editorJs, /suggestedPort/);
 });

@@ -209,7 +209,6 @@
   const ICONS = {
     alert: [['path', { d: 'M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' }], ['line', { x1: 12, y1: 9, x2: 12, y2: 13 }], ['line', { x1: 12, y1: 17, x2: 12.01, y2: 17 }]],
     x: [['line', { x1: 18, y1: 6, x2: 6, y2: 18 }], ['line', { x1: 6, y1: 6, x2: 18, y2: 18 }]],
-    info: [['circle', { cx: 12, cy: 12, r: 10 }], ['line', { x1: 12, y1: 16, x2: 12, y2: 12 }], ['line', { x1: 12, y1: 8, x2: 12.01, y2: 8 }]],
   };
   function icon(name, size) {
     const svg = doc.createElementNS(SVGNS, 'svg');
@@ -225,26 +224,6 @@
     return svg;
   }
 
-  function busy(btn, on) {
-    if (!btn) return;
-    if (on) { if (win.btnLoading) win.btnLoading(btn); else btn.disabled = true; }
-    else if (win.btnReset) win.btnReset(btn); else btn.disabled = false;
-  }
-  function toast(msg, type) {
-    if (win.showToast) win.showToast(msg, type || 'success');
-    else if (type === 'error') console.error(msg);
-  }
-  // api.put resolves {ok:false, code?} for 400/403/429 and throws otherwise —
-  // both become a thrown Error carrying the body (err.data).
-  async function call(promise) {
-    const res = await promise;
-    if (res && res.ok === false) {
-      const e = new Error(res.error || t('zones.error_generic'));
-      e.data = res;
-      throw e;
-    }
-    return res || {};
-  }
   // Mapped German text for a contract code, else the server/API message.
   function errMsg(err) {
     const code = err && err.data && err.data.code;
@@ -284,9 +263,6 @@
   }
 
   // ── Building blocks ──
-  function hintEl(text, warn) {
-    return el('div', { class: 'hs-hint' + (warn ? ' hs-hint-warn' : '') }, [icon(warn ? 'alert' : 'info', 12), el('span', { text })]);
-  }
   // Amber warning box + "ich verstehe" checkbox. onChange(checked).
   function preloadWarningEl(onChange) {
     const cb = el('input', { type: 'checkbox', class: 'hs-confirm-cb' });
@@ -374,175 +350,7 @@
     return { node, select, sub, preload: pre, get: read, set, sync, setDisabled };
   }
 
-  // ── Domain dialog head: HSTS default of a zone ──
-  // zone: { domain_id, domain, hosts, hsts_default }. opts.onChanged(res).
-  function defaultsControl(zone, opts) {
-    const o = opts || {};
-    const current = fromZone(zone);
-    let fields;
-    async function onChange(next) {
-      if (sameConfig(next, current)) return;
-      const applied = await openApplyDialog(zone, next, current);
-      if (applied === null) { fields.set(current); return; }
-      if (o.onChanged) o.onChanged(applied);
-    }
-    fields = fieldsEl(current, { withOff: true, className: 'hs-def-fields', selectClass: 'hs-def-age', subClass: 'hs-def-sub', preloadClass: 'hs-def-preload', onChange });
-    const hint = el('span', { class: 'form-hint hs-def-hint', text: current.enabled ? t('hsts.default_hint') + ' ' + headerValue(current) : t('hsts.default_hint') });
-    return el('div', { class: 'zn-field hs-defaults', dataset: { hstsDefault: current.enabled ? 'on' : 'off' } }, [
-      el('span', { class: 'form-label', text: t('hsts.default_label') }),
-      fields.node,
-      hint,
-    ]);
-  }
-
-  // "Nur für neue Hosts" / "Auch auf n bestehende Hosts anwenden" (+ preload
-  // warning with confirmation). Resolves the PUT answer, or null on cancel /
-  // error (the caller resets the control).
-  function openApplyDialog(zone, next, prev) {
-    const n = applicableEntries(zone).length;
-    const d = dialog({ title: t('hsts.apply_title'), kind: 'apply' });
-    let mode = 'new';
-    let confirmed = !next.preload;
-    const ok = el('button', { type: 'button', class: 'btn btn-primary hs-btn-ok', text: t('hsts.apply_ok') });
-    const err = el('div', { class: 'zn-field-error hs-field-error', role: 'alert' });
-    err.hidden = true;
-    const radio = (value, text, disabled) => {
-      const r = el('input', { type: 'radio', name: 'hs-apply-mode', value, checked: mode === value, disabled: !!disabled, class: 'hs-apply-' + value });
-      r.addEventListener('change', () => { if (r.checked) mode = value; });
-      return el('label', { class: 'zn-radio hs-radio' + (disabled ? ' hs-radio-off' : '') }, [r, text]);
-    };
-    function refresh() { ok.disabled = !confirmed; }
-    d.body.appendChild(el('p', { class: 'zn-dialog-msg', text: t('hsts.apply_intro', { value: label(next) }) }));
-    d.body.appendChild(el('div', { class: 'hs-preview' }, [el('span', { class: 'hs-preview-label', text: t('hsts.header_preview') }), el('code', { class: 'hs-mono', text: headerValue(next) || t('hsts.header_none') })]));
-    d.body.appendChild(el('div', { class: 'form-group zn-radios hs-radios' }, [
-      radio('new', t('hsts.apply_new_only')),
-      radio('existing', n ? t('hsts.apply_existing', { n }) : t('hsts.apply_existing_none'), !n),
-    ]));
-    if (next.preload) {
-      const w = preloadWarningEl((checked) => { confirmed = checked; refresh(); });
-      d.body.appendChild(w.node);
-    }
-    d.body.appendChild(err);
-    ok.addEventListener('click', async () => {
-      err.hidden = true;
-      busy(ok, true);
-      try {
-        const body = { hsts_default: toDefault(next), apply_hsts_to_existing: mode === 'existing' };
-        const res = await call(win.api.put('/api/v1/domains/' + zone.domain_id + '/defaults', body));
-        const applied = typeof res.applied === 'number' ? res.applied : (mode === 'existing' ? n : 0);
-        toast(mode === 'existing' && applied ? t('hsts.defaults_applied', { n: applied }) : t('hsts.defaults_saved'), 'success');
-        d.close(res);
-      } catch (e) {
-        err.textContent = errMsg(e);
-        err.hidden = false;
-        busy(ok, false);
-      }
-    });
-    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } }));
-    d.foot.appendChild(ok);
-    refresh();
-    ok.focus();
-    return d.promise.then((r) => (r && typeof r === 'object' ? r : null));
-  }
-
-  // ── Entry line tag ──
-  // Green "HSTS" when on, muted "HSTS aus" otherwise; null for entries without
-  // HTTPS (no tag — the editor explains the HTTPS requirement).
-  function entryTag(entry, opts) {
-    if (!isEligible(entry)) return null;
-    const cfg = fromEntry(entry);
-    return el('button', {
-      type: 'button', class: 'tag ' + (cfg.enabled ? 'tag-green' : 'tag-grey hs-off') + ' zn-opt-tag hs-entry-tag',
-      title: cfg.enabled ? headerValue(cfg) : t('hsts.tag_hint'), 'aria-haspopup': 'dialog',
-      dataset: { hsts: cfg.enabled ? 'on' : 'off' },
-      on: { click: (e) => { e.stopPropagation(); openEntryDialog(entry, opts); } },
-    }, [cfg.enabled ? el('span', { class: 'tag-dot' }) : null, cfg.enabled ? t('hsts.tag_on') : t('hsts.tag_off')]);
-  }
-
-  // ── Entry dialog: switch, fields, hints, save with the hsts_* fields only ──
-  function openEntryDialog(entry, opts) {
-    const o = opts || {};
-    const https = truthy(entry && entry.https_enabled) && entry.route_type !== 'l4';
-    let cfg = fromEntry(entry);
-    let confirmed = true;   // only a newly set preload asks for confirmation
-    const d = dialog({ title: t('hsts.dialog_title', { host: str(entry && entry.domain) }), kind: 'entry' });
-    const err = el('div', { class: 'zn-field-error hs-field-error', role: 'alert' });
-    err.hidden = true;
-    const saveBtn = el('button', { type: 'button', class: 'btn btn-primary hs-btn-save', text: t('common.save') });
-    const preview = el('code', { class: 'hs-mono hs-preview-value' });
-    const warnSlot = el('div', { class: 'hs-warn-slot' });
-
-    const toggle = el('div', {
-      class: 'toggle zn-toggle hs-toggle' + (cfg.enabled ? ' on' : ''), role: 'switch', tabindex: '0',
-      'aria-checked': cfg.enabled ? 'true' : 'false', 'aria-label': t('hsts.enabled'), 'data-managed': '1',
-    });
-    const fields = fieldsEl(cfg, { onChange: (next, info) => { cfg = Object.assign(next, { enabled: cfg.enabled }); if (info && info.preloadJustSet && cfg.preload) confirmed = false; refresh(); } });
-    function setEnabled(on) {
-      cfg.enabled = !!on;
-      toggle.classList.toggle('on', cfg.enabled);
-      toggle.setAttribute('aria-checked', cfg.enabled ? 'true' : 'false');
-      refresh();
-    }
-    const flip = (e) => { e.stopPropagation(); if (!https) return; setEnabled(!cfg.enabled); };
-    toggle.addEventListener('click', flip);
-    toggle.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(e); } });
-
-    function refresh() {
-      const cur = Object.assign(fields.get(), { enabled: cfg.enabled });
-      cfg = cur;
-      fields.setDisabled(!https || !cfg.enabled);
-      preview.textContent = headerValue(cfg) || t('hsts.header_none');
-      if (cfg.preload) {
-        if (!warnSlot.firstChild) {
-          const w = preloadWarningEl((checked) => { confirmed = checked; refresh(); });
-          w.cb.checked = confirmed;
-          warnSlot.appendChild(w.node);
-        }
-      } else { warnSlot.replaceChildren(); confirmed = true; }
-      saveBtn.disabled = !https || (cfg.preload && !confirmed);
-    }
-
-    d.body.appendChild(el('div', { class: 'hs-switch-row' }, [
-      el('div', {}, [el('div', { class: 'hs-switch-title', text: t('hsts.enabled') }), el('div', { class: 'hs-switch-desc', text: t('hsts.enabled_desc') })]),
-      toggle,
-    ]));
-    d.body.appendChild(fields.node);
-    d.body.appendChild(el('div', { class: 'hs-preview' }, [el('span', { class: 'hs-preview-label', text: t('hsts.header_preview') }), preview]));
-    d.body.appendChild(warnSlot);
-    const hints = [];
-    if (!https) hints.push(hintEl(t('hsts.hint_https'), true));
-    if (https && certNotIssued(entry)) hints.push(hintEl(t('hsts.hint_cert'), true));
-    const custom = customHeaderHsts(entry);
-    if (custom != null) hints.push(hintEl(t('hsts.hint_custom_header', { value: custom }), false));
-    hints.push(hintEl(t('hsts.preload_hint'), false));
-    d.body.appendChild(el('div', { class: 'hs-hints' }, hints));
-    d.body.appendChild(err);
-
-    saveBtn.addEventListener('click', async () => {
-      err.hidden = true;
-      const bad = validate(cfg, { https_enabled: https });
-      if (bad) { err.textContent = errorText(bad); err.hidden = false; return; }
-      busy(saveBtn, true);
-      try {
-        const res = await call(win.api.put('/api/v1/routes/' + entry.id, toRouteFields(cfg)));
-        toast(t('hsts.saved'), 'success');
-        d.close(res);
-        if (o.onChanged) o.onChanged(res);
-      } catch (e) {
-        err.textContent = errMsg(e);
-        err.hidden = false;
-        busy(saveBtn, false);
-      }
-    });
-    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } }));
-    d.foot.appendChild(saveBtn);
-    refresh();
-    if (https) toggle.focus(); else saveBtn.focus();
-    return d;
-  }
-
   return Object.assign(pure, {
     t, el, icon, dialog, errMsg, errorText, label, fieldsEl, preloadWarningEl, confirmPreload,
-    entryTag, openEntryDialog, defaultsControl, openApplyDialog,
   });
 });

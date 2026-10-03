@@ -116,6 +116,49 @@ describe('secopt: header presets', () => {
     assert.equal(S.presetHeaders('security')[0].value, 'nosniff', 'presets cannot be modified through a copy');
   });
 
+  it('the six new presets (redesign): contents, removal with "-Name", request headers of the proxy preset', () => {
+    assert.deepEqual(S.presetHeaders('noindex'), [{ name: 'X-Robots-Tag', value: 'noindex, nofollow' }]);
+    assert.deepEqual(S.presetHeaders('noframe'), [{ name: 'X-Frame-Options', value: 'DENY' }]);
+    assert.deepEqual(S.presetHeaders('nocache'), [{ name: 'Cache-Control', value: 'no-store' }]);
+    assert.deepEqual(S.presetHeaders('hideserver').map((h) => h.name), ['-Server', '-X-Powered-By']);
+    assert.deepEqual(S.presetHeaders('websocket'), [{ name: 'X-Accel-Buffering', value: 'no' }]);
+    assert.deepEqual(S.presetHeaders('proxy'), [], 'the proxy preset only adds request headers');
+    assert.deepEqual(S.HEADER_PRESETS_REQUEST.proxy.map((h) => h.name + ': ' + h.value),
+      ['X-Forwarded-Proto: {scheme}', 'X-Forwarded-Host: {host}', 'X-Real-IP: {remote_host}']);
+    // Every placeholder a preset uses is on the server allow-list.
+    const { HEADER_PLACEHOLDERS } = require('../src/services/caddyValidators');
+    for (const list of [...Object.values(S.HEADER_PRESETS), ...Object.values(S.HEADER_PRESETS_REQUEST)]) {
+      for (const h of list) for (const m of String(h.value).matchAll(/\{[a-z_]+\}/g)) assert.ok(HEADER_PLACEHOLDERS[m[0]], m[0]);
+    }
+  });
+
+  it('applyPresetSets fills both lists; "-Name" and "Name" replace each other; never mutates', () => {
+    const req = [{ name: 'X-Real-IP', value: '1.2.3.4' }];
+    const res = [{ name: 'Server', value: 'mine' }, { name: 'X-Keep', value: '1' }];
+    const snap = JSON.stringify([req, res]);
+    const proxy = S.applyPresetSets(req, res, 'proxy');
+    assert.equal(JSON.stringify([req, res]), snap, 'inputs untouched');
+    assert.deepEqual(proxy.request.map((h) => h.name), ['X-Forwarded-Proto', 'X-Forwarded-Host', 'X-Real-IP']);
+    assert.equal(proxy.request.find((h) => h.name === 'X-Real-IP').value, '{remote_host}');
+    assert.deepEqual(proxy.response, res);
+    const hide = S.applyPresetSets([], res, 'hideserver');
+    assert.deepEqual(hide.response.map((h) => h.name), ['X-Keep', '-Server', '-X-Powered-By'], 'a removal replaces the set header');
+    const back = S.applyPreset(hide.response, 'security');
+    assert.equal(back.length, 2 + 5 + 1);
+    assert.deepEqual(S.applyPresetSets(null, null, 'nope'), { request: [], response: [] });
+  });
+
+  it('presetApplied: every header of the preset present (removals by name only)', () => {
+    const sets = S.applyPresetSets([], [], 'proxy');
+    assert.equal(S.presetApplied(sets.request, sets.response, 'proxy'), true);
+    assert.equal(S.presetApplied(sets.request.slice(1), sets.response, 'proxy'), false);
+    const hide = S.applyPresetSets([], [], 'hideserver');
+    assert.equal(S.presetApplied([], hide.response, 'hideserver'), true);
+    assert.equal(S.presetApplied([], [{ name: 'X-Robots-Tag', value: 'noindex' }], 'noindex'), false, 'value must match');
+    assert.equal(S.presetApplied([], [], 'proxy'), false);
+    assert.equal(S.presetApplied([], [], 'unknown'), false);
+  });
+
   it('German preset labels per contract', () => {
     assert.equal(de['headers.preset_security'], 'Sicherheits-Header (modern)');
     assert.equal(de['headers.preset_csp'], 'CSP (nur eigene Quellen)');

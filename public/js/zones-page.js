@@ -1,13 +1,16 @@
 'use strict';
 
 // Domains & Routen — zones page (zones.njk). Lists zones (base domains) as
-// collapsible cards with one row per host; editing happens in the domain
-// modal (domain-modal.js). Data: GET /api/v1/zones, re-fetched after every
-// mutation and on gc:routes / gc:monitor / gc:reconnected.
+// collapsible cards with one row per host ("Port außen → Ziel im LAN" per
+// entry). Editing happens in the dialogs: "Host bearbeiten" / "Neuer Host"
+// (host-dialogs.js), "Domain-Einstellungen" (domain-modal.js) and the entry
+// editor (entry-editor.js). Data: GET /api/v1/zones, re-fetched after every
+// mutation and on gc:routes / gc:monitor / gc:reconnected / gc:tls.
 (function () {
   const V = window.GCZonesView;
   const UI = window.GCZonesUI;
   const DM = window.GCDomainModal;
+  const HD = window.GCHostDialogs;
   const TG = window.GCTlsUI || null;   // TLS guard markers (tls-ui.js), optional
   const root = document.getElementById('zn-zones');
   if (!V || !UI || !root) return;
@@ -30,6 +33,7 @@
     showAll: new Set(),
     sel: new Set(),            // selected entry ids (bulk actions); survives reloads
     bulkBusy: false,
+    flash: null,               // host id to highlight once (after "Neuer Host")
   };
 
   function emptyFilters() { return { q: '', type: null, access: null, state: null, risk: null, gatewayKey: null }; }
@@ -77,6 +81,7 @@
         state.errorToasted = false;
         render();
         if (DM) DM.refresh();
+        if (HD) HD.refresh();
       } catch (err) {
         state.error = err;
         if (!state.data) render();
@@ -110,34 +115,38 @@
   }
 
   function render() {
-    if (UI.menuOpen() && root.querySelector('.zn-ibtn[aria-expanded="true"], .sh-shield[aria-expanded="true"]')) { renderPending = true; return; }
+    if (UI.menuOpen() && root.querySelector('.rt-more[aria-expanded="true"], .sh-shield[aria-expanded="true"]')) { renderPending = true; return; }
     renderPending = false;
     const sc = scroller();
     const top = sc.scrollTop;
+    // Keep keyboard focus on the same control across the rebuild.
+    const act = document.activeElement;
+    const focusKey = act && root.contains(act) && act.dataset ? act.dataset.rtFocus : null;
     if (!state.data) {
       root.replaceChildren(state.error
-        ? el('div', { class: 'zn-empty zn-error', role: 'alert' }, [icon('alert', 16), UI.errMsg(state.error),
-          el('button', { type: 'button', class: 'btn btn-ghost zn-btn-sm', text: t('zones.retry'), on: { click: () => load() } })])
-        : el('div', { class: 'zn-empty', text: t('common.loading') }));
+        ? el('div', { class: 'zn-empty zn-error rt-empty-page', role: 'alert' }, [icon('alert', 16), UI.errMsg(state.error),
+          el('button', { type: 'button', class: 'btn btn-secondary rt-btn', text: t('zones.retry'), on: { click: () => load() } })])
+        : el('div', { class: 'zn-empty rt-empty-page', text: t('common.loading') }));
       return;
     }
     const all = V.pageZones(state.data);
     renderSummary(all);
     renderGatewayFilter(all);
+    renderToolbarState();
     const active = V.isFilterActive(state.f);
     const zones = V.filterZones(all, state.f);
-    renderChips(all);
 
     const nodes = [];
     if (!all.length) {
-      nodes.push(el('div', { class: 'card zn-empty-card' }, [
-        el('div', { class: 'zn-empty-title', text: t('zones.empty_title') }),
-        el('div', { class: 'zn-empty-text', text: t('zones.empty_text') }),
-        el('button', { type: 'button', class: 'btn btn-primary', on: { click: openAddDomain } }, [icon('plus', 14), t('zones.add_domain')]),
+      nodes.push(el('div', { class: 'rt-empty-card' }, [
+        el('span', { class: 'rt-empty-icon', 'aria-hidden': 'true' }, [icon('globe', 22)]),
+        el('div', { class: 'rt-empty-title', text: t('zones.empty_title') }),
+        el('div', { class: 'rt-empty-text', text: t('zones.empty_text') }),
+        el('button', { type: 'button', class: 'btn btn-primary rt-btn', on: { click: openAddDomain } }, [icon('plus', 16), t('zones.add_domain')]),
       ]));
     } else if (!zones.length) {
-      nodes.push(el('div', { class: 'zn-empty' }, [t('zones.no_match'), ' ',
-        el('button', { type: 'button', class: 'zn-link zn-link-btn', text: t('zones.reset_filters'), on: { click: resetFilters } })]));
+      nodes.push(el('div', { class: 'rt-empty-page' }, [t('zones.no_match'), ' ',
+        el('button', { type: 'button', class: 'rt-link-btn', text: t('zones.reset_filters'), on: { click: resetFilters } })]));
     } else {
       const fullByKey = new Map(all.map((z) => [V.zoneKey(z), z]));
       zones.forEach((z) => nodes.push(renderZone(z, fullByKey.get(V.zoneKey(z)) || z, active)));
@@ -146,46 +155,44 @@
     updateCollapseAll(zones, active);
     renderBulkBar(zones);
     sc.scrollTop = top;
+    if (focusKey) {
+      const n = root.querySelector('[data-rt-focus="' + focusKey + '"]');
+      if (n) n.focus();
+    }
+    if (state.flash != null) {
+      const row = root.querySelector('.rt-host[data-host-id="' + state.flash + '"]');
+      state.flash = null;
+      if (row) {
+        row.scrollIntoView({ block: 'nearest' });
+        row.classList.add('rt-flash');
+        setTimeout(() => row.classList.remove('rt-flash'), 1800);
+      }
+    }
   }
 
+  // "2 Domains · 7 Hosts · 9 Weiterleitungen · 1 deaktiviert" (the KPIs).
   function renderSummary(all) {
     const s = V.summarize(all);
-    const parts = [tn('zones.sum_domains', s.domains), tn('zones.sum_hosts', s.hosts), tn('zones.sum_l4', s.l4)];
+    const entries = all.reduce((n, z) => n + V.countEntries(z).entries, 0);
+    const parts = [tn('zones.sum_domains', s.domains), tn('zones.sum_hosts', s.hosts), tn('zones.sum_entries', entries)];
     if (s.disabled) parts.push(tn('zones.sum_disabled', s.disabled));
     const sum = $('zn-summary');
     if (sum) sum.textContent = parts.join(' · ');
-    const kpis = $('zn-kpis');
-    if (kpis) {
-      const chip = (n, key, cls) => el('div', { class: 'aurora-routes-kpi' + (cls ? ' ' + cls : '') }, [el('b', { text: String(n) }), el('span', { text: t(key) })]);
-      kpis.replaceChildren(...[
-        chip(s.domains, 'zones.kpi_domains'),
-        chip(s.hosts, 'zones.kpi_hosts'),
-        chip(s.l4, 'zones.kpi_l4'),
-        s.disabled ? chip(s.disabled, 'zones.kpi_disabled', 'dim') : null,
-      ].filter(Boolean));
-    }
   }
 
-  function renderChips(all) {
-    const box = $('zn-chips');
-    if (!box) return;
+  function renderToolbarState() {
     const f = state.f;
-    box.querySelectorAll('[data-dim]').forEach((b) => {
-      const dim = b.dataset.dim;
-      const on = dim === 'all' ? !(f.type || f.access || f.state || f.risk) : f[dim] === b.dataset.value;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
-    const risk = $('zn-risk');
-    if (risk) {
-      risk.querySelectorAll('[data-risk]').forEach((b) => {
-        const on = f.risk === b.dataset.risk;
-        b.classList.toggle('on', on);
+    const type = $('zn-type');
+    if (type) {
+      type.querySelectorAll('[data-type]').forEach((b) => {
+        const on = (b.dataset.type || null) === (f.type || null);
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
     }
-    const cnt = $('zn-chip-all-count');
-    if (cnt) cnt.textContent = String(V.summarize(all).hosts);
+    const st = $('zn-status');
+    if (st) st.value = V.statusValue(f);
+    const risk = $('zn-risk');
+    if (risk) risk.value = f.risk || '';
   }
 
   function renderGatewayFilter(all) {
@@ -200,7 +207,8 @@
     });
     sel.replaceChildren(...opts);
     sel.value = state.f.gatewayKey || '';
-    sel.hidden = choices.length < 2 && !state.f.gatewayKey;
+    const wrap = sel.closest('.rt-selectbox') || sel;
+    wrap.hidden = choices.length < 2 && !state.f.gatewayKey;
   }
 
   function updateCollapseAll(zones, active) {
@@ -209,15 +217,19 @@
     const keys = zones.map(V.zoneKey);
     btn.hidden = !keys.length || active;
     const allCollapsed = keys.length > 0 && keys.every((k) => state.collapsed.has(k));
-    const lbl = btn.querySelector('.zn-collapse-lbl') || btn;
-    lbl.textContent = allCollapsed ? t('zones.expand_all') : t('zones.collapse_all');
+    const label = allCollapsed ? t('zones.expand_all') : t('zones.collapse_all');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    const lbl = btn.querySelector('.zn-collapse-lbl');
+    if (lbl) lbl.textContent = label;
     btn.dataset.allCollapsed = allCollapsed ? '1' : '';
   }
 
   function zoneMeta(zone) {
     const c = V.countEntries(zone);
-    const parts = [tn('zones.meta_hosts', c.hosts), tn('zones.meta_l4', c.l4)];
+    const parts = [tn('zones.meta_hosts', c.hosts), tn('zones.meta_entries', c.entries)];
     if (c.disabled) parts.push(tn('zones.meta_disabled', c.disabled));
+    if (!zone.unassigned) parts.push(t(zone.default_external_enabled ? 'zones.meta_default_ext' : 'zones.meta_default_int'));
     return parts.join(' · ');
   }
 
@@ -226,69 +238,77 @@
     const key = V.zoneKey(zone);
     const collapsed = !filterActive && state.collapsed.has(key);
     const g = zone.gateway || {};
-
-    const editBtn = el('button', {
-      type: 'button', class: 'btn btn-ghost zn-btn-sm zn-edit-domain',
-      on: { click: (e) => { e.stopPropagation(); openDomain(zone.domain_id); } },
-    }, [icon('pencil', 13), zone.unassigned ? t('zones.edit_hosts') : t('zones.edit_domain')]);
+    const name = zone.unassigned ? t('zones.unassigned') : zone.domain;
+    const titleId = 'rt-zt-' + key.replace(/[^a-z0-9]/gi, '');
+    const bodyId = 'rt-zb-' + key.replace(/[^a-z0-9]/gi, '');
 
     const zoneEntries = [];
     zone.hosts.forEach((h) => zoneEntries.push(...V.selectableEntries(h, state.f)));
-    const head = el('div', {
-      class: 'zn-zone-head', role: 'button', tabindex: '0', 'aria-expanded': collapsed ? 'false' : 'true',
-      on: {
-        click: (e) => { if (!e.target.closest('button,a,.zn-ibtn,input,label')) toggleZone(key, filterActive); },
-        keydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggleZone(key, filterActive); } },
-      },
-    }, [
-      selectBox(zoneEntries, t('zones.select_zone', { domain: zone.unassigned ? t('zones.unassigned') : zone.domain }), 'sh-sel-zone'),
-      el('span', { class: 'zn-chev' }, [icon('down', 16)]),
-      UI.healthDot(full.health || V.worstHealth(full.hosts.map(V.hostHealth))),
-      el('span', { class: 'zn-domain', text: zone.unassigned ? t('zones.unassigned') : zone.domain }),
-      zone.unassigned ? null : ((TG && TG.dnsTag(zone, { onChanged: load })) || UI.verificationTag(zone)),
-      zone.unassigned ? null : el('span', { class: 'zn-gw-pill' + (g.online === false ? ' off' : ''), title: g.online === false ? t('zones.gateway_offline_hint') : null }, [
-        icon(UI.gatewayIconName(g.kind), 12), UI.gatewayLabel(g),
+    const toggle = el('button', {
+      type: 'button', class: 'rt-zone-toggle', 'aria-expanded': collapsed ? 'false' : 'true', 'aria-controls': bodyId,
+      'aria-label': t(collapsed ? 'zones.expand_zone' : 'zones.collapse_zone', { domain: name }),
+      disabled: filterActive, dataset: { rtFocus: 'zt-' + key },
+      on: { click: () => toggleZone(key, filterActive) },
+    }, [icon('down', 16)]);
+
+    const actions = zone.unassigned ? null : el('div', { class: 'rt-zone-actions' }, [
+      el('button', { type: 'button', class: 'btn rt-btn rt-btn-teal rt-btn-sm rt-add-host', dataset: { rtFocus: 'za-' + key }, on: { click: () => openNewHost(zone.domain_id) } }, [icon('plus', 15), t('zones.add_host')]),
+      el('button', { type: 'button', class: 'btn btn-secondary rt-btn rt-btn-sm zn-edit-domain', dataset: { rtFocus: 'zs-' + key }, on: { click: () => openDomain(zone.domain_id) } }, [icon('sliders', 15), t('zones.domain_settings')]),
+    ]);
+    const head = el('div', { class: 'rt-zone-head' }, [
+      selectBox(zoneEntries, t('zones.select_zone', { domain: name }), 'sh-sel-zone'),
+      toggle,
+      el('div', { class: 'rt-zone-info' }, [
+        el('div', { class: 'rt-zone-line' }, [
+          el('h2', { class: 'rt-zone-title zn-domain', id: titleId, text: name }),
+          zone.unassigned ? null : ((TG && TG.dnsTag(zone, { onChanged: load })) || UI.verificationTag(zone)),
+          zone.unassigned ? null : el('span', { class: 'rt-gw-pill zn-gw-pill' + (g.online === false ? ' off' : ''), title: g.online === false ? t('zones.gateway_offline_hint') : null }, [
+            icon(UI.gatewayIconName(g.kind), 13), UI.targetText(g),
+          ]),
+        ]),
+        el('div', { class: 'rt-zone-meta' }, [UI.healthDot(full.health || V.worstHealth(full.hosts.map(V.hostHealth))), el('span', { text: zoneMeta(full) })]),
       ]),
-      el('span', { class: 'zn-meta', text: zoneMeta(full) }),
-      el('span', { class: 'zn-spacer' }),
-      editBtn,
-      zone.unassigned ? null : el('button', {
-        type: 'button', class: 'zn-ibtn', title: t('zones.domain_menu'), 'aria-label': t('zones.domain_menu'), 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-        on: { click: (e) => { e.stopPropagation(); UI.openMenu(e.currentTarget, zoneMenuItems(zone)); } },
-      }, [icon('more', 13)]),
+      actions,
     ]);
 
-    const card = el('div', { class: 'card zn-zone' + (collapsed ? ' zn-collapsed' : ''), dataset: { zoneKey: key } }, [head]);
+    const card = el('section', { class: 'rt-zone zn-zone' + (collapsed ? ' rt-collapsed' : ''), 'aria-labelledby': titleId, dataset: { zoneKey: key } }, [head]);
     if (collapsed) return card;
 
-    const rows = [zone.hosts.length ? el('div', { class: 'zn-hrow zn-hrow-th', 'aria-hidden': 'true' }, [
-      el('div', { class: 'sh-sel sh-sel-th' }),
-      el('div', { class: 'zn-col-name zn-th', text: t('zones.col_name') }),
-      el('div', { class: 'zn-col-target zn-th', text: t('zones.col_target') }),
-      el('div', { class: 'zn-col-entries zn-th', text: t('zones.col_entries') }),
-      el('div', { class: 'zn-col-access zn-th', text: t('zones.col_access') }),
-      el('div', { class: 'zn-col-status zn-th', text: t('zones.col_status') }),
-      el('div', { class: 'zn-col-actions' }),
-    ]) : null];
+    const bodyNodes = [];
+    if (zone.hosts.length) {
+      bodyNodes.push(el('div', { class: 'rt-cols', 'aria-hidden': 'true' }, [
+        el('span', { class: 'rt-col-sel' }),
+        el('span', { class: 'rt-col-host', text: t('zones.col_host') }),
+        el('span', { class: 'rt-col-lines', text: t('zones.col_lines') }),
+        el('span', { class: 'rt-col-access', text: t('zones.col_access') }),
+        el('span', { class: 'rt-col-status', text: t('zones.col_status') }),
+        el('span', { class: 'rt-col-actions' }),
+      ]));
+    }
     let hosts = zone.hosts;
     let hidden = 0;
     if (!filterActive && hosts.length > MANY_HOSTS && !state.showAll.has(key)) {
       hidden = hosts.length - PREVIEW_HOSTS;
       hosts = hosts.slice(0, PREVIEW_HOSTS);
     }
-    hosts.forEach((h) => rows.push(renderHostRow(h, zone)));
+    const list = el('ul', { class: 'rt-hosts' }, hosts.map((h) => renderHostRow(h, zone)));
+    if (hosts.length) bodyNodes.push(list);
     if (hidden) {
-      rows.push(el('button', { type: 'button', class: 'zn-hrow zn-more', on: { click: () => { state.showAll.add(key); render(); } } }, [
+      bodyNodes.push(el('button', { type: 'button', class: 'rt-more-hosts zn-more', on: { click: () => { state.showAll.add(key); render(); } } }, [
         t('zones.more_hosts', { count: hidden }),
       ]));
     }
     if (!zone.hosts.length) {
-      rows.push(el('div', { class: 'zn-hrow zn-zone-empty' }, [
-        el('span', { class: 'zn-muted', text: t('zones.zone_empty') }), ' ',
-        el('button', { type: 'button', class: 'zn-link zn-link-btn', text: t('zones.zone_empty_add'), on: { click: () => openDomain(zone.domain_id) } }),
+      bodyNodes.push(el('div', { class: 'rt-zone-empty' }, [
+        el('span', { text: t('zones.zone_empty') }),
+        zone.unassigned ? null : el('button', { type: 'button', class: 'btn btn-primary rt-btn rt-btn-sm', on: { click: () => openNewHost(zone.domain_id) } }, [icon('plus', 15), t('zones.zone_empty_add')]),
+      ]));
+    } else if (!zone.unassigned) {
+      bodyNodes.push(el('button', { type: 'button', class: 'rt-add-host-row', on: { click: () => openNewHost(zone.domain_id) } }, [
+        icon('plus', 15), t('zones.add_host_in', { domain: zone.domain }),
       ]));
     }
-    card.appendChild(el('div', { class: 'zn-zone-body' }, rows));
+    card.appendChild(el('div', { class: 'rt-zone-body', id: bodyId }, bodyNodes));
     return card;
   }
 
@@ -297,85 +317,127 @@
     const SO = window.GCSecOptUI;
     const text = SO ? SO.aliasSummary(host) : '';
     if (!text) return null;
-    return el('span', { class: 'so-alias-more', title: SO.hostAliases(host).fqdns.join(', '), text });
+    return el('span', { class: 'so-alias-more rt-alias-more', title: SO.hostAliases(host).fqdns.join(', '), text });
+  }
+
+  function noteText(n) {
+    if (n.id === 'port_label') return n.value;
+    if (n.id === 'waf') return t(n.value === 'block' ? 'waf.chip_block' : 'waf.chip_detect');
+    if (n.id === 'backend_https') return 'Backend HTTPS';
+    if (n.id === 'tls_sni') return 'TLS-SNI';
+    if (n.id === 'hsts') return 'HSTS';
+    return t('zones.note_' + n.id);
+  }
+
+  function entryLineEl(e) {
+    const line = V.entryLine(e);
+    const name = line.notes.find((n) => n.id === 'name');
+    const notes = line.notes.filter((n) => n.id !== 'name');
+    const chip = UI.typeChip(line.type, e.enabled ? '' : 'off');
+    if (TG && !V.isL4(e)) TG.decorateChip(chip, e);
+    return el('div', { class: 'rt-line' + (e.enabled ? '' : ' off'), dataset: { entryId: String(e.id) } }, [
+      chip,
+      el('span', { class: 'rt-from', text: line.from }),
+      el('span', { class: 'rt-arrow', 'aria-hidden': 'true' }, [icon('arrow', 14)]),
+      el('span', { class: 'rt-to', text: line.to }),
+      name ? el('span', { class: 'rt-line-name od-name', text: name.value }) : null,
+      notes.map((n) => el('span', { class: 'rt-note' + (n.id === 'rdp' ? ' rt-note-purple' : ''), text: noteText(n) })),
+      e.enabled ? null : el('span', { class: 'rt-note rt-note-off', text: t('zones.note_off') }),
+      // Body limit / mTLS tags (secopt-ui.js) and the certificate problem tag
+      // (tls-ui.js, opens the certificate detail).
+      window.GCSecOptUI ? window.GCSecOptUI.entryTags(e) : null,
+      TG ? TG.entryTag(e, { onChanged: () => load() }) : null,
+    ]);
   }
 
   function renderHostRow(host, zone) {
     const on = V.hostEnabled(host);
     const health = V.hostHealth(host);
     const apex = V.isApex(host);
-    const port = V.hostSinglePort(host);
-    const target = V.hostTarget(host);
-    const httpEntry = (host.entries || []).find((e) => !V.isL4(e));
-    // Certificate failed/paused: amber dot + reason text (docs/feature-tls-guard.md).
     const tlsText = TG ? TG.hostProblemText(host) : null;
-
-    const nameLine = el('div', { class: 'zn-name-line' }, [
-      host.template === 'printer' ? icon('printer', 12) : null,
-      el('span', { class: 'zn-name', text: V.hostLabel(host) }),
-      apex && host.fqdn ? el('span', { class: 'zn-fqdn', text: host.fqdn }) : null,
-      aliasNote(host),
-      host.gateway_override ? UI.tag('amber', t('host.override_tag'), false, 'zn-tag-sm') : null,
-    ]);
+    const label = V.hostLabel(host);
+    const sfx = zone.unassigned ? '' : (apex ? ' ' + zone.domain : '.' + zone.domain);
     const desc = [];
     if (host.description) desc.push(host.description);
-    if (host.template) desc.push(t('host.template_badge', { name: t('template.' + host.template) }));
-
-    const actions = el('div', { class: 'zn-col-actions' }, [
-      UI.ibtn('pencil', t('zones.edit_host'), () => openDomain(zone.domain_id, host.id)),
-      httpEntry && httpEntry.enabled && host.fqdn
-        ? el('a', { class: 'zn-ibtn', href: 'https://' + host.fqdn, target: '_blank', rel: 'noopener', title: t('host.open'), 'aria-label': t('host.open'), on: { click: (e) => e.stopPropagation() } }, [icon('ext', 13)])
-        : null,
-    ]);
-
-    // Shield per HTTP entry (count of active protections, popup = active/missing).
-    const shields = (host.entries || []).filter((e) => !V.isL4(e) && !e.rdp_owned)
-      .map((e) => UI.shieldEl(e, { onPick: () => openDomain(zone.domain_id, host.id) })).filter(Boolean);
+    if (host.template && host.template !== 'rdp') desc.push(t('host.template_badge', { name: t('template.' + host.template) }));
+    const lines = V.visibleEntries(host, state.f);
     const selected = V.selectableEntries(host, state.f);
+    const fqdn = host.fqdn || label;
 
-    return el('div', {
-      class: 'zn-hrow zn-host' + (on ? '' : ' off') + (selected.length && selected.every((e) => state.sel.has(e.id)) ? ' sh-selected' : ''),
-      role: 'button', tabindex: '0', title: host.fqdn || null,
+    const shields = (host.entries || []).filter((e) => !V.isL4(e) && !e.rdp_owned)
+      .map((e) => UI.shieldEl(e, { onPick: (k) => fixProtection(e, host, zone, k) })).filter(Boolean);
+
+    const edit = host.id != null
+      ? el('button', { type: 'button', class: 'btn btn-secondary rt-btn rt-btn-sm rt-edit-host', dataset: { rtFocus: 'he-' + host.id }, 'aria-label': t('zones.edit_host_named', { host: fqdn }), on: { click: () => openHost(host.id) } }, [icon('pencil', 14), el('span', { class: 'rt-edit-text', text: t('zones.edit') })])
+      : el('a', { href: '/rdp', class: 'btn btn-secondary rt-btn rt-btn-sm', title: t('entry.rdp_hint') }, [icon('rdp', 14), t('entry.rdp_link')]);
+    const more = host.id != null ? el('button', {
+      type: 'button', class: 'rt-more zn-ibtn', 'aria-label': t('zones.more_actions', { host: fqdn }), title: t('zones.more_actions', { host: fqdn }),
+      'aria-haspopup': 'menu', 'aria-expanded': 'false', dataset: { rtFocus: 'hm-' + host.id },
+      on: { click: (e) => { e.stopPropagation(); UI.openMenu(e.currentTarget, hostMenuItems(host, zone)); } },
+    }, [icon('more', 16)]) : null;
+
+    return el('li', {
+      class: 'rt-host zn-host' + (on ? '' : ' off') + (selected.length && selected.every((e) => state.sel.has(e.id)) ? ' sh-selected' : ''),
       dataset: { hostId: String(host.id) },
-      on: {
-        click: (e) => { if (!e.target.closest('button,a,input,label')) openDomain(zone.domain_id, host.id); },
-        keydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openDomain(zone.domain_id, host.id); } },
-      },
     }, [
-      selectBox(selected, t('zones.select_host', { host: host.fqdn || V.hostLabel(host) }), 'sh-sel-host'),
-      el('div', { class: 'zn-col-name' }, [nameLine, desc.length ? el('div', { class: 'zn-desc', text: desc.join(' · ') }) : null]),
-      el('div', { class: 'zn-col-target' }, [
-        icon(UI.gatewayIconName((V.parseGatewayKey(V.hostGatewayKey(host, zone)) || {}).kind), 13),
-        el('span', { class: 'zn-mono', text: target ? (port ? target + ' : ' + port : target) : '—' }),
+      selectBox(selected, t('zones.select_host', { host: fqdn }), 'sh-sel-host'),
+      el('div', { class: 'rt-host-name' }, [
+        el('div', { class: 'rt-host-title' }, [
+          host.template === 'printer' ? icon('printer', 13) : null,
+          el('span', { class: 'rt-host-label zn-name', text: label }),
+          sfx ? el('span', { class: 'rt-host-sfx', text: sfx }) : null,
+          aliasNote(host),
+        ]),
+        desc.length || host.gateway_override ? el('div', { class: 'rt-host-desc' }, [
+          desc.join(' · '),
+          host.gateway_override ? el('span', { class: 'rt-tag rt-tag-amber rt-tag-xs', title: t('host.override_hint'), text: t('host.override_tag') }) : null,
+        ]) : null,
       ]),
-      el('div', { class: 'zn-col-entries' }, V.sortEntries(host.entries).map((e) => (e.rdp_owned
-        ? el('span', { class: 'zn-chip zn-chip-rdp', title: t('entry.rdp_hint') }, [icon('rdp', 11), el('span', { class: 'zn-chip-port', text: String(e.l4_listen_port || '') }), el('span', { class: 'zn-chip-note', text: t('entry.rdp_tag') })])
-        : (TG ? TG.decorateChip(UI.chipEl(e), e) : UI.chipEl(e))))),
-      el('div', { class: 'zn-col-access' }, [UI.accessTag(V.hostAccess(host)), shields]),
-      el('div', { class: 'zn-col-status' + (tlsText ? ' tg-host-problem' : '') }, [
+      el('div', { class: 'rt-lines' }, lines.length ? lines.map(entryLineEl) : [el('span', { class: 'rt-muted', text: '—' })]),
+      el('div', { class: 'rt-host-access' }, [UI.accessTag(V.hostAccess(host)), shields]),
+      el('div', { class: 'rt-host-status' + (tlsText ? ' tg-host-problem' : '') }, [
         UI.healthDot(tlsText && health === 'ok' ? 'degraded' : health),
-        el('span', { class: 'zn-status-text', text: tlsText || UI.hostStatusText(host, zone) }),
+        el('span', { class: 'rt-status-text', text: tlsText || UI.hostStatusText(host, zone) }),
       ]),
-      actions,
+      el('div', { class: 'rt-host-actions' }, [edit, more]),
     ]);
   }
 
-  function zoneMenuItems(zone) {
+  function hostMenuItems(host, zone) {
+    const fqdn = host.fqdn || V.hostLabel(host);
+    const httpEntry = (host.entries || []).find((e) => !V.isL4(e) && e.enabled);
+    const on = V.hostEnabled(host);
+    const SO = window.GCSecOptUI;
+    const alias = SO && !zone.unassigned ? SO.aliasMenuItem(host, zone, { onChanged: () => load() }) : null;
     return [
-      { icon: 'pencil', label: t('zones.edit_domain'), onClick: () => openDomain(zone.domain_id) },
-      { icon: 'refresh', label: t('zones.reverify'), onClick: () => reverify(zone) },
-      { icon: 'settings', label: t('zones.domain_settings'), onClick: () => { window.location.href = '/settings'; } },
+      { icon: 'pencil', label: t('zones.edit_host'), onClick: () => openHost(host.id) },
+      httpEntry && host.fqdn ? { icon: 'ext', label: t('host.open'), onClick: () => window.open('https://' + host.fqdn, '_blank', 'noopener') } : null,
+      alias,
+      { icon: 'power', label: on ? t('host.disable') : t('host.enable'), onClick: () => toggleHost(host, !on) },
+      '-',
+      { icon: 'trash', label: t('host.delete'), danger: true, onClick: () => { if (HD) HD.deleteHost(host, zone); } },
     ];
   }
 
-  async function reverify(zone) {
+  async function toggleHost(host, enabled) {
     try {
-      const res = await UI.call(api.post('/api/settings/domains/' + zone.domain_id + '/verify', {}));
-      const status = res.data && res.data.status;
-      if (status === 'verified') UI.toastOk(t('zones.reverify_ok', { domain: zone.domain }));
-      else UI.toastError(t('zones.reverify_pending', { domain: zone.domain }));
+      await UI.call(api.put('/api/v1/hosts/' + host.id + '/toggle', { enabled }));
+      UI.toastOk(t(enabled ? 'host.enabled_ok' : 'host.disabled_ok', { host: host.fqdn || V.hostLabel(host) }));
       await load();
     } catch (err) { UI.toastError(err); }
+  }
+
+  // Shield popup item → the place where that protection is configured.
+  const PROTECTION_TARGET = {
+    auth: { section: 'auth' },
+    mtls: { section: 'auth', focus: 'edit-mtls-block' },
+    ip_filter: { section: 'access', focus: 'edit-ip-filter-block' },
+    waf: { section: 'security', focus: 'edit-waf-block' },
+    hsts: { section: 'security', focus: 'edit-hsts-block' },
+    rate_limit: { section: 'security', focus: 'edit-rate-limit-block' },
+  };
+  function fixProtection(e, host, zone, key) {
+    if (HD) HD.openOptions(e, host, zone, PROTECTION_TARGET[key] || { section: 'security' });
   }
 
   function toggleZone(key, filterActive) {
@@ -386,9 +448,11 @@
   }
 
   function openDomain(domainId, hostId) {
-    if (!DM) return;
-    DM.open(domainId, { focusHostId: hostId });
+    if (hostId != null && HD) { HD.openHost(hostId); return; }
+    if (DM) DM.open(domainId);
   }
+  function openHost(hostId) { if (HD) HD.openHost(hostId); }
+  function openNewHost(domainId) { if (HD) HD.openNewHost(domainId); }
 
   function resetFilters() {
     state.f = emptyFilters();
@@ -416,7 +480,7 @@
       const again = window.CSS && CSS.escape ? root.querySelector('.sh-sel-cb[aria-label="' + CSS.escape(label) + '"]') : null;
       if (again) again.focus();
     });
-    return el('label', { class: 'sh-sel ' + (cls || ''), title: label, on: { click: (e) => e.stopPropagation() } }, [cb]);
+    return el('label', { class: 'sh-sel rt-sel ' + (cls || ''), title: label, on: { click: (e) => e.stopPropagation() } }, [cb]);
   }
 
   // Drop ids that vanished or became RDP-owned after a reload (gc:routes).
@@ -655,28 +719,20 @@
         qTimer = setTimeout(() => { state.f.q = search.value; writeHash(); render(); }, 150);
       });
     }
-    const chips = $('zn-chips');
-    if (chips) {
-      chips.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-dim]');
+    const type = $('zn-type');
+    if (type) {
+      type.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-type]');
         if (!b) return;
-        const dim = b.dataset.dim;
-        if (dim === 'all') { state.f.type = null; state.f.access = null; state.f.state = null; state.f.risk = null; }
-        else state.f[dim] = state.f[dim] === b.dataset.value ? null : b.dataset.value;
+        state.f.type = b.dataset.type || null;
         writeHash();
         render();
       });
     }
+    const status = $('zn-status');
+    if (status) status.addEventListener('change', () => { state.f = V.applyStatus(state.f, status.value); writeHash(); render(); });
     const risk = $('zn-risk');
-    if (risk) {
-      risk.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-risk]');
-        if (!b) return;
-        state.f.risk = state.f.risk === b.dataset.risk ? null : b.dataset.risk;
-        writeHash();
-        render();
-      });
-    }
+    if (risk) risk.addEventListener('change', () => { state.f.risk = risk.value || null; writeHash(); render(); });
     const gw = $('zn-gateway-filter');
     if (gw) gw.addEventListener('change', () => { state.f.gatewayKey = gw.value || null; writeHash(); render(); });
     // Back/forward or a link like /routes#risk=nowaf (quick search) while on the page.
@@ -698,6 +754,12 @@
     }
     const add = $('zn-add-domain');
     if (add) add.addEventListener('click', openAddDomain);
+    const nh = $('zn-new-host');
+    if (nh) nh.addEventListener('click', () => {
+      const z = (state.data && state.data.zones) || [];
+      if (!z.length) { openAddDomain(); return; }
+      openNewHost(z[0].domain_id);
+    });
   }
 
   // ─── Init ──────────────────────────────────────────────────────────────
@@ -705,13 +767,17 @@
   initToolbar();
   render();
   load().then(() => {
-    // Deep link from the certificates page: /routes?domain=<id>[&host=<id>]
+    // Deep links: /routes?domain=<id>[&host=<id>] (certificates, security,
+    // quick search) and /routes?action=add (FAB, quick search).
     try {
       const q = new URLSearchParams(window.location.search);
       const domainId = q.get('domain');
-      if (domainId != null && domainId !== '' && state.data) {
-        const hostId = q.get('host');
-        openDomain(Number(domainId), hostId != null && hostId !== '' ? Number(hostId) : undefined);
+      const hostId = q.get('host');
+      if (q.get('action') === 'add') {
+        openAddDomain();
+        history.replaceState(null, '', window.location.pathname + window.location.hash);
+      } else if (state.data && ((domainId != null && domainId !== '') || (hostId != null && hostId !== ''))) {
+        openDomain(domainId ? Number(domainId) : null, hostId != null && hostId !== '' ? Number(hostId) : undefined);
         history.replaceState(null, '', window.location.pathname + window.location.hash);
       }
     } catch (_) { /* ignore */ }
@@ -723,7 +789,8 @@
   });
 
   window.GCZonesPage = {
-    reload: load, openDomain, openAddDomain, getData: () => state.data,
+    reload: load, openDomain, openHost, openNewHost, openAddDomain, getData: () => state.data,
+    flashHost: (id) => { state.flash = id; render(); },
     // Bulk selection, for scripts/tests: ids of the selected entries.
     selection: () => Array.from(state.sel),
   };

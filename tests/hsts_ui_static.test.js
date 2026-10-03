@@ -34,7 +34,7 @@ const hasId = (html, id) => html.includes('id="' + id + '"');
 const EDITOR_IDS = ['edit-hsts-block', 'edit-route-hsts', 'edit-route-hsts-max-age', 'edit-route-hsts-subdomains', 'edit-route-hsts-preload', 'edit-hsts-fields', 'edit-hsts-hint', 'edit-headers-hsts-hint'];
 const EDITOR_DATA = ['data-hint-https', 'data-hint-preload', 'data-preload-confirm', 'data-err-preload-requirements', 'data-err-requires-https', 'data-err-max-age-invalid'];
 // Classes the browser scenario and the scripts rely on (built at runtime by hsts-ui.js).
-const RUNTIME_CLASSES = ['hs-defaults', 'hs-def-age', 'hs-def-sub', 'hs-def-preload', 'hs-entry-tag', 'hs-off', 'hs-dialog', 'hs-btn-ok', 'hs-btn-save', 'hs-warn', 'hs-confirm-cb', "'hs-apply-' + value", 'hs-field-error', 'hs-toggle', 'hs-preview-value'];
+const RUNTIME_CLASSES = ['hs-dialog', 'hs-btn-ok', 'hs-warn', 'hs-confirm-cb', 'hs-age', 'hs-sub', 'hs-preload'];
 
 describe('HSTS: DOM hooks per theme', () => {
   for (const theme of THEMES) {
@@ -72,36 +72,36 @@ describe('HSTS: DOM hooks per theme', () => {
     });
   }
 
-  it('hsts-ui.js exposes the contract API, builds DOM without innerHTML and PUTs only the hsts fields', () => {
+  it('hsts-ui.js exposes the contract API and builds DOM without innerHTML', () => {
     const src = stripComments(read('public/js/hsts-ui.js'));
-    for (const f of ['entryTag', 'openEntryDialog', 'defaultsControl', 'headerValue', 'labelFor', 'confirmPreload']) {
+    for (const f of ['headerValue', 'labelFor', 'fieldsEl', 'confirmPreload', 'fromZone']) {
       assert.match(src, new RegExp('\\b' + f + '\\b'), f);
     }
+    // The per-entry tag/dialog and the head control of the former domain
+    // modal are gone: HSTS is edited in the entry editor ("Sicherheit") and
+    // the zone default in "Domain-Einstellungen".
+    for (const f of ['entryTag', 'openEntryDialog', 'defaultsControl', 'openApplyDialog']) {
+      assert.doesNotMatch(src, new RegExp('\\b' + f + '\\b'), f + ' removed');
+    }
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
-    assert.match(src, /api\.put\('\/api\/v1\/routes\/' \+ entry\.id, toRouteFields\(cfg\)\)/, 'entry dialog PUT body = toRouteFields');
-    assert.match(src, /api\.put\('\/api\/v1\/domains\/' \+ zone\.domain_id \+ '\/defaults', body\)/);
-    assert.match(src, /hsts_default: toDefault\(next\), apply_hsts_to_existing: mode === 'existing'/, 'defaults body without default_external_enabled');
-    assert.doesNotMatch(src, /default_external_enabled/, 'never touches the access default');
     for (const cls of RUNTIME_CLASSES) assert.ok(src.includes(cls), 'class ' + cls);
     assert.match(src, /zones-i18n/, 'reads the zones island');
     for (const code of H.ERROR_CODES) assert.ok(src.includes(code), code);
   });
 
-  it('domain-modal.js renders the default control in the head panel and the entry tag next to the TLS tag', () => {
+  it('domain-modal.js: HSTS default in "Domain-Einstellungen" with preload confirmation and one apply checkbox', () => {
     const dm = stripComments(read('public/js/domain-modal.js'));
-    assert.match(dm, /GCHstsUI\.defaultsControl\(zone, \{ onChanged: afterMutation \}\)/);
-    assert.match(dm, /hsts \? ' hs-panel4' : ''/, 'four-field grid only with the control');
-    assert.match(dm, /GCHstsUI\.entryTag\(e, \{ onChanged: afterMutation \}\)/);
-    assert.match(dm, /V\.entryChip\(e, \{ hsts: false(, waf: false)? \}\)/, 'no duplicate HSTS note in the entry line');
-    const tls = dm.indexOf('GCTlsUI.entryTag(e');
-    const hs = dm.indexOf('GCHstsUI.entryTag(e');
-    assert.ok(tls > 0 && hs > tls, 'HSTS tag after the TLS tag');
-    assert.match(dm, /window\.GCHstsUI && window\.GCHstsUI\./, 'guards the absence of hsts-ui.js');
+    assert.match(dm, /H\.fromZone\(zone\)/);
+    assert.match(dm, /H\.fieldsEl\(/);
+    assert.match(dm, /H\.confirmPreload\(\)\.then/);
+    assert.match(dm, /body\.hsts_default = /);
+    assert.match(dm, /body\.apply_hsts_to_existing = true/);
+    assert.match(dm, /window\.GCHstsUI/, 'guards the absence of hsts-ui.js');
   });
 
-  it('zones-view.js adds the HSTS chip note and zones-page.js still renders chips through chipEl', () => {
-    assert.match(stripComments(read('public/js/zones-view.js')), /'HSTS'/);
-    assert.match(read('public/js/zones-page.js'), /UI\.chipEl\(e\)/);
+  it('zones-view.js adds the HSTS note; the page renders it on the entry line', () => {
+    assert.match(stripComments(read('public/js/zones-view.js')), /id: 'hsts'/);
+    assert.match(read('public/js/zones-page.js'), /n\.id === 'hsts'\) return 'HSTS'/);
   });
 
   it('entry-editor.js populates, greys out, confirms preload, sends and maps the HSTS fields', () => {
@@ -137,7 +137,7 @@ describe('HSTS: i18n', () => {
 
   it('every key used by scripts and templates exists in de.json and en.json', () => {
     const used = usedKeys();
-    assert.ok(used.length > 30, 'keys collected');
+    assert.ok(used.length > 15, 'keys collected');
     for (const k of used) {
       assert.ok(typeof de[k] === 'string' && de[k].length, `de.json has ${k}`);
       assert.ok(typeof en[k] === 'string' && en[k].length, `en.json has ${k}`);
@@ -146,7 +146,7 @@ describe('HSTS: i18n', () => {
 
   it('de.json and en.json carry identical hsts.* key sets with matching placeholders', () => {
     assert.deepEqual(pick(de).sort(), pick(en).sort());
-    assert.ok(pick(de).length >= 40);
+    assert.ok(pick(de).length >= 20);
     for (const k of pick(de)) {
       const ph = (s) => (s.match(/\{\{\w+\}\}/g) || []).sort().join();
       assert.equal(ph(de[k]), ph(en[k]), `${k}: same {{placeholders}}`);
@@ -166,15 +166,12 @@ describe('HSTS: i18n', () => {
     }
   });
 
-  it('German texts: select options and the two apply choices per contract', () => {
+  it('German texts: select options and the preload warning per contract', () => {
     assert.equal(de['hsts.age_off'], 'Aus');
     assert.equal(de['hsts.age_6m'], '6 Monate');
     assert.equal(de['hsts.age_1y'], '1 Jahr');
     assert.equal(de['hsts.age_2y'], '2 Jahre');
-    assert.equal(de['hsts.apply_new_only'], 'Nur für neue Hosts');
-    assert.match(de['hsts.apply_existing'], /^Auch auf \{\{n\}\} bestehende Hosts anwenden$/);
     assert.match(de['hsts.preload_warning'], /unumkehrbar/);
-    assert.match(de['hsts.hint_cert'], /gültiges Zertifikat/);
   });
 });
 
@@ -201,10 +198,9 @@ describe('HSTS: styles', () => {
     }
     for (const f of ['app.css §1 (base)']) {
       const css = appSection(1);
-      for (const cls of ['.zn-panel.hs-panel4', '.hs-fields', '.hs-check', '.tag.hs-entry-tag', '.hs-warn', '.hs-radios', '.hs-editor-block.hs-locked', '.hs-editor-fields', '.hs-dialog-body', '.hs-preview']) {
+      for (const cls of ['.hs-fields', '.hs-check', '.hs-warn', '.hs-editor-block.hs-locked', '.hs-editor-fields', '.hs-dialog-body']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
-      assert.match(css, /@media \(max-width: 900px\) \{[^}]*\.zn-panel\.hs-panel4 \{ grid-template-columns: 1fr; \}/, `${f}: single column on phones`);
     }
   });
 });

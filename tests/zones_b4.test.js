@@ -145,17 +145,18 @@ describe('bulk selection', () => {
 describe('zones page + domain dialog wiring', () => {
   const page = strip(read('public/js/zones-page.js'));
   const dm = strip(read('public/js/domain-modal.js'));
+  const hd = strip(read('public/js/host-dialogs.js'));
   const njk = read('templates/aurora/pages/zones.njk');
 
-  it('template: risk chips, bulk bar, island keys', () => {
-    assert.deepEqual(Array.from(njk.matchAll(/data-risk="([a-z]+)"/g)).map((m) => m[1]), ['nowaf', 'unprotected', 'nohsts']);
-    assert.match(njk, /id="zn-risk" role="group"/);
+  it('template: risk check select, bulk bar, island keys', () => {
+    const risk = njk.slice(njk.indexOf('<select id="zn-risk">'), njk.indexOf('</select>', njk.indexOf('<select id="zn-risk">')));
+    assert.deepEqual(Array.from(risk.matchAll(/<option value="([a-z]*)"/g)).map((m) => m[1]), ['', 'nowaf', 'unprotected', 'nohsts']);
     assert.match(njk, /<div class="sh-bulkbar" id="zn-bulkbar" role="region"[^>]*hidden>/);
     const m = /set zonesI18nKeys = \[([\s\S]*?)\]/.exec(njk);
     const listed = Array.from(m[1].matchAll(/'([a-z0-9_.]+)'/g)).map((x) => x[1]);
     assert.equal(new Set(listed).size, listed.length, 'no duplicates');
     const used = new Set();
-    for (const src of [page, dm]) for (const x of src.matchAll(/'((?:bulk|shield|zones\.wafdef|zones\.select)[._][a-z0-9_.]+)'/g)) if (!/[._]$/.test(x[1])) used.add(x[1]);
+    for (const src of [page, dm, hd]) for (const x of src.matchAll(/'((?:bulk|shield|zones\.wafdef|zones\.select)[._][a-z0-9_.]+)'/g)) if (!/[._]$/.test(x[1])) used.add(x[1]);
     for (const a of ['waf', 'hsts', 'monitoring', 'enable', 'disable']) { used.add('bulk.title_' + a); used.add('bulk.msg_' + a); }
     for (const k of ['auth', 'mtls', 'ip_filter', 'waf', 'hsts', 'rate_limit']) used.add('shield.' + k);
     for (const k of used) {
@@ -174,23 +175,23 @@ describe('zones page + domain dialog wiring', () => {
     assert.match(page, /data\.code === 'BULK_INVALID' && Array\.isArray\(data\.failed\)/);
     assert.match(page, /data\.code === 'CADDY_SYNC_FAILED'/);
     assert.match(page, /UI\.shieldEl\(e, \{ onPick:/);
-    assert.match(page, /closest\('button,a,input,label'\)/, 'row click ignores the checkbox');
+    assert.match(page, /on: \{ click: \(e\) => e\.stopPropagation\(\) \}/, 'the selection box does not bubble');
   });
 
-  it('dialog: no negative HSTS chip, shield per entry, WAF default next to the HSTS default', () => {
-    assert.match(dm, /if \(hstsTag && hstsTag\.dataset\.hsts === 'on'\) opts\.push\(hstsTag\);/);
-    assert.match(dm, /const shield = shieldEl\(e, \{ onPick: \(k\) => fixProtection\(e, k\) \}\);/);
-    assert.ok(dm.indexOf('hsts || null,\n      wafDef,') > 0, 'WAF default right after the HSTS default');
+  it('domain settings: WAF default next to the HSTS default, one apply checkbox, licence lock', () => {
+    assert.ok(dm.indexOf("t('hsts.title')") < dm.indexOf("t('waf.title')"), 'WAF row after the HSTS row');
     assert.match(dm, /api\.put\('\/api\/v1\/domains\/' \+ zone\.domain_id \+ '\/defaults', body\)/);
-    assert.match(dm, /waf_default: next\.mode === 'off' \? null : \{ enabled: true, mode: next\.mode, paranoia: next\.paranoia \}/);
-    assert.match(dm, /apply_waf_to_existing: applyMode === 'existing'/);
+    assert.match(dm, /body\.waf_default = st\.waf\.mode === 'off' \? null : \{ enabled: true, mode: st\.waf\.mode, paranoia: st\.waf\.paranoia \}/);
+    assert.match(dm, /body\.apply_waf_to_existing = true/);
     assert.match(dm, /res\.applied_waf/);
     assert.match(dm, /GC\.features\.waf === false/, 'licence lock');
+    // Shields per host row; a click opens the entry editor on the matching section.
+    assert.match(page, /UI\.shieldEl\(e, \{ onPick: \(k\) => fixProtection\(e, host, zone, k\) \}\)/);
   });
 
   it('nav.css styles the shield, bulk bar and palette; no zn-/sh- rules appended to aurora.css', () => {
     const css = appSection(4);
-    for (const sel of ['.sh-shield', '.sh-shield-open', '.sh-bulkbar', '.sh-sel-cb', '.sh-risk-chips', '.sh-wafdef-row', '.cp-overlay', '.cp-opt[aria-selected="true"]', '.cp-trigger']) {
+    for (const sel of ['.sh-shield', '.sh-shield-open', '.sh-bulkbar', '.sh-sel-cb', '.cp-overlay', '.cp-opt[aria-selected="true"]', '.cp-trigger']) {
       assert.ok(css.includes(sel), sel);
     }
     for (const n of [1, 2]) assert.doesNotMatch(appSection(n).replace(/\/\*[\s\S]*?\*\//g, ''), /\.sh-|\.cp-/, 'section §' + n);

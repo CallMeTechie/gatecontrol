@@ -127,7 +127,7 @@ im Stil der bestehenden Endpunkte. Portkonflikte: HTTP 409 mit
 | GET | `/zones` | – | `{ zones, unassigned, gateways, pools }` |
 | PUT | `/domains/:id/gateway` | `{ kind, peer_id?, pool_id? }` | `{ zone }` |
 | PUT | `/domains/:id/defaults` | `{ default_external_enabled }` | `{ zone }` |
-| POST | `/domains/:id/hosts` | `HostInput` | `{ host }` (201) |
+| POST | `/domains/:id/hosts` | `HostInput` (+ `external_enabled?`) | `{ host }` (201) |
 | PUT | `/hosts/:id` | `{ description?, subdomain?, lan_host? }` | `{ host }` |
 | DELETE | `/hosts/:id` | – | `{}` (löscht alle Einträge) |
 | PUT | `/hosts/:id/toggle` | `{ enabled }` | `{ host }` |
@@ -212,11 +212,16 @@ Reine Funktionen, UMD wie `routes-view.js` (in Node testbar):
 
 ### `window.GCEntryEditor` (`public/js/entry-editor.js`)
 
-- `open(routeOrId, { lockTarget?: boolean, onSaved?: (route) => void, onDeleted?: (id) => void })`
-  – lädt `GET /api/routes/:id`, wenn eine ID übergeben wird.
-  `lockTarget: true` blendet Domain, Ziel-Art, Gateway, Zielhost und Routentyp
-  aus und zeigt stattdessen eine schreibgeschützte Zeile `fqdn → lan_host:port`.
-  Beim Speichern werden die gesperrten Felder unverändert mitgeschickt.
+- `open(routeOrId, { context?: { host, zone }, section?: string, tab?: string, focus?: string, onSaved?, onChanged?, onDeleted? })`
+  – lädt `GET /api/routes/:id`, wenn eine ID übergeben wird. `context` sind
+  Host und Zone aus `GET /zones` (Kopfzeile, Weg der Verbindung, Ziel der
+  Zone). `section` ist einer von `target`, `access`, `auth`, `security`,
+  `reliability`, `headers`, `branding`, `diagnose` (`tab` nimmt die alten
+  Namen `general`/`debug` an); `focus` ist die ID eines Blocks, der beim
+  Öffnen ins Bild rollt (z. B. `edit-waf-block`).
+  Das frühere `lockTarget` gibt es nicht mehr: Typ, Port außen, Protokoll und
+  Port am Ziel sind bei jedem Eintrag änderbar; Gateway/Peer kommen bei
+  Zonen-Hosts aus der Zone und werden nicht mitgeschickt (siehe „Redesign“).
 - `close()`.
 - Voraussetzungen auf der Seite: Partials `modals/route-edit.njk` und
   `modals/confirm.njk`, Skripte in dieser Reihenfolge:
@@ -225,8 +230,9 @@ Reine Funktionen, UMD wie `routes-view.js` (in Node testbar):
 
 ### Neue Seite
 
-`templates/{default,pro,aurora}/pages/zones.njk`, Skripte:
-`zones-view.js`, `domain-modal.js`, `zones-page.js` (nach denen des Editors).
+`templates/aurora/pages/zones.njk`, Skripte:
+`zones-view.js`, `tls-ui.js`, `hsts-ui.js`, `secopt-ui.js`, `waf-ui.js`,
+`domain-modal.js`, `host-dialogs.js`, `zones-page.js` (nach denen des Editors).
 DOM wird mit dem `el()`-Builder-Muster aufgebaut (innerHTML ist per Hook
 gesperrt). Globale Helfer aus `app.js`: `api.*`, `openModal`, `closeModal`,
 `showToast`, `btnLoading`, `btnReset`, `escapeHtml`.
@@ -290,9 +296,10 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
 
 - **Übersetzungen:** Die Seite reicht ihre Strings als JSON-Block `#zones-i18n`
   weiter und mischt sie in `GC.t`.
-- **Zusätzliche Globals:** `GCZonesPage` (`reload`, `openDomain`,
-  `openAddDomain`, `getData`), `GCDomainModal`, `GCZonesUI` (Dialog-, Menü- und
-  DOM-Helfer).
+- **Zusätzliche Globals:** `GCZonesPage` (`reload`, `openDomain`, `openHost`,
+  `openNewHost`, `openAddDomain`, `getData`, `flashHost`, `selection`),
+  `GCDomainModal` („Domain-Einstellungen“), `GCHostDialogs` („Host bearbeiten“,
+  „Neuer Host“, `openOptions`), `GCZonesUI` (Dialog-, Menü- und DOM-Helfer).
 - **`GCEntryEditor`:**
   - `open()` gibt ein Promise zurück.
   - Es gibt zusätzlich die Option `onChanged`. `onDeleted` wird angenommen, aber
@@ -303,6 +310,94 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   zutreffen.
 - **Mobil:** Der FAB „Route hinzufügen“ öffnet auf der Zonen-Seite „Domain
   hinzufügen“.
+
+## Redesign „Domains & Routen“ (Seite und Dialoge)
+
+### Seite
+
+- Kopf mit Zusammenfassung (Domains · Hosts · Weiterleitungen · deaktiviert;
+  ersetzt die frühere KPI-Leiste), „Domain hinzufügen“, „Neuer Host“.
+- Werkzeugleiste: Suche, Typ (Alle / HTTPS / TCP-UDP, `aria-pressed`),
+  Status-Auswahl (gestört, deaktiviert, extern, intern), „Prüfen“
+  (Risiko-Filter), Gateway-Auswahl ab zwei Gateways, alles zuklappen. Der
+  Zustand steht im URL-Hash (`filtersToHash`; Status füllt `state` bzw.
+  `access`).
+- Zonen-Karten: Kopf mit DNS-Tag, Gateway-Pille, Kennzahlen, „Host hinzufügen“
+  und „Domain-Einstellungen“. Je Host eine Zeile mit einer Zeile pro
+  Weiterleitung („Port außen → Ziel im LAN“ plus Hinweise), Zugriff + Schild,
+  Status, „Bearbeiten“ und ⋯-Menü; unten „Weiteren Host in … anlegen“.
+  Mehrfachauswahl/Sammelaktionen, „… N weitere Hosts“, Deep-Links
+  `?domain=&host=` und SSE-Aktualisierung bleiben.
+
+### „Host bearbeiten“ (`host-dialogs.js`)
+
+- Subdomain, Beschreibung, LAN-Adresse (Peer-Zonen: Ziel schreibgeschützt),
+  Host-Aktionen (Alias-Namen, öffnen, Scan-to-Folder, Override lösen).
+- Weiterleitungen inline änderbar (Typ, Port außen, Port am Ziel, Name, an/aus);
+  „Speichern“ schickt zuerst `PUT /hosts/:id`, dann je geänderter Weiterleitung
+  `PUT /api/routes/:id` (`V.hostSavePlan`). Gateway-Ziele bekommen
+  `target_port` **und** `target_lan_port`. Ein belegter Port zeigt den
+  Vorschlag des Servers. Löschen einer Weiterleitung und „Host löschen“ fragen
+  nach. Unberührte Entwürfe folgen neuen Daten (SSE, Eintrags-Editor).
+
+### „Neuer Host“
+
+- Schritte Adresse (Subdomain, Domain, www-Alias), Gerät im LAN (LAN-Suche,
+  Vorlagen), Weiterleitungen (mehrere Zeilen), Zugriff; daneben Vorschau und
+  Prüfungen (DNS, Gateway, Zertifikat, Listen-Port frei/belegt/reserviert).
+- Ein einziger `POST /domains/:id/hosts` mit `entries[]`; der Server prüft
+  Ports, Lizenz (alle Einträge zusammen) und legt alles in einem Zug an
+  (Rollback bei Fehlern). Neu: `external_enabled` (boolean) überschreibt den
+  Standard der Zone.
+
+### Eintrags-Editor
+
+- Typ-Chip, „Weg der Verbindung“ (`V.entryFlow`), Bereichsnavigation mit
+  Live-Zusammenfassung, Fußzeile mit Änderungsübersicht und Rückfrage vor dem
+  Verwerfen. Bereiche: Ziel & Ports, Zugriff, Anmeldung, Sicherheit,
+  Zuverlässigkeit, Header, Branding, Diagnose. HTTPS-Bereiche sind bei TCP/UDP
+  ausgegraut („nur HTTPS“).
+- Das Overlay hängt am `<body>` (z-index 1050 über den großen Dialogen 1000,
+  kleine Rückfragen 1100).
+- Header: Vorlagen als Karten (Sicherheits-Header, CORS, CSP, neu:
+  Reverse-Proxy-Infos, Nicht indexieren, Einbetten verbieten, Kein Caching,
+  Server-Kennung verbergen, WebSocket-freundlich), getrennte Request- und
+  Response-Listen; HSTS-Hinweis und CSP-Warnung bleiben.
+
+### API-Änderungen
+
+- **Typwechsel über `PUT /api/routes/:id`:** nach HTTP nur mit Domain
+  (`TYPE_DOMAIN_REQUIRED`) und wenn der Host noch keine andere HTTP-Weiterleitung
+  hat (409 `HOST_HAS_HTTP`); nach L4 nur mit Protokoll
+  (`TYPE_PROTOCOL_REQUIRED`) und Listen-Port (`TYPE_LISTEN_PORT_REQUIRED`).
+  Ein Typwechsel prüft die Lizenz des Zieltyps (403 mit `feature`). Ein
+  L4-Eintrag ohne Domain bleibt in seinem Host.
+- **Ports:** Bei Gateway-Zielen spiegeln sich `target_port` und
+  `target_lan_port`. Ein belegter TLS-loser Listen-Port antwortet mit 409
+  `BUNDLE_PORT_CONFLICT` und `conflict: { port, conflictRouteId, suggestedPort }`.
+- **Domain-Policy:** Namen innerhalb einer verifizierten Zone (auch
+  mehrstufige Basisdomains) sind zulässig.
+- **Eigene Header (`custom_headers`):**
+  - `-Name` entfernt einen Header: Request-Seite über `headers.request.delete`,
+    Response-Seite über einen eigenen, verzögerten `headers`-Handler
+    (`response.delete`, `deferred: true`), damit auch der `Server`-Header von
+    Caddy selbst wegfällt.
+  - Platzhalter: nur `{host}`, `{remote_host}` und `{scheme}` (Allow-List,
+    werden zu `{http.request.host}`, `{http.request.remote.host}`,
+    `{http.request.scheme}`). Jeder andere `{…}`-Ausdruck, CR/LF/NUL und mehr
+    als 50 Header je Seite werden mit 400 `CUSTOM_HEADER_INVALID` abgelehnt;
+    beim Erzeugen der Caddy-Konfiguration fallen ungültige Werte weg.
+  - „WebSocket-freundlich“ setzt nur `X-Accel-Buffering: no` – Caddy leitet
+    WebSockets ohnehin durch. „Reverse-Proxy-Infos“ nutzt `{scheme}` statt
+    eines festen `https`.
+
+### Entfernt
+
+- Domain-Dialog mit Host-Karten, KPI-Leiste und Filter-Chips; die
+  Schnelldialoge je Eintrag für HSTS/WAF (`GCHstsUI.entryTag`/`openEntryDialog`/
+  `defaultsControl`/`openApplyDialog`, `GCWafUI.entryTag`/`openEntryDialog`) und
+  der TLS-Profil-Select (`GCSecOptUI.tlsProfileControl`). HSTS und WAF werden im
+  Eintrags-Editor bzw. in „Domain-Einstellungen“ bearbeitet.
 
 ### Nebenbei behobene bestehende Fehler
 

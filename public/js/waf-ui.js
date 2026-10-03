@@ -628,39 +628,6 @@
     return d.promise;
   }
 
-  // ── Domain dialog: entry tag + small WAF dialog ──
-  // opts.onOpen(entry): open the entry editor (Security tab); without it the
-  // tag opens openEntryDialog (mode, paranoia, link to /waf?host=).
-  function entryTag(entry, opts) {
-    const state = wafState(entry);
-    if (!state) return null;
-    const o = opts || {};
-    const w = wafOf(entry);
-    return el('button', {
-      type: 'button', class: 'tag ' + TAG_CLASS[state] + ' zn-opt-tag wf-entry-tag wf-entry-' + state,
-      title: t('waf.tag_hint', { mode: t(modeKey(state)), paranoia: w.paranoia }), 'aria-haspopup': 'dialog',
-      dataset: { waf: state },
-      on: { click: (e) => { e.stopPropagation(); if (o.onOpen) o.onOpen(entry); else openEntryDialog(entry, o); } },
-    }, [icon('shield', 10), t(tagKey(state))]);
-  }
-  function openEntryDialog(entry, opts) {
-    const o = opts || {};
-    const w = wafOf(entry);
-    const host = str(entry && entry.domain);
-    const d = dialog({ title: t('waf.dialog_title', { host }), kind: 'entry' });
-    d.overlay.classList.add('wf-entry-dialog');
-    d.body.appendChild(el('div', { class: 'wf-facts' }, [
-      el('div', { class: 'wf-fact' }, [el('span', { class: 'wf-f-label', text: t('waf.mode_label') }), modeTag(w.mode)]),
-      el('div', { class: 'wf-fact' }, [el('span', { class: 'wf-f-label', text: t('waf.paranoia_label') }), el('span', { class: 'wf-fact-val', text: t(paranoiaKey(w.paranoia)) })]),
-    ]));
-    d.body.appendChild(hintEl(t(w.mode === 'block' ? 'waf.mode_block_hint' : 'waf.mode_detect_hint')));
-    if (w.mode === 'detect') d.body.appendChild(hintEl(t('waf.recommendation')));
-    d.foot.appendChild(el('a', { class: 'btn btn-ghost wf-events-link', href: pageHref(host) }, [icon('ext', 12), t('waf.events_link')]));
-    if (o.onEdit) d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-primary wf-btn-edit', on: { click: () => { d.close(null); o.onEdit(entry); } } }, [icon('pencil', 12), t('waf.dialog_edit')]));
-    else d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-secondary', text: t('common.close'), on: { click: () => d.close(null) } }));
-    return d;
-  }
-
   // ── Entry editor: exclusion list (#edit-waf-exclusions) ──
   // Works on the saved route immediately (POST/DELETE per item). Returns
   // { set(route), setDisabled(bool), get() }.
@@ -773,7 +740,6 @@
 
   return Object.assign(pure, {
     t, el, append, icon, busy, toast, errMsg, isNotFound, fmtTime, licensed, request, fetchStatus, fetchEvents,
-    addExclusion, removeExclusion, dialog, hintEl, modeTag, actionTag, openExclusionDialog, entryTag, openEntryDialog,
-    exclusionsEditor, engineHint,
+    addExclusion, removeExclusion, dialog, hintEl, modeTag, actionTag, openExclusionDialog, exclusionsEditor, engineHint,
   });
 });

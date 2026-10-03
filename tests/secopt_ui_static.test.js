@@ -69,10 +69,10 @@ const BODY_IDS = ['edit-body-limit-block', 'edit-route-max-body-mb'];
 
 describe('security options: entry editor markup per theme', () => {
   for (const theme of THEMES) {
-    it(`${theme}: backend TLS block sits on the general tab right under "Backend HTTPS"`, () => {
+    it(`${theme}: backend TLS block sits in "Ziel & Ports" right under "Backend HTTPS"`, () => {
       const src = editorTpl(theme);
       for (const id of BACKEND_IDS) assert.ok(hasId(src, id), `${theme}: #${id}`);
-      const general = panel(src, 'general');
+      const general = panel(src, 'target');
       const bh = general.indexOf('id="edit-route-backend-https"');
       const block = general.indexOf('id="edit-backend-tls-block"');
       assert.ok(bh > 0 && block > bh && block - bh < 700, 'directly below the Backend HTTPS toggle');
@@ -114,14 +114,20 @@ describe('security options: entry editor markup per theme', () => {
       assert.match(de['mtls.hint'], /^Zusätzlich zu den anderen Methoden; Browser ohne passendes Zertifikat sehen einen TLS-Fehler, keine Login-Seite/);
     });
 
-    it(`${theme}: header presets offer "Sicherheits-Header (modern)" + "CSP (nur eigene Quellen)" with a warning, HSTS hint kept`, () => {
+    it(`${theme}: header presets are cards (3 existing + 6 new) with the CSP warning and the HSTS hint kept`, () => {
       const src = editorTpl(theme);
       const hdr = panel(src, 'headers');
-      assert.match(hdr, /<option value="security">\{\{ t\('headers\.preset_security'\)/);
-      assert.match(hdr, /<option value="csp">\{\{ t\('headers\.preset_csp'\) \}\}<\/option>/);
+      assert.match(hdr, /<button type="button" class="rt-ee-preset" data-preset="\{\{ p\[0\] \}\}" aria-pressed="false">/);
+      for (const id of ['security', 'cors', 'csp']) assert.ok(hdr.includes("['" + id + "', t('headers.preset_" + id + "')"), id);
+      for (const id of ['proxy', 'noindex', 'noframe', 'nocache', 'hideserver', 'websocket']) {
+        assert.ok(hdr.includes("['" + id + "', t('entry_editor.preset_" + id + "'), t('entry_editor.preset_" + id + "_hint'), true]"), id + ' (new)');
+      }
       const warn = hdr.indexOf('id="edit-headers-csp-warning"');
       assert.ok(warn > hdr.indexOf('id="edit-headers-hsts-hint"') && warn < hdr.indexOf('id="edit-headers-request-list"'), 'warning between the HSTS hint and the lists');
       assert.match(hdr, /id="edit-headers-csp-warning"[^>]*hidden>\{\{ t\('headers\.preset_csp_warning'\) \}\}/);
+      // Separate request and response lists, each with its own add button.
+      assert.ok(hdr.indexOf('id="edit-headers-request-list"') < hdr.indexOf('id="edit-headers-req-add"'));
+      assert.ok(hdr.indexOf('id="edit-headers-response-list"') < hdr.indexOf('id="edit-headers-resp-add"'));
     });
 
     it(`${theme}: zones.njk renders the mTLS block licensed and locked`, () => {
@@ -197,29 +203,33 @@ describe('security options: script integration', () => {
   it('secopt-ui.js: contract API, no innerHTML, PUT /hosts/:id and /domains/:id/defaults', () => {
     const src = stripComments(read('public/js/secopt-ui.js'));
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
-    for (const f of ['aliasTags', 'aliasMenuItem', 'openAliasDialog', 'wwwCheckbox', 'entryTags', 'tlsProfileControl', 'confirmTlsProfile', 'applyPreset', 'pausedNotice']) assert.match(src, new RegExp('\\b' + f + '\\b'), f);
+    for (const f of ['aliasTags', 'aliasMenuItem', 'openAliasDialog', 'wwwCheckbox', 'entryTags', 'confirmTlsProfile', 'applyPreset', 'applyPresetSets', 'pausedNotice']) assert.match(src, new RegExp('\\b' + f + '\\b'), f);
+    assert.doesNotMatch(src, /\btlsProfileControl\b/, 'the head select of the former domain modal is gone');
     assert.match(src, /api\.put\('\/api\/v1\/hosts\/' \+ host\.id, \{ aliases: st\.labels\.slice\(\), alias_mode: st\.mode \}\)/);
-    assert.match(src, /api\.put\('\/api\/v1\/domains\/' \+ zone\.domain_id \+ '\/defaults', \{ tls_min_version: next \}\)/);
     assert.match(src, /tls\.state === 'paused'/, 'paused alias warning');
     assert.match(src, /zones-i18n/, 'reads the zones island');
-    for (const cls of ['so-alias-tag', 'so-alias-dialog', 'so-alias-input', 'so-alias-add-btn', 'so-alias-remove', 'so-btn-save', 'so-alias-mode-', 'so-www-cb', 'so-body-tag', 'so-mtls-tag', 'so-tls-min', 'so-btn-ok', 'so-field-error']) {
+    for (const cls of ['so-alias-tag', 'so-alias-dialog', 'so-alias-input', 'so-alias-add-btn', 'so-alias-remove', 'so-btn-save', 'so-alias-mode-', 'so-www-cb', 'so-body-tag', 'so-mtls-tag', 'so-btn-ok', 'so-field-error']) {
       assert.ok(src.includes(cls), cls);
     }
   });
 
-  it('domain-modal.js renders alias tags, the menu item, the www checkbox, the TLS select and the entry tags', () => {
+  it('the dialogs render alias tags, the alias menu item, the www checkbox, the TLS profile and the entry tags', () => {
+    const hd = stripComments(read('public/js/host-dialogs.js'));
+    const zp = stripComments(read('public/js/zones-page.js'));
     const dm = stripComments(read('public/js/domain-modal.js'));
-    assert.match(dm, /GCSecOptUI\.aliasTags\(host\)/);
-    assert.match(dm, /GCSecOptUI\.aliasMenuItem\(host, zone, \{ onChanged:/);
-    assert.match(dm, /noteAliasPaused\(res\)/);
-    assert.match(dm, /SO\.wwwCheckbox\(nh, zone\)/);
-    assert.match(dm, /GCSecOptUI\.wwwAliasFields\(nh, zone\)/);
-    assert.match(dm, /www: true/, 'checkbox pre-checked in a fresh draft');
-    assert.match(dm, /GCSecOptUI\.tlsProfileControl\(zone, \{ onChanged: afterMutation \}\)/);
-    assert.match(dm, /tlsMin \? ' so-panel5' : ''/);
-    assert.match(dm, /GCSecOptUI\.entryTags\(e\)/);
-    assert.ok(dm.indexOf('GCSecOptUI.entryTags(e)') > dm.indexOf('GCHstsUI.entryTag(e'), 'after the HSTS tag');
-    assert.match(dm, /window\.GCSecOptUI \?|window\.GCSecOptUI &&/, 'guards the absence of secopt-ui.js');
+    assert.match(hd, /GCSecOptUI\.aliasTags\(host\)/);
+    assert.match(hd, /SO\.aliasMenuItem\(host, zone, \{ onChanged:/);
+    assert.match(zp, /SO\.aliasMenuItem\(host, zone, \{ onChanged:/);
+    assert.match(hd, /SO\.pausedNotice\(res\)/);
+    assert.match(hd, /SO\.wwwCheckbox\(nh, zone, 'nh'\)/);
+    assert.match(hd, /SO\.wwwAliasFields\(/);
+    assert.match(hd, /www: true/, 'checkbox pre-checked in a fresh draft');
+    // TLS profile: segmented control in "Domain-Einstellungen", 1.3 asks first.
+    assert.match(dm, /so-tls-min/);
+    assert.match(dm, /GCSecOptUI\.confirmTlsProfile\(zone, '1\.3'\)/);
+    assert.match(dm, /body\.tls_min_version = /);
+    for (const src of [hd, zp]) assert.match(src, /GCSecOptUI\.entryTags\(e\)/);
+    assert.match(hd, /window\.GCSecOptUI \?|window\.GCSecOptUI &&/, 'guards the absence of secopt-ui.js');
   });
 
   it('zones-page.js shows "+ www", certificates.js "Alias von …", tls-ui.js/settings.js the CAA hint', () => {
@@ -248,7 +258,7 @@ describe('security options: script integration', () => {
     assert.match(ed, /if \(showSecoptError\(data\.code\)\) return;/);
     for (const code of ['BACKEND_CA_INVALID', 'BACKEND_SERVER_NAME_INVALID', 'MAX_BODY_INVALID', 'MTLS_CA_INVALID', 'MTLS_REQUIRES_HTTPS', 'MTLS_MODE_INVALID']) assert.ok(ed.includes(code + ':'), code);
     assert.match(ed, /GCSecOptUI/);
-    assert.match(ed, /SO\.applyPreset\(editHeadersResponse, val\)/);
+    assert.match(ed, /SO\.applyPresetSets\(editHeadersRequest, editHeadersResponse, val\)/);
     assert.match(ed, /cspWarn\.hidden = val !== 'csp'/);
     assert.doesNotMatch(ed, /X-XSS-Protection/, 'the old preset is gone');
     assert.doesNotMatch(ed, /Strict-Transport-Security/);
@@ -331,11 +341,10 @@ describe('security options: styles and CSP', () => {
     }
     for (const f of ['app.css §1 (base)']) {
       const css = appSection(1);
-      for (const cls of ['.zn-panel.so-panel5', '.tag.so-alias-tag', '.so-alias-more', '.so-alias-row', '.so-radios', '.tag.so-body-tag', '.tag.so-mtls-tag',
+      for (const cls of ['.tag.so-alias-tag', '.so-alias-more', '.so-alias-row', '.so-radios', '.tag.so-body-tag', '.tag.so-mtls-tag',
         '.so-editor-block.so-locked', 'textarea.so-pem', '.so-switch-row', 'input.so-num', '.so-warn', '.so-caa-none', '.so-caa-ok', '.so-caa-record', '.btn.so-copy', '.so-alias-of', '.so-www-check']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
-      assert.match(css, /@media \(max-width: 900px\) \{[^}]*\.zn-panel\.so-panel5, \.zn-panel\.hs-panel4\.so-panel5 \{ grid-template-columns: 1fr; \}/, `${f}: single column on phones`);
     }
   });
 
