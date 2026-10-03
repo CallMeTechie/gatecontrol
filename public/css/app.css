@@ -4307,6 +4307,212 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
   .au-code input { height: 46px; font-size: 18px; }
 }
 
+/* ----------------------------------------------------------------------------
+   PROFILE PAGE (pf-) — identity header, grouped sections, security rail
+   (templates/aurora/pages/profile.njk + partials two-factor-card / passkeys-card)
+   --------------------------------------------------------------------------- */
+/* Light-theme inks: the Papier teal/green/red are too light for text and
+   white-on-teal buttons (< 4.5:1), so the profile uses darker variants there. */
+[data-theme="dark"]{
+  --pf-teal-ink:var(--teal); --pf-green-ink:var(--green); --pf-red-ink:#ff8585; --pf-blue-ink:#9bb8ff;
+  --pf-faint:#7d8d9c; --pf-teal-bd:rgba(52,220,198,.30); --pf-input:#0d141c;
+  --pf-btn-bg:linear-gradient(145deg,var(--teal),var(--teal-dim));
+}
+[data-theme="light"]{
+  --pf-teal-ink:#0b7d70; --pf-green-ink:#0f7a41; --pf-red-ink:#b52f2f; --pf-blue-ink:#2f4cb0;
+  --pf-faint:var(--faint); --pf-teal-bd:rgba(14,155,138,.30); --pf-input:#f6f1e7;
+  --pf-btn-bg:#0b7d70;
+}
+
+.pf-page{max-width:1160px; margin:0 auto}
+.pf-page .page-header{align-items:flex-start}
+.pf-page [hidden]{display:none !important}
+.pf-page :focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.pf-page .form-input:focus-visible{outline:0}
+.pf-sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+
+/* buttons + inputs: 44 px touch targets, darker primary in Papier */
+.pf-page .pf-btn{min-height:44px; padding:0 16px; justify-content:center; border-color:var(--line-2)}
+.pf-page .btn-primary.pf-btn{background:var(--pf-btn-bg); border:0; padding:0 18px}
+.pf-page .btn-ghost.pf-btn{background:transparent}
+.pf-page .btn-danger.pf-btn{color:var(--pf-red-ink); border-color:var(--red-bd); background:var(--red-bg)}
+.pf-page .pf-btn:disabled{opacity:.55; cursor:not-allowed; transform:none}
+.pf-page .pf-input{height:44px; padding:0 13px; border-radius:11px; background:var(--pf-input); font-size:14px}
+.pf-page .pf-input:disabled{background:transparent; border-style:dashed; color:var(--muted); cursor:not-allowed}
+.pf-page .pf-input.mono{font-size:13.5px}
+
+/* inline messages (showMessage): in-flow here instead of a floating toast */
+.pf-msg{display:none}
+.pf-page .flash{position:static; opacity:1; transform:none; min-width:0; max-width:none; box-shadow:none; z-index:auto;
+  padding:10px 14px; border-radius:11px; font-size:13px; line-height:1.45}
+.pf-page .flash-success{color:var(--pf-green-ink)}
+.pf-page .flash-error{color:var(--pf-red-ink)}
+.pf-section > .flash{margin:0 24px 16px}
+.pf-block .flash{margin-top:12px}
+
+/* identity header */
+.pf-identity{display:flex; flex-wrap:wrap; align-items:center; gap:20px 28px; padding:22px 24px; margin-bottom:22px;
+  background:linear-gradient(180deg,var(--surface),var(--surface-2)); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow)}
+.pf-id-main{display:flex; align-items:center; gap:16px; flex:1 1 300px; min-width:0}
+.pf-avatar{width:68px; height:68px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center;
+  background:var(--teal-soft); border:1px solid var(--pf-teal-bd); color:var(--pf-teal-ink);
+  font-family:var(--font-display); font-weight:800; font-size:24px; letter-spacing:-.01em}
+.pf-id-text{min-width:0}
+.pf-id-name-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.pf-id-name{font-family:var(--font-display); font-weight:700; font-size:21px; letter-spacing:-.015em; overflow-wrap:anywhere}
+.pf-chip{padding:3px 9px; border-radius:999px; font-size:11.5px; font-weight:700; background:var(--chip); border:1px solid var(--line-2); color:var(--muted)}
+.pf-id-meta{margin-top:4px; color:var(--muted); font-size:13.5px; overflow-wrap:anywhere}
+.pf-mono{font-family:var(--font-mono); font-size:12.5px}
+.pf-stats{display:flex; flex-wrap:wrap; gap:10px}
+.pf-stat{min-width:128px; flex:1 0 auto; padding:11px 14px; border-radius:13px; background:var(--chip); border:1px solid var(--line)}
+.pf-stat-label{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--pf-faint)}
+.pf-stat-value{margin-top:4px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-weight:600; font-size:14px}
+.pf-stat-sub{font-weight:500; color:var(--muted)}
+.pf-dot{width:8px; height:8px; border-radius:50%; background:var(--pf-faint); flex:0 0 auto}
+.pf-stat-2fa{flex-wrap:nowrap}
+.pf-stat-2fa[data-on="1"]{color:var(--pf-green-ink)}
+.pf-stat-2fa[data-on="1"] .pf-dot{background:var(--green)}
+.pf-stat-2fa[data-on="0"]{color:var(--muted)}
+
+/* two columns: sections + rail (the rail drops below when there is no room) */
+.pf-layout{display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start}
+.pf-main{flex:999 1 560px; min-width:0; display:flex; flex-direction:column; gap:22px}
+.pf-rail{flex:1 1 280px; min-width:0; display:flex; flex-direction:column; gap:22px; position:sticky; top:0}
+
+/* sections */
+.pf-section{background:linear-gradient(180deg,var(--surface),var(--surface-2)); border:1px solid var(--line);
+  border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden}
+.pf-sec-head{display:flex; align-items:flex-start; gap:13px; padding:20px 24px; border-bottom:1px solid var(--line)}
+.pf-sec-ic{width:34px; height:34px; flex:0 0 auto; border-radius:10px; display:grid; place-items:center; background:var(--surface-3); color:var(--pf-teal-ink)}
+.pf-sec-ic svg{width:17px; height:17px}
+.pf-sec-title{margin:0; font-family:var(--font-display); font-weight:700; font-size:17px; letter-spacing:-.01em}
+.pf-sec-desc{margin:3px 0 0; color:var(--muted); font-size:13px}
+
+/* rows: label + hint left, control right, wrapping when narrow */
+.pf-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px 28px; padding:18px 24px}
+.pf-row + .pf-row{border-top:1px solid var(--line)}
+.pf-row.pf-row-flat{padding:0}
+.pf-row-label{flex:1 1 220px; min-width:0}
+.pf-row-control{flex:2 1 300px; min-width:0; position:relative}
+.pf-row-actions, .pf-actions{display:flex; flex-wrap:wrap; gap:10px}
+.pf-label{display:block; font-weight:600; font-size:14px; color:var(--text)}
+.pf-label-line{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.pf-label-line .pf-label{display:inline}
+.pf-hint{margin-top:3px; color:var(--muted); font-size:12.5px; line-height:1.5}
+.pf-hint-wide{max-width:62ch}
+.pf-hint-extra:not(:empty)::before{content:" · "}
+.pf-locked .pf-input{padding-right:40px}
+.pf-lock{position:absolute; right:14px; top:14px; width:16px; height:16px; color:var(--pf-faint); pointer-events:none}
+.pf-foot{display:flex; justify-content:flex-end; gap:10px; padding:14px 24px; background:var(--chip); border-top:1px solid var(--line)}
+
+/* blocks in "Sign-in & security" */
+.pf-block{padding:18px 24px}
+.pf-block ~ .pf-block{border-top:1px solid var(--line)}
+.pf-block:last-child{padding-bottom:22px}
+.pf-banner{margin-bottom:14px}
+.pf-note-inline{margin-top:10px}
+
+/* status pills (#tf-status, #pk-status) */
+.pf-page .tf-status{margin-left:0; display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
+  font-family:var(--font-body); font-size:12px; font-weight:700; letter-spacing:0; text-transform:none;
+  color:var(--muted); background:var(--chip); border:1px solid var(--line-2)}
+.pf-page .tf-status:empty{display:none}
+.pf-page .tf-status.tf-status-on{color:var(--pf-green-ink); background:var(--green-bg); border-color:var(--green-bd)}
+.pf-page .tf-status.tf-status-on::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--green)}
+.pf-page .tf-status.pf-pill-teal.tf-status-on{color:var(--pf-teal-ink); background:var(--teal-soft); border-color:var(--pf-teal-bd)}
+.pf-page .tf-status.pf-pill-teal::before{display:none}
+
+/* inline expanding forms (password, 2FA setup/codes/regenerate/disable, passkey add/remove) */
+.pf-expand{margin-top:16px; padding:16px; border-radius:14px; background:var(--chip); border:1px solid var(--line);
+  display:flex; flex-direction:column; gap:12px}
+.pf-expand-accent{border-color:var(--pf-teal-bd)}
+.pf-expand-danger{border-color:var(--red-bd)}
+.pf-fields{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px}
+.pf-field-label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:6px}
+.pf-expand-actions{display:flex; justify-content:flex-end; flex-wrap:wrap; gap:10px}
+.pf-inline{display:flex; flex-wrap:wrap; align-items:center; gap:10px}
+.pf-inline.pf-inline-end{align-items:flex-end}
+.pf-inline > .pf-input{flex:1 1 180px; min-width:0}
+.pf-inline > .pf-input.tf-code-input{flex:0 1 160px}
+.pf-grow{flex:1 1 220px; min-width:0}
+.pf-strong{color:var(--text); font-weight:600; font-size:13px}
+.pf-page .tf-hint{color:var(--muted); font-size:12.5px}
+.pf-page .tf-step{font-size:13.5px}
+.pf-page .tf-secret{background:var(--pf-input); border-color:var(--line-2)}
+
+/* passkey list */
+.pf-page .pk-list{margin-top:16px; gap:10px}
+.pf-page .pk-list:empty{display:none}
+.pf-page .pk-empty{margin-top:14px; color:var(--muted); font-size:13px}
+.pf-page .pk-item{display:block; padding:12px 12px 12px 14px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
+.pk-item-row{display:flex; align-items:center; gap:14px}
+.pk-item-ic{width:40px; height:40px; flex:0 0 auto; border-radius:11px; display:grid; place-items:center; background:var(--surface-3); color:var(--pf-teal-ink)}
+.pk-item-ic svg{width:19px; height:19px}
+.pf-page .pk-item-main{flex:1 1 auto; min-width:0}
+.pk-item-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.pf-page .pk-item-name{font-size:14px; font-weight:600}
+.pf-page .pk-item-meta{margin-top:2px; font-family:var(--font-body); font-size:12.5px; color:var(--muted)}
+.pk-chip-synced{padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; color:var(--pf-blue-ink); background:var(--blue-bg); border:1px solid var(--blue-bd)}
+.pk-item-remove{width:44px; height:44px; flex:0 0 auto; border-radius:11px; border:1px solid transparent; background:transparent;
+  color:var(--muted); display:grid; place-items:center; cursor:pointer; transition:.15s}
+.pk-item-remove svg{width:17px; height:17px}
+.pk-item-remove:hover{color:var(--pf-red-ink); border-color:var(--red-bd); background:var(--red-bg)}
+.pk-item .pf-expand{margin-top:12px}
+
+/* segmented controls (language, colour scheme) */
+.pf-seg{display:inline-flex; padding:4px; gap:4px; border-radius:13px; background:var(--pf-input); border:1px solid var(--line)}
+.pf-seg-btn{min-height:40px; padding:0 16px; border-radius:9px; border:0; cursor:pointer; background:transparent; color:var(--muted);
+  font-family:var(--font-body); font-weight:600; font-size:13.5px; transition:background .15s, color .15s}
+.pf-seg-btn:hover{color:var(--text)}
+.pf-seg-btn[aria-pressed="true"]{background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.18)}
+
+/* right rail */
+.pf-status, .pf-note{border-radius:var(--r); padding:20px 22px}
+.pf-status{background:linear-gradient(180deg,var(--surface),var(--surface-2)); border:1px solid var(--line); box-shadow:var(--shadow)}
+.pf-note{border:1px dashed var(--line-2); padding:18px 22px}
+.pf-rail-title{margin:0; font-family:var(--font-display); font-weight:700; font-size:16px}
+.pf-note .pf-rail-title{font-size:15px}
+.pf-note-text{margin:8px 0 0; color:var(--muted); font-size:13px; line-height:1.55}
+.pf-score{display:flex; align-items:baseline; gap:8px; margin-top:12px}
+.pf-score-num{font-family:var(--font-display); font-weight:800; font-size:34px; letter-spacing:-.03em; color:var(--pf-teal-ink); line-height:1.1}
+.pf-score-label{color:var(--muted); font-size:13px}
+.pf-bar{height:6px; border-radius:999px; background:var(--surface-3); margin-top:10px; overflow:hidden}
+.pf-bar-fill{height:100%; width:0; border-radius:999px; background:var(--pf-btn-bg); transition:width .3s ease}
+.pf-status[data-score="1"] .pf-bar-fill{width:33.34%}
+.pf-status[data-score="2"] .pf-bar-fill{width:66.67%}
+.pf-status[data-score="3"] .pf-bar-fill{width:100%}
+.pf-checks{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:12px}
+.pf-check{display:flex; gap:11px; align-items:flex-start}
+.pf-check-ic{width:22px; height:22px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; margin-top:1px;
+  background:var(--green-bg); color:var(--pf-green-ink); border:1px solid var(--green-bd)}
+.pf-check-ic svg{width:12px; height:12px}
+.pf-check:not([data-done="1"]) .pf-check-ic{background:transparent; border:1.5px dashed var(--line-2); color:transparent}
+.pf-check-label{font-weight:600; font-size:13.5px}
+.pf-check:not([data-done="1"]) .pf-check-label{color:var(--muted)}
+.pf-check-hint{color:var(--muted); font-size:12.5px}
+.pf-check:not([data-done="0"]) .pf-when-off, .pf-check:not([data-done="1"]) .pf-when-on{display:none}
+
+@media (max-width:900px){
+  .pf-rail{position:static}
+}
+@media (max-width:600px){
+  .pf-identity{padding:18px 16px; gap:16px}
+  .pf-avatar{width:56px; height:56px; font-size:20px}
+  .pf-stat{flex:1 1 140px; min-width:0}
+  .pf-sec-head{padding:16px}
+  .pf-row{padding:16px}
+  .pf-block{padding:16px}
+  .pf-section > .flash{margin:0 16px 14px}
+  .pf-foot{padding:12px 16px}
+  .pf-row-control, .pf-row-actions, .pf-seg{flex:1 1 100%}
+  .pf-row-actions > .pf-actions{flex:1 1 100%}
+  .pf-row-actions .pf-btn, .pf-foot .pf-btn, .pf-expand-actions .pf-btn, .pf-actions .pf-btn{flex:1 1 auto}
+  .pf-seg-btn{flex:1 1 0; min-height:44px}
+  .pf-inline > .pf-input, .pf-inline > .pf-input.tf-code-input{flex:1 1 100%; max-width:none}
+  .pf-inline > .pf-btn{flex:1 1 auto}
+  .pf-status, .pf-note{padding:18px 16px}
+}
+
 
 /* ============================================================================
  * §3 Security page: licence hint (lh-), security check (sc-), WAF assistant (wfa-) (was public/css/security.css)

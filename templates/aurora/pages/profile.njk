@@ -1,6 +1,9 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
+{% set pfName = (user.display_name if user and user.display_name else (user.username if user else '')) %}
+{% set pfTfOn = user and user.totp_enabled %}
+<div class="pf-page" id="pf-page">
 <div class="page-header">
   <div>
     <div class="page-eyebrow">{{ t('nav.account') }}</div>
@@ -9,79 +12,213 @@
   </div>
 </div>
 
-<div class="grid">
-  {# ─── Profile ──────────────────────────────────────── #}
-  <div class="card span6">
-    <div class="card-title">
-      <span class="ic">
-        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </span>
-      <span>{{ t('settings.profile') }}</span>
-    </div>
-    <div style="margin-top:14px">
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.display_name') }}</label>
-        <input class="form-input" type="text" id="settings-display-name" placeholder="Administrator" maxlength="64">
+{# ─── Identity header ─────────────────────────────────── #}
+<section class="pf-identity" aria-label="{{ t('profile.overview') }}">
+  <div class="pf-id-main">
+    <div class="pf-avatar" id="pf-avatar" aria-hidden="true">{{ profileInitials }}</div>
+    <div class="pf-id-text">
+      <div class="pf-id-name-row">
+        <span class="pf-id-name" id="pf-id-name">{{ pfName }}</span>
+        <span class="pf-chip">{{ t('users.role_admin') if user and user.role == 'admin' else t('users.role_user') }}</span>
       </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.username') }}</label>
-        <input class="form-input mono" type="text" id="settings-username" disabled>
-      </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.email') }}</label>
-        <input class="form-input" type="text" id="settings-email" placeholder="admin@example.com" maxlength="255">
+      <div class="pf-id-meta">
+        <span class="pf-mono">{{ user.username if user }}</span><span id="pf-id-email-wrap" hidden> · <span id="pf-id-email"></span></span>
       </div>
     </div>
-    <div id="profile-message" style="display:none"></div>
-    <button class="btn btn-primary btn-block" id="btn-save-profile" style="margin-top:14px">
-      {{ t('common.save') }}
-    </button>
   </div>
-
-  {# ─── Security & Display ──────────────────────────── #}
-  <div class="card span6">
-    <div class="card-title">
-      <span class="ic">
-        <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2"/></svg>
-      </span>
-      <span>{{ t('profile.security_display') }}</span>
+  <div class="pf-stats">
+    <div class="pf-stat">
+      <div class="pf-stat-label">{{ t('profile.stat_2fa') }}</div>
+      <div class="pf-stat-value pf-stat-2fa" id="pf-stat-2fa" data-on="{{ '1' if pfTfOn else '0' }}">
+        <span class="pf-dot" aria-hidden="true"></span><span id="pf-stat-2fa-text">{{ t('two_fa.status_on') if pfTfOn else t('two_fa.status_off') }}</span>
+      </div>
     </div>
-    <div style="margin-top:14px">
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.current_password') }}</label>
-        <input class="form-input" type="password" id="settings-current-pw" autocomplete="current-password">
+    <div class="pf-stat">
+      <div class="pf-stat-label">{{ t('passkey.title') }}</div>
+      <div class="pf-stat-value" id="pf-stat-pk">…</div>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-label">{{ t('profile.stat_session') }}</div>
+      <div class="pf-stat-value">
+        <span id="pf-session-time" data-at="{{ sessionAuthAt or '' }}"></span>
+        <span class="pf-stat-sub" id="pf-session-method">{% if sessionAuthMethod %}{{ t('profile.session_' + sessionAuthMethod) }}{% else %}—{% endif %}</span>
       </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.new_password') }}</label>
-        <input class="form-input" type="password" id="settings-new-pw" autocomplete="new-password">
+    </div>
+  </div>
+</section>
+
+<div class="pf-layout">
+<div class="pf-main">
+
+  {# ─── Personal details ──────────────────────────────── #}
+  <section class="pf-section" aria-labelledby="pf-sec-personal">
+    <div class="pf-sec-head">
+      <span class="pf-sec-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+      <div>
+        <h2 class="pf-sec-title" id="pf-sec-personal">{{ t('profile.personal_title') }}</h2>
+        <p class="pf-sec-desc">{{ t('profile.personal_desc') }}</p>
       </div>
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.confirm_password') }}</label>
-        <input class="form-input" type="password" id="settings-confirm-pw" autocomplete="new-password">
+    </div>
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <label class="pf-label" for="settings-display-name">{{ t('settings.display_name') }}</label>
+        <div class="pf-hint">{{ t('profile.display_name_hint') }}</div>
       </div>
-      <div id="password-message" style="display:none"></div>
-      <button class="btn btn-primary btn-block" id="btn-change-password" style="margin-top:6px;margin-bottom:20px">
-        {{ t('settings.change_password') }}
-      </button>
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">{{ t('settings.language') }}</label>
-        <div class="toggle-group" id="language-buttons">
-          {% for lang in availableLanguages %}
-          <button class="toggle-btn {{ 'on' if lang == language else '' }}" data-lang="{{ lang }}">
-            {% if lang == 'de' %}Deutsch{% elif lang == 'en' %}English{% else %}{{ lang }}{% endif %}
-          </button>
-          {% endfor %}
+      <div class="pf-row-control">
+        <input class="form-input pf-input" type="text" id="settings-display-name" placeholder="Administrator" maxlength="64" autocomplete="name">
+      </div>
+    </div>
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <label class="pf-label" for="settings-username">{{ t('settings.username') }}</label>
+        <div class="pf-hint">{{ t('profile.username_hint') }}</div>
+      </div>
+      <div class="pf-row-control pf-locked">
+        <input class="form-input pf-input mono" type="text" id="settings-username" value="{{ user.username if user }}" disabled>
+        <svg class="pf-lock" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      </div>
+    </div>
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <label class="pf-label" for="settings-email">{{ t('settings.email') }}</label>
+        <div class="pf-hint">{{ t('profile.email_hint') }}</div>
+      </div>
+      <div class="pf-row-control">
+        <input class="form-input pf-input" type="email" id="settings-email" placeholder="admin@example.com" maxlength="255" autocomplete="email">
+      </div>
+    </div>
+    <div class="pf-msg" id="profile-message" role="status"></div>
+    <div class="pf-foot">
+      <button type="button" class="btn btn-primary pf-btn" id="btn-save-profile">{{ t('profile.save_changes') }}</button>
+    </div>
+  </section>
+
+  {# ─── Sign-in & security ────────────────────────────── #}
+  <section class="pf-section" aria-labelledby="pf-sec-security">
+    <div class="pf-sec-head">
+      <span class="pf-sec-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+      <div>
+        <h2 class="pf-sec-title" id="pf-sec-security">{{ t('profile.security_title') }}</h2>
+        <p class="pf-sec-desc">{{ t('profile.security_desc') }}</p>
+      </div>
+    </div>
+
+    {# Password — the form opens inline #}
+    <div class="pf-block" id="pf-password">
+      <div class="pf-row pf-row-flat">
+        <div class="pf-row-label">
+          <div class="pf-label" id="pf-lbl-password">{{ t('profile.password') }}</div>
+          <div class="pf-hint">{{ t('profile.password_hint') }}</div>
         </div>
-        <span class="form-hint">{{ t('settings.language_hint') }}</span>
+        <div class="pf-row-actions">
+          <button type="button" class="btn pf-btn" id="pf-pw-open" aria-expanded="false" aria-controls="pf-pw-form">{{ t('settings.change_password') }}</button>
+        </div>
+      </div>
+      <div class="pf-expand" id="pf-pw-form" role="group" aria-labelledby="pf-lbl-password" hidden>
+        <div class="pf-fields">
+          <div>
+            <label class="pf-field-label" for="settings-current-pw">{{ t('settings.current_password') }}</label>
+            <input class="form-input pf-input" type="password" id="settings-current-pw" autocomplete="current-password">
+          </div>
+          <div>
+            <label class="pf-field-label" for="settings-new-pw">{{ t('settings.new_password') }}</label>
+            <input class="form-input pf-input" type="password" id="settings-new-pw" autocomplete="new-password">
+          </div>
+          <div>
+            <label class="pf-field-label" for="settings-confirm-pw">{{ t('settings.confirm_password') }}</label>
+            <input class="form-input pf-input" type="password" id="settings-confirm-pw" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="pf-expand-actions">
+          <button type="button" class="btn btn-ghost pf-btn" id="pf-pw-cancel">{{ t('common.cancel') }}</button>
+          <button type="button" class="btn btn-primary pf-btn" id="btn-change-password">{{ t('profile.password_save') }}</button>
+        </div>
+      </div>
+      <div class="pf-msg" id="password-message" role="status"></div>
+    </div>
+
+    <span id="two-factor" class="anchor-target" aria-hidden="true"></span>
+    {% include theme + "/partials/two-factor-card.njk" %}
+
+    <span id="passkeys" class="anchor-target" aria-hidden="true"></span>
+    {% include theme + "/partials/passkeys-card.njk" %}
+  </section>
+
+  {# ─── Appearance ────────────────────────────────────── #}
+  <section class="pf-section" aria-labelledby="pf-sec-display">
+    <div class="pf-sec-head">
+      <span class="pf-sec-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+      <div>
+        <h2 class="pf-sec-title" id="pf-sec-display">{{ t('profile.display_title') }}</h2>
+        <p class="pf-sec-desc">{{ t('profile.display_desc') }}</p>
       </div>
     </div>
-  </div>
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <div class="pf-label" id="pf-lbl-lang">{{ t('settings.language') }}</div>
+        <div class="pf-hint">{{ t('settings.language_hint') }}</div>
+      </div>
+      <div class="pf-seg" id="language-buttons" role="group" aria-labelledby="pf-lbl-lang">
+        {% for lang in availableLanguages %}
+        <button type="button" class="pf-seg-btn" data-lang="{{ lang }}" aria-pressed="{{ 'true' if lang == language else 'false' }}">{% if lang == 'de' %}Deutsch{% elif lang == 'en' %}English{% else %}{{ lang }}{% endif %}</button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <div class="pf-label" id="pf-lbl-scheme">{{ t('profile.scheme') }}</div>
+        <div class="pf-hint">{{ t('profile.scheme_hint') }}</div>
+      </div>
+      <div class="pf-seg" id="pf-scheme-buttons" role="group" aria-labelledby="pf-lbl-scheme">
+        <button type="button" class="pf-seg-btn" data-scheme="dark" aria-pressed="false">{{ t('profile.scheme_dark') }}</button>
+        <button type="button" class="pf-seg-btn" data-scheme="light" aria-pressed="false">{{ t('profile.scheme_light') }}</button>
+      </div>
+    </div>
+  </section>
+</div>
 
-  <span id="two-factor" class="anchor-target" aria-hidden="true"></span>
-  {% include theme + "/partials/two-factor-card.njk" %}
-
-  <span id="passkeys" class="anchor-target" aria-hidden="true"></span>
-  {% include theme + "/partials/passkeys-card.njk" %}
+{# ─── Right rail: security status (filled and kept live by profile.js; the
+     passkey count comes from the passkeys API, so the score waits for it) ─── #}
+<aside class="pf-rail" aria-labelledby="pf-status-title">
+  <section class="pf-status" id="pf-status" data-score="0">
+    <h2 class="pf-rail-title" id="pf-status-title">{{ t('profile.status_title') }}</h2>
+    <div class="pf-score">
+      <span class="pf-score-num"><span id="pf-score">–</span>/3</span>
+      <span class="pf-score-label">{{ t('profile.status_active') }}</span>
+    </div>
+    <div class="pf-bar" aria-hidden="true"><div class="pf-bar-fill"></div></div>
+    <ul class="pf-checks">
+      <li class="pf-check" data-done="1">
+        <span class="pf-check-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+        <div>
+          <div class="pf-check-label">{{ t('profile.check_password') }}<span class="pf-sr"> ({{ t('profile.check_done') }})</span></div>
+          <div class="pf-check-hint">{{ t('profile.check_password_hint') }}</div>
+        </div>
+      </li>
+      <li class="pf-check" id="pf-check-2fa" data-done="{{ '1' if pfTfOn else '0' }}">
+        <span class="pf-check-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+        <div>
+          <div class="pf-check-label">{{ t('profile.check_2fa') }}<span class="pf-sr pf-when-on"> ({{ t('profile.check_done') }})</span><span class="pf-sr pf-when-off"> ({{ t('profile.check_open') }})</span></div>
+          <div class="pf-check-hint pf-when-on" id="pf-check-2fa-hint">{{ t('profile.check_2fa_on') }}</div>
+          <div class="pf-check-hint pf-when-off">{{ t('profile.check_2fa_off') }}</div>
+        </div>
+      </li>
+      <li class="pf-check" id="pf-check-pk" data-done="">
+        <span class="pf-check-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+        <div>
+          <div class="pf-check-label">{{ t('profile.check_passkey') }}<span class="pf-sr pf-when-on"> ({{ t('profile.check_done') }})</span><span class="pf-sr pf-when-off"> ({{ t('profile.check_open') }})</span></div>
+          <div class="pf-check-hint pf-when-on">{{ t('profile.check_passkey_on') }}</div>
+          <div class="pf-check-hint pf-when-off">{{ t('profile.check_passkey_off') }}</div>
+        </div>
+      </li>
+    </ul>
+  </section>
+  <section class="pf-note" aria-labelledby="pf-note-title">
+    <h2 class="pf-rail-title" id="pf-note-title">{{ t('profile.note_title') }}</h2>
+    <p class="pf-note-text">{{ t('profile.note_text') }}</p>
+  </section>
+</aside>
+</div>
 </div>
 {% endblock %}
 

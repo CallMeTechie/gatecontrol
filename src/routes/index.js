@@ -200,6 +200,32 @@ router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
+// Profile page locals: identity header (initials, e-mail) and security rail.
+// The session tile shows the CURRENT session — how and when it was
+// established (establishSession in routes/auth.js) — not a "last login".
+function profileInitials(name) {
+  const words = String(name || '').trim().split(/[\s._-]+/).filter(Boolean);
+  if (!words.length) return '?';
+  const chars = words.length > 1
+    ? [Array.from(words[0])[0], Array.from(words[1])[0]]
+    : Array.from(words[0]).slice(0, 2);
+  return chars.join('').toUpperCase();
+}
+
+// No database access here: the page handler is not rate-limited, so the
+// e-mail, passkey count and recovery-code count come from the existing
+// (rate-limited) APIs that profile.js / profile-passkeys.js / profile-2fa.js
+// already call; `user` (initials, 2FA flag) is loaded by injectLocals.
+function profileLocals(req, res) {
+  const session = req.session || {};
+  const user = res.locals.user || {};
+  return {
+    profileInitials: profileInitials(user.display_name || user.username),
+    sessionAuthMethod: ['password', 'totp', 'passkey'].includes(session.authMethod) ? session.authMethod : null,
+    sessionAuthAt: Number(session.authAt) || null,
+  };
+}
+
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
@@ -260,6 +286,7 @@ pages.forEach(({ path, template, nav, titleKey }) => {
     // without a second factor — the 2FA card opens its setup right away.
     if (template === 'profile') {
       extraLocals.setup2fa = req.query && req.query.setup2fa === '1';
+      Object.assign(extraLocals, profileLocals(req, res));
     }
 
     if (template === 'gateway-pools') {
