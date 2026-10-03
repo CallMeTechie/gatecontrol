@@ -15,6 +15,7 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 
 const modalJs = read('public', 'js', 'domain-modal.js');
+const hostJs = read('public', 'js', 'host-dialogs.js');
 const viewJs = read('public', 'js', 'zones-view.js');
 const deRaw = read('src', 'i18n', 'de.json');
 const enRaw = read('src', 'i18n', 'en.json');
@@ -69,11 +70,11 @@ describe('zones.discovery i18n', () => {
 });
 
 describe('domain-modal.js: discovery wiring', () => {
-  it('renders the button/hint in renderNewHostCard and resets capability in open()', () => {
-    const card = modalJs.slice(modalJs.indexOf('function renderNewHostCard('), modalJs.indexOf('async function openTemplateMenu('));
-    assert.match(card, /renderDiscoveryControl\(zone\)/, 'card calls renderDiscoveryControl');
-    const open = modalJs.slice(modalJs.indexOf('function open(domainId, opts)'), modalJs.indexOf('function close()'));
-    assert.match(open, /discReset\(\)/, 'open() resets the discovery cache');
+  it('"Neuer Host" renders the discovery control next to the LAN field and resets the capability cache on open', () => {
+    assert.match(hostJs, /UI\.discovery\.control\(zone, adoptDevice, /, 'step 2 renders the control');
+    const open = hostJs.slice(hostJs.indexOf('function openNewHost('), hostJs.indexOf('function renderNew('));
+    assert.match(open, /UI\.discovery\.reset\(\)/, 'openNewHost() resets the discovery cache');
+    assert.match(modalJs, /UI\.discovery = \{ reset: discReset, control: renderDiscoveryControl/);
   });
   it('uses the contract endpoints and the SSE event', () => {
     assert.match(modalJs, /api\.get\('\/api\/v1\/gateways'\)/);
@@ -88,9 +89,11 @@ describe('domain-modal.js: discovery wiring', () => {
     assert.match(modalJs, /href: '\/gateways'/, 'hint links to /gateways');
   });
   it('never submits after adopting and never uses innerHTML', () => {
-    const adopt = modalJs.slice(modalJs.indexOf('function adoptDiscoveredDevice('));
-    assert.doesNotMatch(adopt, /submitNewHost|api\.post/);
-    assert.match(adopt, /data-zn-key="nhsub"/, 'focuses the subdomain field');
+    const adopt = hostJs.slice(hostJs.indexOf('function adoptDevice('), hostJs.indexOf('\n  }\n', hostJs.indexOf('function adoptDevice(')));
+    assert.ok(adopt.length > 100, 'adoptDevice found');
+    assert.doesNotMatch(adopt, /submitNew|api\.post/);
+    assert.match(adopt, /data-rt-key="nh-sub"/, 'focuses the subdomain field');
+    assert.doesNotMatch(hostJs, /\.innerHTML\b/);
     assert.doesNotMatch(modalJs, /\.innerHTML\b/);
   });
   it('DOM hooks used by the E2E scenario exist', () => {

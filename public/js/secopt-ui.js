@@ -112,6 +112,25 @@
     csp: [
       { name: 'Content-Security-Policy', value: "default-src 'self'; frame-ancestors 'none'" },
     ],
+    // Presets of the redesigned editor (docs/feature-domain-zones.md,
+    // "Header-Vorlagen"). A name '-Name' removes that header.
+    noindex: [{ name: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+    noframe: [{ name: 'X-Frame-Options', value: 'DENY' }],
+    nocache: [{ name: 'Cache-Control', value: 'no-store' }],
+    hideserver: [{ name: '-Server', value: '' }, { name: '-X-Powered-By', value: '' }],
+    // Caddy proxies WebSockets on its own; this only tells proxies/CDNs in
+    // front not to buffer the long-running responses.
+    websocket: [{ name: 'X-Accel-Buffering', value: 'no' }],
+    proxy: [],
+  };
+  // Request headers of a preset (sent to the device in the LAN). {host},
+  // {remote_host}, {scheme} are the only placeholders the server accepts.
+  const HEADER_PRESETS_REQUEST = {
+    proxy: [
+      { name: 'X-Forwarded-Proto', value: '{scheme}' },
+      { name: 'X-Forwarded-Host', value: '{host}' },
+      { name: 'X-Real-IP', value: '{remote_host}' },
+    ],
   };
   // Presets that need a visible warning in the editor.
   const PRESET_WARNINGS = { csp: 'headers.preset_csp_warning' };
@@ -122,9 +141,29 @@
   // New header list with the preset applied: a header of the same name
   // (case-insensitive) is replaced instead of duplicated. Never mutates.
   function applyPreset(list, name) {
-    const add = presetHeaders(name);
-    const names = add.map((h) => h.name.toLowerCase());
-    return (list || []).filter((h) => h && names.indexOf(str(h.name).trim().toLowerCase()) < 0).concat(add);
+    return mergeHeaders(list, presetHeaders(name));
+  }
+  // Header name without a leading '-' (a removal and a set of the same
+  // header replace each other).
+  function bareName(n) { return str(n).trim().replace(/^-/, '').toLowerCase(); }
+  function mergeHeaders(list, add) {
+    const names = add.map((h) => bareName(h.name));
+    return (list || []).filter((h) => h && names.indexOf(bareName(h.name)) < 0).concat(add);
+  }
+  // Both lists with a preset applied → { request, response }. Never mutates.
+  function applyPresetSets(request, response, name) {
+    const req = (HEADER_PRESETS_REQUEST[str(name)] || []).map((h) => ({ name: h.name, value: h.value }));
+    return { request: mergeHeaders(request, req), response: mergeHeaders(response, presetHeaders(name)) };
+  }
+  // A preset counts as applied when every header of it is in the lists.
+  function presetApplied(request, response, name) {
+    const want = [].concat(
+      (HEADER_PRESETS_REQUEST[str(name)] || []).map((h) => ['request', h]),
+      presetHeaders(name).map((h) => ['response', h]),
+    );
+    if (!want.length) return false;
+    return want.every(([side, h]) => ((side === 'request' ? request : response) || [])
+      .some((x) => x && str(x.name).trim().toLowerCase() === h.name.toLowerCase() && (h.name.charAt(0) === '-' || str(x.value) === h.value)));
   }
 
   // ── Body limit (§D) ──
@@ -179,9 +218,9 @@
   function aliasCheckKey(err) { return err ? 'alias.err.' + err : null; }
 
   const pure = {
-    ALIAS_MAX, ALIAS_MODES, BODY_MAX_MB, TLS_VERSIONS, HEADER_PRESETS, PRESET_WARNINGS, ERROR_CODES, ERROR_KEYS,
+    ALIAS_MAX, ALIAS_MODES, BODY_MAX_MB, TLS_VERSIONS, HEADER_PRESETS, HEADER_PRESETS_REQUEST, PRESET_WARNINGS, ERROR_CODES, ERROR_KEYS,
     normalizeAlias, validAliasLabel, aliasLabelError, aliasFqdn, aliasModeOf, hostAliases, aliasTagText, aliasSummary,
-    wwwTaken, hostHasHttp, draftHasHttp, isApexSub, wwwAliasFields, presetHeaders, applyPreset, parseBodyLimit, bodyLimitOf, bodyLimitLabel,
+    wwwTaken, hostHasHttp, draftHasHttp, isApexSub, wwwAliasFields, presetHeaders, applyPreset, applyPresetSets, presetApplied, parseBodyLimit, bodyLimitOf, bodyLimitLabel,
     backendTlsApplies, mtlsActive, pemCertCount, zoneTlsMin, errorKey, aliasCheckKey,
   };
   if (!win || !win.document) return pure;
@@ -498,34 +537,6 @@
     return out;
   }
 
-  // ── TLS profile: select in the domain dialog head (PUT defaults) ──
-  function tlsProfileControl(zone, opts) {
-    const o = opts || {};
-    const current = zoneTlsMin(zone);
-    const sel = el('select', { class: 'form-select zn-select so-tls-min', 'aria-label': t('tls_profile.label'), 'data-zn-key': 'tlsmin' },
-      TLS_VERSIONS.map((v) => el('option', { value: v, text: t(v === '1.3' ? 'tls_profile.v13' : 'tls_profile.v12') })));
-    sel.value = current;
-    sel.addEventListener('change', async () => {
-      const next = sel.value;
-      if (next === current) return;
-      const ok = await confirmTlsProfile(zone, next);
-      if (!ok) { sel.value = current; return; }
-      sel.disabled = true;
-      try {
-        await call(win.api.put('/api/v1/domains/' + zone.domain_id + '/defaults', { tls_min_version: next }));
-        toast(t('tls_profile.saved', { domain: str(zone.domain), version: next }), 'success');
-        if (o.onChanged) o.onChanged(next);
-      } catch (e) {
-        sel.value = current;
-        toast(errMsg(e), 'error');
-      } finally { sel.disabled = false; }
-    });
-    return el('div', { class: 'zn-field so-tls-profile', dataset: { tlsMin: current } }, [
-      el('span', { class: 'form-label', text: t('tls_profile.label') }),
-      sel,
-      el('span', { class: 'form-hint so-tls-hint', text: t('tls_profile.hint') }),
-    ]);
-  }
   function confirmTlsProfile(zone, next) {
     const d = dialog({ title: t('tls_profile.confirm_title'), kind: 'tls-profile' });
     const up = next === '1.3';
@@ -540,6 +551,6 @@
 
   return Object.assign(pure, {
     t, el, icon, dialog, errMsg, errorText, aliasTags, aliasMenuItem, openAliasDialog, pausedNotice,
-    wwwCheckbox, entryTags, tlsProfileControl, confirmTlsProfile,
+    wwwCheckbox, entryTags, confirmTlsProfile,
   });
 });

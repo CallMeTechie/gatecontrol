@@ -399,18 +399,19 @@ describe('aurora theme — routes page (domain zones)', () => {
     assert.match(res.text, /id="zn-zones"/, '#zn-zones present');
   });
 
-  it('renders Aurora page-header, toolbar, KPI strip and zone contract IDs on /routes', async () => {
+  it('renders Aurora page-header, toolbar, summary line and zone contract IDs on /routes', async () => {
     selectAurora();
     const res = await agent.get('/routes').expect(200);
-    assert.match(res.text, /class="page-header zn-page-header"/, '.page-header present');
+    assert.match(res.text, /class="page-header zn-page-header rt-page-head"/, '.page-header present');
     assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
-    assert.match(res.text, /class="page-actions"/, '.page-actions present');
-    assert.match(res.text, /class="toolbar zn-toolbar"/, '.toolbar present');
-    assert.match(res.text, /class="search-box zn-search"/, '.search-box present');
-    for (const id of ['zn-kpis', 'zn-summary', 'zn-add-domain', 'zn-search', 'zn-chips', 'zn-gateway-filter',
-      'zn-collapse-all', 'zn-domain-modal']) {
+    assert.match(res.text, /class="page-actions rt-page-actions"/, '.page-actions present');
+    assert.match(res.text, /class="toolbar zn-toolbar rt-toolbar"/, '.toolbar present');
+    assert.match(res.text, /class="rt-search search-box zn-search"/, '.search-box present');
+    for (const id of ['zn-summary', 'zn-add-domain', 'zn-new-host', 'zn-search', 'zn-type', 'zn-status', 'zn-risk',
+      'zn-gateway-filter', 'zn-collapse-all', 'zn-zones', 'zn-bulkbar']) {
       assert.match(res.text, new RegExp('id="' + id + '"'), '#' + id + ' present');
     }
+    assert.doesNotMatch(res.text, /id="zn-kpis"|id="zn-domain-modal"|id="zn-chips"/, 'KPI strip, chips and the old domain modal are gone');
   });
 
   it('Aurora routes page has no limit-badge section and no legacy list markup', async () => {
@@ -427,11 +428,11 @@ describe('aurora theme — routes page (domain zones)', () => {
     const res = await agent.get('/routes').expect(200);
     assert.match(res.text, /id="modal-edit-route"/, '#modal-edit-route present (via include)');
     assert.match(res.text, /id="modal-confirm"/, '#modal-confirm present (via include)');
-    assert.match(res.text, /data-edit-tab="general"/, 'data-edit-tab="general" present');
-    assert.match(res.text, /data-edit-tab="auth"/, 'data-edit-tab="auth" present');
-    assert.match(res.text, /data-edit-tab="security"/, 'data-edit-tab="security" present');
-    assert.match(res.text, /class="edit-route-panel"/, '.edit-route-panel present');
-    assert.match(res.text, /data-panel="general"/, 'data-panel="general" present');
+    for (const sec of ['target', 'access', 'auth', 'security', 'reliability', 'headers', 'branding', 'diagnose']) {
+      assert.match(res.text, new RegExp('data-ee-section="' + sec + '"'), 'nav button ' + sec);
+      assert.match(res.text, new RegExp('data-panel="' + sec + '"'), 'panel ' + sec);
+    }
+    assert.match(res.text, /class="rt-ee-panel edit-route-panel/, '.edit-route-panel present');
     assert.match(res.text, /id="btn-edit-route-submit"/, '#btn-edit-route-submit present');
   });
 

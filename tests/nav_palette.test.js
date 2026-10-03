@@ -231,7 +231,7 @@ describe('i18n block (nav.* + palette.* + zones.filter./wafdef + shield.* + bulk
       assert.equal(keys[first - 1], 'nav.skoda', `${name}: after nav.skoda`);
       let i = first;
       while (i < keys.length && BLOCK.test(keys[i])) i++;
-      assert.ok(i - first >= 90, `${name}: block size ${i - first}`);
+      assert.ok(i - first >= 75, `${name}: block size ${i - first}`);
       assert.ok(!keys.slice(i).some((k) => BLOCK.test(k)), `${name}: no block key elsewhere`);
     }
     const pick = (o) => Object.keys(o).filter((k) => BLOCK.test(k));

@@ -117,3 +117,50 @@ describe('caddyCustomHeaders: applyResponseHeaders', () => {
     assert.deepEqual(rp.headers.response.set, { 'X-Frame-Options': ['DENY'] });
   });
 });
+
+describe('caddyCustomHeaders: removals and placeholders (header presets)', () => {
+  const H = require('../src/services/caddyCustomHeaders');
+
+  it("'-Name' entries are removals, never set as a literal header", () => {
+    assert.equal(H.buildHeaderSetMap([{ name: '-Server', value: 'x' }]), null);
+    assert.deepEqual(H.buildHeaderDeleteList([{ name: '-Server', value: '' }, { name: '-x-powered-by' }, { name: '-SERVER' }]), ['Server', 'x-powered-by']);
+    assert.equal(H.buildHeaderDeleteList([{ name: '--bad' }, { name: '-' }, { name: 'X-Set', value: '1' }]), null);
+  });
+
+  it('request handler carries set and delete', () => {
+    assert.deepEqual(H.buildRequestHeadersHandler([{ name: 'X-A', value: '1' }, { name: '-X-B', value: '' }]), {
+      handler: 'headers', request: { set: { 'X-A': ['1'] }, delete: ['X-B'] },
+    });
+    assert.deepEqual(H.buildRequestHeadersHandler([{ name: '-X-B' }]), { handler: 'headers', request: { delete: ['X-B'] } });
+  });
+
+  it('response removals become a deferred headers handler', () => {
+    assert.deepEqual(H.buildResponseDeleteHandler([{ name: '-Server' }, { name: 'X-Keep', value: 'v' }]), {
+      handler: 'headers', response: { delete: ['Server'], deferred: true },
+    });
+    assert.equal(H.buildResponseDeleteHandler([{ name: 'X-Keep', value: 'v' }]), null);
+  });
+
+  it('buildCustomHeaderHandlers: request handler first, then the response removals', () => {
+    const list = H.buildCustomHeaderHandlers({ request: [{ name: 'X-R', value: 'r' }], response: [{ name: '-Server' }] });
+    assert.equal(list.length, 2);
+    assert.ok(list[0].request);
+    assert.ok(list[1].response.deferred);
+    assert.deepEqual(H.buildCustomHeaderHandlers(null), []);
+    assert.deepEqual(H.buildCustomHeaderHandlers({ response: [{ name: 'X-A', value: 'a' }] }), [], 'response set rides on reverse_proxy');
+  });
+
+  it('allowed placeholders are expanded to their JSON form, others drop the header', () => {
+    assert.deepEqual(H.buildHeaderSetMap([
+      { name: 'X-Forwarded-Host', value: '{host}' },
+      { name: 'X-Real-IP', value: '{remote_host}' },
+      { name: 'X-Proto', value: '{scheme}' },
+      { name: 'X-Leak', value: '{env.GC_SECRET}' },
+      { name: 'X-Mix', value: '{host}{file./etc/passwd}' },
+    ]), {
+      'X-Forwarded-Host': ['{http.request.host}'],
+      'X-Real-IP': ['{http.request.remote.host}'],
+      'X-Proto': ['{http.request.scheme}'],
+    });
+  });
+});

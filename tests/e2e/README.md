@@ -10,7 +10,8 @@ seed.js                 Migrationen + Fixtures (Zone mit 3 Hosts, 2 Gateways,
 run.js                  Playwright-Treiber: meldet an, fährt die Szenarien,
                         schreibt Screenshots, druckt einen JSON-Bericht
 scenarios/01-login.js   Anmeldung, falsches Passwort, TOTP-Zweitfaktor
-scenarios/02-zones.js   /routes: Zonenliste, Suche, Domain-Dialog, 400 px
+scenarios/02-zones.js   /routes: Zonen, Suche/Typ-Filter, Domain-Einstellungen,
+                        Host bearbeiten (Ziel-Port inline + Editor), Neuer Host, 400 px
 scenarios/03-security.js /security: Prüfungen gegen die API, hell/dunkel, 400 px
 scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
                         entfernen (virtueller Authenticator über CDP)

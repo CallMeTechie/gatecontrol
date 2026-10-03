@@ -45,14 +45,14 @@ function render(theme, lang = 'de', features = { http_routes: -1, l4_routes: -1 
 
 const SCRIPT_ORDER = [
   '/js/vendor/qrcode.min.js', '/js/routes-view.js', '/js/routeDomain.js', '/js/entry-editor.js',
-  '/js/zones-view.js', '/js/domain-modal.js', '/js/zones-page.js',
+  '/js/zones-view.js', '/js/domain-modal.js', '/js/host-dialogs.js', '/js/zones-page.js',
 ];
 
 const REQUIRED_IDS = [
-  'zn-summary', 'zn-add-domain', 'zn-search', 'zn-chips', 'zn-chip-all-count',
-  'zn-gateway-filter', 'zn-collapse-all', 'zn-zones', 'zn-domain-modal', 'zn-dm-title', 'zn-dm-domain',
-  'zn-dm-tags', 'zn-dm-counts', 'zn-dm-body', 'zn-dm-sync', 'zones-i18n',
+  'zn-summary', 'zn-add-domain', 'zn-new-host', 'zn-search', 'zn-type', 'zn-status', 'zn-risk',
+  'zn-gateway-filter', 'zn-collapse-all', 'zn-zones', 'zn-bulkbar', 'zones-i18n',
 ];
+const SCRIPTS = ['domain-modal.js', 'host-dialogs.js', 'zones-page.js', 'entry-editor.js'];
 
 function island(html) {
   const m = /<script type="application\/json" id="zones-i18n"[^>]*>([\s\S]*?)<\/script>/.exec(html);
@@ -61,14 +61,18 @@ function island(html) {
 }
 
 // Keys the scripts look up: every quoted 'prefix.key' literal plus the ones
-// built at runtime (template ids, '_one' plural variants).
+// built at runtime (template ids, notes, checks, '_one' plural variants).
+// Literals ending in '_' or '.' are prefixes of runtime keys, not keys.
 function jsKeys() {
-  const src = ['domain-modal.js', 'zones-page.js']
-    .map((f) => fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8')).join('\n');
+  const src = SCRIPTS.map((f) => fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8')).join('\n');
   const keys = new Set();
-  for (const m of src.matchAll(/'((?:zones|host|entry|template|common)\.[a-z0-9_.]+)'/g)) keys.add(m[1]);
+  for (const m of src.matchAll(/'((?:zones|host|entry|template|common|entry_editor)\.[a-z0-9_.]+)'/g)) {
+    if (!/[._]$/.test(m[1]) && de[m[1]] !== undefined) keys.add(m[1]);
+  }
   for (const id of ['printer', 'nas', 'proxmox', 'ssh']) { keys.add('template.' + id); keys.add('template.' + id + '_hint'); }
+  for (const k of Object.keys(de)) if (/^(zones\.note_|host\.check_|entry_editor\.listen_)/.test(k)) keys.add(k);
   for (const m of src.matchAll(/\btn\('([a-z_.]+)'/g)) if (de[m[1] + '_one'] !== undefined) keys.add(m[1] + '_one');
+  for (const k of Array.from(keys)) if (de[k + '_one'] !== undefined) keys.add(k + '_one');
   return Array.from(keys).sort();
 }
 
@@ -79,17 +83,15 @@ function templateKeys(theme) {
 
 describe('zones.njk renders in every theme', () => {
   for (const theme of THEMES) {
-    it(`${theme}: compiles, includes route-edit + confirm partials, keeps the modal below them`, () => {
+    it(`${theme}: compiles, includes route-edit + confirm partials, no KPI strip or old domain modal`, () => {
       const html = render(theme);
       assert.match(html, /id="modal-edit-route"/, 'route-edit.njk included');
       assert.match(html, /id="modal-confirm"/, 'confirm.njk included');
-      const dm = html.indexOf('id="zn-domain-modal"');
-      assert.ok(dm > 0 && dm < html.indexOf('id="modal-edit-route"') && dm < html.indexOf('id="modal-confirm"'),
-        'domain modal precedes the editor/confirm overlays (they must stack above it)');
       for (const id of REQUIRED_IDS) assert.ok(html.includes(`id="${id}"`), `#${id} rendered`);
-      assert.match(html, /id="zn-kpis"/);
+      assert.doesNotMatch(html, /id="zn-kpis"|id="zn-domain-modal"|id="zn-chips"/, 'KPI strip, filter chips and the old domain modal are gone');
       assert.match(html, /class="app"/, 'aurora shell');
       assert.doesNotMatch(html, /id="routes-list"|id="btn-add-route"|zn-legacy-link|\/routes\/legacy/, 'no legacy page markup');
+      assert.match(html, /id="zn-zones"[^>]*data-l4-blocked=/, 'blocked L4 ports for the new-host checks');
     });
 
     it(`${theme}: loads the scripts in contract order with cache busting`, () => {
@@ -114,10 +116,16 @@ describe('zones.njk renders in every theme', () => {
       }
     });
 
-    it(`${theme}: filter chips match the filterZones dimensions`, () => {
+    it(`${theme}: toolbar controls match the filterZones dimensions`, () => {
       const html = render(theme);
-      const chips = Array.from(html.matchAll(/data-dim="([a-z]+)"(?: data-value="([a-z0-9]+)")?/g)).map((m) => m[1] + ':' + (m[2] || ''));
-      assert.deepEqual(chips, ['all:', 'type:http', 'type:l4', 'access:external', 'access:internal', 'state:disabled', 'state:problem']);
+      const types = Array.from(html.matchAll(/class="rt-seg-btn" data-type="([a-z0-9]*)" aria-pressed="(true|false)"/g)).map((m) => m[1] + ':' + m[2]);
+      assert.deepEqual(types, [':true', 'http:false', 'l4:false']);
+      const opts = (id) => {
+        const at = html.indexOf('<select id="' + id + '"');
+        return Array.from(html.slice(at, html.indexOf('</select>', at)).matchAll(/<option value="([a-z]*)"/g)).map((m) => m[1]);
+      };
+      assert.deepEqual(opts('zn-status'), ['', 'problem', 'disabled', 'external', 'internal']);
+      assert.deepEqual(opts('zn-risk'), ['', 'nowaf', 'unprotected', 'nohsts']);
     });
   }
 
@@ -168,18 +176,19 @@ describe('zones i18n keys', () => {
 
 describe('zones scripts and styles', () => {
   it('build DOM without innerHTML/outerHTML/insertAdjacentHTML', () => {
-    for (const f of ['zones-view.js', 'domain-modal.js', 'zones-page.js']) {
+    for (const f of ['zones-view.js', 'domain-modal.js', 'host-dialogs.js', 'zones-page.js']) {
       const src = fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''); // comments may name the API
       assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/, f);
     }
   });
 
-  it('call GCEntryEditor.open with lockTarget and guard its absence', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'public/js/domain-modal.js'), 'utf8');
-    assert.match(src, /GCEntryEditor/);
-    assert.match(src, /lockTarget: true/);
+  it('open GCEntryEditor without lockTarget, with the host context, and guard its absence', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'public/js/host-dialogs.js'), 'utf8');
+    assert.match(src, /window\.GCEntryEditor/);
+    assert.match(src, /context: \{ host, zone \}/);
     assert.match(src, /entry\.editor_missing/);
+    for (const f of SCRIPTS) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8').replace(/\/\/.*$/gm, ''), /lockTarget: true/, f);
   });
 
   // Wave 2 §W2: one stylesheet — §1 of app.css is the former pro.css, §2 the

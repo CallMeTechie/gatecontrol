@@ -637,6 +637,47 @@ function resolveBackendFingerprint(data, current, { route_type, target_kind, bac
 
 const LABEL_MAX = 64;
 
+// ─── Custom headers (docs/feature-domain-zones.md, "Header-Vorlagen") ───
+// { request: [{ name, value }], response: [...] }. A name '-Name' removes that
+// header (value ignored). Values may only carry the allowed request
+// placeholders ({host}, {remote_host}, {scheme}); anything else in braces, a
+// CR/LF or an over-long value is rejected here instead of being dropped
+// silently when the Caddy config is built.
+const CUSTOM_HEADERS_MAX = 50;
+
+function headerError(message) {
+  return codedError('CUSTOM_HEADER_INVALID', message);
+}
+
+/** Throws CUSTOM_HEADER_INVALID (400); null / undefined / '' pass. */
+function validateCustomHeaders(value) {
+  if (value === undefined || value === null || value === '') return;
+  const { isValidHeaderName, isValidHeaderValue, isHeaderDeletion } = require('./caddyValidators');
+  let obj = value;
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch { throw headerError('custom_headers must be JSON'); }
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw headerError('custom_headers must be an object');
+  for (const side of ['request', 'response']) {
+    const list = obj[side];
+    if (list === undefined || list === null) continue;
+    if (!Array.isArray(list)) throw headerError(`custom_headers.${side} must be an array`);
+    if (list.length > CUSTOM_HEADERS_MAX) throw headerError(`At most ${CUSTOM_HEADERS_MAX} ${side} headers`);
+    for (const h of list) {
+      if (!h || typeof h !== 'object' || typeof h.name !== 'string') throw headerError(`Invalid ${side} header`);
+      const name = h.name.trim();
+      if (name.startsWith('-')) {
+        if (!isHeaderDeletion(name)) throw headerError(`Invalid header name "${name.slice(0, 64)}"`);
+        continue;
+      }
+      if (!isValidHeaderName(name)) throw headerError(`Invalid header name "${name.slice(0, 64)}"`);
+      const v = h.value == null ? '' : h.value;
+      if (typeof v !== 'string' || v.trim() === '') throw headerError(`Header ${name} needs a value`);
+      if (!isValidHeaderValue(v)) throw headerError(`Invalid value for header ${name}`);
+    }
+  }
+}
+
 /** Normalised label or null; throws LABEL_INVALID (400) when too long. */
 function normalizeLabel(value) {
   if (value === undefined || value === null) return null;
@@ -654,6 +695,8 @@ function onDemandFlag(v) {
 }
 
 module.exports = {
+  validateCustomHeaders,
+  CUSTOM_HEADERS_MAX,
   normalizeLabel,
   onDemandFlag,
   LABEL_MAX,

@@ -161,15 +161,14 @@ describe('zones-view: entryChip', () => {
 });
 
 describe('zones-view: targets and status', () => {
-  it('gateway hosts show lan_host, peer hosts the peer IP', () => {
+  it('entry lines: gateway entries point at lan_host, peer entries at the peer IP', () => {
     const z = allZones();
     const claude = byDomain(z, 'marcbackes.net').hosts.find((h) => h.subdomain === 'claude');
-    assert.equal(V.hostTarget(claude), '192.168.2.86');
-    assert.equal(V.hostSinglePort(claude), null);
+    for (const e of claude.entries.filter((x) => !x.rdp_owned)) assert.match(V.entryLine(e).to, /^192\.168\.2\.86 : \d+$/);
     const apex = byDomain(z, 'marcbackes.net').hosts[0];
-    assert.equal(V.hostSinglePort(apex), '8092');
+    assert.match(V.entryLine(apex.entries[0]).to, / : 8092$/);
     const game = z[z.length - 1].hosts[0];
-    assert.equal(V.hostTarget(game), '10.8.0.12');
+    assert.match(V.entryLine(game.entries[0]).to, /^10\.8\.0\.12 : /);
   });
   it('hostHealth prefers backend health, derives otherwise', () => {
     const drucker = zonesFixture().zones[0].hosts.find((h) => h.subdomain === 'drucker');

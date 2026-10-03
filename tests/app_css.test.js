@@ -20,8 +20,8 @@ const APP = read('public/css/app.css');
 
 // The merged sections, in order. The comment banner of each carries "§<n> ".
 const SECTIONS = [
-  [1, 'pro.css', ['.btn-primary', '.zn-panel', '.field-saving', '.gw-fleet']],
-  [2, 'aurora.css', ['body.au-page', '.aurora-routes-kpi', '--teal']],
+  [1, 'pro.css', ['.btn-primary', '.zn-menu', '.field-saving', '.gw-fleet']],
+  [2, 'aurora.css', ['body.au-page', '.aurora-routes-kpi', '--teal', '.rt-zone', '.rt-ee-nav']],
   [3, 'security.css', ['.lh-', '.sc-check', '.wfa-']],
   [4, 'nav.css', ['.sh-shield', '.cp-']],
   [5, 'ops.css', ['.op-']],

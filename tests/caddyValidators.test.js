@@ -83,3 +83,16 @@ test('sanitizeStickyCookieName: alnum+_+- ok, else default gc_sticky', () => {
   assert.equal(sanitizeStickyCookieName(''), 'gc_sticky');
   assert.equal(sanitizeStickyCookieName(null), 'gc_sticky');
 });
+
+test('header removals and the placeholder allow-list (header presets)', () => {
+  const v = require('../src/services/caddyValidators');
+  assert.equal(v.isHeaderDeletion('-Server'), true);
+  assert.equal(v.isHeaderDeletion('-X-Powered-By'), true);
+  for (const bad of ['Server', '-', '--x', '-x y', '-x$', null, '-' + 'a'.repeat(257)]) assert.equal(v.isHeaderDeletion(bad), false, String(bad));
+  assert.equal(v.isValidHeaderValue('{host}'), true);
+  assert.equal(v.isValidHeaderValue('for={remote_host};proto={scheme}'), true);
+  assert.equal(v.isValidHeaderValue('{env.X}'), false);
+  assert.equal(v.isValidHeaderValue('{ho{host}st}'), false, 'nested trick stays rejected');
+  assert.equal(v.isValidHeaderValue('a\r\nb'), false, 'no header splitting');
+  assert.equal(v.expandHeaderValue('{host} {remote_host} {scheme}'), '{http.request.host} {http.request.remote.host} {http.request.scheme}');
+});

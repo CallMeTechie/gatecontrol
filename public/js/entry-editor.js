@@ -1,12 +1,22 @@
 'use strict';
 
-// ─── GateControl entry editor ("Route bearbeiten") ─────────────────────────
+// ─── GateControl entry editor ("Weiterleitung bearbeiten") ─────────────────
 // Standalone module behind the edit-route modal (partials/modals/route-edit.njk).
-// Used by the domain-zones page (zones-page.js / domain-modal.js). Peers,
-// users and domains are fetched here.
+// Used by the domain-zones page (host-dialogs.js "Optionen", zones-page.js
+// shield). Peers, users and domains are fetched here.
 //
-//   window.GCEntryEditor.open(routeOrId, { lockTarget, onSaved, onDeleted, onChanged, tab, focus })
+//   window.GCEntryEditor.open(routeOrId, { context: { host, zone }, onSaved,
+//                                         onDeleted, onChanged, section, focus })
 //   window.GCEntryEditor.close()
+//
+// Layout (docs/feature-domain-zones.md, "Eintrags-Editor"): header with type
+// chip, "Weg der Verbindung", a section nav with one-line live summaries,
+// sections Ziel & Ports / Zugriff / Anmeldung / Sicherheit / Zuverlässigkeit /
+// Header / Branding / Diagnose and a footer with the change summary. Target,
+// ports, protocol and type are editable for every entry (the former lockTarget
+// mode is gone): inside a domain zone the gateway comes from the zone, the
+// LAN address from the host (changed via PUT /hosts/:id), and the port is sent
+// as target_port AND target_lan_port for gateway targets.
 //
 // Page requirements: app.js globals (api, openModal, closeModal, showError,
 // hideError, showFieldErrors, clearFieldErrors, btnLoading, btnReset,
@@ -151,25 +161,6 @@
     input.classList.remove('gc-port-error');
     if (errEl) errEl.style.display = 'none';
     return true;
-  }
-
-  // ─── L4 listen port auto-fill ───────────────────────────
-  function setupPortAutofill(portId, listenPortId, errId) {
-    var port = byId(portId);
-    if (port) {
-      port.addEventListener('input', function () {
-        var listenPort = byId(listenPortId);
-        if (listenPort && !listenPort.dataset.userModified) {
-          listenPort.value = this.value;
-          checkListenPortBlocked(listenPortId, errId);
-        }
-      });
-    }
-    var lp = byId(listenPortId);
-    if (lp) {
-      lp.addEventListener('input', function () { this.dataset.userModified = 'true'; checkListenPortBlocked(listenPortId, errId); });
-      lp.addEventListener('change', function () { checkListenPortBlocked(listenPortId, errId); });
-    }
   }
 
   // ─── DNS check ──────────────────────────────────────────
@@ -572,7 +563,10 @@
   var state = {
     route: null,        // route object the modal was opened with
     opts: {},
-    lockTarget: false,
+    ctx: null,          // { host, zone } of the zones page (null outside a zone)
+    zoneManaged: false, // target comes from the zone (gateway/pool/peer)
+    section: 'target',
+    snapshot: null,     // form values right after open (change summary)
     peers: [],          // GET /api/routes/peers
     users: null,        // GET /api/v1/users (cached per page)
     seq: 0,             // open() generation — stale async work checks it
@@ -948,7 +942,7 @@
     if (authIsShareManaged) setRouteAuthShareManaged(true);
   }
 
-  // ═══ General tab: domain, target, type, lockTarget ═════════════════════════
+  // ═══ Ziel & Ports: domain, target, type ════════════════════════════════════
 
   function setupDomainRegistry() {
     var sel = byId('edit-route-base-domain');
@@ -1054,6 +1048,8 @@
         if (assembled) { prevEl.textContent = assembled; prevEl.style.display = ''; }
         else prevEl.style.display = 'none';
       }
+      // The select was filled after open(): its value is the starting point.
+      rebaseSnapshot(['edit-route-base-domain']);
     })();
   }
 
@@ -1069,110 +1065,207 @@
     return base ? base.value.trim() : '';
   }
 
-  // Containers hidden in lockTarget mode (target and domain come from the zone).
-  function lockableBlocks() {
+  // ─── Context: host + zone of the entry (zones page) ─────
+  // From opts.context, else looked up in the page data by bundle_id.
+  function resolveContext(route, opts) {
+    var c = opts && opts.context;
+    if (c && c.host) return c;
+    var V = window.GCZonesView;
+    var data = window.GCZonesPage && window.GCZonesPage.getData && window.GCZonesPage.getData();
+    if (!V || !data || route.bundle_id == null) return null;
+    var zones = V.pageZones(data);
+    for (var i = 0; i < zones.length; i++) {
+      var h = (zones[i].hosts || []).find(function (x) { return x.id === route.bundle_id; });
+      if (h) return { host: h, zone: zones[i] };
+    }
+    return null;
+  }
+  function ctxZone() { return state.ctx && state.ctx.zone && !state.ctx.zone.unassigned ? state.ctx.zone : null; }
+  function ctxHost() { return state.ctx && state.ctx.host ? state.ctx.host : null; }
+  // Target of a zone-managed entry: the zone's gateway / pool / peer.
+  function zoneTargetOf() {
+    var z = ctxZone();
+    var h = ctxHost();
+    if (!z || !h || h.gateway_override || !z.gateway || !z.gateway.kind) return null;
+    return z.gateway;
+  }
+  function targetKindNow() {
+    if (state.zoneManaged) {
+      var g = zoneTargetOf();
+      return g && g.kind === 'peer' ? 'peer' : 'gateway';
+    }
     var tk = byId('edit-route-target-kind');
-    var rt = byId('edit-route-type-group');
-    return [
-      tk ? tk.closest('.form-group') : null,
-      rt ? rt.closest('.form-group') : null,
-    ];
+    return tk ? (tk.value || 'peer') : ((state.route && state.route.target_kind) || 'peer');
+  }
+  function hostFqdn() {
+    var h = ctxHost();
+    if (h && h.fqdn) return h.fqdn;
+    return (state.route && state.route.domain) || '';
+  }
+  function l4Allowed() {
+    var f = (window.GC && GC.features) || {};
+    if (f.l4_routes === 0) return false;
+    if (targetKindNow() === 'gateway' && f.gateway_tcp_routing === false) return false;
+    return true;
+  }
+  // Another HTTP entry in the same host → no HTTPS for this one.
+  function hostHasOtherHttp() {
+    var h = ctxHost();
+    if (!h || !state.route) return false;
+    return (h.entries || []).some(function (e) { return e.id !== state.route.id && e.route_type !== 'l4' && !e.rdp_owned; });
   }
 
+  // ─── Type (HTTPS / TCP / UDP) ─────────────────────────────
+  function kindNow() {
+    var type = (byId('edit-route-type') || {}).value || 'http';
+    if (type !== 'l4') return 'http';
+    return (byId('edit-l4-protocol') || {}).value === 'udp' ? 'udp' : 'tcp';
+  }
+  function setKind(kind) {
+    var rt = byId('edit-route-type');
+    var proto = byId('edit-l4-protocol');
+    if (rt) rt.value = kind === 'http' ? 'http' : 'l4';
+    if (proto && kind !== 'http') proto.value = kind;
+    var group = byId('ee-kind-group');
+    if (group) {
+      group.querySelectorAll('[data-value]').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.value === kind ? 'true' : 'false');
+      });
+    }
+  }
+  function syncKindButtons() {
+    var group = byId('ee-kind-group');
+    if (!group) return;
+    var otherHttp = hostHasOtherHttp();
+    var l4ok = l4Allowed();
+    var cur = kindNow();
+    var hint = byId('ee-kind-hint');
+    group.querySelectorAll('[data-value]').forEach(function (b) {
+      var v = b.dataset.value;
+      b.disabled = v !== cur && (v === 'http' ? otherHttp : !l4ok);
+      b.title = b.disabled ? (v === 'http' ? T('entry.err_http_taken', '') : T('entry.l4_locked', '')) : '';
+    });
+    if (hint) hint.textContent = otherHttp && cur !== 'http' ? T('entry.err_http_taken', '') : '';
+  }
+
+  // ─── Target block: zone-managed vs. own target ────────────
   function updateTargetKindVisibility() {
-    var tkSelect = byId('edit-route-target-kind');
-    var peerFields = byId('edit-route-peer-fields');
-    var gwFields = byId('edit-route-gateway-fields');
-    var kind = tkSelect ? tkSelect.value : 'peer';
-    if (peerFields) peerFields.style.display = (!state.lockTarget && kind === 'peer') ? 'block' : 'none';
-    if (gwFields) gwFields.style.display = (!state.lockTarget && kind === 'gateway') ? 'block' : 'none';
+    var zoneTarget = state.zoneManaged ? zoneTargetOf() : null;
+    var kind = targetKindNow();
+    showIf('ee-row-kind', !state.zoneManaged);
+    showIf('ee-zone-target', !!zoneTarget);
+    showIf('edit-route-gateway-fields', !state.zoneManaged && kind === 'gateway');
+    showIf('edit-route-peer-fields', !state.zoneManaged && kind === 'peer');
+    var editPeerSelect = byId('edit-route-peer');
+    showIf('edit-route-ip-group', !state.zoneManaged && kind === 'peer' && !(editPeerSelect && editPeerSelect.value));
+    showIf('ee-row-lan', kind === 'gateway');
+    showIf('ee-row-wol', kind === 'gateway');
+    if (zoneTarget) {
+      var lbl = byId('ee-zone-target-label');
+      if (lbl) lbl.textContent = zoneTarget.kind === 'peer' ? T('entry_editor.peer', 'VPN peer') : zoneTarget.kind === 'pool' ? T('entry_editor.pool', 'Gateway pool') : T('entry_editor.gateway', 'Gateway');
+      var name = byId('ee-zone-target-name');
+      if (name) {
+        name.textContent = '';
+        name.appendChild(el('span', { class: 'rt-strong', text: zoneTarget.name || zoneTarget.ip || ('#' + (zoneTarget.peer_id || zoneTarget.pool_id)) }));
+        name.appendChild(el('span', { class: 'rt-muted', text: ' · ' + T('entry_editor.from_domain', 'from the domain') }));
+      }
+    }
+    var lanHint = byId('ee-lan-hint');
+    if (lanHint) {
+      var h = ctxHost();
+      var n = h ? (h.entries || []).filter(function (e) { return !e.rdp_owned; }).length : 0;
+      lanHint.textContent = state.zoneManaged && h ? T('entry_editor.lan_applies', 'Applies to all {{count}} entries of the host').replace('{{count}}', String(n)) : '';
+    }
+  }
+
+  // Listen-port hint: free / taken / reserved, from the page data.
+  function syncListenState() {
+    var hint = byId('ee-listen-state');
+    var lp = byId('edit-l4-listen-port');
+    if (!hint || !lp) return;
+    var V = window.GCZonesView;
+    var data = window.GCZonesPage && window.GCZonesPage.getData && window.GCZonesPage.getData();
+    var v = lp.value.trim();
+    hint.classList.remove('rt-ok', 'rt-err');
+    if (!v || !V || !data) { hint.textContent = T('entry_editor.listen_hint', ''); return; }
+    var blocked = (lp.dataset.blockedPorts || '').split(',').map(function (x) { return parseInt(x, 10); }).filter(function (n) { return !isNaN(n); });
+    var tls = (byId('edit-l4-tls-mode') || {}).value || 'none';
+    var used = V.usedListenPorts(V.pageZones(data), state.route ? [state.route.id] : []);
+    var st = tls !== 'none' ? (V.validPort(v, true) ? 'free' : 'invalid') : V.listenPortState(v, kindNow(), used, blocked);
+    hint.textContent = T('entry_editor.listen_' + st, st);
+    hint.classList.toggle('rt-ok', st === 'free');
+    hint.classList.toggle('rt-err', st !== 'free');
   }
 
   function updateEditFieldVisibility() {
     var routeType = (byId('edit-route-type') || {}).value || 'http';
     var isL4 = routeType === 'l4';
-    var l4Fields = byId('edit-l4-fields');
-    var httpFields = byId('edit-http-fields');
-    var httpOnlyFeatures = byId('edit-http-only-features');
-    if (l4Fields) l4Fields.style.display = isL4 ? 'block' : 'none';
-    if (httpFields) httpFields.style.display = isL4 ? 'none' : 'block';
-    // Protection block: for every L4 entry, also for a locked target whose
-    // port fields stay hidden (docs/feature-next-package.md §S1.4).
-    var l4Protect = byId('edit-l4-protection');
-    if (l4Protect) l4Protect.style.display = isL4 ? '' : 'none';
-    if (httpOnlyFeatures) httpOnlyFeatures.style.display = isL4 ? 'none' : '';
-
-    // Hide HTTP-only tabs for L4 routes
-    ['headers', 'auth', 'security', 'branding', 'debug'].forEach(function (tab) {
-      var tabBtn = document.querySelector('.edit-route-tabs .tab[data-edit-tab="' + tab + '"]');
-      if (tabBtn) tabBtn.style.display = isL4 ? 'none' : '';
-    });
+    var modal = byId(MODAL_ID);
+    showIf('edit-l4-fields', isL4);
+    showIf('ee-outer-http', !isL4);
+    showIf('edit-http-fields', !isL4);
+    showIf('ee-sec-http', !isL4);
+    showIf('edit-l4-protection', isL4);
+    if (modal) modal.classList.toggle('rt-ee-is-l4', isL4);
+    // HTTPS-only sections stay visible for TCP/UDP but greyed out and inert.
+    if (modal) {
+      modal.querySelectorAll('.rt-ee-http-only, .rt-ee-http-panel').forEach(function (n) {
+        n.classList.toggle('rt-ee-disabled', isL4);
+        try { n.inert = isL4; } catch (_) { /* old browser */ }
+        if (n.classList.contains('rt-ee-http-panel')) {
+          // The panel itself stays readable (title + note); only its content is inert.
+          try { n.inert = false; } catch (_) { /* ignore */ }
+          Array.prototype.forEach.call(n.children, function (c) {
+            if (c.classList.contains('rt-ee-panel-title') || c.classList.contains('rt-ee-l4note')) return;
+            c.classList.toggle('rt-ee-disabled', isL4);
+            try { c.inert = isL4; } catch (_) { /* ignore */ }
+          });
+        }
+      });
+      modal.querySelectorAll('.rt-ee-l4note').forEach(function (n) { n.hidden = !isL4; });
+      modal.querySelectorAll('.rt-ee-tab-http').forEach(function (b) { b.classList.toggle('rt-ee-tab-off', isL4); });
+    }
+    var chip = byId('ee-type-chip');
+    if (chip) {
+      var k = kindNow();
+      var label = k === 'http' ? (isOn('edit-route-https') ? 'HTTPS' : 'HTTP') : k.toUpperCase();
+      chip.textContent = label;
+      chip.className = 'rt-chip rt-ee-chip rt-chip-' + label.toLowerCase();
+    }
+    var url = byId('ee-outer-url');
+    if (url) url.textContent = (isOn('edit-route-https') ? 'https://' : 'http://') + (hostFqdn() || '…') + ' · :' + (isOn('edit-route-https') ? '443' : '80');
 
     var editTlsMode = (byId('edit-l4-tls-mode') || {}).value || 'none';
-    var wrap = byId('edit-route-domain-wrap');
-    applyDomainContext(
-      routeType, editTlsMode,
-      byId('edit-route-base-domain'),
-      wrap,
-      byId('edit-route-domain-label'),
-      byId('edit-route-domain-ctx-hint')
-    );
-    // Also clear the freetext domain on L4-none (applyDomainContext clears the select only)
-    if (isL4 && editTlsMode === 'none') {
-      var eftClear = byId('edit-route-domain-freetext');
-      if (eftClear) eftClear.value = '';
-    }
-    updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
-
-    if (state.lockTarget) {
-      if (l4Fields) l4Fields.style.display = 'none';
-      if (wrap) {
-        wrap.style.display = 'none';
-        if (wrap.parentElement) wrap.parentElement.classList.add('gc-row-collapsed');
+    // Domain picker only outside a zone (the host owns the name otherwise).
+    showIf('ee-domain-legacy', !ctxZone());
+    if (!ctxZone()) {
+      var wrap = byId('edit-route-domain-wrap');
+      applyDomainContext(
+        routeType, editTlsMode,
+        byId('edit-route-base-domain'),
+        wrap,
+        byId('edit-route-domain-label'),
+        byId('edit-route-domain-ctx-hint')
+      );
+      if (isL4 && editTlsMode === 'none') {
+        var eftClear = byId('edit-route-domain-freetext');
+        if (eftClear) eftClear.value = '';
       }
     }
-  }
-
-  // "fqdn → host:port" (HTTP) or "TCP 2222 → host:port" (L4).
-  function lockedSummaryText(r) {
-    var host;
-    var port;
-    if ((r.target_kind || 'peer') === 'gateway') {
-      host = r.target_lan_host || '?';
-      port = r.target_lan_port || r.target_port;
-    } else {
-      host = (r.peer_ip ? String(r.peer_ip).split('/')[0] : '') || r.target_ip || '?';
-      port = r.target_port;
-    }
-    var target = host + (port ? ':' + port : '');
-    if (r.route_type === 'l4') {
-      var sni = (r.l4_tls_mode && r.l4_tls_mode !== 'none' && r.domain) ? ' (' + r.domain + ')' : '';
-      return String(r.l4_protocol || 'tcp').toUpperCase() + ' ' + (r.l4_listen_port || '?') + sni + ' → ' + target;
-    }
-    return (r.domain || '—') + ' → ' + target;
-  }
-
-  function applyLockTarget(route) {
-    var locked = state.lockTarget;
-    lockableBlocks().forEach(function (n) { if (n) n.style.display = locked ? 'none' : ''; });
-    var summary = byId('edit-route-locked-summary');
-    if (summary) summary.style.display = locked ? '' : 'none';
-    var line = byId('edit-route-locked-target');
-    if (line) line.textContent = locked ? lockedSummaryText(route) : '';
-    updateTargetKindVisibility();
-    updateEditFieldVisibility();
+    updateTlsHint('edit-l4-tls-mode', 'edit-l4-tls-hint');
+    syncKindButtons();
+    syncListenState();
   }
 
   function populateTarget(route) {
+    var gw = (route.target_kind || 'peer') === 'gateway';
     var portEl = byId('edit-route-port');
-    if (portEl) portEl.value = route.target_port || '';
+    if (portEl) portEl.value = (gw ? (route.target_lan_port || route.target_port) : route.target_port) || '';
     var ipInput = byId('edit-route-ip');
     if (ipInput) ipInput.value = route.target_ip || '';
 
     var editPeerSelect = byId('edit-route-peer');
     if (editPeerSelect) renderEditPeerOptions(editPeerSelect, route.peer_id);
-    var ipGroup = byId('edit-route-ip-group');
-    if (editPeerSelect && ipGroup) ipGroup.style.display = route.peer_id ? 'none' : 'block';
 
     var gwPeerSelect = byId('edit-route-gateway-peer');
     if (gwPeerSelect) renderEditGatewayOptions(gwPeerSelect, route.target_peer_id);
@@ -1182,22 +1275,19 @@
 
     var lanHost = byId('edit-route-lan-host');
     if (lanHost) lanHost.value = route.target_lan_host || '';
-    var lanPort = byId('edit-route-lan-port');
-    if (lanPort) lanPort.value = route.target_lan_port || '';
     var wolCb = byId('edit-route-wol-enabled');
     if (wolCb) wolCb.checked = !!route.wol_enabled;
     var wolMac = byId('edit-route-wol-mac');
     if (wolMac) wolMac.value = route.wol_mac || '';
     syncWolMacVisibility();
 
-    setToggleGroup('edit-route-type-group', 'edit-route-type', route.route_type || 'http');
-    if (route.route_type === 'l4') {
-      setToggleGroup('edit-l4-protocol-group', 'edit-l4-protocol', route.l4_protocol || 'tcp');
-      var lp = byId('edit-l4-listen-port');
-      if (lp) lp.value = route.l4_listen_port || '';
-      var tls = byId('edit-l4-tls-mode');
-      if (tls) tls.value = route.l4_tls_mode || 'none';
-    }
+    var kind = route.route_type === 'l4' ? (route.l4_protocol === 'udp' ? 'udp' : 'tcp') : 'http';
+    setKind(kind);
+    var lp = byId('edit-l4-listen-port');
+    if (lp) { lp.value = route.route_type === 'l4' ? (route.l4_listen_port || '') : ''; delete lp.dataset.userModified; }
+    var tls = byId('edit-l4-tls-mode');
+    if (tls) tls.value = route.route_type === 'l4' ? (route.l4_tls_mode || 'none') : 'none';
+    hideListenConflict();
   }
 
   function syncWolMacVisibility() {
@@ -1206,35 +1296,65 @@
     if (wolCb && wolMacField) wolMacField.style.display = wolCb.checked ? 'block' : 'none';
   }
 
+  function hideListenConflict() {
+    var box = byId('ee-listen-conflict');
+    if (box) box.hidden = true;
+  }
+  // 409 BUNDLE_PORT_CONFLICT from the save: inline below the listen port,
+  // with "Port n verwenden".
+  function showListenConflict(conflict) {
+    var box = byId('ee-listen-conflict');
+    if (!box) return;
+    var text = byId('ee-listen-conflict-text');
+    var use = byId('ee-listen-use');
+    if (text) text.textContent = T('entry.port_conflict', 'Port {{port}} is already in use').replace('{{port}}', String(conflict.port));
+    if (use) {
+      use.hidden = !conflict.suggestedPort;
+      use.textContent = T('entry.use_port', 'Use port {{port}}').replace('{{port}}', String(conflict.suggestedPort || ''));
+      use.onclick = function () {
+        var lp = byId('edit-l4-listen-port');
+        if (lp) { lp.value = String(conflict.suggestedPort); lp.dataset.userModified = 'true'; }
+        box.hidden = true;
+        onFormChange();
+        if (lp) lp.focus();
+      };
+    }
+    box.hidden = false;
+    goSection('target');
+  }
+
   function setupGeneralControls() {
     var editPeerSelect = byId('edit-route-peer');
-    var ipGroup = byId('edit-route-ip-group');
-    if (editPeerSelect && ipGroup) {
-      editPeerSelect.addEventListener('change', function () {
-        ipGroup.style.display = editPeerSelect.value ? 'none' : 'block';
-      });
-    }
+    if (editPeerSelect) editPeerSelect.addEventListener('change', updateTargetKindVisibility);
     var tkSelect = byId('edit-route-target-kind');
-    if (tkSelect) tkSelect.addEventListener('change', updateTargetKindVisibility);
+    if (tkSelect) tkSelect.addEventListener('change', function () { updateTargetKindVisibility(); syncKindButtons(); });
     var wolCb = byId('edit-route-wol-enabled');
     if (wolCb) wolCb.addEventListener('change', syncWolMacVisibility);
 
-    ['edit-route-type-group', 'edit-l4-protocol-group'].forEach(function (groupId) {
-      var group = byId(groupId);
-      var hidden = byId(groupId.replace(/-group$/, ''));
-      if (!group || !hidden) return;
-      group.querySelectorAll('.toggle-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          group.querySelectorAll('.toggle-btn').forEach(function (b) { b.classList.remove('on'); });
-          btn.classList.add('on');
-          hidden.value = btn.dataset.value;
-          updateEditFieldVisibility();
-        });
+    // Type: one segmented control for HTTPS / TCP / UDP.
+    var kindGroup = byId('ee-kind-group');
+    if (kindGroup) {
+      kindGroup.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-value]');
+        if (!b || b.disabled) return;
+        var prev = kindNow();
+        setKind(b.dataset.value);
+        // Switching to TCP/UDP: suggest the target port as listen port.
+        var lp = byId('edit-l4-listen-port');
+        if (prev === 'http' && b.dataset.value !== 'http' && lp && !lp.value) lp.value = (byId('edit-route-port') || {}).value || '';
+        if (b.dataset.value === 'udp') { var tls = byId('edit-l4-tls-mode'); if (tls) tls.value = 'none'; }
+        hideListenConflict();
+        updateEditFieldVisibility();
+        syncWafBlock();
       });
-    });
+    }
     var tlsSel = byId('edit-l4-tls-mode');
     if (tlsSel) tlsSel.addEventListener('change', function () { updateEditFieldVisibility(); });
-    setupPortAutofill('edit-route-port', 'edit-l4-listen-port', 'edit-l4-listen-port-error');
+    var lp = byId('edit-l4-listen-port');
+    if (lp) {
+      lp.addEventListener('input', function () { this.dataset.userModified = 'true'; hideListenConflict(); checkListenPortBlocked('edit-l4-listen-port', 'edit-l4-listen-port-error'); syncListenState(); });
+      lp.addEventListener('change', function () { checkListenPortBlocked('edit-l4-listen-port', 'edit-l4-listen-port-error'); });
+    }
 
     // External exposure + block action
     var extToggle = byId('edit-route-external');
@@ -1252,6 +1372,17 @@
     if (odToggle) odToggle.addEventListener('click', function () { setTimeout(syncOnDemandHint, 0); });
     if (tkSelect) tkSelect.addEventListener('change', syncOnDemandHint);
     if (wolCb) wolCb.addEventListener('change', syncOnDemandHint);
+
+    var https = byId('edit-route-https');
+    if (https) https.addEventListener('click', function () { setTimeout(updateEditFieldVisibility, 0); });
+    var settingsLink = byId('ee-zone-settings-link');
+    if (settingsLink) {
+      settingsLink.addEventListener('click', function () {
+        var z = ctxZone();
+        if (!z || !window.GCDomainModal) return;
+        requestClose().then(function (closed) { if (closed) window.GCDomainModal.open(z.domain_id); });
+      });
+    }
   }
 
   // Wake-on-LAN note under the "nur bei Bedarf" switch: shown when the entry
@@ -1260,7 +1391,7 @@
     var hint = byId('edit-route-on-demand-wol');
     if (!hint) return;
     var on = isOn('edit-route-on-demand');
-    var kind = (byId('edit-route-target-kind') || {}).value;
+    var kind = targetKindNow();
     var wolCb = byId('edit-route-wol-enabled');
     var licensed = !!(window.GC && GC.features && GC.features.gateway_wol);
     hint.style.display = (on && kind === 'gateway' && licensed && !(wolCb && wolCb.checked)) ? '' : 'none';
@@ -1761,6 +1892,8 @@
     WAF_REQUIRES_HTTP: ['edit-waf-block', 'errWafRequiresHttp', 'waf.err.requires_http', 'security'],
     WAF_LICENSE: ['edit-waf-block', 'errLicense', 'waf.err.license', 'security'],
   };
+  // Tab names of the former editor → sections ('general' is "Ziel & Ports").
+  var SECTION_OF_TAB = { general: 'target', debug: 'diagnose' };
 
   function flag(v) { return v === 1 || v === true || v === '1' || v === 'true'; }
 
@@ -1778,9 +1911,7 @@
     var text = secoptErrorText(code);
     if (!text) return false;
     var m = SECOPT_ERRORS[String(code).toUpperCase()];
-    var modal = byId(MODAL_ID);
-    var tab = modal && modal.querySelector('.edit-route-tabs .tab[data-edit-tab="' + m[3] + '"]');
-    if (tab && tab.style.display !== 'none' && !tab.classList.contains('active')) tab.click();
+    goSection(SECTION_OF_TAB[m[3]] || m[3]);
     window.showError('edit-route-error', text);
     var inline = byId(m[0].replace(/-block$/, '-error'));
     if (inline) {
@@ -1798,11 +1929,7 @@
     });
   }
 
-  function secoptTargetKind() {
-    if (state.lockTarget && state.route) return state.route.target_kind || 'peer';
-    var tk = byId('edit-route-target-kind');
-    return tk ? (tk.value || 'peer') : ((state.route && state.route.target_kind) || 'peer');
-  }
+  function secoptTargetKind() { return targetKindNow(); }
   function mtlsLicensed() {
     var block = byId('edit-mtls-block');
     return !!block && block.dataset.licensed !== '0';
@@ -1992,7 +2119,6 @@
     return (block && block.dataset[name]) || T(key, fallback);
   }
   function wafRouteType() {
-    if (state.lockTarget && state.route) return state.route.route_type || 'http';
     var rt = byId('edit-route-type');
     return rt ? (rt.value || 'http') : ((state.route && state.route.route_type) || 'http');
   }
@@ -2096,26 +2222,45 @@
     if (rt) rt.addEventListener('change', syncWafBlock);
   }
 
-  // ═══ Headers + branding ════════════════════════════════════════════════════
+  // ═══ Header (presets + editable lists) + branding ══════════════════════════
+  // Request headers go to the device in the LAN, response headers to the
+  // browser. A name '-Name' removes that header (no value). Presets come from
+  // secopt-ui.js (HEADER_PRESETS / HEADER_PRESETS_REQUEST); a header of the
+  // same name is replaced, not duplicated.
+
+  function svgX() {
+    var n = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    [['viewBox', '0 0 24 24'], ['width', '15'], ['height', '15'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2.2'], ['stroke-linecap', 'round'], ['aria-hidden', 'true']]
+      .forEach(function (a) { n.setAttribute(a[0], a[1]); });
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M6 6l12 12M18 6L6 18');
+    n.appendChild(p);
+    return n;
+  }
 
   function renderHeadersList(prefix, type, arr) {
     var list = byId(prefix + '-headers-' + type + '-list');
     if (!list) return;
     list.textContent = '';
+    if (!arr.length) list.appendChild(el('div', { class: 'rt-hint rt-ee-hempty', text: T('entry_editor.no_headers', 'No headers yet.') }));
     arr.forEach(function (h, idx) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-xs);font-size:12px';
-      var label = document.createElement('span');
-      label.style.cssText = 'flex:1;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      label.textContent = h.name + ': ' + h.value;
-      row.appendChild(label);
-      var del = document.createElement('button');
-      del.type = 'button';
-      del.textContent = '×';
-      del.style.cssText = 'background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px';
-      del.addEventListener('click', function () { arr.splice(idx, 1); renderHeadersList(prefix, type, arr); });
-      row.appendChild(del);
-      list.appendChild(row);
+      var removal = String(h.name || '').trim().charAt(0) === '-';
+      var name = el('input', { type: 'text', class: 'rt-input rt-mono', maxlength: '257', placeholder: T('headers.name', 'Header name'), 'aria-label': T('headers.name', 'Header name') });
+      name.value = h.name || '';
+      var value = el('input', { type: 'text', class: 'rt-input rt-mono', maxlength: '4096', 'aria-label': T('headers.value', 'Value') });
+      value.value = removal ? '' : (h.value || '');
+      function syncRemoval() {
+        var rm = name.value.trim().charAt(0) === '-';
+        value.disabled = rm;
+        value.placeholder = rm ? T('entry_editor.header_removed', '(removed)') : T('headers.value', 'Value');
+        if (rm) { value.value = ''; arr[idx].value = ''; }
+      }
+      syncRemoval();
+      name.addEventListener('input', function () { arr[idx].name = name.value; syncRemoval(); onHeadersChanged(); });
+      value.addEventListener('input', function () { arr[idx].value = value.value; onHeadersChanged(); });
+      var del = el('button', { type: 'button', class: 'rt-ibtn zn-ibtn', 'aria-label': T('entry_editor.remove_header', 'Remove header {{name}}').replace('{{name}}', h.name || String(idx + 1)) }, [svgX()]);
+      del.addEventListener('click', function () { arr.splice(idx, 1); renderHeadersList(prefix, type, arr); onHeadersChanged(); });
+      list.appendChild(el('div', { class: 'rt-ee-hrow' }, [name, value, del]));
     });
   }
 
@@ -2124,46 +2269,103 @@
     var addBtn = byId(prefix + '-headers-' + short + '-add');
     if (!addBtn) return;
     addBtn.addEventListener('click', function () {
-      var nameInput = byId(prefix + '-headers-' + short + '-name');
-      var valueInput = byId(prefix + '-headers-' + short + '-value');
-      var name = nameInput.value.trim();
-      var value = valueInput.value.trim();
-      if (!name || !value) return;
-      arr.push({ name: name, value: value });
-      nameInput.value = '';
-      valueInput.value = '';
+      arr.push({ name: '', value: '' });
       renderHeadersList(prefix, type, arr);
+      var list = byId(prefix + '-headers-' + type + '-list');
+      var inputs = list ? list.querySelectorAll('.rt-ee-hrow input') : [];
+      if (inputs.length > 1) inputs[inputs.length - 2].focus();
+      onHeadersChanged();
     });
+  }
+
+  function syncPresetStates() {
+    var SO = window.GCSecOptUI;
+    var box = byId('edit-headers-presets');
+    if (!box || !SO || typeof SO.presetApplied !== 'function') return;
+    box.querySelectorAll('[data-preset]').forEach(function (b) {
+      b.setAttribute('aria-pressed', SO.presetApplied(editHeadersRequest, editHeadersResponse, b.dataset.preset) ? 'true' : 'false');
+    });
+  }
+  function onHeadersChanged() {
+    syncPresetStates();
+    onFormChange();
+  }
+  // Strict-Transport-Security in the response list while the HSTS switch is on.
+  function syncHstsDup() {
+    var dup = byId('ee-headers-hsts-dup');
+    if (dup) {
+      dup.hidden = !(isOn('edit-route-hsts') && editHeadersResponse.some(function (h) { return String(h.name || '').trim().toLowerCase() === 'strict-transport-security'; }));
+    }
+  }
+
+  // Header lists for the PUT: empty rows dropped; { error } for a header
+  // without a value (the server would refuse it).
+  function readHeaders() {
+    function clean(arr) {
+      return arr.map(function (h) { return { name: String(h.name || '').trim(), value: String(h.value || '') }; })
+        .filter(function (h) { return h.name || h.value.trim(); });
+    }
+    var req = clean(editHeadersRequest);
+    var res = clean(editHeadersResponse);
+    var bad = req.concat(res).find(function (h) { return !h.name || (h.name.charAt(0) !== '-' && !h.value.trim()); });
+    if (bad) return { error: bad.name ? T('entry_editor.header_needs_value', 'Header {{name}} needs a value').replace('{{name}}', bad.name) : T('entry_editor.header_needs_name', 'A header needs a name') };
+    return { request: req, response: res };
   }
 
   function setupHeaderControls() {
     setupHeadersAdd('edit', 'request', editHeadersRequest);
     setupHeadersAdd('edit', 'response', editHeadersResponse);
-    var headersPreset = byId('edit-headers-preset');
-    if (headersPreset) {
-      headersPreset.addEventListener('change', function () {
-        var val = this.value;
-        if (!val) return;
+    var presets = byId('edit-headers-presets');
+    if (presets) {
+      presets.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-preset]');
+        if (!b) return;
+        var val = b.dataset.preset;
         // The security preset never adds Strict-Transport-Security — the HSTS
-        // switch on the security tab owns that header (docs/feature-hsts.md).
+        // switch on the security section owns that header (docs/feature-hsts.md).
         showIf('edit-headers-hsts-hint', val === 'security');
         // The CSP preset breaks apps with external sources — say so.
         var cspWarn = byId('edit-headers-csp-warning');
         if (cspWarn) cspWarn.hidden = val !== 'csp';
-        // Preset contents live in secopt-ui.js (docs/feature-security-options.md
-        // §C); a header of the same name is replaced, not duplicated.
         var SO = window.GCSecOptUI;
-        if (SO && typeof SO.applyPreset === 'function') {
-          var next = SO.applyPreset(editHeadersResponse, val);
+        if (SO && typeof SO.applyPresetSets === 'function') {
+          var next = SO.applyPresetSets(editHeadersRequest, editHeadersResponse, val);
+          editHeadersRequest.length = 0;
+          next.request.forEach(function (h) { editHeadersRequest.push(h); });
           editHeadersResponse.length = 0;
-          next.forEach(function (h) { editHeadersResponse.push(h); });
+          next.response.forEach(function (h) { editHeadersResponse.push(h); });
         } else {
           console.warn('GCEntryEditor: secopt-ui.js missing, header preset "' + val + '" not applied');
         }
+        renderHeadersList('edit', 'request', editHeadersRequest);
         renderHeadersList('edit', 'response', editHeadersResponse);
-        this.value = '';
+        onHeadersChanged();
       });
     }
+  }
+
+  // Live login-page preview of the branding section.
+  function renderBrandingPreview() {
+    var title = val('edit-branding-title', '') || 'GateControl';
+    var text = val('edit-branding-text', '') || T('branding.text_placeholder', 'Please sign in to continue');
+    var accent = val('edit-branding-color', '#0a6e4f');
+    var bg = val('edit-branding-bg', '#f2f0eb');
+    var pv = byId('ee-brand-preview');
+    if (pv) pv.style.background = /^#[0-9a-fA-F]{6}$/.test(bg) ? bg : '#f2f0eb';
+    var logo = byId('ee-bp-logo');
+    if (logo) { logo.style.background = /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : '#0a6e4f'; logo.textContent = title.slice(0, 2).toUpperCase(); }
+    var btn = byId('ee-bp-btn');
+    if (btn) btn.style.background = /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : '#0a6e4f';
+    var tt = byId('ee-bp-title');
+    if (tt) tt.textContent = title;
+    var tx = byId('ee-bp-text');
+    if (tx) tx.textContent = text;
+    var cv = byId('ee-color-val');
+    if (cv) cv.textContent = accent;
+    var bv = byId('ee-bg-val');
+    if (bv) bv.textContent = bg;
+    var inactive = byId('ee-branding-inactive');
+    if (inactive) inactive.hidden = val('edit-auth-type', 'none') === 'route';
   }
 
   function setupBrandingUpload(fileInputId, field, urlPart, currentId, removeId) {
@@ -2261,21 +2463,48 @@
     });
   }
 
+  // ═══ Sections (left nav) ═══════════════════════════════════════════════════
+  function goSection(id) {
+    var modal = byId(MODAL_ID);
+    if (!modal) return;
+    var btn = modal.querySelector('.rt-ee-tab[data-ee-section="' + id + '"]');
+    if (!btn) return;
+    state.section = id;
+    modal.querySelectorAll('.rt-ee-tab').forEach(function (t) { t.setAttribute('aria-current', t === btn ? 'page' : 'false'); });
+    modal.querySelectorAll('.rt-ee-panel').forEach(function (p) { p.hidden = p.dataset.panel !== id; });
+    var panels = byId('ee-panels');
+    if (panels) panels.scrollTop = 0;
+    // Request tracing polls only while the diagnose section is shown.
+    if (id === 'diagnose' && currentEditRouteId && kindNow() === 'http') startTracePolling(currentEditRouteId);
+    else stopTracePolling();
+  }
+
   function setupTabsAndDebug() {
-    document.addEventListener('click', function (e) {
-      var tab = e.target.closest('.edit-route-tabs .tab[data-edit-tab]');
-      if (!tab) return;
-      var modal = byId(MODAL_ID);
-      if (!modal || !modal.contains(tab)) return;
-      modal.querySelectorAll('.edit-route-tabs .tab').forEach(function (t) { t.classList.remove('active'); });
-      tab.classList.add('active');
-      modal.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = 'none'; });
-      var panel = modal.querySelector('.edit-route-panel[data-panel="' + tab.dataset.editTab + '"]');
-      if (panel) panel.style.display = '';
-      // Start/stop trace polling based on active tab
-      if (tab.dataset.editTab === 'debug' && currentEditRouteId) startTracePolling(currentEditRouteId);
-      else stopTracePolling();
-    });
+    var nav = byId('ee-nav');
+    if (nav) {
+      nav.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-ee-section]');
+        if (b) goSection(b.dataset.eeSection);
+      });
+      // Arrow keys move between sections (a vertical tab list).
+      nav.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        var list = Array.prototype.slice.call(nav.querySelectorAll('[data-ee-section]'));
+        var i = list.indexOf(document.activeElement);
+        if (i < 0) return;
+        e.preventDefault();
+        var n = list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length];
+        n.focus();
+        goSection(n.dataset.eeSection);
+      });
+    }
+    var modal = byId(MODAL_ID);
+    if (modal) {
+      modal.addEventListener('click', function (e) {
+        var g = e.target.closest('[data-ee-goto]');
+        if (g) goSection(g.dataset.eeGoto);
+      });
+    }
 
     var debugClear = byId('edit-debug-clear');
     if (debugClear) {
@@ -2288,6 +2517,307 @@
         lastTraceSince = '';
       });
     }
+  }
+
+  // ═══ Live summaries, connection path, change summary ═══════════════════════
+
+  function summaryOf(id) {
+    var isL4 = kindNow() !== 'http';
+    var bits = [];
+    if (id === 'target') {
+      var port = val('edit-route-port', '?');
+      var host = targetKindNow() === 'gateway' ? val('edit-route-lan-host', '?') : peerTargetText();
+      if (isL4) return ':' + val('edit-l4-listen-port', '?') + ' → ' + host + ' : ' + port;
+      return host + ' : ' + port + (isOn('edit-route-backend-https') ? ' · HTTPS' : '');
+    }
+    if (id === 'access') {
+      bits.push(isOn('edit-route-external') ? T('entry_editor.sum_external', 'External') : T('entry_editor.sum_internal', 'Internal only'));
+      if (isOn('edit-route-on-demand')) bits.push(T('entry.on_demand_tag', 'on demand'));
+      if (!isL4 && isOn('edit-route-ip-filter')) bits.push(T('entry_editor.sum_ip_filter', 'IP filter'));
+      if (!isL4 && isOn('edit-route-acl')) bits.push(T('entry_editor.sum_acl', 'Peer ACL'));
+      var rules = byId('access-rules-list');
+      if (!isL4 && rules && rules.querySelector('[data-rule]')) bits.push(T('entry_editor.sum_windows', 'Time windows'));
+      return bits.join(' · ');
+    }
+    if (isL4 && (id === 'auth' || id === 'headers' || id === 'branding')) return T('entry_editor.https_only', 'HTTPS only');
+    if (id === 'auth') {
+      var a = val('edit-auth-type', 'none');
+      if (a === 'basic') return T('route_auth.auth_basic', 'Basic Auth');
+      if (a === 'route') {
+        var two = isOn('edit-ra-2fa');
+        var m = val('edit-ra-method', 'email_password');
+        var label = two ? T('route_auth.method_email_password', 'E-mail & password') : T('route_auth.method_' + m, m);
+        return T('route_auth.auth_route', 'Route Auth') + ' · ' + label + (two ? ' + 2FA' : '');
+      }
+      return T('route_auth.auth_none', 'None');
+    }
+    if (id === 'security') {
+      if (isL4) {
+        if (isOn('edit-l4-route-ip-filter')) bits.push(T('entry_editor.sum_ip_filter', 'IP filter'));
+        if (isOn('edit-l4-conn-rate')) bits.push(T('entry_editor.sum_conn_rate', 'Connection rate'));
+        return bits.join(' · ') || '–';
+      }
+      if (isOn('edit-route-hsts') && isOn('edit-route-https')) bits.push('HSTS');
+      if (isOn('edit-route-waf')) bits.push(val('edit-route-waf-mode', 'detect') === 'block' ? T('waf.chip_block', 'WAF') : T('waf.chip_detect', 'WAF (detect)'));
+      if (isOn('edit-route-rate-limit')) bits.push(T('entry_editor.sum_rate', 'Rate limit'));
+      if (isOn('edit-route-bot-blocker')) bits.push(T('entry_editor.sum_bots', 'Bot blocker'));
+      var mb = parseInt(val('edit-route-max-body-mb', '0'), 10);
+      if (mb > 0) bits.push('≤ ' + mb + ' MB');
+      return bits.join(' · ') || '–';
+    }
+    if (id === 'reliability') {
+      if (isOn('edit-route-monitoring')) bits.push(T('entry_editor.sum_monitoring', 'Monitoring'));
+      if (!isL4) {
+        if (isOn('edit-route-backends')) bits.push(T('entry_editor.sum_backends', 'Backends'));
+        if (isOn('edit-route-retry')) bits.push(T('entry_editor.sum_retry', 'Retry'));
+        if (isOn('edit-route-circuit-breaker')) bits.push(T('entry_editor.sum_cb', 'Circuit breaker'));
+        if (isOn('edit-route-compress')) bits.push(T('entry_editor.sum_compress', 'Compression'));
+        if (isOn('edit-route-mirror')) bits.push(T('entry_editor.sum_mirror', 'Mirroring'));
+      }
+      return bits.join(' · ') || '–';
+    }
+    if (id === 'headers') {
+      var n = editHeadersRequest.length + editHeadersResponse.length;
+      return T(n === 1 ? 'entry_editor.sum_headers_one' : 'entry_editor.sum_headers', '{{count}} headers').replace('{{count}}', String(n));
+    }
+    if (id === 'branding') {
+      if (val('edit-auth-type', 'none') !== 'route') return T('entry_editor.sum_branding_off', 'only with Route Auth');
+      return val('edit-branding-title', '') || 'GateControl';
+    }
+    if (id === 'diagnose') {
+      if (!isL4 && isOn('edit-route-debug')) return T('entry_editor.sum_trace_on', 'Tracing on');
+      return diagStatusText();
+    }
+    return '';
+  }
+
+  function peerTargetText() {
+    var z = state.zoneManaged ? zoneTargetOf() : null;
+    if (z) return z.ip || z.name || '?';
+    var sel = byId('edit-route-peer');
+    if (sel && sel.value) {
+      var p = state.peers.find(function (x) { return String(x.id) === String(sel.value); });
+      if (p) return peerIp(p) || p.name;
+    }
+    return val('edit-route-ip', '?');
+  }
+
+  function diagStatusText() {
+    var r = state.route || {};
+    if (!r.enabled) return T('host.status_disabled', 'disabled');
+    if (r.monitoring_enabled && r.monitoring_status === 'down') return T('entry_editor.diag_down', 'Not reachable');
+    if (r.monitoring_enabled && r.monitoring_status === 'up') return T('entry_editor.diag_up', 'Reachable') + (r.monitoring_response_time != null ? ' · ' + r.monitoring_response_time + ' ms' : '');
+    return T('entry_editor.diag_unknown', 'No check yet');
+  }
+
+  function renderDiagnose() {
+    var r = state.route || {};
+    var st = byId('ee-diag-status');
+    if (st) {
+      st.textContent = '';
+      var cls = !r.enabled ? 'disabled' : (r.monitoring_enabled && r.monitoring_status === 'down') ? 'down' : (r.monitoring_enabled && r.monitoring_status === 'up') ? 'ok' : 'degraded';
+      st.appendChild(el('span', { class: 'rt-dot zn-dot-' + cls, 'aria-hidden': 'true' }));
+      st.appendChild(document.createTextNode(' ' + diagStatusText().split(' · ')[0]));
+    }
+    var tm = byId('ee-diag-time');
+    if (tm) tm.textContent = r.monitoring_response_time != null && r.monitoring_enabled ? r.monitoring_response_time + ' ms' : '–';
+    var cert = byId('ee-diag-cert');
+    if (cert) {
+      var h = ctxHost();
+      var entry = h ? (h.entries || []).find(function (e) { return e.id === r.id; }) : null;
+      var tls = entry && entry.tls;
+      if (r.route_type === 'l4' && !(r.l4_tls_mode && r.l4_tls_mode !== 'none')) cert.textContent = T('entry_editor.cert_none', 'no certificate (TCP/UDP)');
+      else if (tls && tls.state === 'issued' && tls.not_after) cert.textContent = T('entry_editor.cert_valid_until', 'valid until {{date}}').replace('{{date}}', new Date(tls.not_after).toLocaleDateString());
+      else if (tls && (tls.state === 'failed' || tls.state === 'expiring')) cert.textContent = T('entry_editor.cert_problem', 'problem – see certificates');
+      else if (tls && TLS_STATE_KEYS[tls.state]) cert.textContent = T(TLS_STATE_KEYS[tls.state], tls.state);
+      else cert.textContent = T('entry_editor.cert_auto', 'issued automatically');
+    }
+    var md = byId('ee-monitor-desc');
+    if (md && r.monitoring_enabled && r.monitoring_status) md.textContent = T('monitoring.toggle_desc', '') + ' · ' + diagStatusText();
+  }
+
+  // Static tls.state_* keys without {{placeholders}} (failed/expiring map to
+  // entry_editor.cert_problem above).
+  var TLS_STATE_KEYS = {
+    pending: 'tls.state_pending', paused: 'tls.state_paused', internal: 'tls.state_internal',
+    none: 'tls.state_none', unknown: 'tls.state_unknown',
+  };
+
+  // "Weg der Verbindung": Internet/VPN :port → GateControl [→ Anmeldung] → Gateway → LAN host:port
+  function renderFlow() {
+    var box = byId('ee-flow');
+    var V = window.GCZonesView;
+    if (!box || !V) return;
+    var kind = kindNow();
+    var tk = targetKindNow();
+    var target;
+    if (state.zoneManaged && zoneTargetOf()) target = zoneTargetOf();
+    else if (tk === 'gateway') {
+      var gsel = byId('edit-route-gateway-peer');
+      var gp = gsel && state.peers.find(function (x) { return String(x.id) === String(gsel.value); });
+      target = { kind: state.route && state.route.target_pool_id != null ? 'pool' : 'gateway', name: gp ? gp.name : (state.route && state.route.target_peer_name) || '?' };
+    } else {
+      target = { kind: 'peer', name: '' };
+    }
+    var steps = V.entryFlow({
+      external: isOn('edit-route-external'), kind: kind, outer: kind === 'http' ? (isOn('edit-route-https') ? '443' : '80') : val('edit-l4-listen-port', ''),
+      fqdn: hostFqdn(), auth: kind === 'http' ? val('edit-auth-type', 'none') : 'none',
+      target: { kind: target.kind === 'peer' ? 'peer' : target.kind, name: target.name },
+      lanHost: tk === 'gateway' ? val('edit-route-lan-host', '?') : peerTargetText(), port: val('edit-route-port', '?'),
+    });
+    var KICK = {
+      internet: T('entry_editor.flow_internet', 'Internet'), vpn: T('entry_editor.flow_vpn', 'VPN'), lan: T('entry_editor.flow_lan', 'Device in the LAN'),
+      peer: T('entry_editor.flow_peer', 'VPN peer'), gateway: T('entry_editor.gateway', 'Gateway'), pool: T('entry_editor.pool', 'Gateway pool'),
+    };
+    box.textContent = '';
+    steps.forEach(function (st, i) {
+      var kicker = st.id === 'gc' ? 'GateControl' : st.id === 'auth' ? T('entry_editor.flow_auth', 'Login') : (KICK[st.kicker] || st.kicker || '');
+      var value = st.id === 'auth' ? (st.value === 'basic' ? T('route_auth.auth_basic', 'Basic Auth') : T('route_auth.auth_route', 'Route Auth')) : st.value;
+      box.appendChild(el('div', { class: 'rt-ee-step rt-ee-step-' + st.id }, [
+        el('div', { class: 'rt-ee-step-k', text: kicker }),
+        el('div', { class: 'rt-ee-step-v rt-mono', text: value }),
+      ]));
+      if (i < steps.length - 1) box.appendChild(el('span', { class: 'rt-ee-step-arrow', 'aria-hidden': 'true', text: '→' }));
+    });
+  }
+
+  // Form values for the change summary: every input/select/textarea and
+  // toggle of the modal by id, plus the list-shaped state.
+  // Share links and access windows save through their own API calls, so
+  // their form fields are not part of "Speichern" (and they load later).
+  var SNAPSHOT_SKIP = '#share-links-section, #access-windows-section';
+  function formSnapshot() {
+    var modal = byId(MODAL_ID);
+    var out = {};
+    if (!modal) return out;
+    modal.querySelectorAll('input[id], select[id], textarea[id]').forEach(function (n) {
+      if (n.type === 'file' || n.id === 'edit-route-id' || n.closest(SNAPSHOT_SKIP)) return;
+      out[n.id] = n.type === 'checkbox' ? String(n.checked) : n.value;
+    });
+    modal.querySelectorAll('.toggle[id]').forEach(function (n) { out[n.id] = String(n.classList.contains('on')); });
+    out['#headers'] = JSON.stringify([editHeadersRequest, editHeadersResponse]);
+    out['#ipfilter'] = JSON.stringify(editIpFilterRules);
+    out['#backends'] = JSON.stringify(editBackendsList);
+    out['#mirror'] = JSON.stringify(editMirrorTargets);
+    out['#acl'] = JSON.stringify(getSelectedAclPeers('edit'));
+    var users = [];
+    document.querySelectorAll('#route-user-ids .route-user-cb:checked').forEach(function (cb) { users.push(cb.value); });
+    out['#users'] = users.join(',');
+    return out;
+  }
+  // Fields filled asynchronously after open() take their loaded value as the
+  // starting point (no false "1 more change").
+  function rebaseSnapshot(ids) {
+    if (!state.snapshot) return;
+    var cur = formSnapshot();
+    ids.forEach(function (k) { if (cur[k] !== undefined) state.snapshot[k] = cur[k]; });
+    renderChanges();
+  }
+  // Readable changes for the footer ("Port am Ziel 3389 → 3390 · …").
+  var CHANGE_LABELS = {
+    'edit-route-port': 'entry.target_port', 'edit-l4-listen-port': 'entry.listen_port', 'edit-route-lan-host': 'route_lan_host',
+    'edit-route-label': 'entry.label_field', 'edit-route-type': 'entry_editor.type', 'edit-l4-protocol': 'entry_editor.type',
+  };
+  function changeList() {
+    var cur = formSnapshot();
+    var base = state.snapshot || {};
+    var keys = Object.keys(cur).filter(function (k) { return base[k] !== undefined && cur[k] !== base[k]; });
+    var out = [];
+    var other = 0;
+    var typeDone = false;
+    keys.forEach(function (k) {
+      if (k === 'edit-route-type' || k === 'edit-l4-protocol') {
+        if (typeDone) return;
+        typeDone = true;
+        var from = base['edit-route-type'] === 'l4' ? String(base['edit-l4-protocol'] || 'tcp').toUpperCase() : 'HTTPS';
+        var to = kindNow() === 'http' ? 'HTTPS' : kindNow().toUpperCase();
+        if (from !== to) out.push(T('entry_editor.type', 'Type') + ' ' + from + ' → ' + to);
+        return;
+      }
+      if (k === 'edit-route-external') { out.push(cur[k] === 'true' ? T('entry_editor.chg_external_on', 'now reachable externally') : T('entry_editor.chg_external_off', 'now internal only')); return; }
+      if (CHANGE_LABELS[k]) { out.push(T(CHANGE_LABELS[k], k) + ' ' + (base[k] || '—') + ' → ' + (cur[k] || '—')); return; }
+      other++;
+    });
+    return { items: out, other: other, count: out.length + other };
+  }
+  function renderChanges() {
+    var box = byId('ee-changes');
+    if (!box) return;
+    var c = changeList();
+    if (!c.count) {
+      box.textContent = T('zones.no_changes', 'No changes');
+      box.classList.remove('rt-dirty');
+      return;
+    }
+    if (!c.items.length) {
+      box.textContent = T(c.other === 1 ? 'zones.dirty_one' : 'zones.dirty', '{{count}} unsaved changes').replace('{{count}}', String(c.other));
+      box.classList.add('rt-dirty');
+      return;
+    }
+    var parts = c.items.slice();
+    if (c.other) parts.push(T(c.other === 1 ? 'entry_editor.chg_other_one' : 'entry_editor.chg_other', '{{count}} more').replace('{{count}}', String(c.other)));
+    box.textContent = T('entry_editor.changes', 'Changes') + ': ' + parts.join(' · ');
+    box.classList.add('rt-dirty');
+  }
+
+  function renderSummaries() {
+    ['target', 'access', 'auth', 'security', 'reliability', 'headers', 'branding', 'diagnose'].forEach(function (id) {
+      var n = byId('ee-sum-' + id);
+      if (n) n.textContent = summaryOf(id);
+    });
+    var sub = byId('ee-name-sub');
+    var label = val('edit-route-label', '') || val('edit-route-desc', '');
+    if (sub) sub.textContent = label ? ' · ' + label : '';
+  }
+
+  var changeFrame = null;
+  function onFormChange() {
+    if (changeFrame) return;
+    changeFrame = (window.requestAnimationFrame || setTimeout)(function () {
+      changeFrame = null;
+      if (!isOpen()) return;
+      renderSummaries();
+      renderFlow();
+      renderChanges();
+      renderBrandingPreview();
+      syncHstsDup();
+    });
+  }
+
+  // Escape (with the unsaved-changes question) and Tab stay inside the
+  // editor while it is the topmost overlay; capture phase so app.js's global
+  // Escape, which hides every overlay, never sees the key.
+  function topOverlay() {
+    var best = null;
+    var bestZ = -Infinity;
+    document.querySelectorAll('.modal-overlay').forEach(function (o) {
+      if (o.style.display === 'none') return;
+      var cs = window.getComputedStyle(o);
+      if (cs.display === 'none') return;
+      var z = parseInt(cs.zIndex, 10) || 0;
+      if (z >= bestZ) { best = o; bestZ = z; }
+    });
+    return best;
+  }
+  function onEditorKey(e) {
+    var overlay = byId(MODAL_ID);
+    if (!overlay || !isOpen() || topOverlay() !== overlay) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      requestClose();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    e.stopPropagation();
+    var box = overlay.querySelector('.rt-ee');
+    var list = Array.prototype.slice.call(box.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter(function (n) { return n.offsetParent !== null && !n.closest('[inert]'); });
+    if (!list.length) return;
+    var first = list[0];
+    var last = list[list.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
   }
 
   // ═══ Share links (Pro: share_links) ════════════════════════════════════════
@@ -2530,6 +3060,7 @@
     var delBtn = el('button', { type: 'button', class: 'btn btn-sm', text: T('access.delete', 'Delete rule') });
     delBtn.addEventListener('click', function () { deleteAccessRule(targetId, rule.id); });
     return el('div', {
+      class: 'rt-ee-rule', 'data-rule': String(rule.id),
       style: 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)',
     }, [chip, info, delBtn]);
   }
@@ -2659,29 +3190,30 @@
 
     state.route = route;
     state.opts = opts;
-    state.lockTarget = opts.lockTarget === true;
+    state.ctx = resolveContext(route, opts);
+    // Inside a zone (no legacy override) the target comes from the zone.
+    state.zoneManaged = !!zoneTargetOf();
+    state.snapshot = null;
     id = route.id;
 
     byId('edit-route-id').value = id;
     var dnsHint = byId('edit-route-dns-hint');
     if (dnsHint) dnsHint.style.display = 'none';
+    var hostEl = byId('ee-host');
+    if (hostEl) hostEl.textContent = hostFqdn() || ('#' + id);
     populateDomain(route, seq);
     setVal('edit-route-desc', route.description || '');
     setVal('edit-route-label', route.label || '');
     setToggle('edit-route-on-demand', route.on_demand);
     populateTarget(route);
     syncOnDemandHint();
-    applyLockTarget(route);
+    updateTargetKindVisibility();
+    updateEditFieldVisibility();
 
-    var debugTab = modal.querySelector('[data-edit-tab="debug"]');
-    if (debugTab) debugTab.style.display = (route.route_type === 'l4') ? 'none' : '';
-    // Reset to the first tab — or opts.tab when that tab is shown (the domain
-    // dialog's WAF tag opens the security tab) — before any await so the
-    // modal never shows a stale tab.
-    var startBtn = opts.tab ? modal.querySelector('.edit-route-tabs .tab[data-edit-tab="' + opts.tab + '"]') : null;
-    var startTab = startBtn && startBtn.style.display !== 'none' ? opts.tab : 'general';
-    modal.querySelectorAll('.edit-route-tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.editTab === startTab); });
-    modal.querySelectorAll('.edit-route-panel').forEach(function (p) { p.style.display = p.dataset.panel === startTab ? '' : 'none'; });
+    // Start section: opts.section (shield popup, WAF tag) or the old tab name.
+    var start = opts.section || SECTION_OF_TAB[opts.tab] || opts.tab || 'target';
+    if (!modal.querySelector('.rt-ee-tab[data-ee-section="' + start + '"]')) start = 'target';
+    goSection(start);
 
     await populateAuth(route, id, seq);
     if (seq !== state.seq) return;
@@ -2690,6 +3222,7 @@
 
     window.hideError('edit-route-error');
     window.clearFieldErrors();
+    clearSecoptErrors();
 
     var shareSection = byId('share-links-section');
     if (shareSection) {
@@ -2703,17 +3236,23 @@
     }
 
     currentEditRouteId = id;
-    stopTracePolling();
+    updateEditFieldVisibility();
+    syncWafBlock();
+    renderDiagnose();
+    renderBrandingPreview();
+    syncPresetStates();
+    syncHstsDup();
+    renderSummaries();
+    renderFlow();
+    state.snapshot = formSnapshot();
+    renderChanges();
     window.openModal(MODAL_ID);
-    // opts.focus: id of a block to scroll into view on the start tab (e.g. edit-waf-block).
-    var focusEl = opts.focus && startTab !== 'general' ? byId(opts.focus) : null;
+    goSection(start);
+    // opts.focus: id of a block to scroll into view on the start section (e.g. edit-waf-block).
+    var focusEl = opts.focus ? byId(opts.focus) : null;
     if (focusEl && typeof focusEl.scrollIntoView === 'function') focusEl.scrollIntoView({ block: 'nearest' });
-    // Focus the active domain element: freetext (if visible) or base-domain select
-    if (!state.lockTarget && startTab === 'general') {
-      var ft = byId('edit-route-domain-freetext');
-      if (ft && ft.style.display !== 'none') ft.focus();
-      else { var base = byId('edit-route-base-domain'); if (base) base.focus(); }
-    }
+    var firstTab = modal.querySelector('.rt-ee-tab[aria-current="page"]');
+    if (firstTab) firstTab.focus();
   }
 
   function close() {
@@ -2721,52 +3260,59 @@
     window.closeModal(MODAL_ID);
   }
 
-  // Target/domain/type fields for the PUT. lockTarget: straight from the route
-  // the editor was opened with, so the server sees no change.
+  // Close unless there are unsaved changes the user wants to keep.
+  // → Promise<boolean> (true = closed).
+  function requestClose() {
+    if (!isOpen()) return Promise.resolve(true);
+    var n = changeList().count;
+    if (!n) { close(); return Promise.resolve(true); }
+    var ask = window.GCZonesUI && typeof window.GCZonesUI.confirmDiscard === 'function'
+      ? window.GCZonesUI.confirmDiscard(n)
+      : D.confirm({ message: T(n === 1 ? 'zones.discard_msg_one' : 'zones.discard_msg', 'Discard {{count}} unsaved changes?').replace('{{count}}', String(n)), danger: true });
+    return ask.then(function (ok) { if (ok) close(); return !!ok; });
+  }
+
+  // Target/domain/type fields for the PUT, from the form. Inside a zone the
+  // gateway/peer stay as they are (the zone owns them); the LAN address goes
+  // through PUT /hosts/:id (lanHost), the port as target_port and — for
+  // gateway targets — target_lan_port.
   function readTargetFields() {
     var out = {};
-    if (state.lockTarget && state.route) {
-      var r = state.route;
-      out.route_type = r.route_type || 'http';
-      if (out.route_type === 'l4') {
-        out.l4_protocol = r.l4_protocol || 'tcp';
-        out.l4_listen_port = r.l4_listen_port == null ? '' : String(r.l4_listen_port);
-        out.l4_tls_mode = r.l4_tls_mode || 'none';
-      }
-      out.domain = r.domain || '';
-      out.target_port = r.target_port == null ? '' : String(r.target_port);
-      out.target_kind = r.target_kind || 'peer';
+    var kind = kindNow();
+    out.route_type = kind === 'http' ? 'http' : 'l4';
+    if (out.route_type === 'l4') {
+      out.l4_protocol = kind;
+      out.l4_listen_port = (byId('edit-l4-listen-port') || {}).value ? byId('edit-l4-listen-port').value.trim() : '';
+      out.l4_tls_mode = kind === 'udp' ? 'none' : ((byId('edit-l4-tls-mode') || {}).value || 'none');
+    }
+    out.target_port = (byId('edit-route-port') || {}).value ? byId('edit-route-port').value.trim() : '';
+    out.target_kind = targetKindNow();
+    if (state.zoneManaged) {
+      // The name is the host's: HTTP and SNI entries carry the host fqdn.
+      var fq = hostFqdn();
+      if (out.route_type === 'http' || out.l4_tls_mode !== 'none') out.domain = fq;
+      else out.domain = '';
       if (out.target_kind === 'gateway') {
-        out.target_peer_id = r.target_peer_id == null ? null : r.target_peer_id;
-        out.target_lan_host = r.target_lan_host == null ? null : r.target_lan_host;
-        out.target_lan_port = r.target_lan_port == null ? null : r.target_lan_port;
-        out.wol_enabled = !!r.wol_enabled;
-        out.wol_mac = r.wol_mac || null;
-      } else {
-        out.peer_id = r.peer_id == null ? null : r.peer_id;
-        out.target_ip = r.target_ip || '';
+        out.target_lan_port = out.target_port ? parseInt(out.target_port, 10) : null;
+        var lan = (byId('edit-route-lan-host') || {}).value ? byId('edit-route-lan-host').value.trim() : '';
+        var cur = (state.route && state.route.target_lan_host) || '';
+        if (lan !== cur) out.lanHost = lan;
+        var wolEnabledZ = byId('edit-route-wol-enabled');
+        var wolMacZ = byId('edit-route-wol-mac');
+        out.wol_enabled = !!(wolEnabledZ && wolEnabledZ.checked);
+        out.wol_mac = wolMacZ && wolMacZ.value ? wolMacZ.value.trim() : null;
       }
       return out;
     }
-    out.route_type = byId('edit-route-type').value;
-    if (out.route_type === 'l4') {
-      out.l4_protocol = byId('edit-l4-protocol').value;
-      out.l4_listen_port = byId('edit-l4-listen-port').value;
-      out.l4_tls_mode = byId('edit-l4-tls-mode').value;
-    }
     out.domain = readFormDomain();
-    out.target_port = byId('edit-route-port').value.trim();
-    var tkEl = byId('edit-route-target-kind');
-    out.target_kind = tkEl ? tkEl.value : 'peer';
     if (out.target_kind === 'gateway') {
       var gwPeerEl = byId('edit-route-gateway-peer');
       var lanHostEl = byId('edit-route-lan-host');
-      var lanPortEl = byId('edit-route-lan-port');
       var wolEnabledEl = byId('edit-route-wol-enabled');
       var wolMacEl = byId('edit-route-wol-mac');
       out.target_peer_id = gwPeerEl && gwPeerEl.value ? parseInt(gwPeerEl.value, 10) : null;
       out.target_lan_host = lanHostEl ? lanHostEl.value.trim() : null;
-      out.target_lan_port = lanPortEl && lanPortEl.value ? parseInt(lanPortEl.value, 10) : null;
+      out.target_lan_port = out.target_port ? parseInt(out.target_port, 10) : null;
       out.wol_enabled = !!(wolEnabledEl && wolEnabledEl.checked);
       out.wol_mac = wolMacEl && wolMacEl.value ? wolMacEl.value.trim() : null;
     } else {
@@ -2802,17 +3348,25 @@
 
     var isL4 = target.route_type === 'l4';
     var isL4None = isL4 && (target.l4_tls_mode || 'none') === 'none';
-    if (!target.domain && !isL4None) { window.showError('edit-route-error', T('routes.domain_required', 'Domain is required')); return; }
-    if (!target.target_port) { window.showError('edit-route-error', T('routes.target_port_required', 'Target port is required')); return; }
-    if (isL4 && !state.lockTarget && !checkListenPortBlocked('edit-l4-listen-port', 'edit-l4-listen-port-error')) {
-      window.showError('edit-route-error', (byId('edit-l4-listen-port-error') || {}).textContent || 'Port reserved');
+    var fail = function (msg, section) { if (section) goSection(section); window.showError('edit-route-error', msg); };
+    if (!target.domain && !isL4None) { fail(T('routes.domain_required', 'Domain is required'), 'target'); return; }
+    if (!target.target_port || !/^\d{1,5}$/.test(target.target_port) || +target.target_port < 1 || +target.target_port > 65535) {
+      fail(T('entry.err_target_port', 'Target port 1–65535'), 'target'); return;
+    }
+    if (isL4 && !target.l4_listen_port) { fail(T('entry.err_listen_port', 'Listen port required'), 'target'); return; }
+    if (isL4 && !checkListenPortBlocked('edit-l4-listen-port', 'edit-l4-listen-port-error')) {
+      fail((byId('edit-l4-listen-port-error') || {}).textContent || 'Port reserved', 'target');
       return;
     }
+    if (target.lanHost !== undefined && !target.lanHost) { fail(T('host.err_lan_required', 'LAN address required'), 'target'); return; }
     if (basic_auth_enabled && !basic_auth_user) {
-      window.showError('edit-route-error', 'Basic auth username is required when auth is enabled');
+      fail(T('entry_editor.err_basic_user', 'Basic auth needs a user name'), 'auth');
       return;
     }
+    var headers = isL4 ? { request: editHeadersRequest, response: editHeadersResponse } : readHeaders();
+    if (headers.error) { fail(headers.error, 'headers'); return; }
     clearSecoptErrors();
+    hideListenConflict();
     var secopt = readSecOptFields(target, https_enabled);
     if (secopt.error) { showSecoptError(secopt.error); return; }
 
@@ -2896,9 +3450,9 @@
         selectedUserIds.push(parseInt(cb.value, 10));
       });
       payload.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
-      // Custom headers
-      var hasCustomHeaders = editHeadersRequest.length > 0 || editHeadersResponse.length > 0;
-      payload.custom_headers = hasCustomHeaders ? { request: editHeadersRequest, response: editHeadersResponse } : null;
+      // Custom headers (empty rows dropped; '-Name' removes a header)
+      var hasCustomHeaders = headers.request.length > 0 || headers.response.length > 0;
+      payload.custom_headers = hasCustomHeaders ? { request: headers.request, response: headers.response } : null;
       payload.route_type = target.route_type;
       if (isL4) {
         payload.l4_protocol = target.l4_protocol;
@@ -2910,25 +3464,40 @@
       }
       if (isL4None) {
         // PUT /api/routes/:id validates any defined domain and rejects ''
-        // ("Invalid domain format"). Send '' only when it clears a stored SNI
-        // domain; otherwise leave the field out, i.e. unchanged.
-        if (state.lockTarget || !(state.route && state.route.domain)) delete payload.domain;
+        // ("Invalid domain format"). Send '' only when it clears a stored
+        // domain (HTTP → TCP, SNI → none); otherwise leave the field out.
+        if (!(state.route && state.route.domain)) delete payload.domain;
         else payload.domain = '';
       }
+      // A switch to HTTP starts with HTTPS on (the type chip says HTTPS).
+      if (!isL4 && state.route && state.route.route_type === 'l4') payload.https_enabled = true;
 
       payload.target_kind = target.target_kind;
       if (target.target_kind === 'gateway') {
-        payload.target_peer_id = target.target_peer_id;
-        payload.target_lan_host = target.target_lan_host;
+        // Gateway/pool targets forward to target_lan_port; target_port mirrors it.
         payload.target_lan_port = target.target_lan_port;
         payload.wol_enabled = target.wol_enabled;
         payload.wol_mac = target.wol_mac;
+        if (!state.zoneManaged) {
+          payload.target_peer_id = target.target_peer_id;
+          payload.target_lan_host = target.target_lan_host;
+        }
         // Don't leak the peer-fields' target_ip/peer_id into a gateway route
         // payload: a legacy `target_ip='127.0.0.1'` placeholder would trip the
         // server's SSRF private-IP guard on every save. `delete` (not null) so
         // the PUT handler's validateIp() and SSRF checks skip the field.
         delete payload.target_ip;
         delete payload.peer_id;
+      } else if (state.zoneManaged) {
+        // Peer zone: the peer is the zone's — only the port changes here.
+        delete payload.target_ip;
+        delete payload.peer_id;
+      }
+      // LAN address of a zone host: one PUT /hosts/:id moves every entry.
+      if (target.lanHost !== undefined && state.route && state.route.bundle_id != null) {
+        var hostRes = await window.api.put('/api/v1/hosts/' + state.route.bundle_id, { lan_host: target.lanHost });
+        if (hostRes && hostRes.ok === false) { fail(hostRes.error || T('zones.error_generic', 'Error'), 'target'); return; }
+        state.route.target_lan_host = target.lanHost;
       }
       if (basic_auth_enabled) {
         payload.basic_auth_user = basic_auth_user.trim();
@@ -2963,10 +3532,11 @@
             description: 'edit-route-desc',
             target_ip: 'edit-route-ip',
           });
-          // Locked target fields are hidden, so their field errors would be invisible.
-          if (state.lockTarget) window.showError('edit-route-error', data.error);
-        } else {
           window.showError('edit-route-error', data.error);
+        } else {
+          var sec = /HOST_HAS_HTTP|TYPE_/.test(String(data.code || '')) ? 'target' : null;
+          if (sec) goSection(sec);
+          window.showError('edit-route-error', data.code === 'HOST_HAS_HTTP' ? T('entry.err_http_taken', data.error) : data.error);
         }
         return;
       }
@@ -3003,8 +3573,12 @@
       }
 
       close();
+      if (typeof window.showToast === 'function') window.showToast(T('entry_editor.saved', 'Saved'), 'success');
       callOpt('onSaved', data.route || null);
     } catch (err) {
+      var d = err && err.data;
+      if (d && d.code === 'BUNDLE_PORT_CONFLICT' && d.conflict) showListenConflict(d.conflict);
+      else if (d && d.code === 'HOST_HAS_HTTP') { goSection('target'); window.showError('edit-route-error', T('entry.err_http_taken', err.message)); return; }
       window.showError('edit-route-error', err.message);
     } finally {
       window.btnReset(btn);
@@ -3029,6 +3603,20 @@
     setupShareControls();
     var submit = byId('btn-edit-route-submit');
     if (submit) submit.addEventListener('click', function () { save(this); });
+    var cancel = byId('ee-cancel');
+    if (cancel) cancel.addEventListener('click', function () { requestClose(); });
+    var x = byId('ee-close');
+    if (x) x.addEventListener('click', function () { requestClose(); });
+    // Every change refreshes the summaries, the path and the change line.
+    var modal = byId(MODAL_ID);
+    if (modal) {
+      // The page content is its own stacking context; on <body> the editor
+      // stacks above the "Host bearbeiten" dialog (z-index 1050 > 1000).
+      if (modal.parentNode !== document.body) document.body.appendChild(modal);
+      ['input', 'change'].forEach(function (ev) { modal.addEventListener(ev, onFormChange); });
+      modal.addEventListener('click', function () { setTimeout(onFormChange, 0); });
+    }
+    window.addEventListener('keydown', onEditorKey, true);
   }
   init();
 

@@ -165,7 +165,7 @@ describe('WAF: script integration', () => {
     assert.match(src, /request\('DELETE', exclusionUrl\(routeId\), body\)/);
     assert.match(src, /'X-CSRF-Token'/);
     assert.match(src, /\['waf-i18n', 'zones-i18n'\]/);
-    for (const cls of ['wf-entry-tag', 'wf-exclude-dialog', 'wf-path-input', 'wf-btn-ok', 'wf-excl-row', 'wf-excl-remove', 'wf-excl-add', 'wf-excl-input', 'wf-excl-type', 'wf-mode-tag', 'wf-action-tag', 'wf-field-error']) {
+    for (const cls of ['wf-exclude-dialog', 'wf-path-input', 'wf-btn-ok', 'wf-excl-row', 'wf-excl-remove', 'wf-excl-add', 'wf-excl-input', 'wf-excl-type', 'wf-mode-tag', 'wf-action-tag', 'wf-field-error']) {
       assert.ok(src.includes(cls), cls);
     }
   });
@@ -203,20 +203,22 @@ describe('WAF: script integration', () => {
     assert.match(ed, /W\.engineHint\(engine\)/);
     assert.match(ed, /data\.feature === 'waf' && payload\.waf_enabled/);
     for (const code of ['WAF_MODE_INVALID', 'WAF_PARANOIA_INVALID', 'WAF_REQUIRES_HTTP', 'WAF_LICENSE']) assert.ok(ed.includes(code + ':'), code);
-    assert.match(ed, /opts\.tab \? modal\.querySelector/, 'start tab option');
+    assert.match(ed, /var start = opts\.section \|\| SECTION_OF_TAB\[opts\.tab\] \|\| opts\.tab \|\| 'target';/, 'start section option');
+    assert.match(ed, /var focusEl = opts\.focus \? byId\(opts\.focus\) : null;/, 'focus option');
     assert.match(ed, /'edit-waf-error'/);
   });
 
-  it('domain-modal.js renders the WAF tag and opens the editor on the security tab; zones chip note', () => {
-    const dm = stripComments(read('public/js/domain-modal.js'));
-    assert.match(dm, /window\.GCWafUI && window\.GCWafUI\.entryTag\(e, \{ onOpen: \(\) => editEntry\(e, \{ tab: 'security', focus: 'edit-waf-block' \}\) \}\)/);
-    assert.ok(dm.indexOf('GCWafUI.entryTag(e') > dm.indexOf('GCSecOptUI.entryTags(e)'), 'after the security-option tags');
-    assert.match(dm, /V\.entryChip\(e, \{ hsts: false, waf: false \}\)/);
-    assert.match(dm, /wafLabel: \(state\) => t\(state === 'block' \? 'waf\.chip_block' : 'waf\.chip_detect'\)/);
-    assert.match(dm, /lockTarget: true/);
+  it('the shield opens the editor on "Sicherheit" at the WAF block; the entry line shows the WAF note', () => {
+    const zp = stripComments(read('public/js/zones-page.js'));
+    assert.match(zp, /waf: \{ section: 'security', focus: 'edit-waf-block' \}/);
+    assert.match(zp, /HD\.openOptions\(e, host, zone, PROTECTION_TARGET\[key\]/);
+    assert.match(zp, /t\(n\.value === 'block' \? 'waf\.chip_block' : 'waf\.chip_detect'\)/);
+    const wu = stripComments(read('public/js/waf-ui.js'));
+    assert.doesNotMatch(wu, /\bentryTag\b|\bopenEntryDialog\b/, 'the per-entry quick dialog of the former domain modal is gone');
     const zv = stripComments(read('public/js/zones-view.js'));
     assert.match(zv, /'WAF \(erkennt\)'/);
     assert.match(zv, /opts\.waf === false/);
+    assert.match(zv, /out\.push\(\{ id: 'waf', value: waf \}\)/);
   });
 });
 
@@ -344,7 +346,7 @@ describe('WAF: styles', () => {
     for (const f of ['app.css §1 (base)']) {
       const css = appSection(1);
       for (const cls of ['.stats-grid.wf-tiles', '.wf-tile.on', '.wf-banner', '.wf-filters', '.wf-table-wrap', '#wf-table', '.wf-row-blocked', '.wf-raw', '.btn.wf-act',
-        '.wf-pager', '.wf-locked', '.modal.wf-dialog-box', '.wf-editor-block.wf-locked', '.wf-editor-row', '.wf-recommendation', '.wf-excl-row', '.tag.wf-entry-tag']) {
+        '.wf-pager', '.wf-locked', '.modal.wf-dialog-box', '.wf-editor-block.wf-locked', '.wf-editor-row', '.wf-recommendation', '.wf-excl-row']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
       assert.match(css, /@media \(max-width: 600px\) \{[^}]*\.stats-grid\.wf-tiles \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 8px; \}/, `${f}: compact tiles on phones`);

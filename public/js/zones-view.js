@@ -253,21 +253,6 @@
     return entries.some((e) => !!e.external_enabled) ? 'external' : 'internal';
   }
 
-  // Shared LAN address of a host; peer-routed hosts fall back to the peer IP.
-  function hostTarget(host) {
-    if (!host) return '';
-    if (host.lan_host) return host.lan_host;
-    const first = (host.entries || []).find((e) => !e.rdp_owned) || (host.entries || [])[0];
-    return first ? entryTargetHost(first) : '';
-  }
-
-  // Common target port when the host has exactly one distinct one (shown as
-  // "192.168.2.151 : 8092" in the row), else null.
-  function hostSinglePort(host) {
-    const ports = new Set((host && host.entries || []).map(entryTargetPort).filter(Boolean));
-    return ports.size === 1 ? Array.from(ports)[0] : null;
-  }
-
   // ── Gateways ───────────────────────────────────────────────────────────
   function gatewayKey(kind, id) {
     if (!kind || id == null || id === '') return null;
@@ -604,7 +589,7 @@
     UNASSIGNED_KEY,
     isApex, hostLabel, sortHosts, sortEntries, isL4,
     entryTargetHost, entryTargetPort, entryListenPort, entryChip, entryName, isOnDemand, hstsActive, wafState, entryPortLabel, entryHealth,
-    worstHealth, hostHealth, hostEnabled, hostAccess, hostTarget, hostSinglePort,
+    worstHealth, hostHealth, hostEnabled, hostAccess,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
     isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,
     zoneKey, gatewayChoices, smbEntries, previewFqdn, validSubdomain, validIPv4, validPort,
@@ -705,5 +690,355 @@
   Object.assign(V, {
     DISCOVERY_HTTP_PORTS, suggestSubdomain, classifyDiscoveredPort, entryDraftFromPort, devicePorts,
     filterDiscovered, discoveryAgeMinutes, discoveryStateOf,
+  });
+})(typeof self !== 'undefined' ? self : this);
+
+// ─── Redesign helpers (docs/feature-domain-zones.md, "Seite und Dialoge"):
+// host rows, the "Host bearbeiten" drafts and save plan, the "Neuer Host"
+// body and checks, the editor's connection path. Pure, merged into the same
+// export as above so the browser and node:test see one object.
+(function (root) {
+  const V = (typeof module !== 'undefined' && module.exports) ? module.exports : root.GCZonesView;
+  if (!V || V.entryLine) return;
+
+  function str(v) { return v == null ? '' : String(v); }
+  function on(v) { return v === true || v === 1 || v === '1' || v === 'true'; }
+  function onePort(s) { const v = str(s).trim(); return /^\d{1,5}$/.test(v) && +v >= 1 && +v <= 65535; }
+
+  // 'http' | 'tcp' | 'udp' of an entry.
+  function entryKind(e) {
+    if (!V.isL4(e)) return 'http';
+    return e.l4_protocol === 'udp' ? 'udp' : 'tcp';
+  }
+  // Chip text: HTTPS / HTTP / TCP / UDP.
+  function entryType(e) {
+    const k = entryKind(e);
+    if (k === 'http') return e && on(e.https_enabled) ? 'HTTPS' : 'HTTP';
+    return k.toUpperCase();
+  }
+  // Port on the outside: 443/80 for HTTP, the listen port (or range) for L4.
+  function entryOuter(e) { return V.entryListenPort(e); }
+
+  // Notes behind a host-row line, language-neutral ids (+ a value). The page
+  // translates the ids it knows and shows `value` as is.
+  function entryNotes(e) {
+    const out = [];
+    const name = V.entryName(e);
+    if (name) out.push({ id: 'name', value: name });
+    if (e.rdp_owned) out.push({ id: 'rdp' });
+    if (V.isOnDemand(e)) out.push({ id: 'on_demand' });
+    if (V.isL4(e)) {
+      const pl = V.entryPortLabel(e);
+      if (pl && !e.rdp_owned) out.push({ id: 'port_label', value: pl });
+      if (e.l4_tls_mode && e.l4_tls_mode !== 'none') out.push({ id: 'tls_sni' });
+    } else {
+      if (on(e.backend_https)) out.push({ id: 'backend_https' });
+      if (V.hstsActive(e)) out.push({ id: 'hsts' });
+      const waf = V.wafState(e);
+      if (waf) out.push({ id: 'waf', value: waf });
+      if (on(e.basic_auth_enabled) || on(e.route_auth_enabled)) out.push({ id: 'auth' });
+    }
+    return out;
+  }
+
+  // One line of a host row: "HTTPS 443 → 192.168.2.10 : 80".
+  function entryLine(e) {
+    const port = V.entryTargetPort(e);
+    const host = V.entryTargetHost(e);
+    return {
+      id: e.id,
+      kind: entryKind(e),
+      type: entryType(e),
+      from: V.isL4(e) ? ':' + str(e.l4_listen_port) : entryOuter(e),
+      to: (host || '?') + ' : ' + (port || '?'),
+      enabled: on(e.enabled),
+      notes: entryNotes(e),
+    };
+  }
+
+  // Entries a host row shows: all, or with an entry-level filter only the
+  // ones passing it (same rule as the bulk selection, RDP rows included).
+  function visibleEntries(host, f) {
+    const list = V.sortEntries((host && host.entries) || []);
+    if (!V.entryFilterActive(f)) return list;
+    return list.filter((e) => {
+      if (f.type === 'http' && V.isL4(e)) return false;
+      if (f.type === 'l4' && !V.isL4(e)) return false;
+      if (f.access === 'external' && !on(e.external_enabled)) return false;
+      if (f.access === 'internal' && on(e.external_enabled)) return false;
+      if (f.state === 'disabled' && on(e.enabled)) return false;
+      if (f.risk && !V.entryRisk(e, f.risk)) return false;
+      return true;
+    });
+  }
+
+  // Status select of the toolbar: one value for two hash dimensions
+  // ('problem' | 'disabled' → state, 'external' | 'internal' → access).
+  function statusValue(f) {
+    if (!f) return '';
+    if (f.state) return f.state;
+    if (f.access) return f.access;
+    return '';
+  }
+  function applyStatus(f, value) {
+    const out = Object.assign({}, f, { state: null, access: null });
+    if (value === 'problem' || value === 'disabled') out.state = value;
+    else if (value === 'external' || value === 'internal') out.access = value;
+    return out;
+  }
+
+  // ── "Host bearbeiten" ──
+  function hostDraft(host) {
+    return {
+      subdomain: host && host.subdomain ? (host.subdomain === '@' ? '@' : host.subdomain) : '',
+      description: str(host && host.description),
+      lan: str(host && host.lan_host),
+    };
+  }
+
+  // Inline-editable fields of one entry.
+  function entryDraft(e) {
+    return {
+      type: entryKind(e),
+      outer: V.isL4(e) ? str(e.l4_listen_port) : '',
+      port: V.entryTargetPort(e),
+      name: str(V.entryName(e)),
+      enabled: on(e.enabled),
+    };
+  }
+
+  // [{ field, from, to }] for the "Port am Ziel: 3389 → 3390" hint.
+  function draftChanges(e, d) {
+    const o = entryDraft(e);
+    const out = [];
+    if (d.type !== o.type) out.push({ field: 'type', from: o.type, to: d.type });
+    if (d.type !== 'http' && str(d.outer).trim() !== o.outer) out.push({ field: 'outer', from: o.outer || (o.type === 'http' ? entryOuter(e) : ''), to: str(d.outer).trim() });
+    if (str(d.port).trim() !== o.port) out.push({ field: 'port', from: o.port, to: str(d.port).trim() });
+    if (str(d.name).trim() !== o.name) out.push({ field: 'name', from: o.name, to: str(d.name).trim() });
+    if (!!d.enabled !== o.enabled) out.push({ field: 'enabled', from: o.enabled, to: !!d.enabled });
+    return out;
+  }
+
+  // PUT /api/routes/:id body for an entry draft, or { error } (an i18n-neutral
+  // code: 'port' | 'outer' | 'http_taken' | 'no_domain'). ctx: { fqdn,
+  // hasOtherHttp }. Gateway/pool targets get both port fields.
+  function entryPatch(e, d, ctx) {
+    const c = ctx || {};
+    const changes = draftChanges(e, d);
+    if (!changes.length) return { patch: null, changes };
+    const patch = {};
+    const fields = new Set(changes.map((x) => x.field));
+    const port = str(d.port).trim();
+    if (!onePort(port)) return { error: 'port', changes };
+    if (fields.has('port') || fields.has('type')) {
+      patch.target_port = port;
+      if (e.target_kind === 'gateway') patch.target_lan_port = parseInt(port, 10);
+    }
+    if (fields.has('type') || (d.type !== 'http' && fields.has('outer'))) {
+      if (d.type === 'http') {
+        if (c.hasOtherHttp) return { error: 'http_taken', changes };
+        if (!c.fqdn) return { error: 'no_domain', changes };
+        patch.route_type = 'http';
+        patch.domain = c.fqdn;
+        if (entryKind(e) !== 'http') patch.https_enabled = true;
+      } else {
+        const outer = str(d.outer).trim();
+        if (!V.validPort(outer, true)) return { error: 'outer', changes };
+        patch.route_type = 'l4';
+        patch.l4_protocol = d.type;
+        patch.l4_listen_port = outer;
+        // UDP has no TLS; a type change from HTTP starts without SNI.
+        const tls = entryKind(e) === 'http' ? 'none' : (e.l4_tls_mode || 'none');
+        patch.l4_tls_mode = d.type === 'udp' ? 'none' : tls;
+        if (entryKind(e) === 'http' || patch.l4_tls_mode === 'none') {
+          // A plain forward has no name; '' clears a stored one (the host keeps its fqdn).
+          if (e.domain) patch.domain = '';
+        }
+      }
+    }
+    if (fields.has('name')) patch.label = str(d.name).trim();
+    if (fields.has('enabled')) patch.enabled = !!d.enabled;
+    return { patch, changes };
+  }
+
+  // Changes of the host fields → PUT /hosts/:id body (null when unchanged).
+  function hostPatch(host, d, zone) {
+    const o = hostDraft(host);
+    const patch = {};
+    if (zone && !zone.unassigned && str(d.subdomain).trim().toLowerCase() !== o.subdomain.toLowerCase()) {
+      const sub = str(d.subdomain).trim().toLowerCase();
+      if (!V.validSubdomain(sub)) return { error: 'subdomain' };
+      patch.subdomain = sub || '@';
+      if (patch.subdomain === (host.subdomain || '')) delete patch.subdomain;
+    }
+    if (str(d.description).trim() !== o.description.trim()) patch.description = str(d.description).trim();
+    if (host && host.lan_host != null && str(d.lan).trim() !== o.lan) {
+      const lan = str(d.lan).trim();
+      if (!lan) return { error: 'lan' };
+      patch.lan_host = lan;
+    }
+    return { patch: Object.keys(patch).length ? patch : null };
+  }
+
+  // Everything "Speichern" in "Host bearbeiten" has to do. drafts: id → draft.
+  // → { host: patch|null, entries: [{ id, patch, changes }], count, error? }
+  // count = number of changed fields (the dirty counter).
+  function hostSavePlan(host, zone, hd, drafts) {
+    const plan = { host: null, entries: [], count: 0, error: null };
+    const hp = hostPatch(host, hd, zone);
+    if (hp.error) { plan.error = { scope: 'host', code: hp.error }; }
+    else if (hp.patch) { plan.host = hp.patch; plan.count += Object.keys(hp.patch).length; }
+    const fqdn = (hp.patch && hp.patch.subdomain && zone && zone.domain) ? V.previewFqdn(hp.patch.subdomain, zone.domain) : (host && host.fqdn);
+    const entries = (host && host.entries) || [];
+    // The HTTP slot after the save: an entry that stays/becomes HTTP holds it.
+    const httpAfter = entries.filter((e) => !e.rdp_owned).filter((e) => {
+      const d = drafts && drafts[e.id];
+      return (d ? d.type : entryKind(e)) === 'http';
+    });
+    entries.forEach((e) => {
+      if (e.rdp_owned) return;
+      const d = drafts && drafts[e.id];
+      if (!d) return;
+      const res = entryPatch(e, d, { fqdn, hasOtherHttp: httpAfter.some((x) => x.id !== e.id) });
+      if (res.error) { if (!plan.error) plan.error = { scope: 'entry', id: e.id, code: res.error }; plan.count += res.changes.length; return; }
+      if (res.patch) { plan.entries.push({ id: e.id, patch: res.patch, changes: res.changes }); plan.count += res.changes.length; }
+    });
+    return plan;
+  }
+
+  // ── "Neuer Host" ──
+  function newEntry(type) {
+    const t = type === 'tcp' || type === 'udp' ? type : 'http';
+    return { type: t, outer: t === 'http' ? '443' : '', port: '', backend: false };
+  }
+
+  // Template entries (GET /host-templates) → dialog rows.
+  function entriesFromTemplate(tpl) {
+    return ((tpl && tpl.entries) || []).map((e) => ({
+      type: e.type === 'tcp' || e.type === 'udp' ? e.type : 'http',
+      outer: e.type === 'http' ? '443' : str(e.listen_port),
+      port: str(e.target_port),
+      backend: !!e.backend_https,
+    }));
+  }
+
+  // POST /domains/:id/hosts body or { error: { field, index?, code } }.
+  // draft: { sub, desc, lan, entries, external, template, www }
+  function newHostBody(draft, zone) {
+    const d = draft || {};
+    const sub = str(d.sub).trim().toLowerCase();
+    if (!V.validSubdomain(sub)) return { error: { field: 'sub', code: 'subdomain' } };
+    const body = { subdomain: sub || '@' };
+    if (str(d.desc).trim()) body.description = str(d.desc).trim();
+    const peer = !!(zone && zone.gateway && zone.gateway.kind === 'peer');
+    if (!peer) {
+      if (!str(d.lan).trim()) return { error: { field: 'lan', code: 'lan' } };
+      body.lan_host = str(d.lan).trim();
+    }
+    const list = d.entries || [];
+    if (!list.length) return { error: { field: 'entries', code: 'entries' } };
+    if (list.filter((e) => e.type === 'http').length > 1) return { error: { field: 'type', index: list.map((e) => e.type).lastIndexOf('http'), code: 'http_twice' } };
+    const seen = {};
+    body.entries = [];
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (!onePort(e.port)) return { error: { field: 'port', index: i, code: 'port' } };
+      if (e.type === 'http') {
+        body.entries.push({ type: 'http', target_port: parseInt(e.port, 10), backend_https: !!e.backend });
+        continue;
+      }
+      const outer = str(e.outer).trim();
+      if (!V.validPort(outer, true)) return { error: { field: 'outer', index: i, code: 'outer' } };
+      const key = e.type + '|' + outer;
+      if (seen[key]) return { error: { field: 'outer', index: i, code: 'outer_twice' } };
+      seen[key] = true;
+      body.entries.push({ type: e.type, target_port: parseInt(e.port, 10), listen_port: /^\d+$/.test(outer) ? parseInt(outer, 10) : outer });
+    }
+    if (typeof d.external === 'boolean') body.external_enabled = d.external;
+    if (d.template) body.template = d.template;
+    return { body };
+  }
+
+  // Aside of "Neuer Host": [{ type, from, to }].
+  function newHostPreview(draft, zone) {
+    const d = draft || {};
+    const fqdn = V.previewFqdn(d.sub, zone && zone.domain) || '…';
+    const peer = !!(zone && zone.gateway && zone.gateway.kind === 'peer');
+    const target = peer ? str(zone.gateway.ip || zone.gateway.name || '…') : (str(d.lan).trim() || '…');
+    return (d.entries || []).map((e) => ({
+      type: e.type === 'http' ? 'HTTPS' : e.type.toUpperCase(),
+      kind: e.type,
+      from: e.type === 'http' ? 'https://' + fqdn : fqdn + ':' + (str(e.outer).trim() || '?'),
+      to: target + ':' + (str(e.port).trim() || '?') + (e.type === 'http' && e.backend ? ' (HTTPS)' : ''),
+    }));
+  }
+
+  // Listen ports in use: 'tcp|2222' → entry id, from every enabled plain
+  // (no-TLS) TCP/UDP entry on the page. excludeIds: ids to ignore.
+  function usedListenPorts(zones, excludeIds) {
+    const ex = new Set(excludeIds || []);
+    const map = new Map();
+    (zones || []).forEach((z) => (z.hosts || []).forEach((h) => (h.entries || []).forEach((e) => {
+      if (!V.isL4(e) || ex.has(e.id) || !on(e.enabled)) return;
+      if (e.l4_tls_mode && e.l4_tls_mode !== 'none') return;
+      map.set((e.l4_protocol === 'udp' ? 'udp' : 'tcp') + '|' + str(e.l4_listen_port), e.id);
+    })));
+    return map;
+  }
+
+  // 'free' | 'taken' | 'reserved' | 'invalid' for one listen port (or range).
+  function listenPortState(port, proto, used, blocked) {
+    const v = str(port).trim();
+    if (!V.validPort(v, true)) return 'invalid';
+    const m = /^(\d+)(?:-(\d+))?$/.exec(v);
+    const a = +m[1];
+    const b = m[2] ? +m[2] : a;
+    const bl = (blocked || []).map(Number);
+    for (let p = a; p <= b && p - a < 10000; p++) if (bl.indexOf(p) !== -1) return 'reserved';
+    if (used && used.has((proto === 'udp' ? 'udp' : 'tcp') + '|' + v)) return 'taken';
+    return 'free';
+  }
+
+  // Checks in the "Neuer Host" aside: [{ id, state: 'ok'|'warn', params }].
+  function newHostChecks(draft, zone, ctx) {
+    const d = draft || {};
+    const c = ctx || {};
+    const out = [];
+    if (!zone) return out;
+    const v = zone.verification;
+    out.push({ id: 'dns', state: v === 'verified' ? 'ok' : 'warn', params: { domain: zone.domain, status: v || 'pending' } });
+    const g = zone.gateway || {};
+    if (g.kind) out.push({ id: g.kind === 'peer' ? 'peer' : 'gateway', state: g.online === false ? 'warn' : 'ok', params: { name: g.name || g.ip || '' } });
+    const fqdn = V.previewFqdn(d.sub, zone.domain);
+    if ((d.entries || []).some((e) => e.type === 'http')) out.push({ id: 'cert', state: v === 'verified' ? 'ok' : 'warn', params: { host: fqdn } });
+    (d.entries || []).forEach((e) => {
+      if (e.type === 'http' || !str(e.outer).trim()) return;
+      const st = listenPortState(e.outer, e.type, c.used, c.blocked);
+      out.push({ id: 'port_' + st, state: st === 'free' ? 'ok' : 'warn', params: { port: str(e.outer).trim(), proto: e.type.toUpperCase() } });
+    });
+    return out;
+  }
+
+  // ── Entry editor: "Weg der Verbindung" ──
+  // s: { external, kind, outer, fqdn, auth: 'none'|'basic'|'route', target:
+  //      { kind: 'gateway'|'pool'|'peer', name }, lanHost, port }
+  // → [{ id: 'in'|'gc'|'auth'|'gw'|'lan', value, kicker? }]
+  function entryFlow(s) {
+    const x = s || {};
+    const steps = [];
+    const outer = x.kind === 'http' ? (x.outer || '443') : (x.outer || '?');
+    steps.push({ id: 'in', kicker: x.external ? 'internet' : 'vpn', value: ':' + outer });
+    steps.push({ id: 'gc', value: x.fqdn || 'GateControl' });
+    if (x.kind === 'http' && (x.auth === 'basic' || x.auth === 'route')) steps.push({ id: 'auth', value: x.auth });
+    const t = x.target || {};
+    if (t.kind === 'gateway' || t.kind === 'pool') steps.push({ id: 'gw', kicker: t.kind, value: t.name || '?' });
+    steps.push({ id: 'lan', kicker: t.kind === 'peer' ? 'peer' : 'lan', value: (x.lanHost || '?') + ' : ' + (x.port || '?') });
+    return steps;
+  }
+
+  Object.assign(V, {
+    entryKind, entryType, entryOuter, entryNotes, entryLine, visibleEntries, statusValue, applyStatus,
+    hostDraft, entryDraft, draftChanges, entryPatch, hostPatch, hostSavePlan,
+    newEntry, entriesFromTemplate, newHostBody, newHostPreview, usedListenPorts, listenPortState, newHostChecks, entryFlow,
   });
 })(typeof self !== 'undefined' ? self : this);

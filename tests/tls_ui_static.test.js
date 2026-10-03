@@ -95,15 +95,17 @@ describe('TLS guard: DOM hooks per theme', () => {
   it('zones scripts use the TLS guard hooks and keep a fallback without tls-ui.js', () => {
     const page = stripComments(read('public/js/zones-page.js'));
     const dm = stripComments(read('public/js/domain-modal.js'));
+    const hd = stripComments(read('public/js/host-dialogs.js'));
     assert.match(page, /TG\.hostProblemText\(host\)/);
     assert.match(page, /TG\.decorateChip\(/);
     assert.match(page, /TG\.dnsTag\(zone/);
     assert.match(page, /'gc:tls'/);
-    assert.match(dm, /GCTlsUI\.entryTag\(e/);
+    assert.match(page, /\|\| UI\.verificationTag\(zone\)/, 'falls back to the plain verification tag');
+    assert.match(page, /TG \? TG\.entryTag\(e/);
+    assert.match(hd, /GCTlsUI\.entryTag\(e/);
+    assert.match(hd, /GCTlsUI\.noticeEl\(/);
+    assert.match(hd, /TG\.tlsFromResponse\(res\)/);
     assert.match(dm, /GCTlsUI\.dnsTag\(zone/);
-    assert.match(dm, /noteTlsPaused\(res/);
-    assert.match(dm, /GCTlsUI\.noticeEl\(/);
-    assert.match(dm, /\|\| verificationTag\(zone\)/, 'falls back to the plain verification tag');
   });
 
   it('events.js forwards the tls SSE event as gc:tls', () => {
@@ -202,7 +204,7 @@ describe('TLS guard: styles', () => {
     }
     for (const f of ['app.css §1 (base)']) {
       const css = appSection(1);
-      for (const cls of ['.tg-tiles', '.tg-banner', '.tg-chips', '.tg-table', '.tg-orig', '.tg-actions', '.tg-records', '.tg-preflight', '.tg-notice', '.tg-chip-warn', '.tg-entry-tag', '.toast-warning']) {
+      for (const cls of ['.tg-tiles', '.tg-banner', '.tg-chips', '.tg-table', '.tg-orig', '.tg-actions', '.tg-records', '.tg-preflight', '.tg-notice', '.rt-chip.tg-chip-warn', '.tg-entry-tag', '.toast-warning']) {
         assert.ok(css.includes(cls), `${f}: ${cls}`);
       }
     }
