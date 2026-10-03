@@ -200,6 +200,44 @@ router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
+// Profile page locals: identity header (initials, e-mail) and security rail.
+// The session tile shows the CURRENT session — how and when it was
+// established (establishSession in routes/auth.js) — not a "last login".
+function profileInitials(name) {
+  const words = String(name || '').trim().split(/[\s._-]+/).filter(Boolean);
+  if (!words.length) return '?';
+  const chars = words.length > 1
+    ? [Array.from(words[0])[0], Array.from(words[1])[0]]
+    : Array.from(words[0]).slice(0, 2);
+  return chars.join('').toUpperCase();
+}
+
+function profileLocals(req, res) {
+  const session = req.session || {};
+  const uid = session.userId;
+  const user = res.locals.user || {};
+  const out = {
+    profileInitials: profileInitials(user.display_name || user.username),
+    sessionAuthMethod: ['password', 'totp', 'passkey'].includes(session.authMethod) ? session.authMethod : null,
+    sessionAuthAt: Number(session.authAt) || null,
+    profileEmail: '',
+    profilePasskeyCount: 0,
+    profileRecoveryRemaining: null,
+  };
+  try {
+    const row = require('../db/connection').getDb().prepare('SELECT email FROM users WHERE id = ?').get(uid);
+    out.profileEmail = (row && row.email) || '';
+  } catch (err) { logger.debug({ err: err.message }, 'profile e-mail unavailable'); }
+  try {
+    out.profilePasskeyCount = require('../services/adminPasskeys').count(uid);
+  } catch (err) { logger.debug({ err: err.message }, 'passkey count unavailable'); }
+  try {
+    const st = require('../services/adminTwoFactor').getStatus(uid);
+    if (st && st.enabled) out.profileRecoveryRemaining = st.recovery_codes_remaining;
+  } catch (err) { logger.debug({ err: err.message }, '2fa status unavailable'); }
+  return out;
+}
+
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
@@ -260,6 +298,7 @@ pages.forEach(({ path, template, nav, titleKey }) => {
     // without a second factor — the 2FA card opens its setup right away.
     if (template === 'profile') {
       extraLocals.setup2fa = req.query && req.query.setup2fa === '1';
+      Object.assign(extraLocals, profileLocals(req, res));
     }
 
     if (template === 'gateway-pools') {

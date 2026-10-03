@@ -1,70 +1,70 @@
-{# Zwei-Faktor-Anmeldung (docs/feature-admin-2fa.md) — Profilkarte, gesteuert von /js/profile-2fa.js #}
-<div class="card span6 tf-card" id="tf-card" data-enabled="{{ '1' if user.totp_enabled else '0' }}" data-username="{{ user.username }}" data-setup="{{ '1' if setup2fa else '0' }}">
-  <div class="card-title">
-    <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
-    <span>{{ t('two_fa.title') }}</span>
-    <span class="tf-status" id="tf-status"></span>
+{# Zwei-Faktor-Anmeldung (docs/feature-admin-2fa.md) — Block in „Anmeldung & Sicherheit“ der Profilseite, gesteuert von /js/profile-2fa.js #}
+<div class="pf-block tf-card" id="tf-card" data-enabled="{{ '1' if user.totp_enabled else '0' }}" data-username="{{ user.username }}" data-setup="{{ '1' if setup2fa else '0' }}" role="group" aria-labelledby="tf-title">
+  <div class="tf-banner tf-banner-amber pf-banner" id="tf-required-banner" hidden>{{ t('two_fa.required_banner') }}</div>
+  <div class="pf-row pf-row-flat">
+    <div class="pf-row-label">
+      <div class="pf-label-line">
+        <span class="pf-label" id="tf-title">{{ t('two_fa.title') }}</span>
+        <span class="tf-status" id="tf-status"></span>
+      </div>
+      <div class="pf-hint"><span>{{ t('profile.tf_hint') }}</span><span class="pf-hint-extra" id="tf-remaining"></span></div>
+    </div>
+    <div class="pf-row-actions">
+      <div class="tf-panel pf-actions" id="tf-panel-off">
+        <button type="button" class="btn btn-primary pf-btn" id="tf-btn-setup">{{ t('two_fa.setup') }}</button>
+      </div>
+      <div class="tf-panel pf-actions" id="tf-panel-on" hidden>
+        <button type="button" class="btn pf-btn" id="tf-btn-regenerate" aria-controls="tf-form-regenerate">{{ t('two_fa.regenerate') }}</button>
+        <button type="button" class="btn btn-danger pf-btn" id="tf-btn-disable" aria-controls="tf-form-disable">{{ t('two_fa.disable') }}</button>
+      </div>
+    </div>
   </div>
-  <div class="tf-body" style="margin-top:14px">
-    <div class="tf-banner tf-banner-amber" id="tf-required-banner" hidden>{{ t('two_fa.required_banner') }}</div>
+  <div class="tf-hint pf-note-inline" id="tf-required-locked" hidden>{{ t('two_fa.required_locked') }}</div>
+  <div class="pf-msg" id="tf-message" role="status"></div>
+
+  <div class="tf-panel pf-expand" id="tf-panel-setup" hidden>
     <div class="tf-hint">{{ t('two_fa.card_hint') }}</div>
-    <div id="tf-message" style="display:none"></div>
-
-    <div class="tf-panel" id="tf-panel-off">
-      <button type="button" class="btn btn-primary" id="tf-btn-setup">{{ t('two_fa.setup') }}</button>
+    <div class="tf-step">{{ t('two_fa.setup_step_scan') }}</div>
+    <div class="tf-qr" id="tf-qr"></div>
+    <div class="tf-secret-row">
+      <span class="tf-label">{{ t('two_fa.secret_label') }}</span>
+      <code class="tf-secret" id="tf-secret"></code>
+      <button type="button" class="btn btn-ghost pf-btn" id="tf-btn-copy-secret">{{ t('two_fa.copy') }}</button>
     </div>
-
-    <div class="tf-panel" id="tf-panel-setup" hidden>
-      <div class="tf-step">{{ t('two_fa.setup_step_scan') }}</div>
-      <div class="tf-qr" id="tf-qr"></div>
-      <div class="tf-secret-row">
-        <span class="tf-label">{{ t('two_fa.secret_label') }}</span>
-        <code class="tf-secret" id="tf-secret"></code>
-        <button type="button" class="btn btn-ghost tf-btn-sm" id="tf-btn-copy-secret">{{ t('two_fa.copy') }}</button>
-      </div>
-      <div class="tf-step">{{ t('two_fa.setup_step_code') }}</div>
-      <div class="tf-inline">
-        <input type="text" class="form-input tf-code-input" id="tf-confirm-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="123456">
-        <button type="button" class="btn btn-primary" id="tf-btn-confirm">{{ t('two_fa.confirm') }}</button>
-        <button type="button" class="btn btn-ghost" id="tf-btn-cancel-setup">{{ t('two_fa.cancel') }}</button>
-      </div>
+    <label class="tf-step" for="tf-confirm-code">{{ t('two_fa.setup_step_code') }}</label>
+    <div class="pf-inline">
+      <input type="text" class="form-input pf-input tf-code-input" id="tf-confirm-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="123456">
+      <button type="button" class="btn btn-primary pf-btn" id="tf-btn-confirm">{{ t('two_fa.confirm') }}</button>
+      <button type="button" class="btn btn-ghost pf-btn" id="tf-btn-cancel-setup">{{ t('two_fa.cancel') }}</button>
     </div>
+  </div>
 
-    <div class="tf-panel" id="tf-panel-codes" hidden>
-      <div class="tf-label">{{ t('two_fa.recovery_title') }}</div>
-      <div class="tf-hint">{{ t('two_fa.recovery_hint') }}</div>
-      <ol class="tf-codes" id="tf-codes"></ol>
-      <div class="tf-inline">
-        <button type="button" class="btn btn-ghost" id="tf-btn-copy-codes">{{ t('two_fa.copy') }}</button>
-        <button type="button" class="btn btn-ghost" id="tf-btn-download-codes">{{ t('two_fa.download') }}</button>
-        <button type="button" class="btn btn-primary" id="tf-btn-codes-done">{{ t('two_fa.done') }}</button>
-      </div>
+  <div class="tf-panel pf-expand" id="tf-panel-codes" hidden>
+    <div class="tf-label">{{ t('two_fa.recovery_title') }}</div>
+    <div class="tf-hint">{{ t('two_fa.recovery_hint') }}</div>
+    <ol class="tf-codes" id="tf-codes"></ol>
+    <div class="pf-inline">
+      <button type="button" class="btn btn-ghost pf-btn" id="tf-btn-copy-codes">{{ t('two_fa.copy') }}</button>
+      <button type="button" class="btn btn-ghost pf-btn" id="tf-btn-download-codes">{{ t('two_fa.download') }}</button>
+      <button type="button" class="btn btn-primary pf-btn" id="tf-btn-codes-done">{{ t('two_fa.done') }}</button>
     </div>
+  </div>
 
-    <div class="tf-panel" id="tf-panel-on" hidden>
-      <div class="tf-hint tf-mono" id="tf-remaining"></div>
-      <div class="tf-inline">
-        <button type="button" class="btn btn-ghost" id="tf-btn-regenerate">{{ t('two_fa.regenerate') }}</button>
-        <button type="button" class="btn btn-danger" id="tf-btn-disable">{{ t('two_fa.disable') }}</button>
-      </div>
-      <div class="tf-subform" id="tf-form-regenerate" hidden>
-        <div class="tf-hint">{{ t('two_fa.regenerate_hint') }}</div>
-        <div class="tf-inline">
-          <input type="password" class="form-input" id="tf-regen-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
-          <button type="button" class="btn btn-primary" id="tf-btn-regenerate-confirm">{{ t('two_fa.regenerate') }}</button>
-          <button type="button" class="btn btn-ghost" data-tf-cancel="tf-form-regenerate">{{ t('two_fa.cancel') }}</button>
-        </div>
-      </div>
-      <div class="tf-subform" id="tf-form-disable" hidden>
-        <div class="tf-hint">{{ t('two_fa.disable_hint') }}</div>
-        <div class="tf-inline">
-          <input type="password" class="form-input" id="tf-disable-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
-          <input type="text" class="form-input tf-code-input" id="tf-disable-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="123456">
-          <button type="button" class="btn btn-danger" id="tf-btn-disable-confirm">{{ t('two_fa.disable') }}</button>
-          <button type="button" class="btn btn-ghost" data-tf-cancel="tf-form-disable">{{ t('two_fa.cancel') }}</button>
-        </div>
-      </div>
-      <div class="tf-hint" id="tf-required-locked" hidden>{{ t('two_fa.required_locked') }}</div>
+  <div class="pf-expand" id="tf-form-regenerate" hidden>
+    <label class="tf-hint" for="tf-regen-password">{{ t('two_fa.regenerate_hint') }}</label>
+    <div class="pf-inline">
+      <input type="password" class="form-input pf-input" id="tf-regen-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
+      <button type="button" class="btn btn-primary pf-btn" id="tf-btn-regenerate-confirm">{{ t('two_fa.regenerate') }}</button>
+      <button type="button" class="btn btn-ghost pf-btn" data-tf-cancel="tf-form-regenerate">{{ t('two_fa.cancel') }}</button>
+    </div>
+  </div>
+  <div class="pf-expand pf-expand-danger" id="tf-form-disable" hidden>
+    <div class="tf-hint" id="tf-disable-hint">{{ t('two_fa.disable_hint') }}</div>
+    <div class="pf-inline">
+      <input type="password" class="form-input pf-input" id="tf-disable-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}" aria-label="{{ t('two_fa.password_label') }}" aria-describedby="tf-disable-hint">
+      <input type="text" class="form-input pf-input tf-code-input" id="tf-disable-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="123456" aria-label="{{ t('two_fa.code_label') }}" aria-describedby="tf-disable-hint">
+      <button type="button" class="btn btn-danger pf-btn" id="tf-btn-disable-confirm">{{ t('two_fa.disable') }}</button>
+      <button type="button" class="btn btn-ghost pf-btn" data-tf-cancel="tf-form-disable">{{ t('two_fa.cancel') }}</button>
     </div>
   </div>
   <script type="application/json" id="tf-i18n">{

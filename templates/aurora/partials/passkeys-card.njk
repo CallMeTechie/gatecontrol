@@ -1,44 +1,53 @@
-{# Passkeys (docs/feature-admin-passkeys.md) — Profilkarte, gesteuert von /js/profile-passkeys.js #}
-<div class="card span6 pk-card" id="pk-card">
-  <div class="card-title">
-    <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="4"/><path d="M2 21c0-3.3 2.7-6 6-6 1.4 0 2.6.4 3.6 1.2"/><circle cx="17.5" cy="12.5" r="2.5"/><path d="M17.5 15v6l1.5-1.5M17.5 18.5l1.5-1"/></svg></span>
-    <span>{{ t('passkey.title') }}</span>
-    <span class="tf-status" id="pk-status"></span>
+{# Passkeys (docs/feature-admin-passkeys.md) — Block in „Anmeldung & Sicherheit“ der Profilseite, gesteuert von /js/profile-passkeys.js #}
+<div class="pf-block pk-card" id="pk-card" role="group" aria-labelledby="pk-title">
+  <div class="pf-row pf-row-flat">
+    <div class="pf-row-label">
+      <div class="pf-label-line">
+        <span class="pf-label" id="pk-title">{{ t('passkey.title') }}</span>
+        <span class="tf-status pf-pill-teal" id="pk-status">{{ t('passkey.status_count') | replace('{{count}}', profilePasskeyCount) if profilePasskeyCount else t('passkey.status_none') }}</span>
+      </div>
+      <div class="pf-hint pf-hint-wide">{{ t('profile.pk_hint') }} {{ t('profile.pk_origin') | replace('{{origin}}', baseUrl) }}</div>
+    </div>
+    <div class="pf-row-actions" id="pk-actions">
+      <button type="button" class="btn btn-primary pf-btn" id="pk-btn-add" aria-controls="pk-form-add" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        {{ t('passkey.add') }}
+      </button>
+    </div>
   </div>
-  <div class="tf-body" style="margin-top:14px">
-    <div class="tf-hint">{{ t('passkey.card_hint') }}</div>
-    <div class="tf-banner tf-banner-amber" id="pk-unavailable" hidden></div>
-    <div id="pk-message" style="display:none"></div>
+  <div class="tf-banner tf-banner-amber pf-banner" id="pk-unavailable" hidden></div>
+  <div class="pf-msg" id="pk-message" role="status"></div>
 
-    <ul class="pk-list" id="pk-list"></ul>
-    <div class="pk-empty" id="pk-empty" hidden>{{ t('passkey.empty') }}</div>
-
-    <div class="tf-inline" id="pk-actions">
-      <button type="button" class="btn btn-primary" id="pk-btn-add">{{ t('passkey.add') }}</button>
-    </div>
-
-    <div class="tf-subform" id="pk-form-add" hidden>
-      <label class="tf-label" for="pk-name">{{ t('passkey.name_label') }}</label>
-      <input type="text" class="form-input" id="pk-name" maxlength="64" placeholder="{{ t('passkey.name_placeholder') }}" autocomplete="off">
-      <div class="pk-reauth" id="pk-add-reauth" hidden>
-        <div class="tf-hint">{{ t('passkey.reauth_hint') }}</div>
-        <input type="password" class="form-input" id="pk-add-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
+  <div class="pf-expand pf-expand-accent" id="pk-form-add" hidden>
+    <div class="pf-inline pf-inline-end">
+      <div class="pf-grow">
+        <label class="pf-field-label" for="pk-name">{{ t('passkey.name_label') }}</label>
+        <input type="text" class="form-input pf-input" id="pk-name" maxlength="64" placeholder="{{ t('passkey.name_placeholder') }}" autocomplete="off">
       </div>
-      <div class="tf-inline">
-        <button type="button" class="btn btn-primary" id="pk-btn-add-confirm">{{ t('passkey.add_confirm') }}</button>
-        <button type="button" class="btn btn-ghost" data-pk-cancel="pk-form-add">{{ t('two_fa.cancel') }}</button>
+      <div class="pf-grow" id="pk-add-reauth" hidden>
+        <label class="pf-field-label" for="pk-add-password">{{ t('passkey.reauth_hint') }}</label>
+        <input type="password" class="form-input pf-input" id="pk-add-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
+      </div>
+      <div class="pf-actions">
+        <button type="button" class="btn btn-ghost pf-btn" data-pk-cancel="pk-form-add">{{ t('two_fa.cancel') }}</button>
+        <button type="button" class="btn btn-primary pf-btn" id="pk-btn-add-confirm">{{ t('passkey.add_confirm') }}</button>
       </div>
     </div>
+  </div>
 
-    <div class="tf-subform" id="pk-form-delete" hidden>
-      <div class="tf-hint" id="pk-delete-text"></div>
-      <div class="pk-reauth" id="pk-delete-reauth" hidden>
-        <div class="tf-hint">{{ t('passkey.reauth_hint') }}</div>
-        <input type="password" class="form-input" id="pk-delete-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
+  <ul class="pk-list" id="pk-list"></ul>
+  <div class="pk-empty" id="pk-empty" hidden>{{ t('passkey.empty') }}</div>
+
+  <div class="pf-expand pf-expand-danger" id="pk-form-delete" hidden>
+    <div class="tf-hint pf-strong" id="pk-delete-text"></div>
+    <div class="pf-inline pf-inline-end">
+      <div class="pf-grow" id="pk-delete-reauth" hidden>
+        <label class="pf-field-label" for="pk-delete-password">{{ t('passkey.reauth_hint') }}</label>
+        <input type="password" class="form-input pf-input" id="pk-delete-password" autocomplete="current-password" placeholder="{{ t('two_fa.password_label') }}">
       </div>
-      <div class="tf-inline">
-        <button type="button" class="btn btn-danger" id="pk-btn-delete-confirm">{{ t('passkey.remove') }}</button>
-        <button type="button" class="btn btn-ghost" data-pk-cancel="pk-form-delete">{{ t('two_fa.cancel') }}</button>
+      <div class="pf-actions">
+        <button type="button" class="btn btn-ghost pf-btn" data-pk-cancel="pk-form-delete">{{ t('two_fa.cancel') }}</button>
+        <button type="button" class="btn btn-danger pf-btn" id="pk-btn-delete-confirm">{{ t('passkey.remove') }}</button>
       </div>
     </div>
   </div>
@@ -50,6 +59,7 @@
     "never_used": {{ t('passkey.never_used') | dump | safe }},
     "synced": {{ t('passkey.synced') | dump | safe }},
     "remove": {{ t('passkey.remove') | dump | safe }},
+    "remove_label": {{ t('passkey.remove_label') | dump | safe }},
     "remove_confirm": {{ t('passkey.remove_confirm') | dump | safe }},
     "added": {{ t('passkey.added_success') | dump | safe }},
     "removed": {{ t('passkey.removed_success') | dump | safe }},

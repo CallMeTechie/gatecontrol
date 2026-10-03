@@ -1,6 +1,6 @@
 'use strict';
 
-// Profile card "Two-factor login" (docs/feature-admin-2fa.md).
+// Profile page, "Two-factor login" block (docs/feature-admin-2fa.md).
 // Talks to /api/v1/profile/2fa/*; the QR code is drawn client-side with
 // /js/vendor/qrcode.min.js (same helper route-auth uses).
 (function () {
@@ -34,14 +34,19 @@
     var rem = byId('tf-remaining');
     if (rem) {
       var parts = [];
-      if (status && status.confirmed_at) parts.push(t('status_since', 'Active since {{date}}').replace('{{date}}', String(status.confirmed_at).replace('T', ' ').slice(0, 16)));
-      if (status && typeof status.recovery_codes_remaining === 'number') parts.push(t('recovery_remaining', '{{count}} of 10 codes left').replace('{{count}}', status.recovery_codes_remaining));
+      if (enabled && status && status.confirmed_at) parts.push(t('status_since', 'Active since {{date}}').replace('{{date}}', String(status.confirmed_at).replace('T', ' ').slice(0, 16)));
+      if (enabled && status && typeof status.recovery_codes_remaining === 'number') parts.push(t('recovery_remaining', '{{count}} of 10 codes left').replace('{{count}}', status.recovery_codes_remaining));
       rem.textContent = parts.join(' · ');
     }
     show('tf-required-banner', required && !enabled);
     show('tf-required-locked', required && enabled);
     var dis = byId('tf-btn-disable');
     if (dis) dis.disabled = required && enabled;
+    // Identity header and security rail (profile.js) follow this state.
+    document.dispatchEvent(new CustomEvent('gc:profile-2fa', { detail: {
+      enabled: enabled,
+      remaining: status && typeof status.recovery_codes_remaining === 'number' ? status.recovery_codes_remaining : null,
+    } }));
   }
 
   async function refresh() {
@@ -199,6 +204,10 @@
   renderStatus(null);
   panel(enabled ? 'on' : 'off');
   refresh().then(function () {
-    if (card.getAttribute('data-setup') === '1' && !enabled) startSetup();
+    // ?setup2fa=1 (require_2fa policy): bring the 2FA block into view and open the setup.
+    if (card.getAttribute('data-setup') === '1' && !enabled) {
+      card.scrollIntoView({ block: 'start' });
+      startSetup();
+    }
   });
 })();

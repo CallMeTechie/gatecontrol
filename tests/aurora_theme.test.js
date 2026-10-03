@@ -1161,14 +1161,16 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
-  it('renders Aurora grid structure and signature classes on /profile', async () => {
+  it('renders the redesigned profile structure (identity header, sections, rail)', async () => {
     selectAurora();
     const res = await agent.get('/profile').expect(200);
-    assert.match(res.text, /class="grid"/, '.grid container present');
-    assert.match(res.text, /class="card span6"/, '.card.span6 present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
-    assert.match(res.text, /class="form-input"/, '.form-input on inputs present');
-    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+    assert.match(res.text, /class="pf-identity"/, 'identity header present');
+    assert.match(res.text, /class="pf-avatar"/, 'avatar with initials present');
+    assert.equal((res.text.match(/class="pf-section"/g) || []).length, 3, 'three sections: personal, security, appearance');
+    assert.match(res.text, /class="pf-rail"/, 'security rail present');
+    assert.match(res.text, /id="pf-status"[^>]*data-score="[123]"/, 'security score rendered server-side');
+    assert.match(res.text, /class="form-input pf-input"/, '.form-input on inputs present');
+    assert.match(res.text, /<label class="pf-label" for="settings-display-name"/, 'inputs carry real labels');
     // Aurora profile must NOT use old .two-col or .card-head pattern
     assert.doesNotMatch(res.text, /class="two-col"/, '.two-col absent in Aurora profile');
     assert.doesNotMatch(res.text, /class="card-head"/, '.card-head absent in Aurora profile');
@@ -1191,11 +1193,20 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.doesNotMatch(res.text, /id="theme-buttons"/, '#theme-buttons removed (Aurora only)');
   });
 
-  it('renders language buttons inside #language-buttons as toggle-group', async () => {
+  it('renders language and colour-scheme segmented controls', async () => {
     selectAurora();
     const res = await agent.get('/profile').expect(200);
-    assert.match(res.text, /id="language-buttons"[\s\S]{0,30}class="toggle-group"|class="toggle-group"[^>]*id="language-buttons"/, '#language-buttons wraps a .toggle-group');
-    assert.match(res.text, /data-lang=/, 'language buttons have data-lang attribute');
+    assert.match(res.text, /class="pf-seg" id="language-buttons" role="group"/, '#language-buttons is a segmented group');
+    assert.match(res.text, /data-lang="[a-z]+" aria-pressed="(true|false)"/, 'language buttons have data-lang + aria-pressed');
+    assert.match(res.text, /id="pf-scheme-buttons"[\s\S]{0,200}data-scheme="dark"[\s\S]{0,200}data-scheme="light"/, 'Midnight/Papier switch');
+  });
+
+  it('the colour-scheme switch reuses the topbar mechanism (window.GCTheme), no own storage', () => {
+    const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+    const profile = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'profile.js'), 'utf8');
+    assert.match(app, /window\.GCTheme = \{ get: get, set: set \}/);
+    assert.match(profile, /window\.GCTheme\.set\(/);
+    assert.doesNotMatch(profile, /localStorage|gc-theme-mode/, 'profile.js stores nothing itself');
   });
 
   it('i18n has profile.security_display in both en.json and de.json', () => {

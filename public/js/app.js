@@ -549,18 +549,22 @@ window.showToast = function(message, type) {
 console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');
 
 // ─── Dark/light mode toggle (#theme-btn in the topbar) ──────
+// window.GCTheme is the one place that switches and stores the colour scheme;
+// the topbar button and the profile page's segmented control both use it.
 (function () {
-  var btn = document.getElementById('theme-btn');
-  if (!btn) return;
   var html = document.documentElement;
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
   function stored() { try { return localStorage.getItem('gc-theme-mode'); } catch (e) { return null; } }
+  function get() { return html.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function set(mode) {
+    var next = mode === 'light' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    try { localStorage.setItem('gc-theme-mode', next); } catch (e) { /* ignore */ }
+  }
+  window.GCTheme = { get: get, set: set };
   mq.addEventListener('change', function (e) {
     if (!stored()) html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
   });
-  btn.addEventListener('click', function () {
-    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    html.setAttribute('data-theme', next);
-    try { localStorage.setItem('gc-theme-mode', next); } catch (e) { /* ignore */ }
-  });
+  var btn = document.getElementById('theme-btn');
+  if (btn) btn.addEventListener('click', function () { set(get() === 'dark' ? 'light' : 'dark'); });
 })();
