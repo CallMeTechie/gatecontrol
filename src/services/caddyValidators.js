@@ -62,8 +62,37 @@ function isValidHeaderName(name) {
   return typeof name === 'string' && name.length <= 256 && HEADER_NAME_RE.test(name);
 }
 
+// Custom headers (docs/feature-domain-zones.md, "Header-Vorlagen"): a name
+// with a leading '-' removes that header instead of setting it (Caddyfile
+// `header -Server`). The rest must be a plain token that starts with a letter
+// or digit, so '--x' or a bare '-' never reach the config.
+const HEADER_DELETE_RE = /^-[a-zA-Z0-9][a-zA-Z0-9-]*$/;
+function isHeaderDeletion(name) {
+  return typeof name === 'string' && name.length <= 257 && HEADER_DELETE_RE.test(name);
+}
+
+// Request-derived placeholders a header value may carry (the "Reverse-Proxy-
+// Infos" preset). Caddy's JSON config only knows the long forms, so the short
+// Caddyfile spellings are written into the config expanded. Every other
+// {...} stays rejected: {env.*}, {file.*}, {http.request.header.*} and friends
+// would let a value read server state or secrets.
+const HEADER_PLACEHOLDERS = Object.freeze({
+  '{host}': '{http.request.host}',
+  '{remote_host}': '{http.request.remote.host}',
+  '{scheme}': '{http.request.scheme}',
+});
+const HEADER_PLACEHOLDER_TOKEN_RE = /\{(?:host|remote_host|scheme)\}/g;
+
 function isValidHeaderValue(value) {
-  return typeof value === 'string' && value.length <= 4096 && !CADDY_PLACEHOLDER_RE.test(value);
+  if (typeof value !== 'string' || value.length > 4096) return false;
+  // CR/LF/NUL would split the header (Caddy refuses them too).
+  if (/[\r\n\0]/.test(value)) return false;
+  return !CADDY_PLACEHOLDER_RE.test(value.replace(HEADER_PLACEHOLDER_TOKEN_RE, ''));
+}
+
+// Value as written into the Caddy config: allowed short placeholders expanded.
+function expandHeaderValue(value) {
+  return String(value).replace(HEADER_PLACEHOLDER_TOKEN_RE, (tok) => HEADER_PLACEHOLDERS[tok]);
 }
 
 function sanitizeRateWindow(window) {
@@ -82,6 +111,9 @@ module.exports = {
   parseStatusCodes,
   isValidHeaderName,
   isValidHeaderValue,
+  isHeaderDeletion,
+  expandHeaderValue,
+  HEADER_PLACEHOLDERS,
   sanitizeRateWindow,
   sanitizeStickyCookieName,
 };

@@ -129,6 +129,15 @@ const VALIDATION_ERROR_MAP = {
 function resolveError(req, err, fallbackKey) {
   const msg = err.message || '';
   if (msg.includes('Caddy')) return { status: 502, error: req.t('error.routes.caddy_unreachable') };
+  // Port conflict of a TCP/UDP listener (routes.update): 409 with the free-port
+  // suggestion, same shape as the host endpoints (docs/feature-domain-zones.md).
+  if (err.statusCode === 409 && err.conflict) {
+    const c = err.conflict;
+    const text = c.suggestedPort
+      ? req.t('error.bundles.port_conflict', { port: c.port, suggested: c.suggestedPort })
+      : req.t('error.bundles.port_conflict_no_free', { port: c.port });
+    return { status: 409, error: text, code: err.code || 'BUNDLE_PORT_CONFLICT', conflict: c };
+  }
   // Coded service errors (HSTS_* from routesValidation): status + code pass through.
   if (err.statusCode && err.code) return { status: err.statusCode, error: msg, code: err.code };
   for (const [pattern, key] of Object.entries(VALIDATION_ERROR_MAP)) {
@@ -138,6 +147,15 @@ function resolveError(req, err, fallbackKey) {
     }
   }
   return { status: 500, error: req.t(fallbackKey) };
+}
+
+function inVerifiedZone(domain) {
+  try {
+    const z = require('../../services/domainZones').resolveZone(String(domain).trim().toLowerCase());
+    if (!z) return false;
+    const row = getDb().prepare('SELECT status FROM domains WHERE id = ?').get(z.domain_id);
+    return !!row && row.status === 'verified';
+  } catch { return false; }
 }
 
 const EXTERNAL_BLOCK_ACTIONS = ['inherit', 'not_found', 'custom', 'redirect', 'empty'];
@@ -645,6 +663,9 @@ router.put('/:id',
         currentDomain: cur ? cur.domain : null,
         routeType: req.body.route_type || (cur && cur.route_type) || 'http',
       });
+      // Same exception as hosts.checkFqdn: a name inside a VERIFIED zone is
+      // fine even when the policy's two-label base (example.co.uk) is not.
+      if (pol.error === 'public_domain_use_verified' && inVerifiedZone(domain)) pol.error = null;
       if (pol.error) fields.domain = req.t('error.routes.' + pol.error);
     }
     if (target_port !== undefined) {
@@ -717,6 +738,22 @@ router.put('/:id',
 
     const existingRoute = routes.getById(req.params.id);
     if (!existingRoute) return res.status(404).json({ ok: false, error: 'not found' });
+    // Type change HTTP <-> TCP/UDP (editable targets): the entry now counts
+    // against the other type's limit, and TCP/UDP behind a gateway needs
+    // gateway_tcp_routing — the same gates as creating such an entry.
+    const prevType = existingRoute.route_type || 'http';
+    if (route_type && route_type !== prevType) {
+      const { evaluateRouteLicense } = require('../../services/routeLicense');
+      const kind = req.body.target_kind || existingRoute.target_kind || 'peer';
+      const verdict = evaluateRouteLicense({
+        httpCount: route_type === 'http' ? 1 : 0,
+        l4Count: route_type === 'l4' ? 1 : 0,
+        targetKind: kind === 'gateway' ? 'gateway' : 'peer',
+      });
+      if (!verdict.ok) {
+        return res.status(403).json({ ok: false, error: req.t(verdict.key), upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing', ...verdict.extra });
+      }
+    }
     const ebErrU = validateExternalBlock(req.body, req.body.domain || existingRoute.domain, existingRoute);
     if (ebErrU) return res.status(400).json({ ok: false, error: ebErrU });
 
@@ -775,8 +812,8 @@ router.put('/:id',
     res.json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, 'Failed to update route');
-    const { status, error, code } = resolveError(req, err, 'error.routes.update');
-    res.status(status).json({ ok: false, error, ...(code ? { code } : {}) });
+    const { status, error, code, conflict } = resolveError(req, err, 'error.routes.update');
+    res.status(status).json({ ok: false, error, ...(code ? { code } : {}), ...(conflict ? { conflict } : {}) });
   }
 });
 

@@ -39,7 +39,7 @@ const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildCircuitBreakerOpenHandler } = require('./caddyCircuitBreaker');
 const { buildMirrorHandler } = require('./caddyMirror');
 const { applyRetryConfig } = require('./caddyRetry');
-const { buildRequestHeadersHandler, applyResponseHeaders } = require('./caddyCustomHeaders');
+const { buildCustomHeaderHandlers, applyResponseHeaders } = require('./caddyCustomHeaders');
 const { hstsHeaderValue, hstsOfRoute } = require('./routesValidation');
 const { resolveBackends } = require('./caddyBackends');
 const { buildTlsAutomation } = require('./caddyTlsAutomation');
@@ -674,11 +674,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       });
     }
 
-    // Request custom headers
-    if (customHeaders) {
-      const reqHeaders = buildRequestHeadersHandler(customHeaders.request);
-      if (reqHeaders) routeHandlers.push(reqHeaders);
-    }
+    // Request custom headers (set/remove) and deferred response removals
+    // ('-Server'); the response set-headers ride on reverse_proxy above.
+    if (customHeaders) routeHandlers.push(...buildCustomHeaderHandlers(customHeaders));
 
     // Rate limiting
     if (route.rate_limit_enabled) {

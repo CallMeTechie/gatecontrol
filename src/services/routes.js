@@ -6,7 +6,7 @@ const { validateDomain, validatePort, validateLanHost, validateDescription, vali
 const bcrypt = require('bcryptjs');
 const { syncToCaddy, buildCaddyConfig, caddyApi, getAclPeers, setAclPeers } = require('./caddyConfig');
 const { restoreRouteRow, reinsertRouteRow } = require('./routesRollback');
-const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint, normalizeLabel, onDemandFlag, validateIpFilter, validateL4ConnRate } = require('./routesValidation');
+const { validateIfProvided, validateBrandingFields, validateBotBlockerConfig, resolveHstsFields, hasHstsInput, hstsDefaultToFields, parseHstsDefault, resolveSecurityFields, resolveWafFields, hasWafInput, wafModeChanged, parseWafDefault, wafDefaultToFields, resolveBackendFingerprint, normalizeLabel, onDemandFlag, validateIpFilter, validateL4ConnRate, validateCustomHeaders } = require('./routesValidation');
 const { withCaddySync } = require('./routesSync');
 const activity = require('./activity');
 const logger = require('../utils/logger');
@@ -349,6 +349,7 @@ async function create(data, opts = {}) {
   }
 
   // Validate and serialize custom_headers
+  validateCustomHeaders(data.custom_headers);
   const customHeaders = data.custom_headers
     ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers))
     : null;
@@ -579,6 +580,15 @@ async function create(data, opts = {}) {
 /**
  * Update a route
  */
+// Error with an HTTP status and a machine-readable code (passed through by
+// the route API's resolveError).
+function codedServiceError(statusCode, code, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
 async function update(id, data) {
   const db = getDb();
   const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
@@ -588,6 +598,39 @@ async function update(id, data) {
   const snapshot = { ...route };
 
   const routeType = data.route_type || route.route_type || 'http';
+  const prevType = route.route_type || 'http';
+
+  // Editable targets (docs/feature-domain-zones.md, "Ziele bearbeiten"): an
+  // entry may switch between HTTP and TCP/UDP in place. HTTP needs a domain,
+  // TCP/UDP a protocol and a listen port, and a host keeps one HTTP entry.
+  if (routeType !== prevType) {
+    if (routeType === 'http') {
+      const dom = data.domain !== undefined ? data.domain : route.domain;
+      if (!dom || !String(dom).trim()) throw codedServiceError(400, 'TYPE_DOMAIN_REQUIRED', 'An HTTP entry needs a domain');
+      if (route.bundle_id != null && db.prepare(
+        "SELECT 1 FROM routes WHERE bundle_id = ? AND id != ? AND (route_type IS NULL OR route_type != 'l4')"
+      ).get(route.bundle_id, route.id)) {
+        throw codedServiceError(409, 'HOST_HAS_HTTP', 'The host already has an HTTP entry');
+      }
+    } else if (routeType === 'l4') {
+      const proto = data.l4_protocol !== undefined ? data.l4_protocol : route.l4_protocol;
+      if (!proto) throw codedServiceError(400, 'TYPE_PROTOCOL_REQUIRED', 'A TCP/UDP entry needs l4_protocol');
+      const lp = data.l4_listen_port !== undefined ? data.l4_listen_port : route.l4_listen_port;
+      if (lp == null || String(lp).trim() === '') {
+        throw codedServiceError(400, 'TYPE_LISTEN_PORT_REQUIRED', 'A TCP/UDP entry needs a listen port');
+      }
+    }
+  }
+
+  // Gateway and pool targets forward to target_lan_port; target_port only
+  // mirrors it (serviceBundle.memberTargetFields). A port change that names
+  // just one of the two moves both, so they never drift apart.
+  const gatewayTarget = (data.target_kind !== undefined ? (data.target_kind || 'peer') : (route.target_kind || 'peer')) === 'gateway';
+  if (gatewayTarget) {
+    const hasLan = data.target_lan_port !== undefined && data.target_lan_port !== null && data.target_lan_port !== '';
+    if (data.target_port !== undefined && data.target_lan_port === undefined) data.target_lan_port = data.target_port;
+    else if (hasLan && data.target_port === undefined) data.target_port = data.target_lan_port;
+  }
 
   if (routeType === 'l4') {
     validateIfProvided(data, 'l4_protocol', validateL4Protocol);
@@ -697,7 +740,8 @@ async function update(id, data) {
     throw new Error('Target port ' + effectiveTargetPort + ' is reserved for loopback targets');
   }
 
-  // Serialize custom_headers for update
+  // Validate + serialize custom_headers for update
+  if (data.custom_headers !== undefined) validateCustomHeaders(data.custom_headers);
   const updateCustomHeaders = data.custom_headers !== undefined
     ? (data.custom_headers ? (typeof data.custom_headers === 'string' ? data.custom_headers : JSON.stringify(data.custom_headers)) : null)
     : route.custom_headers;
@@ -719,6 +763,29 @@ async function update(id, data) {
   validateL4ConnRate(data, { routeType, current: route });
 
   validateTargetExclusivity(data);
+
+  // A plain (no-TLS) TCP/UDP listener whose port, protocol or type changes —
+  // or that gets switched on — must not take a port another enabled entry
+  // already listens on. Answered as 409 BUNDLE_PORT_CONFLICT with a free-port
+  // suggestion, the same shape the host endpoints use; without this the
+  // clash only surfaced as an opaque Caddy sync error. Ranges are left to the
+  // config check (no suggestion possible).
+  if (routeType === 'l4') {
+    const lp = data.l4_listen_port !== undefined ? data.l4_listen_port : route.l4_listen_port;
+    const proto = data.l4_protocol !== undefined ? data.l4_protocol : route.l4_protocol;
+    const tlsEff = (data.l4_tls_mode !== undefined ? data.l4_tls_mode : route.l4_tls_mode) || 'none';
+    const enabledEff = data.enabled !== undefined ? !!data.enabled : !!route.enabled;
+    const touched = prevType !== 'l4'
+      || String(lp) !== String(route.l4_listen_port)
+      || proto !== route.l4_protocol
+      || tlsEff !== (route.l4_tls_mode || 'none')
+      || (enabledEff && !route.enabled);
+    if (touched && enabledEff && tlsEff === 'none' && lp && /^\d+$/.test(String(lp).trim())) {
+      require('./l4').assertListenPortFree(String(lp).trim(), {
+        protocol: proto || 'tcp', excludeRouteIds: [route.id], code: 'BUNDLE_PORT_CONFLICT',
+      });
+    }
+  }
 
   // TLS guard: preflight when this update turns the route into an HTTPS route
   // or an SNI L4 entry, or renames one. Network lookups happen here, before

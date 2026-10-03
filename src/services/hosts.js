@@ -161,6 +161,10 @@ function createHostRow(db, route, fqdn) {
 // The route's domain changed while it already had a host.
 function followDomainChange(db, route, fqdn) {
   const hostId = route.bundle_id;
+  // A TCP/UDP entry that lost its name (HTTP → plain L4, or SNI → none) stays
+  // in its host: plain L4 members never carry a domain (serviceBundle), the
+  // host keeps its fqdn as label and its zone.
+  if (!fqdn && route.route_type === 'l4') return hostId;
   const count = db.prepare('SELECT COUNT(*) AS n FROM routes WHERE bundle_id = ?').get(hostId).n;
   const isHttp = route.route_type !== 'l4';
   const other = fqdn ? findHostForFqdn(db, fqdn, hostId) : null;
@@ -453,6 +457,12 @@ async function create(domainId, input = {}) {
     description = sanitize(input.description);
   }
 
+  // Access of the new entries: the zone default unless the dialog chose one.
+  if (input.external_enabled !== undefined && typeof input.external_enabled !== 'boolean') {
+    throw httpError(400, 'external_enabled must be a boolean');
+  }
+  const externalEnabled = input.external_enabled !== undefined ? input.external_enabled : !!zone.default_external_enabled;
+
   let lanHost = null;
   if (target.kind !== 'peer') {
     const lanErr = validateLanHost(input.lan_host);
@@ -493,7 +503,7 @@ async function create(domainId, input = {}) {
   }, {
     zone: { domain_id: zone.id, subdomain },
     template: input.template || null,
-    external_enabled: !!zone.default_external_enabled,
+    external_enabled: externalEnabled,
   });
   if (target.kind === 'pool') {
     domainZones.notifyGateways(domainZones.peersForTargets(db, [target]));

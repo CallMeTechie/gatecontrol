@@ -1,7 +1,7 @@
 'use strict';
 
 const { buildDefenderConfig } = require('./caddyValidators');
-const { buildRequestHeadersHandler } = require('./caddyCustomHeaders');
+const { buildCustomHeaderHandlers } = require('./caddyCustomHeaders');
 const { buildRateLimitHandler } = require('./caddyRateLimit');
 const { buildMirrorHandler } = require('./caddyMirror');
 const { appUpstream } = require('./caddyAppUpstream');
@@ -99,10 +99,8 @@ function buildAuthHandlerChain({ route, reverseProxy, customHeaders, mirrorTarge
   if (route.bot_blocker_enabled) {
     handlers.unshift(buildDefenderConfig(route));
   }
-  if (customHeaders) {
-    const reqHeaders = buildRequestHeadersHandler(customHeaders.request);
-    if (reqHeaders) handlers.push(reqHeaders);
-  }
+  // Request headers (set/remove) and deferred response removals.
+  if (customHeaders) handlers.push(...buildCustomHeaderHandlers(customHeaders));
   if (route.rate_limit_enabled) {
     handlers.push(buildRateLimitHandler(route));
   }
