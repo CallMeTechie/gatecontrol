@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.139.0] — 2026-10-03
+
+### Features
+- redesigned Domains & Routen page and dialogs (editable targets, multi-entry hosts, header presets) (#260)
+
+---
+
 ## [1.138.0] — 2026-10-03
 
 ### Features
