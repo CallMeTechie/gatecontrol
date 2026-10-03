@@ -212,30 +212,18 @@ function profileInitials(name) {
   return chars.join('').toUpperCase();
 }
 
+// No database access here: the page handler is not rate-limited, so the
+// e-mail, passkey count and recovery-code count come from the existing
+// (rate-limited) APIs that profile.js / profile-passkeys.js / profile-2fa.js
+// already call; `user` (initials, 2FA flag) is loaded by injectLocals.
 function profileLocals(req, res) {
   const session = req.session || {};
-  const uid = session.userId;
   const user = res.locals.user || {};
-  const out = {
+  return {
     profileInitials: profileInitials(user.display_name || user.username),
     sessionAuthMethod: ['password', 'totp', 'passkey'].includes(session.authMethod) ? session.authMethod : null,
     sessionAuthAt: Number(session.authAt) || null,
-    profileEmail: '',
-    profilePasskeyCount: 0,
-    profileRecoveryRemaining: null,
   };
-  try {
-    const row = require('../db/connection').getDb().prepare('SELECT email FROM users WHERE id = ?').get(uid);
-    out.profileEmail = (row && row.email) || '';
-  } catch (err) { logger.debug({ err: err.message }, 'profile e-mail unavailable'); }
-  try {
-    out.profilePasskeyCount = require('../services/adminPasskeys').count(uid);
-  } catch (err) { logger.debug({ err: err.message }, 'passkey count unavailable'); }
-  try {
-    const st = require('../services/adminTwoFactor').getStatus(uid);
-    if (st && st.enabled) out.profileRecoveryRemaining = st.recovery_codes_remaining;
-  } catch (err) { logger.debug({ err: err.message }, '2fa status unavailable'); }
-  return out;
 }
 
 const pages = [

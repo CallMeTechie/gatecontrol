@@ -81,7 +81,8 @@ test('profile card, users modal row and settings toggle render', async () => {
     // Identity header + security rail: 2FA open, password-session tile.
     assert.match(profile.text, /id="pf-stat-2fa"[^>]*data-on="0"/, theme);
     assert.match(profile.text, /id="pf-check-2fa"[^>]*data-done="0"/, theme);
-    assert.match(profile.text, /id="pf-status"[^>]*data-score="1"/, theme);
+    // The score waits for the passkeys API (no DB access in the page handler).
+    assert.match(profile.text, /id="pf-check-pk" data-done=""/, theme);
     assert.match(profile.text, /id="pf-session-time" data-at="\d{13}"/, theme);
     assert.match(profile.text, /id="pf-session-method">[^<]*\S[^<]*</, theme);
     const setup = await agent.get('/profile?setup2fa=1').expect(200);
@@ -105,7 +106,6 @@ test('profile card reflects an enabled 2FA server-side', async () => {
   assert.match(profile.text, /id="tf-card"[^>]*data-enabled="1"/);
   assert.match(profile.text, /id="pf-stat-2fa"[^>]*data-on="1"/);
   assert.match(profile.text, /id="pf-check-2fa"[^>]*data-done="1"/);
-  assert.match(profile.text, /id="pf-status"[^>]*data-score="2"/);
   const settingsPage = await agent.get('/settings').expect(200);
   assert.match(settingsPage.text, /data-self-2fa="1"/);
 });

@@ -4477,7 +4477,8 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .pf-score-num{font-family:var(--font-display); font-weight:800; font-size:34px; letter-spacing:-.03em; color:var(--pf-teal-ink); line-height:1.1}
 .pf-score-label{color:var(--muted); font-size:13px}
 .pf-bar{height:6px; border-radius:999px; background:var(--surface-3); margin-top:10px; overflow:hidden}
-.pf-bar-fill{height:100%; width:33.34%; border-radius:999px; background:var(--pf-btn-bg); transition:width .3s ease}
+.pf-bar-fill{height:100%; width:0; border-radius:999px; background:var(--pf-btn-bg); transition:width .3s ease}
+.pf-status[data-score="1"] .pf-bar-fill{width:33.34%}
 .pf-status[data-score="2"] .pf-bar-fill{width:66.67%}
 .pf-status[data-score="3"] .pf-bar-fill{width:100%}
 .pf-checks{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:12px}
@@ -4485,11 +4486,11 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .pf-check-ic{width:22px; height:22px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; margin-top:1px;
   background:var(--green-bg); color:var(--pf-green-ink); border:1px solid var(--green-bd)}
 .pf-check-ic svg{width:12px; height:12px}
-.pf-check[data-done="0"] .pf-check-ic{background:transparent; border:1.5px dashed var(--line-2); color:transparent}
+.pf-check:not([data-done="1"]) .pf-check-ic{background:transparent; border:1.5px dashed var(--line-2); color:transparent}
 .pf-check-label{font-weight:600; font-size:13.5px}
-.pf-check[data-done="0"] .pf-check-label{color:var(--muted)}
+.pf-check:not([data-done="1"]) .pf-check-label{color:var(--muted)}
 .pf-check-hint{color:var(--muted); font-size:12.5px}
-.pf-check[data-done="1"] .pf-when-off, .pf-check[data-done="0"] .pf-when-on{display:none}
+.pf-check:not([data-done="0"]) .pf-when-off, .pf-check:not([data-done="1"]) .pf-when-on{display:none}
 
 @media (max-width:900px){
   .pf-rail{position:static}

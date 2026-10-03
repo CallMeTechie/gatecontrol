@@ -1168,7 +1168,7 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     assert.match(res.text, /class="pf-avatar"/, 'avatar with initials present');
     assert.equal((res.text.match(/class="pf-section"/g) || []).length, 3, 'three sections: personal, security, appearance');
     assert.match(res.text, /class="pf-rail"/, 'security rail present');
-    assert.match(res.text, /id="pf-status"[^>]*data-score="[123]"/, 'security score rendered server-side');
+    assert.match(res.text, /id="pf-status"[^>]*data-score="0"/, 'security score is filled client-side from the rate-limited APIs');
     assert.match(res.text, /class="form-input pf-input"/, '.form-input on inputs present');
     assert.match(res.text, /<label class="pf-label" for="settings-display-name"/, 'inputs carry real labels');
     // Aurora profile must NOT use old .two-col or .card-head pattern

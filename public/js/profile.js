@@ -51,9 +51,12 @@
   // ─── Security status (header tiles + right rail) ────────
   // profile-2fa.js and profile-passkeys.js report their state as events.
   function isDone(id) { var el = byId(id); return !!el && el.getAttribute('data-done') === '1'; }
-  var secure = { tf: isDone('pf-check-2fa'), pk: isDone('pf-check-pk') };
+  // pk stays null until profile-passkeys.js has loaded the list; until then
+  // the score shows "–" instead of a number that would jump.
+  var secure = { tf: isDone('pf-check-2fa'), pk: null };
 
   function renderScore() {
+    if (secure.pk === null) return;
     var score = 1 + (secure.tf ? 1 : 0) + (secure.pk ? 1 : 0);
     setText('pf-score', String(score));
     var box = byId('pf-status');
@@ -93,6 +96,7 @@
         document.getElementById('settings-username').value = data.profile.username || '';
         document.getElementById('settings-display-name').value = data.profile.display_name || '';
         document.getElementById('settings-email').value = data.profile.email || '';
+        renderIdentity(data.profile);
       }
     } catch (err) {
       console.error('Failed to load profile:', err);

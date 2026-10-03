@@ -4,7 +4,7 @@
     <div class="pf-row-label">
       <div class="pf-label-line">
         <span class="pf-label" id="pk-title">{{ t('passkey.title') }}</span>
-        <span class="tf-status pf-pill-teal" id="pk-status">{{ t('passkey.status_count') | replace('{{count}}', profilePasskeyCount) if profilePasskeyCount else t('passkey.status_none') }}</span>
+        <span class="tf-status pf-pill-teal" id="pk-status"></span>
       </div>
       <div class="pf-hint pf-hint-wide">{{ t('profile.pk_hint') }} {{ t('profile.pk_origin') | replace('{{origin}}', baseUrl) }}</div>
     </div>

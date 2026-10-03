@@ -3,8 +3,6 @@
 {% block content %}
 {% set pfName = (user.display_name if user and user.display_name else (user.username if user else '')) %}
 {% set pfTfOn = user and user.totp_enabled %}
-{% set pfPkOn = profilePasskeyCount > 0 %}
-{% set pfScore = 1 + (1 if pfTfOn else 0) + (1 if pfPkOn else 0) %}
 <div class="pf-page" id="pf-page">
 <div class="page-header">
   <div>
@@ -24,7 +22,7 @@
         <span class="pf-chip">{{ t('users.role_admin') if user and user.role == 'admin' else t('users.role_user') }}</span>
       </div>
       <div class="pf-id-meta">
-        <span class="pf-mono">{{ user.username if user }}</span><span id="pf-id-email-wrap"{% if not profileEmail %} hidden{% endif %}> · <span id="pf-id-email">{{ profileEmail }}</span></span>
+        <span class="pf-mono">{{ user.username if user }}</span><span id="pf-id-email-wrap" hidden> · <span id="pf-id-email"></span></span>
       </div>
     </div>
   </div>
@@ -37,7 +35,7 @@
     </div>
     <div class="pf-stat">
       <div class="pf-stat-label">{{ t('passkey.title') }}</div>
-      <div class="pf-stat-value" id="pf-stat-pk">{{ t('passkey.status_count') | replace('{{count}}', profilePasskeyCount) if pfPkOn else t('passkey.status_none') }}</div>
+      <div class="pf-stat-value" id="pf-stat-pk">…</div>
     </div>
     <div class="pf-stat">
       <div class="pf-stat-label">{{ t('profile.stat_session') }}</div>
@@ -179,12 +177,13 @@
   </section>
 </div>
 
-{# ─── Right rail: security status (kept live by profile.js) ─── #}
+{# ─── Right rail: security status (filled and kept live by profile.js; the
+     passkey count comes from the passkeys API, so the score waits for it) ─── #}
 <aside class="pf-rail" aria-labelledby="pf-status-title">
-  <section class="pf-status" id="pf-status" data-score="{{ pfScore }}">
+  <section class="pf-status" id="pf-status" data-score="0">
     <h2 class="pf-rail-title" id="pf-status-title">{{ t('profile.status_title') }}</h2>
     <div class="pf-score">
-      <span class="pf-score-num"><span id="pf-score">{{ pfScore }}</span>/3</span>
+      <span class="pf-score-num"><span id="pf-score">–</span>/3</span>
       <span class="pf-score-label">{{ t('profile.status_active') }}</span>
     </div>
     <div class="pf-bar" aria-hidden="true"><div class="pf-bar-fill"></div></div>
@@ -200,11 +199,11 @@
         <span class="pf-check-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
         <div>
           <div class="pf-check-label">{{ t('profile.check_2fa') }}<span class="pf-sr pf-when-on"> ({{ t('profile.check_done') }})</span><span class="pf-sr pf-when-off"> ({{ t('profile.check_open') }})</span></div>
-          <div class="pf-check-hint pf-when-on" id="pf-check-2fa-hint">{% if profileRecoveryRemaining !== null %}{{ t('profile.check_2fa_codes') | replace('{{count}}', profileRecoveryRemaining) }}{% else %}{{ t('profile.check_2fa_on') }}{% endif %}</div>
+          <div class="pf-check-hint pf-when-on" id="pf-check-2fa-hint">{{ t('profile.check_2fa_on') }}</div>
           <div class="pf-check-hint pf-when-off">{{ t('profile.check_2fa_off') }}</div>
         </div>
       </li>
-      <li class="pf-check" id="pf-check-pk" data-done="{{ '1' if pfPkOn else '0' }}">
+      <li class="pf-check" id="pf-check-pk" data-done="">
         <span class="pf-check-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
         <div>
           <div class="pf-check-label">{{ t('profile.check_passkey') }}<span class="pf-sr pf-when-on"> ({{ t('profile.check_done') }})</span><span class="pf-sr pf-when-off"> ({{ t('profile.check_open') }})</span></div>
