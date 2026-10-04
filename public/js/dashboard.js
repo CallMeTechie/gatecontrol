@@ -270,7 +270,7 @@
         return {
           title: t('problems.gateway_offline', { name: (p.gateway && p.gateway.name) || '?' }),
           detail: [p.gateway && p.gateway.entries
-            ? t('problems.gateway_offline_detail', { count: p.gateway.entries })
+            ? t(p.gateway.entries === 1 ? 'problems.gateway_offline_detail_one' : 'problems.gateway_offline_detail', { count: p.gateway.entries })
             : t('problems.gateway_offline_none')],
         };
       case 'entry_down': {
