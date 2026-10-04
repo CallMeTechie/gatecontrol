@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.140.0] — 2026-10-04
+
+### Features
+- redesigned dashboard (health tiles, live activity, traffic chart, security summary) (#261)
+
+---
+
 ## [1.139.0] — 2026-10-03
 
 ### Features
