@@ -1,12 +1,13 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
 seed.js                 Migrationen + Fixtures (Zone mit 3 Hosts, 2 Gateways,
-                        Admin mit und ohne zweiten Faktor) → e2e-fixtures.json
+                        1 Client, 30 Tage Traffic, Ereignisse, Admin mit und
+                        ohne zweiten Faktor) → e2e-fixtures.json
 run.js                  Playwright-Treiber: meldet an, fährt die Szenarien,
                         schreibt Screenshots, druckt einen JSON-Bericht
 scenarios/01-login.js   Anmeldung, falsches Passwort, TOTP-Zweitfaktor
@@ -15,6 +16,9 @@ scenarios/02-zones.js   /routes: Zonen, Suche/Typ-Filter, Domain-Einstellungen,
 scenarios/03-security.js /security: Prüfungen gegen die API, hell/dunkel, 400 px
 scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
                         entfernen (virtueller Authenticator über CDP)
+scenarios/05-dashboard.js /dashboard: Kacheln, Traffic-Diagramm (x-Achse,
+                        Tooltip per Maus und Tastatur), Zeitraum übersteht
+                        Poll und Neuladen, Tabelle, Aktivität + Filter, 390 px
 ```
 
 ## Ablauf
@@ -35,7 +39,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

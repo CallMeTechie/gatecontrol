@@ -103,15 +103,24 @@ async function sendEmailAlert(eventType, message, severity, details) {
 }
 
 /**
- * Get recent activity log entries
+ * Get recent activity log entries; `category` (an allow-listed name from
+ * services/activityCategories.js) narrows them to its event_type prefixes.
  */
-function getRecent(limit = 20, offset = 0) {
+function getRecent(limit = 20, offset = 0, { category = null } = {}) {
   const db = getDb();
+  let where = '';
+  let args = [];
+  if (category) {
+    const f = require('./activityCategories').sqlFilter(category);
+    where = `WHERE ${f.sql}`;
+    args = f.args;
+  }
   const rows = db.prepare(`
     SELECT * FROM activity_log
+    ${where}
     ORDER BY created_at DESC, id DESC
     LIMIT ? OFFSET ?
-  `).all(limit, offset);
+  `).all(...args, limit, offset);
 
   return rows.map(row => ({
     ...row,

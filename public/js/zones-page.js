@@ -768,13 +768,18 @@
   render();
   load().then(() => {
     // Deep links: /routes?domain=<id>[&host=<id>] (certificates, security,
-    // quick search) and /routes?action=add (FAB, quick search).
+    // quick search), /routes?action=add (FAB, quick search) and
+    // /routes?action=new-host (dashboard "Neuer Host" — same as the button).
     try {
       const q = new URLSearchParams(window.location.search);
       const domainId = q.get('domain');
       const hostId = q.get('host');
       if (q.get('action') === 'add') {
         openAddDomain();
+        history.replaceState(null, '', window.location.pathname + window.location.hash);
+      } else if (q.get('action') === 'new-host') {
+        const z = (state.data && state.data.zones) || [];
+        if (z.length) openNewHost(z[0].domain_id); else openAddDomain();
         history.replaceState(null, '', window.location.pathname + window.location.hash);
       } else if (state.data && ((domainId != null && domainId !== '') || (hostId != null && hostId !== ''))) {
         openDomain(domainId ? Number(domainId) : null, hostId != null && hostId !== '' ? Number(hostId) : undefined);

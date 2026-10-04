@@ -24,14 +24,26 @@ router.get('/activity', (req, res) => {
 });
 
 /**
- * GET /api/logs/recent?limit=10
- * Returns recent activity entries (for dashboard widget)
+ * GET /api/logs/recent?limit=10[&category=login|peer|route|security]
+ * Returns recent activity entries (for the dashboard feed). `category` is an
+ * allow-listed name (services/activityCategories.js) mapped to event_type
+ * prefixes on the server — never a raw prefix; anything else is a 400.
  */
 router.get('/recent', (req, res) => {
   try {
     const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 6));
-    const entries = activity.getRecent(limit);
-    res.json({ ok: true, entries });
+    const categories = require('../../services/activityCategories');
+    const raw = req.query.category;
+    let category = null;
+    if (raw !== undefined && raw !== '' && raw !== 'all') {
+      if (typeof raw !== 'string' || !categories.isCategory(raw)) {
+        return res.status(400).json({ ok: false, error: 'invalid category', code: 'INVALID_CATEGORY' });
+      }
+      category = raw;
+    }
+    const entries = activity.getRecent(limit, 0, { category })
+      .map((e) => ({ ...e, category: categories.categoryOf(e.event_type) }));
+    res.json({ ok: true, category: category || 'all', entries });
   } catch (err) {
     res.status(500).json({ ok: false, error: req.t('error.logs.recent') });
   }

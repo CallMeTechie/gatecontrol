@@ -43,7 +43,7 @@ function section(src, from, to) {
   return src.slice(a, b);
 }
 const SETTINGS_OPS = section(SETTINGS_JS, '// ─── Auto-Update: maintenance window', '// ── Machine Binding Settings');
-const DASH_WN = section(DASH_JS, '// ─── "Was ist neu" card', '// ─── Refresh all');
+const DASH_WN = section(DASH_JS, '// ─── "Was ist neu" strip', '// ─── Activity');
 
 describe('ops UI: stylesheet + scripts', () => {
   it('live backup refresh (gc:backup) only re-renders the target list when the data changed', () => {
@@ -111,11 +111,11 @@ describe('ops UI: templates', () => {
     assert.match(SETTINGS_TPL, /curl -fsSLO https:\/\/raw\.githubusercontent\.com\/CallMeTechie\/gatecontrol\/master\/update\.sh/);
     assert.ok(read('INSTALL.md').includes('curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh'), 'same command as the install guide');
   });
-  it('dashboard: hidden "Was ist neu" card before the KPI grid', () => {
-    const card = DASH_TPL.indexOf('id="whats-new"');
-    assert.ok(card > 0 && card < DASH_TPL.indexOf('aurora-kpi-grid'));
-    assert.match(DASH_TPL, /<section class="card op-wn" id="whats-new" hidden/);
-    for (const id of ['whats-new-title', 'whats-new-sub', 'whats-new-body', 'whats-new-all', 'whats-new-dismiss']) assert.ok(DASH_TPL.includes('id="' + id + '"'), id);
+  it('dashboard: hidden "Was ist neu" strip before the health tiles', () => {
+    const strip = DASH_TPL.indexOf('id="whats-new"');
+    assert.ok(strip > 0 && strip < DASH_TPL.indexOf('id="db-tiles"'));
+    assert.match(DASH_TPL, /<section class="db-news" id="whats-new" hidden/);
+    for (const id of ['whats-new-badge', 'whats-new-text', 'whats-new-body', 'whats-new-all', 'whats-new-dismiss']) assert.ok(DASH_TPL.includes('id="' + id + '"'), id);
   });
   it('entry editor: fingerprint field inside the backend TLS block, error text as data attribute', () => {
     const block = section(EDITOR_TPL, 'id="edit-backend-tls-block"', 'id="edit-backend-tls-error"');
@@ -199,7 +199,7 @@ describe('ops UI: i18n', () => {
         assert.ok(de[m[1]] && en[m[1]], m[1]);
       }
     }
-    const scripts = OPS_JS + SETTINGS_OPS + DASH_WN + section(DASH_JS, 'function renderAutoUpdate', '// ─── "Was ist neu" card')
+    const scripts = OPS_JS + SETTINGS_OPS + DASH_WN + section(DASH_JS, 'function renderAutoUpdate', '// ─── "Was ist neu" strip')
       + section(SETTINGS_JS, 'Encrypted off-site archives (.gcbk', "document.getElementById('btn-backup-restore')");
     const used = new Set(Array.from(scripts.matchAll(/['"]((?:offsite|premig|whatsnew|autoupdate)\.[a-z0-9_.]+)['"]/g)).map((m) => m[1]));
     assert.ok(used.size > 90, 'keys collected: ' + used.size);
@@ -239,7 +239,7 @@ describe('ops UI: behaviour wiring', () => {
     assert.match(d, /if \(d\.mode === 'manual' \|\| windowOn\)/);
     assert.match(d, /'\/api\/system\/whats-new' \+ \(all \? '\?all=1' : ''\)/);
     assert.match(d, /window\.api\.post\('\/api\/system\/whats-new\/seen', body\)/);
-    assert.match(d, /if \(!all && !d\.unseen\) \{ card\.hidden = true; return; \}/);
+    assert.match(d, /if \(!all && !d\.unseen\) \{ strip\.hidden = true; return; \}/);
   });
   it('settings.js: /settings#<tab> or #<element id> selects the tab, the hash follows tab switches', () => {
     const tabs = stripComments(section(SETTINGS_JS, '// ─── Settings Tab Switching', '// Mobile hamburger toggle'))
@@ -250,12 +250,13 @@ describe('ops UI: behaviour wiring', () => {
     assert.match(tabs, /if \(!fromHash\(\)\) \{/, 'the hash wins over the remembered tab');
     assert.ok(SETTINGS_TPL.includes('data-settings-panel="backup"') && SETTINGS_TPL.includes('data-settings-tab="backup"'));
   });
-  it('dashboard.js: #auto-update highlights the topbar status and opens the setup guide when not set up', () => {
+  it('dashboard.js: #auto-update highlights the Server card\'s update block and opens the setup guide when not set up', () => {
     const d = stripComments(DASH_JS);
     assert.match(d, /location\.hash === '#auto-update'/);
-    assert.match(d, /host\.classList\.add\('op-flash'\)/);
+    assert.match(d, /box\.classList\.add\('db-flash'\)/);
     assert.match(d, /if \(d && d\.status !== 'active'\) openAuSetup\(\);/);
-    assert.match(OPS_CSS, /#au-status\.op-flash \{/);
+    assert.match(DASH_TPL, /<div class="db-au" id="auto-update"/);
+    assert.match(APP_CSS, /\.db-flash\{/);
   });
   it('events.js subscribes the backup SSE type (gc:backup refreshes the targets)', () => {
     assert.match(read('public/js/events.js'), /'tls', 'backup'\]/);

@@ -78,4 +78,21 @@ function i18nMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { i18nMiddleware, loadLocales, translate };
+/**
+ * All strings of `lang` whose key starts with one of `prefixes`, with the
+ * default language filling the gaps — for pages that hand a whole block of
+ * strings to their script as one JSON island (dashboard.njk).
+ */
+function stringsWithPrefix(lang, prefixes) {
+  const out = {};
+  const pick = (locale) => {
+    for (const [k, v] of Object.entries(locale || {})) {
+      if (out[k] === undefined && prefixes.some((p) => k.startsWith(p))) out[k] = v;
+    }
+  };
+  pick(locales[lang]);
+  pick(locales[config.i18n.defaultLanguage]);
+  return out;
+}
+
+module.exports = { i18nMiddleware, loadLocales, translate, stringsWithPrefix };

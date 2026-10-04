@@ -910,6 +910,7 @@ module.exports = {
   startWatcher, stopWatcher, pollOnce, parseTlsLogLine, classifyError, parseDurationSeconds, applyLogEvent,
   inventory, inventoryHost, scanCertificates, startInventory, stopInventory,
   statusFor, listStatus, entryTls, kindOfRoute, deriveState, loadRows,
+  EXPIRING_DAYS,
   maxAttempts, setMaxAttempts, acmeEmailMissing,
   start, stop,
   getRow, writeRow,

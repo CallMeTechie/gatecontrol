@@ -21,13 +21,15 @@ const LAYOUT = read('templates/aurora/layout.njk');
 const DASH_TPL = read('templates/aurora/pages/dashboard.njk');
 const EDITOR_TPL = read('templates/aurora/partials/modals/route-edit.njk');
 const APP_CSS = read('public/css/app.css');
-// Wave 2 §W2: problems.css is now section §6 of the single stylesheet app.css.
-const PR_CSS = (() => {
-  const a = APP_CSS.indexOf('\n * \u00a76 ');
-  const b = APP_CSS.indexOf('\n * \u00a77 ');
-  return APP_CSS.slice(a, b < 0 ? APP_CSS.length : b);
+// Dashboard redesign: the problems list is part of dashboard.js and of the
+// db- block in the Aurora section (§2) of app.css.
+const DB_CSS = (() => {
+  const a = APP_CSS.indexOf('DASHBOARD REDESIGN (db-)');
+  const b = APP_CSS.indexOf('\n * \u00a73 ');
+  return APP_CSS.slice(a, b);
 })();
-const PR_JS = read('public/js/dashboard-problems.js');
+const PR_JS = read('public/js/dashboard.js');
+const ROUTES = read('src/routes/index.js');
 
 describe('S3: stylesheet and scripts', () => {
   it('the layout links app.css exactly once and nothing else', () => {
@@ -35,23 +37,28 @@ describe('S3: stylesheet and scripts', () => {
     assert.deepEqual(links, ['/css/app.css']);
   });
 
-  it('the pr- section sits after the Aurora section, carries the rules and balances braces', () => {
+  it('the problem rows are styled in the db- block of the Aurora section; braces balance', () => {
     const aurora = APP_CSS.indexOf('\n * \u00a72 ');
-    assert.ok(aurora > 0 && APP_CSS.indexOf('\n * \u00a76 ') > aurora, 'pr- section after the Aurora section');
-    assert.match(PR_CSS, /\.pr-row/);
-    assert.match(PR_CSS, /\.pr-card/);
+    const dbAt = APP_CSS.indexOf('DASHBOARD REDESIGN (db-)');
+    assert.ok(aurora > 0 && dbAt > aurora && dbAt < APP_CSS.indexOf('\n * \u00a73 '), 'db- block inside §2');
+    assert.match(DB_CSS, /\.db-prow\{/);
+    assert.match(DB_CSS, /\.db-problems\{/);
+    assert.doesNotMatch(APP_CSS.replace(/\/\*[\s\S]*?\*\//g, ''), /\.pr-(row|card|link)\b/, 'old pr- rules are gone');
     const whole = APP_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     assert.equal((whole.match(/\{/g) || []).length, (whole.match(/\}/g) || []).length, 'app.css braces balanced');
   });
 
-  it('dashboard-problems.js loads after dashboard.js', () => {
+  it('dashboard-ui.js loads before dashboard.js; the old problems script is gone', () => {
+    const u = DASH_TPL.indexOf('/js/dashboard-ui.js');
     const d = DASH_TPL.indexOf('/js/dashboard.js');
-    const p = DASH_TPL.indexOf('/js/dashboard-problems.js');
-    assert.ok(d > 0 && p > d, 'dashboard-problems.js after dashboard.js');
+    assert.ok(u > 0 && d > u, 'dashboard-ui.js before dashboard.js');
+    assert.ok(!DASH_TPL.includes('dashboard-problems.js'));
+    assert.ok(!fs.existsSync(path.join(ROOT, 'public/js/dashboard-problems.js')));
   });
 
   it('no innerHTML in the new code', () => {
     assert.doesNotMatch(stripComments(PR_JS), /innerHTML|insertAdjacentHTML|outerHTML|document\.write/);
+    assert.doesNotMatch(stripComments(read('public/js/dashboard-ui.js')), /innerHTML|insertAdjacentHTML|outerHTML|document\.write/);
   });
 
   it('the problems section carries its DOM hooks and starts hidden', () => {
@@ -59,12 +66,17 @@ describe('S3: stylesheet and scripts', () => {
       'dash-problems-hint', 'dash-problems-ondemand', 'dash-problems-ondemand-list']) {
       assert.ok(DASH_TPL.includes(`id="${id}"`), `#${id} in dashboard.njk`);
     }
-    assert.match(DASH_TPL, /<section class="card pr-card" id="dash-problems" hidden/);
+    assert.match(DASH_TPL, /<section class="db-card db-problems" id="dash-problems" hidden/);
   });
 
   it('the section refreshes on the existing SSE types', () => {
     for (const ev of ['gc:gateway', 'gc:monitor', 'gc:tls', 'gc:backup', 'gc:routes', 'gc:security', 'gc:reconnected']) {
       assert.ok(PR_JS.includes(`'${ev}'`), ev);
+    }
+    // every SSE type that touches problems reloads the problems job
+    const map = PR_JS.slice(PR_JS.indexOf('var SSE = {'), PR_JS.indexOf('};', PR_JS.indexOf('var SSE = {')));
+    for (const ev of ['gc:gateway', 'gc:monitor', 'gc:tls', 'gc:backup', 'gc:routes', 'gc:security']) {
+      assert.match(map, new RegExp(`'${ev}': \\[[^\\]]*'problems'`), ev);
     }
   });
 
@@ -90,10 +102,10 @@ describe('S3: i18n', () => {
     }
   });
 
-  it('every client string is in the window.GC.t whitelist', () => {
-    for (const k of keysOf(PR_JS).concat(['entry.on_demand_tag'])) {
-      assert.ok(LAYOUT.includes(`'${k}': {{ t('${k}')`), `layout.njk exposes ${k}`);
-    }
+  it('the strings reach the script through the JSON island of the page (dashboard.* + problems.*)', () => {
+    assert.match(DASH_TPL, /<script type="application\/json" id="db-i18n" data-prefixes="dashboard\. problems\." nonce="\{\{ cspNonce \}\}">\{\{ dashI18n/);
+    assert.match(ROUTES, /stringsWithPrefix\(req\.language \|\| res\.locals\.language, \['dashboard\.', 'problems\.'\]\)/);
+    assert.ok(!LAYOUT.includes("'problems.title'"), 'problems.* left the global GC.t whitelist');
   });
 
   it('de and en carry the same problems.* keys with the same placeholders', () => {

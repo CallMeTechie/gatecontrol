@@ -2365,20 +2365,6 @@ table tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 760px) { .gw-fleet .kpis { grid-template-columns: repeat(2, 1fr); } .gw-fleet .grid.two { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .gw-fleet .row3 { grid-template-columns: 1fr 1fr; } }
 
-/* ── Auto-update status (dashboard header) ─────────────── */
-.au-pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px;
-  font-size:12px; font-weight:600; }
-.au-pill .au-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-.au-active  { background: var(--green-lt, var(--green-light)); color: var(--green-text, var(--green)); border:1px solid var(--green-bd, var(--green-border)); }
-.au-active  .au-dot { background: var(--green, #16a34a); }
-.au-amber   { background: var(--amber-lt, rgba(217,119,6,0.1)); color: var(--amber-text, var(--amber, #92400E)); border:1px solid var(--amber-bd, rgba(217,119,6,0.4)); }
-.au-amber   .au-dot { background: var(--amber, #b45309); }
-.au-red     { background: var(--red-lt, var(--red-light)); color: var(--red-text, var(--red)); border:1px solid var(--red-bd, var(--red-border)); }
-.au-red     .au-dot { background: var(--red, #dc2626); }
-.au-badge   { font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px;
-  background: var(--bg-base, #f0ede7); color: var(--text-2); border:1px solid var(--border); }
-.au-actions { display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; }
-
 /* ── Browser RDP Session Player (pro theme) ──────────────────────────────── */
 body.rdp-session-body {
   margin: 0;
@@ -3600,7 +3586,7 @@ input[type=date]:focus, select:focus {
 .search-box input{border:0; background:transparent; outline:0; color:var(--text); font-family:var(--font-body); font-size:13.5px; width:100%}
 
 /* ----------------------------------------------------------------------------
-   13 · DASHBOARD / DATA-VIZ — NEW (aurora): kpi, donut, chart, toplist, resbar
+   13 · DATA-VIZ — NEW (aurora): kpi, donut, chart, toplist, resbar (peers, gateways, Pi-hole pages)
    --------------------------------------------------------------------------- */
 .kpi{display:flex; flex-direction:column; gap:10px}
 .kpi .top{display:flex; align-items:center; gap:10px}
@@ -3610,16 +3596,6 @@ input[type=date]:focus, select:focus {
 .kpi .val{font-family:var(--font-mono); font-weight:700; font-size:28px; line-height:1; letter-spacing:-.02em}
 .kpi .delta{font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; gap:4px}
 .kpi .delta.up{color:var(--green)} .kpi .delta.down{color:var(--coral)}
-/* Dashboard KPI row: all (5–6) cards in one row down to ~1200px, then they
-   progressively wrap/stack as the viewport narrows. auto-fit fills the row for
-   either 5 or 6 cards (the Availability KPI is conditionally hidden) with no
-   empty trailing slot. ~140px min lets six fit in the content area at 1200px. */
-.aurora-kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; margin-bottom:18px}
-.aurora-kpi-grid .card.kpi{padding:15px; gap:9px}
-.aurora-kpi-grid .kpi .ic{width:30px;height:30px;border-radius:9px}
-.aurora-kpi-grid .kpi .ic svg{width:16px;height:16px}
-.aurora-kpi-grid .kpi .lab{font-size:11px}
-.aurora-kpi-grid .kpi .val{font-size:23px}
 
 .kv{display:flex; flex-direction:column; gap:12px; margin-top:14px}
 .kv .row{display:flex; align-items:center; justify-content:space-between; gap:14px}
@@ -3652,11 +3628,6 @@ input[type=date]:focus, select:focus {
 .pi-stats .s .n{font-family:var(--font-mono); font-weight:700; font-size:19px}
 .pi-stats .s .n.blk{color:var(--coral)} .pi-stats .s .t{color:var(--muted); font-size:13px}
 
-/* resource donut gauges — NEW (aurora): CPU + RAM radial donuts on dashboard */
-.res-gauge-wrap{display:flex; gap:18px; align-items:center; margin-top:8px; flex-wrap:wrap}
-.res-gauge-info{display:flex; flex-direction:column; justify-content:center; flex:1; min-width:0}
-.res-gauge-info .ri{font-family:var(--font-mono); font-size:11px; color:var(--muted); word-break:break-word}
-
 .toplist{margin-top:16px; border-top:1px solid var(--line); padding-top:13px}
 .toplist .h{font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:9px}
 .toplist ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
@@ -3670,10 +3641,6 @@ input[type=date]:focus, select:focus {
 .chart .col .bar{width:100%; border-radius:5px 5px 2px 2px; background:linear-gradient(180deg,var(--teal),var(--teal-dim)); transition:height .5s cubic-bezier(.2,.7,.2,1)}
 .chart .col .bar.up{background:linear-gradient(180deg,var(--coral),var(--coral-dim))}
 .chart .col .lab{font-size:10.5px; color:var(--faint); text-align:center; font-family:var(--font-mono)}
-.chart-legend{display:inline-flex;gap:6px;align-items:center;font-size:11.5px;color:var(--faint)}
-.chart-legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
-.chart-foot{display:flex; gap:20px; margin-top:14px; border-top:1px solid var(--line); padding-top:13px; flex-wrap:wrap}
-.chart-foot .t{font-size:12px; color:var(--muted)} .chart-foot .t b{font-family:var(--font-mono); color:var(--text); font-weight:700}
 
 /* log rows — NEW (aurora) */
 .log-row{display:flex; align-items:center; gap:13px; padding:11px 12px; border-radius:10px; font-size:13px; border:1px solid transparent}
@@ -4876,6 +4843,350 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 }
 
 
+/* ----------------------------------------------------------------------------
+   DASHBOARD REDESIGN (db-) — templates/aurora/pages/dashboard.njk + dashboard.js
+   Health tiles, "Braucht Aufmerksamkeit", traffic chart, peers / gateways /
+   server, live activity, security (24 h). Aurora tokens; small text in the
+   light theme uses the profile's contrast inks (--pf-*). The two chart series
+   colours were validated for colour-blind safety and contrast and are used
+   as-is; they colour marks only (lines, area, bars, swatches) — never text.
+   Status colours (good / warn / crit) mark status only and always come with
+   an icon and a text label. Touch targets are 44px (36px on fine pointers).
+   --------------------------------------------------------------------------- */
+[data-theme="dark"]{
+  --db-s1:#1fa391; --db-s2:#d97447;
+  --db-good-ink:var(--pf-green-ink); --db-warn-ink:var(--amber); --db-crit-ink:var(--pf-red-ink);
+  --db-muted:#9aaabb; --db-input:var(--pf-input); --db-tip-bg:var(--surface-3);
+  --db-grid:rgba(255,255,255,.08); --db-cross:rgba(233,239,246,.45);
+  --db-btn-bg:var(--pf-btn-bg); --db-accent-ink:var(--pf-teal-ink); --db-accent-bd:var(--pf-teal-bd);
+}
+[data-theme="light"]{
+  --db-s1:#0e9b8a; --db-s2:#d9602f;
+  --db-good-ink:var(--pf-green-ink); --db-warn-ink:#8a5f12; --db-crit-ink:var(--pf-red-ink);
+  --db-muted:var(--muted); --db-input:var(--pf-input); --db-tip-bg:var(--surface);
+  --db-grid:rgba(60,45,25,.10); --db-cross:rgba(44,39,32,.45);
+  --db-btn-bg:var(--pf-btn-bg); --db-accent-ink:var(--pf-teal-ink); --db-accent-bd:var(--pf-teal-bd);
+}
+
+.db-page{max-width:1240px; margin:0 auto; display:flex; flex-direction:column; gap:18px; min-width:0}
+.db-page [hidden]{display:none !important}
+.db-page :focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.db-sr{position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+.db-mono{font-family:var(--font-mono); font-weight:600; font-variant-numeric:tabular-nums}
+.db-num{text-align:right; font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+
+/* buttons + links */
+.db-btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 16px; border-radius:11px;
+  border:1px solid var(--line-2); background:var(--chip); color:var(--text); font:600 13.5px var(--font-body); text-decoration:none;
+  cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s}
+.db-btn:hover{border-color:var(--muted)}
+.db-btn svg{width:15px; height:15px; flex:0 0 auto}
+.db-btn-primary{background:var(--db-btn-bg); color:var(--btn-text); border:0; font-weight:700; padding:0 18px}
+.db-btn-primary:hover{filter:brightness(1.06)}
+.db-btn-accent{background:var(--teal-soft); border-color:var(--db-accent-bd); color:var(--db-accent-ink); font-weight:700}
+.db-btn-sm{min-height:36px; padding:0 12px; font-size:12.5px; border-radius:9px}
+.db-btn:disabled{opacity:.55; cursor:not-allowed}
+.db-link, .db-card-link, .db-link-btn, .db-card-foot-link{color:var(--db-accent-ink); font-weight:700; text-decoration:none}
+.db-link:hover, .db-card-link:hover, .db-link-btn:hover, .db-card-foot-link:hover{text-decoration:underline}
+.db-link-btn{border:0; background:none; padding:0 4px; min-height:44px; font:700 13px var(--font-body); cursor:pointer}
+.db-ghost-btn{min-height:36px; padding:0 12px; border-radius:9px; border:1px solid var(--line-2); background:transparent; color:var(--db-muted);
+  font:600 12.5px var(--font-body); cursor:pointer}
+.db-ghost-btn:hover, .db-ghost-btn[aria-pressed="true"]{color:var(--text); border-color:var(--muted)}
+.db-icon-btn{width:44px; height:44px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; border:1px solid var(--line-2);
+  background:transparent; color:var(--db-muted); cursor:pointer}
+.db-icon-btn:hover{color:var(--text); border-color:var(--muted)}
+@media (pointer:fine){
+  .db-btn{min-height:40px}
+  .db-btn-sm{min-height:34px}
+  .db-icon-btn{width:38px; height:38px}
+  .db-link-btn{min-height:36px}
+}
+
+/* status: icon circle, badge, dot — colour + icon + text together */
+.db-status-ic{width:22px; height:22px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center;
+  color:var(--db-muted); background:var(--chip); border:1px solid var(--line-2)}
+.db-status-ic svg{width:13px; height:13px}
+.db-status-ic-lg{width:28px; height:28px}
+.db-status-ic-lg svg{width:14px; height:14px}
+.db-status-ic-sm{width:18px; height:18px}
+.db-status-ic-sm svg{width:10px; height:10px}
+.db-badge{display:inline-flex; align-items:center; gap:4px; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;
+  color:var(--db-muted); background:var(--chip); border:1px solid var(--line-2)}
+.db-badge svg{width:10px; height:10px}
+.db-badge-sm{padding:0 6px; font-size:10.5px}
+.db-dot{width:9px; height:9px; flex:0 0 auto; border-radius:50%; background:var(--faint)}
+[data-state="good"] > .db-status-ic, .db-status-ic[data-state="good"], .db-badge[data-state="good"], .db-tile[data-state="good"] .db-tile-badge,
+.db-act-ic[data-state="good"]{color:var(--db-good-ink); background:var(--green-bg); border-color:var(--green-bd)}
+[data-state="warn"] > .db-status-ic, .db-status-ic[data-state="warn"], .db-badge[data-state="warn"], .db-tile[data-state="warn"] .db-tile-badge,
+.db-act-ic[data-state="warn"]{color:var(--db-warn-ink); background:var(--amber-bg); border-color:var(--amber-bd)}
+[data-state="crit"] > .db-status-ic, .db-status-ic[data-state="crit"], .db-badge[data-state="crit"], .db-tile[data-state="crit"] .db-tile-badge,
+.db-act-ic[data-state="crit"]{color:var(--db-crit-ink); background:var(--red-bg); border-color:var(--red-bd)}
+.db-status-ic[data-state="info"], .db-act-ic[data-state="info"]{color:var(--db-accent-ink); background:var(--teal-soft); border-color:var(--db-accent-bd)}
+.db-dot[data-state="good"]{background:var(--green)}
+.db-dot[data-state="warn"]{background:var(--amber)}
+.db-dot[data-state="crit"]{background:var(--red)}
+
+/* banners (unlicensed, gateway re-pairing) */
+.db-banner{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; padding:12px 16px; border-radius:14px; border:1px solid var(--line-2); background:var(--chip)}
+.db-banner-accent{background:var(--teal-soft); border-color:var(--db-accent-bd)}
+.db-banner-warn{background:var(--amber-bg); border-color:var(--amber-bd); align-items:flex-start}
+.db-banner-ic{width:28px; height:28px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; background:var(--surface); color:var(--db-accent-ink)}
+.db-banner-warn .db-banner-ic{color:var(--db-warn-ink)}
+.db-banner-ic svg{width:15px; height:15px}
+.db-banner-text{flex:1 1 260px; min-width:0; font-size:13.5px; display:flex; flex-direction:column; gap:2px}
+.db-banner-sub{color:var(--db-muted); font-size:13px}
+.db-banner-list{margin:4px 0 0; padding-left:18px; font-size:13px}
+.db-banner-list a{color:var(--db-accent-ink); font-weight:700}
+
+/* "Was ist neu" strip */
+.db-news{padding:8px 14px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
+.db-news-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px}
+.db-news-badge{padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700; color:var(--db-accent-ink); background:var(--teal-soft); border:1px solid var(--db-accent-bd); white-space:nowrap}
+.db-news-text{flex:1 1 300px; min-width:0; font-size:13.5px}
+.db-news-body{border-top:1px solid var(--line); padding-top:12px}
+
+/* header */
+.db-head{display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px 20px}
+.db-head-main{flex:1 1 380px; min-width:0}
+.db-live{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--db-muted)}
+.db-live-dot{width:8px; height:8px; border-radius:50%; background:var(--faint); flex:0 0 auto}
+.db-live[data-state="live"] .db-live-dot, .db-live-chip .db-live-dot{background:var(--green)}
+.db-live[data-state="stale"] .db-live-dot{background:var(--amber)}
+.db-title{margin:6px 0 0; font-family:var(--font-display); font-weight:800; font-size:clamp(24px,3.2vw,32px); letter-spacing:-.025em; line-height:1.1}
+.db-sub{margin:6px 0 0; color:var(--db-muted); font-size:14px; max-width:80ch}
+.db-sub:empty{display:none}
+.db-head-actions{display:flex; flex-wrap:wrap; gap:10px}
+
+/* health tiles */
+.db-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px}
+.db-tile{display:flex; flex-direction:column; gap:6px; padding:16px; border-radius:16px; min-width:0;
+  background:linear-gradient(180deg,var(--surface),var(--surface-2)); border:1px solid var(--line); box-shadow:var(--shadow);
+  color:var(--text); text-decoration:none; transition:border-color .15s, transform .15s}
+.db-tile:hover{border-color:var(--line-2); transform:translateY(-1px)}
+.db-tile-top{display:flex; align-items:center; gap:8px; min-width:0}
+.db-tile-main{display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px}
+.db-tile-label{font-size:12.5px; font-weight:700; color:var(--db-muted); min-width:0; overflow-wrap:break-word; hyphens:auto}
+.db-tile-badge{margin-left:auto}
+.db-tile-badge:empty{display:none}
+.db-tile-value{font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.02em; line-height:1.15; font-variant-numeric:tabular-nums}
+.db-tile-sub{font-size:12.5px; color:var(--db-muted); min-height:1.5em}
+.db-tile[data-state="loading"] .db-tile-value{color:var(--faint)}
+
+/* rows + cards */
+.db-row{display:flex; flex-wrap:wrap; gap:18px; align-items:stretch}
+.db-row-bottom{align-items:flex-start}
+.db-grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px}
+.db-card{min-width:0; background:linear-gradient(180deg,var(--surface),var(--surface-2)); border:1px solid var(--line);
+  border-radius:18px; box-shadow:var(--shadow); padding:18px 20px}
+.db-card-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px}
+.db-card-head-rule{margin:-18px -20px 0; padding:16px 18px; border-bottom:1px solid var(--line); align-items:center}
+.db-card-title{margin:0; font-family:var(--font-display); font-size:16px; font-weight:700; letter-spacing:-.01em}
+.db-card-meta{font-size:12.5px; color:var(--db-muted)}
+.db-card-link{margin-left:auto; font-size:12.5px}
+.db-count{padding:1px 8px; border-radius:999px; font-size:12px; font-weight:700; color:var(--db-warn-ink); background:var(--amber-bg); border:1px solid var(--amber-bd)}
+.db-count[data-state="crit"]{color:var(--db-crit-ink); background:var(--red-bg); border-color:var(--red-bd)}
+.db-note{margin:10px 0 0; font-size:12.5px; color:var(--db-muted)}
+.db-empty{margin:16px 0 0; padding:26px 16px; text-align:center; color:var(--db-muted); font-size:13px; border:1px dashed var(--line-2); border-radius:12px}
+.db-empty-sm{padding:16px 12px; margin-top:12px}
+.db-card-foot-link{display:inline-flex; align-items:center; min-height:44px; font-size:13px}
+
+/* Braucht Aufmerksamkeit */
+.db-problems{flex:1 1 340px; display:flex; flex-direction:column; padding-bottom:12px}
+.db-plist{list-style:none; margin:0 -20px; padding:0}
+.db-prow{display:flex; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line)}
+.db-prow-body{flex:1 1 auto; min-width:0}
+.db-prow-head{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px}
+.db-prow-title{font-weight:700; font-size:14px; overflow-wrap:anywhere}
+.db-prow-detail{margin-top:2px; color:var(--db-muted); font-size:12.5px; overflow-wrap:anywhere}
+.db-prow-actions{margin-top:8px; display:flex; flex-wrap:wrap; gap:8px}
+.db-prow-when{flex:0 0 auto; font-size:12px; color:var(--db-muted); white-space:nowrap}
+.db-od{margin-top:10px}
+.db-od-title{margin:0 0 4px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--db-muted)}
+.db-od-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px}
+.db-od-row{display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; font-size:12.5px; color:var(--db-muted)}
+.db-od-text{flex:1 1 auto; min-width:0}
+.db-od-row .db-link{display:inline-flex; align-items:center; min-height:36px}
+
+/* traffic */
+.db-traffic{flex:2 1 560px}
+.db-row-main[data-problems="0"] .db-traffic{flex-basis:100%}
+.db-traffic-head{display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 20px}
+.db-traffic-sum{flex:1 1 260px; min-width:0}
+.db-hero{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; margin-top:6px}
+.db-hero-value{font-family:var(--font-display); font-weight:800; font-size:40px; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+.db-hero-label{font-size:13px; color:var(--db-muted)}
+.db-split{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin-top:8px; font-size:13px}
+.db-split-item{display:inline-flex; align-items:center; gap:6px}
+.db-split-rate{color:var(--db-muted)}
+.db-key{display:inline-block; width:14px; height:3px; border-radius:2px; flex:0 0 auto}
+.db-key-s1{background:var(--db-s1)}
+.db-key-s2{background:var(--db-s2)}
+.db-traffic-ctl{display:flex; flex-direction:column; align-items:flex-end; gap:8px}
+.db-seg{display:inline-flex; padding:3px; gap:3px; border-radius:11px; background:var(--db-input); border:1px solid var(--line)}
+.db-seg-btn{min-height:38px; min-width:44px; padding:0 11px; border-radius:8px; border:0; background:transparent; color:var(--db-muted);
+  font:600 12.5px var(--font-body); cursor:pointer; white-space:nowrap}
+.db-seg-btn:hover{color:var(--text)}
+.db-seg-btn[aria-pressed="true"]{background:var(--surface-3); color:var(--text); box-shadow:0 2px 8px -4px rgba(0,0,0,.35)}
+@media (pointer:fine){ .db-seg-btn{min-height:32px} }
+
+.db-chart{margin-top:16px}
+.db-chart-frame{display:flex; gap:6px}
+.db-chart-y{position:relative; flex:0 0 52px; height:200px}
+.db-chart-ytick{position:absolute; right:0; transform:translateY(-50%); font-size:11px; color:var(--db-muted); white-space:nowrap; font-variant-numeric:tabular-nums}
+.db-chart-main{flex:1 1 auto; min-width:0}
+.db-chart-plot{position:relative; height:200px; border-radius:4px; touch-action:pan-y; cursor:crosshair}
+.db-chart-svg{display:block; width:100%; height:100%; overflow:visible}
+.db-grid{stroke:var(--db-grid); stroke-width:1}
+.db-area-s1{fill:var(--db-s1); fill-opacity:.10}
+.db-line{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.db-line-s1{stroke:var(--db-s1)}
+.db-line-s2{stroke:var(--db-s2)}
+.db-cross{stroke:var(--db-cross); stroke-width:1}
+.db-chart-dot{position:absolute; width:10px; height:10px; border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; box-shadow:0 0 0 2px var(--surface)}
+.db-dot-s1{background:var(--db-s1)}
+.db-dot-s2{background:var(--db-s2)}
+.db-tip{position:absolute; top:4px; min-width:170px; padding:10px 12px; border-radius:12px; background:var(--db-tip-bg); border:1px solid var(--line-2);
+  box-shadow:0 12px 30px -12px rgba(0,0,0,.6); pointer-events:none; z-index:2; font-size:12.5px}
+.db-tip-title{font-weight:700; margin-bottom:4px}
+.db-tip-row{display:flex; align-items:center; gap:6px}
+.db-tip-row strong{margin-left:auto; padding-left:12px}
+.db-chart-x{position:relative; height:22px}
+.db-chart-xtick{position:absolute; top:5px; transform:translateX(-50%); font-size:11px; color:var(--db-muted); white-space:nowrap}
+.db-chart-xtick-last{transform:translateX(-80%)}
+.db-legend{display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px; font-size:12.5px; color:var(--db-muted)}
+.db-legend-item{display:inline-flex; align-items:center; gap:6px}
+.db-table-wrap{margin-top:14px; max-height:260px; overflow:auto; border:1px solid var(--line); border-radius:12px}
+.db-table{width:100%; border-collapse:collapse; font-size:13px}
+.db-table th, .db-table td{padding:7px 12px; border-top:1px solid var(--line); text-align:left; font-weight:500}
+.db-table thead th{position:sticky; top:0; background:var(--surface-2); border-top:0; color:var(--db-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em}
+.db-table .db-num{text-align:right}
+
+/* peers */
+.db-counts{display:flex; flex-wrap:wrap; gap:8px 22px; margin:12px 0 14px}
+.db-count-value{font-family:var(--font-display); font-weight:800; font-size:26px; line-height:1.1; font-variant-numeric:tabular-nums}
+.db-count-label{font-size:12px; color:var(--db-muted)}
+.db-bars{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px}
+.db-bar-head{display:flex; align-items:center; gap:8px; font-size:13px; min-width:0}
+.db-bar-name{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.db-bar-meta{color:var(--db-muted); font-size:12px; white-space:nowrap}
+.db-bar-row{display:flex; align-items:center; gap:8px; margin-top:5px}
+.db-bar-track{flex:1 1 auto; min-width:0; height:8px}
+.db-bar{display:block; height:8px; border-radius:4px; background:var(--db-s1)}
+.db-bar-value{flex:0 0 auto; font-family:var(--font-mono); font-size:12.5px; font-variant-numeric:tabular-nums}
+
+/* gateways */
+.db-gwlist{list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; gap:10px}
+.db-gw{padding:12px; border-radius:13px; background:var(--chip); border:1px solid var(--line)}
+.db-gw-head{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px}
+.db-gw-name{font-weight:700; color:var(--text); text-decoration:none; min-width:0; overflow-wrap:anywhere}
+.db-gw-name:hover{text-decoration:underline}
+.db-gw-version{margin-left:auto; font:600 12px var(--font-mono); color:var(--db-muted)}
+.db-gw-detail{margin-top:4px; font-size:12.5px; color:var(--db-muted)}
+.db-gw .db-btn{margin-top:8px}
+.db-gw-note{display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12.5px}
+
+/* server */
+.db-meters{display:flex; flex-direction:column; gap:12px; margin-top:14px}
+.db-meter-head{display:flex; align-items:baseline; gap:8px; font-size:13px; min-width:0}
+.db-meter-label{font-weight:600}
+.db-meter-detail{color:var(--db-muted); font-size:12px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.db-meter-value{margin-left:auto; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums}
+.db-meter{--db-meter:var(--db-s1)}
+.db-meter[data-level="warn"]{--db-meter:var(--amber)}
+.db-meter[data-level="crit"]{--db-meter:var(--red)}
+.db-meter[data-level="none"]{--db-meter:var(--faint)}
+.db-meter-track{margin-top:6px; height:8px; border-radius:4px; overflow:hidden; background:color-mix(in srgb, var(--db-meter) 18%, transparent)}
+.db-meter-fill{height:100%; width:0; border-radius:4px; background:var(--db-meter); transition:width .5s cubic-bezier(.2,.7,.2,1)}
+.db-au{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:16px; padding:12px; border-radius:13px; background:var(--chip); border:1px solid var(--line)}
+.db-au > .db-status-ic{width:26px; height:26px}
+.db-au-text{flex:1 1 180px; min-width:0}
+.db-au-title{font-weight:700; font-size:13.5px}
+.db-au-sub{font-size:12px; color:var(--db-muted)}
+.db-au-notes{list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:4px}
+.db-au-note{display:flex; align-items:center; gap:6px; font-size:12.5px}
+.db-au-actions{flex:1 1 100%; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-left:36px}
+.db-au:focus{outline:none}
+.db-flash{animation:db-flash 1.2s ease 2; border-color:var(--teal)}
+@keyframes db-flash{0%,100%{box-shadow:0 0 0 0 transparent} 40%{box-shadow:0 0 0 6px var(--teal-soft)}}
+.db-details{margin-top:14px}
+.db-details summary{cursor:pointer; min-height:36px; display:flex; align-items:center}
+.db-pre{background:var(--surface-3); padding:10px 12px; border-radius:8px; font-size:11px; overflow-x:auto; border:1px solid var(--line)}
+
+/* activity */
+.db-activity{flex:3 1 520px; padding-bottom:6px}
+.db-activity-head{gap:10px}
+.db-live-chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--db-muted)}
+.db-chips{margin-left:auto; display:flex; flex-wrap:wrap; gap:6px}
+.db-chip{min-height:36px; padding:0 12px; border-radius:999px; border:1px solid var(--line-2); background:transparent; color:var(--db-muted);
+  font:600 12px var(--font-body); cursor:pointer; white-space:nowrap}
+.db-chip:hover{color:var(--text)}
+.db-chip[aria-pressed="true"]{border-color:var(--db-accent-bd); background:var(--teal-soft); color:var(--db-accent-ink)}
+.db-feed{list-style:none; margin:0; padding:8px 0 4px}
+.db-act{display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line)}
+.db-act-ic{width:30px; height:30px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; border:1px solid var(--line-2); background:var(--chip); color:var(--db-muted)}
+.db-act-body{flex:1 1 auto; min-width:0}
+.db-act-text{font-size:13.5px; overflow-wrap:anywhere}
+.db-act-meta{display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; font-size:12px; color:var(--db-muted)}
+.db-act-time{flex:0 0 auto; font-size:12px; color:var(--db-muted); white-space:nowrap}
+.db-act-new{animation:db-new 1.6s ease}
+@keyframes db-new{from{background:var(--teal-soft)} to{background:transparent}}
+
+/* security */
+.db-security{flex:2 1 340px}
+.db-subtiles{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:14px}
+.db-subtiles:not(:has(.db-subtile:not([hidden]))){display:none}
+.db-subtile{padding:12px; border-radius:13px; background:var(--chip); border:1px solid var(--line); min-width:0}
+.db-subtile-label{font-size:12px; color:var(--db-muted); font-weight:600}
+.db-subtile-main{display:flex; align-items:flex-end; gap:10px; margin-top:4px}
+.db-subtile-value{font-family:var(--font-display); font-weight:800; font-size:26px; line-height:1; font-variant-numeric:tabular-nums}
+.db-subtile > .db-subtile-value{margin-top:4px}
+.db-subtile-sub{font-size:12px; color:var(--db-muted); margin-top:4px}
+.db-spark{flex:1 1 auto; min-width:0; height:28px}
+.db-spark-line{fill:none; stroke:var(--db-muted); stroke-width:2; stroke-linejoin:round; vector-effect:non-scaling-stroke}
+.db-spark-last{fill:none; stroke:var(--db-s1); stroke-width:2; stroke-linecap:round; vector-effect:non-scaling-stroke}
+.db-checkrow{display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px; min-height:44px; border-radius:13px;
+  border:1px solid var(--line-2); background:var(--chip); color:var(--text); text-decoration:none}
+.db-checkrow[data-state="warn"]{border-color:var(--amber-bd); background:var(--amber-bg)}
+.db-checkrow[data-state="crit"]{border-color:var(--red-bd); background:var(--red-bg)}
+.db-checkrow[data-state="good"]{border-color:var(--green-bd)}
+.db-checkrow > .db-status-ic{width:26px; height:26px}
+.db-checkrow-text{flex:1 1 auto; min-width:0; display:flex; flex-direction:column}
+.db-checkrow-title{font-weight:700; font-size:13.5px}
+.db-checkrow-sub{font-size:12px; color:var(--db-muted)}
+.db-checkrow-go{font-size:12.5px; font-weight:700; color:var(--db-accent-ink)}
+.db-checkrow:hover .db-checkrow-go{text-decoration:underline}
+
+@media (prefers-reduced-motion: reduce){
+  .db-tile, .db-meter-fill{transition:none}
+  .db-act-new, .db-flash{animation:none}
+}
+@media (max-width:640px){
+  .db-page{gap:14px}
+  .db-head-actions, .db-head-actions .db-btn{flex:1 1 auto}
+  .db-tiles{grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px}
+  .db-tile{padding:13px}
+  .db-tile-value{font-size:22px}
+  .db-card{padding:16px}
+  .db-card-head-rule{margin:-16px -16px 0; padding:14px 16px}
+  .db-plist{margin:0 -16px}
+  .db-prow{padding:12px 16px; flex-wrap:wrap}
+  .db-prow-when{order:3; flex-basis:100%; padding-left:40px}
+  .db-au-actions{padding-left:0}
+  .db-traffic-ctl{align-items:stretch; flex:1 1 100%}
+  .db-seg{display:flex}
+  .db-seg-btn{flex:1 1 0}
+  .db-hero-value{font-size:34px}
+  .db-chart-y{flex-basis:44px}
+  .db-chips{margin-left:0; width:100%}
+  .db-subtiles{gap:10px}
+  .db-grid3{grid-template-columns:minmax(0,1fr)}
+  .db-traffic, .db-problems, .db-activity, .db-security{flex-basis:100%}
+}
+@media (max-width:380px){
+  .db-tiles{grid-template-columns:minmax(0,1fr)}
+}
+
+
 /* ============================================================================
  * §3 Security page: licence hint (lh-), security check (sc-), WAF assistant (wfa-) (was public/css/security.css)
  * ============================================================================ */
@@ -5303,7 +5614,7 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
    partials/modals/route-edit.njk; DOM built by settings.js / dashboard.js. */
 
 .op-offsite [hidden], .op-premig [hidden], .op-target-modal [hidden], .op-au [hidden],
-.op-wn[hidden], .op-wn [hidden], .op-restore-pass[hidden], .op-dialog [hidden] { display: none !important; }
+.op-restore-pass[hidden], .op-dialog [hidden] { display: none !important; }
 
 /* ── Shared bits ─────────────────────────────────────────── */
 .op-sub { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 90ch; }
@@ -5417,19 +5728,9 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
 .op-reinstall { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .op-reinstall summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--amber); }
 
-/* ── "Was ist neu" (dashboard) ───────────────────────────── */
-.op-wn { margin-bottom: 18px; }
-.op-wn-head { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
-.op-wn-ic { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--teal); background: var(--teal-soft); }
-.op-wn-ic svg { width: 18px; height: 18px; }
-.op-wn-titles { flex: 1 1 220px; min-width: 0; }
-.op-wn-title { margin: 0; font-size: 16px; }
-.op-wn-sub { margin-top: 2px; font-size: 12px; color: var(--faint); }
-.op-wn-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* ── "Was ist neu": release list (dashboard strip, ops-ui.js whatsNewNodes) ── */
 .op-wn-body { margin-top: 14px; max-height: 340px; overflow-y: auto; padding-right: 6px; }
 .op-wn-body:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 8px; }
-.op-wn-single .op-wn-ver { display: none; }
-.op-wn-single .op-wn-group:first-of-type .op-wn-gtitle { margin-top: 0; }
 .op-wn-section + .op-wn-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .op-wn-ver { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 .op-wn-vnum { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
@@ -5438,14 +5739,6 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
 .op-wn-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.55; color: var(--text); }
 .op-wn-list li::marker { color: var(--teal); }
 .op-wn-code { font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--surface-3); overflow-wrap: anywhere; }
-
-/* /dashboard#auto-update: highlight the topbar status */
-@keyframes op-flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 40% { box-shadow: 0 0 0 6px var(--teal-soft); } }
-#au-status.op-flash { border-radius: 999px; outline: 2px solid var(--teal); outline-offset: 3px; animation: op-flash 1.2s ease 2; }
-
-/* Topbar version badge = entry to "What's new" */
-.au-badge-btn { cursor: pointer; font-family: inherit; line-height: inherit; }
-.au-badge-btn:hover, .au-badge-btn:focus-visible { color: var(--text); border-color: var(--line-2); }
 
 /* ── Entry editor: gateway certificate fingerprint (§13b) ── */
 .so-editor-block.so-locked > .so-fp { opacity: 1; pointer-events: auto; }
@@ -5461,15 +5754,6 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
   .op-offsite-grid, .op-au-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
-  /* Topbar auto-update status: at phone width only ~60 px are left next to
-     menu, title, theme and profile — show the status pills as dots (text as
-     tooltip) and drop badge, re-check and buttons (setup/"Update now" stay on
-     wider screens and in Settings → Erweitert). Before, the row overflowed. */
-  .topbar .au-actions { flex-wrap: nowrap; min-width: 0; gap: 4px; }
-  .topbar .au-actions .au-pill { padding: 7px; }
-  .topbar .au-actions .au-pill > span:not(.au-dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .topbar .au-actions .au-pill { position: relative; }
-  .topbar .au-actions .au-badge, .topbar .au-actions .icon-btn, .topbar .au-actions .btn { display: none; }
   .op-pane { padding: 12px; }
   .op-target-form .form-row, .op-host-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .op-au-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -5482,189 +5766,17 @@ code.op-t-error.op-t-detail { color: var(--red); border-color: var(--red-bd); ba
 
 
 /* ============================================================================
- * §6 Dashboard problems (pr-) and entry names (was public/css/problems.css)
+ * §6 Entry names (od-) (was public/css/problems.css)
  * ============================================================================ */
 
-/* ─── Dashboard problems + entry names (docs/feature-next-package.md S3) ───
-   pr-*  the problems section of the dashboard
-   od-*  "nur bei Bedarf" note and the entry name in the zones views        */
-
-.pr-card {
-  margin-bottom: 18px;
-  padding: 14px 16px 12px;
-  border-left: 3px solid var(--amber);
-}
-
-.pr-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.pr-head-ic {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border-radius: var(--radius-sm);
-  background: var(--amber-lt, var(--bg-base));
-  color: var(--amber);
-}
-
-.pr-head-ic svg { width: 16px; height: 16px; }
-
-.pr-titles { min-width: 0; flex: 1 1 auto; }
-.pr-title { margin: 0; font-size: 14px; }
-.pr-sub { font-size: 11px; color: var(--text-2); margin-top: 1px; }
-
-.pr-count {
-  flex: 0 0 auto;
-  min-width: 22px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-  color: var(--text-1);
-}
-
-.pr-count-error { border-color: var(--red); color: var(--red); }
-
-.pr-list { display: flex; flex-direction: column; gap: 2px; }
-
-.pr-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-}
-
-.pr-row + .pr-row { margin-top: 4px; }
-
-.pr-dot {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--amber);
-}
-
-.pr-error .pr-dot,
-.pr-row.pr-error > .pr-dot { background: var(--red); }
-
-.pr-body { flex: 1 1 auto; min-width: 0; }
-
-.pr-row-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-1);
-  word-break: break-word;
-}
-
-.pr-row-detail {
-  font-size: 11px;
-  color: var(--text-2);
-  margin-top: 2px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-}
-
-.pr-since {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--faint, var(--text-2));
-  white-space: nowrap;
-  margin-top: 2px;
-}
-
-.pr-link {
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent, var(--teal));
-  text-decoration: none;
-  white-space: nowrap;
-  margin-top: 1px;
-}
-
-.pr-link:hover { text-decoration: underline; }
-
-.pr-empty { font-size: 12px; color: var(--text-2); padding: 6px 2px; }
-.pr-empty.pr-error { color: var(--red); }
-
-.pr-note {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.pr-od { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
-.pr-od-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  margin-bottom: 4px;
-}
-
-.pr-od-list { display: flex; flex-direction: column; gap: 4px; }
-
-.pr-od-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.pr-od-tag,
-.od-tag {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.pr-od-tag {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-}
-
-.pr-od-text { flex: 1 1 auto; min-width: 0; }
+/* ─── Entry names (docs/feature-next-package.md S3) ───
+   The dashboard's problems list moved to the db- block of §2 (dashboard
+   redesign); what stays here is the entry name in the zones views. */
 
 /* Entry name in the zones list and the domain dialog. */
 .od-name {
   font-weight: 700;
   color: var(--text-1);
-}
-
-
-
-.od-chip { opacity: 0.85; }
-
-@media (max-width: 640px) {
-  /* Dot and text stay on one line; timestamp and link wrap below. */
-  .pr-row { flex-wrap: wrap; }
-  .pr-body { flex: 1 1 calc(100% - 18px); }
-  .pr-since { order: 3; margin-top: 4px; }
-  .pr-link { order: 4; margin-top: 4px; margin-left: auto; }
 }
 
 

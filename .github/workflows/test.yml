@@ -198,7 +198,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard' }}
 
       - name: App log
         if: failure()
