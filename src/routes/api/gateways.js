@@ -24,12 +24,17 @@ const router = Router();
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
  *                l4_listen_port, l4_protocol, wol_enabled, wol_mac }],
  *   }
+ *
+ * `?peek=1` is a side-effect-free read (the dashboard polls it): the
+ * terminal update states (done/failed) are reported but NOT cleared — that
+ * stays with the gateways page, which shows them once and then lets go.
  */
 router.get('/', (req, res) => {
   try {
+    const peek = req.query.peek === '1' || req.query.peek === 'true';
     const db = getDb();
     const rows = db.prepare(`
-      SELECT p.id, p.name, p.hostname, p.allowed_ips,
+      SELECT p.id, p.name, p.hostname, p.allowed_ips, p.latest_handshake,
              gm.api_port, gm.last_seen_at, gm.last_health,
              gm.update_request_id, gm.update_requested_at, gm.update_target_version
       FROM peers p
@@ -77,6 +82,7 @@ router.get('/', (req, res) => {
         api_port: row.api_port,
         status,
         last_seen_at: row.last_seen_at,
+        latest_handshake: row.latest_handshake || null,
         health,
         routes: routeStmt.all(row.id),
         update_state: _ust.state,
@@ -93,7 +99,7 @@ router.get('/', (req, res) => {
       g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);
       // Terminal lifecycle states are surfaced once, then cleared so the
       // tracking columns don't pin a stale done/failed forever.
-      if (g.update_state === 'done' || g.update_state === 'failed') {
+      if (!peek && (g.update_state === 'done' || g.update_state === 'failed')) {
         gatewaysSvc._clearUpdateTracking(g.peer_id);
       }
     }
