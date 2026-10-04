@@ -230,8 +230,67 @@ describe('traffic: getCurrentRates', () => {
 describe('traffic: getChartData', () => {
   const traffic = require('../src/services/traffic');
 
-  it('returns an empty array when no snapshots exist', () => {
-    assert.deepEqual(traffic.getChartData('1h'), []);
+  it('returns a continuous zero-filled frame when no snapshots exist', () => {
+    const data = traffic.getChartData('1h');
+    assert.equal(data.length, 60);
+    assert.ok(data.every((p) => p.upload === 0 && p.download === 0 && p.peers === 0));
+  });
+
+  // Fixed clock: 2026-10-04 13:37:20 UTC.
+  const NOW = Date.UTC(2026, 9, 4, 13, 37, 20);
+  const at = (iso) => iso.replace('T', ' ').replace(/\.\d+Z$|Z$/, '');
+  function snapAt(iso, up, down) {
+    getDb().prepare('INSERT INTO traffic_snapshots (upload_bytes, download_bytes, peer_count, recorded_at) VALUES (?, ?, 1, ?)').run(up, down, at(iso));
+  }
+
+  it('24h: the most recent 24 hour buckets, oldest first, the current partial hour last', () => {
+    // Every hour of the last 30 h has data — the old "ORDER BY bucket ASC LIMIT 24"
+    // returned the 24 OLDEST buckets of the window and dropped the current one.
+    for (let h = 0; h < 30; h++) snapAt(new Date(NOW - h * 3600e3).toISOString(), 1, 100 + h);
+    const data = traffic.getChartData('24h', { now: NOW });
+    assert.equal(data.length, 24);
+    assert.equal(data[23].time, '2026-10-04T13:00:00Z', 'current (partial) hour is the last bucket');
+    assert.equal(data[0].time, '2026-10-03T14:00:00Z');
+    assert.equal(data[23].download, 100, 'the current bucket carries the newest snapshot');
+    for (let i = 1; i < data.length; i++) assert.ok(data[i].time > data[i - 1].time, 'ascending');
+  });
+
+  it('fills gaps with 0 so the time axis is continuous', () => {
+    snapAt('2026-10-04T13:05:00Z', 7, 70);
+    snapAt('2026-10-04T10:15:00Z', 3, 30);
+    const data = traffic.getChartData('24h', { now: NOW });
+    assert.equal(data.length, 24);
+    const byTime = Object.fromEntries(data.map((d) => [d.time, d]));
+    assert.equal(byTime['2026-10-04T13:00:00Z'].download, 70);
+    assert.equal(byTime['2026-10-04T10:00:00Z'].download, 30);
+    assert.equal(byTime['2026-10-04T12:00:00Z'].download, 0);
+    assert.equal(byTime['2026-10-04T11:00:00Z'].upload, 0);
+  });
+
+  it('1h: 60 minute buckets ending with the current minute', () => {
+    snapAt('2026-10-04T13:37:05Z', 1, 2);
+    snapAt('2026-10-04T12:37:59Z', 5, 5); // just before the oldest minute bucket (12:38)
+    const data = traffic.getChartData('1h', { now: NOW });
+    assert.equal(data.length, 60);
+    assert.equal(data[59].time, '2026-10-04T13:37:00Z');
+    assert.equal(data[0].time, '2026-10-04T12:38:00Z');
+    assert.equal(data[59].download, 2);
+    assert.equal(data.reduce((n, d) => n + d.upload, 0), 1, 'the row outside the window is not counted');
+  });
+
+  it('7d and 30d: day buckets (UTC dates), today last', () => {
+    for (let d = 0; d < 35; d++) snapAt(new Date(NOW - d * 86400e3).toISOString(), 1, 10);
+    const week = traffic.getChartData('7d', { now: NOW });
+    assert.equal(week.length, 7);
+    assert.equal(week[6].time, '2026-10-04');
+    assert.equal(week[0].time, '2026-09-28');
+    const month = traffic.getChartData('30d', { now: NOW });
+    assert.equal(month.length, 30);
+    assert.equal(month[29].time, '2026-10-04');
+    assert.equal(month[0].time, '2026-09-05');
+    assert.ok(month.every((d) => d.download === 10));
+    assert.equal(traffic.chartUnit('30d'), 'day');
+    assert.equal(traffic.chartUnit('1h'), 'minute');
   });
 
   it('aggregates snapshot rows into time buckets — 1h period', () => {
@@ -253,6 +312,29 @@ describe('traffic: getChartData', () => {
     const a = traffic.getChartData();
     const b = traffic.getChartData('1h');
     assert.deepEqual(a, b);
+  });
+});
+
+describe('traffic: getTopPeers', () => {
+  const traffic = require('../src/services/traffic');
+
+  it('sums today per peer in SQL, sorted by total, limited, without silent peers', () => {
+    insertPeer({ id: 1, name: 'alpha', publicKey: 'pkA' });
+    insertPeer({ id: 2, name: 'beta', publicKey: 'pkB' });
+    insertPeer({ id: 3, name: 'gamma', publicKey: 'pkC' });
+    const db = getDb();
+    const ins = db.prepare('INSERT INTO peer_traffic_snapshots (peer_id, upload_bytes, download_bytes, recorded_at) VALUES (?, ?, ?, ?)');
+    const NOW = Date.UTC(2026, 9, 4, 13, 0, 0);
+    ins.run(1, 10, 100, '2026-10-04 01:00:00');
+    ins.run(1, 10, 100, '2026-10-04 12:00:00');
+    ins.run(2, 500, 500, '2026-10-04 09:00:00');
+    ins.run(3, 9999, 9999, '2026-10-03 23:59:00'); // yesterday
+    const top = traffic.getTopPeers({ period: 'today', limit: 5, now: NOW });
+    assert.deepEqual(top.map((p) => [p.name, p.total]), [['beta', 1000], ['alpha', 220]]);
+    assert.equal(top[1].upload, 20);
+    assert.equal(top[1].download, 200);
+    assert.equal(traffic.getTopPeers({ period: '24h', limit: 1, now: NOW })[0].name, 'gamma', '24h reaches into yesterday');
+    assert.equal(traffic.getTopPeers({ period: 'today', limit: 1, now: NOW }).length, 1);
   });
 });
 
