@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.141.0] — 2026-10-04
+
+### Features
+- redesigned settings (grouped sections, unified save, per-event webhooks, disk alerts) (#262)
+
+---
+
 ## [1.140.0] — 2026-10-04
 
 ### Features
