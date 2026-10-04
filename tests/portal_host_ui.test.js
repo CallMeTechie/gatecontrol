@@ -3,6 +3,7 @@ const crypto = require('crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const { withoutScripts } = require('./helpers/html');
 const supertest = require('supertest');
 const fs = require('node:fs'); const path = require('node:path');
 const { setup, teardown, getAgent } = require('./helpers/setup');
@@ -16,7 +17,7 @@ test('settings page renders the Portal address card, no raw i18n keys', async ()
   assert.match(res.text, /id="st-po-prefix"/);
   assert.match(res.text, /id="st-po-preview"/);
   // (the JSON string table in <script id="st-i18n"> carries the keys by design)
-  const visible = res.text.replace(/<script[\s\S]*?<\/script>/g, '');
+  const visible = withoutScripts(res.text);
   assert.doesNotMatch(visible, /settings\.portal\.(address|base_domain|prefix|host_note)\b/);
 });
 
