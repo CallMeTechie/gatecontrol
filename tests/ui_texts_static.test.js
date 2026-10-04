@@ -127,6 +127,11 @@ function pageInfo(file) {
   for (const m of src.matchAll(/\/js\/([A-Za-z0-9_.-]+\.js)/g)) scripts.add(m[1]);
   // An i18n island only counts when the page really renders one.
   const islandKeys = /type="application\/json" id="[a-z-]*i18n"/.test(src) ? njkKeys(src) : new Set();
+  // A prefix island (dashboard.njk): the route renders every key with these
+  // prefixes (stringsWithPrefix) — the island declares them in data-prefixes.
+  const pm = src.match(/type="application\/json" id="[a-z-]*i18n" data-prefixes="([^"]+)"/);
+  const islandPrefixes = pm ? pm[1].split(/\s+/).filter(Boolean) : [];
+  for (const prefix of islandPrefixes) for (const k of Object.keys(de)) if (k.startsWith(prefix)) islandKeys.add(k);
   return { scripts, islandKeys };
 }
 

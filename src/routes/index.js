@@ -6,6 +6,7 @@ const { csrfProtection } = require('../middleware/csrf');
 const { loginLimiter, passkeyLoginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
 const { hasFeature } = require('../services/license');
+const { stringsWithPrefix } = require('../middleware/i18n');
 
 const express = require('express');
 const router = Router();
@@ -258,6 +259,14 @@ pages.forEach(({ path, template, nav, titleKey }) => {
     const activeNav = nav || template;
     const extraLocals = {};
 
+    // The dashboard is made of admin API reads only (every /api/v1 call of a
+    // session without the admin role answers 403): a plain user gets the one
+    // page that is theirs instead of a dashboard that never loads. The role
+    // comes from injectLocals (res.locals.user) — no extra query here.
+    if (template === 'dashboard' && (!res.locals.user || res.locals.user.role !== 'admin')) {
+      return res.redirect('/profile');
+    }
+
     // Inject RDP route count for sidebar badge (all pages)
     try {
       const rdpService = require('../services/rdp');
@@ -331,6 +340,11 @@ pages.forEach(({ path, template, nav, titleKey }) => {
           WHERE gm.needs_repair=1 AND p.enabled=1
         `).all();
       } catch { extraLocals.needs_repair_gateways = []; }
+      // All dashboard.* / problems.* strings for dashboard.js as one JSON
+      // island (strings from the locale files only; `<` escaped so the
+      // island can never close its <script> element).
+      extraLocals.dashI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['dashboard.', 'problems.']))
+        .replace(/</g, '\\u003c');
     }
 
     res.render(`${res.locals.theme}/pages/${template}.njk`, {

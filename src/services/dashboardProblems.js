@@ -5,13 +5,16 @@
 //   list()  → { generated_at, summary, problems: [...], on_demand: [...] }
 //
 // Nothing is measured here — every row is assembled from data GateControl
-// already has, so the endpoint stays cheap enough for the dashboard's 15 s
-// refresh and the SSE-driven reloads:
+// already has, so the endpoint stays cheap enough for the dashboard's 30 s
+// refresh (public/js/dashboard.js, REFRESH.problems) and the SSE-driven
+// reloads:
 //
 //   gateway_offline      gateway_meta.alive = 0
 //   entry_down           uptime monitoring (routes.monitoring_status) and/or
 //                        Caddy's access log, see below
 //   tls_failed/paused    tls_status via tlsGuard.listStatus()
+//   tls_expiring         an issued certificate with < 14 days left
+//                        (tlsGuard.EXPIRING_DAYS, same rule as /tls/status)
 //   update_failed        .auto-update-state.json via autoUpdate.getStatus()
 //   update_rolled_back   ditto
 //   backup_failed        backup_targets.last_status
@@ -199,7 +202,7 @@ function entryHref(row, rdpIds) {
 
 const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
 const KIND_RANK = [
-  'gateway_offline', 'entry_down', 'tls_failed', 'tls_paused',
+  'gateway_offline', 'entry_down', 'tls_failed', 'tls_paused', 'tls_expiring',
   'update_failed', 'update_rolled_back', 'backup_failed', 'waf_engine_missing',
 ];
 
@@ -247,9 +250,14 @@ function wolInfo(row, licensed) {
 
 function tlsProblems() {
   let st;
-  try { st = require('./tlsGuard').listStatus(); }
-  catch (err) { logger.warn({ err: err.message }, 'problems: tls status unavailable'); return []; }
-  return (st.hosts || [])
+  let expiringDays = 14;
+  try {
+    const tlsGuard = require('./tlsGuard');
+    st = tlsGuard.listStatus();
+    if (Number.isFinite(tlsGuard.EXPIRING_DAYS)) expiringDays = tlsGuard.EXPIRING_DAYS;
+  } catch (err) { logger.warn({ err: err.message }, 'problems: tls status unavailable'); return []; }
+  const hosts = st.hosts || [];
+  const broken = hosts
     .filter((h) => h.state === 'failed' || h.state === 'paused')
     .map((h) => ({
       id: 'tls:' + h.host,
@@ -265,6 +273,24 @@ function tlsProblems() {
         max_attempts: h.max_attempts,
       },
     }));
+  // Issued, but running out: Caddy renews 30 days ahead, so a certificate
+  // this close to its end means the renewal keeps failing.
+  const expiring = hosts
+    .filter((h) => h.state === 'issued' && h.days_left != null && h.days_left < expiringDays)
+    .map((h) => ({
+      id: 'tls_expiring:' + h.host,
+      kind: 'tls_expiring',
+      severity: 'warning',
+      href: '/certificates',
+      since: null,
+      tls: {
+        host: h.host,
+        days_left: h.days_left,
+        not_after: isoOf(h.not_after),
+        code: h.last_error_code || null,
+      },
+    }));
+  return broken.concat(expiring);
 }
 
 function updateProblem() {
@@ -387,7 +413,7 @@ async function list({ now = Date.now(), access } = {}) {
     problems.push({ ...base, severity: row.external_enabled ? 'error' : 'warning' });
   }
 
-  // 3–6. Certificates, update, off-site backups, WAF module.
+  // 3–6. Certificates (broken or expiring), update, off-site backups, WAF module.
   problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...wafEngineProblem(db));
 
   problems.sort((a, b) => {

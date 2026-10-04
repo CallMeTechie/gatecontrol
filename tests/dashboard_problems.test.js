@@ -221,6 +221,40 @@ test('certificates, off-site backups and the auto-update marker become rows', as
   db.prepare("DELETE FROM backup_targets WHERE name = 'NAS'").run();
 });
 
+test('an issued certificate with < 14 days left is a warning; 14+ days or failed hosts are not', async () => {
+  writeAccessLog([]);
+  const soon = insertRoute({ domain: 'soon.example' });
+  const later = insertRoute({ domain: 'later.example' });
+  const inDays = (d) => new Date(Date.now() + d * 86400000 + 3600000).toISOString();
+  db.prepare("INSERT INTO tls_status (host, state, attempts, not_after, last_error_code) VALUES ('soon.example', 'issued', 0, ?, 'dns')")
+    .run(inDays(9));
+  db.prepare("INSERT INTO tls_status (host, state, attempts, not_after) VALUES ('later.example', 'issued', 0, ?)")
+    .run(inDays(20));
+
+  const res = await problems.list();
+  const rows = res.problems.filter((p) => p.kind === 'tls_expiring');
+  assert.equal(rows.length, 1, 'only the host below the threshold');
+  const row = rows[0];
+  assert.equal(row.id, 'tls_expiring:soon.example');
+  assert.equal(row.severity, 'warning');
+  assert.equal(row.href, '/certificates');
+  assert.equal(row.tls.host, 'soon.example');
+  assert.ok(row.tls.days_left >= 9 && row.tls.days_left <= 10, String(row.tls.days_left));
+  assert.ok(row.tls.not_after, 'expiry date for the detail line');
+  assert.equal(row.tls.code, 'dns', 'the failing renewal is named');
+  assert.equal(res.summary.warning >= 1, true);
+  // Sorted with the other certificate rows: after errors, among warnings.
+  const kinds = res.problems.map((p) => p.kind);
+  assert.ok(kinds.indexOf('tls_expiring') > kinds.lastIndexOf('gateway_offline'));
+
+  // The same threshold as GET /tls/status → summary.expiring.
+  const st = require('../src/services/tlsGuard').listStatus();
+  assert.equal(st.summary.expiring, 1);
+
+  db.prepare('DELETE FROM routes WHERE id IN (?, ?)').run(soon, later);
+  db.prepare("DELETE FROM tls_status WHERE host IN ('soon.example', 'later.example')").run();
+});
+
 test('a rolled-back update is reported with its version', async () => {
   const autoUpdate = require('../src/services/autoUpdate');
   fs.mkdirSync(path.dirname(autoUpdate.STATE_FILE), { recursive: true });

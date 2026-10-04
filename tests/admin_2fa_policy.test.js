@@ -181,5 +181,9 @@ test('non-admin sessions are not subject to require_2fa', async () => {
   getDb().prepare("INSERT INTO users (username, password_hash, role) VALUES ('viewer', ?, 'user')").run(hash);
   const { a, location } = await loginAs('viewer', 'Plain!Pass1234');
   assert.equal(location, '/dashboard');
-  await a.get('/dashboard').expect(200);
+  // Not sent to the 2FA setup: a plain user goes from the (admin-only)
+  // dashboard to their own profile, and the profile opens.
+  const dash = await a.get('/dashboard').expect(302);
+  assert.equal(dash.headers.location, '/profile');
+  await a.get('/profile').expect(200);
 });

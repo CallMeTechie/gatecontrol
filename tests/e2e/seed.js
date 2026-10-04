@@ -82,6 +82,38 @@ async function main() {
     entries: [{ type: 'http', target_port: 80 }],
   });
 
+  // Dashboard (scenarios/05-dashboard.js): ein Client-Peer, Traffic der
+  // letzten 30 Tage (Diagramm, Top-Peers) und ein paar Ereignisse
+  // (Aktivität). Werte deterministisch, damit Screenshots vergleichbar sind.
+  const laptop = db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type, latest_handshake) VALUES (?, ?, ?, 1, 'regular', strftime('%s','now'))")
+    .run('e2e-laptop', crypto.randomBytes(16).toString('base64'), '10.8.0.10/32').lastInsertRowid;
+  const snap = db.prepare(`INSERT INTO traffic_snapshots (upload_bytes, download_bytes, peer_count, recorded_at)
+    VALUES (?, ?, 3, datetime('now', ?))`);
+  const peerSnap = db.prepare(`INSERT INTO peer_traffic_snapshots (peer_id, upload_bytes, download_bytes, recorded_at)
+    VALUES (?, ?, ?, datetime('now', ?))`);
+  db.transaction(() => {
+    const wave = (i, k) => Math.max(0.05, 0.5 + 0.45 * Math.sin((i + k) / 3.1) + 0.3 * Math.sin((i * 1.7 + k) / 2.3));
+    // 30 days, one row every 20 minutes (older than 2 hours) …
+    for (let m = 30 * 24 * 60; m > 120; m -= 20) {
+      const i = m / 60;
+      snap.run(Math.round(wave(i, 7) * 9e6), Math.round(wave(i, 2) * 6e7), `-${m} minutes`);
+    }
+    // … and every minute for the last two hours (the 1 h view).
+    for (let m = 120; m >= 0; m--) snap.run(Math.round(wave(m / 6, 7) * 3e5), Math.round(wave(m / 6, 2) * 2e6), `-${m} minutes`);
+    [[laptop, 7.1e8], [gwHome, 3.9e8], [gwNas, 1.2e8]].forEach(([id, bytes]) => {
+      peerSnap.run(id, Math.round(bytes / 6), Math.round(bytes), '-1 minutes');
+    });
+  })();
+  const act = db.prepare(`INSERT INTO activity_log (event_type, message, source, ip_address, severity, created_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now', ?))`);
+  [
+    ['backup_created', 'Automatic backup created', 'system', null, 'success', '-95 minutes'],
+    ['route_updated', 'Route wiki.e2e.example.com updated', 'admin', '192.168.10.5', 'info', '-50 minutes'],
+    ['login_failed', 'Failed login for admin', 'auth', '203.0.113.7', 'warning', '-30 minutes'],
+    ['peer_connected', 'e2e-laptop connected', 'wireguard', null, 'success', '-12 minutes'],
+    ['waf_ip_banned', 'IP 198.51.100.4 banned', 'waf', '198.51.100.4', 'error', '-3 minutes'],
+  ].forEach((r) => act.run(...r));
+
   // Zweiter Admin MIT zweitem Faktor — der erste bleibt ohne, damit die
   // Anmeldung ohne zweiten Schritt ebenfalls geprüft werden kann.
   const users = require('../../src/services/users');
@@ -99,12 +131,13 @@ async function main() {
     zone: { domain: ZONE, id: zoneId },
     hosts: { nas: nas.id, wiki: wiki.id, apex: apex.id },
     gateways: { home: gwHome, nas: gwNas },
+    peers: { laptop },
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));
   fs.chmodSync(out, 0o600);
   // Kein Geheimnis in die Ausgabe — die Datei liegt im Datenverzeichnis des Laufs.
-  console.log(`seed: zone ${ZONE} with 3 hosts, 2 gateways, 2FA user ${TFA.username}; fixtures → ${out}`);
+  console.log(`seed: zone ${ZONE} with 3 hosts, 2 gateways, 1 client, 30 days of traffic, 2FA user ${TFA.username}; fixtures → ${out}`);
 
   require('../../src/db/connection').closeDb();
 }

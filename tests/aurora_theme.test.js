@@ -119,62 +119,42 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
   });
 });
 
-// ── Task P2-1: Dashboard ID-contract (Aurora mockup fidelity) ─────────────────
-describe('aurora theme — dashboard layout (Task P2-1)', () => {
-  it('renders /dashboard with Aurora grid structure and .kpi/.card-title elements', async () => {
+// ── Dashboard redesign (2026-10): ID contract of dashboard.njk / dashboard.js ──
+describe('aurora theme — dashboard layout (redesign)', () => {
+  it('renders /dashboard with the db- structure: header, five tiles, cards', async () => {
     selectAurora();
     const res = await agent.get('/dashboard').expect(200);
-    // Aurora shell
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    // Grid layout
-    assert.match(res.text, /class="grid"/, '.grid container present');
-    // KPI cards live in the responsive .aurora-kpi-grid (6-across → progressive stack)
-    assert.match(res.text, /class="aurora-kpi-grid"/, '.aurora-kpi-grid present');
-    assert.match(res.text, /class="card kpi"/, '.kpi KPI cards present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
+    assert.match(res.text, /class="db-page"/, '.db-page present');
+    assert.match(res.text, /<h1 class="db-title" id="db-headline">/, 'one real h1 headline');
+    for (const id of ['tunnel', 'gateways', 'routes', 'certs', 'check']) {
+      assert.match(res.text, new RegExp(`<a class="db-tile" id="db-tile-${id}" href="/`), `#db-tile-${id} is a link`);
+    }
+    for (const h of ['dash-problems-title', 'db-traffic-title', 'db-peers-title', 'db-gateways-title', 'db-server-title', 'db-activity-title', 'db-security-title']) {
+      assert.match(res.text, new RegExp(`<h2 class="db-card-title" id="${h}"`), `#${h} is an h2`);
+    }
   });
 
-  it('renders all static contract IDs on /dashboard under aurora', async () => {
+  it('renders the static contract IDs the script fills', async () => {
     selectAurora();
     const res = await agent.get('/dashboard').expect(200);
-    // KPI IDs
-    assert.match(res.text, /id="stat-peers"/, '#stat-peers present');
-    assert.match(res.text, /id="stat-routes"/, '#stat-routes present');
-    assert.match(res.text, /id="stat-traffic"/, '#stat-traffic present');
-    assert.match(res.text, /id="stat-gateways"/, '#stat-gateways present');
-    assert.match(res.text, /id="stat-latency"/, '#stat-latency present');
-    assert.match(res.text, /id="stat-monitoring"/, '#stat-monitoring present');
-    assert.match(res.text, /id="stat-monitoring-sub"/, '#stat-monitoring-sub present');
-    // Chart
-    assert.match(res.text, /id="traffic-chart"/, '#traffic-chart present');
-    assert.match(res.text, /id="t-total"/, '#t-total present');
-    assert.match(res.text, /id="t-avg"/, '#t-avg present');
-    assert.match(res.text, /id="t-peak"/, '#t-peak present');
-    // Activity feed
-    assert.match(res.text, /id="activity-feed"/, '#activity-feed present');
-    // System resources
-    assert.match(res.text, /id="cpu-pct"/, '#cpu-pct present');
-    assert.match(res.text, /id="cpu-info"/, '#cpu-info present');
-    assert.match(res.text, /id="cpu-bar"/, '#cpu-bar present');
-    assert.match(res.text, /id="ram-pct"/, '#ram-pct present');
-    assert.match(res.text, /id="ram-info"/, '#ram-info present');
-    assert.match(res.text, /id="ram-bar"/, '#ram-bar present');
-    assert.match(res.text, /id="uptime-value"/, '#uptime-value present');
-    assert.match(res.text, /id="uptime-boot"/, '#uptime-boot present');
-    // Auto-update modal IDs
-    assert.match(res.text, /id="au-status"/, '#au-status present');
-    assert.match(res.text, /id="au-setup-modal-overlay"/, '#au-setup-modal-overlay present');
-    assert.match(res.text, /id="au-setup-title"/, '#au-setup-title present');
-    assert.match(res.text, /id="au-setup-body"/, '#au-setup-body present');
+    for (const id of ['db-live-text', 'db-subline', 'dash-problems', 'dash-problems-list', 'dash-problems-ondemand-list',
+      'db-chart', 'db-table', 'db-table-body', 'db-table-toggle', 'db-traffic-total', 'db-traffic-rate',
+      'db-top-peers', 'db-gw-list', 'db-meter-cpu', 'db-meter-ram', 'db-meter-disk', 'auto-update',
+      'activity-feed', 'db-activity-filter', 'db-sec-check', 'db-sec-waf-spark', 'db-i18n',
+      'au-setup-modal-overlay', 'au-setup-title', 'au-setup-body', 'whats-new']) {
+      assert.match(res.text, new RegExp(`id="${id}"`), `#${id} present`);
+    }
+    // The auto-update status lives in the Server card now, not in the topbar.
+    assert.doesNotMatch(res.text, /id="au-status"/, 'no #au-status in the topbar');
+    assert.equal((res.text.match(/role="meter"/g) || []).length, 3, 'three role=meter bars');
   });
 
-  it('renders Aurora toggle-group instead of .tabs for traffic period selector', async () => {
+  it('segmented control and chips carry aria-pressed', async () => {
     selectAurora();
     const res = await agent.get('/dashboard').expect(200);
-    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
-    assert.match(res.text, /data-r="24h"/, 'toggle-btn with data-r="24h" present');
-    // Should NOT have the old .tabs .tab[data-period] pattern in Aurora
-    assert.doesNotMatch(res.text, /class="tab active" data-period=/, 'old .tabs pattern absent in Aurora');
+    for (const r of ['1h', '24h', '7d', '30d']) assert.match(res.text, new RegExp(`data-range="${r}" aria-pressed="(true|false)"`), r);
+    for (const c of ['all', 'login', 'peer', 'route', 'security']) assert.match(res.text, new RegExp(`data-cat="${c}" aria-pressed="(true|false)"`), c);
   });
 
   it('sidebar has route-count-badge on the routes nav item under aurora', async () => {
@@ -183,24 +163,12 @@ describe('aurora theme — dashboard layout (Task P2-1)', () => {
     assert.match(res.text, /id="route-count-badge"/, '#route-count-badge present in aurora sidebar');
   });
 
-  it('dashboard.js renders the Aurora dashboard without a theme branch', () => {
+  it('dashboard.js: one refresh loop, no theme branch, no innerHTML', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
     assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dashboard.js (Aurora is the only theme)');
-    assert.match(js, /function refreshStats\(/, 'refreshStats() present');
-    assert.match(js, /function renderChart\(/, 'renderChart() present');
-    assert.match(js, /function refreshDonut\(/, 'refreshDonut() present');
-    assert.match(js, /function refreshActivity\(/, 'refreshActivity() present');
-    assert.match(js, /function refreshChart\(/, 'refreshChart() present');
-  });
-
-  it('Pi-hole donut card is absent when pihole_integration is not licensed (feature gate works)', async () => {
-    selectAurora();
-    // Default test setup does NOT enable pihole_integration — card must be absent (no card = correct reflow)
-    const res = await agent.get('/dashboard').expect(200);
-    assert.doesNotMatch(res.text, /id="pihole-donut-card"/, '#pihole-donut-card absent when not licensed');
-    assert.doesNotMatch(res.text, /id="dash-donut"/, '#dash-donut absent when not licensed');
-    // But the rest of the grid must still be present
-    assert.match(res.text, /id="traffic-chart"/, '#traffic-chart present even without pihole');
+    assert.doesNotMatch(js.replace(/\/\/.*$/gm, ''), /innerHTML|insertAdjacentHTML|outerHTML/, 'DOM via createElement/textContent only');
+    assert.match(js, /function tick\(/, 'tick() loop present');
+    assert.match(js, /visibilitychange/, 'pauses while hidden');
   });
 });
 
@@ -1215,49 +1183,6 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
     const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
     assert.ok(en['profile.security_display'], 'profile.security_display present in en.json');
     assert.ok(de['profile.security_display'], 'profile.security_display present in de.json');
-  });
-});
-
-// ── UX-fixes: Dashboard donut gauges + bug fixes ─────────────────────────────
-describe('aurora theme — dashboard UX fixes (ux-dash)', () => {
-  it('dashboard.njk has #cpu-donut and #ram-donut SVG elements', async () => {
-    selectAurora();
-    const res = await agent.get('/dashboard').expect(200);
-    assert.match(res.text, /id="cpu-donut"/, '#cpu-donut SVG present in aurora dashboard');
-    assert.match(res.text, /id="ram-donut"/, '#ram-donut SVG present in aurora dashboard');
-    // Both donuts must contain the .val arc circle
-    assert.match(res.text, /id="cpu-donut"[\s\S]{0,400}class="val"/, '#cpu-donut has .val arc');
-    assert.match(res.text, /id="ram-donut"[\s\S]{0,400}class="val"/, '#ram-donut has .val arc');
-  });
-
-  it('dashboard.njk still has all required resource IDs after donut redesign', async () => {
-    selectAurora();
-    const res = await agent.get('/dashboard').expect(200);
-    assert.match(res.text, /id="cpu-pct"/, '#cpu-pct present inside donut center');
-    assert.match(res.text, /id="cpu-info"/, '#cpu-info present');
-    assert.match(res.text, /id="cpu-bar"/, '#cpu-bar present (hidden, for JS contract)');
-    assert.match(res.text, /id="ram-pct"/, '#ram-pct present inside donut center');
-    assert.match(res.text, /id="ram-info"/, '#ram-info present');
-    assert.match(res.text, /id="ram-bar"/, '#ram-bar present (hidden, for JS contract)');
-  });
-
-  it('dashboard.js uses /api/v1/pihole/summary (not the wrong /api/pihole/stats)', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.match(js, /\/api\/v1\/pihole\/summary/, 'dashboard.js fetches /api/v1/pihole/summary');
-    assert.doesNotMatch(js, /\/api\/pihole\/stats/, '/api/pihole/stats (wrong URL) absent');
-  });
-
-  it('dashboard.js has refreshResources() and setResourceDonut() functions', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dashboard.js (Aurora is the only theme)');
-    assert.match(js, /function refreshResources\(/, 'refreshResources() present');
-    assert.match(js, /function setResourceDonut\(/, 'setResourceDonut() present');
-  });
-
-  it('app.css has .res-gauge-wrap and .res-gauge-info rules', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    assert.match(css, /\.res-gauge-wrap\b/, '.res-gauge-wrap rule in app.css');
-    assert.match(css, /\.res-gauge-info\b/, '.res-gauge-info rule in app.css');
   });
 });
 

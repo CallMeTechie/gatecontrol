@@ -318,7 +318,7 @@ async function start() {
         const ramThreshold = parseInt(settingsSvc.get('alerts.resource_ram_threshold', '0'), 10);
         if (cpuThreshold > 0 || ramThreshold > 0) {
           const system = require('./services/system');
-          const res = await system.getResources();
+          const res = await system.getResources({ consumer: 'alerts' });
           if (cpuThreshold > 0 && res.cpu.percent > cpuThreshold) {
             activity.log('resource_alert', `CPU usage ${res.cpu.percent}% exceeds threshold ${cpuThreshold}%`, {
               source: 'system', severity: 'warning', details: { cpu: res.cpu.percent, threshold: cpuThreshold },
