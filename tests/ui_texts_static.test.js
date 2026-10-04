@@ -77,14 +77,13 @@ describe('W1: no browser dialogs in public/js/**', () => {
   it('every destructive confirmation asks with the danger button', () => {
     // Deleting, revoking, restoring, resetting: danger: true on the dialog.
     const DESTRUCTIVE = [
-      ['public/js/settings.js', ['settings.confirm_clear_logs', 'settings.confirm_delete_webhook',
-        'settings.restore_warning', 'autobackup.confirm_delete', 'license.remove_confirm', 'pihole.cfg.confirm_delete']],
+      ['public/js/settings.js', ['st.cleanup.confirm', 'st.wh.delete_msg', 'settings.restore_warning', 'autobackup.confirm_delete',
+        'license.remove_confirm', 'st.ph.delete_msg', 'st.domains.remove_msg', 'st.groups.delete_msg', 'tags.confirm_delete',
+        'offsite.delete_msg', 'offsite.key_rotate_msg', 'st.cp.inherit_msg', 'st.confirm.req2fa_off', 'st.confirm.lockout_low']],
       ['public/js/users.js', ['users.confirm_delete', 'users.confirm_disable', 'users.token_revoke_confirm']],
       ['public/js/rdp.js', ['rdp.confirm_delete', 'rdp.confirm_disconnect_all']],
       ['public/js/peers.js', ['peer_groups.confirm_delete', 'gateway_download_confirm']],
       ['public/js/smarthome-rules.js', ['smarthome.rules.confirm_delete']],
-      ['public/js/tags-admin.js', ['tags.confirm_delete']],
-      ['public/js/peer-groups-admin.js', ['peer_groups.confirm_delete']],
       ['public/js/gatewayPools.js', ['gateway_pools.confirm_delete']],
       ['public/js/gateways.js', ['egress.delete_confirm']],
     ];

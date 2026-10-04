@@ -5,6 +5,7 @@ const webhooks = require('../../services/webhook');
 const logger = require('../../utils/logger');
 const resolveError = require('../../utils/resolveError');
 const { requireFeature } = require('../../middleware/license');
+const { hasFeature } = require('../../services/license');
 
 const router = Router();
 
@@ -19,6 +20,8 @@ const VALIDATION_ERROR_MAP = {
   'resolves to a private': 'error.webhooks.url_private',
   'could not be resolved': 'error.webhooks.url_dns',
   'redirect limit': 'error.webhooks.url_redirects',
+  'Invalid webhook events': 'error.webhooks.events_invalid',
+  'description too long': 'error.webhooks.description_too_long',
 };
 
 /**
@@ -36,11 +39,12 @@ router.get('/', (req, res) => {
 
 /**
  * POST /api/webhooks — Create webhook
+ * Body: { url, description?, events?: '*' | [types] | 'a,b', enabled? }
  */
 router.post('/', requireFeature('webhooks'), (req, res) => {
   try {
-    const { url, events, description } = req.body;
-    const wh = webhooks.create({ url, events, description });
+    const { url, events, description, enabled } = req.body;
+    const wh = webhooks.create({ url, events, description, enabled });
     res.status(201).json({ ok: true, webhook: wh });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create webhook');
@@ -51,10 +55,23 @@ router.post('/', requireFeature('webhooks'), (req, res) => {
 
 /**
  * PUT /api/webhooks/:id — Update webhook
+ * Existing webhooks stay manageable without the licence (events, description,
+ * pause, delete — nobody is stuck with a hook after a downgrade). A new target
+ * URL is a new webhook in all but name, so changing it needs the licence like
+ * POST does.
  */
 router.put('/:id', (req, res) => {
   try {
     const { url, events, description, enabled } = req.body;
+    const current = webhooks.getById(req.params.id);
+    if (current && url !== undefined && String(url).trim() !== current.url && !hasFeature('webhooks')) {
+      return res.status(403).json({
+        ok: false,
+        error: req.t('error.license.feature_not_available'),
+        feature: 'webhooks',
+        upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+      });
+    }
     const wh = webhooks.update(req.params.id, { url, events, description, enabled });
     res.json({ ok: true, webhook: wh });
   } catch (err) {

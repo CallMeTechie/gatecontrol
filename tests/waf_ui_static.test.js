@@ -224,25 +224,20 @@ describe('WAF: script integration', () => {
 
 describe('WAF: event retention on the settings page', () => {
   for (const theme of THEMES) {
-    it(`${theme}: data-waf-days next to the activity retention, only with the waf license`, () => {
+    it(`${theme}: WAF retention in the data card after the activity retention, Pro-marked and locked without the waf licence`, () => {
       const src = read(`templates/${theme}/pages/settings.njk`);
-      const act = src.indexOf('id="data-activity-days"');
-      const waf = src.indexOf('id="data-waf-days"');
-      assert.ok(act > 0 && waf > act && waf < src.indexOf('id="data-peer-timeout"'), 'between activity retention and peer timeout');
-      const before = src.slice(0, waf);
-      assert.ok(before.lastIndexOf('{% if license.features.waf %}') > before.lastIndexOf('{% endif %}'), 'inside the license guard');
-      assert.match(src, /<input type="number" id="data-waf-days" value="14" min="1" max="365"/);
-      assert.ok(src.includes("{{ t('waf.retention_label') }}") && src.includes("{{ t('waf.retention_hint') }}"));
+      const act = src.indexOf("numRow('st-ret-activity'");
+      const waf = src.indexOf("numRow('st-ret-waf'");
+      assert.ok(act > 0 && waf > act, 'after the activity retention');
+      const row = src.slice(waf, src.indexOf('}}', waf));
+      assert.match(row, /1, 365, chip=PRO, disabled=not has\('waf'\)\)/);
     });
   }
 
-  it('settings.js loads and saves retention_waf_days with the data cluster', () => {
+  it('settings.js loads and saves retention_waf_days with the data group', () => {
     const js = stripComments(read('public/js/settings.js'));
-    assert.match(js, /elWaf\.value = d\.retention_waf_days/);
-    assert.match(js, /\[trafficDays, activityDays, wafDays, peerTimeout\]\.filter\(Boolean\)/);
-    assert.match(js, /'data-waf-days': wafDays \? wafDays\.value : ''/);
-    assert.match(js, /if \(wafDays\) body\.retention_waf_days = wafDays\.value;/);
-    assert.equal(de['waf.retention_label'], 'WAF-Ereignisse (Tage)');
+    assert.match(js, /retention_waf_days: 'ret-waf'/);
+    assert.match(js, /'ret-waf': r\.data\.retention_waf_days/);
   });
 });
 

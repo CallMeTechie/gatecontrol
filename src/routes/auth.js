@@ -7,6 +7,7 @@ const { ensureCsrfToken } = require('../middleware/csrf');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
+const activity = require('../services/activity');
 const { safeReturnTo } = require('../middleware/auth');
 const twoFactor = require('../services/adminTwoFactor');
 const passkeys = require('../services/adminPasskeys');
@@ -161,11 +162,11 @@ const authRoutes = {
         // Record failed attempt for lockout
         lockout.recordFailedAttempt(username, 'admin', req.ip);
 
-        // Log failed attempt
-        db.prepare(`
-          INSERT INTO activity_log (event_type, message, source, ip_address, severity)
-          VALUES ('login_failed', ?, 'system', ?, 'warning')
-        `).run(`Failed login for user: ${username}`, req.ip);
+        // Log failed attempt — through activity.log, so the notification
+        // settings (mail, webhooks) see it like every other event.
+        activity.log('login_failed', `Failed login for user: ${username}`, {
+          source: 'system', ipAddress: req.ip, severity: 'warning',
+        });
 
         setFlash(req, 'error', res.locals.t('auth.error_invalid'));
         return res.redirect('/login');
@@ -256,10 +257,9 @@ const authRoutes = {
         // The code itself is never logged.
         logger.warn({ userId, username: user.username, ip: req.ip, via }, 'Failed second-factor attempt');
         lockout.recordFailedAttempt(lockoutId(userId), 'admin_2fa', req.ip);
-        db.prepare(`
-          INSERT INTO activity_log (event_type, message, source, ip_address, severity)
-          VALUES ('login_2fa_failed', ?, 'system', ?, 'warning')
-        `).run(`Failed second-factor attempt for user: ${user.username}`, req.ip);
+        activity.log('login_2fa_failed', `Failed second-factor attempt for user: ${user.username}`, {
+          source: 'system', ipAddress: req.ip, severity: 'warning',
+        });
 
         const now = lockout.isLocked(lockoutId(userId));
         if (now.locked) {
@@ -338,10 +338,9 @@ const authRoutes = {
       // signature, counter regression and disabled account look the same.
       logger.warn({ ip: req.ip, code: err.code }, 'Failed passkey login');
       try {
-        getDb().prepare(`
-          INSERT INTO activity_log (event_type, message, source, ip_address, severity)
-          VALUES ('passkey_login_failed', ?, 'system', ?, 'warning')
-        `).run(`Failed passkey login (${err.code})`, req.ip);
+        activity.log('passkey_login_failed', `Failed passkey login (${err.code})`, {
+          source: 'system', ipAddress: req.ip, severity: 'warning',
+        });
       } catch (e) { logger.warn({ err: e.message }, 'Could not log failed passkey login'); }
       return fail(400, 'passkey.error_login_failed', 'LOGIN_FAILED');
     }

@@ -53,6 +53,21 @@ router.put('/default-theme', (req, res) => {
 });
 
 /**
+ * GET /api/settings/acme-email — die gespeicherte Adresse und ob ohne sie
+ * eine aus der .env gilt. Der .env-Wert selbst wird nie ausgeliefert (nur das
+ * Boolean `inherited`), Token-Zugriff sperrt TOKEN_FORBIDDEN in index.js.
+ */
+router.get('/acme-email', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      email: String(settings.get('caddy.acme_email', '') || '').trim(),
+      inherited: Boolean(String((config.caddy || {}).email || '').trim()),
+    },
+  });
+});
+
+/**
  * PUT /api/settings/acme-email — Kontaktadresse für Let's Encrypt.
  *
  * Zugriffsschutz: requireAuth vom API-Router plus der TOKEN_FORBIDDEN-Eintrag

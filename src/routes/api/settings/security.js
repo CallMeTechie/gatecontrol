@@ -7,6 +7,7 @@ const { Router } = require('express');
 const settings = require('../../../services/settings');
 const activity = require('../../../services/activity');
 const { requireFeature } = require('../../../middleware/license');
+const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 
 const router = Router();
 
@@ -39,7 +40,16 @@ router.get('/security', (req, res) => {
  */
 router.put('/security', (req, res) => {
   try {
-    const { lockout: lo, password: pw, require_2fa } = req.body;
+    const { lockout: lo, password: pw, require_2fa } = req.body || {};
+
+    // Out-of-range numbers are a 400 with one message per field (keys
+    // 'lockout.max_attempts', 'lockout.duration', 'password.min_length');
+    // nothing is written then.
+    const fields = {};
+    const prefixed = (prefix, r) => { for (const [k, v] of Object.entries(r.fields)) fields[prefix + k] = v; return r.values; };
+    const loVals = lo ? prefixed('lockout.', checkRanges(req, lo, { max_attempts: [1, 100], duration: [1, 1440] })) : {};
+    const pwVals = pw ? prefixed('password.', checkRanges(req, pw, { min_length: [4, 128] })) : {};
+    if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
 
     if (require_2fa !== undefined) {
       const on = require_2fa === true || require_2fa === 'true';
@@ -54,22 +64,13 @@ router.put('/security', (req, res) => {
 
     if (lo) {
       if (lo.enabled !== undefined) settings.set('security.lockout.enabled', String(lo.enabled));
-      if (lo.max_attempts !== undefined) {
-        const val = parseInt(lo.max_attempts, 10);
-        if (val >= 1 && val <= 100) settings.set('security.lockout.max_attempts', String(val));
-      }
-      if (lo.duration !== undefined) {
-        const val = parseInt(lo.duration, 10);
-        if (val >= 1 && val <= 1440) settings.set('security.lockout.duration', String(val));
-      }
+      if (loVals.max_attempts !== undefined) settings.set('security.lockout.max_attempts', String(loVals.max_attempts));
+      if (loVals.duration !== undefined) settings.set('security.lockout.duration', String(loVals.duration));
     }
 
     if (pw) {
       if (pw.complexity_enabled !== undefined) settings.set('security.password.complexity_enabled', String(pw.complexity_enabled));
-      if (pw.min_length !== undefined) {
-        const val = parseInt(pw.min_length, 10);
-        if (val >= 4 && val <= 128) settings.set('security.password.min_length', String(val));
-      }
+      if (pwVals.min_length !== undefined) settings.set('security.password.min_length', String(pwVals.min_length));
       if (pw.require_uppercase !== undefined) settings.set('security.password.require_uppercase', String(pw.require_uppercase));
       if (pw.require_number !== undefined) settings.set('security.password.require_number', String(pw.require_number));
       if (pw.require_special !== undefined) settings.set('security.password.require_special', String(pw.require_special));
@@ -102,7 +103,10 @@ router.put('/tls', (req, res) => {
   const tlsGuard = require('../../../services/tlsGuard');
   try {
     const value = req.body ? req.body.max_attempts : undefined;
-    if (value === undefined) return res.status(400).json({ ok: false, error: 'max_attempts required' });
+    if (value === undefined) {
+      const msg = req.t('error.settings.range', { min: '0', max: '10' });
+      return res.status(400).json({ ok: false, error: msg, fields: { max_attempts: msg } });
+    }
     const n = tlsGuard.setMaxAttempts(value);
     activity.log('tls_settings_updated', `Certificate attempt limit set to ${n}`, {
       source: 'admin',
@@ -111,7 +115,10 @@ router.put('/tls', (req, res) => {
     });
     res.json({ ok: true, max_attempts: n });
   } catch (err) {
-    if (err.statusCode === 400) return res.status(400).json({ ok: false, error: err.message });
+    if (err.statusCode === 400) {
+      const msg = req.t('error.settings.range', { min: '0', max: '10' });
+      return res.status(400).json({ ok: false, error: msg, fields: { max_attempts: msg } });
+    }
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }
 });

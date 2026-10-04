@@ -42,7 +42,9 @@ describe('TLS guard: DOM hooks per theme', () => {
   const certIds = idsQueried(stripComments(read('public/js/certificates.js')));
   // tiles are addressed as 'tg-tile-' + k(+'-val') at runtime
   for (const k of ['issued', 'expiring', 'failed', 'paused']) { certIds.add('tg-tile-' + k); certIds.add('tg-tile-' + k + '-val'); }
-  const TLS_SETTINGS_IDS = ['tls-max-attempts', 'tls-max-attempts-status', 'domains-server-ipv6', 'domains-server-ipv6-input', 'domains-server-ip-input', 'domains-server-ip-save', 'domains-tbody', 'domains-table'];
+  // Fields rendered by the row macros: textRow('st-srv-ip6', …) → id="st-srv-ip6".
+  const TLS_SETTINGS_ROWS = ["numRow('st-tls-attempts', 'tls-attempts'", "textRow('st-srv-ip6', 'srv-ip6'", "textRow('st-srv-ip', 'srv-ip'", "textRow('st-acme', 'acme-email'"];
+  const TLS_SETTINGS_IDS = ['card-domains', 'st-dom-list', 'st-dom-add', 'st-dom-input'];
 
   for (const theme of THEMES) {
     it(`${theme}/certificates.njk has every id certificates.js queries (+ tls-i18n) and the scripts in order`, () => {
@@ -68,28 +70,25 @@ describe('TLS guard: DOM hooks per theme', () => {
 
     it(`${theme}/settings.njk has the TLS fields, the IPv6 override and tls-ui.js before settings.js`, () => {
       const src = tpl(theme, 'settings');
+      for (const row of TLS_SETTINGS_ROWS) assert.ok(src.includes(row), `${theme}: ${row}`);
       for (const id of TLS_SETTINGS_IDS) assert.ok(src.includes(`id="${id}"`), `${theme}: #${id}`);
-      assert.match(src, /id="tls-max-attempts"[^>]*\bmin="0"[^>]*\bmax="10"[^>]*\bvalue="3"/, 'range 0–10, default 3');
+      assert.ok(/numRow\('st-tls-attempts'.*, 0, 10\) \}\}/.test(src), 'range 0–10');
       assert.match(src, /include "partials\/tls-i18n\.njk"/);
       const ui = src.indexOf('/js/tls-ui.js?v=');
-      const core = src.indexOf('settingsAutosaveCore.js');
       const main = src.indexOf('/js/settings.js?v=');
       assert.ok(ui > 0 && main > ui, 'tls-ui.js before settings.js');
-      assert.ok(core > 0 && core < main, 'autosave core still before settings.js');
-      // the max-attempts field sits in the ACME e-mail card, right after its status line
-      const acme = src.indexOf('id="acme-email-status"');
-      const field = src.indexOf('id="tls-max-attempts"');
-      assert.ok(acme > 0 && field > acme && field - acme < 900, 'field next to the ACME e-mail');
+      // the max-attempts field sits in the ACME card, right after the e-mail
+      const acme = src.indexOf("textRow('st-acme'");
+      const field = src.indexOf("numRow('st-tls-attempts'");
+      assert.ok(acme > 0 && field > acme && field - acme < 400, 'field next to the ACME e-mail');
     });
   }
 
-  it('the settings script sends both overrides and binds the max-attempts autosave to PUT /settings/tls', () => {
+  it('the settings script sends both overrides and saves max attempts via PUT /settings/tls', () => {
     const js = stripComments(read('public/js/settings.js'));
-    assert.match(js, /\/api\/v1\/settings\/domains\/server-ip',\s*\{\s*ip:\s*ip,\s*ipv6:\s*ipv6\s*\}/);
-    const i = js.indexOf("cluster: 'tls-guard'");
-    assert.ok(i > 0, 'tls-guard autosave cluster');
-    assert.match(js.slice(i, i + 900), /\/api\/v1\/settings\/tls',\s*\{\s*max_attempts:/);
-    assert.match(js, /appendDnsInfo\(/);
+    assert.match(js, /\/api\/v1\/settings\/domains\/server-ip', \{ ip: v\['srv-ip'\]\.trim\(\), ipv6: v\['srv-ip6'\]\.trim\(\) \}/);
+    assert.match(js, /fields: \['tls-attempts'\], map: \{ max_attempts: 'tls-attempts' \}[\s\S]{0,120}\/api\/v1\/settings\/tls', \{ max_attempts:/);
+    assert.match(js, /TG\.recordsEl\(check\)/);
   });
 
   it('zones scripts use the TLS guard hooks and keep a fallback without tls-ui.js', () => {

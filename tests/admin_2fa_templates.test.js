@@ -94,8 +94,9 @@ test('profile card, users modal row and settings toggle render', async () => {
     assert.match(users.text, /id="tf-users-i18n"/, theme);
 
     const settingsPage = await agent.get('/settings').expect(200);
-    assert.match(settingsPage.text, /id="security-require-2fa"[^>]*data-self-2fa="0"/, theme);
-    assert.match(settingsPage.text, /id="security-require-2fa-warning"/, theme);
+    assert.match(settingsPage.text, /id="st-page"[^>]*data-user-2fa="0"/, theme);
+    assert.match(settingsPage.text, /role="switch"[^>]*id="st-req2fa" data-st-field="req2fa"/, theme);
+    assert.match(settingsPage.text, /id="st-2fa-self">[^<]+</, theme);
   }
 });
 
@@ -107,5 +108,5 @@ test('profile card reflects an enabled 2FA server-side', async () => {
   assert.match(profile.text, /id="pf-stat-2fa"[^>]*data-on="1"/);
   assert.match(profile.text, /id="pf-check-2fa"[^>]*data-done="1"/);
   const settingsPage = await agent.get('/settings').expect(200);
-  assert.match(settingsPage.text, /data-self-2fa="1"/);
+  assert.match(settingsPage.text, /data-user-2fa="1"/);
 });

@@ -33,6 +33,23 @@ function recordFailedAttempt(identifier, type, ip) {
     INSERT INTO login_attempts (identifier, type, ip_address)
     VALUES (?, ?, ?)
   `).run(identifier, type, ip || null);
+
+  // The attempt that locks an admin account is an event of its own
+  // (notifications: account_locked). Exactly once per lock: only when this
+  // attempt brings the count in the window to the limit.
+  if (type !== 'admin') return;
+  const cfg = getSettings();
+  if (!cfg.enabled) return;
+  const { cnt } = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM login_attempts
+    WHERE identifier = ? AND failed_at >= datetime('now', '-' || ? || ' minutes')
+  `).get(identifier, cfg.duration);
+  if (cnt === cfg.maxAttempts) {
+    require('./activity').log('account_locked', `Account locked after ${cnt} failed logins: ${identifier}`, {
+      source: 'system', ipAddress: ip || null, severity: 'warning',
+      details: { identifier, attempts: cnt, minutes: cfg.duration },
+    });
+  }
 }
 
 /**
@@ -82,7 +99,7 @@ function clearAttempts(identifier) {
 
 /**
  * Get all currently locked accounts
- * @returns {Array<{ identifier: string, type: string, attempts: number, remainingSeconds: number }>}
+ * @returns {Array<{ identifier: string, type: string, attempts: number, lastIp: string|null, remainingSeconds: number }>}
  */
 function getLockedAccounts() {
   const cfg = getSettings();
@@ -92,7 +109,9 @@ function getLockedAccounts() {
   // Same datetime('now', ...) cutoff as isLocked() — see the note there for why
   // a JS toISOString() string would never match the space-separated failed_at.
   const rows = db.prepare(`
-    SELECT identifier, type, COUNT(*) as attempts, MIN(failed_at) as first_attempt
+    SELECT identifier, type, COUNT(*) as attempts, MIN(failed_at) as first_attempt,
+      (SELECT la.ip_address FROM login_attempts la WHERE la.identifier = login_attempts.identifier
+        ORDER BY la.failed_at DESC, la.id DESC LIMIT 1) AS last_ip
     FROM login_attempts
     WHERE failed_at >= datetime('now', '-' || ? || ' minutes')
     GROUP BY identifier
@@ -106,6 +125,7 @@ function getLockedAccounts() {
       identifier: row.identifier,
       type: row.type,
       attempts: row.attempts,
+      lastIp: row.last_ip || null,
       remainingSeconds,
     };
   });

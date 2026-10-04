@@ -65,19 +65,16 @@ function log(eventType, message, options = {}) {
 }
 
 /**
- * Check if an event type should trigger an email alert, and send it
+ * Check if an event type should trigger an email alert, and send it.
+ * Recipient and event list: services/notifications.js. route_down/route_up
+ * and the update mails have their own sender and are skipped here.
  */
 async function sendEmailAlert(eventType, message, severity, details) {
   try {
-    const settings = require('./settings');
-    const alertEventsStr = settings.get('alerts.email_events', '');
-    if (!alertEventsStr) return;
-
-    const alertEmail = settings.get('alerts.email', '');
+    const notifications = require('./notifications');
+    if (!notifications.genericMailFor(eventType)) return;
+    const alertEmail = notifications.recipient();
     if (!alertEmail) return;
-
-    const alertEvents = alertEventsStr.split(',').map(e => e.trim()).filter(Boolean);
-    if (!alertEvents.includes(eventType)) return;
 
     const { isSmtpConfigured, sendMail } = require('./email');
     if (!isSmtpConfigured()) return;

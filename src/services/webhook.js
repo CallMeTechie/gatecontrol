@@ -3,6 +3,7 @@
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const outbound = require('../utils/outboundGuard');
+const { parseWebhookEvents, webhookReceives } = require('./notifications');
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB
 const MAX_RESPONSE_BYTES = 64 * 1024; // Antwort wird nur fürs Logging/Test gelesen
@@ -67,22 +68,32 @@ function getById(id) {
   return db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id);
 }
 
+const MAX_DESCRIPTION = 255;
+
+function cleanDescription(d) {
+  const s = d == null ? '' : String(d).trim();
+  if (s.length > MAX_DESCRIPTION) throw new Error('Webhook description too long');
+  return s || null;
+}
+
 /**
- * Create a new webhook
+ * Create a new webhook. `events`: '*' / omitted = every event, otherwise a
+ * list (array or comma string) of catalogue event types
+ * (services/notifications.js) — anything else is rejected.
  */
-function create({ url, events, description }) {
+function create({ url, events, description, enabled }) {
   const db = getDb();
 
   if (!url || typeof url !== 'string') throw new Error('Webhook URL is required');
   validateWebhookUrl(url);
 
-  const eventsStr = Array.isArray(events) ? events.join(',') : (events || '*');
-  const desc = description || null;
+  const eventsStr = parseWebhookEvents(events === '' ? null : events);
+  const desc = cleanDescription(description);
 
   const result = db.prepare(`
     INSERT INTO webhooks (url, events, description, enabled)
-    VALUES (?, ?, ?, 1)
-  `).run(url.trim(), eventsStr, desc);
+    VALUES (?, ?, ?, ?)
+  `).run(url.trim(), eventsStr, desc, enabled === false ? 0 : 1);
 
   return getById(result.lastInsertRowid);
 }
@@ -96,22 +107,26 @@ function update(id, data) {
   if (!webhook) throw new Error('Webhook not found');
 
   if (data.url !== undefined) {
-    if (!data.url) throw new Error('Webhook URL is required');
+    if (!data.url || typeof data.url !== 'string') throw new Error('Webhook URL is required');
     validateWebhookUrl(data.url);
   }
+  const events = data.events !== undefined ? parseWebhookEvents(data.events) : null;
+  const description = data.description !== undefined ? cleanDescription(data.description) : undefined;
 
+  // description: '' clears it (a plain COALESCE would keep the old one).
   db.prepare(`
     UPDATE webhooks SET
       url = COALESCE(?, url),
       events = COALESCE(?, events),
-      description = COALESCE(?, description),
+      description = CASE WHEN ? = 1 THEN ? ELSE description END,
       enabled = COALESCE(?, enabled),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
-    data.url || null,
-    data.events !== undefined ? (Array.isArray(data.events) ? data.events.join(',') : data.events) : null,
-    data.description !== undefined ? (data.description || null) : null,
+    data.url ? data.url.trim() : null,
+    events,
+    description !== undefined ? 1 : 0,
+    description === undefined ? null : description,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
     id
   );
@@ -179,15 +194,12 @@ async function notify(eventType, message, details = null) {
   }
 
   for (const wh of webhooks) {
-    // Check if webhook subscribes to this event
-    if (wh.events !== '*') {
-      const subscribed = wh.events.split(',').map(e => e.trim());
-      if (!subscribed.includes(eventType)) continue;
-    }
+    // Only the webhooks that subscribe to this event ('*' = all).
+    if (!webhookReceives(wh.events, eventType)) continue;
 
     // Fire-and-forget — don't block the caller. deliver() validates the
     // URL, resolves + pins DNS and re-checks every redirect hop.
-    deliver(wh.url, finalPayload).then((res) => {
+    module.exports.deliver(wh.url, finalPayload).then((res) => {
       if (res.status < 200 || res.status >= 300) {
         logger.warn({ webhookId: wh.id, status: res.status, url: wh.url }, 'Webhook delivery failed');
       }

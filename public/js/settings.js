@@ -1,3217 +1,2065 @@
 'use strict';
 
-// Note: btn.innerHTML usage below is safe - only hardcoded SVG paths are inserted, no user input.
-
-// In-app dialogs instead of the browser's confirm()/alert()/prompt()
-// (docs/feature-wave2.md §W1.2). D.t() reads window.GC.t (layout.njk).
-var D = window.GCDialog;
-var DT = function (k, p) { return D.t(k, p); };
-
-// ─── Settings Tab Switching ──────────────────────────────
+// Settings page (templates/aurora/pages/settings.njk).
+//
+// Structure: 21 sections (<section data-section>), one visible at a time,
+// chosen in the grouped nav (a select at ≤ 900 px) and kept in the address:
+// /settings#<section>; old tab names, old element ids and ?tab= still work
+// (GCSettingsUI.resolveLocation).
+//
+// Save model: every input with data-st-field belongs to its section. Each
+// section has a load() that fills the fields and records their saved values,
+// and save groups — { fields, save(values, dirty) } — that talk to the
+// existing endpoints. A change shows the sticky save bar ("N ungespeicherte
+// Änderungen · Verwerfen · Speichern"); Speichern runs the groups with dirty
+// fields, field errors (400 { fields }) appear next to the inputs. Leaving a
+// section or the page with unsaved changes asks first. Immediate actions
+// (test, restart, upload, list items, dialogs) stay buttons.
+//
+// DOM is built with GCDialog.el / textContent only — never innerHTML.
 (function () {
-  var tabs = document.querySelectorAll('.settings-tabs .tab');
-  var panels = document.querySelectorAll('.settings-panel');
-  var toggle = document.querySelector('.settings-tab-toggle');
-  var dropdown = document.querySelector('.settings-tab-dropdown');
-  var label = document.querySelector('.settings-tab-label');
-  if (!tabs.length) return;
-
-  function switchTab(tabName) {
-    tabs.forEach(function (t) {
-      t.classList.toggle('active', t.dataset.settingsTab === tabName);
-    });
-    panels.forEach(function (p) {
-      p.style.display = p.dataset.settingsPanel === tabName ? '' : 'none';
-    });
-    // Update mobile hamburger label
-    if (label) {
-      var activeTab = document.querySelector('.settings-tabs > .tab.active');
-      if (activeTab) label.textContent = activeTab.textContent;
-    }
-    try { localStorage.setItem('settings-active-tab', tabName); } catch { /* storage unavailable (private mode / blocked) — tab memory is optional */ }
-    // Keep the address in sync (links like /settings#backup from the security
-    // check); replaceState: no history entry per tab, no scroll jump.
-    if (window.history && history.replaceState && location.hash !== '#' + tabName) {
-      try { history.replaceState(null, '', location.pathname + location.search + '#' + tabName); } catch { /* replaceState can throw in sandboxed frames — hash sync is cosmetic */ }
-    }
-  }
-
-  // #<tab> selects the tab; #<element id> inside a panel (e.g. #card-offsite)
-  // selects that panel and scrolls the element into view.
-  function fromHash() {
-    var h = decodeURIComponent((location.hash || '').slice(1));
-    if (!h || !/^[A-Za-z0-9_-]+$/.test(h)) return false;
-    if (document.querySelector('[data-settings-panel="' + h + '"]')) { switchTab(h); return true; }
-    var target = document.getElementById(h);
-    var panel = target && target.closest('.settings-panel');
-    if (!panel) return false;
-    var name = panel.dataset.settingsPanel;
-    switchTab(name);
-    try { history.replaceState(null, '', location.pathname + location.search + '#' + h); } catch { /* replaceState can throw in sandboxed frames — hash sync is cosmetic */ }
-    setTimeout(function () { if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
-    return true;
-  }
-  window.addEventListener('hashchange', fromHash);
-
-  tabs.forEach(function (t) {
-    t.addEventListener('click', function () {
-      switchTab(t.dataset.settingsTab);
-      // Close dropdown on mobile after selection
-      if (dropdown && dropdown.classList.contains('open')) {
-        dropdown.classList.remove('open');
-        toggle.classList.remove('open');
-        toggle.setAttribute('aria-expanded', 'false');
-      }
-    });
-  });
-
-  // Mobile hamburger toggle
-  if (toggle && dropdown) {
-    toggle.addEventListener('click', function () {
-      var isOpen = dropdown.classList.toggle('open');
-      toggle.classList.toggle('open', isOpen);
-      toggle.setAttribute('aria-expanded', String(isOpen));
-    });
-    // Close on outside click
-    document.addEventListener('click', function (e) {
-      if (!toggle.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('open');
-        toggle.classList.remove('open');
-        toggle.setAttribute('aria-expanded', 'false');
-      }
-    });
-  }
-
-  // Tab from the address first, else the last active tab
-  if (!fromHash()) {
-    var saved = null;
-    try { saved = localStorage.getItem('settings-active-tab'); } catch { /* storage unavailable (private mode / blocked) — fall back to default tab */ }
-    if (saved && document.querySelector('[data-settings-panel="' + saved + '"]')) {
-      switchTab(saved);
-    }
-  }
-})();
-
-(function () {
-  // ─── Clear logs ──────────────────────────────────────────
-  document.getElementById('btn-clear-logs').addEventListener('click', async function() {
-    const btn = this;
-    if (!await D.confirm({ title: DT('settings.clear_logs_title'), message: DT('settings.confirm_clear_logs'), danger: true, okLabel: DT('common.delete') })) return;
-
-    btnLoading(btn);
-    try {
-      const data = await api.post('/api/settings/clear-logs');
-      if (data.ok) {
-        await D.alert({ message: DT('settings.logs_cleared') + ': ' + data.deleted });
-      }
-    } catch (err) {
-      D.alert({ message: err.message, danger: true });
-    } finally {
-      btnReset(btn);
-    }
-  });
-
-  // ─── Webhooks ──────────────────────────────────────────
-  const webhooksList = document.getElementById('webhooks-list');
-
-  async function loadWebhooks() {
-    try {
-      const data = await api.get('/api/webhooks');
-      if (data.ok) renderWebhooks(data.webhooks);
-    } catch (err) {
-      console.error('Failed to load webhooks:', err);
-    }
-  }
-
-  function renderWebhooks(hooks) {
-    if (!hooks || hooks.length === 0) {
-      webhooksList.textContent = '';
-      const empty = document.createElement('div');
-      empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
-      empty.textContent = DT('settings.webhooks_empty');
-      webhooksList.appendChild(empty);
-      return;
-    }
-    webhooksList.textContent = '';
-    hooks.forEach(function(wh) {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
-      row.dataset.whId = wh.id;
-
-      const info = document.createElement('div');
-      info.style.cssText = 'flex:1;min-width:0';
-
-      const urlEl = document.createElement('div');
-      urlEl.style.cssText = 'font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      urlEl.title = wh.url;
-      urlEl.textContent = wh.url.length > 45 ? wh.url.substring(0, 45) + '...' : wh.url;
-      info.appendChild(urlEl);
-
-      if (wh.description) {
-        const descEl = document.createElement('div');
-        descEl.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:2px';
-        descEl.textContent = wh.description;
-        info.appendChild(descEl);
-      }
-      row.appendChild(info);
-
-      const tag = document.createElement('span');
-      tag.className = wh.enabled ? 'tag tag-green' : 'tag tag-amber';
-      tag.style.fontSize = '10px';
-      const dot = document.createElement('span');
-      dot.className = 'tag-dot';
-      tag.appendChild(dot);
-      tag.appendChild(document.createTextNode(wh.enabled ? 'Active' : 'Off'));
-      row.appendChild(tag);
-
-      const svgPaths = {
-        test: '<polygon points="5 3 19 12 5 21 5 3"/>',
-        toggle: '<path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
-        delete: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
-      };
-      ['test', 'toggle', 'delete'].forEach(function(action) {
-        const btn = document.createElement('button');
-        btn.className = 'icon-btn';
-        btn.title = action.charAt(0).toUpperCase() + action.slice(1);
-        btn.dataset.whAction = action;
-        btn.dataset.whId = wh.id;
-        btn.style.cssText = 'width:24px;height:24px';
-        // Safe: only hardcoded SVG paths, no user input
-        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">' + svgPaths[action] + '</svg>';
-        row.appendChild(btn);
-      });
-
-      webhooksList.appendChild(row);
-    });
-  }
-
-  if (webhooksList) {
-    webhooksList.addEventListener('click', async function(e) {
-      const btn = e.target.closest('[data-wh-action]');
-      if (!btn) return;
-      const action = btn.dataset.whAction;
-      const id = btn.dataset.whId;
-
-      if (action === 'test') {
-        try {
-          const data = await api.post('/api/webhooks/' + id + '/test');
-          if (data.ok) D.alert({ message: DT('settings.webhook_test_ok', { status: data.status }) });
-          else D.alert({ message: DT('settings.webhook_test_failed', { error: data.error }), danger: true });
-        } catch (err) { D.alert({ message: DT('settings.webhook_test_failed', { error: err.message }), danger: true }); }
-      } else if (action === 'toggle') {
-        try { await api.put('/api/webhooks/' + id + '/toggle'); loadWebhooks(); } catch (err) { console.error(err); }
-      } else if (action === 'delete') {
-        if (!await D.confirm({ message: DT('settings.confirm_delete_webhook'), danger: true, okLabel: DT('common.delete') })) return;
-        try { await api.del('/api/webhooks/' + id); loadWebhooks(); } catch (err) { console.error(err); }
-      }
-    });
-  }
-
-  const btnAddWebhook = document.getElementById('btn-add-webhook');
-  if (btnAddWebhook) {
-    btnAddWebhook.addEventListener('click', async function() {
-      const url = document.getElementById('webhook-url').value.trim();
-      const description = document.getElementById('webhook-desc').value.trim();
-      if (!url) return D.alert({ message: DT('settings.webhook_url_required'), danger: true });
-      try {
-        const data = await api.post('/api/webhooks', { url: url, description: description, events: '*' });
-        if (data.ok) {
-          document.getElementById('webhook-url').value = '';
-          document.getElementById('webhook-desc').value = '';
-          loadWebhooks();
-        } else {
-          D.alert({ message: data.error || DT('settings.webhook_create_failed'), danger: true });
-        }
-      } catch (err) { D.alert({ message: err.message, danger: true }); }
-    });
-  }
-
-  // ─── Backup & Restore ───────────────────────────────────
-  let pendingBackupFile = null;
-
-  document.getElementById('btn-backup-download').addEventListener('click', async function() {
-    try {
-      const resp = await fetch('/api/v1/settings/backup', { credentials: 'same-origin' });
-      if (!resp.ok) throw new Error('Download failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const match = (resp.headers.get('Content-Disposition') || '').match(/filename="(.+)"/);
-      a.download = match ? match[1] : 'gatecontrol-backup.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      D.alert({ message: DT('settings.backup_failed', { error: err.message }), danger: true });
-    }
-  });
-
-  document.getElementById('btn-backup-select').addEventListener('click', function() {
-    document.getElementById('backup-file-input').click();
-  });
-
-  // Encrypted off-site archives (.gcbk, release B §7): the passphrase row shows
-  // up when the server needs one (PASSPHRASE_REQUIRED) or rejects it
-  // (DECRYPT_FAILED); preview and restore then send it as form field.
-  const restorePassRow = document.getElementById('restore-passphrase-row');
-  const restorePass = document.getElementById('restore-passphrase');
-  function restorePassphrase() {
-    return restorePassRow && !restorePassRow.hidden && restorePass && restorePass.value ? restorePass.value : '';
-  }
-  function backupFormData(file) {
-    const fd = new FormData();
-    fd.append('backup', file);
-    const pass = restorePassphrase();
-    if (pass) fd.append('passphrase', pass);
-    return fd;
-  }
-  function restoreErrorText(data) {
-    if (data && data.code && window.GCOpsUI) return GCOpsUI.errorText(data, ['offsite.err.generic', data.error || 'Failed']);
-    return (data && data.error ? data.error : 'Failed') + (data && data.errors ? ': ' + data.errors.join(', ') : '');
-  }
-  function onGcbkNeedsPassphrase(data) {
-    const code = data && data.code;
-    if (restorePassRow && (code === 'PASSPHRASE_REQUIRED' || code === 'DECRYPT_FAILED')) {
-      restorePassRow.hidden = false;
-      if (restorePass) restorePass.focus();
-    }
-  }
-  if (restorePass) restorePass.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); previewBackup(); }
-  });
-  const restorePassApply = document.getElementById('restore-passphrase-apply');
-  if (restorePassApply) restorePassApply.addEventListener('click', function () { previewBackup(); });
-
-  document.getElementById('backup-file-input').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    pendingBackupFile = null;
-    if (restorePassRow) restorePassRow.hidden = true;
-    if (restorePass) restorePass.value = '';
-    previewBackup(file);
-  });
-
-  let previewFile = null;
-  async function previewBackup(fileArg) {
-    const file = fileArg || previewFile;
-    if (!file) return;
-    previewFile = file;
-    const preview = document.getElementById('backup-preview');
-    const restoreBtn = document.getElementById('btn-backup-restore');
-    const msgEl = document.getElementById('restore-message');
-    msgEl.style.display = 'none';
-
-    const formData = backupFormData(file);
-
-    try {
-      const resp = await fetch('/api/v1/settings/restore/preview', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': window.GC.csrfToken },
-        body: formData,
-      });
-      const data = await resp.json();
-
-      if (!data.ok) {
-        preview.style.display = 'none';
-        restoreBtn.style.display = 'none';
-        pendingBackupFile = null;
-        onGcbkNeedsPassphrase(data);
-        showMessage('restore-message', restoreErrorText(data), 'error');
-        return;
-      }
-
-      const s = data.summary;
-      let line = s.peers + ' Peers, ' + s.routes + ' Routes, ' + s.settings + ' Settings, ' + s.webhooks + ' Webhooks (' + s.created_at + ')';
-      if (data.encrypted && window.GCOpsUI) {
-        line += ' · ' + GCOpsUI.tr('offsite.restore_encrypted', 'encrypted archive')
-          + ' · ' + (data.include_key ? GCOpsUI.tr('offsite.restore_with_key', 'contains the key') : GCOpsUI.tr('offsite.restore_without_key', 'without the key'))
-          + (data.gc_version ? ' · v' + data.gc_version : '');
-      }
-      preview.textContent = line;
-      preview.style.display = 'block';
-      restoreBtn.style.display = 'inline-flex';
-      pendingBackupFile = file;
-    } catch (err) {
-      preview.style.display = 'none';
-      restoreBtn.style.display = 'none';
-      pendingBackupFile = null;
-      showMessage('restore-message', err.message, 'error');
-    }
-  }
-
-  document.getElementById('btn-backup-restore').addEventListener('click', async function() {
-    if (!pendingBackupFile) return;
-    // Destructive: the restore drops everything that is there now.
-    if (!await D.confirm({
-      title: DT('settings.restore_confirm'),
-      message: DT('settings.restore_warning'),
-      detail: DT('settings.restore_warning_detail'),
-      okLabel: DT('settings.restore_confirm_ok'),
-      danger: true,
-    })) return;
-
-    const formData = backupFormData(pendingBackupFile);
-
-    try {
-      const resp = await fetch('/api/v1/settings/restore', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': window.GC.csrfToken },
-        body: formData,
-      });
-      const data = await resp.json();
-
-      if (data.ok) {
-        const r = data.restored;
-        await D.alert({
-          title: DT('settings.restore_done_title'),
-          message: DT('settings.restore_done', { peers: r.peers, routes: r.routes, settings: r.settings, webhooks: r.webhooks }),
-        });
-        window.location.reload();
-      } else {
-        onGcbkNeedsPassphrase(data);
-        showMessage('restore-message', data.code ? restoreErrorText(data) : (data.error || 'Restore failed'), 'error');
-      }
-    } catch (err) {
-      showMessage('restore-message', err.message, 'error');
-    }
-  });
-
-  // ─── SMTP ───────────────────────────────────────────────
-  // Load SMTP settings
-  api.get('/api/smtp/settings').then(function(data) {
-    if (data.ok && data.data) {
-      document.getElementById('smtp-host').value = data.data.host || '';
-      document.getElementById('smtp-port').value = data.data.port || '';
-      document.getElementById('smtp-user').value = data.data.user || '';
-      document.getElementById('smtp-from').value = data.data.from || '';
-      var tlsToggle = document.getElementById('smtp-tls');
-      if (data.data.secure) tlsToggle.classList.add('on');
-      else tlsToggle.classList.remove('on');
-      if (data.data.hasPassword) {
-        var hint = document.getElementById('smtp-password-hint');
-        hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set';
-        hint.style.display = '';
-      }
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('smtp');
-    }
-  }).catch(function(err) {
-    console.error('Failed to load SMTP settings:', err);
-  });
-
-  // TLS toggle
-  var smtpTlsToggle = document.getElementById('smtp-tls');
-  if (smtpTlsToggle) {
-    smtpTlsToggle.addEventListener('click', function() {
-      smtpTlsToggle.classList.toggle('on');
-      smtpTlsToggle.dispatchEvent(new Event('change'));
-    });
-  }
-
-  // SMTP autosave
-  var Core = window.SettingsAutosaveCore;
-  function smtpValues() {
-    var hostEl = document.getElementById('smtp-host');
-    var portEl = document.getElementById('smtp-port');
-    var userEl = document.getElementById('smtp-user');
-    var fromEl = document.getElementById('smtp-from');
-    var tlsEl = document.getElementById('smtp-tls');
-    var pwEl = document.getElementById('smtp-password');
-    return {
-      'smtp-host': hostEl ? hostEl.value : '',
-      'smtp-port': portEl ? portEl.value : '',
-      'smtp-user': userEl ? userEl.value : '',
-      'smtp-from': fromEl ? fromEl.value : '',
-      'smtp-tls': tlsEl ? tlsEl.classList.contains('on') : false,
-      'smtp-password': pwEl ? pwEl.value : '',
-    };
-  }
-  function smtpSave() {
-    var payload = {
-      host: document.getElementById('smtp-host').value,
-      port: document.getElementById('smtp-port').value,
-      user: document.getElementById('smtp-user').value,
-      from: document.getElementById('smtp-from').value,
-      secure: document.getElementById('smtp-tls').classList.contains('on'),
-    };
-    var pw = document.getElementById('smtp-password').value;
-    if (pw) payload.password = pw;
-    payload = Core.stripEmptySecrets(payload, ['password']);
-    return api.put('/api/smtp/settings', payload).then(function (res) {
-      if (res && res.ok && pw) {
-        var hint = document.getElementById('smtp-password-hint');
-        if (hint) { hint.textContent = (window.GC.t || {})['settings.smtp.password_set'] || 'Password is set'; hint.style.display = ''; }
-      }
-      return res;
-    });
-  }
-  (function () {
-    var smtpFields = ['smtp-host', 'smtp-port', 'smtp-user', 'smtp-from', 'smtp-tls', 'smtp-password']
-      .map(function (i) { return document.getElementById(i); }).filter(Boolean);
-    if (smtpFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'smtp',
-        fields: smtpFields,
-        statusEl: document.getElementById('smtp-status'),
-        valuesById: smtpValues,
-        save: smtpSave,
-      });
-    }
-  })();
-  // SMTP password clear
-  var smtpClear = document.getElementById('smtp-password-clear');
-  if (smtpClear) {
-    smtpClear.addEventListener('click', async function () {
-      if (!await D.confirm({ message: DT('settings.autosave.clear_secret_confirm'), danger: true })) return;
-      SettingsAutosave.enqueue('smtp', function () {
-        return api.put('/api/smtp/settings', {
-          host: document.getElementById('smtp-host').value,
-          port: document.getElementById('smtp-port').value,
-          from: document.getElementById('smtp-from').value,
-          clear_password: true,
-        });
-      });
-    });
-  }
-
-  // Test SMTP
-  var btnSmtpTest = document.getElementById('btn-smtp-test');
-  if (btnSmtpTest) {
-    btnSmtpTest.addEventListener('click', async function() {
-      var email = document.getElementById('smtp-test-email').value.trim();
-      var resultEl = document.getElementById('smtp-test-result');
-      if (!email) {
-        resultEl.textContent = DT('settings.smtp_test_email_required');
-        resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
-        return;
-      }
-      btnLoading(btnSmtpTest);
-      resultEl.style.display = 'none';
-      try {
-        var data = await api.post('/api/smtp/test', { email: email });
-        if (data.ok) {
-          resultEl.textContent = DT('settings.smtp_test_sent', { email: email });
-          resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--green-bg);color:var(--green)';
-        } else {
-          resultEl.textContent = data.error || DT('settings.smtp_test_failed');
-          resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
-        }
-      } catch (err) {
-        resultEl.textContent = err.message;
-        resultEl.style.cssText = 'display:block;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px;background:var(--red-bg);color:var(--red)';
-      } finally {
-        btnReset(btnSmtpTest);
-      }
-    });
-  }
-
-  // ─── Security Settings ────────────────────────────────
-
-  // Toggle helpers for managed toggles
-  function setupManagedToggle(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('click', function () {
-      el.classList.toggle('on');
-      el.dispatchEvent(new Event('change'));    // <-- enables autosave on toggles
-    });
-  }
-  ['security-lockout-enabled', 'security-password-enabled', 'security-password-uppercase',
-   'security-password-number', 'security-password-special', 'security-require-2fa'].forEach(setupManagedToggle);
-
-  // require_2fa: warn when the current admin has no 2FA yet — switching it
-  // on would send them to the profile setup on the next page load.
-  function syncRequire2faWarning() {
-    var tg = document.getElementById('security-require-2fa');
-    var warn = document.getElementById('security-require-2fa-warning');
-    if (!tg || !warn) return;
-    warn.hidden = !(tg.classList.contains('on') && tg.getAttribute('data-self-2fa') !== '1');
-  }
-  var req2fa = document.getElementById('security-require-2fa');
-  if (req2fa) req2fa.addEventListener('change', syncRequire2faWarning);
-
-  async function loadSecuritySettings() {
-    try {
-      var data = await api.get('/api/settings/security');
-      if (!data.ok) return;
-      var lo = data.data.lockout;
-      var pw = data.data.password;
-
-      var loEnabled = document.getElementById('security-lockout-enabled');
-      if (loEnabled) { if (lo.enabled) loEnabled.classList.add('on'); else loEnabled.classList.remove('on'); }
-      var loAttempts = document.getElementById('security-lockout-attempts');
-      if (loAttempts) loAttempts.value = lo.max_attempts;
-      var loDuration = document.getElementById('security-lockout-duration');
-      if (loDuration) loDuration.value = lo.duration;
-
-      var pwEnabled = document.getElementById('security-password-enabled');
-      if (pwEnabled) { if (pw.complexity_enabled) pwEnabled.classList.add('on'); else pwEnabled.classList.remove('on'); }
-      var pwMin = document.getElementById('security-password-min-length');
-      if (pwMin) pwMin.value = pw.min_length;
-      var pwUpper = document.getElementById('security-password-uppercase');
-      if (pwUpper) { if (pw.require_uppercase) pwUpper.classList.add('on'); else pwUpper.classList.remove('on'); }
-      var pwNum = document.getElementById('security-password-number');
-      if (pwNum) { if (pw.require_number) pwNum.classList.add('on'); else pwNum.classList.remove('on'); }
-      var pwSpecial = document.getElementById('security-password-special');
-      if (pwSpecial) { if (pw.require_special) pwSpecial.classList.add('on'); else pwSpecial.classList.remove('on'); }
-      var r2 = document.getElementById('security-require-2fa');
-      if (r2) { if (data.data.require_2fa) r2.classList.add('on'); else r2.classList.remove('on'); }
-      syncRequire2faWarning();
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('security');
-    } catch (err) {
-      console.error('Failed to load security settings:', err);
-    }
-  }
-
-  async function loadLockedAccounts() {
-    var listEl = document.getElementById('security-locked-list');
-    if (!listEl) return;
-    try {
-      var data = await api.get('/api/settings/lockout');
-      if (!data.ok || !data.locked || data.locked.length === 0) {
-        listEl.textContent = GC.t['security.lockout.no_locked'] || 'No locked accounts';
-        return;
-      }
-      listEl.textContent = '';
-      data.locked.forEach(function(acc) {
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)';
-        var info = document.createElement('div');
-        info.style.cssText = 'font-size:12px';
-        var id = document.createElement('span');
-        id.style.fontWeight = '600';
-        id.textContent = acc.identifier;
-        info.appendChild(id);
-        var remaining = document.createElement('span');
-        remaining.style.cssText = 'color:var(--text-3);margin-left:8px';
-        var mins = Math.ceil(acc.remainingSeconds / 60);
-        remaining.textContent = (GC.t['security.lockout.remaining'] || '{{minutes}} min remaining').replace('{{minutes}}', mins);
-        info.appendChild(remaining);
-        row.appendChild(info);
-        var btn = document.createElement('button');
-        btn.className = 'btn btn-ghost';
-        btn.style.cssText = 'font-size:11px;padding:3px 8px;color:var(--red)';
-        btn.textContent = GC.t['security.lockout.unlock'] || 'Unlock';
-        btn.addEventListener('click', async function() {
-          try {
-            await api.del('/api/settings/lockout/' + encodeURIComponent(acc.identifier));
-            loadLockedAccounts();
-          } catch (err) { D.alert({ message: err.message, danger: true }); }
-        });
-        row.appendChild(btn);
-        listEl.appendChild(row);
-      });
-    } catch (err) {
-      listEl.textContent = GC.t['security.lockout.no_locked'] || 'No locked accounts';
-    }
-  }
-
-  // ─── Security Autosave (single bind over all 8 fields) ───
-  (function () {
-    var g = function (id) { return document.getElementById(id); };
-    function securityValues() {
-      return {
-        'security-lockout-enabled': g('security-lockout-enabled') ? g('security-lockout-enabled').classList.contains('on') : false,
-        'security-lockout-attempts': g('security-lockout-attempts') ? g('security-lockout-attempts').value : '',
-        'security-lockout-duration': g('security-lockout-duration') ? g('security-lockout-duration').value : '',
-        'security-password-enabled': g('security-password-enabled') ? g('security-password-enabled').classList.contains('on') : false,
-        'security-password-min-length': g('security-password-min-length') ? g('security-password-min-length').value : '',
-        'security-password-uppercase': g('security-password-uppercase') ? g('security-password-uppercase').classList.contains('on') : false,
-        'security-password-number': g('security-password-number') ? g('security-password-number').classList.contains('on') : false,
-        'security-password-special': g('security-password-special') ? g('security-password-special').classList.contains('on') : false,
-        'security-require-2fa': g('security-require-2fa') ? g('security-require-2fa').classList.contains('on') : false,
-      };
-    }
-    function securitySave() {
-      var v = securityValues();
-      return api.put('/api/settings/security', {
-        lockout: {
-          enabled: v['security-lockout-enabled'],
-          max_attempts: v['security-lockout-attempts'],
-          duration: v['security-lockout-duration'],
-        },
-        password: {
-          complexity_enabled: v['security-password-enabled'],
-          min_length: v['security-password-min-length'],
-          require_uppercase: v['security-password-uppercase'],
-          require_number: v['security-password-number'],
-          require_special: v['security-password-special'],
-        },
-        require_2fa: v['security-require-2fa'],
-      });
-    }
-    var securityFieldIds = [
-      'security-lockout-enabled', 'security-lockout-attempts', 'security-lockout-duration',
-      'security-password-enabled', 'security-password-min-length', 'security-password-uppercase',
-      'security-password-number', 'security-password-special', 'security-require-2fa',
-    ];
-    var securityFields = securityFieldIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
-    if (securityFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'security',
-        fields: securityFields,
-        statusEl: document.getElementById('security-status'),
-        valuesById: securityValues,
-        save: securitySave,
-      });
-    }
-  })();
-
-  // ─── Monitoring Settings ───────────────────────────────
-
-  // ─── Data & Retention Settings ─────────────────────────
-
-  async function loadDataSettings() {
-    try {
-      var data = await api.get('/api/settings/data');
-      if (!data.ok) return;
-      var d = data.data;
-      var el1 = document.getElementById('data-traffic-days');
-      if (el1) el1.value = d.retention_traffic_days;
-      var el2 = document.getElementById('data-activity-days');
-      if (el2) el2.value = d.retention_activity_days;
-      var el3 = document.getElementById('data-peer-timeout');
-      if (el3) el3.value = d.peer_online_timeout;
-      // WAF events (docs/feature-waf.md); the field only exists with the waf license.
-      var elWaf = document.getElementById('data-waf-days');
-      if (elWaf && d.retention_waf_days != null) elWaf.value = d.retention_waf_days;
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('data');
-    } catch (err) {
-      console.error('Failed to load data settings:', err);
-    }
-  }
-
-  (function () {
-    var trafficDays = document.getElementById('data-traffic-days');
-    var activityDays = document.getElementById('data-activity-days');
-    var peerTimeout = document.getElementById('data-peer-timeout');
-    var wafDays = document.getElementById('data-waf-days');
-    var dataStatus = document.getElementById('data-status');
-    var dataFields = [trafficDays, activityDays, wafDays, peerTimeout].filter(Boolean);
-    if (dataFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'data',
-        fields: dataFields,
-        statusEl: dataStatus,
-        valuesById: function () {
-          return {
-            'data-traffic-days': trafficDays ? trafficDays.value : '',
-            'data-activity-days': activityDays ? activityDays.value : '',
-            'data-waf-days': wafDays ? wafDays.value : '',
-            'data-peer-timeout': peerTimeout ? peerTimeout.value : '',
-          };
-        },
-        save: function () {
-          var body = {
-            retention_traffic_days: trafficDays ? trafficDays.value : '',
-            retention_activity_days: activityDays ? activityDays.value : '',
-            peer_online_timeout: peerTimeout ? peerTimeout.value : '',
-          };
-          if (wafDays) body.retention_waf_days = wafDays.value;
-          return api.put('/api/settings/data', body);
-        },
-      });
-    }
-  })();
-
-  // ─── Monitoring Settings ───────────────────────────────
-
-  var monEmailToggle = document.getElementById('monitoring-email-alerts');
-  if (monEmailToggle) monEmailToggle.addEventListener('click', function() {
-    monEmailToggle.classList.toggle('on');
-    monEmailToggle.dispatchEvent(new Event('change'));
-  });
-
-  async function loadMonitoringSettings() {
-    try {
-      var data = await api.get('/api/settings/monitoring');
-      if (!data.ok) return;
-      var d = data.data;
-      var intervalEl = document.getElementById('monitoring-interval');
-      if (intervalEl) intervalEl.value = d.interval;
-      if (monEmailToggle) { if (d.emailAlerts) monEmailToggle.classList.add('on'); else monEmailToggle.classList.remove('on'); }
-      var emailEl = document.getElementById('monitoring-alert-email');
-      if (emailEl) emailEl.value = d.alertEmail || '';
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('monitoring');
-    } catch (err) {
-      console.error('Failed to load monitoring settings:', err);
-    }
-  }
-
-  (function () {
-    var intervalEl = document.getElementById('monitoring-interval');
-    var alertEmailEl = document.getElementById('monitoring-alert-email');
-    var monFields = [intervalEl, monEmailToggle, alertEmailEl].filter(Boolean);
-    if (monFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'monitoring',
-        fields: monFields,
-        statusEl: document.getElementById('monitoring-status'),
-        valuesById: function () {
-          return {
-            'monitoring-interval': intervalEl ? intervalEl.value : '',
-            'monitoring-email-alerts': monEmailToggle ? monEmailToggle.classList.contains('on') : false,
-            'monitoring-alert-email': alertEmailEl ? alertEmailEl.value : '',
-          };
-        },
-        save: function () {
-          return api.put('/api/settings/monitoring', {
-            interval: intervalEl ? intervalEl.value : '',
-            email_alerts: monEmailToggle ? monEmailToggle.classList.contains('on') : false,
-            alert_email: alertEmailEl ? alertEmailEl.value : '',
-          });
-        },
-      });
-    }
-  })();
-
-  // ─── Email Alert Settings ──────────────────────────────
-
-  async function loadAlertSettings() {
-    try {
-      var data = await api.get('/api/settings/alerts');
-      if (!data.ok) return;
-      var d = data.data;
-      var emailEl = document.getElementById('alerts-email');
-      if (emailEl) emailEl.value = d.email || '';
-      var backupEl = document.getElementById('alerts-backup-days');
-      if (backupEl) backupEl.value = d.backup_reminder_days || 0;
-      var cpuEl = document.getElementById('alerts-cpu');
-      if (cpuEl) cpuEl.value = d.resource_cpu_threshold || 0;
-      var ramEl = document.getElementById('alerts-ram');
-      if (ramEl) ramEl.value = d.resource_ram_threshold || 0;
-
-      // Set checkboxes based on configured events
-      var configuredEvents = (d.email_events || '').split(',').map(function(e) { return e.trim(); }).filter(Boolean);
-      document.querySelectorAll('.alert-event-group').forEach(function(cb) {
-        var groupEvents = cb.dataset.events.split(',');
-        cb.checked = groupEvents.some(function(e) { return configuredEvents.includes(e); });
-      });
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('alerts');
-    } catch (err) {
-      console.error('Failed to load alert settings:', err);
-    }
-  }
-
-  // Alerts autosave
-  function alertsEventsActive() { return !!document.querySelector('.alert-event-group:checked'); }
-  (function () {
-    var alertsEmail = document.getElementById('alerts-email');
-    var alertsBackupDays = document.getElementById('alerts-backup-days');
-    var alertsCpu = document.getElementById('alerts-cpu');
-    var alertsRam = document.getElementById('alerts-ram');
-    var alertsEventGroups = Array.from(document.querySelectorAll('.alert-event-group'));
-    var alertsFields = [alertsEmail].concat(alertsEventGroups).concat([alertsBackupDays, alertsCpu, alertsRam]).filter(Boolean);
-    if (alertsFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'alerts',
-        fields: alertsFields,
-        statusEl: document.getElementById('alerts-status'),
-        valuesById: function () {
-          var vals = {
-            'alerts-email': alertsEmail ? alertsEmail.value : '',
-            'alerts-backup-days': alertsBackupDays ? alertsBackupDays.value : '',
-            'alerts-cpu': alertsCpu ? alertsCpu.value : '',
-            'alerts-ram': alertsRam ? alertsRam.value : '',
-          };
-          alertsEventGroups.forEach(function(cb) { if (cb.id) vals[cb.id] = cb.checked; });
-          return vals;
-        },
-        requiredForCommit: function () { return alertsEventsActive() ? ['alerts-email'] : []; },
-        save: function () {
-          var events = [];
-          document.querySelectorAll('.alert-event-group:checked').forEach(function (cb) {
-            cb.dataset.events.split(',').forEach(function (e) { if (events.indexOf(e) === -1) events.push(e); });
-          });
-          return api.put('/api/settings/alerts', {
-            email: alertsEmail ? alertsEmail.value : '',
-            email_events: events.join(','),
-            backup_reminder_days: alertsBackupDays ? alertsBackupDays.value : '',
-            resource_cpu_threshold: alertsCpu ? alertsCpu.value : '',
-            resource_ram_threshold: alertsRam ? alertsRam.value : '',
-          });
-        },
-      });
-    }
-  })();
-
-  // ─── ip2location Settings ──────────────────────────────
-
-  async function loadIp2locationSettings() {
-    try {
-      var data = await api.get('/api/v1/settings/ip2location');
-      if (data.ok && data.data.has_api_key) {
-        var el = document.getElementById('ip2location-key');
-        if (el) el.placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + ' (' + (GC.t['settings.key_is_set'] || 'Key is set') + ')';
-      }
-    } catch (err) { console.error('Failed to load ip2location settings:', err); }
-  }
-
-  var btnIp2Save = document.getElementById('btn-ip2location-save');
-  if (btnIp2Save) {
-    btnIp2Save.addEventListener('click', async function() {
-      btnLoading(btnIp2Save);
-      try {
-        var key = document.getElementById('ip2location-key').value;
-        var data = await api.put('/api/v1/settings/ip2location', { api_key: key });
-        if (data.ok) {
-          showMessage('ip2location-result', GC.t['security.saved'] || 'Saved', 'success');
-          document.getElementById('ip2location-key').value = '';
-          loadIp2locationSettings();
-        } else {
-          showMessage('ip2location-result', data.error || 'Failed', 'error');
-        }
-      } catch (err) { showMessage('ip2location-result', err.message, 'error'); }
-      finally { btnReset(btnIp2Save); }
-    });
-  }
-
-  var btnIp2Test = document.getElementById('btn-ip2location-test');
-  if (btnIp2Test) {
-    btnIp2Test.addEventListener('click', async function() {
-      btnLoading(btnIp2Test);
-      try {
-        var data = await api.post('/api/v1/settings/ip2location/test', {});
-        if (data.ok && data.data) {
-          showMessage('ip2location-result', data.data.country_name + ' (' + data.data.country_code + ') — ' + data.data.ip, 'success');
-        } else {
-          showMessage('ip2location-result', data.error || 'Test failed', 'error');
-        }
-      } catch (err) { showMessage('ip2location-result', err.message, 'error'); }
-      finally { btnReset(btnIp2Test); }
-    });
-  }
-
-  // ip2location clear
-  var ip2lClear = document.getElementById('ip2location-clear');
-  if (ip2lClear) {
-    ip2lClear.addEventListener('click', async function () {
-      if (!await D.confirm({ message: DT('settings.autosave.clear_secret_confirm'), danger: true })) return;
-      SettingsAutosave.enqueue('ip2location', function () {
-        return api.put('/api/v1/settings/ip2location', { api_key: '', clear: true });
-      });
-      var keyEl = document.getElementById('ip2location-key');
-      if (keyEl) keyEl.value = '';
-    });
-  }
-
-  // ─── Auto-Backup Settings ──────────────────────────────
-
-  var autobackupEnabledToggle = document.getElementById('autobackup-enabled');
-  if (autobackupEnabledToggle) {
-    autobackupEnabledToggle.addEventListener('click', function() {
-      autobackupEnabledToggle.classList.toggle('on');
-      autobackupEnabledToggle.dispatchEvent(new Event('change'));
-    });
-  }
-
-  function createSvgIcon(paths) {
-    // Safe: creates SVG elements via DOM API, no innerHTML used
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    paths.forEach(function(p) {
-      var el;
-      if (p.type === 'path') {
-        el = document.createElementNS(ns, 'path');
-        el.setAttribute('d', p.d);
-      } else if (p.type === 'polyline') {
-        el = document.createElementNS(ns, 'polyline');
-        el.setAttribute('points', p.points);
-      } else if (p.type === 'line') {
-        el = document.createElementNS(ns, 'line');
-        el.setAttribute('x1', p.x1); el.setAttribute('y1', p.y1);
-        el.setAttribute('x2', p.x2); el.setAttribute('y2', p.y2);
-      }
-      if (el) svg.appendChild(el);
-    });
+  const page = document.getElementById('st-page');
+  if (!page) return;
+  const U = window.GCSettingsUI;
+  const D = window.GCDialog;
+  const O = window.GCOpsUI;
+  const TG = window.GCTlsUI || null;
+  const api = window.api;
+  const lang = (window.GC && window.GC.language) || undefined;
+
+  // ── Strings: the page island merges into GC.t (ops-ui / client-policy-form read it there) ──
+  window.GC = window.GC || {};
+  window.GC.t = window.GC.t || {};
+  try { Object.assign(window.GC.t, JSON.parse(document.getElementById('st-i18n').textContent || '{}')); } catch (_) { /* keys stay visible */ }
+  function t(key, params) { return U.fmt(window.GC.t[key] != null ? window.GC.t[key] : key, params); }
+  function tp(key, n, params) { return t(key + (Number(n) === 1 ? '_one' : '_other'), Object.assign({ n }, params || {})); }
+
+  let FEATURES = {};
+  try { FEATURES = JSON.parse(page.dataset.features || '{}'); } catch (_) { FEATURES = {}; }
+  let CATALOGUE = [];
+  try { CATALOGUE = JSON.parse(document.getElementById('st-catalogue').textContent || '[]'); } catch (_) { CATALOGUE = []; }
+  const ROWS = U.allRows(CATALOGUE);
+
+  // ── Small helpers ──
+  const $ = (id) => document.getElementById(id);
+  const el = D.el;
+  const NS = 'http://www.w3.org/2000/svg';
+  function icon(d, size) {
+    const svg = document.createElementNS(NS, 'svg');
+    [['viewBox', '0 0 24 24'], ['width', String(size || 15)], ['height', String(size || 15)], ['fill', 'none'], ['stroke', 'currentColor'],
+      ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach((a) => svg.setAttribute(a[0], a[1]));
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
     return svg;
   }
-
-  async function loadAutobackupSettings() {
-    try {
-      var data = await api.get('/api/settings/autobackup');
-      if (!data.ok) return;
-      var d = data.data;
-      if (autobackupEnabledToggle) {
-        if (d.enabled) autobackupEnabledToggle.classList.add('on');
-        else autobackupEnabledToggle.classList.remove('on');
-      }
-      var scheduleEl = document.getElementById('autobackup-schedule');
-      if (scheduleEl) scheduleEl.value = d.schedule || 'daily';
-      var retentionEl = document.getElementById('autobackup-retention');
-      if (retentionEl) retentionEl.value = d.retention || 5;
-      var lastRunEl = document.getElementById('autobackup-last-run');
-      if (lastRunEl) {
-        lastRunEl.textContent = d.lastRun
-          ? new Date(d.lastRun).toLocaleString()
-          : (GC.t['autobackup.last_run_never'] || 'Never');
-      }
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('autobackup');
-      // Off-site card: uploads follow the automatic backups (hint while they are off).
-      document.dispatchEvent(new CustomEvent('gc:autobackup-settings', { detail: { enabled: !!d.enabled } }));
-    } catch (err) {
-      console.error('Failed to load auto-backup settings:', err);
-    }
+  const ICON_TRASH = 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3';
+  function call(p) {
+    return Promise.resolve(p).then((r) => r || { ok: false }, (e) => (e && e.data) || { ok: false, error: (e && e.message) || t('st.err.generic') });
   }
-
-  async function loadAutobackupFiles() {
-    var container = document.getElementById('autobackup-files');
-    if (!container) return;
-    try {
-      var data = await api.get('/api/settings/autobackup/list');
-      if (!data.ok || !data.files || data.files.length === 0) {
-        container.textContent = GC.t['autobackup.no_files'] || 'No backup files yet';
-        return;
-      }
-      container.textContent = '';
-      data.files.forEach(function(f) {
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)';
-
-        var info = document.createElement('div');
-        info.style.cssText = 'flex:1;min-width:0';
-        var nameEl = document.createElement('div');
-        nameEl.style.cssText = 'font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-        nameEl.textContent = f.filename;
-        info.appendChild(nameEl);
-        var metaEl = document.createElement('div');
-        metaEl.style.cssText = 'font-size:10px;color:var(--text-3);margin-top:2px';
-        var sizeKb = (f.size / 1024).toFixed(1);
-        metaEl.textContent = sizeKb + ' KB — ' + new Date(f.created).toLocaleString();
-        info.appendChild(metaEl);
-        row.appendChild(info);
-
-        var downloadBtn = document.createElement('button');
-        downloadBtn.className = 'icon-btn';
-        downloadBtn.title = GC.t['peers.download'] || 'Download';
-        downloadBtn.style.cssText = 'width:24px;height:24px';
-        downloadBtn.appendChild(createSvgIcon([
-          { type: 'path', d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4' },
-          { type: 'polyline', points: '7 10 12 15 17 10' },
-          { type: 'line', x1: '12', y1: '15', x2: '12', y2: '3' },
-        ]));
-        downloadBtn.addEventListener('click', function() {
-          var a = document.createElement('a');
-          a.href = '/api/v1/settings/autobackup/download/' + encodeURIComponent(f.filename);
-          a.download = f.filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        });
-        row.appendChild(downloadBtn);
-
-        var deleteBtn = document.createElement('button');
-        deleteBtn.className = 'icon-btn';
-        deleteBtn.title = GC.t['common.delete'] || 'Delete';
-        deleteBtn.style.cssText = 'width:24px;height:24px;color:var(--red)';
-        deleteBtn.appendChild(createSvgIcon([
-          { type: 'polyline', points: '3 6 5 6 21 6' },
-          { type: 'path', d: 'M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2' },
-        ]));
-        deleteBtn.addEventListener('click', async function() {
-          if (!await D.confirm({ message: DT('autobackup.confirm_delete'), danger: true, okLabel: DT('common.delete') })) return;
-          try {
-            var res = await api.del('/api/settings/autobackup/' + encodeURIComponent(f.filename));
-            if (res.ok) loadAutobackupFiles();
-            else D.alert({ message: res.error || DT('autobackup.delete_failed'), danger: true });
-          } catch (err) { D.alert({ message: err.message, danger: true }); }
-        });
-        row.appendChild(deleteBtn);
-
-        container.appendChild(row);
-      });
-    } catch (err) {
-      container.textContent = GC.t['autobackup.no_files'] || 'No backup files yet';
-      console.error('Failed to load backup files:', err);
-    }
+  function toast(msg, type) { if (window.showToast) window.showToast(msg, type || 'success'); }
+  function errText(r) {
+    if (r && r.feature) return t('st.err.license');
+    return (r && r.error) || t('st.err.generic');
   }
-
-  // ─── Autobackup Autosave ───────────────────────────────
-  (function () {
-    var scheduleEl = document.getElementById('autobackup-schedule');
-    var retentionEl = document.getElementById('autobackup-retention');
-    var abFields = [autobackupEnabledToggle, scheduleEl, retentionEl].filter(Boolean);
-    if (abFields.length) {
-      SettingsAutosave.bind({
-        cluster: 'autobackup',
-        fields: abFields,
-        statusEl: document.getElementById('autobackup-status'),
-        valuesById: function () {
-          return {
-            'autobackup-enabled': autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
-            'autobackup-schedule': scheduleEl ? scheduleEl.value : '',
-            'autobackup-retention': retentionEl ? retentionEl.value : '',
-          };
-        },
-        save: function () {
-          return api.put('/api/settings/autobackup', {
-            enabled: autobackupEnabledToggle ? autobackupEnabledToggle.classList.contains('on') : false,
-            schedule: scheduleEl ? scheduleEl.value : '',
-            retention: retentionEl ? retentionEl.value : '',
-          });
-        },
-      });
-    }
-  })();
-
-  var btnAutobackupRun = document.getElementById('btn-autobackup-run');
-  if (btnAutobackupRun) {
-    btnAutobackupRun.addEventListener('click', async function() {
-      btnLoading(btnAutobackupRun);
-      try {
-        var data = await api.post('/api/settings/autobackup/run');
-        if (data.ok) {
-          showMessage('autobackup-message', (GC.t['autobackup.run_success'] || 'Backup created successfully') + ': ' + data.filename, 'success');
-          loadAutobackupFiles();
-          loadAutobackupSettings();
-        } else {
-          showMessage('autobackup-message', data.error || 'Failed', 'error');
-        }
-      } catch (err) {
-        showMessage('autobackup-message', err.message, 'error');
-      } finally {
-        btnReset(btnAutobackupRun);
-      }
-    });
-  }
-
-  // ─── Metrics Settings ──────────────────────────────────
-
-  var metricsEnabledToggle = document.getElementById('metrics-enabled');
-  if (metricsEnabledToggle) {
-    metricsEnabledToggle.addEventListener('click', function() {
-      metricsEnabledToggle.classList.toggle('on');
-      metricsEnabledToggle.dispatchEvent(new Event('change'));
-    });
-  }
-
-  async function loadMetricsSettings() {
-    try {
-      var data = await api.get('/api/settings/metrics');
-      if (!data.ok) return;
-      if (metricsEnabledToggle) {
-        if (data.data.enabled) metricsEnabledToggle.classList.add('on');
-        else metricsEnabledToggle.classList.remove('on');
-      }
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('metrics');
-    } catch (err) {
-      console.error('Failed to load metrics settings:', err);
-    }
-  }
-
-  var metricsStatus = document.getElementById('metrics-status');
-  if (metricsEnabledToggle) {
-    SettingsAutosave.bind({
-      cluster: 'metrics',
-      fields: [metricsEnabledToggle],
-      statusEl: metricsStatus,
-      valuesById: function () { return { 'metrics-enabled': metricsEnabledToggle.classList.contains('on') }; },
-      save: function () { return api.put('/api/settings/metrics', { enabled: metricsEnabledToggle.classList.contains('on') }); },
-    });
-  }
-
-  // ─── Init ───────────────────────────────────────────────
-  loadWebhooks();
-  loadSecuritySettings();
-  loadLockedAccounts();
-  loadDataSettings();
-  loadMonitoringSettings();
-  loadAlertSettings();
-  loadIp2locationSettings();
-  loadAutobackupSettings();
-  loadAutobackupFiles();
-  loadMetricsSettings();
-  setInterval(loadLockedAccounts, 30000);
-})();
-
-// ─── License Tab ─────────────────────────────────
-(function () {
-  var licenseForm = document.getElementById('license-form');
-  var refreshBtn = document.getElementById('license-refresh-btn');
-  var removeBtn = document.getElementById('license-remove-btn');
-  var t = window.GC && window.GC.t || {};
-
-  if (licenseForm) {
-    licenseForm.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      try {
-        var data = await api.post('/api/v1/license/activate', {
-          license_key: licenseForm.querySelector('[name="license_key"]').value,
-          signing_key: licenseForm.querySelector('[name="signing_key"]').value,
-        });
-        if (data.ok) {
-          showToast(t['license.activated'] || 'License activated');
-          setTimeout(function () { location.reload(); }, 1000);
-        } else {
-          showToast(data.error || 'Activation failed', 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      }
-    });
-  }
-
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async function () {
-      try {
-        var data = await api.post('/api/v1/license/refresh', {});
-        if (data.ok) {
-          showToast(t['license.refresh_success'] || 'License refreshed');
-          setTimeout(function () { location.reload(); }, 1000);
-        } else {
-          showToast(data.error || 'Refresh failed', 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      }
-    });
-  }
-
-  if (removeBtn) {
-    removeBtn.addEventListener('click', async function () {
-      if (!await D.confirm({ message: DT('license.remove_confirm'), danger: true, okLabel: DT('common.delete') })) return;
-      try {
-        var data = await api.del('/api/v1/license');
-        if (data.ok) {
-          showToast(t['license.removed'] || 'License removed');
-          setTimeout(function () { location.reload(); }, 1000);
-        } else {
-          showToast(data.error || 'Remove failed', 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      }
-    });
-  }
-})();
-
-// ─── DNS Settings ─────────────────────────────
-(function () {
-  var dnsInput = document.getElementById('settings-dns-input');
-
-  if (dnsInput) {
-    api.get('/api/v1/settings/dns').then(function(data) {
-      if (data.ok) {
-        dnsInput.value = data.data.dns || '';
-        if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('dns');
-      }
-    }).catch(function (err) { console.warn('[settings] loading DNS settings failed', err); });
-
-    SettingsAutosave.bind({
-      cluster: 'dns',
-      fields: [dnsInput],
-      statusEl: document.getElementById('dns-status'),
-      valuesById: function () { return { 'settings-dns-input': dnsInput.value.trim() }; },
-      save: function () { return api.put('/api/v1/settings/dns', { dns: dnsInput.value.trim() }); },
-    });
-  }
-})();
-
-// ─── Auto-Update Mode ─────────────────────────────────
-(function initAutoUpdateMode() {
-  var card = document.getElementById('card-autoupdate');
-  if (!card) return;
-  window.api.get('/api/system/auto-update').then(function (d) {
-    var el = card.querySelector('input[name="au-mode"][value="' + ((d && d.mode) || 'auto') + '"]');
-    if (el) el.checked = true;
-    if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('auto-update');
-  }).catch(function (err) { console.warn('[settings] loading auto-update settings failed', err); });
-  var auRadios = Array.prototype.slice.call(document.querySelectorAll('input[name="au-mode"]'));
-  if (auRadios.length) {
-    function auVal() { var c = document.querySelector('input[name="au-mode"]:checked'); return c ? c.value : ''; }
-    SettingsAutosave.bind({
-      cluster: 'auto-update',
-      fields: auRadios,
-      statusEl: document.getElementById('au-mode-status'),
-      valuesById: function () { return { 'au-mode': auVal() }; },
-      save: function () { return api.put('/api/system/auto-update', { mode: auVal() }); },
-    });
-  }
-})();
-
-
-// ─── Auto-Update: maintenance window + update e-mail (release B §6) ─────
-// GET/PUT /api/v1/system/auto-update: PUT {window:{enabled,start,end,tz}} and
-// PUT {notify_email}; both answer with the full status (window, window_open,
-// notify_email, last_action). update.sh writes last_action "waiting_window"
-// when it holds a new image back until the window opens.
-(function initAutoUpdateWindow() {
-  var card = document.getElementById('card-au-window');
-  if (!card || !window.GCOpsUI || !window.SettingsAutosave) return;
-  var O = window.GCOpsUI;
-  var T = O.tr;
-  function byId(id) { return document.getElementById(id); }
-  var enabledEl = byId('au-window-enabled');
-  var startEl = byId('au-window-start');
-  var endEl = byId('au-window-end');
-  var tzEl = byId('au-window-tz');
-  var notifyEl = byId('au-notify-email');
-  var errEl = byId('au-window-error');
-  var saved = null; // last status answer (saved window + last_action)
-
-  function setToggle(t, on) { t.classList.toggle('on', !!on); t.setAttribute('aria-checked', on ? 'true' : 'false'); }
-  function managedToggle(t) {
-    t.addEventListener('click', function () {
-      if (t.getAttribute('aria-disabled') === 'true') return;
-      setToggle(t, !t.classList.contains('on'));
-      t.dispatchEvent(new Event('change'));
-    });
-    t.addEventListener('keydown', function (e) {
-      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); t.click(); }
-    });
-  }
-  managedToggle(enabledEl);
-  managedToggle(notifyEl);
-
-  function fillZones(selected) {
-    var zones = O.timeZones(window.Intl, selected);
-    tzEl.replaceChildren.apply(tzEl, zones.map(function (z) {
-      var o = document.createElement('option');
-      o.value = z;
-      o.textContent = z.replace(/_/g, ' ');
-      return o;
-    }));
-    tzEl.value = selected;
-  }
-  function currentWindow() {
-    return { enabled: enabledEl.classList.contains('on'), start: startEl.value, end: endEl.value, tz: tzEl.value };
-  }
-  function mode() {
-    var c = document.querySelector('input[name="au-mode"]:checked');
-    return c ? c.value : (saved && saved.mode) || 'auto';
-  }
-
-  function renderClock() {
-    var clock = byId('au-window-clock');
-    var now = O.timeIn(tzEl.value);
-    clock.textContent = now ? T('autoupdate.window_now', 'Local time there: {x}', { x: now }) : '';
-    renderState();
-  }
-  function renderState() {
-    var w = currentWindow();
-    card.classList.toggle('op-au-off', !w.enabled);
-    byId('au-window-overnight').hidden = !O.overMidnight(w.start, w.end);
-    var problem = O.windowProblem(w);
-    errEl.textContent = problem === 'same' ? T('autoupdate.window_same', 'Start and end must differ.') : '';
-    errEl.hidden = problem !== 'same';
-    byId('au-window-mode-note').hidden = mode() !== 'manual';
-    // State of the SAVED window (unsaved edits would be misleading).
-    var sw = saved && saved.window;
-    var stateEl = byId('au-window-state');
-    stateEl.replaceChildren();
-    if (sw && sw.enabled && w.enabled && sw.start === w.start && sw.end === w.end && sw.tz === w.tz) {
-      var open = O.inWindow(sw);
-      stateEl.appendChild(O.el(document, 'span', {
-        class: 'tag tag-dot ' + (open ? 'tag-green' : 'tag-grey'),
-        id: 'au-window-open', 'data-open': open ? '1' : '0',
-        text: open ? T('autoupdate.window_open', 'The window is open right now.')
-          : T('autoupdate.window_closed', 'Outside the window — next start {x}.', { x: sw.start + ' (' + sw.tz.replace(/_/g, ' ') + ')' }),
-      }));
-    }
-    byId('au-window-waiting').hidden = !(saved && saved.last_action === 'waiting_window');
-    byId('au-reinstall').hidden = !w.enabled;
-  }
-
-  // ── update.sh version of the host vs. the image (§S2.2) ────────────────
-  // host_version === null: an update.sh from before the version marker (or no
-  // run yet) — it cannot self-update, so the host has to install it once more.
-  function updateShMismatch() {
-    var u = saved && saved.update_sh;
-    return !!(u && u.image_version !== null && u.image_version !== undefined && !u.matches);
-  }
-  function renderUpdateSh() {
-    var box = byId('au-updatesh');
-    if (!box) return;
-    var u = (saved && saved.update_sh) || null;
-    if (!updateShMismatch()) { box.hidden = true; return; }
-    byId('au-updatesh-text').textContent = u.host_version === null || u.host_version === undefined
-      ? T('updatesh.unknown', 'The update.sh on the server reports no version — install it once more.')
-      : T('updatesh.mismatch', 'The update.sh on the server is not the version from the image (version {host} instead of {image}).',
-        { host: u.host_version, image: u.image_version });
-    box.hidden = false;
-  }
-
-  function apply(d) {
-    saved = d;
-    var w = d.window || {};
-    setToggle(enabledEl, !!w.enabled);
-    startEl.value = O.isHHMM(w.start) ? w.start : '03:00';
-    endEl.value = O.isHHMM(w.end) ? w.end : '05:00';
-    var tz = w.tz || O.DEFAULT_TZ;
-    // Never configured (off, server default zone): suggest the browser's zone.
-    var browserTz = O.browserTimeZone(window.Intl);
-    if (!w.enabled && tz === O.DEFAULT_TZ && browserTz && browserTz !== tz && O.timeIn(browserTz)) tz = browserTz;
-    fillZones(tz);
-    setToggle(notifyEl, d.notify_email !== false);
-    renderUpdateSh();
-    renderClock();
-  }
-
-  window.api.get('/api/system/auto-update').then(function (d) {
-    if (!d) return;
-    apply(d);
-    SettingsAutosave.resync('au-window');
-    SettingsAutosave.resync('au-notify');
-  }).catch(function (err) { console.warn('[settings] loading auto-update window/notify settings failed', err); });
-
-  [startEl, endEl].forEach(function (n) { n.addEventListener('input', renderState); });
-  tzEl.addEventListener('change', renderClock);
-  document.querySelectorAll('input[name="au-mode"]').forEach(function (r) { r.addEventListener('change', renderState); });
-  setInterval(renderClock, 30000);
-
-  SettingsAutosave.bind({
-    cluster: 'au-window',
-    fields: [enabledEl, startEl, endEl, tzEl],
-    statusEl: byId('au-window-status'),
-    valuesById: function () {
-      return { 'au-window-enabled': enabledEl.classList.contains('on'), 'au-window-start': startEl.value, 'au-window-end': endEl.value, 'au-window-tz': tzEl.value };
-    },
-    save: function () {
-      var w = currentWindow();
-      var problem = O.windowProblem(w);
-      if (problem) {
-        return Promise.resolve({ ok: false, error: problem === 'same' ? T('autoupdate.window_same', 'Start and end must differ.') : O.errorText({ code: 'INVALID_WINDOW' }) });
-      }
-      return window.api.put('/api/system/auto-update', { window: w }).then(function (r) {
-        if (r && r.ok) { saved = r; renderState(); return r; }
-        return { ok: false, error: O.errorText(r, ['autoupdate.err.generic', 'Could not save.']) };
-      });
-    },
-  });
-  SettingsAutosave.bind({
-    cluster: 'au-notify',
-    fields: [notifyEl],
-    statusEl: byId('au-notify-status'),
-    valuesById: function () { return { 'au-notify-email': notifyEl.classList.contains('on') }; },
-    save: function () {
-      return window.api.put('/api/system/auto-update', { notify_email: notifyEl.classList.contains('on') }).then(function (r) {
-        if (r && r.ok) { saved = r; return r; }
-        return { ok: false, error: O.errorText(r, ['autoupdate.err.generic', 'Could not save.']) };
-      });
-    },
-  });
-
-  // "Update now" while an update waits for the window (skips the window).
-  var TRIGGER_REASONS = {
-    cooldown: ['autoupdate.trigger_cooldown', 'Just requested — please wait a moment.'],
-    stale_no_cron: ['autoupdate.not_configured', 'Auto-update not set up'],
-    not_manual_mode: ['autoupdate.trigger_not_manual', 'Only in Manual mode or with a maintenance window.'],
-  };
-  byId('au-window-trigger').addEventListener('click', function () {
-    var btn = this;
-    window.btnLoading(btn);
-    window.api.post('/api/system/auto-update/trigger', {}).then(function (j) {
-      var queued = !!(j && j.queued);
-      var r = !queued && j && TRIGGER_REASONS[j.reason];
-      if (window.showToast) window.showToast(r ? T(r[0], r[1]) : T('autoupdate.trigger_queued', 'Update queued'), queued ? 'success' : 'error');
-    }).catch(function () {
-      if (window.showToast) window.showToast(T('autoupdate.err.generic', 'Could not save.'), 'error');
-    }).then(function () { window.btnReset(btn); });
-  });
-
-  byId('au-reinstall-copy').addEventListener('click', function () {
-    copyText(byId('au-reinstall-cmd').textContent, T('autoupdate.reinstall_copied', 'Commands copied'));
-  });
-
-  // "Show commands" of the update.sh hint: open the reinstall block below it.
-  var updateShShow = byId('au-updatesh-show');
-  if (updateShShow) updateShShow.addEventListener('click', function () {
-    var det = byId('au-reinstall');
-    det.hidden = false;
-    det.open = true;
-    if (det.scrollIntoView) det.scrollIntoView({ block: 'nearest' });
-  });
-
-  function copyText(text, okMsg) {
-    var done = function () { if (window.showToast) window.showToast(okMsg, 'success'); };
+  function pill(state, text) { return el('span', { class: 'st-pill', 'data-state': state, text }); }
+  function busy(btn, on) { if (!btn) return; if (on) window.btnLoading(btn); else window.btnReset(btn); }
+  function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
+  function empty(text) { return el('li', { class: 'st-empty', text }); }
+  function copyText(text) {
+    const done = () => toast(t('st.copied'));
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text) && done(); });
+      navigator.clipboard.writeText(text).then(done, () => { if (fallbackCopy(text)) done(); });
     } else if (fallbackCopy(text)) done();
   }
   function fallbackCopy(text) {
-    var ta = document.createElement('textarea');
-    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    var ok = false;
+    const ta = el('textarea', { readonly: true, style: 'position:fixed;opacity:0' });
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
     try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
     ta.remove();
     return ok;
   }
-})();
-
-// ─── Off-site backups + pre-migration snapshots (release B §4, §7) ──────
-// API under /api/v1/settings/backup (admin session; writes and transfers need
-// the scheduled_backups licence → 403 {feature}). Secrets are write-only:
-// inputs start empty, has_password / has_secret_access_key only change the
-// hint. Error codes are mapped to UI texts by GCOpsUI.errorText; transport
-// details (remote messages) are shown verbatim as technical detail.
-(function initOffsite() {
-  var card = document.getElementById('card-offsite');
-  if (!card || !window.GCOpsUI) return;
-  var O = window.GCOpsUI;
-  var T = O.tr;
-  var lang = (window.GC && window.GC.language) || undefined;
-  var BASE = '/api/settings/backup';
-  var MAX_TARGETS = 10;
-  var licensed = card.dataset.licensed !== '0';
-  var state = { settings: null, targets: null, loadError: null, busy: {}, results: {}, files: {}, candidates: null, pubkey: null };
-  var editing = null;
-
-  function byId(id) { return document.getElementById(id); }
-  function el(tag, props, children) { return O.el(document, tag, props, children); }
-  // api.* resolve 400/403 as data and throw on 409/502 with err.data = body.
-  function call(p) {
-    return p.then(function (r) { return r || { ok: false }; }, function (e) { return (e && e.data) || { ok: false, error: e && e.message }; });
+  function fmtTime(d) {
+    try { return new Date(d).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; }
   }
-  function toast(msg, type) { if (window.showToast) window.showToast(msg, type || 'success'); }
-  function setToggle(t, on) { t.classList.toggle('on', !!on); t.setAttribute('aria-checked', on ? 'true' : 'false'); }
 
-  // ── Licence ──────────────────────────────────────────────
-  function applyLicense() {
-    var box = byId('offsite-license');
-    card.classList.toggle('op-unlicensed', !licensed);
-    if (!licensed && box.hidden) {
-      var node = null;
-      try { node = window.GCLicenseHint && typeof window.GCLicenseHint.render === 'function' ? window.GCLicenseHint.render('scheduled_backups') : null; } catch (_) { node = null; }
-      box.replaceChildren(node && node.nodeType ? node : el('span', { class: 'op-license-text', text: T('offsite.license', 'Off-site backups are part of the “Scheduled backups” licence.') }));
-      box.hidden = false;
+  // ══ Fields ════════════════════════════════════════════════════════════
+  const CUSTOM = {}; // field name → { get(), set(v) }
+  function sectionEl(id) { return document.querySelector('.st-section[data-section="' + id + '"]'); }
+  function fieldEls(id) {
+    const root = sectionEl(id);
+    return root ? Array.from(root.querySelectorAll('[data-st-field]')) : [];
+  }
+  function fieldEl(id, name) {
+    const root = sectionEl(id);
+    return root ? root.querySelector('[data-st-field="' + name + '"]') : null;
+  }
+  function getField(node) {
+    const name = node.dataset.stField;
+    if (CUSTOM[name]) return CUSTOM[name].get();
+    if (node.getAttribute('role') === 'switch') return node.getAttribute('aria-checked') === 'true';
+    if (node.classList.contains('st-seg')) return node.dataset.value || '';
+    if (node.type === 'checkbox') return node.checked;
+    return node.value;
+  }
+  function setField(node, v) {
+    const name = node.dataset.stField;
+    if (CUSTOM[name]) { CUSTOM[name].set(v); return; }
+    if (node.getAttribute('role') === 'switch') { node.setAttribute('aria-checked', v ? 'true' : 'false'); return; }
+    if (node.classList.contains('st-seg')) { setSeg(node, v == null ? '' : String(v)); return; }
+    if (node.type === 'checkbox') { node.checked = !!v; return; }
+    node.value = v == null ? '' : String(v);
+    if (node.type === 'range') syncRange(node);
+  }
+  function setSeg(node, v) {
+    node.dataset.value = v;
+    node.querySelectorAll('.st-seg-btn').forEach((b) => b.setAttribute('aria-pressed', b.dataset.value === v ? 'true' : 'false'));
+  }
+  function syncRange(node) {
+    const out = document.querySelector('output[for="' + node.id + '"]');
+    if (out) out.textContent = node.value + ' s';
+  }
+  function valuesOf(id) {
+    const out = {};
+    fieldEls(id).forEach((n) => { out[n.dataset.stField] = getField(n); });
+    return out;
+  }
+
+  // Per section: saved values (baseline) and whether it was loaded.
+  const baseline = {};
+  /** Set fields from `vals` ({ field: value }) and record them as saved. */
+  function fill(id, vals) {
+    baseline[id] = baseline[id] || {};
+    for (const [name, v] of Object.entries(vals)) {
+      const node = fieldEl(id, name);
+      if (!node) continue;
+      setField(node, v);
+      baseline[id][name] = getField(node);
     }
-    [byId('offsite-passphrase'), byId('offsite-passphrase2')].forEach(function (n) { n.disabled = !licensed; });
-    byId('offsite-include-key').setAttribute('aria-disabled', licensed ? 'false' : 'true');
-    renderStrength();
-    renderAddButton();
+    applyShows(id);
   }
-  function checkLicense(r) {
-    if (licensed && O.errorCode(r) === 'LICENSE') { licensed = false; applyLicense(); renderTargets(); }
+  /** Mark fields as saved with their current values. */
+  function commit(id, names) {
+    baseline[id] = baseline[id] || {};
+    const cur = valuesOf(id);
+    (names || Object.keys(cur)).forEach((n) => { if (n in cur) baseline[id][n] = cur[n]; });
   }
+  function dirtyOf(id) { return U.dirtyFields(baseline[id] || {}, valuesOf(id)); }
 
-  // ── Passphrase + include_key ─────────────────────────────
-  var pass1 = byId('offsite-passphrase');
-  var pass2 = byId('offsite-passphrase2');
-  var passSave = byId('offsite-pass-save');
-  var includeEl = byId('offsite-include-key');
-  var includeNote = byId('offsite-include-key-note');
-
-  function renderPassState() {
-    var s = state.settings || {};
-    var set = !!s.passphrase_set;
-    byId('offsite-pass-state').replaceChildren(el('span', {
-      class: 'tag tag-dot ' + (set ? 'tag-green' : 'tag-amber'), id: 'offsite-pass-tag', 'data-set': set ? '1' : '0',
-      text: set ? T('offsite.passphrase_set', 'A passphrase is set.') : T('offsite.passphrase_missing', 'No passphrase yet — without one GateControl uploads nothing.'),
-    }));
-    pass1.placeholder = (set ? pass1.dataset.phSet : pass1.dataset.phNew) || '';
-    byId('offsite-pass-change-note').hidden = !set;
-    var on = s.include_key !== false;
-    setToggle(includeEl, on);
-    includeNote.textContent = on ? includeNote.dataset.on : includeNote.dataset.off;
-    includeNote.classList.toggle('op-note-warn', !on);
-  }
-  function renderStrength() {
-    var v = pass1.value;
-    var r = O.passphraseStrength(v);
-    var box = byId('offsite-pass-strength');
-    var text = byId('offsite-pass-strength-text');
-    var mismatch = pass2.value !== '' && pass2.value !== v;
-    box.dataset.level = r.level;
-    box.classList.toggle('op-mismatch', mismatch);
-    if (mismatch) text.textContent = T('offsite.passphrase_mismatch', 'The two entries do not match.');
-    else if (r.level === 'short') text.textContent = T('offsite.strength_short', '{n} more characters to reach the minimum of 12.', { n: r.missing });
-    else if (r.level === 'weak') text.textContent = T('offsite.strength_weak', 'Weak — longer is better, e.g. four random words.');
-    else if (r.level === 'ok') text.textContent = T('offsite.strength_ok', 'Fair');
-    else if (r.level === 'strong') text.textContent = T('offsite.strength_strong', 'Strong');
-    else text.textContent = T('offsite.strength_hint', 'At least 12 characters. A sentence or four random words work well.');
-    passSave.disabled = !licensed || r.level === 'empty' || r.level === 'short' || v !== pass2.value;
-  }
-  pass1.addEventListener('input', renderStrength);
-  pass2.addEventListener('input', renderStrength);
-  byId('offsite-pass-form').addEventListener('submit', function (e) {
-    e.preventDefault();
-    if (passSave.disabled) return;
-    window.btnLoading(passSave);
-    call(window.api.put(BASE + '/offsite', { passphrase: pass1.value })).then(function (r) {
-      if (r.ok) {
-        state.settings = r;
-        pass1.value = '';
-        pass2.value = '';
-        renderPassState();
-        toast(T('offsite.passphrase_saved', 'Passphrase saved'));
-      } else {
-        checkLicense(r);
-        toast(O.errorText(r), 'error');
-      }
-    }).then(function () { window.btnReset(passSave); renderStrength(); });
-  });
-
-  includeEl.addEventListener('click', function () {
-    if (includeEl.getAttribute('aria-disabled') === 'true' || includeEl.dataset.busy) return;
-    var next = !includeEl.classList.contains('on');
-    setToggle(includeEl, next);
-    includeEl.dataset.busy = '1';
-    call(window.api.put(BASE + '/offsite', { include_key: next })).then(function (r) {
-      if (r.ok) { state.settings = r; toast(T('offsite.saved', 'Saved')); }
-      else { checkLicense(r); toast(O.errorText(r), 'error'); }
-      renderPassState();
-    }).then(function () { delete includeEl.dataset.busy; });
-  });
-  includeEl.addEventListener('keydown', function (e) {
-    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeEl.click(); }
-  });
-
-  function loadSettings() {
-    return call(window.api.get(BASE + '/offsite')).then(function (r) {
-      if (r.ok) { state.settings = r; renderPassState(); }
+  // data-st-show="field=value" / "field!=value": rows that only matter for one choice.
+  function applyShows(id) {
+    const root = sectionEl(id);
+    if (!root) return;
+    const vals = valuesOf(id);
+    root.querySelectorAll('[data-st-show]').forEach((n) => {
+      const m = /^([\w-]+)(!?=)(.*)$/.exec(n.dataset.stShow);
+      if (!m) return;
+      const v = U.valueKey(vals[m[1]]);
+      n.hidden = m[2] === '=' ? v !== m[3] : v === m[3];
     });
   }
 
-  // ── Automatic backups off → uploads only on "Upload now" ─
-  function renderAutobackupHint(enabled) { byId('offsite-autobackup-off').hidden = enabled !== false; }
-  document.addEventListener('gc:autobackup-settings', function (e) { renderAutobackupHint(!!(e.detail && e.detail.enabled)); });
-  var abToggle = byId('autobackup-enabled');
-  if (abToggle) abToggle.addEventListener('change', function () { renderAutobackupHint(abToggle.classList.contains('on')); });
+  // Field errors
+  function errNode(node) {
+    if (!node) return null;
+    return $(node.id + '-err') || (node.closest('.st-row') && node.closest('.st-row').querySelector('.st-err')) || null;
+  }
+  function showFieldError(id, name, msg) {
+    const node = fieldEl(id, name);
+    const e = errNode(node);
+    if (node && node.setAttribute) node.setAttribute('aria-invalid', 'true');
+    if (e) { e.textContent = msg; e.hidden = false; return true; }
+    return false;
+  }
+  function clearErrors(id) {
+    const root = sectionEl(id);
+    if (!root) return;
+    root.querySelectorAll('[aria-invalid="true"]').forEach((n) => n.removeAttribute('aria-invalid'));
+    root.querySelectorAll('.st-err').forEach((n) => { n.textContent = ''; n.hidden = true; });
+    $('st-savebar-err').hidden = true;
+  }
 
-  // ── Targets ──────────────────────────────────────────────
-  function renderAddButton() {
-    var add = byId('offsite-add');
-    var full = !!(state.targets && state.targets.length >= MAX_TARGETS);
-    add.disabled = !licensed || full;
-    add.title = full ? T('offsite.max_targets', 'At most 10 targets.') : '';
-  }
-  function loadTargets(opts) {
-    return call(window.api.get(BASE + '/targets')).then(function (r) {
-      var before = JSON.stringify([state.targets, state.loadError]);
-      if (r.ok) { state.targets = r.targets || []; state.loadError = null; }
-      else { state.loadError = O.errorText(r); }
-      // Live refreshes (gc:backup) often bring back exactly what an action
-      // already rendered — skip the rebuild then, so focus and open panels'
-      // DOM stay put.
-      if (opts && opts.ifChanged && JSON.stringify([state.targets, state.loadError]) === before) return;
-      renderTargets();
-    });
-  }
-  function actionButton(t, name, label, onClick, extra) {
-    var busy = state.busy[t.id];
-    var b = el('button', Object.assign({
-      type: 'button', class: 'btn btn-sm ' + (name === 'delete' ? 'btn-danger' : 'btn-ghost') + ' op-t-' + name + (busy === name ? ' is-loading' : ''),
-      'data-action': name, text: label, disabled: !licensed || !!busy,
-    }, extra || {}));
-    b.addEventListener('click', function () { onClick(t); });
-    return b;
-  }
-  function resultEl(res) {
-    if (!res) return null;
-    return el('div', { class: 'op-t-result ' + (res.ok ? 'op-ok' : 'op-bad'), role: 'status' }, [
-      el('span', { class: 'op-t-result-text', text: res.text }),
-      res.detail ? el('code', { class: 'op-t-detail', text: res.detail }) : null,
-      res.lines && res.lines.length
-        ? el('div', { class: 'op-t-verify-facts' }, res.lines.map(function (x) { return el('span', { text: x }); }))
-        : null,
-      res.warnings && res.warnings.length
-        ? el('ul', { class: 'op-t-verify-warn' }, res.warnings.map(function (w) { return el('li', { text: w }); }))
-        : null,
-      res.note ? el('p', { class: 'op-note op-t-verify-note', text: res.note }) : null,
-    ]);
-  }
-  function filesEl(t) {
-    var f = state.files[t.id];
-    if (!f) return null;
-    var body;
-    if (f.error) body = el('div', { class: 'op-t-result op-bad', role: 'status' }, [el('span', { text: f.error }), f.detail ? el('code', { class: 'op-t-detail', text: f.detail }) : null]);
-    else if (!f.files.length) body = el('div', { class: 'op-empty', text: T('offsite.files_empty', 'No GateControl archives on the target yet.') });
-    else {
-      body = el('div', { class: 'op-table-wrap' }, [el('table', { class: 'data-table op-files-table' }, [
-        el('thead', null, [el('tr', null, [
-          el('th', { text: T('offsite.files_name', 'File') }), el('th', { text: T('offsite.files_size', 'Size') }), el('th', { text: T('offsite.files_modified', 'Modified') }),
-        ])]),
-        el('tbody', null, f.files.map(function (x) {
-          return el('tr', null, [
-            el('td', { class: 'mono', text: x.name }),
-            el('td', { class: 'mono', text: O.fmtBytes(x.size) }),
-            el('td', { text: x.modified ? O.fmtDateTime(x.modified, lang) : '—' }),
-          ]);
-        })),
-      ])]);
-    }
-    return el('div', { class: 'op-t-files', id: 'offsite-files-' + t.id }, [
-      el('div', { class: 'op-t-files-head', text: T('offsite.files_title', 'Archives on the target') }),
-      body,
-      el('p', { class: 'op-note', text: T('offsite.files_note', 'Only gatecontrol-*.gcbk files; GateControl never touches other files.') }),
-    ]);
-  }
-  function targetRow(t) {
-    var st = O.targetStatus(t, state.busy[t.id] === 'run');
-    var lastRun = t.last_run_at
-      ? el('span', { title: O.fmtDateTime(t.last_run_at, lang), text: T('offsite.last_run', 'Last run {x}', { x: O.fmtAgo(t.last_run_at, lang) }) })
-      : el('span', { text: T('offsite.never_run', 'Not run yet') });
-    return el('div', { class: 'op-target' + (t.enabled ? '' : ' op-paused'), 'data-target-id': t.id, 'data-type': t.type }, [
-      el('div', { class: 'op-t-head' }, [
-        el('span', { class: 'op-t-type', text: O.TYPE_LABELS[t.type] || t.type }),
-        el('div', { class: 'op-t-main' }, [
-          el('div', { class: 'op-t-name', text: t.name }),
-          el('div', { class: 'op-t-dest', text: O.targetSummary(t) }),
-        ]),
-        el('div', { class: 'op-t-status' }, [
-          t.enabled ? null : el('span', { class: 'tag tag-grey', text: T('offsite.paused', 'paused') }),
-          el('span', { class: 'tag tag-dot ' + st.cls, 'data-status': t.last_status || 'never', text: T(st.key, st.fallback) }),
-        ]),
-      ]),
-      el('div', { class: 'op-t-meta' }, [
-        lastRun,
-        el('span', { text: T('offsite.keep', 'keeps {n}', { n: t.keep }) }),
-        t.last_verify_at
-          ? el('span', {
-            class: 'op-t-verify-age' + (t.last_verify_status === 'failed' ? ' op-bad' : ''),
-            title: O.fmtDateTime(t.last_verify_at, lang),
-            text: T('offsite.verify_last', 'Last tested {x}', { x: O.fmtAgo(t.last_verify_at, lang) }),
-          })
-          : el('span', { class: 'op-t-verify-age', text: T('offsite.verify_never', 'Restore never tested') }),
-      ]),
-      t.config_error ? el('div', { class: 'op-t-error', text: T('offsite.config_error', 'Credentials unreadable — enter them again (different GC_ENCRYPTION_KEY).') }) : null,
-      t.last_status === 'failed' && t.last_error ? el('code', { class: 'op-t-error op-t-detail', text: t.last_error }) : null,
-      el('div', { class: 'op-t-actions' }, [
-        actionButton(t, 'test', T('offsite.act_test', 'Test'), testTarget),
-        actionButton(t, 'run', T('offsite.act_run', 'Upload now'), runTarget),
-        actionButton(t, 'verify', T('offsite.act_verify', 'Test restore'), verifyTarget),
-        actionButton(t, 'files', T('offsite.act_files', 'Files'), toggleFiles, { 'aria-expanded': state.files[t.id] ? 'true' : 'false', 'aria-controls': 'offsite-files-' + t.id }),
-        actionButton(t, 'edit', T('offsite.act_edit', 'Edit'), openDialog),
-        actionButton(t, 'delete', T('offsite.act_delete', 'Delete'), deleteTarget),
-      ]),
-      resultEl(state.results[t.id]),
-      filesEl(t),
-    ]);
-  }
-  function renderTargets() {
-    var box = byId('offsite-targets');
-    renderAddButton();
-    if (state.loadError && !state.targets) { box.replaceChildren(el('div', { class: 'op-t-result op-bad', text: state.loadError })); return; }
-    if (!state.targets) return;
-    if (!state.targets.length) {
-      box.replaceChildren(el('div', { class: 'op-empty op-targets-empty', text: T('offsite.targets_empty', 'No target yet. Add one so backups leave the server.') }));
+  // Controls: switches and segments change on click.
+  document.addEventListener('click', (e) => {
+    const sw = e.target.closest('.st-switch');
+    if (sw && !sw.disabled && page.contains(sw)) {
+      sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+      sw.dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
-    box.replaceChildren.apply(box, state.targets.map(targetRow));
+    const sb = e.target.closest('.st-seg-btn');
+    if (sb && !sb.disabled && page.contains(sb)) {
+      const seg = sb.closest('.st-seg');
+      if (seg.dataset.value === sb.dataset.value) return;
+      setSeg(seg, sb.dataset.value);
+      seg.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+  page.addEventListener('input', (e) => {
+    if (e.target.type === 'range') syncRange(e.target);
+    onFieldChange(e);
+  });
+  page.addEventListener('change', onFieldChange);
+  function onFieldChange(e) {
+    const sec = e.target.closest && e.target.closest('.st-section');
+    if (!sec || sec.dataset.section !== current) return;
+    applyShows(current);
+    const field = e.target.closest('[data-st-field]');
+    if (field) {
+      field.removeAttribute('aria-invalid');
+      const er = errNode(field);
+      if (er && er.textContent) { er.textContent = ''; er.hidden = true; }
+    }
+    const s = SECTIONS[current];
+    if (s && s.onChange) s.onChange(e);
+    updateBar();
   }
-  function findTarget(id) { return (state.targets || []).filter(function (x) { return x.id === id; })[0] || null; }
 
-  function testTarget(t) {
-    state.busy[t.id] = 'test';
-    delete state.results[t.id];
-    renderTargets();
-    return call(window.api.post(BASE + '/targets/' + t.id + '/test', {})).then(function (r) {
-      state.results[t.id] = r.ok
-        ? { ok: true, text: T('offsite.test_ok', 'Connection ok'), detail: r.detail || '' }
-        : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? T('offsite.test_failed', 'Connection failed') : O.errorText(r), detail: O.errorDetail(r) };
-      checkLicense(r);
-    }).then(function () { delete state.busy[t.id]; renderTargets(); });
+  // ══ Save bar ══════════════════════════════════════════════════════════
+  const bar = $('st-savebar');
+  const barText = $('st-savebar-text');
+  const barErr = $('st-savebar-err');
+  const savedLine = $('st-saved');
+  let lastSaved = null;
+  let saving = false;
+  function updateBar() {
+    const n = current ? dirtyOf(current).length : 0;
+    bar.hidden = n === 0;
+    if (n) barText.textContent = tp('st.save.count', n);
+    savedLine.textContent = !n && lastSaved ? t('st.save.saved_at', { time: fmtTime(lastSaved) }) : '';
   }
-  function runTarget(t) {
-    state.busy[t.id] = 'run';
-    delete state.results[t.id];
-    renderTargets();
-    return call(window.api.post(BASE + '/targets/' + t.id + '/run', {})).then(function (r) {
-      if (r.ok) {
-        state.results[t.id] = {
-          ok: true,
-          text: T('offsite.run_ok', 'Uploaded: {file}', { file: r.file || '' }) + (r.deleted ? ' · ' + T('offsite.run_deleted', '{n} older archives deleted', { n: r.deleted }) : ''),
-        };
-        if (state.files[t.id]) delete state.files[t.id];
-      } else {
-        // The remote detail of a failed upload lands in last_error (shown in the row).
-        state.results[t.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r) };
-        checkLicense(r);
-        if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') { pass1.focus(); }
+  $('st-discard').addEventListener('click', () => discard());
+  $('st-save').addEventListener('click', () => save());
+
+  function discard() {
+    if (!current) return;
+    const id = current;
+    clearErrors(id);
+    const b = baseline[id] || {};
+    fieldEls(id).forEach((n) => { if (n.dataset.stField in b) setField(n, b[n.dataset.stField]); });
+    applyShows(id);
+    const s = SECTIONS[id];
+    if (s && s.onDiscard) s.onDiscard();
+    updateBar();
+  }
+
+  /** Client-side checks: numbers within min/max of their input. */
+  function validate(id, dirty) {
+    let ok = true;
+    for (const name of dirty) {
+      const node = fieldEl(id, name);
+      if (!node || (node.type !== 'number' && node.type !== 'range')) continue;
+      const bad = U.checkNumber(node.value, Number(node.min), Number(node.max));
+      if (bad) { showFieldError(id, name, t('st.err.range', bad)); ok = false; }
+    }
+    const s = SECTIONS[id];
+    const loose = [];
+    if (s.validate) {
+      const errs = s.validate(valuesOf(id), dirty) || {};
+      for (const [name, msg] of Object.entries(errs)) { if (!showFieldError(id, name, msg)) loose.push(msg); ok = false; }
+    }
+    if (loose.length) { barErr.textContent = loose.join(' · '); barErr.hidden = false; }
+    return ok;
+  }
+
+  async function save() {
+    if (!current || saving) return false;
+    const id = current;
+    const s = SECTIONS[id];
+    const dirty = dirtyOf(id);
+    if (!dirty.length) return true;
+    clearErrors(id);
+    if (!validate(id, dirty)) { focusFirstError(id); return false; }
+    const vals = valuesOf(id);
+    const plan = U.savePlan(s.groups || [], dirty);
+    for (const g of plan) {
+      const asks = g.confirm ? [].concat(g.confirm(vals, dirty) || []) : [];
+      for (const a of asks) if (!(await D.confirm(a))) return false;
+    }
+    saving = true;
+    const btn = $('st-save');
+    busy(btn, true);
+    let allOk = true;
+    const messages = [];
+    try {
+      for (const g of plan) {
+        const r = await call(g.save(vals, dirty));
+        if (r && r.ok) {
+          commit(id, g.fields);
+          if (r.warning) messages.push(r.warning);
+          if (g.after) await g.after(r);
+          continue;
+        }
+        allOk = false;
+        let shown = false;
+        if (r && r.fields) {
+          for (const [k, msg] of Object.entries(r.fields)) {
+            const name = (g.map && g.map[k]) || k;
+            if (showFieldError(id, name, msg)) shown = true;
+          }
+        }
+        if (!shown && g.errorField && !(r && r.feature)) shown = showFieldError(id, g.errorField, errText(r));
+        if (!shown) messages.push(errText(r));
       }
-    }).then(function () { delete state.busy[t.id]; return loadTargets(); });
+    } finally {
+      busy(btn, false);
+      saving = false;
+    }
+    if (messages.length) { barErr.textContent = messages.join(' · '); barErr.hidden = false; }
+    if (allOk) {
+      lastSaved = new Date();
+      if (!messages.length) toast(t('st.save.done'));
+    } else {
+      focusFirstError(id);
+    }
+    updateBar();
+    if (allOk && messages.length) { bar.hidden = false; barText.textContent = t('st.save.saved_with_note'); }
+    return allOk;
   }
-  // Restore test (§S2.1): fetch the newest archive, decrypt it, validate it —
-  // read-only. The row then shows date, size, content counts and warnings.
-  function verifyTarget(t) {
-    state.busy[t.id] = 'verify';
-    state.results[t.id] = { ok: true, text: T('offsite.verify_running', 'Fetching and checking the archive …') };
-    renderTargets();
-    return call(window.api.post(BASE + '/targets/' + t.id + '/verify', {})).then(function (r) {
-      if (r.ok) {
-        state.results[t.id] = {
-          ok: true,
-          text: T('offsite.verify_ok', 'Restore verified: {file}', { file: r.file || '' }),
-          lines: O.verifyLines(r, lang),
-          warnings: (r.warnings || []).map(O.verifyWarningText).filter(Boolean),
-          note: T('offsite.verify_note', 'Nothing is changed — the archive is only read and decrypted.'),
-        };
-      } else {
-        state.results[t.id] = {
-          ok: false,
-          text: T('offsite.verify_failed', 'Restore not verified') + ' · ' + O.errorText(r),
-          detail: O.errorDetail(r),
-        };
-        checkLicense(r);
-        if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') pass1.focus();
+  function focusFirstError(id) {
+    const root = sectionEl(id);
+    const bad = root && root.querySelector('[aria-invalid="true"]');
+    if (bad && bad.focus) bad.focus();
+  }
+
+  window.addEventListener('beforeunload', (e) => {
+    if (current && dirtyOf(current).length) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // ══ Navigation ════════════════════════════════════════════════════════
+  const SECTIONS = {};
+  const navItems = Array.from(document.querySelectorAll('.st-nav-item'));
+  const select = $('st-select');
+  const known = navItems.map((b) => b.dataset.section);
+  let current = null;
+  const loaded = {};
+
+  function sectionOfElement(elId) {
+    const node = document.getElementById(elId);
+    const sec = node && node.closest && node.closest('.st-section');
+    return sec ? sec.dataset.section : null;
+  }
+
+  async function show(id, opts) {
+    const o = opts || {};
+    if (!known.includes(id)) id = known[0];
+    if (current && id !== current && dirtyOf(current).length && !o.force) {
+      const n = dirtyOf(current).length;
+      const ok = await D.confirm({
+        title: t('st.leave.title'),
+        message: tp('st.leave.message', n, { section: navLabel(current) }),
+        okLabel: t('st.leave.discard'),
+        danger: true,
+      });
+      if (!ok) {
+        syncNav();
+        try { history.replaceState(null, '', location.pathname + '#' + current); } catch (_) { /* cosmetic */ }
+        return false;
       }
-    }).then(function () { delete state.busy[t.id]; return loadTargets(); });
+      discard();
+    }
+    if (current !== id) {
+      document.querySelectorAll('.st-section').forEach((s) => { s.hidden = s.dataset.section !== id; });
+      current = id;
+      barErr.hidden = true;
+      try { localStorage.setItem('gc-settings-section', id); } catch (_) { /* optional */ }
+      applySearchToSection();
+    }
+    syncNav();
+    const target = o.anchor ? document.getElementById(o.anchor) : null;
+    const hash = '#' + (o.anchor || id);
+    if (location.hash !== hash || /[?&]tab=/.test(location.search)) {
+      try { history.replaceState(null, '', location.pathname + hash); } catch (_) { /* cosmetic */ }
+    }
+    const s = SECTIONS[id];
+    if (s && s.load && !(o.keep && loaded[id])) {
+      try { await s.load(); } catch (err) { console.warn('[settings] loading', id, err); }
+      loaded[id] = true;
+      applyShows(id);
+    }
+    updateBar();
+    if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+    else if (o.focus) { const h = $('st-h-' + id); if (h) h.focus({ preventScroll: true }); window.scrollTo({ top: 0 }); }
+    return true;
   }
-  function toggleFiles(t) {
-    if (state.files[t.id]) { delete state.files[t.id]; renderTargets(); return; }
-    state.busy[t.id] = 'files';
-    renderTargets();
-    call(window.api.get(BASE + '/targets/' + t.id + '/files')).then(function (r) {
-      state.files[t.id] = r.ok ? { files: r.files || [] } : { error: O.errorText(r), detail: O.errorDetail(r) || (O.errorCode(r) === 'TRANSPORT_FAILED' ? String(r.error || '') : '') };
-      checkLicense(r);
-    }).then(function () { delete state.busy[t.id]; renderTargets(); });
+  function navLabel(id) {
+    const b = navItems.find((x) => x.dataset.section === id);
+    return b ? b.querySelector('.st-nav-label').textContent : id;
   }
-  function deleteTarget(t) {
-    O.confirmDialog(document, {
-      title: T('offsite.delete_title', 'Delete target?'),
-      message: T('offsite.delete_msg', '“{name}” will be removed.', { name: t.name }),
-      detail: T('offsite.delete_detail', 'The archives on the target are kept.'),
-      okLabel: T('offsite.act_delete', 'Delete'),
-      danger: true,
-    }).then(function (ok) {
-      if (!ok) return;
-      state.busy[t.id] = 'delete';
-      renderTargets();
-      call(window.api.del(BASE + '/targets/' + t.id)).then(function (r) {
-        if (r.ok) { toast(T('offsite.deleted_target', 'Target deleted')); delete state.results[t.id]; delete state.files[t.id]; }
-        else { checkLicense(r); toast(O.errorText(r), 'error'); }
-      }).then(function () { delete state.busy[t.id]; loadTargets(); });
+  function syncNav() {
+    navItems.forEach((b) => b.setAttribute('aria-current', b.dataset.section === current ? 'page' : 'false'));
+    if (select) select.value = current;
+  }
+  navItems.forEach((b) => b.addEventListener('click', () => show(b.dataset.section, { focus: true })));
+  if (select) select.addEventListener('change', () => show(select.value, { focus: true }));
+  window.addEventListener('hashchange', () => {
+    const r = U.resolveLocation({ hash: location.hash, search: '' }, { known, sectionOfElement });
+    if (r) show(r.section, { anchor: r.anchor, keep: r.section === current });
+  });
+  function setDot(id, on) {
+    const b = navItems.find((x) => x.dataset.section === id);
+    const dot = b && b.querySelector('[data-dot]');
+    if (dot) dot.hidden = !on;
+  }
+
+  // ── Search ──
+  const search = $('st-search');
+  const searchCount = $('st-search-count');
+  let query = '';
+  function sectionText(id) {
+    const sec = sectionEl(id);
+    return [navLabel(id), sec ? sec.dataset.stKeywords : '', sec ? sec.textContent : ''].join(' ');
+  }
+  function runSearch() {
+    query = search.value;
+    let shown = 0;
+    navItems.forEach((b) => {
+      const hit = U.matches(sectionText(b.dataset.section), query);
+      b.parentElement.hidden = !hit;
+      if (hit) shown++;
+    });
+    document.querySelectorAll('.st-nav-group').forEach((g) => {
+      g.hidden = !g.querySelector('li:not([hidden])');
+    });
+    if (select) Array.from(select.options).forEach((o) => { o.hidden = !U.matches(sectionText(o.value), query); });
+    $('st-nav-empty').hidden = shown > 0;
+    searchCount.textContent = query.trim() ? tp('st.search_count', shown) : '';
+    applySearchToSection();
+  }
+  function applySearchToSection() {
+    const sec = current && sectionEl(current);
+    if (!sec) return;
+    const head = [navLabel(current), sec.dataset.stKeywords, (sec.querySelector('.st-sec-head') || {}).textContent].join(' ');
+    const whole = !query.trim() || U.matches(head, query);
+    sec.querySelectorAll(':scope > .st-card').forEach((c) => { c.classList.toggle('st-search-miss', !whole && !U.matches(c.textContent, query)); });
+  }
+  search.addEventListener('input', runSearch);
+  search.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { search.value = ''; runSearch(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = navItems.find((b) => !b.parentElement.hidden);
+      if (first) show(first.dataset.section, { focus: true });
+    }
+  });
+
+  // Copy buttons of read-only rows.
+  page.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-st-copy]');
+    if (c) { const v = $(c.dataset.stCopy); if (v) copyText(v.textContent.trim()); }
+  });
+
+  // Shared action: clear the activity log (Daten + Gefahrenzone).
+  document.querySelectorAll('[data-st-action="clear-logs"]').forEach((b) => b.addEventListener('click', async () => {
+    if (!(await D.confirm({ title: t('st.cleanup.confirm_title'), message: t('st.cleanup.confirm'), okLabel: t('st.cleanup.confirm_ok'), danger: true }))) return;
+    busy(b, true);
+    const r = await call(api.post('/api/v1/settings/clear-logs', {}));
+    busy(b, false);
+    if (r.ok) toast(t('st.cleanup.done', { n: r.deleted || 0 }));
+    else toast(errText(r), 'error');
+  }));
+
+  // ══ Sections ══════════════════════════════════════════════════════════
+  const get = (url) => call(api.get(url));
+  const put = (url, body) => call(api.put(url, body));
+  const post = (url, body) => call(api.post(url, body || {}));
+  const del = (url) => call(api.del(url));
+  const int = (v) => parseInt(v, 10);
+
+  // ── Übersicht ──
+  SECTIONS.uebersicht = {
+    async load() {
+      const wgDetail = $('st-svc-wg-detail');
+      if (!wgDetail.dataset.base) wgDetail.dataset.base = wgDetail.textContent;
+      const [wg, caddy] = await Promise.all([get('/api/v1/wg/status'), get('/api/v1/caddy/status')]);
+      const wgOk = !!(wg && wg.running);
+      setService('st-svc-wg', wg && wg.ok !== false ? (wgOk ? 'good' : 'crit') : 'warn');
+      const online = wg && Array.isArray(wg.peers) ? wg.peers.filter((p) => p.isOnline).length : null;
+      wgDetail.textContent = wgDetail.dataset.base + (online != null && wgOk ? ' · ' + tp('st.services.wg_peers', online) : '');
+      const cOk = !!(caddy && caddy.running);
+      setService('st-svc-caddy', caddy && caddy.ok !== false ? (cOk ? 'good' : 'crit') : 'warn');
+      $('st-svc-caddy-detail').textContent = cOk
+        ? t('st.services.caddy_detail', { http: caddy.httpRoutes || 0, l4: caddy.l4Routes || 0 })
+        : '';
+    },
+  };
+  function setService(id, state) {
+    const tile = $(id);
+    tile.dataset.state = state;
+    $(id + '-state').dataset.state = state;
+    $(id + '-state').textContent = t(state === 'good' ? 'st.services.running' : state === 'crit' ? 'st.services.stopped' : 'st.services.unknown');
+  }
+  $('st-wg-restart').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    if (!(await D.confirm({ title: t('st.services.wg_restart_title'), message: t('settings.svc.wg_restart_confirm'), okLabel: t('st.services.wg_restart_ok') }))) return;
+    busy(b, true);
+    const r = await post('/api/v1/wg/restart');
+    busy(b, false);
+    if (r.ok && r.success) { toast(t('st.services.wg_restarted')); SECTIONS.uebersicht.load(); } else toast(r.ok ? t('settings.svc.wg_restart_failed') : errText(r), 'error');
+  });
+  $('st-caddy-reload').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    busy(b, true);
+    const r = await post('/api/v1/caddy/reload');
+    busy(b, false);
+    if (r.ok && r.success) { toast(t('st.services.caddy_reloaded')); SECTIONS.uebersicht.load(); } else toast(errText(r), 'error');
+  });
+
+  // ── Domains & Zertifikate ──
+  const domList = $('st-dom-list');
+  function domainRow(d) {
+    const state = d.status === 'verified' ? 'good' : d.status === 'failed' ? 'crit' : 'warn';
+    const label = t(d.status === 'verified' ? 'st.domains.verified' : d.status === 'failed' ? 'st.domains.failed' : 'st.domains.pending');
+    const check = TG ? TG.parseCheck(d.check_json) : null;
+    const code = TG ? TG.dnsCode(d) : null;
+    let detail;
+    if (d.status === 'failed') detail = code && TG ? TG.dnsCodeText(code) : (d.last_error || '');
+    else if (d.status === 'verified') detail = d.verified_at ? t('st.domains.verified_at', { when: O.fmtAgo(d.verified_at, lang) || O.fmtDateTime(d.verified_at, lang) }) : '';
+    else detail = t('st.domains.unchecked');
+    const info = el('div', { class: 'st-li-main' }, [
+      el('div', { class: 'st-li-title st-mono', text: d.domain }),
+      detail ? el('div', { class: 'st-li-sub', text: detail }) : null,
+      check && check.detail && d.status === 'failed' ? el('div', { class: 'st-li-sub st-mono', text: String(check.detail) }) : null,
+    ]);
+    if (check && TG) {
+      const box = TG.recordsEl(check);
+      box.hidden = true;
+      const tg = el('button', { type: 'button', class: 'st-link-btn', 'aria-expanded': 'false', text: t('settings.tls.records_show') });
+      tg.addEventListener('click', () => { box.hidden = !box.hidden; tg.setAttribute('aria-expanded', box.hidden ? 'false' : 'true'); });
+      info.appendChild(el('div', { class: 'st-li-extra' }, [tg, box]));
+      const caa = TG.caaEl ? TG.caaEl(check, { compact: true }) : null;
+      if (caa) info.appendChild(caa);
+    }
+    const verify = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.domains.recheck') });
+    verify.addEventListener('click', async () => {
+      busy(verify, true);
+      const r = await post('/api/v1/settings/domains/' + d.id + '/verify');
+      busy(verify, false);
+      if (r.ok) SECTIONS.domains.loadList(); else toast(errText(r), 'error');
+    });
+    const remove = el('button', { type: 'button', class: 'st-icon-btn', 'aria-label': t('st.domains.remove_label', { domain: d.domain }), title: t('st.domains.remove_label', { domain: d.domain }) }, [icon(ICON_TRASH)]);
+    remove.addEventListener('click', async () => {
+      if (!(await D.confirm({ title: t('st.domains.remove_title'), message: t('st.domains.remove_msg', { domain: d.domain }), okLabel: t('st.remove'), danger: true }))) return;
+      const r = await del('/api/v1/settings/domains/' + d.id);
+      if (r.ok) SECTIONS.domains.loadList(); else toast(errText(r), 'error');
+    });
+    return el('li', { class: 'st-li', 'data-domain': d.domain }, [info, pill(state, label), el('div', { class: 'st-li-actions' }, [verify, remove])]);
+  }
+  SECTIONS.domains = {
+    async loadList() {
+      const r = await get('/api/v1/settings/domains');
+      if (!r.ok) { clear(domList); domList.appendChild(empty(errText(r))); return r; }
+      const list = r.data.domains || [];
+      clear(domList);
+      if (!list.length) domList.appendChild(empty(t('st.domains.none')));
+      list.forEach((d) => domList.appendChild(domainRow(d)));
+      $('st-r-ip4').textContent = r.data.serverIp || '—';
+      $('st-r-ip6').textContent = r.data.serverIpv6 || '—';
+      $('st-dom-ipwarn').hidden = !r.data.serverIpWarning;
+      setDot('domains', list.some((d) => d.status === 'failed') || !!r.data.serverIpWarning);
+      return r;
+    },
+    async load() {
+      const [r, acme, tls] = await Promise.all([this.loadList(), get('/api/v1/settings/acme-email'), get('/api/v1/settings/tls')]);
+      const vals = {};
+      if (r.ok) { vals['srv-ip'] = r.data.serverIpOverride || ''; vals['srv-ip6'] = r.data.serverIpv6Override || ''; }
+      if (acme.ok) {
+        vals['acme-email'] = acme.data.email;
+        $('st-acme').placeholder = acme.data.inherited ? t('st.acme.email_ph_env') : t('st.acme.email_ph');
+      }
+      if (tls.ok) vals['tls-attempts'] = tls.max_attempts;
+      fill('domains', vals);
+    },
+    groups: [
+      { fields: ['srv-ip', 'srv-ip6'], errorField: 'srv-ip',
+        save: (v) => api.put('/api/v1/settings/domains/server-ip', { ip: v['srv-ip'].trim(), ipv6: v['srv-ip6'].trim() }),
+        after: () => SECTIONS.domains.loadList() },
+      { fields: ['acme-email'], errorField: 'acme-email',
+        save: (v) => api.put('/api/v1/settings/acme-email', { email: v['acme-email'].trim() })
+          .then((r) => (r && r.ok && r.warning ? Object.assign({}, r, { warning: t(r.warning) }) : r)) },
+      { fields: ['tls-attempts'], map: { max_attempts: 'tls-attempts' }, errorField: 'tls-attempts',
+        save: (v) => api.put('/api/v1/settings/tls', { max_attempts: int(v['tls-attempts']) }) },
+    ],
+  };
+  $('st-dom-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('st-dom-input');
+    const err = $('st-dom-add-err');
+    err.hidden = true;
+    const domain = input.value.trim();
+    if (!domain) { input.focus(); return; }
+    const b = e.currentTarget.querySelector('button[type="submit"]');
+    busy(b, true);
+    const r = await post('/api/v1/settings/domains', { domain });
+    busy(b, false);
+    if (r.ok) { input.value = ''; SECTIONS.domains.loadList(); } else { err.textContent = errText(r); err.hidden = false; input.focus(); }
+  });
+
+  // ── VPN & Netzwerk ──
+  SECTIONS.netzwerk = {
+    async load() {
+      const [dns, data, rb] = await Promise.all([get('/api/v1/settings/dns'), get('/api/v1/settings/data'), get('/api/v1/settings/route-block-default')]);
+      const vals = {};
+      if (dns.ok) vals.dns = dns.data.dns || '';
+      if (data.ok) vals['peer-timeout'] = data.data.peer_online_timeout;
+      if (rb.ok) { vals['rb-action'] = rb.data.action || 'not_found'; vals['rb-url'] = rb.data.redirect_url || ''; vals['rb-body'] = rb.data.body || ''; }
+      fill('netzwerk', vals);
+    },
+    validate(v, dirty) {
+      const errs = {};
+      if (dirty.some((d) => d.startsWith('rb-'))) {
+        if (v['rb-action'] === 'redirect' && !/^https?:\/\/\S+$/i.test(v['rb-url'].trim())) errs['rb-url'] = t('error.settings.block_redirect_invalid');
+        if (v['rb-action'] === 'custom' && !v['rb-body'].trim()) errs['rb-body'] = t('error.settings.block_body_required');
+      }
+      return errs;
+    },
+    groups: [
+      { fields: ['dns'], map: { dns: 'dns' }, errorField: 'dns', save: (v) => api.put('/api/v1/settings/dns', { dns: v.dns.trim() }) },
+      { fields: ['peer-timeout'], map: { peer_online_timeout: 'peer-timeout' }, errorField: 'peer-timeout',
+        save: (v) => api.put('/api/v1/settings/data', { peer_online_timeout: v['peer-timeout'] }) },
+      { fields: ['rb-action', 'rb-url', 'rb-body'], map: { action: 'rb-action', body: 'rb-body', redirect_url: 'rb-url' },
+        save: (v) => api.put('/api/v1/settings/route-block-default', { action: v['rb-action'], body: v['rb-body'], redirect_url: v['rb-url'].trim() }) },
+    ],
+  };
+
+  // ── Daten & Aufbewahrung ──
+  const DATA_MAP = { retention_traffic_days: 'ret-traffic', retention_activity_days: 'ret-activity', retention_waf_days: 'ret-waf' };
+  SECTIONS.daten = {
+    async load() {
+      const r = await get('/api/v1/settings/data');
+      if (r.ok) fill('daten', { 'ret-traffic': r.data.retention_traffic_days, 'ret-activity': r.data.retention_activity_days, 'ret-waf': r.data.retention_waf_days });
+    },
+    groups: [{ fields: Object.values(DATA_MAP), map: DATA_MAP, save: (v, d) => api.put('/api/v1/settings/data', U.pickDirty(DATA_MAP, v, d)) }],
+  };
+
+  // ── Anmeldung & Konten ──
+  const self2fa = page.dataset.user2fa === '1';
+  SECTIONS.anmeldung = {
+    timer: null,
+    async load() {
+      const r = await get('/api/v1/settings/security');
+      if (r.ok) {
+        const lo = r.data.lockout;
+        const pw = r.data.password;
+        fill('anmeldung', {
+          req2fa: !!r.data.require_2fa, 'lock-on': !!lo.enabled, 'lock-attempts': lo.max_attempts, 'lock-minutes': lo.duration,
+          'pw-on': !!pw.complexity_enabled, 'pw-len': pw.min_length, 'pw-upper': !!pw.require_uppercase, 'pw-number': !!pw.require_number, 'pw-special': !!pw.require_special,
+        });
+      }
+      await this.loadLocked();
+      clearInterval(this.timer);
+      this.timer = setInterval(() => { if (current === 'anmeldung') this.loadLocked(); }, 30000);
+    },
+    async loadLocked() {
+      const box = $('st-locked');
+      const r = await get('/api/v1/settings/lockout');
+      clear(box);
+      const list = (r.ok && r.locked) || [];
+      if (!list.length) { box.appendChild(empty(t('security.lockout.no_locked'))); return; }
+      list.forEach((acc) => {
+        const btn = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.lockout.unlock') });
+        btn.addEventListener('click', async () => {
+          if (!(await D.confirm({ title: t('st.lockout.unlock_title'), message: t('st.lockout.unlock_msg', { name: acc.identifier }), okLabel: t('st.lockout.unlock_ok') }))) return;
+          const res = await del('/api/v1/settings/lockout/' + encodeURIComponent(acc.identifier));
+          if (res.ok) { toast(t('st.lockout.unlocked', { name: acc.identifier })); this.loadLocked(); } else toast(errText(res), 'error');
+        });
+        const meta = [t('st.lockout.remaining', { n: Math.max(1, Math.ceil(acc.remainingSeconds / 60)) }), tp('st.lockout.attempts_n', acc.attempts)];
+        if (acc.lastIp) meta.push(t('st.lockout.from', { ip: acc.lastIp }));
+        box.appendChild(el('li', { class: 'st-chiprow' }, [el('span', { class: 'st-mono st-strong', text: acc.identifier }), el('span', { class: 'st-li-sub', text: meta.join(' · ') }), btn]));
+      });
+    },
+    groups: [{
+      fields: ['req2fa', 'lock-on', 'lock-attempts', 'lock-minutes', 'pw-on', 'pw-len', 'pw-upper', 'pw-number', 'pw-special'],
+      map: { 'lockout.max_attempts': 'lock-attempts', 'lockout.duration': 'lock-minutes', 'password.min_length': 'pw-len' },
+      confirm: (v, d) => {
+        const asks = [];
+        if (d.includes('lock-attempts') && v['lock-on'] && int(v['lock-attempts']) <= 2) {
+          asks.push({ title: t('st.confirm.title'), message: t('st.confirm.lockout_low', { n: int(v['lock-attempts']) }), okLabel: t('st.confirm.save_anyway'), danger: true });
+        }
+        if (d.includes('req2fa') && !v.req2fa) asks.push({ title: t('st.confirm.title'), message: t('st.confirm.req2fa_off'), okLabel: t('st.confirm.save_anyway'), danger: true });
+        if (d.includes('req2fa') && v.req2fa && !self2fa) asks.push({ title: t('st.confirm.title'), message: t('st.confirm.req2fa_self'), okLabel: t('st.confirm.save_anyway') });
+        return asks;
+      },
+      save(v, d) {
+        const body = {};
+        const lo = U.pickDirty({ enabled: 'lock-on', max_attempts: 'lock-attempts', duration: 'lock-minutes' }, v, d);
+        const pw = U.pickDirty({ complexity_enabled: 'pw-on', min_length: 'pw-len', require_uppercase: 'pw-upper', require_number: 'pw-number', require_special: 'pw-special' }, v, d);
+        if (Object.keys(lo).length) body.lockout = lo;
+        if (Object.keys(pw).length) body.password = pw;
+        if (d.includes('req2fa')) body.require_2fa = v.req2fa;
+        return api.put('/api/v1/settings/security', body);
+      },
+    }],
+  };
+
+  // ── Gerätebindung ──
+  SECTIONS.geraete = {
+    async load() {
+      const r = await get('/api/v1/settings/machine-binding');
+      if (r.ok) fill('geraete', { 'mb-mode': r.data.mode || 'off' });
+    },
+    groups: [{
+      fields: ['mb-mode'], errorField: 'mb-mode',
+      confirm: (v) => ({ title: t('st.confirm.title'), message: t('st.confirm.mb_' + v['mb-mode']), okLabel: t('st.confirm.save_anyway'), danger: true }),
+      save: (v) => api.put('/api/v1/settings/machine-binding', { mode: v['mb-mode'] }),
+    }],
+  };
+
+  // ── Peer-Gruppen & Tags ──
+  function safeColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '#6b7280'; }
+  SECTIONS.gruppen = {
+    editing: null,
+    groups: [],
+    policies: {},
+    async load() { await Promise.all([this.loadGroups(), this.loadTags()]); },
+    async loadGroups() {
+      const [r, cp] = await Promise.all([get('/api/v1/peer-groups'), get('/api/v1/settings/client-policy')]);
+      this.groups = (r.ok && r.groups) || [];
+      this.policies = {};
+      if (cp.ok) (cp.data.groups || []).forEach((g) => { this.policies[g.id] = Object.keys(g.policy || {}).length > 0; });
+      this.render();
+    },
+    render() {
+      const box = $('st-groups');
+      clear(box);
+      if (!this.groups.length) { box.appendChild(empty(t('peer_groups.no_groups'))); return; }
+      this.groups.forEach((g) => box.appendChild(this.editing === g.id ? this.editRow(g) : this.row(g)));
+    },
+    row(g) {
+      const dot = el('span', { class: 'st-colordot', 'aria-hidden': 'true' });
+      dot.style.background = safeColor(g.color);
+      const edit = el('button', { type: 'button', class: 'st-btn st-btn-sm', 'aria-label': t('st.groups.edit_label', { name: g.name }), text: t('st.edit') });
+      edit.addEventListener('click', () => { this.editing = g.id; this.render(); const f = document.querySelector('[data-group-edit="' + g.id + '"] input'); if (f) f.focus(); });
+      return el('li', { class: 'st-li', 'data-group-id': String(g.id) }, [
+        dot,
+        el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title', text: g.name }), g.description ? el('div', { class: 'st-li-sub', text: g.description }) : null]),
+        el('span', { class: 'st-li-sub', text: tp('st.groups.peers', g.peer_count || 0) }),
+        this.policies[g.id] ? el('span', { class: 'st-chip-accent', text: t('st.groups.own_policy') }) : null,
+        edit,
+      ]);
+    },
+    editRow(g) {
+      const name = el('input', { type: 'text', class: 'st-input', maxLength: 100, value: g.name || '', 'aria-label': t('st.groups.name') });
+      const desc = el('input', { type: 'text', class: 'st-input', maxLength: 255, value: g.description || '', 'aria-label': t('st.groups.desc'), placeholder: t('st.optional') });
+      const color = el('input', { type: 'color', class: 'st-color', value: safeColor(g.color), 'aria-label': t('st.groups.color') });
+      const err = el('span', { class: 'st-err st-err-block', role: 'alert', hidden: true });
+      const saveB = el('button', { type: 'button', class: 'st-btn st-btn-sm st-btn-primary', text: t('common.save') });
+      const cancelB = el('button', { type: 'button', class: 'st-btn st-btn-sm st-btn-ghost', text: t('common.cancel') });
+      const delB = el('button', { type: 'button', class: 'st-btn st-btn-sm st-btn-danger', text: t('st.delete_dots') });
+      saveB.addEventListener('click', async () => {
+        if (!name.value.trim()) { err.textContent = t('error.peer_groups.name_required'); err.hidden = false; name.focus(); return; }
+        busy(saveB, true);
+        const r = await put('/api/v1/peer-groups/' + g.id, { name: name.value.trim(), description: desc.value.trim(), color: color.value });
+        busy(saveB, false);
+        if (r.ok) { this.editing = null; this.loadGroups(); } else { err.textContent = errText(r); err.hidden = false; }
+      });
+      cancelB.addEventListener('click', () => { this.editing = null; this.render(); });
+      delB.addEventListener('click', async () => {
+        if (!(await D.confirm({ title: t('st.groups.delete_title'), message: t('st.groups.delete_msg', { name: g.name }), okLabel: t('common.delete'), danger: true }))) return;
+        const r = await del('/api/v1/peer-groups/' + g.id);
+        if (r.ok) { this.editing = null; this.loadGroups(); } else { err.textContent = errText(r); err.hidden = false; }
+      });
+      return el('li', { class: 'st-li st-li-edit', 'data-group-edit': String(g.id) }, [
+        el('div', { class: 'st-formline' }, [
+          el('div', { class: 'st-fl st-fl-2' }, [name]), el('div', { class: 'st-fl st-fl-3' }, [desc]), el('div', { class: 'st-fl' }, [color]),
+          saveB, cancelB, delB, err,
+        ]),
+      ]);
+    },
+    async loadTags() {
+      const box = $('st-tags');
+      const r = await get('/api/v1/tags');
+      clear(box);
+      const list = (r.ok && r.tags) || [];
+      if (!list.length) { box.appendChild(empty(t('tags.no_tags'))); return; }
+      list.forEach((tag) => {
+        const x = el('button', { type: 'button', class: 'st-tag-x', 'aria-label': t('st.tags.remove_label', { name: tag.name }), title: t('st.tags.remove_label', { name: tag.name }), text: '×' });
+        x.addEventListener('click', async () => {
+          if (!(await D.confirm({ title: t('st.tags.delete_title'), message: t('tags.confirm_delete', { name: tag.name }), okLabel: t('common.delete'), danger: true }))) return;
+          const res = await del('/api/v1/tags/' + encodeURIComponent(tag.name));
+          if (res.ok) { toast(t('tags.deleted', { n: res.peers_affected || 0 })); this.loadTags(); } else toast(errText(res), 'error');
+        });
+        box.appendChild(el('li', { class: 'st-tag' }, [
+          el('span', { text: tag.name }),
+          el('span', { class: 'st-tag-n', text: tag.peer_count > 0 ? String(tag.peer_count) : t('tags.unused') }),
+          x,
+        ]));
+      });
+    },
+  };
+  $('st-group-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('st-g-name');
+    const err = $('st-g-err');
+    err.hidden = true;
+    if (!name.value.trim()) { err.textContent = t('error.peer_groups.name_required'); err.hidden = false; name.focus(); return; }
+    const b = e.currentTarget.querySelector('button[type="submit"]');
+    busy(b, true);
+    const r = await post('/api/v1/peer-groups', { name: name.value.trim(), description: $('st-g-desc').value.trim(), color: $('st-g-color').value });
+    busy(b, false);
+    if (r.ok) { name.value = ''; $('st-g-desc').value = ''; $('st-g-color').value = '#6b7280'; SECTIONS.gruppen.loadGroups(); } else { err.textContent = errText(r); err.hidden = false; }
+  });
+  $('st-tag-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('st-tag-input');
+    const err = $('st-tag-err');
+    err.hidden = true;
+    if (!input.value.trim()) { err.textContent = t('tags.error_name_required'); err.hidden = false; input.focus(); return; }
+    const b = e.currentTarget.querySelector('button[type="submit"]');
+    busy(b, true);
+    const r = await post('/api/v1/tags', { name: input.value.trim() });
+    busy(b, false);
+    if (r.ok) { input.value = ''; SECTIONS.gruppen.loadTags(); } else { err.textContent = errText(r); err.hidden = false; }
+  });
+
+  // ── Client-Richtlinien ──
+  const CPF = window.ClientPolicyForm;
+  const cpGlobal = CPF ? CPF.create($('st-cp-global'), { mode: 'global', idPrefix: 'stcp-global' }) : null;
+  const cpGroup = CPF ? CPF.create($('st-cp-groupform'), { mode: 'override', idPrefix: 'stcp-group' }) : null;
+  const cpSel = $('st-cp-group');
+  if (cpGlobal) CUSTOM['cp-global'] = { get: () => cpGlobal.getValue(), set: (v) => cpGlobal.setValue(v) };
+  if (cpGroup) CUSTOM['cp-group'] = { get: () => cpGroup.getValue(), set: (v) => cpGroup.setValue(v) };
+  let cpState = null;
+  let cpGroupId = '';
+  SECTIONS.richtlinien = {
+    async load() {
+      const r = await get('/api/v1/settings/client-policy');
+      if (!r.ok) return;
+      this.apply(r.data);
+    },
+    apply(data) {
+      cpState = data;
+      const warn = $('st-cp-warn');
+      const ws = data.warnings || [];
+      warn.hidden = !ws.length;
+      warn.textContent = ws.map((w) => t('client_policy.' + w.replace('split_tunnel_preset_conflict', 'split_preset_conflict'))).join(' ');
+      clear(cpSel);
+      data.groups.forEach((g) => cpSel.appendChild(el('option', {
+        value: String(g.id),
+        text: g.name + (Object.keys(g.policy || {}).length ? ' · ' + t('st.groups.own_policy') : ''),
+      })));
+      const has = data.groups.length > 0;
+      $('st-cp-nogroups').hidden = has;
+      $('st-cp-groupbody').hidden = !has;
+      if (cpGroupId && data.groups.some((g) => String(g.id) === cpGroupId)) cpSel.value = cpGroupId;
+      cpGroupId = cpSel.value;
+      if (cpGroup) cpGroup.setInherited(data.global, null);
+      const g = data.groups.find((x) => String(x.id) === cpGroupId);
+      fill('richtlinien', { 'cp-global': data.global, 'cp-group': g ? g.policy : {} });
+    },
+    validate(v, d) {
+      const errs = {};
+      if (d.includes('cp-global') && cpGlobal && !cpGlobal.isValid()) errs['cp-global'] = t('error.client_policy.invalid');
+      if (d.includes('cp-group') && cpGroup && !cpGroup.isValid()) errs['cp-group'] = t('error.client_policy.invalid');
+      return errs;
+    },
+    groups: [
+      { fields: ['cp-global'], errorField: 'cp-global', save: (v) => api.put('/api/v1/settings/client-policy', v['cp-global']),
+        after: (r) => { if (r.data) SECTIONS.richtlinien.apply(r.data); } },
+      { fields: ['cp-group'], errorField: 'cp-group', save: (v) => api.put('/api/v1/settings/client-policy/groups/' + cpGroupId, v['cp-group']),
+        after: (r) => { if (r.data) SECTIONS.richtlinien.apply(r.data); } },
+    ],
+  };
+  cpSel.addEventListener('change', async () => {
+    if (dirtyOf('richtlinien').includes('cp-group')) {
+      if (!(await D.confirm({ title: t('st.leave.title'), message: t('st.cp.switch_group'), okLabel: t('st.leave.discard'), danger: true }))) { cpSel.value = cpGroupId; return; }
+    }
+    cpGroupId = cpSel.value;
+    const g = cpState && cpState.groups.find((x) => String(x.id) === cpGroupId);
+    fill('richtlinien', { 'cp-group': g ? g.policy : {} });
+    updateBar();
+  });
+  $('st-cp-inherit').addEventListener('click', async (e) => {
+    const g = cpState && cpState.groups.find((x) => String(x.id) === cpGroupId);
+    if (!g) return;
+    if (!(await D.confirm({ title: t('st.cp.inherit_title'), message: t('st.cp.inherit_msg', { name: g.name }), okLabel: t('st.cp.inherit_ok'), danger: true }))) return;
+    busy(e.currentTarget, true);
+    const r = await put('/api/v1/settings/client-policy/groups/' + g.id, {});
+    busy(e.currentTarget, false);
+    if (r.ok) { SECTIONS.richtlinien.apply(r.data); updateBar(); toast(t('client_policy.saved')); } else toast(errText(r), 'error');
+  });
+
+  // ── Split-Tunnel-Vorgabe ──
+  const PRIVATE_CIDRS = [{ cidr: '172.16.0.0/12', label: 'Private 172.x' }, { cidr: '192.168.0.0/16', label: 'Private 192.x' }];
+  const LINK_LOCAL = { cidr: '169.254.0.0/16', label: 'Link-Local' };
+  let stNets = [];
+  CUSTOM['st-networks'] = {
+    get: () => stNets.map((n) => ({ label: n.label || '', cidr: n.cidr })),
+    set: (v) => { stNets = (v || []).map((n) => ({ label: n.label || '', cidr: n.cidr })); renderNets(); },
+  };
+  function renderNets() {
+    const box = $('st-st-list');
+    clear(box);
+    if (!stNets.length) { box.appendChild(empty(t('st.st.no_networks'))); return; }
+    stNets.forEach((n, i) => {
+      const x = el('button', { type: 'button', class: 'st-icon-btn', 'aria-label': t('st.st.remove_label', { name: n.label || n.cidr }), title: t('st.st.remove_label', { name: n.label || n.cidr }), disabled: !FEATURES.split_tunnel_preset }, [icon('M6 6l12 12M18 6L6 18')]);
+      x.addEventListener('click', () => {
+        stNets.splice(i, 1);
+        renderNets();
+        $('st-st-networks').dispatchEvent(new Event('change', { bubbles: true }));
+        toast(t('st.st.removed_hint'));
+      });
+      box.appendChild(el('li', { class: 'st-chiprow' }, [el('span', { class: 'st-strong', text: n.label || '—' }), el('span', { class: 'st-mono st-li-sub', text: n.cidr }), x]));
     });
   }
-
-  // ── Add / edit dialog ────────────────────────────────────
-  var modal = byId('offsite-target-modal');
-  var typeEl = byId('ot-type');
-  var formErr = byId('offsite-target-error');
-  var FIELD_INPUTS = {
-    host: 'ot-host', port: 'ot-port', username: 'ot-username', path: 'ot-path', share: 'ot-share', domain: 'ot-domain',
-    endpoint: 'ot-endpoint', region: 'ot-region', bucket: 'ot-bucket', prefix: 'ot-prefix', access_key_id: 'ot-akid',
-    secret_access_key: 'ot-secret', url: 'ot-url', password: 'ot-password',
+  $('st-st-addbtn').addEventListener('click', () => {
+    const label = $('st-st-label');
+    const cidr = $('st-st-cidr');
+    const err = $('st-st-networks-err');
+    err.hidden = true;
+    const c = cidr.value.trim();
+    if (!label.value.trim()) { err.textContent = t('settings.split_tunnel_label_required'); err.hidden = false; label.focus(); return; }
+    if (!U.cidrOk(c)) { err.textContent = t('settings.split_tunnel_cidr_invalid'); err.hidden = false; cidr.focus(); return; }
+    if (stNets.some((n) => n.cidr === c)) { err.textContent = t('st.st.duplicate'); err.hidden = false; cidr.focus(); return; }
+    stNets.push({ label: label.value.trim(), cidr: c });
+    label.value = '';
+    cidr.value = '';
+    renderNets();
+    $('st-st-networks').dispatchEvent(new Event('change', { bubbles: true }));
+    label.focus();
+  });
+  ['st-st-label', 'st-st-cidr'].forEach((idx) => $(idx).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('st-st-addbtn').click(); } }));
+  SECTIONS.splittunnel = {
+    async load() {
+      const r = await get('/api/v1/settings/split-tunnel');
+      if (!r.ok) return;
+      const nets = r.networks || [];
+      const priv = PRIVATE_CIDRS.every((p) => nets.some((n) => n.cidr === p.cidr));
+      const ll = nets.some((n) => n.cidr === LINK_LOCAL.cidr);
+      const custom = nets.filter((n) => !((priv && PRIVATE_CIDRS.some((p) => p.cidr === n.cidr)) || (ll && n.cidr === LINK_LOCAL.cidr)));
+      fill('splittunnel', { 'st-mode': r.mode || 'off', 'st-private': priv, 'st-linklocal': ll, 'st-lock': !!r.locked, 'st-networks': custom });
+    },
+    groups: [{
+      fields: ['st-mode', 'st-private', 'st-linklocal', 'st-lock', 'st-networks'],
+      map: { mode: 'st-mode', networks: 'st-networks' },
+      save(v) {
+        let networks = v['st-networks'].slice();
+        if (v['st-private']) networks = PRIVATE_CIDRS.concat(networks);
+        if (v['st-linklocal']) networks.push(LINK_LOCAL);
+        return api.put('/api/v1/settings/split-tunnel', { mode: v['st-mode'], networks, locked: v['st-lock'] });
+      },
+    }],
   };
-  function val(id) { return byId(id).value; }
-  function clearFormErrors() {
-    formErr.hidden = true;
-    formErr.textContent = '';
-    modal.querySelectorAll('.field-invalid').forEach(function (n) { n.classList.remove('field-invalid'); n.removeAttribute('aria-invalid'); });
+
+  // ── Client-Updates ──
+  const PRODUCT_KEYS = { pro: 'client_updates.product_pro', community: 'client_updates.product_community', android: 'client_updates.product_android', unknown: 'client_updates.product_unknown' };
+  function renderVersions(ov) {
+    const box = $('st-cu-overview');
+    clear(box);
+    const products = (ov && ov.products) || [];
+    $('st-cu-unreported').textContent = ov && ov.unreported > 0 ? t('client_updates.overview_unreported', { count: ov.unreported }) : '';
+    if (!products.length) { box.appendChild(el('p', { class: 'st-empty', text: t('client_updates.overview_empty') })); return; }
+    products.forEach((p) => {
+      const max = Math.max(1, ...p.versions.map((v) => v.count));
+      box.appendChild(el('div', { class: 'st-tile' }, [
+        el('div', { class: 'st-tile-head' }, [el('span', { class: 'st-tile-name', text: t(PRODUCT_KEYS[p.product] || PRODUCT_KEYS.unknown) }), el('span', { class: 'st-li-sub st-push', text: tp('st.cu.devices', p.total) })]),
+        el('div', { class: 'st-li-sub', text: p.min_version ? t('client_updates.overview_min', { version: p.min_version }) : t('st.cu.no_min') }),
+        el('ul', { class: 'st-bars' }, p.versions.map((v) => {
+          const fillEl = el('span', { class: 'st-bar-fill' + (v.below_min ? ' st-bar-warn' : '') });
+          fillEl.style.width = Math.round((v.count / max) * 100) + '%';
+          return el('li', { class: 'st-bar-row', 'data-below-min': v.below_min ? '1' : null }, [
+            el('div', { class: 'st-bar-head' }, [
+              el('span', { class: 'st-mono', text: v.version }),
+              v.below_min ? el('span', { class: 'st-bar-flag', text: t('client_updates.overview_below_min') }) : null,
+              el('span', { class: 'st-strong st-push', text: String(v.count) }),
+            ]),
+            el('span', { class: 'st-bar-track' }, [fillEl]),
+          ]);
+        })),
+      ]));
+    });
   }
-  function formError(text, inputId) {
-    formErr.textContent = text;
-    formErr.hidden = false;
-    var input = inputId && byId(inputId);
-    if (input) { input.classList.add('field-invalid'); input.setAttribute('aria-invalid', 'true'); input.focus(); }
+  SECTIONS.clientupdates = {
+    async load() {
+      const r = await get('/api/v1/settings/client-updates');
+      if (!r.ok) { renderVersions(null); return; }
+      fill('clientupdates', { 'cu-channel': r.data.default_channel || 'stable', 'cu-min-pro': (r.data.min_versions && r.data.min_versions.pro) || '', 'cu-min-community': (r.data.min_versions && r.data.min_versions.community) || '' });
+      renderVersions(r.data.overview);
+    },
+    validate(v) {
+      const errs = {};
+      ['cu-min-pro', 'cu-min-community'].forEach((f) => { if (!U.semverOk(v[f])) errs[f] = t('error.client_updates.invalid_min_version'); });
+      return errs;
+    },
+    groups: [{
+      fields: ['cu-channel', 'cu-min-pro', 'cu-min-community'], errorField: 'cu-min-pro',
+      save: (v) => api.put('/api/v1/settings/client-updates', { default_channel: v['cu-channel'], min_versions: { pro: v['cu-min-pro'].trim(), community: v['cu-min-community'].trim() } }),
+      after: (r) => { if (r.data) renderVersions(r.data.overview); },
+    }],
+  };
+
+  // ── E-Mail-Versand ──
+  let smtpSaved = null;
+  SECTIONS.email = {
+    async load() {
+      const r = await get('/api/v1/smtp/settings');
+      if (!r.ok) return;
+      const d = r.data;
+      smtpSaved = d;
+      $('st-smtp-pw').placeholder = d.hasPassword ? t('st.secret_set') : '';
+      $('st-smtp-pw-clear').hidden = !d.hasPassword;
+      fill('email', { 'smtp-host': d.host || '', 'smtp-port': d.port || '', 'smtp-tls': d.secure ? 'tls' : 'starttls', 'smtp-user': d.user || '', 'smtp-password': '', 'smtp-from': d.from || '' });
+    },
+    groups: [{
+      fields: ['smtp-host', 'smtp-port', 'smtp-tls', 'smtp-user', 'smtp-password', 'smtp-from'],
+      map: { host: 'smtp-host', port: 'smtp-port', from: 'smtp-from' }, errorField: 'smtp-host',
+      save(v) {
+        const body = { host: v['smtp-host'].trim(), port: v['smtp-port'], user: v['smtp-user'].trim(), from: v['smtp-from'].trim(), secure: v['smtp-tls'] === 'tls' };
+        if (v['smtp-password']) body.password = v['smtp-password'];
+        return api.put('/api/v1/smtp/settings', body);
+      },
+      after: () => SECTIONS.email.load(),
+    }],
+  };
+  $('st-smtp-pw-clear').addEventListener('click', async (e) => {
+    if (!smtpSaved) return;
+    if (!(await D.confirm({ title: t('st.smtp.password_clear_title'), message: t('settings.autosave.clear_secret_confirm'), okLabel: t('st.remove'), danger: true }))) return;
+    busy(e.currentTarget, true);
+    const r = await put('/api/v1/smtp/settings', { host: smtpSaved.host, port: smtpSaved.port, user: smtpSaved.user, from: smtpSaved.from, secure: smtpSaved.secure, clear_password: true });
+    busy(e.currentTarget, false);
+    if (r.ok) { toast(t('st.smtp.password_cleared')); SECTIONS.email.load(); } else toast(errText(r), 'error');
+  });
+  $('st-smtp-test').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    const msg = $('st-smtp-test-msg');
+    if (dirtyOf('email').length) { msg.textContent = t('st.smtp.test_save_first'); msg.dataset.state = 'warn'; return; }
+    const rec = await get('/api/v1/settings/alerts');
+    const first = rec.ok ? String(rec.data.email || '').split(',')[0].trim() : '';
+    const to = await D.prompt({
+      title: t('st.smtp.test'), label: t('st.smtp.test_to'), value: first, placeholder: 'admin@example.com', okLabel: t('st.smtp.test_send'), maxLength: 254,
+      validate: (v) => (U.recipientsOk(v) && v && !v.includes(',') ? null : t('error.settings.recipient_invalid')),
+    });
+    if (!to) return;
+    busy(b, true);
+    msg.textContent = '';
+    const r = await post('/api/v1/smtp/test', { email: to });
+    busy(b, false);
+    msg.textContent = r.ok ? t('settings.smtp_test_sent', { email: to }) : errText(r);
+    msg.dataset.state = r.ok ? 'good' : 'crit';
+  });
+
+  // ── Benachrichtigungen ──
+  const matrixBody = $('st-matrix-body');
+  const mailBoxes = {};
+  const hookCells = {};
+  (function buildMatrix() {
+    CATALOGUE.forEach((g) => {
+      matrixBody.appendChild(el('tr', { class: 'st-mx-group' }, [el('th', { scope: 'rowgroup', colspan: '3', text: t('st.egroup.' + g.id) })]));
+      g.events.forEach((ev) => {
+        const label = t('st.event.' + ev.id);
+        const locked = !FEATURES.email_alerts && !ev.free;
+        const cb = el('input', { type: 'checkbox', class: 'st-cb', 'data-event': ev.id, 'aria-label': t('st.notify.by_mail', { event: label }), disabled: locked, title: locked ? t('st.err.license') : null });
+        mailBoxes[ev.id] = cb;
+        const hooks = el('span', { class: 'st-mx-hooks', text: '—' });
+        hookCells[ev.id] = hooks;
+        matrixBody.appendChild(el('tr', { 'data-event-row': ev.id }, [
+          el('td', { text: label }),
+          el('td', { class: 'st-mx-c' }, [cb]),
+          el('td', { class: 'st-mx-c' }, [hooks]),
+        ]));
+      });
+    });
+  })();
+  CUSTOM['al-events'] = {
+    get: () => ROWS.filter((r) => mailBoxes[r.id] && mailBoxes[r.id].checked).map((r) => r.id),
+    set: (ids) => { const s = new Set(ids || []); ROWS.forEach((r) => { if (mailBoxes[r.id]) mailBoxes[r.id].checked = s.has(r.id); }); },
+  };
+  function renderHookCounts(hooks) {
+    ROWS.forEach((r) => {
+      const n = U.hooksForRow(r, hooks);
+      const cell = hookCells[r.id];
+      if (!cell) return;
+      cell.textContent = n ? String(n) : '—';
+      cell.setAttribute('aria-label', tp('st.notify.hooks_n', n, { event: t('st.event.' + r.id) }));
+      cell.dataset.on = n ? '1' : '0';
+    });
   }
-  function showType(type) {
-    modal.querySelectorAll('[data-for]').forEach(function (n) { n.hidden = n.dataset.for.split(' ').indexOf(type) < 0; });
-    byId('ot-port').placeholder = O.DEFAULT_PORTS[type] ? String(O.DEFAULT_PORTS[type]) : '';
-    var cfg = (editing && editing.config) || {};
-    var hasPw = !!(editing && (type === 'smb' || type === 'webdav') && cfg.has_password);
-    byId('ot-clear-password-row').hidden = !hasPw;
-    byId('ot-password-hint').hidden = !hasPw;
-    byId('ot-password-hint').textContent = hasPw ? byId('ot-password-hint').dataset.kept : '';
-    var hasSecret = !!(editing && type === 's3' && cfg.has_secret_access_key);
-    byId('ot-secret-hint').hidden = !hasSecret;
-    byId('ot-secret-hint').textContent = hasSecret ? byId('ot-secret-hint').dataset.kept : '';
+  const ALERT_MAP = { email: 'al-email', events: 'al-events', backup_reminder_days: 'al-backup', resource_cpu_threshold: 'al-cpu', resource_ram_threshold: 'al-ram', resource_disk_threshold: 'al-disk' };
+  SECTIONS.benachrichtigungen = {
+    async load() {
+      const [r, hooks] = await Promise.all([get('/api/v1/settings/alerts'), get('/api/v1/webhooks')]);
+      renderHookCounts((hooks.ok && hooks.webhooks) || []);
+      if (!r.ok) return;
+      const d = r.data;
+      const note = $('st-al-smtp');
+      clear(note);
+      if (d.smtp && d.smtp.configured) note.appendChild(document.createTextNode(t('st.notify.smtp_ok', { host: d.smtp.host })));
+      else {
+        note.appendChild(document.createTextNode(t('st.notify.smtp_missing') + ' '));
+        note.appendChild(el('a', { href: '#email', class: 'st-link', text: t('st.nav.email') }));
+      }
+      note.classList.toggle('st-note-warn', !(d.smtp && d.smtp.configured));
+      fill('benachrichtigungen', {
+        'al-email': d.email || '', 'al-events': d.events || [], 'al-backup': d.backup_reminder_days,
+        'al-cpu': d.resource_cpu_threshold, 'al-ram': d.resource_ram_threshold, 'al-disk': d.resource_disk_threshold,
+      });
+    },
+    validate(v, d) { return d.includes('al-email') && !U.recipientsOk(v['al-email']) ? { 'al-email': t('error.settings.recipient_invalid') } : {}; },
+    groups: [{
+      fields: Object.values(ALERT_MAP), map: Object.assign({ email_events: 'al-events' }, ALERT_MAP),
+      save: (v, d) => api.put('/api/v1/settings/alerts', U.pickDirty(ALERT_MAP, v, d, (val, f) => (f === 'al-email' ? String(val).trim() : val))),
+    }],
+  };
+
+  // ── Webhooks ──
+  const whList = $('st-wh-list');
+  let whItems = [];
+  let whEditing = null;
+  function groupNames(ids) { return ids.map((g) => t('st.egroup.' + g)).join(', '); }
+  function hookSummary(h) {
+    const s = U.webhookSummary(CATALOGUE, h.events);
+    if (s.all) return t('st.wh.all_events');
+    if (!s.rows) return t('st.wh.custom_events', { list: String(h.events) });
+    return groupNames(s.groups) + ' · ' + tp('st.wh.n_events', s.rows);
+  }
+  function hookRow(h) {
+    let host = '';
+    try { host = new URL(h.url).host; } catch (_) { host = h.url; }
+    const test = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.test') });
+    test.addEventListener('click', async () => {
+      busy(test, true);
+      const r = await post('/api/v1/webhooks/' + h.id + '/test');
+      busy(test, false);
+      if (r.ok) toast(t('settings.webhook_test_ok', { status: r.status }));
+      else toast(t('settings.webhook_test_failed', { error: errText(r) }), 'error');
+    });
+    const edit = el('button', { type: 'button', class: 'st-btn st-btn-sm', 'aria-label': t('st.wh.edit_label', { name: h.description || host }), text: t('st.edit') });
+    edit.addEventListener('click', () => openHook(h));
+    return el('li', { class: 'st-li', 'data-webhook-id': String(h.id) }, [
+      el('div', { class: 'st-li-main' }, [
+        el('div', { class: 'st-li-title', text: h.description || host }),
+        el('div', { class: 'st-li-sub st-mono st-wrap', text: h.url }),
+        el('div', { class: 'st-li-sub', 'data-events': h.events, text: hookSummary(h) }),
+      ]),
+      pill(h.enabled ? 'good' : 'off', t(h.enabled ? 'st.wh.active' : 'st.wh.paused')),
+      el('div', { class: 'st-li-actions' }, [test, edit]),
+    ]);
+  }
+  SECTIONS.webhooks = {
+    async load() {
+      const r = await get('/api/v1/webhooks');
+      whItems = (r.ok && r.webhooks) || [];
+      clear(whList);
+      if (!r.ok) { whList.appendChild(empty(errText(r))); return; }
+      if (!whItems.length) whList.appendChild(empty(t('settings.webhooks_empty')));
+      whItems.forEach((h) => whList.appendChild(hookRow(h)));
+    },
+  };
+  // Dialog
+  const whGroups = $('st-wh-groups');
+  const whBoxes = {};
+  (function buildHookEvents() {
+    CATALOGUE.forEach((g) => {
+      const box = el('fieldset', { class: 'st-wh-group' }, [el('legend', { class: 'st-wh-legend', text: t('st.egroup.' + g.id) })]);
+      g.events.forEach((ev) => {
+        const cb = el('input', { type: 'checkbox', value: ev.id });
+        whBoxes[ev.id] = cb;
+        box.appendChild(el('label', { class: 'st-check' }, [cb, el('span', { text: t('st.event.' + ev.id) })]));
+      });
+      whGroups.appendChild(box);
+    });
+  })();
+  function syncHookScope() {
+    const pick = $('st-wh-pick').checked;
+    whGroups.hidden = !pick;
+  }
+  $('st-wh-all').addEventListener('change', syncHookScope);
+  $('st-wh-pick').addEventListener('change', syncHookScope);
+  function openHook(h) {
+    whEditing = h || null;
+    const title = $('st-wh-title');
+    title.textContent = h ? title.dataset.edit : title.dataset.add;
+    ['st-wh-url-err', 'st-wh-events-err', 'st-wh-err'].forEach((x) => { $(x).hidden = true; $(x).textContent = ''; });
+    $('st-wh-url').value = h ? h.url : '';
+    // Without the licence an existing webhook keeps its target (a new URL is a new webhook).
+    $('st-wh-url').disabled = !!h && !FEATURES.webhooks;
+    $('st-wh-desc').value = h ? (h.description || '') : '';
+    $('st-wh-enabled').checked = h ? !!h.enabled : true;
+    const all = !h || String(h.events).trim() === '*';
+    $('st-wh-all').checked = all;
+    $('st-wh-pick').checked = !all;
+    const rows = new Set(all ? [] : U.eventRows(CATALOGUE, h.events));
+    Object.keys(whBoxes).forEach((id) => { whBoxes[id].checked = rows.has(id); });
+    syncHookScope();
+    $('st-wh-delete').hidden = !h;
+    window.openModal('st-wh-modal');
+    $(h && !FEATURES.webhooks ? 'st-wh-desc' : 'st-wh-url').focus();
+  }
+  $('st-wh-add').addEventListener('click', () => openHook(null));
+  $('st-wh-form').addEventListener('submit', (e) => { e.preventDefault(); saveHook(); });
+  $('st-wh-save').addEventListener('click', saveHook);
+  async function saveHook() {
+    const urlErr = $('st-wh-url-err');
+    const evErr = $('st-wh-events-err');
+    const err = $('st-wh-err');
+    [urlErr, evErr, err].forEach((x) => { x.hidden = true; });
+    const url = $('st-wh-url').value.trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) { urlErr.textContent = t('error.webhooks.url_invalid'); urlErr.hidden = false; $('st-wh-url').focus(); return; }
+    let events = '*';
+    if ($('st-wh-pick').checked) {
+      const ids = Object.keys(whBoxes).filter((id) => whBoxes[id].checked);
+      if (!ids.length) { evErr.textContent = t('st.wh.events_required'); evErr.hidden = false; return; }
+      events = U.typesOfRows(CATALOGUE, ids);
+    }
+    const body = { url, description: $('st-wh-desc').value.trim(), events, enabled: $('st-wh-enabled').checked };
+    if (whEditing && $('st-wh-url').disabled) delete body.url;
+    const btn = $('st-wh-save');
+    busy(btn, true);
+    const r = whEditing ? await put('/api/v1/webhooks/' + whEditing.id, body) : await post('/api/v1/webhooks', body);
+    busy(btn, false);
+    if (r.ok) { window.closeModal('st-wh-modal'); toast(t('st.wh.saved')); SECTIONS.webhooks.load(); return; }
+    err.textContent = errText(r);
+    err.hidden = false;
+  }
+  $('st-wh-delete').addEventListener('click', async () => {
+    if (!whEditing) return;
+    const name = whEditing.description || whEditing.url;
+    if (!(await D.confirm({ title: t('st.wh.delete_title'), message: t('st.wh.delete_msg', { name }), okLabel: t('common.delete'), danger: true }))) return;
+    const r = await del('/api/v1/webhooks/' + whEditing.id);
+    if (r.ok) { window.closeModal('st-wh-modal'); toast(t('st.wh.deleted')); SECTIONS.webhooks.load(); } else { $('st-wh-err').textContent = errText(r); $('st-wh-err').hidden = false; }
+  });
+
+  // ── Monitoring ──
+  SECTIONS.monitoring = {
+    async load() {
+      const [m, gw, me] = await Promise.all([get('/api/v1/settings/monitoring'), get('/api/v1/settings/gateway-failover'), get('/api/v1/settings/metrics')]);
+      const vals = {};
+      if (m.ok) vals['mon-interval'] = m.data.interval;
+      if (gw.ok) vals['gw-down'] = gw.data.gateway_down_threshold_s;
+      if (me.ok) vals.prom = !!me.data.enabled;
+      fill('monitoring', vals);
+    },
+    groups: [
+      { fields: ['mon-interval'], map: { interval: 'mon-interval' }, errorField: 'mon-interval', save: (v) => api.put('/api/v1/settings/monitoring', { interval: v['mon-interval'] }) },
+      { fields: ['gw-down'], map: { gateway_down_threshold_s: 'gw-down' }, errorField: 'gw-down', save: (v) => api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: int(v['gw-down']) }) },
+      { fields: ['prom'], errorField: 'prom', save: (v) => api.put('/api/v1/settings/metrics', { enabled: v.prom }) },
+    ],
+  };
+
+  // ── Pi-hole ──
+  if (sectionEl('pihole')) {
+    let phInstances = [];
+    let phEditing = -1;
+    const phSaved = {};
+    const phList = $('st-ph-list');
+    const phPayload = (vals, instances) => ({
+      enabled: vals['ph-on'], manage_dns_chain: vals['ph-chain'], sync_interval_sec: int(vals['ph-sync']), top_clients_count: int(vals['ph-top']),
+      instances: instances.map((i) => {
+        const out = { id: i.id, label: i.label || '', url: i.url, dns_ip: i.dns_ip || '', dns_port: int(i.dns_port) || 53, verify_tls: i.verify_tls !== false, password_set: !!i.password_set };
+        if (i.app_password) out.app_password = i.app_password;
+        return out;
+      }),
+    });
+    const renderPh = () => {
+      clear(phList);
+      if (!phInstances.length) { phList.appendChild(empty(t('pihole.cfg.no_instances'))); return; }
+      phInstances.forEach((inst, idx) => {
+        const test = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('pihole.cfg.test_connection') });
+        test.addEventListener('click', async () => {
+          busy(test, true);
+          const r = await post('/api/v1/settings/pihole/test/' + encodeURIComponent(inst.id));
+          busy(test, false);
+          toast(phTestText(r, inst.dns_port), r.ok && r.data && r.data.connected ? 'success' : 'error');
+        });
+        const edit = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.edit'), 'aria-label': t('st.ph.edit_label', { name: inst.label || inst.url }) });
+        edit.addEventListener('click', () => openPh(idx));
+        const detail = [inst.url];
+        if (inst.dns_ip) detail.push(t('st.ph.dns', { ip: inst.dns_ip, port: inst.dns_port || 53 }));
+        detail.push(t(inst.verify_tls !== false ? 'st.ph.tls_on' : 'st.ph.tls_off'));
+        phList.appendChild(el('li', { class: 'st-li' }, [
+          el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title', text: inst.label || inst.url }), el('div', { class: 'st-li-sub st-mono', text: detail.join(' · ') })]),
+          el('div', { class: 'st-li-actions' }, [test, edit]),
+        ]));
+      });
+    };
+    const phTestText = (r, port) => {
+      if (!(r.ok && r.data && r.data.connected)) return errText(r.ok ? { error: t('pihole.cfg.test_failed') } : r);
+      let msg = t('st.ph.test_ok', { version: r.data.version || '?' });
+      if (r.data.dns) {
+        if (!r.data.dns.reachable) msg += ' · ' + t('st.ph.dns_unreachable', { port: port || 53 });
+        else {
+          msg += ' · ' + t('st.ph.dns_ok');
+          if (r.data.dns.blocking === true) msg += ' · ' + t('st.ph.blocking_on');
+          else if (r.data.dns.blocking === false) msg += ' · ' + t('st.ph.blocking_off');
+        }
+      }
+      return msg;
+    };
+    const openPh = (idx) => {
+      phEditing = idx;
+      const inst = idx >= 0 ? phInstances[idx] : null;
+      const title = $('st-ph-title');
+      title.textContent = inst ? title.dataset.edit : title.dataset.add;
+      $('st-ph-label').value = inst ? inst.label || '' : '';
+      $('st-ph-url').value = inst ? inst.url || '' : '';
+      $('st-ph-dns').value = inst ? inst.dns_ip || '' : '';
+      $('st-ph-dnsport').value = inst ? inst.dns_port || 53 : 53;
+      $('st-ph-pw').value = '';
+      $('st-ph-pw-hint').hidden = !(inst && inst.password_set);
+      $('st-ph-tls').checked = inst ? inst.verify_tls !== false : true;
+      $('st-ph-delete').hidden = !inst;
+      $('st-ph-url-err').hidden = true;
+      $('st-ph-testmsg').hidden = true;
+      window.openModal('st-ph-modal');
+      $('st-ph-label').focus();
+    };
+    const phForm = () => ({
+      label: $('st-ph-label').value.trim(), url: $('st-ph-url').value.trim(), dns_ip: $('st-ph-dns').value.trim(),
+      dns_port: int($('st-ph-dnsport').value) || 53, app_password: $('st-ph-pw').value, verify_tls: $('st-ph-tls').checked,
+    });
+    $('st-ph-url').addEventListener('blur', () => {
+      const dns = $('st-ph-dns');
+      if (dns.value.trim()) return;
+      try { dns.value = new URL($('st-ph-url').value.trim()).hostname; } catch (_) { /* still typing */ }
+    });
+    const storeInstances = async (instances) => {
+      // Saved values of the other fields: unsaved edits stay in the save bar.
+      const r = await put('/api/v1/settings/pihole', phPayload(Object.assign({}, phSaved, baseline.pihole || {}), instances));
+      if (r.ok) { const fresh = await get('/api/v1/settings/pihole'); phInstances = ((fresh.ok && fresh.data.instances) || instances).slice(); renderPh(); }
+      return r;
+    };
+    $('st-ph-add').addEventListener('click', () => openPh(-1));
+    $('st-ph-form').addEventListener('submit', (e) => { e.preventDefault(); $('st-ph-save').click(); });
+    $('st-ph-save').addEventListener('click', async (e) => {
+      const f = phForm();
+      if (!/^https?:\/\/\S+$/i.test(f.url)) { $('st-ph-url-err').textContent = t('pihole.cfg.url_required'); $('st-ph-url-err').hidden = false; return; }
+      const list = phInstances.map((i) => Object.assign({}, i));
+      if (phEditing >= 0) {
+        const cur = list[phEditing];
+        Object.assign(cur, { label: f.label, url: f.url, dns_ip: f.dns_ip, dns_port: f.dns_port, verify_tls: f.verify_tls });
+        if (f.app_password) { cur.app_password = f.app_password; cur.password_set = true; }
+      } else {
+        const n = { id: Date.now().toString(), label: f.label, url: f.url, dns_ip: f.dns_ip, dns_port: f.dns_port, verify_tls: f.verify_tls, password_set: !!f.app_password };
+        if (f.app_password) n.app_password = f.app_password;
+        list.push(n);
+      }
+      busy(e.currentTarget, true);
+      const r = await storeInstances(list);
+      busy(e.currentTarget, false);
+      if (r.ok) { window.closeModal('st-ph-modal'); toast(t('pihole.cfg.saved')); } else { $('st-ph-testmsg').textContent = errText(r); $('st-ph-testmsg').hidden = false; }
+    });
+    $('st-ph-delete').addEventListener('click', async () => {
+      if (phEditing < 0) return;
+      const inst = phInstances[phEditing];
+      if (!(await D.confirm({ title: t('st.ph.delete_title'), message: t('st.ph.delete_msg', { name: inst.label || inst.url }), okLabel: t('common.delete'), danger: true }))) return;
+      const r = await storeInstances(phInstances.filter((_, i) => i !== phEditing));
+      if (r.ok) window.closeModal('st-ph-modal'); else toast(errText(r), 'error');
+    });
+    $('st-ph-test').addEventListener('click', async (e) => {
+      const f = phForm();
+      const msg = $('st-ph-testmsg');
+      if (!/^https?:\/\/\S+$/i.test(f.url)) { $('st-ph-url-err').textContent = t('pihole.cfg.url_required'); $('st-ph-url-err').hidden = false; return; }
+      busy(e.currentTarget, true);
+      const r = await post('/api/v1/settings/pihole/test', { url: f.url, app_password: f.app_password || null, verify_tls: f.verify_tls, dns_ip: f.dns_ip, dns_port: f.dns_port });
+      busy(e.currentTarget, false);
+      msg.textContent = phTestText(r, f.dns_port);
+      msg.dataset.state = r.ok && r.data && r.data.connected ? 'good' : 'crit';
+      msg.hidden = false;
+    });
+    SECTIONS.pihole = {
+      async load() {
+        const r = await get('/api/v1/settings/pihole');
+        if (!r.ok) return;
+        const c = r.data;
+        phInstances = (c.instances || []).slice();
+        renderPh();
+        Object.assign(phSaved, { 'ph-on': !!c.enabled, 'ph-chain': !!c.manage_dns_chain, 'ph-sync': c.sync_interval_sec || 30, 'ph-top': c.top_clients_count || 1000 });
+        fill('pihole', phSaved);
+      },
+      groups: [{
+        fields: ['ph-on', 'ph-chain', 'ph-sync', 'ph-top'], map: { sync_interval_sec: 'ph-sync', top_clients_count: 'ph-top' },
+        save: (v) => api.put('/api/v1/settings/pihole', phPayload(v, phInstances)),
+      }],
+    };
+  }
+
+  // ── Geo-IP ──
+  SECTIONS.geoip = {
+    async load() {
+      const r = await get('/api/v1/settings/ip2location');
+      const has = !!(r.ok && r.data.has_api_key);
+      $('st-geo-key').placeholder = has ? t('st.secret_set') : '';
+      $('st-geo-clear').hidden = !has;
+      const state = $('st-geo-state');
+      if (!state.dataset.tested) state.textContent = has ? t('st.geo.key_set') : t('st.geo.no_key');
+      fill('geoip', { 'geo-key': '' });
+    },
+    groups: [{ fields: ['geo-key'], errorField: 'geo-key', save: (v) => api.put('/api/v1/settings/ip2location', { api_key: v['geo-key'] }),
+      after: () => SECTIONS.geoip.load() }],
+  };
+  $('st-geo-test').addEventListener('click', async (e) => {
+    const state = $('st-geo-state');
+    busy(e.currentTarget, true);
+    const r = await post('/api/v1/settings/ip2location/test', {});
+    busy(e.currentTarget, false);
+    state.dataset.tested = '1';
+    state.textContent = r.ok && r.data
+      ? t('st.geo.test_ok', { country: r.data.country_name + ' (' + r.data.country_code + ')', ip: r.data.ip })
+      : t('st.geo.test_failed', { error: errText(r) });
+    state.classList.toggle('st-note-warn', !(r.ok && r.data));
+  });
+  $('st-geo-clear').addEventListener('click', async (e) => {
+    if (!(await D.confirm({ title: t('st.geo.clear_title'), message: t('settings.autosave.clear_secret_confirm'), okLabel: t('st.remove'), danger: true }))) return;
+    busy(e.currentTarget, true);
+    const r = await put('/api/v1/settings/ip2location', { api_key: '', clear: true });
+    busy(e.currentTarget, false);
+    if (r.ok) { delete $('st-geo-state').dataset.tested; toast(t('st.geo.cleared')); SECTIONS.geoip.load(); } else toast(errText(r), 'error');
+  });
+
+  // ── Portal ──
+  let portalSaved = { host: '', internal: '' };
+  const PORTAL_MAP = { enabled: 'po-on', autoappear: 'po-auto', trust_owner_mapping: 'po-trust' };
+  const WIDGET_MAP = { device: 'w-device', traffic: 'w-traffic', services: 'w-services', pihole: 'w-pihole', midea: 'w-midea', smarthome: 'w-smarthome', skoda: 'w-skoda' };
+  function renderPortalPreview() {
+    const v = valuesOf('portal');
+    const host = U.portalHost(v['po-domain'], v['po-prefix'], portalSaved.internal);
+    const box = $('st-po-preview');
+    clear(box);
+    box.appendChild(document.createTextNode(t('st.portal.reachable') + ' '));
+    box.appendChild(el('strong', { class: 'st-mono', text: 'https://' + host }));
+    if (host !== portalSaved.host) box.appendChild(document.createTextNode(' · ' + t('settings.portal.switch_warning')));
+    $('st-po-prefix').disabled = !v['po-domain'];
+  }
+  SECTIONS.portal = {
+    async load() {
+      const [p, dm] = await Promise.all([get('/api/v1/settings/portal'), get('/api/v1/settings/domains')]);
+      if (!p.ok) return;
+      const d = p.data;
+      const sel = $('st-po-domain');
+      while (sel.options.length > 1) sel.remove(1);
+      const verified = dm.ok ? (dm.data.domains || []).filter((x) => x.status === 'verified') : [];
+      verified.forEach((x) => sel.appendChild(el('option', { value: x.domain, text: x.domain })));
+      if (d.base_domain && !verified.some((x) => x.domain === d.base_domain)) sel.appendChild(el('option', { value: d.base_domain, text: d.base_domain }));
+      $('st-po-nodomains').hidden = verified.length > 0;
+      portalSaved = { host: d.effectiveHost || '', internal: d.internalHost || '' };
+      const w = d.widgets || {};
+      fill('portal', {
+        'po-on': !!d.enabled, 'po-auto': d.autoappear !== false, 'po-trust': !!d.trustOwnerMapping,
+        'w-device': !!w.device, 'w-traffic': !!w.traffic, 'w-services': !!w.services, 'w-pihole': !!w.pihole,
+        'w-midea': !!w.midea, 'w-smarthome': !!w.smarthome, 'w-skoda': !!w.skoda,
+        'po-domain': d.base_domain || '', 'po-prefix': d.prefix == null ? 'home' : d.prefix,
+      });
+      renderPortalPreview();
+    },
+    onChange: renderPortalPreview,
+    onDiscard: renderPortalPreview,
+    groups: [
+      { fields: Object.values(PORTAL_MAP).concat(Object.values(WIDGET_MAP)),
+        save(v, d) {
+          const body = U.pickDirty(PORTAL_MAP, v, d);
+          const widgets = U.pickDirty(WIDGET_MAP, v, d);
+          if (Object.keys(widgets).length) body.widgets = widgets;
+          return api.put('/api/v1/settings/portal', body);
+        } },
+      { fields: ['po-domain', 'po-prefix'], errorField: 'po-prefix',
+        confirm: (v) => ({ title: t('settings.portal.switch_title'), message: t('st.confirm.portal', { host: 'https://' + U.portalHost(v['po-domain'], v['po-prefix'], portalSaved.internal) }), okLabel: t('st.confirm.switch') }),
+        save: (v) => api.put('/api/v1/settings/portal', { base_domain: v['po-domain'], prefix: v['po-prefix'].trim() }),
+        after: () => SECTIONS.portal.load() },
+    ],
+  };
+
+  // ── Backups ──
+  const BK = '/api/v1/settings/backup';
+  const bk = { auto: null, targets: null, files: [], busy: {}, results: {}, tfiles: {}, candidates: null, pubkey: null, offsite: null };
+  const passEl = $('st-off-pass');
+  const pass2El = $('st-off-pass2');
+  CUSTOM['off-pass'] = {
+    get: () => (passEl.value || pass2El.value ? passEl.value + '\u0000' + pass2El.value : ''),
+    set: (v) => { const s = String(v || '').split('\u0000'); passEl.value = s[0] || ''; pass2El.value = s[1] || ''; renderStrength(); },
+  };
+  function renderStrength() {
+    const r = O.passphraseStrength(passEl.value);
+    const box = $('st-off-strength');
+    const text = $('st-off-strength-text');
+    const mismatch = pass2El.value !== '' && pass2El.value !== passEl.value;
+    box.dataset.level = r.level;
+    box.classList.toggle('st-mismatch', mismatch);
+    if (mismatch) text.textContent = t('offsite.passphrase_mismatch');
+    else if (r.level === 'short') text.textContent = t('offsite.strength_short', { n: r.missing });
+    else if (r.level === 'weak') text.textContent = t('offsite.strength_weak');
+    else if (r.level === 'ok') text.textContent = t('offsite.strength_ok');
+    else if (r.level === 'strong') text.textContent = t('offsite.strength_strong');
+    else text.textContent = bk.offsite && bk.offsite.passphrase_set ? t('offsite.passphrase_set') : t('offsite.passphrase_missing');
+  }
+  [passEl, pass2El].forEach((n) => n.addEventListener('input', () => { renderStrength(); $('st-off-passfield').dispatchEvent(new Event('change', { bubbles: true })); }));
+
+  function bkHero() {
+    const a = bk.auto;
+    const newest = bk.files[0];
+    const last = (a && a.lastRun) || (newest && newest.created) || null;
+    $('st-bk-last').textContent = last ? (O.fmtAgo(last, lang) || O.fmtDateTime(last, lang)) : t('st.bk.never');
+    $('st-bk-last-sub').textContent = newest ? O.fmtDateTime(newest.created, lang) + ' · ' + O.fmtBytes(newest.size) : '';
+    const next = a ? U.nextBackupAt(a.lastRun, a.schedule, a.enabled, Date.now()) : null;
+    $('st-bk-next').textContent = next ? O.fmtDateTime(new Date(next).toISOString(), lang) : t('st.bk.auto_off');
+    $('st-bk-next-sub').textContent = a && a.enabled ? t('autobackup.schedule_' + a.schedule) : '';
+    const ts = bk.targets || [];
+    const enabled = ts.filter((x) => x.enabled);
+    const failing = enabled.filter((x) => x.last_status === 'failed' || x.last_verify_status === 'failed');
+    $('st-bk-off').textContent = enabled.length ? t('st.bk.off_ok', { ok: enabled.length - failing.length, n: enabled.length }) : t('st.bk.off_none');
+    $('st-bk-off-sub').textContent = failing.length ? t('st.bk.off_failing', { names: failing.map((x) => x.name).join(', ') }) : '';
+    $('st-bk-off-stat').dataset.state = failing.length ? 'crit' : enabled.length ? 'good' : '';
+    setDot('backup', failing.length > 0);
+  }
+  async function loadTargets() {
+    const r = await get(BK + '/targets');
+    if (r.ok) bk.targets = r.targets || [];
+    renderTargets(r.ok ? null : errText(r));
+    bkHero();
+  }
+  function targetResult(res) {
+    if (!res) return null;
+    return el('div', { class: 'st-result', 'data-state': res.ok ? 'good' : 'crit', role: 'status' }, [
+      el('span', { text: res.text }),
+      res.detail ? el('code', { class: 'st-code', text: res.detail }) : null,
+      res.lines && res.lines.length ? el('div', { class: 'st-li-sub', text: res.lines.join(' · ') }) : null,
+      res.warnings && res.warnings.length ? el('ul', { class: 'st-warnlist' }, res.warnings.map((w) => el('li', { text: w }))) : null,
+      res.note ? el('div', { class: 'st-li-sub', text: res.note }) : null,
+    ]);
+  }
+  function targetFiles(tg) {
+    const f = bk.tfiles[tg.id];
+    if (!f) return null;
+    let body;
+    if (f.error) body = el('div', { class: 'st-result', 'data-state': 'crit', text: f.error });
+    else if (!f.files.length) body = el('p', { class: 'st-empty', text: t('offsite.files_empty') });
+    else {
+      body = el('ul', { class: 'st-sublist' }, f.files.map((x) => el('li', {}, [
+        el('span', { class: 'st-mono st-grow', text: x.name }), el('span', { class: 'st-li-sub', text: O.fmtBytes(x.size) + (x.modified ? ' · ' + O.fmtDateTime(x.modified, lang) : '') }),
+      ])));
+    }
+    return el('div', { class: 'st-tfiles', id: 'st-tfiles-' + tg.id }, [el('div', { class: 'st-sub-title', text: t('offsite.files_title') }), body, el('p', { class: 'st-hint', text: t('offsite.files_note') })]);
+  }
+  function tbtn(tg, name, label, fn, extra) {
+    const b = el('button', Object.assign({ type: 'button', class: 'st-btn st-btn-sm' + (name === 'delete' ? ' st-btn-danger' : ''), 'data-action': name, text: label, disabled: !FEATURES.scheduled_backups || !!bk.busy[tg.id] }, extra || {}));
+    if (bk.busy[tg.id] === name) b.classList.add('is-loading');
+    b.addEventListener('click', () => fn(tg));
+    return b;
+  }
+  function renderTargets(error) {
+    const box = $('st-off-targets');
+    clear(box);
+    if (error && !bk.targets) { box.appendChild(empty(error)); return; }
+    const list = bk.targets || [];
+    if (!list.length) { box.appendChild(empty(t('offsite.targets_empty'))); return; }
+    list.forEach((tg) => {
+      const st = O.targetStatus(tg, bk.busy[tg.id] === 'run');
+      const state = st.cls === 'tag-green' ? 'good' : st.cls === 'tag-red' ? 'crit' : st.cls === 'tag-blue' ? 'info' : 'off';
+      const meta = [O.targetSummary(tg), t('offsite.keep', { n: tg.keep }),
+        tg.last_run_at ? t('offsite.last_run', { x: O.fmtAgo(tg.last_run_at, lang) }) : t('offsite.never_run'),
+        tg.last_verify_at ? t('offsite.verify_last', { x: O.fmtAgo(tg.last_verify_at, lang) }) : t('offsite.verify_never')];
+      box.appendChild(el('li', { class: 'st-li st-li-target' + (tg.enabled ? '' : ' st-paused'), 'data-target-id': String(tg.id), 'data-type': tg.type }, [
+        el('span', { class: 'st-typebadge', text: O.TYPE_LABELS[tg.type] || tg.type }),
+        el('div', { class: 'st-li-main' }, [
+          el('div', { class: 'st-li-title', text: tg.name }),
+          el('div', { class: 'st-li-sub', text: meta.join(' · ') }),
+          tg.config_error ? el('div', { class: 'st-li-sub st-crit', text: t('offsite.config_error') }) : null,
+          tg.last_status === 'failed' && tg.last_error ? el('code', { class: 'st-code st-crit', text: tg.last_error }) : null,
+        ]),
+        el('div', { class: 'st-li-pills' }, [tg.enabled ? null : pill('off', t('offsite.paused')), pill(state, t(st.key))]),
+        el('div', { class: 'st-li-actions st-li-actions-wrap' }, [
+          tbtn(tg, 'test', t('offsite.act_test'), testTarget),
+          tbtn(tg, 'run', t('offsite.act_run'), runTarget),
+          tbtn(tg, 'verify', t('st.bk.act_verify'), verifyTarget),
+          tbtn(tg, 'files', t('offsite.act_files'), toggleFiles, { 'aria-expanded': bk.tfiles[tg.id] ? 'true' : 'false', 'aria-controls': 'st-tfiles-' + tg.id }),
+          tbtn(tg, 'edit', t('st.edit'), openTarget),
+          tbtn(tg, 'delete', t('st.delete_dots'), deleteTarget),
+        ]),
+        targetResult(bk.results[tg.id]),
+        targetFiles(tg),
+      ]));
+    });
+  }
+  async function testTarget(tg) {
+    bk.busy[tg.id] = 'test'; delete bk.results[tg.id]; renderTargets();
+    const r = await post(BK + '/targets/' + tg.id + '/test');
+    bk.results[tg.id] = r.ok ? { ok: true, text: t('offsite.test_ok'), detail: r.detail || '' }
+      : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? t('offsite.test_failed') : O.errorText(r), detail: O.errorDetail(r) };
+    delete bk.busy[tg.id]; renderTargets();
+  }
+  async function runTarget(tg) {
+    bk.busy[tg.id] = 'run'; delete bk.results[tg.id]; renderTargets();
+    const r = await post(BK + '/targets/' + tg.id + '/run');
+    if (r.ok) {
+      bk.results[tg.id] = { ok: true, text: t('offsite.run_ok', { file: r.file || '' }) + (r.deleted ? ' · ' + t('offsite.run_deleted', { n: r.deleted }) : '') };
+      delete bk.tfiles[tg.id];
+    } else {
+      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r) };
+      if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') passEl.focus();
+    }
+    delete bk.busy[tg.id];
+    await loadTargets();
+  }
+  async function verifyTarget(tg) {
+    bk.busy[tg.id] = 'verify'; bk.results[tg.id] = { ok: true, text: t('offsite.verify_running') }; renderTargets();
+    const r = await post(BK + '/targets/' + tg.id + '/verify');
+    bk.results[tg.id] = r.ok
+      ? { ok: true, text: t('offsite.verify_ok', { file: r.file || '' }), lines: O.verifyLines(r, lang), warnings: (r.warnings || []).map(O.verifyWarningText).filter(Boolean), note: t('offsite.verify_note') }
+      : { ok: false, text: t('offsite.verify_failed') + ' · ' + O.errorText(r), detail: O.errorDetail(r) };
+    delete bk.busy[tg.id];
+    await loadTargets();
+  }
+  async function toggleFiles(tg) {
+    if (bk.tfiles[tg.id]) { delete bk.tfiles[tg.id]; renderTargets(); return; }
+    bk.busy[tg.id] = 'files'; renderTargets();
+    const r = await get(BK + '/targets/' + tg.id + '/files');
+    bk.tfiles[tg.id] = r.ok ? { files: r.files || [] } : { error: O.errorText(r) };
+    delete bk.busy[tg.id]; renderTargets();
+  }
+  async function deleteTarget(tg) {
+    if (!(await D.confirm({ title: t('offsite.delete_title'), message: t('offsite.delete_msg', { name: tg.name }), detail: t('offsite.delete_detail'), okLabel: t('common.delete'), danger: true }))) return;
+    bk.busy[tg.id] = 'delete'; renderTargets();
+    const r = await del(BK + '/targets/' + tg.id);
+    delete bk.busy[tg.id];
+    if (r.ok) { toast(t('offsite.deleted_target')); delete bk.results[tg.id]; } else toast(O.errorText(r), 'error');
+    loadTargets();
+  }
+
+  // Target dialog
+  let otEditing = null;
+  let otType = 'sftp';
+  const otModal = $('st-ot-modal');
+  const otErr = $('st-ot-err');
+  const OT_INPUTS = { host: 'st-ot-host', port: 'st-ot-port', username: 'st-ot-user', path: 'st-ot-path', share: 'st-ot-share', domain: 'st-ot-domain',
+    endpoint: 'st-ot-endpoint', region: 'st-ot-region', bucket: 'st-ot-bucket', prefix: 'st-ot-prefix', access_key_id: 'st-ot-akid',
+    secret_access_key: 'st-ot-secret', url: 'st-ot-url', password: 'st-ot-pw' };
+  function otShowType(type) {
+    otType = type;
+    otModal.querySelectorAll('.st-typecard').forEach((c) => c.setAttribute('aria-pressed', c.dataset.type === type ? 'true' : 'false'));
+    otModal.querySelectorAll('[data-for]').forEach((n) => { n.hidden = n.dataset.for.split(' ').indexOf(type) < 0; });
+    $('st-ot-port').placeholder = O.DEFAULT_PORTS[type] ? String(O.DEFAULT_PORTS[type]) : '';
+    const cfg = (otEditing && otEditing.config) || {};
+    const hasPw = !!(otEditing && (type === 'smb' || type === 'webdav') && cfg.has_password);
+    $('st-ot-clearpw-row').hidden = !hasPw;
+    $('st-ot-pw-hint').hidden = !hasPw;
+    $('st-ot-secret-hint').hidden = !(otEditing && type === 's3' && cfg.has_secret_access_key);
     if (type === 'sftp') loadPubkey();
     if (type === 'sftp' || type === 'smb') fillCandidates(type);
   }
-  function openDialog(t) {
-    editing = t || null;
-    clearFormErrors();
-    byId('offsite-target-form').reset();
-    var title = byId('offsite-target-title');
-    title.textContent = editing ? title.dataset.edit : title.dataset.add;
-    typeEl.value = editing ? editing.type : 'sftp';
-    typeEl.disabled = !!editing;
-    byId('ot-id').value = editing ? String(editing.id) : '';
-    if (editing) {
-      var c = editing.config || {};
-      byId('ot-name').value = editing.name || '';
-      byId('ot-keep').value = editing.keep || 14;
-      byId('ot-enabled').checked = !!editing.enabled;
-      ['host', 'port', 'username', 'path', 'share', 'domain', 'endpoint', 'region', 'bucket', 'prefix', 'url'].forEach(function (k) {
-        if (c[k] != null && byId(FIELD_INPUTS[k])) byId(FIELD_INPUTS[k]).value = String(c[k]);
+  otModal.querySelectorAll('.st-typecard').forEach((c) => c.addEventListener('click', () => { if (!otEditing) { otErr.hidden = true; otShowType(c.dataset.type); } }));
+  function openTarget(tg) {
+    otEditing = tg || null;
+    otErr.hidden = true;
+    $('st-ot-form').reset();
+    otModal.querySelectorAll('[aria-invalid]').forEach((n) => n.removeAttribute('aria-invalid'));
+    const title = $('st-ot-title');
+    title.textContent = otEditing ? title.dataset.edit : title.dataset.add;
+    otModal.querySelectorAll('.st-typecard').forEach((c) => { c.disabled = !!otEditing && c.dataset.type !== otEditing.type; });
+    $('st-ot-type-hint').hidden = !!otEditing;
+    if (otEditing) {
+      const c = otEditing.config || {};
+      $('st-ot-name').value = otEditing.name || '';
+      $('st-ot-keep').value = otEditing.keep || 14;
+      $('st-ot-enabled').checked = !!otEditing.enabled;
+      ['host', 'port', 'username', 'path', 'share', 'domain', 'endpoint', 'region', 'bucket', 'prefix', 'url', 'access_key_id'].forEach((k) => {
+        if (c[k] != null && OT_INPUTS[k]) $(OT_INPUTS[k]).value = String(c[k]);
       });
-      if (c.access_key_id != null) byId('ot-akid').value = c.access_key_id;
-      byId('ot-path-style').checked = !!c.path_style;
+      $('st-ot-pathstyle').checked = !!c.path_style;
     }
-    byId('ot-lan').open = false;
-    byId('ot-l4').value = '';
-    byId('ot-l4-note').hidden = true;
-    showType(typeEl.value);
-    window.openModal('offsite-target-modal');
-    byId('ot-name').focus();
+    $('st-ot-l4').value = '';
+    $('st-ot-l4-note').hidden = true;
+    otShowType(otEditing ? otEditing.type : 'sftp');
+    window.openModal('st-ot-modal');
+    (otEditing ? $('st-ot-name') : otModal.querySelector('.st-typecard[aria-pressed="true"]')).focus();
   }
-  typeEl.addEventListener('change', function () { clearFormErrors(); showType(typeEl.value); });
-  byId('offsite-add').addEventListener('click', function () { openDialog(null); });
-  byId('offsite-target-form').addEventListener('submit', function (e) { e.preventDefault(); saveDialog(); });
-  byId('offsite-target-save').addEventListener('click', saveDialog);
-
-  function saveDialog() {
-    clearFormErrors();
-    var type = typeEl.value;
-    var values = {
-      name: val('ot-name'), keep: val('ot-keep'), enabled: byId('ot-enabled').checked,
-      host: val('ot-host'), port: val('ot-port'), username: val('ot-username'), path: val('ot-path'), share: val('ot-share'),
-      domain: val('ot-domain'), endpoint: val('ot-endpoint'), region: val('ot-region'), bucket: val('ot-bucket'),
-      prefix: val('ot-prefix'), access_key_id: val('ot-akid'), secret_access_key: val('ot-secret'), url: val('ot-url'),
-      password: val('ot-password'), clear_password: byId('ot-clear-password').checked, path_style: byId('ot-path-style').checked,
+  $('st-off-add').addEventListener('click', () => openTarget(null));
+  $('st-ot-form').addEventListener('submit', (e) => { e.preventDefault(); saveTarget(); });
+  $('st-ot-save').addEventListener('click', saveTarget);
+  function otError(text, inputId) {
+    otErr.textContent = text;
+    otErr.hidden = false;
+    const input = inputId && $(inputId);
+    if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+  }
+  async function saveTarget() {
+    otErr.hidden = true;
+    otModal.querySelectorAll('[aria-invalid]').forEach((n) => n.removeAttribute('aria-invalid'));
+    const val = (id) => $(id).value;
+    const values = {
+      name: val('st-ot-name'), keep: val('st-ot-keep'), enabled: $('st-ot-enabled').checked,
+      host: val('st-ot-host'), port: val('st-ot-port'), username: val('st-ot-user'), path: val('st-ot-path'), share: val('st-ot-share'),
+      domain: val('st-ot-domain'), endpoint: val('st-ot-endpoint'), region: val('st-ot-region'), bucket: val('st-ot-bucket'),
+      prefix: val('st-ot-prefix'), access_key_id: val('st-ot-akid'), secret_access_key: val('st-ot-secret'), url: val('st-ot-url'),
+      password: val('st-ot-pw'), clear_password: $('st-ot-clearpw').checked, path_style: $('st-ot-pathstyle').checked,
     };
-    if (!values.name.trim()) { formError(O.errorText({ code: 'INVALID_NAME' }), 'ot-name'); return; }
-    var body = O.targetPayload(type, values, !!editing);
-    var btn = byId('offsite-target-save');
-    var wasNew = !editing;
-    window.btnLoading(btn);
-    var req = editing ? window.api.put(BASE + '/targets/' + editing.id, body) : window.api.post(BASE + '/targets', body);
-    call(req).then(function (r) {
-      if (r.ok && r.target) {
-        window.closeModal('offsite-target-modal');
-        toast(T('offsite.saved_target', 'Target saved'));
-        delete state.results[r.target.id];
-        loadTargets().then(function () {
-          // A new target is tested right away (for SFTP this also shows whether the key is in place).
-          if (wasNew && licensed) { var t = findTarget(r.target.id); if (t) testTarget(t); }
-        });
-        return;
-      }
-      checkLicense(r);
-      var code = O.errorCode(r);
-      var field = code === 'INVALID_CONFIG' ? O.configField(r) : null;
-      formError(O.errorText(r), field ? FIELD_INPUTS[field] : code === 'INVALID_NAME' ? 'ot-name' : code === 'INVALID_KEEP' ? 'ot-keep' : null);
-    }).then(function () { window.btnReset(btn); });
-  }
-
-  // LAN targets: internal L4 routes (TCP, no TLS) as host/port picker.
-  var l4 = byId('ot-l4');
-  function fillCandidates(type) {
-    var render = function () {
-      var list = O.sortCandidates(state.candidates || [], type);
-      var first = l4.options[0];
-      l4.replaceChildren(first);
-      list.forEach(function (c) {
-        var flags = [];
-        if (!c.internal) flags.push(T('offsite.l4_public', 'public'));
-        if (!c.enabled) flags.push(T('offsite.l4_off', 'disabled'));
-        var o = document.createElement('option');
-        o.value = String(c.route_id);
-        var lbl = /^L4 :\d+$/.test(String(c.label)) ? c.label : c.label + ' · :' + c.listen_port;
-        o.textContent = lbl + ' → ' + c.target + (flags.length ? ' (' + flags.join(', ') + ')' : '');
-        l4.appendChild(o);
-      });
-      l4.disabled = !list.length;
-      if (!list.length) showL4Note(T('offsite.l4_none', 'No suitable L4 route (TCP, no TLS, single port).'), false);
-    };
-    if (state.candidates) { render(); return; }
-    call(window.api.get(BASE + '/targets/l4-candidates')).then(function (r) {
-      state.candidates = r.ok ? (r.routes || []) : [];
-      render();
-    });
-  }
-  function showL4Note(text, warn) {
-    var n = byId('ot-l4-note');
-    n.textContent = text;
-    n.classList.toggle('op-note-warn', !!warn);
-    n.hidden = !text;
-  }
-  l4.addEventListener('change', function () {
-    var id = Number(l4.value);
-    var c = (state.candidates || []).filter(function (x) { return x.route_id === id; })[0];
-    if (!c) { showL4Note('', false); return; }
-    byId('ot-host').value = c.connect_host;
-    byId('ot-port').value = String(c.connect_port);
-    if (!byId('ot-name').value.trim()) byId('ot-name').value = String(c.label).slice(0, 64);
-    var note = T('offsite.l4_filled', 'Host and port set: {host}:{port}', { host: c.connect_host, port: c.connect_port });
-    if (!c.internal) note += ' ' + T('offsite.l4_public_warn', 'This route is reachable from the internet. For a NAS use an internal route instead.');
-    if (!c.enabled) note += ' ' + T('offsite.l4_off_warn', 'The route is disabled — enable it before testing.');
-    showL4Note(note, !c.internal || !c.enabled);
-  });
-
-  // SFTP: GateControl's own ed25519 key (generated on first request).
-  var pubkeyEl = byId('ot-pubkey');
-  function loadPubkey() {
-    if (state.pubkey) { pubkeyEl.value = state.pubkey; return; }
-    if (!licensed) { pubkeyEl.value = ''; pubkeyEl.placeholder = T('offsite.license', 'Off-site backups are part of the “Scheduled backups” licence.'); return; }
-    call(window.api.get(BASE + '/ssh-key')).then(function (r) {
-      if (r.ok && r.public_key) { state.pubkey = r.public_key; pubkeyEl.value = r.public_key; }
-      else { checkLicense(r); pubkeyEl.value = ''; pubkeyEl.placeholder = O.errorText(r); }
-    });
-  }
-  byId('ot-key-copy').addEventListener('click', function () {
-    if (!pubkeyEl.value) return;
-    var done = function () { toast(T('offsite.key_copied', 'Key copied')); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(pubkeyEl.value).then(done, function () { pubkeyEl.select(); try { if (document.execCommand('copy')) done(); } catch (_) { /* manual copy */ } });
-    } else { pubkeyEl.select(); try { if (document.execCommand('copy')) done(); } catch (_) { /* manual copy */ } }
-  });
-  byId('ot-key-rotate').addEventListener('click', function () {
-    if (!licensed) return;
-    var btn = this;
-    O.confirmDialog(document, {
-      title: T('offsite.key_rotate_title', 'Renew the SSH key?'),
-      message: T('offsite.key_rotate_msg', 'Afterwards add the new public key to every SFTP target; the old one stops working.'),
-      okLabel: T('offsite.key_rotate_ok', 'Renew'),
-      danger: true,
-    }).then(function (ok) {
-      if (!ok) return;
-      window.btnLoading(btn);
-      call(window.api.post(BASE + '/ssh-key/rotate', {})).then(function (r) {
-        if (r.ok && r.public_key) { state.pubkey = r.public_key; pubkeyEl.value = r.public_key; toast(T('offsite.key_rotated', 'New key generated')); }
-        else { checkLicense(r); toast(O.errorText(r), 'error'); }
-      }).then(function () { window.btnReset(btn); });
-    });
-  });
-
-  // ── Pre-migration snapshots (§4) ─────────────────────────
-  function loadPremig() {
-    var box = byId('premig-list');
-    call(window.api.get(BASE + '/pre-migration')).then(function (r) {
-      if (!r.ok) { box.replaceChildren(el('div', { class: 'op-t-result op-bad', text: O.errorText(r) })); return; }
-      var files = r.files || [];
-      if (!files.length) { box.replaceChildren(el('div', { class: 'op-empty', text: box.dataset.empty || '' })); return; }
-      box.replaceChildren.apply(box, files.map(function (f) {
-        return el('div', { class: 'op-pm-row', 'data-name': f.name }, [
-          el('div', { class: 'op-pm-main' }, [
-            el('div', { class: 'op-pm-ver', text: T('premig.versions', 'Schema {from} → {to}', { from: f.from_version || '?', to: f.to_version || '?' }) }),
-            el('div', { class: 'op-pm-name', text: f.name }),
-          ]),
-          el('div', { class: 'op-pm-meta', text: O.fmtDateTime(f.created_at, lang) + ' · ' + O.fmtBytes(f.size) }),
-          el('a', { class: 'btn btn-ghost btn-sm op-pm-dl', href: '/api/v1/settings/backup/pre-migration/' + encodeURIComponent(f.name), download: f.name, text: box.dataset.download || 'Download' }),
-        ]);
-      }));
-    });
-  }
-
-  // Live status of scheduled uploads (SSE type `backup`, dispatched by events.js as gc:backup).
-  var sseTimer = null;
-  document.addEventListener('gc:backup', function () {
-    clearTimeout(sseTimer);
-    sseTimer = setTimeout(function () { loadTargets({ ifChanged: true }); }, 400);
-  });
-
-  applyLicense();
-  renderStrength();
-  loadSettings();
-  loadTargets();
-  loadPremig();
-})();
-
-// ── Machine Binding Settings ──────────────────────────
-(async function () {
-  var modeSelect = document.getElementById('mb-mode');
-  var statusEl = document.getElementById('machine-binding-status');
-  if (!modeSelect) return;
-
-  try {
-    var res = await api.get('/api/v1/settings/machine-binding');
-    if (res.ok) modeSelect.value = res.data.mode;
-  } catch (err) { console.warn('[settings] loading machine-binding mode failed', err); }
-
-  SettingsAutosave.bind({
-    cluster: 'machine-binding',
-    fields: [modeSelect],
-    statusEl: statusEl,
-    valuesById: function () { return { 'mb-mode': modeSelect.value }; },
-    save: function () { return api.put('/api/v1/settings/machine-binding', { mode: modeSelect.value }); },
-  });
-})();
-
-// ─── Service Management (WireGuard + Caddy) ────────────
-(function () {
-  // ── WG Restart ──
-  var btnRestart = document.getElementById('btn-svc-wg-restart');
-  if (btnRestart) {
-    btnRestart.addEventListener('click', async function () {
-      if (!await D.confirm({ message: DT('settings.svc.wg_restart_confirm'), okLabel: DT('config.restart') })) return;
-      btnLoading(btnRestart);
-      try {
-        var data = await api.post('/api/wg/restart');
-        if (!data.success) D.alert({ message: DT('settings.svc.wg_restart_failed'), danger: true });
-      } catch (err) {
-        D.alert({ message: err.message || DT('common.error'), danger: true });
-      } finally {
-        btnReset(btnRestart);
-      }
-    });
-  }
-
-  // ── WG Stop (with password modal) ──
-  var btnStop = document.getElementById('btn-svc-wg-stop');
-  var modal = document.getElementById('wg-stop-modal');
-  var pwdInput = document.getElementById('wg-stop-password');
-  var errDiv = document.getElementById('wg-stop-error');
-  var btnCancel = document.getElementById('wg-stop-cancel');
-  var btnConfirm = document.getElementById('wg-stop-confirm');
-
-  function openModal() {
-    if (!modal) return;
-    modal.style.display = 'flex';
-    pwdInput.value = '';
-    errDiv.style.display = 'none';
-    setTimeout(function () { pwdInput.focus(); }, 100);
-  }
-
-  function closeModal() {
-    if (!modal) return;
-    modal.style.display = 'none';
-    pwdInput.value = '';
-    errDiv.style.display = 'none';
-  }
-
-  if (btnStop) btnStop.addEventListener('click', openModal);
-  if (btnCancel) btnCancel.addEventListener('click', closeModal);
-
-  if (modal) {
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeModal();
-    });
-  }
-
-  if (pwdInput) {
-    pwdInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') btnConfirm.click();
-    });
-  }
-
-  if (btnConfirm) {
-    btnConfirm.addEventListener('click', async function () {
-      var password = pwdInput.value.trim();
-      if (!password) {
-        errDiv.textContent = GC.t['error.wireguard.password_required'] || 'Password required';
-        errDiv.style.display = 'block';
-        return;
-      }
-      btnLoading(btnConfirm);
-      try {
-        await api.post('/api/wg/stop', { password: password });
-        closeModal();
-      } catch (err) {
-        errDiv.textContent = err.message || 'Error';
-        errDiv.style.display = 'block';
-      } finally {
-        btnReset(btnConfirm);
-      }
-    });
-  }
-
-  // ── Caddy Status ──
-  var caddyStatus = document.getElementById('svc-caddy-status');
-  var caddyInfo = document.getElementById('svc-caddy-info');
-
-  function setCaddyState(color, text) {
-    if (!caddyStatus) return;
-    caddyStatus.textContent = '';
-    var dot = document.createElement('div');
-    if (color === 'green') {
-      dot.className = 'pulse-dot';
-    } else {
-      dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--' + color + ')';
-    }
-    var label = document.createElement('span');
-    label.style.cssText = 'font-size:13px;color:var(--' + color + ');font-weight:600';
-    label.textContent = text;
-    caddyStatus.appendChild(dot);
-    caddyStatus.appendChild(label);
-  }
-
-  async function loadCaddyStatus() {
-    if (!caddyStatus) return;
-    try {
-      var data = await api.get('/api/caddy/status');
-      if (data.running) {
-        setCaddyState('green', GC.t['config.caddy_running'] || 'Caddy running');
-        var parts = [];
-        if (data.httpRoutes) parts.push(data.httpRoutes + ' HTTP');
-        if (data.l4Routes) parts.push(data.l4Routes + ' L4');
-        caddyInfo.textContent = (parts.length ? parts.join(' \u00b7 ') + ' routes \u00b7 ' : '') + 'HTTPS \u00b7 Let\'s Encrypt';
-      } else {
-        setCaddyState('red', GC.t['config.caddy_stopped'] || 'Caddy stopped');
-        caddyInfo.textContent = '';
-      }
-    } catch {
-      setCaddyState('amber', 'Unknown');
-      caddyInfo.textContent = '';
-    }
-  }
-
-  // ── Caddy Reload ──
-  var btnReload = document.getElementById('btn-svc-caddy-reload');
-  if (btnReload) {
-    btnReload.addEventListener('click', async function () {
-      btnLoading(btnReload);
-      try {
-        var data = await api.post('/api/caddy/reload');
-        if (data.success) loadCaddyStatus();
-        else D.alert({ message: DT('settings.svc.caddy_reload_failed'), danger: true });
-      } catch (err) {
-        D.alert({ message: err.message || DT('common.error'), danger: true });
-      } finally {
-        btnReset(btnReload);
-      }
-    });
-  }
-
-  loadCaddyStatus();
-})();
-
-// Split-Tunnel Preset
-(function () {
-  var modeSelect = document.getElementById('st-mode');
-  var networksSection = document.getElementById('st-networks-section');
-  var privateNets = document.getElementById('st-private-nets');
-  var linkLocal = document.getElementById('st-link-local');
-  var lockedCb = document.getElementById('st-locked');
-  var customList = document.getElementById('st-custom-list');
-  if (!modeSelect) return;
-
-  // 10.0.0.0/8 intentionally excluded — the WireGuard VPN subnet (10.8.0.0/24)
-  // lives there. Users who need it can add it as a custom network.
-  var PRIVATE_CIDRS = [
-    { cidr: '172.16.0.0/12', label: 'Private 172.x' },
-    { cidr: '192.168.0.0/16', label: 'Private 192.x' },
-  ];
-  var LINK_LOCAL = { cidr: '169.254.0.0/16', label: 'Link-Local' };
-  var customNets = [];
-
-  modeSelect.addEventListener('change', function () {
-    networksSection.style.display = modeSelect.value === 'off' ? 'none' : '';
-  });
-
-  function renderCustom() {
-    customList.textContent = '';
-    customNets.forEach(function (n, i) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px';
-      var lbl = document.createElement('span');
-      lbl.style.cssText = 'font-size:12px;min-width:100px';
-      lbl.textContent = n.label || '';
-      row.appendChild(lbl);
-      var cidr = document.createElement('code');
-      cidr.style.cssText = 'font-size:12px;color:var(--text-2)';
-      cidr.textContent = n.cidr;
-      row.appendChild(cidr);
-      var del = document.createElement('button');
-      del.className = 'icon-btn';
-      del.style.cssText = 'color:var(--red);margin-left:auto';
-      del.textContent = '\u2715';
-      del.addEventListener('click', function () { customNets.splice(i, 1); renderCustom(); SettingsAutosave.enqueue('split-tunnel', stSave); });
-      row.appendChild(del);
-      customList.appendChild(row);
-    });
-  }
-
-  document.getElementById('st-add-network').addEventListener('click', async function () {
-    var label = await D.prompt({
-      title: DT('settings.split_tunnel_add_title'),
-      label: DT('settings.split_tunnel_label_prompt'),
-      maxLength: 64,
-      okLabel: DT('common.next'),
-      validate: function (v) { return v ? null : DT('settings.split_tunnel_label_required'); },
-    });
-    if (!label) return;
-    var cidr = await D.prompt({
-      title: DT('settings.split_tunnel_add_title'),
-      label: DT('settings.split_tunnel_cidr_prompt'),
-      placeholder: '172.20.0.0/16',
-      maxLength: 18,
-      validate: function (v) {
-        if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(v)) return DT('settings.split_tunnel_cidr_invalid');
-        return null;
-      },
-    });
-    if (!cidr) return;
-    customNets.push({ label: label, cidr: cidr });
-    renderCustom();
-    SettingsAutosave.enqueue('split-tunnel', stSave);
-  });
-
-  async function loadST() {
-    try {
-      var data = await api.get('/api/v1/settings/split-tunnel');
-      if (!data.ok) return;
-      modeSelect.value = data.mode || 'off';
-      networksSection.style.display = modeSelect.value === 'off' ? 'none' : '';
-      lockedCb.checked = !!data.locked;
-      var nets = data.networks || [];
-      var pCidrs = PRIVATE_CIDRS.map(function (p) { return p.cidr; });
-      // The private-nets preset is an all-or-nothing bundle: only tick the box
-      // when BOTH CIDRs are present, otherwise stSave would silently re-add the
-      // missing one. A partially-present private CIDR is kept as a custom entry
-      // so it round-trips faithfully.
-      var hasAllPrivate = pCidrs.every(function (c) { return nets.some(function (n) { return n.cidr === c; }); });
-      var hasLinkLocal = nets.some(function (n) { return n.cidr === LINK_LOCAL.cidr; });
-      privateNets.checked = hasAllPrivate;
-      linkLocal.checked = hasLinkLocal;
-      customNets = nets.filter(function (n) {
-        if (hasAllPrivate && pCidrs.indexOf(n.cidr) >= 0) return false; // consumed by the private bundle
-        if (hasLinkLocal && n.cidr === LINK_LOCAL.cidr) return false;   // consumed by the link-local box
-        return true;
-      });
-      renderCustom();
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('split-tunnel');
-    } catch (err) { console.warn('[settings] loading split-tunnel preset failed', err); }
-  }
-
-  function stSave() {
-    var networks = customNets.slice();
-    if (privateNets && privateNets.checked) networks = PRIVATE_CIDRS.concat(networks);
-    if (linkLocal && linkLocal.checked) networks.push(LINK_LOCAL);
-    return api.put('/api/v1/settings/split-tunnel', { mode: modeSelect.value, networks: networks, locked: lockedCb ? lockedCb.checked : false });
-  }
-
-  SettingsAutosave.bind({
-    cluster: 'split-tunnel',
-    fields: [modeSelect, privateNets, linkLocal, lockedCb].filter(Boolean),
-    statusEl: document.getElementById('st-status'),
-    valuesById: function () {
-      return {
-        'st-mode': modeSelect ? modeSelect.value : 'off',
-        'st-private-nets': privateNets ? privateNets.checked : false,
-        'st-link-local': linkLocal ? linkLocal.checked : false,
-        'st-locked': lockedCb ? lockedCb.checked : false,
-      };
-    },
-    save: stSave,
-  });
-
-  loadST();
-})();
-
-// ─── ACME contact email ───────────────────────────────
-(function () {
-  var el = document.getElementById('acme-email');
-  if (!el) return;
-  var t = (window.GC && window.GC.t) || {};
-  SettingsAutosave.bind({
-    cluster: 'acme-email',
-    fields: [el],
-    statusEl: document.getElementById('acme-email-status'),
-    valuesById: function () { return { 'acme-email': el.value }; },
-    save: function () {
-      return api.put('/api/v1/settings/acme-email', { email: el.value }).then(function (data) {
-        // Der Server speichert auch dann, wenn der Caddy-Push scheitert. Die
-        // Warnung MUSS als ok:false zurückgegeben werden — gäbe man data
-        // unverändert zurück, überschriebe settingsAutosave.js:90 mit flash()
-        // jeden selbst gesetzten Text durch "Gespeichert". Als ok:false greift
-        // showError(), und der Snapshot bleibt alt → das nächste Verlassen des
-        // Feldes wiederholt den Push.
-        // ponytail: Retry ohne Extra-Code; der Wert liegt serverseitig bereits.
-        if (data && data.warning) {
-          return { ok: false, error: t[data.warning] || undefined };
-        }
-        return data;
-      });
-    },
-  });
-})();
-
-// ─── TLS guard: attempts before a host is paused ──────
-// Same autosave pattern as the ACME e-mail above (docs/feature-tls-guard.md,
-// PUT /api/v1/settings/tls). The current value comes from GET /api/v1/tls/status;
-// while the backend is missing (404) the field keeps its default and saving
-// reports "Backend noch nicht verfügbar".
-(function () {
-  var el = document.getElementById('tls-max-attempts');
-  if (!el) return;
-  var TG = window.GCTlsUI;
-  var t = (window.GC && window.GC.t) || {};
-  function valid(v) { var s = String(v == null ? '' : v).trim(); return /^\d{1,2}$/.test(s) && +s >= 0 && +s <= 10; }
-  var ctl = SettingsAutosave.bind({
-    cluster: 'tls-guard',
-    fields: [el],
-    statusEl: document.getElementById('tls-max-attempts-status'),
-    valuesById: function () { return { 'tls-max-attempts': el.value }; },
-    save: function () {
-      if (!valid(el.value)) return Promise.resolve({ ok: false, error: t['settings.tls.max_attempts_invalid'] || undefined });
-      return api.put('/api/v1/settings/tls', { max_attempts: parseInt(el.value, 10) }).catch(function (err) {
-        if (TG && TG.isNotFound(err)) return { ok: false, error: t['settings.tls.backend_missing'] || undefined };
-        throw err;
-      });
-    },
-  });
-  api.get('/api/v1/tls/status').then(function (r) {
-    var s = r && r.settings;
-    if (s && s.max_attempts != null && valid(s.max_attempts)) { el.value = String(s.max_attempts); ctl.resync(); }
-  }).catch(function () { /* backend not merged yet → keep the default */ });
-})();
-
-(function () {
-  var sliderEl = document.getElementById('gw-down-threshold');
-  var sliderOut = document.getElementById('gw-down-threshold-value');
-  if (sliderEl && sliderOut) {
-    sliderEl.addEventListener('input', function () { sliderOut.textContent = sliderEl.value + ' s'; });
-    SettingsAutosave.bind({
-      cluster: 'gateway-failover',
-      fields: [sliderEl],
-      statusEl: document.getElementById('gw-failover-status'),
-      valuesById: function () { return { 'gw-down-threshold': sliderEl.value }; },
-      save: function () { return api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: parseInt(sliderEl.value, 10) }); },
-    });
-  }
-})();
-
-// ─── Pi-hole Settings ─────────────────────────────────
-(function () {
-  var phInstances = [];
-  var editingIndex = -1;
-  var t = window.GC && window.GC.t || {};
-
-  var addBtn = document.getElementById('btn-pihole-add-instance');
-  var instancesList = document.getElementById('pihole-instances-list');
-  var instanceForm = document.getElementById('pihole-instance-form');
-  if (!addBtn && !instancesList) return;
-
-  async function loadPihole() {
-    try {
-      var data = await api.get('/api/v1/settings/pihole');
-      if (!data.ok) return;
-      var cfg = data.data;
-      var enabledEl = document.getElementById('pihole-enabled');
-      var chainEl = document.getElementById('pihole-manage-chain');
-      var intervalEl = document.getElementById('pihole-sync-interval');
-      if (enabledEl) enabledEl.classList.toggle('on', !!cfg.enabled);
-      if (chainEl) chainEl.classList.toggle('on', !!cfg.manage_dns_chain);
-      if (intervalEl) intervalEl.value = cfg.sync_interval_sec || 30;
-      var countEl = document.getElementById('pihole-top-clients-count'); if (countEl) countEl.value = cfg.top_clients_count || 1000;
-      phInstances = (cfg.instances || []).slice();
-      renderInstances();
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('pihole');
-    } catch (err) {
-      console.error('Failed to load Pi-hole settings:', err);
-    }
-  }
-
-  function renderInstances() {
-    if (!instancesList) return;
-    instancesList.textContent = '';
-    if (phInstances.length === 0) {
-      var empty = document.createElement('div');
-      empty.style.cssText = 'font-size:12px;color:var(--text-3);padding:8px 0';
-      empty.textContent = t['pihole.cfg.no_instances'] || 'No instances configured';
-      instancesList.appendChild(empty);
+    if (!values.name.trim()) { otError(O.errorText({ code: 'INVALID_NAME' }), 'st-ot-name'); return; }
+    const body = O.targetPayload(otType, values, !!otEditing);
+    const wasNew = !otEditing;
+    const btn = $('st-ot-save');
+    busy(btn, true);
+    const r = otEditing ? await put(BK + '/targets/' + otEditing.id, body) : await post(BK + '/targets', body);
+    busy(btn, false);
+    if (r.ok && r.target) {
+      window.closeModal('st-ot-modal');
+      toast(t('offsite.saved_target'));
+      delete bk.results[r.target.id];
+      await loadTargets();
+      const tg = (bk.targets || []).find((x) => x.id === r.target.id);
+      if (tg) testTarget(tg); // "Speichern & testen" (for SFTP this also shows whether the key is in place)
       return;
     }
-    phInstances.forEach(function (inst, idx) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
+    const code = O.errorCode(r);
+    const field = code === 'INVALID_CONFIG' ? O.configField(r) : null;
+    otError(O.errorText(r), field ? OT_INPUTS[field] : code === 'INVALID_NAME' ? 'st-ot-name' : code === 'INVALID_KEEP' ? 'st-ot-keep' : null);
+    if (wasNew && r.feature) otError(t('st.err.license'));
+  }
+  const l4 = $('st-ot-l4');
+  async function fillCandidates(type) {
+    if (!bk.candidates) {
+      const r = await get(BK + '/targets/l4-candidates');
+      bk.candidates = r.ok ? (r.routes || []) : [];
+    }
+    const list = O.sortCandidates(bk.candidates, type);
+    while (l4.options.length > 1) l4.remove(1);
+    list.forEach((c) => {
+      const flags = [];
+      if (!c.internal) flags.push(t('offsite.l4_public'));
+      if (!c.enabled) flags.push(t('offsite.l4_off'));
+      const lbl = /^L4 :\d+$/.test(String(c.label)) ? c.label : c.label + ' · TCP :' + c.listen_port;
+      l4.appendChild(el('option', { value: String(c.route_id), text: lbl + ' → ' + c.target + (flags.length ? ' (' + flags.join(', ') + ')' : '') }));
+    });
+    l4.disabled = !list.length;
+  }
+  l4.addEventListener('change', () => {
+    const c = (bk.candidates || []).find((x) => String(x.route_id) === l4.value);
+    const note = $('st-ot-l4-note');
+    if (!c) { note.hidden = true; return; }
+    $('st-ot-host').value = c.connect_host;
+    $('st-ot-port').value = String(c.connect_port);
+    if (!$('st-ot-name').value.trim()) $('st-ot-name').value = String(c.label).slice(0, 64);
+    let text = t('offsite.l4_filled', { host: c.connect_host, port: c.connect_port });
+    if (!c.internal) text += ' ' + t('offsite.l4_public_warn');
+    if (!c.enabled) text += ' ' + t('offsite.l4_off_warn');
+    note.textContent = text;
+    note.classList.toggle('st-warn-text', !c.internal || !c.enabled);
+    note.hidden = false;
+  });
+  const pubkey = $('st-ot-pubkey');
+  async function loadPubkey() {
+    if (bk.pubkey) { pubkey.value = bk.pubkey; return; }
+    if (!FEATURES.scheduled_backups) { pubkey.value = ''; pubkey.placeholder = t('st.err.license'); return; }
+    const r = await get(BK + '/ssh-key');
+    if (r.ok && r.public_key) { bk.pubkey = r.public_key; pubkey.value = r.public_key; } else { pubkey.value = ''; pubkey.placeholder = O.errorText(r); }
+  }
+  $('st-ot-keycopy').addEventListener('click', () => { if (pubkey.value) copyText(pubkey.value); });
+  $('st-ot-keyrotate').addEventListener('click', async (e) => {
+    if (!FEATURES.scheduled_backups) return;
+    if (!(await D.confirm({ title: t('offsite.key_rotate_title'), message: t('offsite.key_rotate_msg'), okLabel: t('offsite.key_rotate_ok'), danger: true }))) return;
+    busy(e.currentTarget, true);
+    const r = await post(BK + '/ssh-key/rotate');
+    busy(e.currentTarget, false);
+    if (r.ok && r.public_key) { bk.pubkey = r.public_key; pubkey.value = r.public_key; toast(t('offsite.key_rotated')); } else toast(O.errorText(r), 'error');
+  });
 
-      var info = document.createElement('div');
-      info.style.cssText = 'flex:1;min-width:0';
-
-      var labelEl = document.createElement('div');
-      labelEl.style.cssText = 'font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      labelEl.textContent = inst.label || inst.url;
-      info.appendChild(labelEl);
-
-      var meta = document.createElement('div');
-      meta.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:2px';
-      var parts = [inst.url];
-      if (inst.dns_ip) parts.push('DNS: ' + inst.dns_ip);
-      parts.push(inst.password_set ? (t['pihole.cfg.password_set'] || 'set') : (t['pihole.cfg.no_password'] || '—'));
-      parts.push(inst.verify_tls !== false ? 'TLS ✓' : 'TLS ✗');
-      meta.textContent = parts.join(' · ');
-      info.appendChild(meta);
-      row.appendChild(info);
-
-      var actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:4px;flex-shrink:0';
-      var svgPaths = {
-        edit: '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>',
-        test: '<polygon points="5 3 19 12 5 21 5 3"/>',
-        delete: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
-      };
-      ['edit', 'test', 'delete'].forEach(function (action) {
-        var btn = document.createElement('button');
-        btn.className = 'icon-btn';
-        btn.title = action.charAt(0).toUpperCase() + action.slice(1);
-        btn.dataset.phAction = action;
-        btn.dataset.phIdx = idx;
-        btn.style.cssText = 'width:24px;height:24px';
-        // Safe: only hardcoded SVG paths, no user input
-        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">' + svgPaths[action] + '</svg>';
-        actions.appendChild(btn);
+  async function loadFiles() {
+    const box = $('st-bk-files');
+    const r = await get('/api/v1/settings/autobackup/list');
+    bk.files = (r.ok && r.files) || [];
+    clear(box);
+    if (!bk.files.length) { box.appendChild(empty(t('autobackup.no_files'))); return; }
+    bk.files.forEach((f) => {
+      const dl = el('a', { class: 'st-btn st-btn-sm', href: '/api/v1/settings/autobackup/download/' + encodeURIComponent(f.filename), download: f.filename, text: t('st.download') });
+      const rm = el('button', { type: 'button', class: 'st-icon-btn', 'aria-label': t('st.bk.delete_label', { name: f.filename }), title: t('st.bk.delete_label', { name: f.filename }) }, [icon(ICON_TRASH)]);
+      rm.addEventListener('click', async () => {
+        if (!(await D.confirm({ title: t('st.bk.delete_title'), message: t('autobackup.confirm_delete'), okLabel: t('common.delete'), danger: true }))) return;
+        const res = await del('/api/v1/settings/autobackup/' + encodeURIComponent(f.filename));
+        if (res.ok) { loadFiles().then(bkHero); } else toast(errText(res), 'error');
       });
-      row.appendChild(actions);
-      instancesList.appendChild(row);
+      box.appendChild(el('li', { class: 'st-li' }, [
+        el('span', { class: 'st-mono st-li-main st-wrap', text: f.filename }),
+        el('span', { class: 'st-li-sub', text: O.fmtBytes(f.size) + ' · ' + O.fmtDateTime(f.created, lang) }),
+        el('div', { class: 'st-li-actions' }, [dl, rm]),
+      ]));
     });
   }
-
-  function showInstanceForm(inst) {
-    if (!instanceForm) return;
-    document.getElementById('ph-inst-label').value = inst ? (inst.label || '') : '';
-    document.getElementById('ph-inst-url').value = inst ? (inst.url || '') : '';
-    document.getElementById('ph-inst-dns').value = inst ? (inst.dns_ip || '') : '';
-    var dnsPortEl = document.getElementById('ph-inst-dns-port');
-    if (dnsPortEl) dnsPortEl.value = inst ? (inst.dns_port || 53) : 53;
-    document.getElementById('ph-inst-password').value = '';
-    var tlsEl = document.getElementById('ph-inst-tls');
-    if (tlsEl) tlsEl.classList.toggle('on', inst ? inst.verify_tls !== false : true);
-    var hint = document.getElementById('ph-inst-password-hint');
-    if (hint) hint.style.display = (inst && inst.password_set) ? '' : 'none';
-    instanceForm.style.display = 'flex';
+  async function loadPremig() {
+    const box = $('st-premig');
+    const r = await get(BK + '/pre-migration');
+    clear(box);
+    if (!r.ok) { box.appendChild(empty(O.errorText(r))); return; }
+    const files = r.files || [];
+    if (!files.length) { box.appendChild(empty(t('premig.empty'))); return; }
+    files.forEach((f) => box.appendChild(el('li', { class: 'st-li', 'data-name': f.name }, [
+      el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title', text: t('premig.versions', { from: f.from_version || '?', to: f.to_version || '?' }) }), el('div', { class: 'st-li-sub st-mono', text: f.name })]),
+      el('span', { class: 'st-li-sub', text: O.fmtBytes(f.size) + ' · ' + O.fmtDateTime(f.created_at, lang) }),
+      el('a', { class: 'st-btn st-btn-sm', href: BK + '/pre-migration/' + encodeURIComponent(f.name), download: f.name, text: t('st.download') }),
+    ])));
   }
-
-  // Prefill dns_ip from the url host when dns_ip is empty
-  var urlInput = document.getElementById('ph-inst-url');
-  if (urlInput) {
-    urlInput.addEventListener('blur', function () {
-      var dnsEl = document.getElementById('ph-inst-dns');
-      if (dnsEl && !dnsEl.value.trim() && this.value.trim()) {
-        try {
-          var hostname = new URL(this.value.trim()).hostname;
-          if (hostname) dnsEl.value = hostname;
-        } catch { /* URL still being typed / invalid — leave the DNS field alone */ }
-      }
-    });
-  }
-
-  function hideInstanceForm() {
-    if (instanceForm) instanceForm.style.display = 'none';
-    editingIndex = -1;
-  }
-
-  if (instancesList) {
-    instancesList.addEventListener('click', async function (e) {
-      var btn = e.target.closest('[data-ph-action]');
-      if (!btn) return;
-      var action = btn.dataset.phAction;
-      var idx = parseInt(btn.dataset.phIdx, 10);
-      var inst = phInstances[idx];
-      if (!inst) return;
-
-      if (action === 'delete') {
-        if (!await D.confirm({ message: DT('pihole.cfg.confirm_delete'), danger: true, okLabel: DT('common.delete') })) return;
-        phInstances.splice(idx, 1);
-        renderInstances();
-        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
-      } else if (action === 'edit') {
-        editingIndex = idx;
-        showInstanceForm(inst);
-      } else if (action === 'test') {
-        btnLoading(btn);
-        try {
-          var res = await api.post('/api/v1/settings/pihole/test/' + encodeURIComponent(inst.id));
-          if (res.ok && res.data && res.data.connected) {
-            showToast(buildPiholeTestToast(res.data, inst.dns_port || 53));
-          } else {
-            showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
-          }
-        } catch (err) {
-          showToast(err.message || 'Error', 'error');
-        } finally {
-          btnReset(btn);
-        }
-      }
-    });
-  }
-
-  if (addBtn) {
-    addBtn.addEventListener('click', function () {
-      editingIndex = -1;
-      showInstanceForm(null);
-    });
-  }
-
-  var cancelBtn = document.getElementById('btn-pihole-cancel-instance');
-  if (cancelBtn) cancelBtn.addEventListener('click', hideInstanceForm);
-
-  var applyBtn = document.getElementById('btn-pihole-apply-instance');
-  if (applyBtn) {
-    applyBtn.addEventListener('click', async function () {
-      var label = document.getElementById('ph-inst-label').value.trim();
-      var url = document.getElementById('ph-inst-url').value.trim();
-      var dns_ip = document.getElementById('ph-inst-dns').value.trim();
-      var dnsPortEl = document.getElementById('ph-inst-dns-port');
-      var dns_port = dnsPortEl ? (parseInt(dnsPortEl.value, 10) || 53) : 53;
-      var app_password = document.getElementById('ph-inst-password').value;
-      var tlsEl = document.getElementById('ph-inst-tls');
-      var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
-
-      if (!url) { showToast(t['pihole.cfg.url_required'] || 'URL required', 'error'); return; }
-
-      if (editingIndex >= 0) {
-        var existing = phInstances[editingIndex];
-        existing.label = label;
-        existing.url = url;
-        existing.dns_ip = dns_ip;
-        existing.dns_port = dns_port;
-        existing.verify_tls = verify_tls;
-        if (app_password) {
-          existing.app_password = app_password;
-          existing.password_set = true;
-        }
-      } else {
-        var newInst = {
-          id: Date.now().toString(),
-          label: label,
-          url: url,
-          dns_ip: dns_ip,
-          dns_port: dns_port,
-          verify_tls: verify_tls,
-          password_set: !!app_password,
-        };
-        if (app_password) newInst.app_password = app_password;
-        phInstances.push(newInst);
-      }
-      renderInstances();
-      hideInstanceForm();
-      try {
-        await SettingsAutosave.enqueue('pihole', function () { return savePihole(false); });
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      }
-    });
-  }
-
-  var testFormBtn = document.getElementById('btn-pihole-test-instance');
-  if (testFormBtn) {
-    testFormBtn.addEventListener('click', async function () {
-      var url = document.getElementById('ph-inst-url').value.trim();
-      var dns_ip_test = document.getElementById('ph-inst-dns').value.trim();
-      var dnsPortTestEl = document.getElementById('ph-inst-dns-port');
-      var dns_port_test = dnsPortTestEl ? (parseInt(dnsPortTestEl.value, 10) || 53) : 53;
-      var app_password = document.getElementById('ph-inst-password').value || null;
-      var tlsEl = document.getElementById('ph-inst-tls');
-      var verify_tls = tlsEl ? tlsEl.classList.contains('on') : true;
-      if (!url) { showToast(t['pihole.cfg.url_required'] || 'URL required', 'error'); return; }
-      btnLoading(testFormBtn);
-      try {
-        var res = await api.post('/api/v1/settings/pihole/test', { url: url, app_password: app_password, verify_tls: verify_tls, dns_ip: dns_ip_test, dns_port: dns_port_test });
-        if (res.ok && res.data && res.data.connected) {
-          showToast(buildPiholeTestToast(res.data, dns_port_test));
-        } else {
-          showToast(res.error || (t['pihole.cfg.test_failed'] || 'Connection failed'), 'error');
-        }
-      } catch (err) {
-        showToast(err.message || 'Error', 'error');
-      } finally {
-        btnReset(testFormBtn);
-      }
-    });
-  }
-
-  function buildPiholeTestToast(data, dns_port) {
-    var msg = (t['pihole.cfg.test_ok'] || 'Connected') + ' (v' + (data.version || '?') + ')';
-    if (data.dns) {
-      if (!data.dns.reachable) {
-        msg += ' · DNS ' + (t['pihole.cfg.dns_not_reachable'] || 'not reachable on port') + ' ' + (dns_port || 53);
-      } else {
-        msg += ' · DNS ✓';
-        if (data.dns.blocking === true) msg += ' · Blocking ✓';
-        else if (data.dns.blocking === false) msg += ' · Blocking ✗';
-      }
-    }
-    return msg;
-  }
-
-  var tlsFormToggle = document.getElementById('ph-inst-tls');
-  if (tlsFormToggle) {
-    tlsFormToggle.addEventListener('click', function () {
-      tlsFormToggle.classList.toggle('on');
-    });
-  }
-
-  var enabledToggle = document.getElementById('pihole-enabled');
-  if (enabledToggle) {
-    enabledToggle.addEventListener('click', function () {
-      enabledToggle.classList.toggle('on');
-      enabledToggle.dispatchEvent(new Event('change'));
-    });
-  }
-
-  var chainToggle = document.getElementById('pihole-manage-chain');
-  if (chainToggle) {
-    chainToggle.addEventListener('click', function () {
-      chainToggle.classList.toggle('on');
-      chainToggle.dispatchEvent(new Event('change'));
-    });
-  }
-
-  async function savePihole(showSavedToast) {
-    var enabledEl = document.getElementById('pihole-enabled');
-    var chainEl = document.getElementById('pihole-manage-chain');
-    var intervalEl = document.getElementById('pihole-sync-interval');
-    var countEl = document.getElementById('pihole-top-clients-count');
-    var payload = {
-      enabled: enabledEl ? enabledEl.classList.contains('on') : false,
-      manage_dns_chain: chainEl ? chainEl.classList.contains('on') : false,
-      sync_interval_sec: intervalEl ? (parseInt(intervalEl.value, 10) || 30) : 30,
-      top_clients_count: countEl ? (parseInt(countEl.value, 10) || 1000) : 1000,
-      instances: phInstances.map(function (inst) {
-        var out = {
-          id: inst.id,
-          label: inst.label || '',
-          url: inst.url,
-          dns_ip: inst.dns_ip || '',
-          dns_port: parseInt(inst.dns_port, 10) || 53,
-          verify_tls: inst.verify_tls !== false,
-          password_set: !!inst.password_set,
-        };
-        if (inst.app_password) out.app_password = inst.app_password;
-        return out;
-      }),
-    };
-    var res = await api.put('/api/v1/settings/pihole', payload);
-    if (res.ok) {
-      if (showSavedToast) showToast(t['pihole.cfg.saved'] || 'Pi-hole settings saved');
-    } else {
-      showToast(res.error || 'Error', 'error');
-    }
-  }
-
-  var phIntervalEl = document.getElementById('pihole-sync-interval');
-  var phCountEl = document.getElementById('pihole-top-clients-count');
-  SettingsAutosave.bind({
-    cluster: 'pihole',
-    fields: [enabledToggle, chainToggle, phIntervalEl, phCountEl].filter(Boolean),
-    statusEl: document.getElementById('pihole-status'),
-    valuesById: function () {
-      return {
-        'pihole-enabled': enabledToggle ? enabledToggle.classList.contains('on') : false,
-        'pihole-manage-chain': chainToggle ? chainToggle.classList.contains('on') : false,
-        'pihole-sync-interval': phIntervalEl ? phIntervalEl.value : '30',
-        'pihole-top-clients-count': phCountEl ? phCountEl.value : '1000',
-      };
-    },
-    save: function () { return savePihole(false); },
-  });
-
-  loadPihole();
-})();
-
-// ─── Portal Settings ─────────────────────────────────
-(function () {
-  var enabledToggle = document.getElementById('portal-enabled');
-  var widgetDevice = document.getElementById('portal-widget-device');
-  var widgetTraffic = document.getElementById('portal-widget-traffic');
-  var widgetServices = document.getElementById('portal-widget-services');
-  var widgetPihole = document.getElementById('portal-widget-pihole');
-  var widgetMidea = document.getElementById('portal-widget-midea');
-  var widgetSmarthome = document.getElementById('portal-widget-smarthome');
-  var widgetSkoda = document.getElementById('portal-widget-skoda');
-  var trustToggle = document.getElementById('portal-trust-owner-mapping');
-  var autoappearToggle = document.getElementById('portal-autoappear');
-  if (!enabledToggle) return;
-
-  [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, widgetSkoda, trustToggle, autoappearToggle].forEach(function (el) {
-    if (el) el.addEventListener('click', function () {
-      el.classList.toggle('on');
-      el.dispatchEvent(new Event('change'));
-    });
-  });
-
-  function setToggle(el, val) {
-    if (!el) return;
-    if (val) el.classList.add('on'); else el.classList.remove('on');
-  }
-
-  api.get('/api/v1/settings/portal').then(function (data) {
-    if (!data.ok) return;
-    var d = data.data;
-    setToggle(enabledToggle, d.enabled);
-    setToggle(widgetDevice, d.widgets && d.widgets.device);
-    setToggle(widgetTraffic, d.widgets && d.widgets.traffic);
-    setToggle(widgetServices, d.widgets && d.widgets.services);
-    setToggle(widgetPihole, d.widgets && d.widgets.pihole);
-    setToggle(widgetMidea, d.widgets && d.widgets.midea);
-    setToggle(widgetSmarthome, d.widgets && d.widgets.smarthome);
-    setToggle(widgetSkoda, d.widgets && d.widgets.skoda);
-    setToggle(trustToggle, d.trustOwnerMapping);
-    setToggle(autoappearToggle, d.autoappear !== false);
-    if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('portal');
-  }).catch(function (err) {
-    console.error('Failed to load portal settings:', err);
-  });
-
-  var portalFields = [enabledToggle, widgetDevice, widgetTraffic, widgetServices, widgetPihole, widgetMidea, widgetSmarthome, widgetSkoda, trustToggle, autoappearToggle].filter(Boolean);
-  SettingsAutosave.bind({
-    cluster: 'portal',
-    fields: portalFields,
-    statusEl: document.getElementById('portal-status'),
-    valuesById: function () {
-      return {
-        'portal-enabled': enabledToggle.classList.contains('on'),
-        'portal-widget-device': widgetDevice ? widgetDevice.classList.contains('on') : true,
-        'portal-widget-traffic': widgetTraffic ? widgetTraffic.classList.contains('on') : true,
-        'portal-widget-services': widgetServices ? widgetServices.classList.contains('on') : true,
-        'portal-widget-pihole': widgetPihole ? widgetPihole.classList.contains('on') : true,
-        'portal-widget-midea': widgetMidea ? widgetMidea.classList.contains('on') : true,
-        'portal-widget-smarthome': widgetSmarthome ? widgetSmarthome.classList.contains('on') : true,
-        'portal-widget-skoda': widgetSkoda ? widgetSkoda.classList.contains('on') : true,
-        'portal-trust-owner-mapping': trustToggle ? trustToggle.classList.contains('on') : false,
-        'portal-autoappear': autoappearToggle ? autoappearToggle.classList.contains('on') : true,
-      };
-    },
-    save: function () {
-      return api.put('/api/v1/settings/portal', {
-        enabled: enabledToggle.classList.contains('on'),
-        widgets: {
-          device:   widgetDevice   ? widgetDevice.classList.contains('on')   : true,
-          traffic:  widgetTraffic  ? widgetTraffic.classList.contains('on')  : true,
-          services: widgetServices ? widgetServices.classList.contains('on') : true,
-          pihole: widgetPihole ? widgetPihole.classList.contains('on') : true,
-          midea: widgetMidea ? widgetMidea.classList.contains('on') : true,
-          smarthome: widgetSmarthome ? widgetSmarthome.classList.contains('on') : true,
-          skoda: widgetSkoda ? widgetSkoda.classList.contains('on') : true,
-        },
-        trust_owner_mapping: trustToggle ? trustToggle.classList.contains('on') : false,
-        autoappear: autoappearToggle ? autoappearToggle.classList.contains('on') : true,
+  SECTIONS.backup = {
+    async load() {
+      const [a, off] = await Promise.all([get('/api/v1/settings/autobackup'), get(BK + '/offsite')]);
+      if (a.ok) bk.auto = a.data;
+      if (off.ok) bk.offsite = off;
+      $('st-off-abhint').hidden = !(a.ok && !a.data.enabled);
+      fill('backup', {
+        'ab-on': !!(a.ok && a.data.enabled), 'ab-schedule': (a.ok && a.data.schedule) || 'daily', 'ab-keep': (a.ok && a.data.retention) || 5,
+        'off-pass': '', 'off-key': !(off.ok && off.include_key === false),
       });
+      passEl.placeholder = off.ok && off.passphrase_set ? t('st.secret_set') : t('offsite.passphrase_ph_new');
+      renderStrength();
+      await Promise.all([loadTargets(), loadFiles(), loadPremig()]);
+      bkHero();
     },
-  });
-})();
-
-// ─── Portal Address ───────────────────────────────────
-(function () {
-  var sel = document.getElementById('portal-base-domain');
-  if (!sel) return;
-  var prefix = document.getElementById('portal-prefix');
-  var preview = document.getElementById('portal-effective-host');
-  var errEl = document.getElementById('portal-host-error');
-  var applyBtn = document.getElementById('portal-host-apply');
-  var switchWarn = document.getElementById('portal-switch-warning');
-  var noDomainsHint = document.getElementById('portal-no-domains-hint');
-  var t = (window.GC && window.GC.t) || {};
-  var currentHost = '';     // the live, persisted effective host (from initial GET)
-  var internalHost = '';    // home.<gc.internal> for the "Internal (default)" preview
-  var curBase = '';         // persisted base_domain (for confirm-cancel restore)
-  var curPrefix = 'home';   // persisted prefix
-
-  function effective() {
-    var base = sel.value; var p = (prefix.value || '').trim();
-    return base ? (p ? p + '.' + base : base) : internalHost;
-  }
-  function renderPreview() {
-    preview.textContent = effective();
-    prefix.disabled = !sel.value;
-    // Show the switch warning ONLY when the selection differs from the live host
-    // (no false alarm for an already-configured, stable host on page load).
-    if (switchWarn) switchWarn.style.display = (effective() !== currentHost) ? '' : 'none';
-  }
-
-  // Populate verified domains + current selection.
-  Promise.all([api.get('/api/v1/settings/domains'), api.get('/api/v1/settings/portal')]).then(function (r) {
-    var verified = (r[0].data.domains || []).filter(function (d) { return d.status === 'verified'; });
-    var cur = r[1].data;
-    currentHost = cur.effectiveHost || '';
-    internalHost = cur.internalHost || '';
-    curBase = cur.base_domain || '';
-    curPrefix = cur.prefix || 'home';
-    sel.appendChild(new Option(t['settings.portal.internal_default'] || 'Internal (default)', ''));
-    verified.forEach(function (d) { sel.appendChild(new Option(d.domain, d.domain)); });
-    sel.value = curBase;
-    prefix.value = curPrefix;
-    // Empty state: no verified domains → only "Internal (default)" + a hint pointing to the registry.
-    if (noDomainsHint) noDomainsHint.style.display = verified.length ? 'none' : '';
-    renderPreview();
-  }).catch(function (err) { console.warn('[settings] loading domains for preview failed', err); });
-
-  // Preview only — selecting/typing does NOT switch the live host.
-  sel.addEventListener('change', renderPreview);
-  prefix.addEventListener('input', renderPreview);
-
-  // Deliberate, confirmed commit (NOT autosave): a host change causes a brief
-  // portal outage (single-host switch window), so it stays an explicit action.
-  if (applyBtn) applyBtn.addEventListener('click', async function () {
-    if (errEl) { errEl.classList.remove('autosave-error'); errEl.textContent = ''; errEl.style.display = 'none'; }
-    if (effective() === currentHost) return;     // no-op: nothing changed
-    if (!await D.confirm({ title: DT('settings.portal.switch_title'), message: DT('settings.portal.switch_warning') })) {
-      // Cancel: restore the persisted selection so the warning clears and a stray re-Apply is avoided.
-      sel.value = curBase; prefix.value = curPrefix; renderPreview();
-      return;
-    }
-    btnLoading(applyBtn);
-    try {
-      var res = await api.put('/api/v1/settings/portal', { base_domain: sel.value, prefix: prefix.value });
-      if (res && res.ok) { curBase = sel.value; curPrefix = prefix.value; currentHost = effective(); renderPreview(); showToast(t['settings.portal.saved'] || 'Saved'); }
-      else if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = (res && res.error) || ''; errEl.style.display = ''; }
-    } catch (err) {
-      if (errEl) { errEl.classList.add('autosave-error'); errEl.textContent = err.message; errEl.style.display = ''; }
-    } finally { btnReset(applyBtn); }
-  });
-})();
-
-// ─── Route Block Default ──────────────────────────────
-(function () {
-  var actionSel = document.getElementById('settings-route-block-action');
-  var bodyEl = document.getElementById('settings-route-block-body');
-  var redirectEl = document.getElementById('settings-route-block-redirect');
-  if (!actionSel) return;
-
-  function syncSettingsBlockVisibility() {
-    if (bodyEl) bodyEl.style.display = actionSel.value === 'custom' ? '' : 'none';
-    if (redirectEl) redirectEl.style.display = actionSel.value === 'redirect' ? '' : 'none';
-  }
-
-  actionSel.addEventListener('change', syncSettingsBlockVisibility);
-
-  api.get('/api/v1/settings/route-block-default').then(function (r) {
-    if (r.ok && r.data) {
-      actionSel.value = r.data.action || 'not_found';
-      if (bodyEl) bodyEl.value = r.data.body || '';
-      if (redirectEl) redirectEl.value = r.data.redirect_url || '';
-      syncSettingsBlockVisibility();
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('route-block');
-    }
-  }).catch(function (err) {
-    console.error('Failed to load route block default:', err);
-  });
-
-  function rbValues() {
-    return {
-      'settings-route-block-action': actionSel.value,
-      'settings-route-block-body': bodyEl ? bodyEl.value || '' : '',
-      'settings-route-block-redirect': redirectEl ? redirectEl.value || '' : '',
-    };
-  }
-  var rbFields = ['settings-route-block-action', 'settings-route-block-body', 'settings-route-block-redirect']
-    .map(function (i) { return document.getElementById(i); }).filter(Boolean);
-  SettingsAutosave.bind({
-    cluster: 'route-block',
-    fields: rbFields,
-    statusEl: document.getElementById('route-block-status'),
-    valuesById: rbValues,
-    requiredForCommit: function () { return actionSel.value === 'redirect' ? ['settings-route-block-redirect'] : []; },
-    save: function () {
-      return api.put('/api/v1/settings/route-block-default', {
-        action: actionSel.value,
-        body: bodyEl ? bodyEl.value : '',
-        redirect_url: redirectEl ? redirectEl.value : '',
-      });
+    validate(v, d) {
+      if (!d.includes('off-pass')) return {};
+      const s = O.passphraseStrength(passEl.value);
+      if (passEl.value !== pass2El.value) return { 'off-pass': t('offsite.passphrase_mismatch') };
+      if (s.level === 'short' || s.level === 'empty') return { 'off-pass': t('offsite.strength_short', { n: s.missing }) };
+      return {};
     },
-  });
-})();
-
-// ─── Domains Registry ─────────────────────────────
-(function () {
-  var tbl = document.getElementById('domains-table');
-  if (!tbl) return;
-
-  var tbody = document.getElementById('domains-tbody');
-  var serverIpEl = document.getElementById('domains-server-ip');
-  var serverIpv6El = document.getElementById('domains-server-ipv6');
-  var warningEl = document.getElementById('domains-server-ip-warning');
-  var ipInput = document.getElementById('domains-server-ip-input');
-  var ipv6Input = document.getElementById('domains-server-ipv6-input');
-  var ipSaveBtn = document.getElementById('domains-server-ip-save');
-  var TG = window.GCTlsUI || null;   // tls-ui.js: dns_check texts + record renderer
-  var t = (window.GC && window.GC.t) || {};
-  var addInput = document.getElementById('domains-add-input');
-  var addBtn = document.getElementById('domains-add-btn');
-  var addError = document.getElementById('domains-add-error');
-
-  var labelVerified = tbl.dataset.labelVerified || '';
-  var labelFailed = tbl.dataset.labelFailed || '';
-  var labelPending = tbl.dataset.labelPending || '';
-  var labelVerify = tbl.dataset.labelVerify || '';
-  var labelRemove = tbl.dataset.labelRemove || '';
-
-  function statusBadge(status) {
-    var span = document.createElement('span');
-    span.className = 'tag ' + (status === 'verified' ? 'tag-green' : status === 'failed' ? 'tag-amber' : 'tag-grey');
-    span.style.fontSize = '11px';
-    var dot = document.createElement('span');
-    dot.className = 'tag-dot';
-    span.appendChild(dot);
-    span.appendChild(document.createTextNode(
-      status === 'verified' ? labelVerified : status === 'failed' ? labelFailed : labelPending
-    ));
-    return span;
-  }
-
-  function formatDate(iso) {
-    if (!iso) return '—';
-    try { return new Date(iso).toLocaleDateString(); } catch (e) { return iso; }
-  }
-
-  // Under the domain name: the DNS check reason (dns_check.<code> + detail)
-  // and an expandable block with the A/AAAA/CAA records and server addresses
-  // (check_json, docs/feature-tls-guard.md). Without tls-ui.js: last_error as before.
-  function appendDnsInfo(cell, d) {
-    var check = TG ? TG.parseCheck(d.check_json) : null;
-    var code = TG ? TG.dnsCode(d) : null;
-    var failed = d.status === 'failed';
-    if (failed && (code || d.last_error)) {
-      var reason = document.createElement('div');
-      reason.className = 'tg-dns-reason';
-      reason.textContent = code && TG ? TG.dnsCodeText(code) : d.last_error;
-      cell.appendChild(reason);
-      if (check && check.detail) {
-        var det = document.createElement('div');
-        det.className = 'tg-dns-detail';
-        det.textContent = String(check.detail);
-        cell.appendChild(det);
-      }
-    }
-    if (check && TG) {
-      var wrap = document.createElement('div');
-      wrap.className = 'tg-dns-records';
-      var box = TG.recordsEl(check);
-      box.hidden = true;
-      var toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.className = 'tg-link tg-dns-toggle';
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.textContent = t['settings.tls.records_show'] || 'Records';
-      toggle.addEventListener('click', function () {
-        box.hidden = !box.hidden;
-        toggle.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
-        toggle.textContent = box.hidden ? (t['settings.tls.records_show'] || 'Records') : (t['settings.tls.records_hide'] || 'Records');
-      });
-      wrap.appendChild(toggle);
-      wrap.appendChild(box);
-      cell.appendChild(wrap);
-    }
-    // CAA recommendation (docs/feature-security-options.md §G): the record to
-    // copy when the domain has none, "CAA schützt die Domain" when it allows.
-    var caa = check && TG && TG.caaEl ? TG.caaEl(check, { compact: true }) : null;
-    if (caa) cell.appendChild(caa);
-  }
-
-  function renderRows(domains) {
-    tbody.textContent = '';
-    if (!domains || domains.length === 0) return;
-    domains.forEach(function (d) {
-      var tr = document.createElement('tr');
-      tr.dataset.domainId = d.id;
-      tr.style.borderBottom = '1px solid var(--border)';
-
-      var tdDomain = document.createElement('td');
-      tdDomain.style.cssText = 'padding:8px;font-family:var(--font-mono);font-size:12px';
-      tdDomain.textContent = d.domain;
-      appendDnsInfo(tdDomain, d);
-      tr.appendChild(tdDomain);
-
-      var tdStatus = document.createElement('td');
-      tdStatus.style.padding = '8px';
-      tdStatus.appendChild(statusBadge(d.status));
-      tr.appendChild(tdStatus);
-
-      var tdDate = document.createElement('td');
-      tdDate.style.cssText = 'padding:8px;font-size:11px;color:var(--text-3)';
-      tdDate.textContent = formatDate(d.verified_at);
-      tr.appendChild(tdDate);
-
-      var tdAct = document.createElement('td');
-      tdAct.style.cssText = 'padding:8px;white-space:nowrap';
-
-      var verifyBtn = document.createElement('button');
-      verifyBtn.className = 'btn btn-ghost';
-      verifyBtn.style.cssText = 'font-size:11px;padding:3px 8px;margin-right:4px';
-      verifyBtn.textContent = labelVerify;
-      verifyBtn.addEventListener('click', (function (domainId, row) {
-        return function () { recheckDomain(domainId, row); };
-      })(d.id, tr));
-      tdAct.appendChild(verifyBtn);
-
-      var removeBtn = document.createElement('button');
-      removeBtn.className = 'btn btn-ghost';
-      removeBtn.style.cssText = 'font-size:11px;padding:3px 8px;color:var(--red)';
-      removeBtn.textContent = labelRemove;
-      removeBtn.addEventListener('click', (function (domainId, row) {
-        return function () { removeDomain(domainId, row); };
-      })(d.id, tr));
-      tdAct.appendChild(removeBtn);
-
-      tr.appendChild(tdAct);
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function loadDomains() {
-    try {
-      var r = await api.get('/api/v1/settings/domains');
-      if (!r.ok) return;
-      renderRows(r.data.domains);
-      if (serverIpEl) serverIpEl.textContent = r.data.serverIp || '—';
-      if (serverIpv6El) serverIpv6El.textContent = r.data.serverIpv6 || '—';
-      if (warningEl) warningEl.style.display = r.data.serverIpWarning ? '' : 'none';
-    } catch (err) {
-      console.error('Failed to load domains:', err);
-    }
-  }
-
-  async function recheckDomain(id, tr) {
-    try {
-      var r = await api.post('/api/v1/settings/domains/' + id + '/verify', {});
-      if (r.ok && r.data) {
-        var d = r.data;
-        var domainCell = tr.cells[0];
-        domainCell.textContent = d.domain;
-        appendDnsInfo(domainCell, d);
-        var statusCell = tr.cells[1];
-        statusCell.textContent = '';
-        statusCell.appendChild(statusBadge(d.status));
-        tr.cells[2].textContent = formatDate(d.verified_at);
-      }
-    } catch (err) {
-      console.error('Recheck failed:', err);
-    }
-  }
-
-  async function removeDomain(id, tr) {
-    try {
-      var r = await api.del('/api/v1/settings/domains/' + id);
-      if (r.ok) tr.remove();
-    } catch (err) {
-      console.error('Remove domain failed:', err);
-    }
-  }
-
-  if (addBtn) {
-    addBtn.addEventListener('click', async function () {
-      var domain = addInput ? addInput.value.trim() : '';
-      if (!domain) return;
-      if (addError) { addError.style.display = 'none'; addError.textContent = ''; }
-      btnLoading(addBtn);
-      try {
-        var r = await api.post('/api/v1/settings/domains', { domain: domain });
-        if (!r.ok) {
-          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
-        } else {
-          if (addInput) addInput.value = '';
-          await loadDomains();
-        }
-      } catch (err) {
-        if (addError) { addError.textContent = err.message; addError.style.display = ''; }
-      } finally {
-        btnReset(addBtn);
-      }
-    });
-  }
-
-  if (ipSaveBtn) {
-    ipSaveBtn.addEventListener('click', async function () {
-      var ip = ipInput ? ipInput.value.trim() : '';
-      var ipv6 = ipv6Input ? ipv6Input.value.trim() : '';
-      if (addError) { addError.style.display = 'none'; addError.textContent = ''; }
-      btnLoading(ipSaveBtn);
-      try {
-        // Both overrides in one call (docs/feature-tls-guard.md); a backend
-        // that rejects ipv6 answers 400 → shown via r.error below.
-        var r = await api.put('/api/v1/settings/domains/server-ip', { ip: ip, ipv6: ipv6 });
-        if (r.ok) {
-          if (ipInput) ipInput.value = '';
-          if (ipv6Input) ipv6Input.value = '';
-          await loadDomains();
-        } else {
-          if (addError) { addError.textContent = r.error || ''; addError.style.display = ''; }
-        }
-      } catch (err) {
-        if (addError) { addError.textContent = err.message; addError.style.display = ''; }
-      } finally {
-        btnReset(ipSaveBtn);
-      }
-    });
-  }
-
-  loadDomains();
-})();
-
-// ─── Client Updates (default channel, minimum versions, overview) ─────
-(function initClientUpdates() {
-  var channelSel = document.getElementById('cu-default-channel');
-  var minPro = document.getElementById('cu-min-pro');
-  var minCommunity = document.getElementById('cu-min-community');
-  var overviewEl = document.getElementById('cu-overview');
-  if (!channelSel || !minPro || !minCommunity || !overviewEl) return;
-
-  function tr(key, params) {
-    var s = (window.GC && GC.t && GC.t[key]) || key;
-    Object.keys(params || {}).forEach(function (k) { s = s.split('{{' + k + '}}').join(String(params[k])); });
-    return s;
-  }
-  function el(tag, attrs, text) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
-    if (text != null) n.textContent = text;
-    return n;
-  }
-
-  var PRODUCT_KEYS = {
-    pro: 'client_updates.product_pro',
-    community: 'client_updates.product_community',
-    android: 'client_updates.product_android',
-    unknown: 'client_updates.product_unknown',
+    groups: [
+      { fields: ['ab-on', 'ab-schedule', 'ab-keep'], map: { retention: 'ab-keep', schedule: 'ab-schedule' }, errorField: 'ab-on',
+        save: (v) => api.put('/api/v1/settings/autobackup', { enabled: v['ab-on'], schedule: v['ab-schedule'], retention: v['ab-keep'] }),
+        after: async () => { const a = await get('/api/v1/settings/autobackup'); if (a.ok) { bk.auto = a.data; $('st-off-abhint').hidden = a.data.enabled; } bkHero(); } },
+      { fields: ['off-pass'], errorField: 'off-pass', save: () => api.put(BK + '/offsite', { passphrase: passEl.value }),
+        after: (r) => { bk.offsite = r; passEl.value = ''; pass2El.value = ''; commit('backup', ['off-pass']); passEl.placeholder = t('st.secret_set'); renderStrength(); } },
+      { fields: ['off-key'], errorField: 'off-key', save: (v) => api.put(BK + '/offsite', { include_key: v['off-key'] }) },
+    ],
   };
+  $('st-bk-run').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    busy(b, true);
+    const r = await post('/api/v1/settings/autobackup/run');
+    busy(b, false);
+    const msg = $('st-bk-msg');
+    msg.textContent = r.ok ? t('st.bk.run_ok', { file: r.filename }) : errText(r);
+    msg.dataset.state = r.ok ? 'good' : 'crit';
+    if (r.ok) { const a = await get('/api/v1/settings/autobackup'); if (a.ok) bk.auto = a.data; await loadFiles(); bkHero(); }
+  });
+  $('st-bk-download').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    busy(b, true);
+    try {
+      const resp = await fetch('/api/v1/settings/backup', { credentials: 'same-origin' });
+      if (!resp.ok) throw new Error(t('st.bk.download_failed'));
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const m = (resp.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+      const a = el('a', { href: url, download: m ? m[1] : 'gatecontrol-backup.json' });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) { toast(t('settings.backup_failed', { error: err.message }), 'error'); }
+    busy(b, false);
+  });
+  document.addEventListener('gc:backup', () => { if (current === 'backup') { clearTimeout(bk.sse); bk.sse = setTimeout(loadTargets, 400); } });
 
-  // Overview: per product one block, one row per reported version.
-  // All values go through textContent (versions are client-reported).
-  function renderOverview(ov) {
-    while (overviewEl.firstChild) overviewEl.removeChild(overviewEl.firstChild);
-    var products = (ov && ov.products) || [];
-    if (!products.length) {
-      overviewEl.appendChild(el('div', { style: 'color:var(--text-3)' }, tr('client_updates.overview_empty')));
-    }
-    products.forEach(function (p) {
-      var block = el('div', { style: 'margin-bottom:14px' });
-      var head = el('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600;margin-bottom:6px' });
-      head.appendChild(el('span', null, tr(PRODUCT_KEYS[p.product] || 'client_updates.product_unknown')));
-      head.appendChild(el('span', { class: 'tag tag-grey', style: 'font-size:10px' }, tr('client_updates.overview_devices', { count: p.total })));
-      if (p.min_version) head.appendChild(el('span', { class: 'tag tag-blue', style: 'font-size:10px' }, tr('client_updates.overview_min', { version: p.min_version })));
-      if (p.below_min > 0) head.appendChild(el('span', { class: 'tag tag-red', style: 'font-size:10px' }, p.below_min + ' ' + tr('client_updates.overview_below_min')));
-      block.appendChild(head);
-      var table = el('table', { class: 'data-table' });
-      var tbody = el('tbody');
-      p.versions.forEach(function (v) {
-        var tr_ = el('tr', v.below_min ? { 'data-below-min': '1' } : null);
-        var tdV = el('td', { class: 'mono' }, v.version);
-        if (v.below_min) {
-          tdV.appendChild(document.createTextNode(' '));
-          tdV.appendChild(el('span', { class: 'tag tag-red', style: 'font-size:10px' }, tr('client_updates.overview_below_min')));
-        }
-        tr_.appendChild(tdV);
-        tr_.appendChild(el('td', { style: 'text-align:right' }, String(v.count)));
-        tbody.appendChild(tr_);
-      });
-      table.appendChild(tbody);
-      block.appendChild(table);
-      overviewEl.appendChild(block);
+  // Restore
+  let rsFile = null;
+  let rsReady = false;
+  $('st-rs-pick').addEventListener('click', () => $('st-rs-file').click());
+  $('st-rs-file').addEventListener('change', (e) => {
+    rsFile = e.target.files[0] || null;
+    $('st-rs-passrow').hidden = true;
+    $('st-rs-pass').value = '';
+    if (rsFile) previewRestore();
+  });
+  $('st-rs-check').addEventListener('click', previewRestore);
+  $('st-rs-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); previewRestore(); } });
+  function restoreForm() {
+    const fd = new FormData();
+    fd.append('backup', rsFile);
+    if (!$('st-rs-passrow').hidden && $('st-rs-pass').value) fd.append('passphrase', $('st-rs-pass').value);
+    return fd;
+  }
+  async function restoreCall(url) {
+    try {
+      const resp = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': window.GC.csrfToken }, body: restoreForm() });
+      return await resp.json();
+    } catch (err) { return { ok: false, error: err.message }; }
+  }
+  function restoreError(r) {
+    if (r && (r.code === 'PASSPHRASE_REQUIRED' || r.code === 'DECRYPT_FAILED')) { $('st-rs-passrow').hidden = false; $('st-rs-pass').focus(); }
+    return r && r.code ? O.errorText(r, ['offsite.err.generic', r.error || '']) : (r && r.error) || t('st.err.generic');
+  }
+  async function previewRestore() {
+    if (!rsFile) return;
+    $('st-rs-box').hidden = false;
+    const prev = $('st-rs-preview');
+    prev.textContent = t('common.loading');
+    rsReady = false;
+    $('st-rs-go').hidden = true;
+    const r = await restoreCall('/api/v1/settings/restore/preview');
+    if (!r.ok) { prev.textContent = restoreError(r); prev.dataset.state = 'crit'; return; }
+    const s = r.summary;
+    let line = t('st.bk.restore_summary', { peers: s.peers, routes: s.routes, settings: s.settings, webhooks: s.webhooks, date: O.fmtDateTime(s.created_at, lang) });
+    if (r.encrypted) line += ' · ' + t('offsite.restore_encrypted') + ' · ' + t(r.include_key ? 'offsite.restore_with_key' : 'offsite.restore_without_key') + (r.gc_version ? ' · v' + r.gc_version : '');
+    prev.textContent = line;
+    prev.dataset.state = '';
+    rsReady = true;
+    $('st-rs-go').hidden = false;
+  }
+  $('st-rs-go').addEventListener('click', async (e) => {
+    if (!rsReady) return;
+    if (!(await D.confirm({ title: t('settings.restore_confirm'), message: t('settings.restore_warning'), detail: t('settings.restore_warning_detail'), okLabel: t('settings.restore_confirm_ok'), danger: true }))) return;
+    busy(e.currentTarget, true);
+    const r = await restoreCall('/api/v1/settings/restore');
+    busy(e.currentTarget, false);
+    if (r.ok) {
+      const x = r.restored;
+      await D.alert({ title: t('settings.restore_done_title'), message: t('settings.restore_done', { peers: x.peers, routes: x.routes, settings: x.settings, webhooks: x.webhooks }) });
+      window.location.reload();
+    } else { $('st-rs-preview').textContent = restoreError(r); $('st-rs-preview').dataset.state = 'crit'; }
+  });
+
+  // ── Updates ──
+  let auSaved = null;
+  function renderTimeline() {
+    const v = valuesOf('updates');
+    const segs = U.windowSegments(v['au-from'], v['au-to']);
+    const w1 = $('st-au-win1');
+    const w2 = $('st-au-win2');
+    [w1, w2].forEach((w, i) => {
+      const s = segs[i];
+      w.hidden = !s;
+      if (s) { w.style.left = s.left + '%'; w.style.width = s.width + '%'; }
     });
-    if (ov && ov.unreported > 0) {
-      overviewEl.appendChild(el('div', { style: 'color:var(--text-3);font-size:12px' }, tr('client_updates.overview_unreported', { count: ov.unreported })));
-    }
+    const nowStr = O.timeIn(v['au-tz']) || '';
+    const nowMin = U.minutesOf(nowStr);
+    const now = $('st-au-now');
+    now.hidden = nowMin == null;
+    if (nowMin != null) now.style.left = (nowMin / 14.4) + '%';
+    const wait = nowMin == null ? null : U.minutesToWindow(v['au-from'], v['au-to'], nowMin);
+    const parts = [t('st.au.caption_tz', { tz: String(v['au-tz']).replace(/_/g, ' ') })];
+    if (nowStr) parts.push(t('st.au.caption_now', { time: nowStr }));
+    if (wait === 0) parts.push(t('st.au.caption_open'));
+    else if (wait != null) parts.push(t('st.au.caption_next', { h: Math.floor(wait / 60), m: wait % 60 }));
+    if (!segs.length) parts.push(t('autoupdate.window_same'));
+    $('st-au-caption').textContent = parts.join(' · ');
   }
-
-  function apply(data) {
-    channelSel.value = data.default_channel || 'stable';
-    minPro.value = (data.min_versions && data.min_versions.pro) || '';
-    minCommunity.value = (data.min_versions && data.min_versions.community) || '';
-    renderOverview(data.overview);
-  }
-
-  api.get('/api/v1/settings/client-updates').then(function (r) {
-    if (r && r.ok) {
-      apply(r.data);
-      if (window.SettingsAutosave && SettingsAutosave.resync) SettingsAutosave.resync('client-updates');
+  function renderUpdateSh() {
+    const u = auSaved && auSaved.update_sh;
+    const state = $('st-ush-state');
+    let mismatch = false;
+    if (!u || u.image_version == null) state.textContent = t('st.ush.unknown_state');
+    else if (u.matches) state.textContent = t('st.ush.ok');
+    else {
+      mismatch = true;
+      state.textContent = u.host_version == null ? t('updatesh.unknown') : t('updatesh.mismatch', { host: u.host_version, image: u.image_version });
     }
-  }).catch(function (err) {
-    overviewEl.textContent = err.message || '';
-    console.warn('[settings] loading client update policy failed', err);
-  });
-
-  SettingsAutosave.bind({
-    cluster: 'client-updates',
-    fields: [channelSel, minPro, minCommunity],
-    statusEl: document.getElementById('cu-status'),
-    valuesById: function () {
-      return {
-        'cu-default-channel': channelSel.value,
-        'cu-min-pro': minPro.value.trim(),
-        'cu-min-community': minCommunity.value.trim(),
-      };
-    },
-    save: function () {
-      return api.put('/api/v1/settings/client-updates', {
-        default_channel: channelSel.value,
-        min_versions: { pro: minPro.value.trim(), community: minCommunity.value.trim() },
-      }).then(function (r) {
-        if (r && r.ok && r.data) renderOverview(r.data.overview);
-        return r;
+    state.classList.toggle('st-warn-text', mismatch);
+    const waiting = !!(auSaved && auSaved.last_action === 'waiting_window');
+    $('st-au-waiting').hidden = !waiting;
+    setDot('updates', mismatch || waiting);
+  }
+  async function loadAutoUpdate() {
+    const d = await get('/api/v1/system/auto-update');
+    if (!d || d.ok === false) return null;
+    auSaved = d;
+    return d;
+  }
+  SECTIONS.updates = {
+    async load() {
+      const d = await loadAutoUpdate();
+      if (!d) return;
+      const w = d.window || {};
+      let tz = w.tz || O.DEFAULT_TZ;
+      const browserTz = O.browserTimeZone(window.Intl);
+      if (!w.enabled && tz === O.DEFAULT_TZ && browserTz && browserTz !== tz && O.timeIn(browserTz)) tz = browserTz;
+      const tzSel = $('st-au-tz');
+      clear(tzSel);
+      O.timeZones(window.Intl, tz).forEach((z) => tzSel.appendChild(el('option', { value: z, text: z.replace(/_/g, ' ') })));
+      fill('updates', {
+        'au-mode': d.mode || 'auto', 'au-win': !!w.enabled, 'au-from': O.isHHMM(w.start) ? w.start : '03:00', 'au-to': O.isHHMM(w.end) ? w.end : '05:00',
+        'au-tz': tz, 'au-mail': d.notify_email !== false,
       });
+      renderUpdateSh();
+      renderTimeline();
     },
+    onChange: renderTimeline,
+    onDiscard: renderTimeline,
+    validate(v, d) {
+      if (!d.some((x) => ['au-win', 'au-from', 'au-to', 'au-tz'].includes(x))) return {};
+      const p = O.windowProblem({ enabled: v['au-win'], start: v['au-from'], end: v['au-to'], tz: v['au-tz'] });
+      return p ? { 'au-from': p === 'same' ? t('autoupdate.window_same') : O.errorText({ code: 'INVALID_WINDOW' }) } : {};
+    },
+    groups: [
+      { fields: ['au-mode'], errorField: 'au-mode', save: (v) => api.put('/api/v1/system/auto-update', { mode: v['au-mode'] }) },
+      { fields: ['au-win', 'au-from', 'au-to', 'au-tz'], errorField: 'au-from',
+        save: (v) => api.put('/api/v1/system/auto-update', { window: { enabled: v['au-win'], start: v['au-from'], end: v['au-to'], tz: v['au-tz'] } }),
+        after: (r) => { auSaved = r; renderUpdateSh(); } },
+      { fields: ['au-mail'], errorField: 'au-mail', save: (v) => api.put('/api/v1/system/auto-update', { notify_email: v['au-mail'] }) },
+    ],
+  };
+  setInterval(() => { if (current === 'updates') renderTimeline(); }, 30000);
+  $('st-au-trigger').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    busy(b, true);
+    const r = await post('/api/v1/system/auto-update/trigger');
+    busy(b, false);
+    const reasons = { cooldown: 'autoupdate.trigger_cooldown', stale_no_cron: 'autoupdate.not_configured', not_manual_mode: 'autoupdate.trigger_not_manual' };
+    if (r.queued) toast(t('autoupdate.trigger_queued'));
+    else toast(t(reasons[r.reason] || 'autoupdate.err.generic'), 'error');
   });
+  $('st-ush-show').addEventListener('click', (e) => {
+    const box = $('st-ush-cmds');
+    box.hidden = !box.hidden;
+    e.currentTarget.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+  });
+  $('st-ush-copy').addEventListener('click', () => copyText($('st-ush-cmd').textContent));
+
+  // ── Lizenz ──
+  const licForm = $('st-lic-form');
+  if (licForm) licForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = $('st-lic-msg');
+    const b = licForm.querySelector('button[type="submit"]');
+    busy(b, true);
+    const r = await post('/api/v1/license/activate', { license_key: $('st-lic-key').value.trim(), signing_key: $('st-lic-sig').value.trim() });
+    busy(b, false);
+    if (r.ok) { toast(t('license.activated')); setTimeout(() => location.reload(), 900); } else { msg.textContent = errText(r); msg.dataset.state = 'crit'; }
+  });
+  const licRefresh = $('st-lic-refresh');
+  if (licRefresh) licRefresh.addEventListener('click', async () => {
+    busy(licRefresh, true);
+    const r = await post('/api/v1/license/refresh');
+    busy(licRefresh, false);
+    if (r.ok) { toast(t('license.refresh_success')); setTimeout(() => location.reload(), 900); } else toast(errText(r), 'error');
+  });
+  const licRemove = $('st-lic-remove');
+  if (licRemove) licRemove.addEventListener('click', async () => {
+    if (!(await D.confirm({ title: t('st.lic.remove_title'), message: t('license.remove_confirm'), okLabel: t('st.lic.remove_ok'), danger: true }))) return;
+    busy(licRemove, true);
+    const r = await del('/api/v1/license');
+    busy(licRemove, false);
+    if (r.ok) { toast(t('license.removed')); setTimeout(() => location.reload(), 900); } else toast(errText(r), 'error');
+  });
+
+  // ── Gefahrenzone ──
+  $('st-wg-stop').addEventListener('click', () => {
+    $('st-wgstop-pw').value = '';
+    $('st-wgstop-err').hidden = true;
+    window.openModal('st-wgstop-modal');
+    $('st-wgstop-pw').focus();
+  });
+  $('st-wgstop-form').addEventListener('submit', (e) => { e.preventDefault(); $('st-wgstop-go').click(); });
+  $('st-wgstop-go').addEventListener('click', async (e) => {
+    const pw = $('st-wgstop-pw');
+    const err = $('st-wgstop-err');
+    err.hidden = true;
+    if (!pw.value) { err.textContent = t('error.wireguard.password_required'); err.hidden = false; pw.focus(); return; }
+    busy(e.currentTarget, true);
+    const r = await post('/api/v1/wg/stop', { password: pw.value });
+    busy(e.currentTarget, false);
+    if (r.ok) { window.closeModal('st-wgstop-modal'); toast(t('st.danger.wg_stopped')); } else { err.textContent = errText(r); err.hidden = false; pw.focus(); }
+  });
+
+  // ══ Start ═════════════════════════════════════════════════════════════
+  // Attention dots that matter before their section is opened.
+  (async function dots() {
+    const [tg, au] = await Promise.all([get(BK + '/targets'), loadAutoUpdate()]);
+    if (tg.ok) { bk.targets = tg.targets || []; setDot('backup', bk.targets.some((x) => x.enabled && (x.last_status === 'failed' || x.last_verify_status === 'failed'))); }
+    if (au) renderUpdateSh();
+  })();
+
+  const start = U.resolveLocation({ hash: location.hash, search: location.search }, { known, sectionOfElement });
+  let first = start ? start.section : null;
+  if (!first) { try { const s = localStorage.getItem('gc-settings-section'); if (known.includes(s)) first = s; } catch (_) { /* optional */ } }
+  show(first || known[0], { anchor: start && start.anchor, force: true });
+
+  // For tests and the quick search on this page.
+  window.GCSettings = { show, save, discard, dirty: () => (current ? dirtyOf(current) : []), current: () => current };
 })();

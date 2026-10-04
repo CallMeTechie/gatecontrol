@@ -41,7 +41,7 @@ router.put('/dns', requireFeature('custom_dns'), (req, res) => {
         const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
         for (const ip of ips) {
           if (!ipv4Regex.test(ip)) {
-            return res.status(400).json({ ok: false, error: 'Invalid IP address: ' + ip });
+            return res.status(400).json({ ok: false, error: req.t('error.settings.dns_invalid_ip', { ip }), fields: { dns: req.t('error.settings.dns_invalid_ip', { ip }) } });
           }
         }
         settings.set('custom_dns', ips.join(','));
@@ -83,30 +83,30 @@ router.get('/split-tunnel', (req, res) => {
 router.put('/split-tunnel', (req, res) => {
   try {
     if (!hasFeature('split_tunnel_preset')) {
-      return res.status(403).json({ ok: false, error: 'Feature not licensed' });
+      return res.status(403).json({ ok: false, error: req.t('error.license.feature_not_available'), feature: 'split_tunnel_preset' });
     }
 
     const { mode, networks, locked } = req.body;
 
     if (!['off', 'exclude', 'include'].includes(mode)) {
-      return res.status(400).json({ ok: false, error: 'Invalid mode. Must be off, exclude, or include.' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.split_mode_invalid'), fields: { mode: req.t('error.settings.split_mode_invalid') } });
     }
 
     if (!Array.isArray(networks) || networks.length > 50) {
-      return res.status(400).json({ ok: false, error: 'networks must be an array with max 50 entries.' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.split_networks_invalid'), fields: { networks: req.t('error.settings.split_networks_invalid') } });
     }
 
     const cidrRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
     for (const net of networks) {
-      if (!cidrRegex.test(net.cidr)) {
-        return res.status(400).json({ ok: false, error: `Invalid CIDR: ${net.cidr}` });
-      }
-      const prefix = parseInt(net.cidr.split('/')[1], 10);
-      if (prefix < 0 || prefix > 32) {
-        return res.status(400).json({ ok: false, error: `Invalid prefix length in ${net.cidr}` });
-      }
+      const cidr = net && typeof net.cidr === 'string' ? net.cidr : '';
+      const badCidr = () => res.status(400).json({
+        ok: false, error: req.t('error.settings.split_cidr_invalid', { cidr }), fields: { networks: req.t('error.settings.split_cidr_invalid', { cidr }) },
+      });
+      if (!cidrRegex.test(cidr)) return badCidr();
+      const prefix = parseInt(cidr.split('/')[1], 10);
+      if (prefix < 0 || prefix > 32 || cidr.split('/')[0].split('.').some((o) => Number(o) > 255)) return badCidr();
       if (net.label && (typeof net.label !== 'string' || net.label.length > 100)) {
-        return res.status(400).json({ ok: false, error: 'Label must be a string with max 100 characters.' });
+        return res.status(400).json({ ok: false, error: req.t('error.settings.split_label_invalid'), fields: { networks: req.t('error.settings.split_label_invalid') } });
       }
     }
 
@@ -148,17 +148,17 @@ router.put('/route-block-default', (req, res) => {
   try {
     const { action, body, redirect_url } = req.body;
     if (action !== undefined && !EB_ACTIONS.includes(action)) {
-      return res.status(400).json({ ok: false, error: 'invalid action' });
+      return res.status(400).json({ ok: false, error: req.t('error.settings.block_action_invalid'), fields: { action: req.t('error.settings.block_action_invalid') } });
     }
     if (action === 'custom') {
-      if (!body || !String(body).trim()) return res.status(400).json({ ok: false, error: 'body required for custom' });
-      if (Buffer.byteLength(String(body), 'utf8') > EB_BODY_MAX) return res.status(400).json({ ok: false, error: 'body too large (max 16 KB)' });
+      if (!body || !String(body).trim()) return res.status(400).json({ ok: false, error: req.t('error.settings.block_body_required'), fields: { body: req.t('error.settings.block_body_required') } });
+      if (Buffer.byteLength(String(body), 'utf8') > EB_BODY_MAX) return res.status(400).json({ ok: false, error: req.t('error.settings.block_body_too_large'), fields: { body: req.t('error.settings.block_body_too_large') } });
     }
     if (action === 'redirect') {
       try {
         const u = new URL(String(redirect_url || '').trim());
         if (!/^https?:$/.test(u.protocol)) throw new Error('proto');
-      } catch { return res.status(400).json({ ok: false, error: 'redirect_url must be a valid http(s) URL' }); }
+      } catch { return res.status(400).json({ ok: false, error: req.t('error.settings.block_redirect_invalid'), fields: { redirect_url: req.t('error.settings.block_redirect_invalid') } }); }
     }
 
     // Only trigger a Caddy rebuild when one of the three keys actually changes

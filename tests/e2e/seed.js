@@ -114,6 +114,12 @@ async function main() {
     ['waf_ip_banned', 'IP 198.51.100.4 banned', 'waf', '198.51.100.4', 'error', '-3 minutes'],
   ].forEach((r) => act.run(...r));
 
+  // Settings (scenarios/06-settings.js): ein Webhook. Anlegen braucht die
+  // webhooks-Lizenz, die die App in der CI nicht hat; Bearbeiten (Ereignisse,
+  // Beschreibung) geht ohne — das Szenario bearbeitet diesen.
+  const webhookId = db.prepare("INSERT INTO webhooks (url, events, description, enabled) VALUES (?, '*', ?, 1)")
+    .run('https://hooks.example.com/e2e', 'E2E hook').lastInsertRowid;
+
   // Zweiter Admin MIT zweitem Faktor — der erste bleibt ohne, damit die
   // Anmeldung ohne zweiten Schritt ebenfalls geprüft werden kann.
   const users = require('../../src/services/users');
@@ -132,6 +138,7 @@ async function main() {
     hosts: { nas: nas.id, wiki: wiki.id, apex: apex.id },
     gateways: { home: gwHome, nas: gwNas },
     peers: { laptop },
+    webhook: webhookId,
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));

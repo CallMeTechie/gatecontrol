@@ -100,11 +100,6 @@
     return fix.type === 'copy' ? 'security.copy' : (fix.type === 'link' ? 'security.fix_open' : 'security.fix_generic');
   }
   function confirmKey(c) { return CONFIRM_IDS.indexOf(str(c && c.id)) >= 0 ? 'security.confirm.' + c.id : 'security.confirm_generic'; }
-  // /settings#backup → the settings tab to preselect (settings.js restores it from localStorage).
-  function settingsTab(href) {
-    const m = /^\/settings#([a-z0-9-]+)$/.exec(str(href));
-    return m ? m[1] : null;
-  }
 
   // route id → { domain_id, host_id } from GET /api/v1/zones.
   function zoneIndex(res) {
@@ -180,7 +175,7 @@
 
   const pure = {
     SEVERITIES, CHECK_IDS, CHECK_FEATURE, FIX_LABELS, CONFIRM_IDS, PILL_CLASS, PROTECTIONS, FILTERS, TABS, ITEMS_SHOWN,
-    severityOf, statusOf, kindOf, pillOf, groupChecks, summaryOf, textKeys, safeFix, fixLabelKey, confirmKey, settingsTab, relPath,
+    severityOf, statusOf, kindOf, pillOf, groupChecks, summaryOf, textKeys, safeFix, fixLabelKey, confirmKey, relPath,
     zoneIndex, routeHref, itemHref, isUnprotected, lacksWaf, normFilter, filterEntries, exposureCounts, protectionCells, healthKind, parseHash,
   };
   if (!win || !win.document) return pure;
@@ -520,7 +515,7 @@
       const label = str(it.label) || (str(it.kind) + ' ' + str(it.id));
       const href = itemHref(it, state.zones);
       return href
-        ? el('a', { class: 'sc-item', href, title: t('security.item_open'), dataset: { kind: str(it.kind) }, on: { click: () => rememberSettingsTab(href) } }, [el('span', { class: 'sc-item-label', text: label })])
+        ? el('a', { class: 'sc-item', href, title: t('security.item_open'), dataset: { kind: str(it.kind) } }, [el('span', { class: 'sc-item-label', text: label })])
         : el('span', { class: 'sc-item', dataset: { kind: str(it.kind) } }, [el('span', { class: 'sc-item-label', text: label })]);
     });
     const more = items.length > ITEMS_SHOWN
@@ -542,10 +537,6 @@
       btn,
     ]);
   }
-  function rememberSettingsTab(href) {
-    const tab = settingsTab(href);
-    if (tab) { try { win.localStorage.setItem('settings-active-tab', tab); } catch (_) { /* storage off */ } }
-  }
   function actionsEl(c, fix) {
     const id = str(c.id);
     const nodes = [];
@@ -555,7 +546,7 @@
       btn.addEventListener('click', () => runFix(c, fix, btn));
       nodes.push(btn);
     } else if (fix && fix.type === 'link') {
-      nodes.push(el('a', { class: 'btn btn-sm sc-fix', href: fix.href, dataset: { fix: 'link' }, on: { click: () => rememberSettingsTab(fix.href) } }, [icon('ext', 13), t(fixLabelKey(c, fix))]));
+      nodes.push(el('a', { class: 'btn btn-sm sc-fix', href: fix.href, dataset: { fix: 'link' } }, [icon('ext', 13), t(fixLabelKey(c, fix))]));
     }
     if (id === 'public_unprotected' && statusOf(c) === 'fail') {
       nodes.push(el('button', { type: 'button', class: 'btn btn-ghost btn-sm sc-to-exposure', on: { click: () => { setFilter('unprotected'); setTab('exposure'); } } }, [icon('globe', 13), t('security.show_exposure')]));

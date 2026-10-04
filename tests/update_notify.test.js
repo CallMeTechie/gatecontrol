@@ -1,8 +1,10 @@
 'use strict';
 
-// Update / rollback e-mails (docs/feature-release-b.md §6): recipient
-// monitoring.alert_email, switch notify.update_email (default on), once per
-// version, once per failure streak of .auto-update-state.json.
+// Update / rollback e-mails (docs/feature-release-b.md §6): the one
+// notification recipient and the "update" row of the notification events
+// (services/notifications.js), once per version, once per failure streak of
+// .auto-update-state.json. Webhooks subscribed to the update types get the
+// event whether or not the mail is on.
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,6 +12,9 @@ const fs = require('node:fs');
 const { setup, teardown } = require('./helpers/setup');
 
 let notify;
+let notifications;
+let webhook;
+const hooks = [];
 let settings;
 let email;
 let db;
@@ -24,6 +29,9 @@ before(async () => {
   email = require('../src/services/email');
   email.isSmtpConfigured = () => true;
   email.sendMail = async (m) => { sent.push(m); return { messageId: 'x' }; };
+  notifications = require('../src/services/notifications');
+  webhook = require('../src/services/webhook');
+  webhook.notify = async (type, message, details) => { hooks.push({ type, message, details }); };
   notify = require('../src/services/updateNotify');
   STATE = require('../src/services/autoUpdate').STATE_FILE;
 });
@@ -31,8 +39,9 @@ after(() => teardown());
 
 beforeEach(() => {
   sent.length = 0;
-  settings.set('monitoring.alert_email', 'ops@example.com');
-  settings.set('notify.update_email', 'true');
+  hooks.length = 0;
+  notifications.setRecipient('ops@example.com');
+  notifications.setEventEmail('update', true);
   db.prepare("DELETE FROM settings WHERE key IN ('notify.last_version', 'notify.update_state_last')").run();
   db.prepare("DELETE FROM activity_log WHERE event_type = 'system_start'").run();
   db.prepare("UPDATE users SET language = 'en'").run();
@@ -84,12 +93,13 @@ describe('new version e-mail', () => {
   });
 
   it('switch off / no recipient → no mail, but deduplicated', async () => {
-    settings.set('notify.update_email', 'false');
+    notifications.setEventEmail('update', false);
     settings.set('notify.last_version', '1.124.0');
     assert.equal(await notify.checkVersion(), 'skipped');
-    settings.set('notify.update_email', 'true');
+    assert.deepEqual(hooks.map((h) => h.type), ['update_installed'], 'webhooks still get the event');
+    notifications.setEventEmail('update', true);
     assert.equal(await notify.checkVersion(), 'same');
-    settings.set('monitoring.alert_email', '');
+    notifications.setRecipient('');
     settings.set('notify.last_version', '1.124.0');
     assert.equal(await notify.checkVersion(), 'skipped');
     assert.equal(sent.length, 0);
@@ -138,10 +148,10 @@ describe('rollback / failure e-mail', () => {
   });
 
   it('switch off → state still tracked, no mail', async () => {
-    settings.set('notify.update_email', 'false');
+    notifications.setEventEmail('update', false);
     marker({ checked_at: '2026-09-14T03:00:00Z', action: 'rolled_back', bad_image: 'sha256:x' });
     assert.equal(await notify.checkState(), 'skipped');
-    settings.set('notify.update_email', 'true');
+    notifications.setEventEmail('update', true);
     marker({ checked_at: '2026-09-14T03:05:00Z', action: 'rolled_back', bad_image: 'sha256:x' });
     assert.equal(await notify.checkState(), 'repeat');
     assert.equal(sent.length, 0);

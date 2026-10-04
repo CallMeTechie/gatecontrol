@@ -10,6 +10,7 @@ const activity = require('../../../services/activity');
 const backup = require('../../../services/backup');
 const logger = require('../../../utils/logger');
 const { requireFeature } = require('../../../middleware/license');
+const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 const { uploadLimiter } = require('../../../middleware/rateLimit');
 const gcbk = require('../../../services/offsite/gcbk');
 
@@ -203,8 +204,11 @@ router.get('/autobackup', (req, res) => {
 router.put('/autobackup', requireFeature('scheduled_backups'), (req, res) => {
   try {
     const autobackup = require('../../../services/autobackup');
-    const { enabled, schedule, retention } = req.body;
-    autobackup.updateSettings({ enabled, schedule, retention });
+    const { enabled, schedule } = req.body || {};
+    const { values, fields } = checkRanges(req, req.body || {}, { retention: [1, 100] });
+    if (schedule !== undefined && !autobackup.VALID_SCHEDULES.includes(schedule)) fields.schedule = req.t('error.settings.invalid_input');
+    if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
+    autobackup.updateSettings({ enabled, schedule, retention: values.retention });
 
     autobackup.restartScheduler();
 

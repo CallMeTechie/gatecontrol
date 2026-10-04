@@ -51,7 +51,9 @@ function getAll() {
 //
 // Deliberately NOT listed, with reason:
 //   ip2location.api_key, license_key, license_signing_key_encrypted → secrets
-//   alert_email, alerts.email, monitoring.alert_email, caddy.acme_email → operator PII
+//   notifications.email (and the old alert_email, alerts.email,
+//   monitoring.alert_email), caddy.acme_email → operator PII
+//   alerts.check_state → internal bookkeeping of the hourly checks
 //   security.lockout.*, security.password.*  → lets an attacker tune brute force
 //   custom_dns, server.public_ip, server.verify_resolver → infrastructure
 //   portal.base_domain, portal.prefix → internal naming
@@ -73,11 +75,11 @@ const PUBLIC_KEYS = new Set([
   'auto_update.last_trigger_at',
   'auto_update.stale_after_min',
   'monitoring.interval',
-  'monitoring.email_alerts',
   'email_alerts_enabled',
   'alerts.email_events',
   'alerts.resource_cpu_threshold',
   'alerts.resource_ram_threshold',
+  'alerts.resource_disk_threshold',
   'alerts.backup_reminder_days',
   'portal.enabled',
   'portal.autoappear',

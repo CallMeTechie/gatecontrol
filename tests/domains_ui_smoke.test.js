@@ -10,6 +10,9 @@ afterEach(teardown);
 
 test('settings page renders the Domains section', async () => {
   const res = await getAgent().get('/settings').expect(200);
-  assert.match(res.text, /domains-table/);
-  assert.doesNotMatch(res.text, /settings\.domains\.[a-z_]+/i); // no raw i18n keys leaked
+  assert.match(res.text, /data-section="domains"/);
+  assert.match(res.text, /id="st-dom-list"/);
+  assert.match(res.text, /id="st-dom-add"/);
+  const visible = res.text.replace(/<script[\s\S]*?<\/script>/g, '');
+  assert.doesNotMatch(visible, /settings\.domains\.[a-z_]+|>st\.[a-z_.]+<|"st\.[a-z_.]+"/i); // no raw i18n keys leaked
 });

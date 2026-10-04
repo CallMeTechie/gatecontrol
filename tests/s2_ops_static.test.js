@@ -1,7 +1,7 @@
 'use strict';
 
 // Static wiring of strand S2 (docs/feature-next-package.md §S2): the restore
-// test in the backup card, the update.sh version hint in the advanced tab and
+// test in the backup section, the update.sh version hint in the Updates section and
 // the "derived from your plan" note of the licence hint. Templates, script
 // wiring, i18n placement + GC.t whitelist, no innerHTML.
 
@@ -37,20 +37,19 @@ const O = require('../public/js/ops-ui.js');
 
 describe('restore test: UI wiring', () => {
   it('settings.js has a verify action per target that calls the contract endpoint', () => {
-    assert.match(SETTINGS_JS, /actionButton\(t, 'verify', T\('offsite\.act_verify'/);
-    assert.match(SETTINGS_JS, /window\.api\.post\(BASE \+ '\/targets\/' \+ t\.id \+ '\/verify'/);
-    assert.match(SETTINGS_JS, /state\.busy\[t\.id\] = 'verify'/);
-    // Licence gate like the other target actions (actionButton disables without it).
-    assert.match(SETTINGS_JS, /disabled: !licensed \|\| !!busy,/);
+    assert.match(SETTINGS_JS, /tbtn\(tg, 'verify', t\('st\.bk\.act_verify'\), verifyTarget\)/);
+    assert.match(SETTINGS_JS, /post\(BK \+ '\/targets\/' \+ tg\.id \+ '\/verify'\)/);
+    assert.match(SETTINGS_JS, /bk\.busy\[tg\.id\] = 'verify'/);
+    // Licence gate like the other target actions.
+    assert.match(SETTINGS_JS, /disabled: !FEATURES\.scheduled_backups \|\| !!bk\.busy\[tg\.id\]/);
   });
 
   it('the result shows date, size, counts and warnings and says nothing was changed', () => {
     assert.match(SETTINGS_JS, /lines: O\.verifyLines\(r, lang\)/);
     assert.match(SETTINGS_JS, /warnings: \(r\.warnings \|\| \[\]\)\.map\(O\.verifyWarningText\)\.filter\(Boolean\)/);
-    assert.match(SETTINGS_JS, /note: T\('offsite\.verify_note'/);
-    assert.match(SETTINGS_JS, /op-t-verify-facts/);
-    assert.match(SETTINGS_JS, /op-t-verify-warn/);
-    assert.match(SETTINGS_JS, /T\('offsite\.verify_last'|T\('offsite\.verify_never'/);
+    assert.match(SETTINGS_JS, /note: t\('offsite\.verify_note'\)/);
+    assert.match(SETTINGS_JS, /class: 'st-warnlist'/);
+    assert.match(SETTINGS_JS, /t\('offsite\.verify_last'[\s\S]{0,80}t\('offsite\.verify_never'\)/);
   });
 
   it('ops-ui: verifyLines and the warning codes', () => {
@@ -72,26 +71,23 @@ describe('restore test: UI wiring', () => {
   });
 });
 
-describe('update.sh version hint (advanced tab)', () => {
-  it('the hint lives in the maintenance-window card, next to the reinstall commands', () => {
-    for (const id of ['au-updatesh', 'au-updatesh-text', 'au-updatesh-show']) {
+describe('update.sh version hint (Updates section)', () => {
+  it('the hint lives in the update.sh card of the Updates section, with the reinstall commands', () => {
+    for (const id of ['st-ush-state', 'st-ush-show', 'st-ush-cmds', 'st-ush-cmd']) {
       assert.ok(SETTINGS_TPL.includes('id="' + id + '"'), id);
     }
-    assert.ok(SETTINGS_TPL.indexOf('id="au-updatesh"') < SETTINGS_TPL.indexOf('id="au-reinstall"'));
-    assert.match(SETTINGS_TPL, /<div id="au-updatesh" class="op-note op-note-warn op-updatesh" hidden>/);
+    const updates = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf('data-section="updates"'), SETTINGS_TPL.indexOf('data-section="lizenz"'));
+    assert.ok(updates.includes('id="st-ush-state"') && updates.includes('id="st-ush-cmds"'));
     // Strand S3 owns the dashboard — the hint must not be put there.
-    assert.doesNotMatch(read('templates/aurora/pages/dashboard.njk'), /au-updatesh/);
+    assert.doesNotMatch(read('templates/aurora/pages/dashboard.njk'), /au-updatesh|st-ush/);
   });
 
-  it('settings.js fills it from GET /system/auto-update update_sh', () => {
-    assert.match(SETTINGS_JS, /var u = saved && saved\.update_sh;/);
-    assert.match(SETTINGS_JS, /T\('updatesh\.mismatch'/);
-    assert.match(SETTINGS_JS, /T\('updatesh\.unknown'/);
-    assert.match(SETTINGS_JS, /renderUpdateSh\(\);/);
-    // "Befehle zeigen" opens the reinstall block on demand — the block's own
-    // visibility rule (maintenance window) stays exactly as it was.
-    assert.match(SETTINGS_JS, /byId\('au-reinstall'\)\.hidden = !w\.enabled;/);
-    assert.match(SETTINGS_JS, /au-updatesh-show[\s\S]{0,300}det\.hidden = false;[\s\S]{0,60}det\.open = true;/);
+  it('settings.js fills it from GET /system/auto-update update_sh and marks the section', () => {
+    assert.match(SETTINGS_JS, /const u = auSaved && auSaved\.update_sh;/);
+    assert.match(SETTINGS_JS, /t\('updatesh\.mismatch'/);
+    assert.match(SETTINGS_JS, /t\('updatesh\.unknown'\)/);
+    assert.match(SETTINGS_JS, /setDot\('updates', mismatch \|\| waiting\)/);
+    assert.match(SETTINGS_JS, /\$\('st-ush-show'\)\.addEventListener\('click'[\s\S]{0,200}box\.hidden = !box\.hidden;/);
   });
 });
 
@@ -107,7 +103,9 @@ describe('licence source note', () => {
   });
 
   it('the off-site card carries the slot for scheduled_backups', () => {
-    assert.match(SETTINGS_TPL, /<div id="offsite-plan-default" data-license-source="scheduled_backups"><\/div>/);
+    assert.match(SETTINGS_TPL, /<div class="st-src" id="offsite-plan-default" data-license-source="scheduled_backups"><\/div>/);
+    const card = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf('id="card-offsite"'), SETTINGS_TPL.indexOf('id="st-off-targets"'));
+    assert.ok(card.includes('id="offsite-plan-default"'), 'inside the off-site card');
   });
 
   it('security.css styles the note and stays balanced', () => {
@@ -115,10 +113,10 @@ describe('licence source note', () => {
     assert.match(css, /\.lh-src \{/);
     assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length);
     const ops = appSection(5);
-    assert.match(ops, /\.op-updatesh \{/);
-    assert.match(ops, /\.op-t-verify-facts \{/);
     assert.equal((ops.match(/\{/g) || []).length, (ops.match(/\}/g) || []).length);
-    assert.doesNotMatch(appSection(2).replace(/\/\*[\s\S]*?\*\//g, ''), /\.op-t-verify|\.op-updatesh|\.lh-src/);
+    assert.doesNotMatch(appSection(2).replace(/\/\*[\s\S]*?\*\//g, ''), /\.lh-src \{/);
+    // the settings slot only takes room while the note is shown
+    assert.match(appSection(2), /\.st-src:not\(:has\(> :not\(\[hidden\]\)\)\)\{display:none\}/);
   });
 });
 
@@ -128,7 +126,7 @@ describe('i18n', () => {
 
   it('de and en carry the same new keys with the same {placeholders}', () => {
     assert.deepEqual(pick(de).sort(), pick(en).sort());
-    assert.ok(pick(de).length >= 22, 'keys: ' + pick(de).length);
+    assert.ok(pick(de).length >= 20, 'keys: ' + pick(de).length);
     for (const k of pick(de)) {
       const ph = (s) => (s.match(/\{\w+\}/g) || []).sort().join();
       assert.ok(de[k] && en[k], k);
@@ -142,7 +140,8 @@ describe('i18n', () => {
       const keys = Object.keys(loc);
       assert.match(keys[keys.length - 1], /^waf\./, n + ': the waf.* block stays the tail');
       // offsite.verify_* inside the offsite.* block, updatesh.* after whatsnew.*
-      const firstVerify = keys.findIndex((k) => k === 'offsite.act_verify');
+      const firstVerify = keys.findIndex((k) => k.startsWith('offsite.verify_'));
+      assert.ok(firstVerify > 0, n + ': offsite.verify_* keys');
       assert.ok(keys[firstVerify - 1].startsWith('offsite.'), n + ': verify keys inside the offsite block');
       const firstUpdatesh = keys.findIndex((k) => k.startsWith('updatesh.'));
       assert.ok(keys[firstUpdatesh - 1].startsWith('whatsnew.'), n + ': updatesh.* after the whats-new block');
@@ -165,7 +164,7 @@ describe('i18n', () => {
       license, activeNav: 'settings', currentPath: '/settings',
     });
     assert.ok(html.includes('data-license-source="scheduled_backups"'));
-    assert.ok(html.includes('id="au-updatesh"'));
+    assert.ok(html.includes('id="st-ush-state"'));
     assert.ok(html.includes(de['updatesh.show']));
     assert.doesNotMatch(html, /\{\{\s*t\(|\{%/, 'no unrendered tags');
   });

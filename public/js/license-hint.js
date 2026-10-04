@@ -25,7 +25,6 @@
 
   const REASONS = ['plan', 'not_in_token', 'unlicensed'];
   const PRICING_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
-  const SETTINGS_TAB_KEY = 'settings-active-tab';
 
   // 'plan' | 'not_in_token' | 'unlicensed' | null (not locked / unknown)
   function reasonOf(info, key) {
@@ -203,10 +202,8 @@
         return btn;
       }
       if (a === 'enter') {
-        return el('a', {
-          class: 'btn btn-sm lh-enter', href: '/settings', text: t('license_hint.enter'),
-          on: { click: () => { try { win.localStorage.setItem(SETTINGS_TAB_KEY, 'license'); } catch (_) { /* storage off */ } } },
-        });
+        // On the settings page itself the hash change switches the section.
+        return el('a', { class: 'btn btn-sm lh-enter', href: '/settings#lizenz', text: t('license_hint.enter') });
       }
       if (a === 'upgrade') return el('a', { class: 'lh-link lh-upgrade', href: PRICING_URL, target: '_blank', rel: 'noopener noreferrer', text: t('license_hint.upgrade') });
       if (a === 'reload') return el('button', { type: 'button', class: 'btn btn-sm lh-reload', text: t('license_hint.reload'), on: { click: () => win.location.reload() } });

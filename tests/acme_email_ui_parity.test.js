@@ -9,18 +9,10 @@ const en = require('../src/i18n/en.json');
 const THEMES = ['aurora']; // Aurora is the only theme (docs/feature-aurora-only.md)
 const ALL_KEYS = [
   'settings.acme_email',
-  'settings.acme_email_hint',
-  'settings.acme_email.inherited',
   'settings.acme_email.push_failed',
   'error.settings.acme_email_invalid',
   'error.settings.acme_email_save',
 ];
-// Nur diese werden vom Client-JS gelesen und brauchen deshalb die GC.t-Brücke.
-// settings.autosave.saved existiert seit je in beiden Sprachdateien, fehlt aber in
-// ALLEN drei Whitelists — settingsAutosave.js:13 fällt deshalb auf das
-// hartkodierte englische 'Saved' zurück, auch in der deutschen Oberfläche.
-const BRIDGED = ['settings.acme_email.push_failed', 'settings.autosave.saved'];
-
 test('all new keys exist in de and en', () => {
   for (const k of ALL_KEYS) {
     assert.ok(de[k] && de[k].trim(), `de ${k}`);
@@ -28,34 +20,24 @@ test('all new keys exist in de and en', () => {
   }
 });
 
-test('client-read keys are bridged into GC.t in all three layouts', () => {
-  for (const theme of THEMES) {
-    const layout = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'layout.njk'), 'utf8');
-    // Mit Doppelpunkt prüfen (Projektkonvention, tests/i18n_update_keys.test.js:16):
-    // ohne ihn erfüllt schon ein beliebiges t('key')-Vorkommen die Assertion.
-    for (const k of BRIDGED) assert.ok(layout.includes(`'${k}':`), `${theme} ${k}`);
-  }
+test('the push warning reaches the browser through the settings island (settings.* prefix)', () => {
+  const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
+  assert.match(njk, /id="st-i18n" data-prefixes="[^"]*\bsettings\. /);
 });
 
-// PR #229: der Aurora-Knopf fehlte in zwei von drei Settings-Seiten — dieselbe
-// Dreifach-Pflege, deshalb hier für alle drei Themes geprüft.
-test('all three settings pages carry the field, its status line and the prefill', () => {
-  for (const theme of THEMES) {
-    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'pages', 'settings.njk'), 'utf8');
-    assert.match(njk, /id="acme-email"/, `${theme}/settings.njk fehlt id="acme-email"`);
-    assert.match(njk, /id="acme-email-status"/, `${theme}/settings.njk fehlt id="acme-email-status"`);
-    assert.match(njk, /value="\{\{ settingsAcmeEmail/, `${theme}: ohne Prefill ist "ändern" unmöglich`);
-    assert.match(njk, /acmeEmailInherited/, `${theme}: kein Hinweis auf den geerbten .env-Wert`);
-  }
-});
-
-test('the save handler routes the push warning through ok:false', () => {
-  // settingsAutosave.js:90 ruft bei ok:true unbedingt flash() und überschreibt
-  // jeden selbst gesetzten Statustext mit "Gespeichert". Die Warnung muss
-  // deshalb als ok:false zurückkommen, sonst ist sie unsichtbar.
+test('the settings page carries the field; the value comes from GET /settings/acme-email', () => {
+  const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
+  assert.match(njk, /textRow\('st-acme', 'acme-email'/, 'field st-acme (data-st-field acme-email)');
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings.js'), 'utf8');
-  const i = js.indexOf("/api/v1/settings/acme-email");
+  assert.match(js, /get\('\/api\/v1\/settings\/acme-email'\)/, 'prefill from the API');
+  assert.match(js, /acme\.data\.inherited \? t\('st\.acme\.email_ph_env'\)/, 'hint for the inherited .env value');
+});
+
+test('the save group turns the push warning into a visible note, not a silent success', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings.js'), 'utf8');
+  const i = js.indexOf("api.put('/api/v1/settings/acme-email'");
   assert.ok(i > 0, 'Bindung an die acme-email-Route fehlt');
-  assert.match(js.slice(i, i + 800), /data\.warning[\s\S]{0,300}ok:\s*false/,
-    'Warnung muss als ok:false zurückgegeben werden');
+  assert.match(js.slice(i, i + 300), /r\.warning \? Object\.assign\(\{\}, r, \{ warning: t\(r\.warning\) \}\)/);
+  // save(): a warning is shown in the save bar.
+  assert.match(js, /if \(r\.warning\) messages\.push\(r\.warning\)/);
 });

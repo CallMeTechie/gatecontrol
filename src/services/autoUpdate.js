@@ -97,9 +97,10 @@ function setWindow(input) {
   return next;
 }
 
-// "Update"/"Rollback" e-mails (services/updateNotify.js); default on.
-function getNotifyEmail() { return settings.get('notify.update_email', 'true') !== 'false'; }
-function setNotifyEmail(v) { settings.set('notify.update_email', v ? 'true' : 'false'); return getNotifyEmail(); }
+// "Update"/"Rollback" e-mails (services/updateNotify.js): the "update" row of
+// the notification events (services/notifications.js).
+function getNotifyEmail() { return require('./notifications').eventEmailOn('update'); }
+function setNotifyEmail(v) { require('./notifications').setEventEmail('update', !!v); return getNotifyEmail(); }
 
 function setMode(mode) {
   if (!VALID_MODES.includes(mode)) throw new Error('invalid mode');
