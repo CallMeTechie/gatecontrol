@@ -1,1473 +1,901 @@
 {% extends theme + "/layout.njk" %}
 
+{#- Settings (docs: PR "redesigned settings"). One page, 21 sections in seven
+    groups, left section nav (a select at ≤ 900 px), one save model: every
+    field with data-st-field belongs to its section; changes collect in the
+    sticky save bar and are saved per section (public/js/settings.js).
+    Immediate actions (test, restart, upload, list items) stay buttons.
+    Styles: the st- block in §2 of public/css/app.css. -#}
+
+{%- macro pro(text) -%}<span class="st-pro">{{ text }}</span>{%- endmacro -%}
+
+{%- macro rowText(id, label, hint, chip, isLabel) -%}
+<div class="st-row-text">
+  {%- if isLabel %}<label class="st-label" for="{{ id }}" id="{{ id }}-label">{{ label }}{% if chip %} {{ pro(chip) }}{% endif %}</label>
+  {%- else %}<span class="st-label" id="{{ id }}-label">{{ label }}{% if chip %} {{ pro(chip) }}{% endif %}</span>{% endif %}
+  {%- if hint %}<span class="st-hint" id="{{ id }}-hint">{{ hint }}</span>{% endif %}
+  <span class="st-err" id="{{ id }}-err" role="alert" hidden></span>
+</div>
+{%- endmacro -%}
+
+{%- macro switchRow(id, field, label, hint='', chip='', disabled=false) -%}
+<div class="st-row" data-st-row="{{ field }}">
+  {{ rowText(id, label, hint, chip, true) }}
+  <div class="st-row-ctl">
+    <button type="button" class="st-switch" role="switch" aria-checked="false" id="{{ id }}" data-st-field="{{ field }}"
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err"{% if disabled %} disabled{% endif %}><span class="st-knob" aria-hidden="true"></span></button>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro numRow(id, field, label, hint='', unit='', min=0, max=100, chip='', disabled=false, step=1) -%}
+<div class="st-row" data-st-row="{{ field }}">
+  {{ rowText(id, label, hint, chip, true) }}
+  <div class="st-row-ctl">
+    <input type="number" class="st-input st-input-num" id="{{ id }}" data-st-field="{{ field }}" min="{{ min }}" max="{{ max }}" step="{{ step }}"
+      inputmode="numeric" autocomplete="off" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err"{% if disabled %} disabled{% endif %}>
+    {%- if unit %}<span class="st-unit">{{ unit }}</span>{% endif %}
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro textRow(id, field, label, hint='', type='text', placeholder='', mono=false, width='', chip='', disabled=false, maxlength=255, autocomplete='off') -%}
+<div class="st-row" data-st-row="{{ field }}">
+  {{ rowText(id, label, hint, chip, true) }}
+  <div class="st-row-ctl">
+    <input type="{{ type }}" class="st-input{% if mono %} st-mono{% endif %}{% if width %} st-w-{{ width }}{% endif %}" id="{{ id }}"{% if field %} data-st-field="{{ field }}"{% endif %}
+      placeholder="{{ placeholder }}" maxlength="{{ maxlength }}" autocomplete="{{ autocomplete }}" spellcheck="false"
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err"{% if disabled %} disabled{% endif %}>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro segRow(id, field, label, options, hint='', chip='', disabled=false) -%}
+<div class="st-row" data-st-row="{{ field }}">
+  {{ rowText(id, label, hint, chip, false) }}
+  <div class="st-row-ctl">
+    <div class="st-seg" role="group" id="{{ id }}" data-st-field="{{ field }}" aria-labelledby="{{ id }}-label"
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err">
+      {%- for o in options %}<button type="button" class="st-seg-btn" data-value="{{ o[0] }}" aria-pressed="false"{% if disabled %} disabled{% endif %}>{{ o[1] }}</button>{% endfor -%}
+    </div>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro selectRow(id, field, label, options, hint='', chip='', disabled=false) -%}
+<div class="st-row" data-st-row="{{ field }}">
+  {{ rowText(id, label, hint, chip, true) }}
+  <div class="st-row-ctl">
+    <select class="st-select" id="{{ id }}" data-st-field="{{ field }}" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err"{% if disabled %} disabled{% endif %}>
+      {%- for o in options %}<option value="{{ o[0] }}">{{ o[1] }}</option>{% endfor -%}
+    </select>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro readRow(id, label, hint='', mono=false, copyLabel='', value='') -%}
+<div class="st-row st-row-read">
+  <div class="st-row-text"><span class="st-label" id="{{ id }}-label">{{ label }}</span>{% if hint %}<span class="st-hint">{{ hint }}</span>{% endif %}</div>
+  <div class="st-row-ctl">
+    <span class="st-read{% if mono %} st-mono{% endif %}" id="{{ id }}" aria-labelledby="{{ id }}-label">{{ value }}</span>
+    {%- if copyLabel %}<button type="button" class="st-icon-btn" data-st-copy="{{ id }}" aria-label="{{ copyLabel }}" title="{{ copyLabel }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>{% endif %}
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro cardHead(id, title, desc='', chip='') -%}
+<div class="st-card-head">
+  <div class="st-card-headtext">
+    <h3 class="st-card-title" id="{{ id }}">{{ title }}{% if chip %} {{ pro(chip) }}{% endif %}</h3>
+    {%- if desc %}<p class="st-card-desc">{{ desc }}</p>{% endif %}
+  </div>
+  {{ caller() if caller else '' }}
+</div>
+{%- endmacro -%}
+
+{%- macro lockNote(feature) -%}
+<div class="st-lock" data-license-hint="{{ feature }}"></div>
+{%- endmacro -%}
+
+{% set PRO = t('st.pro') %}
+{% set has = license.hasFeature %}
+{% set navGroups = [
+  { id: 'system', items: [
+    ['uebersicht', 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z', ''],
+    ['domains', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18', ''],
+    ['netzwerk', 'M5 12h14M12 5v14M7 7l10 10', ''],
+    ['daten', 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6', ''] ] },
+  { id: 'security', items: [
+    ['anmeldung', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', ''],
+    ['geraete', 'M4 5h16v11H4zM2 20h20', 'machine_binding'] ] },
+  { id: 'clients', items: [
+    ['gruppen', 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21c0-4 4-6 8-6s8 2 8 6', ''],
+    ['richtlinien', 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9', ''],
+    ['splittunnel', 'M6 3v12a6 6 0 0 0 6 6M18 3v6a6 6 0 0 1-6 6', 'split_tunnel_preset'],
+    ['clientupdates', 'M12 3v12M7 10l5 5 5-5M4 21h16', ''] ] },
+  { id: 'notify', items: [
+    ['email', 'M3 5h18v14H3zM3 6l9 7 9-7', ''],
+    ['benachrichtigungen', 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4', ''],
+    ['webhooks', 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7', 'webhooks'] ] },
+  { id: 'observe', items: [
+    ['monitoring', 'M3 20h18M6 16l4-5 3 3 5-7', ''] ] },
+  { id: 'integrations', items: [
+    ['pihole', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v8M8 12h8', 'pihole_integration'],
+    ['geoip', 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 10v.5', ''],
+    ['portal', 'M3 9l9-6 9 6v11H3zM9 20v-6h6v6', ''] ] },
+  { id: 'maintenance', items: [
+    ['backup', 'M12 3v12M7 10l5 5 5-5M4 21h16', ''],
+    ['updates', 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5', ''],
+    ['lizenz', 'M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM12 10v11M12 14h3M12 18h2', ''],
+    ['gefahr', 'M12 3l10 18H2zM12 10v5M12 18v.5', ''] ] }
+] %}
+{% set piholeOn = has('pihole_integration') %}
+
 {% block content %}
 {% include "partials/tls-i18n.njk" %}
 
-<div class="page-header">
-  <div>
-    <div class="page-eyebrow">{{ t('nav.system') }}</div>
-    <div class="page-title">{{ t('nav.settings') }}</div>
-    <div class="page-sub">{{ t('settings.subtitle') }}</div>
-  </div>
-</div>
+<div class="st-page" id="st-page" data-user-2fa="{{ '1' if user.totp_enabled else '0' }}" data-base-url="{{ baseUrl }}"
+  data-features='{"webhooks":{{ "true" if has("webhooks") else "false" }},"email_alerts":{{ "true" if has("email_alerts") else "false" }},"scheduled_backups":{{ "true" if has("scheduled_backups") else "false" }},"machine_binding":{{ "true" if has("machine_binding") else "false" }},"split_tunnel_preset":{{ "true" if has("split_tunnel_preset") else "false" }},"custom_dns":{{ "true" if has("custom_dns") else "false" }},"prometheus_metrics":{{ "true" if has("prometheus_metrics") else "false" }},"waf":{{ "true" if has("waf") else "false" }}}'>
 
-<div class="settings-tabs">
-  <button class="settings-tab-toggle" aria-expanded="false" aria-controls="settings-tab-dropdown">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    <span class="settings-tab-label">{{ t('settings.tab_general') }}</span>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto"><polyline points="6 9 12 15 18 9"/></svg>
-  </button>
-  <div class="settings-tab-dropdown" id="settings-tab-dropdown">
-    <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
-    <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
-    <div class="tab" data-settings-tab="backup">{{ t('settings.tab_backup') }}</div>
-    <div class="tab" data-settings-tab="email">{{ t('settings.tab_email') }}</div>
-    <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
-    <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
-    <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
-    <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
-    <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
-    <div class="tab" data-settings-tab="client-policy">{{ t('settings.tab_client_policy') }}</div>
-    {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
-    <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
-  </div>
-  <div class="tab active" data-settings-tab="general">{{ t('settings.tab_general') }}</div>
-  <div class="tab" data-settings-tab="security">{{ t('settings.tab_security') }}</div>
-  <div class="tab" data-settings-tab="backup">{{ t('settings.tab_backup') }}</div>
-  <div class="tab" data-settings-tab="email">{{ t('settings.tab_email') }}</div>
-  <div class="tab" data-settings-tab="monitoring">{{ t('settings.tab_monitoring') }}</div>
-  <div class="tab" data-settings-tab="advanced">{{ t('settings.tab_advanced') }}</div>
-  <div class="tab" data-settings-tab="license">{{ t('settings.tab_license') }}</div>
-  <div class="tab" data-settings-tab="split-tunnel">{{ t('settings.tab_split_tunnel') }}</div>
-  <div class="tab" data-settings-tab="client-updates">{{ t('settings.tab_client_updates') }}</div>
-  <div class="tab" data-settings-tab="client-policy">{{ t('settings.tab_client_policy') }}</div>
-  {% if license.features.pihole_integration %}<div class="tab" data-settings-tab="pihole">{{ t('settings.tab_pihole') }}</div>{% endif %}
-  <div class="tab" data-settings-tab="portal">{{ t('settings.portal.title') }}</div>
-</div>
+  <header class="st-head">
+    <div class="st-head-main">
+      <div class="page-eyebrow">{{ t('nav.system') }}</div>
+      <h1 class="st-title">{{ t('nav.settings') }}</h1>
+    </div>
+    <div class="st-search">
+      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" id="st-search" aria-label="{{ t('st.search_label') }}" placeholder="{{ t('st.search_ph') }}" autocomplete="off" spellcheck="false" aria-controls="st-nav">
+      <span class="st-search-count" id="st-search-count" aria-live="polite"></span>
+    </div>
+  </header>
 
-{# ─── General Tab ─────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="general">
-  {# Fix 4: single merged grid — App info sits in same flex-column as the ACME e-mail card etc., eliminating gap #}
-  <div class="grid">
-    <div class="span6" style="display:flex;flex-direction:column;gap:14px">
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>
-          {{ t('settings.app_info') }}
-        </div>
-        <div style="margin-top:14px">
-          <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.app_name') }}</span><code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ appName }}</code></div>
-          <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.version') }}</span><code style="font-family:var(--font-mono);font-size:12px">v{{ appVersion }}</code></div>
-          <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.wg_host') }}</span><code style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">{{ wgHost }}:{{ wgPort }}</code></div>
-          <div class="set-row" style="border-bottom:1px solid var(--border)"><span class="l">{{ t('settings.subnet') }}</span><code style="font-family:var(--font-mono);font-size:12px">{{ wgSubnet }}</code></div>
-          <div class="set-row"><span class="l">{{ t('settings.default_language') }}</span><code style="font-family:var(--font-mono);font-size:12px">{{ language }}</code></div>
-        </div>
+  <div class="st-layout">
+    <label class="st-compact">
+      <span class="st-compact-label">{{ t('st.area') }}</span>
+      <select id="st-select" class="st-select st-select-lg">
+        {%- for g in navGroups %}<optgroup label="{{ t('st.group.' + g.id) }}">
+          {%- for it in g.items %}{% if it[0] != 'pihole' or piholeOn %}<option value="{{ it[0] }}">{{ t('st.nav.' + it[0]) }}</option>{% endif %}{% endfor -%}
+        </optgroup>{% endfor -%}
+      </select>
+    </label>
+
+    <nav class="st-nav" id="st-nav" aria-label="{{ t('st.nav_label') }}">
+      {%- for g in navGroups %}
+      <div class="st-nav-group" data-group="{{ g.id }}">
+        <div class="st-nav-head" id="st-nav-g-{{ g.id }}">{{ t('st.group.' + g.id) }}</div>
+        <ul class="st-nav-list" aria-labelledby="st-nav-g-{{ g.id }}">
+          {%- for it in g.items %}{% if it[0] != 'pihole' or piholeOn %}
+          <li><button type="button" class="st-nav-item" data-section="{{ it[0] }}" aria-current="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ it[1] }}"/></svg>
+            <span class="st-nav-label">{{ t('st.nav.' + it[0]) }}</span>
+            {%- if it[2] %}<span class="st-pro st-pro-sm">{{ PRO }}</span>{% endif %}
+            <span class="st-nav-dot" data-dot hidden><span class="st-sr">{{ t('st.attention') }}</span></span>
+          </button></li>
+          {%- endif %}{% endfor %}
+        </ul>
       </div>
+      {%- endfor %}
+      <p class="st-nav-empty" id="st-nav-empty" hidden>{{ t('st.search_none') }}</p>
+    </nav>
 
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg></span>
-          {{ t('settings.acme_email') }}
-        </div>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
-          <input type="text" id="acme-email" value="{{ settingsAcmeEmail or '' }}" placeholder="{{ t('settings.acme_email.inherited') if acmeEmailInherited else '' }}" aria-label="{{ t('settings.acme_email') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="254" autocomplete="off">
-          <div style="font-size:11px;color:var(--text-3)">{{ t('settings.acme_email_hint') }}</div>
-          <div id="acme-email-status" class="autosave-status"></div>
-          {# TLS guard: attempts before a host is paused (docs/feature-tls-guard.md) #}
-          <div class="tg-settings-field" style="padding-top:12px;border-top:1px solid var(--border)">
-            <label for="tls-max-attempts" style="font-size:13px;color:var(--text-2)">{{ t('settings.tls.max_attempts') }}</label>
-            <input type="number" id="tls-max-attempts" min="0" max="10" step="1" value="3" inputmode="numeric" aria-label="{{ t('settings.tls.max_attempts') }}" autocomplete="off">
-            <div style="font-size:11px;color:var(--text-3)">{{ t('settings.tls.max_attempts_hint') }}</div>
-            <div id="tls-max-attempts-status" class="autosave-status"></div>
-          </div>
-        </div>
+    <div class="st-main" id="st-main">
+
+{# ══ System · Übersicht ══════════════════════════════════════════════ #}
+<section class="st-section" data-section="uebersicht" aria-labelledby="st-h-uebersicht" data-st-keywords="{{ t('st.kw.uebersicht') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-uebersicht" tabindex="-1">{{ t('st.nav.uebersicht') }}</h2><p class="st-sec-desc">{{ t('st.desc.uebersicht') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-services">
+    {% call cardHead('st-c-services', t('st.services.title'), t('st.services.desc')) %}{% endcall %}
+    <div class="st-tiles">
+      <div class="st-tile" id="st-svc-wg" data-state="unknown">
+        <div class="st-tile-head"><span class="st-dot" aria-hidden="true"></span><span class="st-tile-name">WireGuard</span><span class="st-pill" id="st-svc-wg-state">{{ t('st.services.checking') }}</span></div>
+        <div class="st-tile-detail" id="st-svc-wg-detail">{{ t('st.services.wg_detail', { port: wgPort, iface: wgInterface, ip: wgGatewayIp }) }}</div>
+        <div class="st-tile-actions"><button type="button" class="st-btn st-btn-sm" id="st-wg-restart">{{ t('st.services.wg_restart') }}</button></div>
       </div>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
-        <div class="card">
-          <div class="card-title">
-            <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>
-            {{ t('peer_groups.title') }}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-            <div style="font-size:12px;color:var(--text-3)">{{ t('peer_groups.subtitle') }}</div>
-            <div id="peer-groups-list"></div>
-            <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
-              <div style="display:flex;gap:8px">
-                <input type="text" id="pg-name" placeholder="{{ t('peer_groups.name_placeholder') }}" style="flex:1;padding:8px 12px;font-size:12px" maxlength="100">
-                <input type="color" id="pg-color" value="#6b7280" style="width:40px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">
-              </div>
-              <input type="text" id="pg-desc" placeholder="{{ t('peer_groups.description_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="255">
-              <div id="pg-error" class="form-error" style="display:none"></div>
-              <button class="btn btn-primary" id="btn-add-peer-group" style="align-self:flex-start">{{ t('peer_groups.add') }}</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">
-            <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41L13.42 20.58a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
-            {{ t('tags.title') or 'Tags' }}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-            <div style="font-size:12px;color:var(--text-3)">{{ t('tags.subtitle') or 'Zentrale Verwaltung aller Peer-Tags' }}</div>
-            <div id="tags-list"></div>
-            <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
-              <input type="text" id="tag-name" placeholder="{{ t('tags.name_placeholder') or 'Tag-Name' }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="64" autocomplete="off">
-              <div id="tag-error" class="form-error" style="display:none"></div>
-              <button class="btn btn-primary" id="btn-add-tag" style="align-self:flex-start">{{ t('tags.add') or 'Tag anlegen' }}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic" style="color:var(--red);background:var(--red-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
-          {{ t('settings.danger_zone') }}
-        </div>
-        <div style="margin-top:14px">
-          <button class="btn btn-danger" style="width:100%;justify-content:center" id="btn-clear-logs">{{ t('settings.clear_logs') }}</button>
-        </div>
+      <div class="st-tile" id="st-svc-caddy" data-state="unknown">
+        <div class="st-tile-head"><span class="st-dot" aria-hidden="true"></span><span class="st-tile-name">Caddy</span><span class="st-pill" id="st-svc-caddy-state">{{ t('st.services.checking') }}</span></div>
+        <div class="st-tile-detail" id="st-svc-caddy-detail"></div>
+        <div class="st-tile-actions"><button type="button" class="st-btn st-btn-sm" id="st-caddy-reload">{{ t('st.services.caddy_reload') }}</button></div>
       </div>
     </div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-server">
+    {% call cardHead('st-c-server', t('st.server.title')) %}{% endcall %}
+    {{ readRow('st-r-name', t('st.server.name'), value=appName) }}
+    {{ readRow('st-r-version', t('st.server.version'), mono=true, value='v' + appVersion) }}
+    {{ readRow('st-r-endpoint', t('st.server.endpoint'), t('st.server.endpoint_hint'), mono=true, copyLabel=t('st.copy'), value=wgHost + ':' + wgPort) }}
+    {{ readRow('st-r-subnet', t('st.server.subnet'), mono=true, value=wgSubnet) }}
+    {{ readRow('st-r-lang', t('st.server.language'), t('st.server.language_hint'), value=t('st.lang.' + language)) }}
+  </section>
+</section>
 
-    <div class="span6" style="display:flex;flex-direction:column;gap:14px">
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
-          {{ t('settings.dns') }}
-        </div>
-        <div style="margin-top:14px">
-          {% if license.features.custom_dns %}
-          <div style="margin-bottom:8px">
-            <input type="text" id="settings-dns-input" placeholder="{{ t('peers.dns_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12.5px;font-family:var(--font-mono)">
-          </div>
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">{{ t('settings.dns_desc') }}</div>
-          <div id="dns-status" class="autosave-status"></div>
-          {% else %}
-          <div class="set-row">
-            <span class="l">{{ t('settings.dns') }} <span class="lock-icon"></span></span>
-            <code style="font-family:var(--font-mono);font-size:12px;color:var(--text-3)">{{ wgDns }}</code>
-          </div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('settings.dns_desc') }}</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
-          {{ t('data.title') or 'Data & Retention' }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-          <div style="display:flex;gap:10px">
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label" for="data-traffic-days">{{ t('data.traffic_retention') or 'Traffic data (days)' }}</label>
-              <input type="number" id="data-traffic-days" value="30" min="1" max="365" style="width:100%">
-            </div>
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label" for="data-activity-days">{{ t('data.activity_retention') or 'Activity logs (days)' }}</label>
-              <input type="number" id="data-activity-days" value="30" min="1" max="365" style="width:100%">
-            </div>
-            {# WAF events (docs/feature-waf.md): data.retention_waf_days, 1–365, default 14. #}
-            {% if license.features.waf %}
-            <div class="form-group wf-retention" style="flex:1;margin-bottom:0">
-              <label class="form-label" for="data-waf-days">{{ t('waf.retention_label') }}</label>
-              <input type="number" id="data-waf-days" value="14" min="1" max="365" style="width:100%" title="{{ t('waf.retention_hint') }}" aria-describedby="data-waf-days-hint">
-              <small class="form-hint" id="data-waf-days-hint" hidden>{{ t('waf.retention_hint') }}</small>
-            </div>
-            {% endif %}
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="data-peer-timeout">{{ t('data.peer_timeout') or 'Peer online timeout (seconds)' }}</label>
-            <input type="number" id="data-peer-timeout" value="180" min="30" max="600" style="width:100%">
-            <small class="form-hint">{{ t('data.peer_timeout_hint') or 'Peer is considered offline after no handshake for this many seconds' }}</small>
-          </div>
-          <div id="data-message" style="display:none"></div>
-          <div id="data-status" class="autosave-status"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></span>
-          {{ t('settings.route_block_title') }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="settings-route-block-action">{{ t('routes.block_action_label') }}</label>
-            <select id="settings-route-block-action" style="width:100%">
-              <option value="not_found">{{ t('routes.block_not_found') }}</option>
-              <option value="custom">{{ t('routes.block_custom') }}</option>
-              <option value="redirect">{{ t('routes.block_redirect') }}</option>
-              <option value="empty">{{ t('routes.block_empty') }}</option>
-            </select>
-          </div>
-          <textarea id="settings-route-block-body" style="display:none;width:100%;padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:var(--font-mono);resize:vertical;background:var(--bg-base);color:var(--text-1)" maxlength="16384" placeholder="{{ t('routes.block_body_ph') }}"></textarea>
-          <input type="url" id="settings-route-block-redirect" style="display:none;width:100%" placeholder="{{ t('routes.block_redirect_ph') or 'https://...' }}">
-          <div id="settings-route-block-message" style="display:none"></div>
-          <div id="route-block-status" class="autosave-status"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg></span>
-          {{ t('config.wg_service') }}
-        </div>
-        <div style="margin-top:14px">
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('config.listen_port') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent);background:var(--accent-lt);padding:2px 8px;border-radius:4px;border:1px solid var(--accent-md)">{{ wgPort }} / UDP</code>
-          </div>
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('config.gateway_ip') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px">{{ wgGatewayIp }}</code>
-          </div>
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('config.interface') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px">{{ wgInterface }}</code>
-          </div>
-          <div style="display:flex;gap:8px;padding-top:12px">
-            <button class="btn btn-ghost" style="flex:1;justify-content:center" id="btn-svc-wg-restart">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-              {{ t('config.restart') }}
-            </button>
-            <button class="btn btn-warning" style="flex:1;justify-content:center" id="btn-svc-wg-stop">{{ t('config.stop') }}</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
-          {{ t('config.caddy_service') }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
-          <div style="display:flex;align-items:center;gap:8px" id="svc-caddy-status">
-            <div class="pulse-dot"></div>
-            <span style="font-size:13px;color:var(--green);font-weight:600">{{ t('config.caddy_running') }}</span>
-          </div>
-          <div style="font-size:12px;color:var(--text-2)" id="svc-caddy-info">{{ t('config.https_active') }} · Let's Encrypt</div>
-          <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px" id="btn-svc-caddy-reload">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            {{ t('config.caddy_reload') }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {# ─── Domains ─────────────────────────────────────── #}
-  <div class="card">
-    <div class="card-title">
-      <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
-      {{ t('settings.domains.title') }}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
-      <div style="font-size:12px;color:var(--text-3)">{{ t('settings.domains.intro') }}</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="set-row" style="border-bottom:1px solid var(--border)">
-          <span class="l">{{ t('settings.domains.server_ip') }}</span>
-          <code id="domains-server-ip" style="font-family:var(--font-mono);font-size:12px"></code>
-        </div>
-        <div class="set-row" style="border-bottom:1px solid var(--border)">
-          <span class="l">{{ t('settings.tls.server_ipv6') }}</span>
-          <code id="domains-server-ipv6" style="font-family:var(--font-mono);font-size:12px"></code>
-        </div>
-        <div id="domains-server-ip-warning" style="display:none;padding:8px 12px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">{{ t('settings.domains.server_ip_warning') }}</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="domains-server-ip-input" placeholder="{{ t('settings.domains.server_ip_override') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="64" autocomplete="off">
-          <input type="text" id="domains-server-ipv6-input" placeholder="{{ t('settings.tls.server_ipv6_override') }}" aria-label="{{ t('settings.tls.server_ipv6_override') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="64" autocomplete="off">
-          <button class="btn btn-primary" id="domains-server-ip-save">{{ t('data.save') }}</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-3)">{{ t('settings.tls.server_ipv6_hint') }}</div>
-      </div>
-      <table id="domains-table"
-        data-label-verified="{{ t('settings.domains.status_verified') }}"
-        data-label-failed="{{ t('settings.domains.status_failed') }}"
-        data-label-pending="{{ t('settings.domains.status_pending') }}"
-        data-label-verify="{{ t('settings.domains.verify') }}"
-        data-label-remove="{{ t('settings.domains.remove') }}"
-        style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr style="border-bottom:1px solid var(--border)">
-            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.domain') }}</th>
-            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.status') }}</th>
-            <th style="text-align:left;padding:6px 8px;font-weight:500;color:var(--text-2)">{{ t('settings.domains.verified_at') }}</th>
-            <th style="padding:6px 8px"></th>
-          </tr>
-        </thead>
-        <tbody id="domains-tbody"></tbody>
-      </table>
-      <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
-        <div style="display:flex;gap:8px">
-          <input type="text" id="domains-add-input" placeholder="{{ t('settings.domains.domain') }}" style="flex:1;padding:8px 12px;font-size:12px;font-family:var(--font-mono)" maxlength="255" autocomplete="off">
-          <button class="btn btn-primary" id="domains-add-btn">{{ t('settings.domains.add') }}</button>
-        </div>
-        <div id="domains-add-error" class="form-error" style="display:none"></div>
-      </div>
-      <div style="font-size:11px;color:var(--text-3)">{{ t('settings.domains.points_note') }}</div>
-    </div>
-  </div>
-
-  {# ─── WG Stop Password Modal ────────────────────── #}
-  <div id="wg-stop-modal" class="modal-overlay">
-    <div class="modal modal-sm">
-      <div class="modal-head">
-        <div class="modal-title">{{ t('config.stop_confirm_title') }}<small>{{ t('config.stop_confirm_text') }}</small></div>
-      </div>
-      <div class="modal-body">
-        <input type="password" id="wg-stop-password" placeholder="{{ t('config.password_placeholder') }}" style="width:100%;padding:10px 12px;font-size:13px;margin-bottom:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input, var(--surface));color:var(--text-1)" autocomplete="current-password">
-        <div id="wg-stop-error" style="display:none;font-size:12px;color:var(--red);margin-bottom:8px"></div>
-      </div>
-      <div class="modal-foot">
-        <button class="btn btn-ghost" id="wg-stop-cancel">{{ t('config.cancel') }}</button>
-        <button class="btn btn-warning" id="wg-stop-confirm">{{ t('config.confirm') }}</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ─── Security Tab ────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="security" style="display:none">
-  <div class="grid">
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span>
-        {{ t('security.lockout.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
-        <div class="set-row">
-          <span class="l">{{ t('security.lockout.enabled') }}</span>
-          <div class="toggle on" id="security-lockout-enabled" data-managed="true"></div>
-        </div>
-        <div style="display:flex;gap:10px">
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <label class="form-label" for="security-lockout-attempts">{{ t('security.lockout.max_attempts') }}</label>
-            <input type="number" id="security-lockout-attempts" value="5" min="1" max="100" style="width:100%">
-          </div>
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <label class="form-label" for="security-lockout-duration">{{ t('security.lockout.duration') }}</label>
-            <input type="number" id="security-lockout-duration" value="15" min="1" max="1440" style="width:100%">
-          </div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('two_fa.settings_require') }}<small>{{ t('two_fa.settings_require_hint') }}</small></span>
-          <div class="toggle" id="security-require-2fa" data-managed="true" data-self-2fa="{{ '1' if user.totp_enabled else '0' }}"></div>
-        </div>
-        <div class="tf-banner tf-banner-amber" id="security-require-2fa-warning" hidden>{{ t('two_fa.settings_self_warning') }}</div>
-        <div class="set-sec"><div class="sh"><b>{{ t('security.lockout.locked_accounts') }}</b></div></div>
-        <div id="security-locked-list" style="font-size:12px;color:var(--text-3)">{{ t('security.lockout.no_locked') }}</div>
-        <div id="security-status" class="autosave-status"></div>
-      </div>
-    </div>
-
-    <div class="span6">
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span>
-          {{ t('security.password.title') }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
-          <div class="set-row">
-            <span class="l">{{ t('security.password.enabled') }}</span>
-            <div class="toggle" id="security-password-enabled" data-managed="true"></div>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="security-password-min-length">{{ t('security.password.min_length') }}</label>
-            <input type="number" id="security-password-min-length" value="8" min="4" max="128" style="width:100%">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <div class="set-row">
-              <span class="l">{{ t('security.password.require_uppercase') }}</span>
-              <div class="toggle on" id="security-password-uppercase" data-managed="true"></div>
-            </div>
-            <div class="set-row">
-              <span class="l">{{ t('security.password.require_number') }}</span>
-              <div class="toggle on" id="security-password-number" data-managed="true"></div>
-            </div>
-            <div class="set-row">
-              <span class="l">{{ t('security.password.require_special') }}</span>
-              <div class="toggle on" id="security-password-special" data-managed="true"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# ── Machine Binding ──────────────────────────────────── #}
-      {% set mbLocked = not license.hasFeature('machine_binding') %}
-      <div class="card" id="machine-binding-card" style="margin-top:14px;{% if mbLocked %}opacity:0.6{% endif %}">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-          {{ t('security.machine_binding.title') }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-          <div style="font-size:12px;color:var(--text-3)">{{ t('security.machine_binding.description') }}</div>
-          {% if mbLocked %}
-          <div class="tag tag-amber">
-            <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" style="color:inherit">Upgrade required</a>
-          </div>
-          {% endif %}
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">{{ t('security.machine_binding.mode') }}</label>
-            <select id="mb-mode" style="width:100%" {% if mbLocked %}disabled{% endif %}>
-              <option value="off">{{ t('security.machine_binding.mode_off') }}</option>
-              <option value="global">{{ t('security.machine_binding.mode_global') }}</option>
-              <option value="individual">{{ t('security.machine_binding.mode_individual') }}</option>
-            </select>
-          </div>
-          <div id="mb-message" style="display:none"></div>
-          <div id="machine-binding-status" class="autosave-status"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ─── Backup Tab ──────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="backup" style="display:none">
-  <div class="grid">
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-        {{ t('settings.backup') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3)">{{ t('settings.backup_subtitle') }}</div>
-        <div class="set-sec">
-          <div class="sh"><b>{{ t('settings.backup_download') }}</b></div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('settings.backup_download_desc') }}</div>
-        </div>
-        <button class="btn btn-primary" id="btn-backup-download" style="align-self:flex-start">{{ t('settings.backup_download') }}</button>
-        <div class="set-sec">
-          <div class="sh"><b>{{ t('settings.restore') }}</b></div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('settings.restore_desc') }}</div>
-        </div>
-        <div class="form-hint op-restore-gcbk">{{ t('offsite.restore_gcbk_hint') }}</div>
-        <input type="file" id="backup-file-input" accept=".json,.gcbk" style="display:none">
-        <div id="backup-preview" style="display:none;padding:10px;border-radius:6px;background:var(--surface-3);font-size:12px;font-family:var(--font-mono)"></div>
-        {# Encrypted off-site archive (.gcbk): passphrase for preview + restore; empty = the one saved here. #}
-        <div id="restore-passphrase-row" class="op-restore-pass" hidden>
-          <label class="form-label" for="restore-passphrase">{{ t('offsite.restore_passphrase') }}</label>
-          <div class="op-inline">
-            <input type="password" class="form-input" id="restore-passphrase" autocomplete="off" maxlength="1024" spellcheck="false">
-            <button type="button" class="btn btn-ghost btn-sm" id="restore-passphrase-apply">{{ t('offsite.restore_check') }}</button>
-          </div>
-          <small class="form-hint">{{ t('offsite.restore_passphrase_hint') }}</small>
-        </div>
-        <div id="restore-message" style="display:none"></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" id="btn-backup-select" style="flex:0 0 auto">{{ t('settings.restore_select') }}</button>
-          <button class="btn btn-primary" id="btn-backup-restore" style="flex:0 0 auto;display:none">{{ t('settings.restore_confirm') }}</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
-        {{ t('autobackup.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('autobackup.subtitle') }}</div>
-        <div class="set-row">
-          <span class="l">{{ t('autobackup.enabled') }}</span>
-          <div class="toggle" id="autobackup-enabled" data-managed="true"></div>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="autobackup-schedule">{{ t('autobackup.schedule') }}</label>
-          <select id="autobackup-schedule" style="width:100%">
-            <option value="6h">{{ t('autobackup.schedule_6h') }}</option>
-            <option value="12h">{{ t('autobackup.schedule_12h') }}</option>
-            <option value="daily" selected>{{ t('autobackup.schedule_daily') }}</option>
-            <option value="3d">{{ t('autobackup.schedule_3d') }}</option>
-            <option value="weekly">{{ t('autobackup.schedule_weekly') }}</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="autobackup-retention">{{ t('autobackup.retention') }}</label>
-          <input type="number" id="autobackup-retention" value="5" min="1" max="100" style="width:100%">
-          <small class="form-hint">{{ t('autobackup.retention_hint') }}</small>
-        </div>
-        <div class="set-row" style="border-bottom:1px solid var(--border)">
-          <span class="l">{{ t('autobackup.directory') }}</span>
-          <code style="font-family:var(--font-mono);font-size:11px">/data/backups/</code>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('autobackup.last_run') }}</span>
-          <span id="autobackup-last-run" style="font-size:11px;font-family:var(--font-mono);color:var(--text-3)">{{ t('autobackup.last_run_never') }}</span>
-        </div>
-        <div id="autobackup-message" style="display:none"></div>
-        <div id="autobackup-status" class="autosave-status"></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-ghost" id="btn-autobackup-run">{{ t('autobackup.run_now') }}</button>
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
-          <div class="set-sec"><div class="sh"><b>{{ t('autobackup.existing_files') }}</b></div></div>
-          <div id="autobackup-files" style="font-size:12px;color:var(--text-3)">{{ t('autobackup.no_files') }}</div>
-        </div>
-      </div>
-    </div>
-
-    {# ── Off-site backups (docs/feature-release-b.md §7, licence scheduled_backups).
-       Filled by settings.js (GCOpsUI helpers); styles in the op- section of public/css/app.css.
-       Secrets are write-only: nothing secret is ever rendered or read back. #}
-    <div class="card span12 op-offsite" id="card-offsite" data-licensed="{{ '1' if license.hasFeature('scheduled_backups') else '0' }}">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0017.5 8h-1.8A7 7 0 104 14.9"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg></span>
-        {{ t('offsite.title') }}
-      </div>
-      <p class="op-sub">{{ t('offsite.subtitle') }}</p>
-      {# "Derived from your plan" when scheduled_backups is not in the licence
-         token but the paid plan switches it on (docs/feature-next-package.md
-         §S2.3). license-hint.js fills this; it stays empty otherwise. #}
-      <div id="offsite-plan-default" data-license-source="scheduled_backups"></div>
-      <div id="offsite-license" class="op-license" hidden></div>
-      <div id="offsite-autobackup-off" class="op-note op-note-warn" hidden>{{ t('offsite.autobackup_off') }}</div>
-      <div class="op-offsite-grid">
-        <section class="op-pane" aria-labelledby="offsite-enc-title">
-          <h3 class="op-h" id="offsite-enc-title">{{ t('offsite.enc_title') }}</h3>
-          <div id="offsite-pass-state" class="op-state" aria-live="polite"></div>
-          <form id="offsite-pass-form" class="op-pass-form" autocomplete="off" novalidate>
-            <input type="text" name="username" value="gatecontrol-offsite" autocomplete="username" hidden>
-            <div class="form-group">
-              <label class="form-label" for="offsite-passphrase">{{ t('offsite.passphrase') }}</label>
-              <input type="password" class="form-input" id="offsite-passphrase" autocomplete="new-password" maxlength="1024" spellcheck="false"
-                     data-ph-new="{{ t('offsite.passphrase_ph_new') }}" data-ph-set="{{ t('offsite.passphrase_ph_set') }}" aria-describedby="offsite-pass-strength">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="offsite-passphrase2">{{ t('offsite.passphrase_repeat') }}</label>
-              <input type="password" class="form-input" id="offsite-passphrase2" autocomplete="new-password" maxlength="1024" spellcheck="false">
-            </div>
-            <div id="offsite-pass-strength" class="op-strength" data-level="empty" aria-live="polite">
-              <span class="op-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-              <span class="op-strength-text" id="offsite-pass-strength-text"></span>
-            </div>
-            <div class="op-actions">
-              <button type="submit" class="btn btn-primary btn-sm" id="offsite-pass-save" disabled>{{ t('offsite.passphrase_save') }}</button>
-            </div>
-          </form>
-          <p class="op-note" id="offsite-pass-change-note" hidden>{{ t('offsite.passphrase_change_note') }}</p>
-          <div class="set-row op-set-row">
-            <span class="l" id="offsite-include-key-label">{{ t('offsite.include_key') }}<small>{{ t('offsite.include_key_desc') }}</small></span>
-            <div class="toggle" id="offsite-include-key" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="offsite-include-key-label"></div>
-          </div>
-          <p class="op-note" id="offsite-include-key-note" data-on="{{ t('offsite.include_key_on') }}" data-off="{{ t('offsite.include_key_off') }}"></p>
-          <p class="op-note op-note-warn op-loss">{{ t('offsite.passphrase_loss') }}</p>
-        </section>
-        <section class="op-pane" aria-labelledby="offsite-targets-title">
-          <div class="op-pane-head">
-            <h3 class="op-h" id="offsite-targets-title">{{ t('offsite.targets_title') }}</h3>
-            <button type="button" class="btn btn-primary btn-sm" id="offsite-add">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              {{ t('offsite.add') }}
-            </button>
-          </div>
-          <div id="offsite-targets" class="op-targets">
-            <div class="op-empty">{{ t('common.loading') }}</div>
-          </div>
-        </section>
-      </div>
-    </div>
-
-    {# ── Snapshots before database migrations (docs/feature-release-b.md §4) ── #}
-    <div class="card span12 op-premig" id="card-premigration">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
-        {{ t('premig.title') }}
-      </div>
-      <p class="op-sub">{{ t('premig.subtitle') }}</p>
-      <div id="premig-list" class="op-premig-list" data-empty="{{ t('premig.empty') }}" data-download="{{ t('premig.download') }}">
-        <div class="op-empty">{{ t('common.loading') }}</div>
-      </div>
-      <p class="op-note">{{ t('premig.restore_hint') }}</p>
-    </div>
-  </div>
-</div>
-
-{# Add/edit dialog of an off-site target (outside the tab panels: position:fixed
-   children of a display:none panel would stay hidden). One field set; the
-   wrappers carry data-for="<types>" and settings.js shows the ones of the
-   selected type. Secret inputs stay empty; has_* flags only change the hint. #}
-<div class="modal-overlay" id="offsite-target-modal" style="display:none">
-  <div class="modal modal-wide op-target-modal" role="dialog" aria-modal="true" aria-labelledby="offsite-target-title">
-    <div class="modal-head">
-      <span class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0017.5 8h-1.8A7 7 0 104 14.9"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg></span>
-      <span class="modal-title" id="offsite-target-title" data-add="{{ t('offsite.add') }}" data-edit="{{ t('offsite.dlg_edit') }}">{{ t('offsite.add') }}</span>
-      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
-    </div>
-    <form class="modal-body op-target-form" id="offsite-target-form" novalidate autocomplete="off">
-      <input type="hidden" id="ot-id" value="">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="ot-name">{{ t('offsite.f_name') }}</label>
-          <input type="text" class="form-input" id="ot-name" maxlength="64" placeholder="{{ t('offsite.f_name_ph') }}">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ot-type">{{ t('offsite.f_type') }}</label>
-          <select class="form-select" id="ot-type">
-            <option value="sftp">SFTP</option>
-            <option value="smb">SMB</option>
-            <option value="s3">S3</option>
-            <option value="webdav">WebDAV</option>
-          </select>
-          <small class="form-hint" id="ot-type-hint">{{ t('offsite.f_type_hint') }}</small>
-        </div>
-      </div>
-
-      <div class="form-group" data-for="webdav">
-        <label class="form-label" for="ot-url">{{ t('offsite.field.url') }}</label>
-        <input type="url" class="form-input mono" id="ot-url" maxlength="2048" placeholder="https://cloud.example.com/remote.php/dav/files/alice/gatecontrol/" spellcheck="false">
-        <small class="form-hint">{{ t('offsite.f_url_hint') }}</small>
-      </div>
-
-      <div class="form-group" data-for="s3">
-        <label class="form-label" for="ot-endpoint">{{ t('offsite.f_endpoint') }}</label>
-        <input type="url" class="form-input mono" id="ot-endpoint" maxlength="2048" placeholder="https://s3.eu-central-1.wasabisys.com" spellcheck="false">
-        <small class="form-hint">{{ t('offsite.f_endpoint_hint') }}</small>
-      </div>
-      <div class="form-row" data-for="s3">
-        <div class="form-group">
-          <label class="form-label" for="ot-bucket">{{ t('offsite.field.bucket') }}</label>
-          <input type="text" class="form-input mono" id="ot-bucket" maxlength="63" spellcheck="false">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ot-region">{{ t('offsite.field.region') }}</label>
-          <input type="text" class="form-input mono" id="ot-region" maxlength="32" placeholder="us-east-1" spellcheck="false">
-        </div>
-      </div>
-      <div class="form-group" data-for="s3">
-        <label class="form-label" for="ot-prefix">{{ t('offsite.f_prefix') }}</label>
-        <input type="text" class="form-input mono" id="ot-prefix" maxlength="255" placeholder="gatecontrol" spellcheck="false">
-      </div>
-      <div class="form-row" data-for="s3">
-        <div class="form-group">
-          <label class="form-label" for="ot-akid">{{ t('offsite.field.access_key_id') }}</label>
-          <input type="text" class="form-input mono" id="ot-akid" maxlength="128" autocomplete="off" spellcheck="false">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ot-secret">{{ t('offsite.field.secret_access_key') }}</label>
-          <input type="password" class="form-input mono" id="ot-secret" maxlength="1024" autocomplete="new-password" spellcheck="false">
-          <small class="form-hint" id="ot-secret-hint" data-kept="{{ t('offsite.secret_kept') }}" hidden></small>
-        </div>
-      </div>
-      <label class="form-check op-check" data-for="s3">
-        <input type="checkbox" id="ot-path-style">
-        <span>{{ t('offsite.f_path_style') }}</span>
-      </label>
-
-      <div class="form-row op-host-row" data-for="sftp smb">
-        <div class="form-group">
-          <label class="form-label" for="ot-host">{{ t('offsite.field.host') }}</label>
-          <input type="text" class="form-input mono" id="ot-host" maxlength="253" placeholder="nas.example.com" spellcheck="false">
-        </div>
-        <div class="form-group op-port">
-          <label class="form-label" for="ot-port">{{ t('offsite.field.port') }}</label>
-          <input type="number" class="form-input mono" id="ot-port" min="1" max="65535" placeholder="22">
-        </div>
-      </div>
-      <details class="op-lan" id="ot-lan" data-for="sftp smb">
-        <summary>{{ t('offsite.lan_title') }}</summary>
-        <p class="op-note">{{ t('offsite.lan_hint') }}</p>
-        <label class="form-label" for="ot-l4">{{ t('offsite.lan_pick_label') }}</label>
-        <select class="form-select" id="ot-l4"><option value="">{{ t('offsite.l4_pick') }}</option></select>
-        <div class="op-note" id="ot-l4-note" aria-live="polite" hidden></div>
-      </details>
-      <div class="form-row" data-for="sftp smb webdav">
-        <div class="form-group">
-          <label class="form-label" for="ot-username">{{ t('offsite.field.username') }}</label>
-          <input type="text" class="form-input mono" id="ot-username" maxlength="128" autocomplete="off" spellcheck="false">
-        </div>
-        <div class="form-group" data-for="smb webdav">
-          <label class="form-label" for="ot-password">{{ t('offsite.field.password') }}</label>
-          <input type="password" class="form-input" id="ot-password" maxlength="1024" autocomplete="new-password">
-          <small class="form-hint" id="ot-password-hint" data-kept="{{ t('offsite.secret_kept') }}" hidden></small>
-        </div>
-      </div>
-      <div class="form-row" data-for="sftp smb">
-        <div class="form-group" data-for="smb">
-          <label class="form-label" for="ot-share">{{ t('offsite.field.share') }}</label>
-          <input type="text" class="form-input mono" id="ot-share" maxlength="80" placeholder="backup" spellcheck="false">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ot-path">{{ t('offsite.f_path') }}</label>
-          <input type="text" class="form-input mono" id="ot-path" maxlength="255" placeholder="gatecontrol" spellcheck="false">
-        </div>
-      </div>
-      <label class="form-check op-check" id="ot-clear-password-row" data-for="smb webdav" hidden>
-        <input type="checkbox" id="ot-clear-password">
-        <span>{{ t('offsite.f_clear_password') }}</span>
-      </label>
-      <div class="form-group" data-for="smb">
-        <label class="form-label" for="ot-domain">{{ t('offsite.f_domain') }}</label>
-        <input type="text" class="form-input mono" id="ot-domain" maxlength="64" placeholder="WORKGROUP" spellcheck="false">
-      </div>
-
-      <div class="op-key" id="ot-key" data-for="sftp">
-        <div class="op-key-head">{{ t('offsite.key_title') }}</div>
-        <p class="op-note">{{ t('offsite.key_hint') }}</p>
-        <textarea class="form-textarea mono op-key-val" id="ot-pubkey" rows="2" readonly spellcheck="false" aria-label="{{ t('offsite.key_title') }}"></textarea>
-        <div class="op-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="ot-key-copy">{{ t('offsite.key_copy') }}</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="ot-key-rotate">{{ t('offsite.key_rotate') }}</button>
-        </div>
-        <p class="op-note">{{ t('offsite.key_hostkey_note') }}</p>
-      </div>
-
-      <div class="form-row op-common-row">
-        <div class="form-group">
-          <label class="form-label" for="ot-keep">{{ t('offsite.f_keep') }}</label>
-          <input type="number" class="form-input" id="ot-keep" min="1" max="365" value="14">
-          <small class="form-hint">{{ t('offsite.f_keep_hint') }}</small>
-        </div>
-        <label class="form-check op-check op-enabled">
-          <input type="checkbox" id="ot-enabled" checked>
-          <span>{{ t('offsite.f_enabled') }}</span>
-        </label>
-      </div>
-      <div id="offsite-target-error" class="op-error" role="alert" hidden></div>
+{# ══ System · Domains & Zertifikate ═══════════════════════════════════ #}
+<section class="st-section" data-section="domains" aria-labelledby="st-h-domains" data-st-keywords="{{ t('st.kw.domains') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-domains" tabindex="-1">{{ t('st.nav.domains') }}</h2><p class="st-sec-desc">{{ t('st.desc.domains') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-domains" id="card-domains">
+    {% call cardHead('st-c-domains', t('st.domains.title'), t('st.domains.desc')) %}{% endcall %}
+    <div class="st-note st-note-warn" id="st-dom-ipwarn" hidden>{{ t('settings.domains.server_ip_warning') }}</div>
+    <ul class="st-list" id="st-dom-list" aria-label="{{ t('st.domains.title') }}"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    <form class="st-addline" id="st-dom-add" novalidate>
+      <label class="st-sr" for="st-dom-input">{{ t('st.domains.new') }}</label>
+      <input type="text" class="st-input st-mono st-grow" id="st-dom-input" placeholder="{{ t('st.domains.new_ph') }}" maxlength="255" autocomplete="off" spellcheck="false" aria-describedby="st-dom-add-err">
+      <button type="submit" class="st-btn st-btn-primary">{{ t('st.domains.add') }}</button>
+      <span class="st-err st-err-block" id="st-dom-add-err" role="alert" hidden></span>
     </form>
-    <div class="modal-foot">
-      <button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
-      <button type="button" class="btn btn-primary" id="offsite-target-save">{{ t('common.save') }}</button>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-serverip">
+    {% call cardHead('st-c-serverip', t('st.serverip.title'), t('st.serverip.desc')) %}{% endcall %}
+    {{ readRow('st-r-ip4', t('st.serverip.detected4'), mono=true, value='—') }}
+    {{ readRow('st-r-ip6', t('st.serverip.detected6'), mono=true, value='—') }}
+    {{ textRow('st-srv-ip', 'srv-ip', t('st.serverip.override4'), placeholder=t('st.serverip.auto'), mono=true, width='md', maxlength=64) }}
+    {{ textRow('st-srv-ip6', 'srv-ip6', t('st.serverip.override6'), t('settings.tls.server_ipv6_hint'), placeholder=t('st.serverip.auto'), mono=true, width='md', maxlength=64) }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-acme">
+    {% call cardHead('st-c-acme', t('st.acme.title')) %}{% endcall %}
+    {{ textRow('st-acme', 'acme-email', t('st.acme.email'), t('st.acme.email_hint'), type='email', placeholder=t('st.acme.email_ph'), maxlength=254) }}
+    {{ numRow('st-tls-attempts', 'tls-attempts', t('st.acme.attempts'), t('st.acme.attempts_hint'), t('st.unit.attempts'), 0, 10) }}
+  </section>
+</section>
+
+{# ══ System · VPN & Netzwerk ══════════════════════════════════════════ #}
+<section class="st-section" data-section="netzwerk" aria-labelledby="st-h-netzwerk" data-st-keywords="{{ t('st.kw.netzwerk') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-netzwerk" tabindex="-1">{{ t('st.nav.netzwerk') }}</h2><p class="st-sec-desc">{{ t('st.desc.netzwerk') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-vpn">
+    {% call cardHead('st-c-vpn', t('st.vpn.title')) %}{% endcall %}
+    {{ textRow('st-dns', 'dns', t('st.vpn.dns'), t('st.vpn.dns_hint'), placeholder=t('peers.dns_placeholder'), mono=true, chip=PRO, disabled=not has('custom_dns'), maxlength=255) }}
+    {% if not has('custom_dns') %}{{ lockNote('custom_dns') }}{% endif %}
+    {{ numRow('st-peer-timeout', 'peer-timeout', t('st.vpn.timeout'), t('st.vpn.timeout_hint'), t('st.unit.seconds'), 30, 600) }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-block">
+    {% call cardHead('st-c-block', t('st.block.title'), t('st.block.desc')) %}{% endcall %}
+    {{ segRow('st-rb-action', 'rb-action', t('st.block.action'), [['not_found', t('st.block.not_found')], ['custom', t('st.block.custom')], ['redirect', t('st.block.redirect')], ['empty', t('st.block.empty')]]) }}
+    <div data-st-show="rb-action=redirect">{{ textRow('st-rb-url', 'rb-url', t('st.block.url'), t('st.block.url_hint'), type='url', placeholder=t('st.block.url_ph'), mono=true, maxlength=2048) }}</div>
+    <div class="st-row st-row-stack" data-st-row="rb-body" data-st-show="rb-action=custom">
+      {{ rowText('st-rb-body', t('st.block.body'), t('st.block.body_hint'), '', true) }}
+      <textarea class="st-textarea st-mono" id="st-rb-body" data-st-field="rb-body" rows="5" maxlength="16384" spellcheck="false" placeholder="{{ t('routes.block_body_ph') }}" aria-describedby="st-rb-body-hint st-rb-body-err"></textarea>
     </div>
-  </div>
-</div>
+  </section>
+</section>
 
-{# ─── Email & SMTP Tab ───────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="email" style="display:none">
-  <div class="grid">
-    <div class="span6">
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
-          {{ t('route_auth.smtp_server_settings') }}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-          <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('route_auth.smtp_subtitle') }}</div>
-          <div style="display:flex;gap:10px">
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label">{{ t('route_auth.smtp_host') }}</label>
-              <input type="text" id="smtp-host" placeholder="smtp.gmail.com" style="width:100%">
-            </div>
-            <div class="form-group" style="width:100px;margin-bottom:0">
-              <label class="form-label">{{ t('route_auth.smtp_port') }}</label>
-              <input type="text" id="smtp-port" placeholder="587" style="width:100%">
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">{{ t('route_auth.smtp_user') }}</label>
-            <input type="text" id="smtp-user" placeholder="user@gmail.com" style="width:100%">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">{{ t('route_auth.smtp_password') }}</label>
-            <input type="password" id="smtp-password" style="width:100%">
-            <small class="form-hint" id="smtp-password-hint" style="display:none"></small>
-            <button class="btn btn-ghost" id="smtp-password-clear" style="font-size:12px;margin-top:4px">{{ t('settings.autosave.clear_secret') }}</button>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">{{ t('route_auth.smtp_from') }}</label>
-            <input type="email" id="smtp-from" placeholder="noreply@example.com" style="width:100%">
-            <small class="form-hint">{{ t('route_auth.smtp_from_hint') }}</small>
-          </div>
-          <div class="set-row">
-            <div>
-              <div style="font-size:13px;font-weight:600">{{ t('route_auth.smtp_tls') }}</div>
-              <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('route_auth.smtp_tls_desc') }}</div>
-            </div>
-            <div class="toggle on" id="smtp-tls" data-managed="true"></div>
-          </div>
-          <div id="smtp-status" class="autosave-status"></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
-          {{ t('route_auth.smtp_test') }}
-        </div>
-        <div style="margin-top:14px">
-          <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">{{ t('route_auth.smtp_test_desc') }}</div>
-          <div style="display:flex;gap:8px">
-            <input type="email" id="smtp-test-email" placeholder="{{ t('route_auth.smtp_test_email_placeholder') }}" style="flex:1">
-            <button class="btn btn-ghost" id="btn-smtp-test">{{ t('route_auth.smtp_test_send') }}</button>
-          </div>
-          <div id="smtp-test-result" style="display:none;padding:8px 12px;border-radius:var(--radius-xs);font-size:12px;font-family:var(--font-mono);margin-top:10px"></div>
-        </div>
-      </div>
+{# ══ System · Daten & Aufbewahrung ════════════════════════════════════ #}
+<section class="st-section" data-section="daten" aria-labelledby="st-h-daten" data-st-keywords="{{ t('st.kw.daten') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-daten" tabindex="-1">{{ t('st.nav.daten') }}</h2><p class="st-sec-desc">{{ t('st.desc.daten') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-retention">
+    {% call cardHead('st-c-retention', t('st.retention.title')) %}{% endcall %}
+    {{ numRow('st-ret-traffic', 'ret-traffic', t('st.retention.traffic'), t('st.range', { min: 1, max: 365 }), t('st.unit.days'), 1, 365) }}
+    {{ numRow('st-ret-activity', 'ret-activity', t('st.retention.activity'), t('st.range', { min: 1, max: 365 }), t('st.unit.days'), 1, 365) }}
+    {{ numRow('st-ret-waf', 'ret-waf', t('st.retention.waf'), t('st.retention.waf_hint'), t('st.unit.days'), 1, 365, chip=PRO, disabled=not has('waf')) }}
+  </section>
+  <section class="st-card st-card-danger" aria-labelledby="st-c-cleanup">
+    {% call cardHead('st-c-cleanup', t('st.cleanup.title')) %}{% endcall %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label">{{ t('st.cleanup.clear') }}</span><span class="st-hint">{{ t('st.cleanup.clear_hint') }}</span></div>
+      <div class="st-row-ctl"><button type="button" class="st-btn st-btn-danger" data-st-action="clear-logs">{{ t('st.cleanup.clear_btn') }}</button></div>
     </div>
+  </section>
+</section>
 
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
-        {{ t('alerts.title') or 'Email Alerts' }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('alerts.subtitle') or 'Get notified by email when events occur. Requires SMTP to be configured.' }}</div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="alerts-email">{{ t('alerts.email') or 'Alert email address' }}</label>
-          <input type="email" id="alerts-email" placeholder="admin@example.com" style="width:100%">
-        </div>
-        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-top:4px">{{ t('alerts.events_label') or 'Notify on these events:' }}</div>
-        <div id="alerts-events" style="display:flex;flex-direction:column;gap:6px">
-          {% set alertGroups = [
-            { label: t('alerts.group_security') or 'Security', events: 'login_failed,account_locked,password_changed', id: 'alerts-events-security' },
-            { label: t('alerts.group_peers') or 'Peers', events: 'peer_connected,peer_disconnected,peer_created,peer_deleted,peer_expired', id: 'alerts-events-peers' },
-            { label: t('alerts.group_routes') or 'Routes', events: 'route_down,route_up,route_created,route_deleted', id: 'alerts-events-routes' },
-            { label: t('alerts.group_system') or 'System', events: 'system_start,wg_restart,backup_restored,backup_reminder,resource_alert', id: 'alerts-events-system' }
-          ] %}
-          {% for g in alertGroups %}
-          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px">
-            <input type="checkbox" id="{{ g.id }}" class="alert-event-group" data-events="{{ g.events }}" style="accent-color:var(--accent)">
-            <span>{{ g.label }}</span>
-          </label>
-          {% endfor %}
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
-          <div class="set-sec"><div class="sh"><b>{{ t('alerts.extra_checks') or 'Periodic checks' }}</b></div></div>
-          <div class="form-group" style="margin-bottom:8px">
-            <label class="form-label" for="alerts-backup-days">{{ t('alerts.backup_reminder') or 'Backup reminder (days, 0=off)' }}</label>
-            <input type="number" id="alerts-backup-days" value="0" min="0" max="365" style="width:100%">
-          </div>
-          <div style="display:flex;gap:10px">
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label" for="alerts-cpu">{{ t('alerts.cpu_threshold') or 'CPU alert (%, 0=off)' }}</label>
-              <input type="number" id="alerts-cpu" value="0" min="0" max="100" style="width:100%">
-            </div>
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label" for="alerts-ram">{{ t('alerts.ram_threshold') or 'RAM alert (%, 0=off)' }}</label>
-              <input type="number" id="alerts-ram" value="0" min="0" max="100" style="width:100%">
-            </div>
-          </div>
-        </div>
-        <div id="alerts-message" style="display:none"></div>
-        <div id="alerts-status" class="autosave-status"></div>
-      </div>
+{# ══ Sicherheit · Anmeldung & Konten ══════════════════════════════════ #}
+<section class="st-section" data-section="anmeldung" aria-labelledby="st-h-anmeldung" data-st-keywords="{{ t('st.kw.anmeldung') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-anmeldung" tabindex="-1">{{ t('st.nav.anmeldung') }}</h2><p class="st-sec-desc">{{ t('st.desc.anmeldung') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-2fa">
+    {% call cardHead('st-c-2fa', t('st.twofa.title')) %}{% endcall %}
+    {{ switchRow('st-req2fa', 'req2fa', t('two_fa.settings_require'), t('two_fa.settings_require_hint')) }}
+    <div class="st-note" id="st-2fa-self">{{ t('st.twofa.self_ok') if user.totp_enabled else t('two_fa.settings_self_warning') }}</div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-lockout">
+    {% call cardHead('st-c-lockout', t('st.lockout.title'), t('st.lockout.desc')) %}{% endcall %}
+    {{ switchRow('st-lock-on', 'lock-on', t('st.lockout.enabled')) }}
+    {{ numRow('st-lock-attempts', 'lock-attempts', t('st.lockout.attempts'), t('st.lockout.attempts_hint'), t('st.unit.attempts'), 1, 100) }}
+    {{ numRow('st-lock-minutes', 'lock-minutes', t('st.lockout.duration'), t('st.range', { min: 1, max: 1440 }), t('st.unit.minutes'), 1, 1440) }}
+    <div class="st-sub">
+      <h4 class="st-sub-title">{{ t('st.lockout.locked') }}</h4>
+      <ul class="st-chiplist" id="st-locked" aria-live="polite"><li class="st-empty">{{ t('security.lockout.no_locked') }}</li></ul>
     </div>
-  </div>
-</div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-pw">
+    {% call cardHead('st-c-pw', t('st.pw.title')) %}{% endcall %}
+    {{ switchRow('st-pw-on', 'pw-on', t('st.pw.enabled'), t('st.pw.enabled_hint')) }}
+    {{ numRow('st-pw-len', 'pw-len', t('security.password.min_length'), t('st.range', { min: 4, max: 128 }), t('st.unit.chars'), 4, 128) }}
+    {{ switchRow('st-pw-upper', 'pw-upper', t('security.password.require_uppercase')) }}
+    {{ switchRow('st-pw-number', 'pw-number', t('security.password.require_number')) }}
+    {{ switchRow('st-pw-special', 'pw-special', t('security.password.require_special')) }}
+  </section>
+</section>
 
-{# ─── Monitoring Tab ──────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="monitoring" style="display:none">
-  <div class="grid">
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
-        {{ t('monitoring.settings_title') or 'Uptime Monitoring' }}
+{# ══ Sicherheit · Gerätebindung ═══════════════════════════════════════ #}
+<section class="st-section" data-section="geraete" aria-labelledby="st-h-geraete" data-st-keywords="{{ t('st.kw.geraete') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-geraete" tabindex="-1">{{ t('st.nav.geraete') }}</h2><p class="st-sec-desc">{{ t('security.machine_binding.description') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-mb" id="machine-binding-card">
+    {% call cardHead('st-c-mb', t('st.mb.title'), '', PRO) %}{% endcall %}
+    {% if not has('machine_binding') %}{{ lockNote('machine_binding') }}{% endif %}
+    {{ segRow('st-mb-mode', 'mb-mode', t('security.machine_binding.mode'), [['off', t('security.machine_binding.mode_off')], ['global', t('security.machine_binding.mode_global')], ['individual', t('security.machine_binding.mode_individual')]], t('st.mb.mode_hint'), disabled=not has('machine_binding')) }}
+    <div class="st-note">{{ t('st.mb.note') }}</div>
+  </section>
+</section>
+
+{# ══ Clients · Peer-Gruppen & Tags ════════════════════════════════════ #}
+<section class="st-section" data-section="gruppen" aria-labelledby="st-h-gruppen" data-st-keywords="{{ t('st.kw.gruppen') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-gruppen" tabindex="-1">{{ t('st.nav.gruppen') }}</h2><p class="st-sec-desc">{{ t('st.desc.gruppen') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-groups">
+    {% call cardHead('st-c-groups', t('peer_groups.title')) %}{% endcall %}
+    <ul class="st-list" id="st-groups"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    <form class="st-formline" id="st-group-add" novalidate>
+      <div class="st-fl st-fl-2"><label class="st-fl-label" for="st-g-name">{{ t('st.groups.name') }}</label><input type="text" class="st-input" id="st-g-name" maxlength="100" placeholder="{{ t('st.groups.name_ph') }}" autocomplete="off" aria-describedby="st-g-err"></div>
+      <div class="st-fl st-fl-3"><label class="st-fl-label" for="st-g-desc">{{ t('st.groups.desc') }}</label><input type="text" class="st-input" id="st-g-desc" maxlength="255" placeholder="{{ t('st.optional') }}" autocomplete="off"></div>
+      <div class="st-fl"><label class="st-fl-label" for="st-g-color">{{ t('st.groups.color') }}</label><input type="color" class="st-color" id="st-g-color" value="#6b7280"></div>
+      <button type="submit" class="st-btn st-btn-primary">{{ t('peer_groups.add') }}</button>
+      <span class="st-err st-err-block" id="st-g-err" role="alert" hidden></span>
+    </form>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-tags">
+    {% call cardHead('st-c-tags', t('tags.title')) %}{% endcall %}
+    <ul class="st-tags" id="st-tags"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    <form class="st-addline" id="st-tag-add" novalidate>
+      <label class="st-sr" for="st-tag-input">{{ t('st.tags.new') }}</label>
+      <input type="text" class="st-input st-grow" id="st-tag-input" maxlength="64" placeholder="{{ t('st.tags.new') }}" autocomplete="off" aria-describedby="st-tag-err">
+      <button type="submit" class="st-btn">{{ t('tags.add') }}</button>
+      <span class="st-err st-err-block" id="st-tag-err" role="alert" hidden></span>
+    </form>
+  </section>
+</section>
+
+{# ══ Clients · Client-Richtlinien ═════════════════════════════════════ #}
+<section class="st-section" data-section="richtlinien" aria-labelledby="st-h-richtlinien" data-st-keywords="{{ t('st.kw.richtlinien') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-richtlinien" tabindex="-1">{{ t('st.nav.richtlinien') }}</h2><p class="st-sec-desc">{{ t('st.desc.richtlinien') }}</p></div>
+  <div class="st-note st-note-warn" id="st-cp-warn" hidden></div>
+  <section class="st-card" aria-labelledby="st-c-cpglobal" id="card-client-policy">
+    {% call cardHead('st-c-cpglobal', t('st.cp.global')) %}{% endcall %}
+    <div class="st-cp" id="st-cp-global" data-st-field="cp-global" data-st-custom="1"></div>
+    <span class="st-err st-err-block st-pad" id="st-cp-global-err" role="alert" hidden></span>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-cpgroup" id="card-client-policy-groups">
+    {% call cardHead('st-c-cpgroup', t('st.cp.groups'), t('st.cp.groups_desc')) %}{% endcall %}
+    <p class="st-empty st-pad" id="st-cp-nogroups" hidden>{{ t('client_policy.groups_empty') }}</p>
+    <div id="st-cp-groupbody">
+      <div class="st-row">
+        {{ rowText('st-cp-group', t('st.cp.group'), '', '', true) }}
+        <div class="st-row-ctl"><select class="st-select" id="st-cp-group"></select></div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="monitoring-interval">{{ t('monitoring.interval') or 'Check interval (seconds)' }}</label>
-          <input type="number" id="monitoring-interval" value="60" min="10" max="3600" style="width:100%">
-        </div>
-        <div class="set-row">
-          <div>
-            <div style="font-size:13px;font-weight:600">{{ t('monitoring.email_alerts') or 'Email alerts' }}</div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:2px">{{ t('monitoring.email_alerts_desc') or 'Send email on status change' }}</div>
-          </div>
-          <div class="toggle" id="monitoring-email-alerts" data-managed="true"></div>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="monitoring-alert-email">{{ t('monitoring.alert_email') or 'Alert email address' }}</label>
-          <input type="email" id="monitoring-alert-email" placeholder="admin@example.com" style="width:100%">
-        </div>
-        <div id="monitoring-message" style="display:none"></div>
-        <div id="monitoring-status" class="autosave-status"></div>
-      </div>
+      <div class="st-cp" id="st-cp-groupform" data-st-field="cp-group" data-st-custom="1"></div>
+      <span class="st-err st-err-block st-pad" id="st-cp-groupform-err" role="alert" hidden></span>
+      <div class="st-card-foot"><button type="button" class="st-btn" id="st-cp-inherit">{{ t('st.cp.inherit_all') }}</button></div>
     </div>
+  </section>
+</section>
 
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
-        {{ t('metrics.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('metrics.subtitle') }}</div>
-        <div class="set-row">
-          <span class="l">{{ t('metrics.enable') }}</span>
-          <div class="toggle" id="metrics-enabled" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('metrics.path') }}</span>
-          <code style="font-family:var(--font-mono);font-size:11px">/metrics</code>
-        </div>
-        <div id="metrics-message" style="display:none"></div>
-        <div id="metrics-status" class="autosave-status"></div>
-      </div>
-    </div>
-
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
-        {{ t('gateway_failover_settings.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="gw-down-threshold">{{ t('gateway_failover_settings.down_threshold_s') }}</label>
-          <div style="display:flex;align-items:center;gap:12px">
-            <input type="range" id="gw-down-threshold" min="30" max="600" step="10" value="{{ settings.gateway_down_threshold_s or 90 }}" style="flex:1">
-            <output id="gw-down-threshold-value" style="font-variant-numeric:tabular-nums;min-width:48px;text-align:right">{{ settings.gateway_down_threshold_s or 90 }} s</output>
-          </div>
-        </div>
-        <p style="margin:0;font-size:11px;color:var(--text-2)">{{ t('gateway_failover_settings.down_threshold_help') }}</p>
-        <div id="gw-failover-status" class="autosave-status"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ─── Advanced Tab ────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="advanced" style="display:none">
-  <div class="grid">
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
-        {{ t('ip2location.title') or 'ip2location (Geo-IP)' }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3)">{{ t('ip2location.subtitle') or 'API key for country-based IP access control.' }}</div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="ip2location-key">{{ t('ip2location.api_key') or 'API Key' }}</label>
-          <input type="password" id="ip2location-key" style="width:100%">
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" id="btn-ip2location-save" style="font-size:12px">{{ t('ip2location.save') or 'Save' }}</button>
-          <button class="btn btn-ghost" id="btn-ip2location-test" style="font-size:12px">{{ t('ip2location.test') or 'Test' }}</button>
-          <button class="btn btn-ghost" id="ip2location-clear" style="font-size:12px">{{ t('settings.autosave.clear_secret') }}</button>
-        </div>
-        <div id="ip2location-result" style="display:none"></div>
-      </div>
-    </div>
-
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></span>
-        {{ t('webhooks.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3);margin-bottom:4px">{{ t('webhooks.subtitle') }}</div>
-        <div id="webhooks-list"></div>
-        <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
-          <input type="text" id="webhook-url" placeholder="{{ t('webhooks.url_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="500">
-          <input type="text" id="webhook-desc" placeholder="{{ t('webhooks.description_placeholder') }}" style="width:100%;padding:8px 12px;font-size:12px" maxlength="255">
-          <button class="btn btn-primary" id="btn-add-webhook" style="align-self:flex-start">{{ t('webhooks.add') }}</button>
+{# ══ Clients · Split-Tunnel-Vorgabe ═══════════════════════════════════ #}
+<section class="st-section" data-section="splittunnel" aria-labelledby="st-h-splittunnel" data-st-keywords="{{ t('st.kw.splittunnel') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-splittunnel" tabindex="-1">{{ t('st.nav.splittunnel') }}</h2><p class="st-sec-desc">{{ t('st.desc.splittunnel') }}</p></div>
+  {% set stOff = not has('split_tunnel_preset') %}
+  <section class="st-card" aria-labelledby="st-c-st">
+    {% call cardHead('st-c-st', t('st.st.title'), '', PRO) %}{% endcall %}
+    {% if stOff %}{{ lockNote('split_tunnel_preset') }}{% endif %}
+    {{ segRow('st-st-mode', 'st-mode', t('st.st.mode'), [['off', t('settings.split_tunnel_off')], ['exclude', t('settings.split_tunnel_exclude')], ['include', t('settings.split_tunnel_include')]], disabled=stOff) }}
+    <div data-st-show="st-mode!=off">
+      {{ switchRow('st-st-private', 'st-private', t('st.st.private'), '172.16.0.0/12 · 192.168.0.0/16', disabled=stOff) }}
+      {{ switchRow('st-st-ll', 'st-linklocal', t('st.st.linklocal'), '169.254.0.0/16', disabled=stOff) }}
+      {{ switchRow('st-st-lock', 'st-lock', t('settings.split_tunnel_lock'), t('settings.split_tunnel_lock_hint'), disabled=stOff) }}
+      <div class="st-sub" data-st-field="st-networks" data-st-custom="1" id="st-st-networks">
+        <h4 class="st-sub-title" id="st-st-nets-title">{{ t('settings.split_tunnel_custom') }}</h4>
+        <ul class="st-chiplist" id="st-st-list" aria-labelledby="st-st-nets-title"></ul>
+        <div class="st-formline" id="st-st-add">
+          <div class="st-fl st-fl-2"><label class="st-fl-label" for="st-st-label">{{ t('st.st.net_label') }}</label><input type="text" class="st-input" id="st-st-label" maxlength="64" placeholder="{{ t('st.st.net_label_ph') }}" autocomplete="off"{% if stOff %} disabled{% endif %}></div>
+          <div class="st-fl st-fl-2"><label class="st-fl-label" for="st-st-cidr">{{ t('st.st.net_cidr') }}</label><input type="text" class="st-input st-mono" id="st-st-cidr" maxlength="18" placeholder="10.20.0.0/16" autocomplete="off" spellcheck="false" aria-describedby="st-st-networks-err"{% if stOff %} disabled{% endif %}></div>
+          <button type="button" class="st-btn" id="st-st-addbtn"{% if stOff %} disabled{% endif %}>{{ t('st.add') }}</button>
+          <span class="st-err st-err-block" id="st-st-networks-err" role="alert" hidden></span>
         </div>
       </div>
     </div>
+  </section>
+</section>
 
-    {# ── Auto-Update Mode ──────────────────────────────────── #}
-    <div class="card span4" id="card-autoupdate">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></span>
-        {{ t('autoupdate.mode_setting_title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-        <div style="font-size:12px;color:var(--text-3)">{{ t('autoupdate.mode_setting_help') }}</div>
-        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:13px">
-          <input type="radio" name="au-mode" value="auto" style="accent-color:var(--accent)">
-          <span>{{ t('autoupdate.mode_auto') }}</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:13px">
-          <input type="radio" name="au-mode" value="manual" style="accent-color:var(--accent)">
-          <span>{{ t('autoupdate.mode_manual') }}</span>
-        </label>
-        <div id="au-mode-status" class="autosave-status"></div>
+{# ══ Clients · Client-Updates ═════════════════════════════════════════ #}
+<section class="st-section" data-section="clientupdates" aria-labelledby="st-h-clientupdates" data-st-keywords="{{ t('st.kw.clientupdates') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-clientupdates" tabindex="-1">{{ t('st.nav.clientupdates') }}</h2><p class="st-sec-desc">{{ t('client_updates.desc') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-cu" id="card-client-updates">
+    {% call cardHead('st-c-cu', t('st.cu.policy')) %}{% endcall %}
+    {{ segRow('st-cu-channel', 'cu-channel', t('client_updates.default_channel'), [['stable', t('client_updates.channel_stable')], ['beta', t('client_updates.channel_beta')]], t('client_updates.default_channel_hint')) }}
+    {{ textRow('st-cu-pro', 'cu-min-pro', t('client_updates.min_version_pro'), t('client_updates.min_version_hint'), placeholder=t('st.none'), mono=true, width='sm', maxlength=20) }}
+    {{ textRow('st-cu-community', 'cu-min-community', t('client_updates.min_version_community'), placeholder=t('st.none'), mono=true, width='sm', maxlength=20) }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-cuov">
+    {% call cardHead('st-c-cuov', t('client_updates.overview_title')) %}<p class="st-card-desc st-card-desc-side" id="st-cu-unreported"></p>{% endcall %}
+    <div class="st-tiles" id="st-cu-overview"><p class="st-empty">{{ t('common.loading') }}</p></div>
+  </section>
+</section>
+
+{# ══ Benachrichtigungen · E-Mail-Versand ══════════════════════════════ #}
+<section class="st-section" data-section="email" aria-labelledby="st-h-email" data-st-keywords="{{ t('st.kw.email') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-email" tabindex="-1">{{ t('st.nav.email') }}</h2><p class="st-sec-desc">{{ t('st.desc.email') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-smtp">
+    {% call cardHead('st-c-smtp', t('st.smtp.title')) %}{% endcall %}
+    {{ textRow('st-smtp-host', 'smtp-host', t('st.smtp.host'), placeholder='smtp.example.com', mono=true) }}
+    {{ numRow('st-smtp-port', 'smtp-port', t('st.smtp.port'), t('st.smtp.port_hint'), '', 1, 65535) }}
+    {{ segRow('st-smtp-tls', 'smtp-tls', t('st.smtp.tls'), [['starttls', 'STARTTLS'], ['tls', 'TLS']], t('st.smtp.tls_hint')) }}
+    {{ textRow('st-smtp-user', 'smtp-user', t('st.smtp.user'), placeholder='user@example.com', autocomplete='off') }}
+    <div class="st-row" data-st-row="smtp-password">
+      {{ rowText('st-smtp-pw', t('st.smtp.password'), t('st.secret_hint'), '', true) }}
+      <div class="st-row-ctl">
+        <input type="password" class="st-input" id="st-smtp-pw" data-st-field="smtp-password" maxlength="1024" autocomplete="new-password" aria-describedby="st-smtp-pw-hint st-smtp-pw-err">
+        <button type="button" class="st-btn st-btn-sm st-btn-ghost" id="st-smtp-pw-clear" hidden>{{ t('st.smtp.password_clear') }}</button>
       </div>
     </div>
+    {{ textRow('st-smtp-from', 'smtp-from', t('st.smtp.from'), t('st.smtp.from_hint'), placeholder='GateControl <noreply@example.com>') }}
+    <div class="st-card-foot"><span class="st-foot-msg" id="st-smtp-test-msg" role="status"></span><button type="button" class="st-btn" id="st-smtp-test">{{ t('st.smtp.test') }}</button></div>
+  </section>
+</section>
 
-    {# ── Maintenance window + update e-mail (docs/feature-release-b.md §6).
-       settings.js (initAutoUpdateWindow) loads GET /system/auto-update and saves
-       PUT {window} / {notify_email} through SettingsAutosave. #}
-    <div class="card span12 op-au" id="card-au-window">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>
-        {{ t('autoupdate.window_title') }}
+{# ══ Benachrichtigungen · Benachrichtigungen ══════════════════════════ #}
+<section class="st-section" data-section="benachrichtigungen" aria-labelledby="st-h-benachrichtigungen" data-st-keywords="{{ t('st.kw.benachrichtigungen') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-benachrichtigungen" tabindex="-1">{{ t('st.nav.benachrichtigungen') }}</h2><p class="st-sec-desc">{{ t('st.desc.benachrichtigungen') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-recipient">
+    {% call cardHead('st-c-recipient', t('st.notify.recipient_title')) %}{% endcall %}
+    {{ textRow('st-al-email', 'al-email', t('st.notify.recipient'), t('st.notify.recipient_hint'), type='text', placeholder='admin@example.com', maxlength=1000, autocomplete='email') }}
+    <div class="st-note" id="st-al-smtp"></div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-events">
+    {% call cardHead('st-c-events', t('st.notify.events_title'), t('st.notify.events_desc')) %}{% endcall %}
+    {% if not has('email_alerts') %}<div class="st-note st-note-pro">{{ pro(PRO) }} {{ t('st.notify.events_license') }}</div>{% endif %}
+    <div class="st-matrix-wrap" data-st-field="al-events" data-st-custom="1" id="st-al-events">
+      <table class="st-matrix">
+        <caption class="st-sr">{{ t('st.notify.events_title') }}</caption>
+        <thead><tr><th scope="col">{{ t('st.notify.event') }}</th><th scope="col" class="st-mx-c">{{ t('st.notify.col_mail') }}</th><th scope="col" class="st-mx-c">{{ t('st.notify.col_hooks') }}</th></tr></thead>
+        <tbody id="st-matrix-body"></tbody>
+      </table>
+      <span class="st-err st-err-block" id="st-al-events-err" role="alert" hidden></span>
+    </div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-checks">
+    {% call cardHead('st-c-checks', t('st.checks.title'), t('st.checks.desc'), PRO) %}{% endcall %}
+    {% set chkOff = not has('email_alerts') %}
+    {% if chkOff %}{{ lockNote('email_alerts') }}{% endif %}
+    {{ numRow('st-al-backup', 'al-backup', t('st.checks.backup'), t('st.checks.backup_hint'), t('st.unit.days'), 0, 365, disabled=chkOff) }}
+    {{ numRow('st-al-cpu', 'al-cpu', t('st.checks.cpu'), '', '%', 0, 100, disabled=chkOff) }}
+    {{ numRow('st-al-ram', 'al-ram', t('st.checks.ram'), '', '%', 0, 100, disabled=chkOff) }}
+    {{ numRow('st-al-disk', 'al-disk', t('st.checks.disk'), t('st.checks.disk_hint'), '%', 0, 100, disabled=chkOff) }}
+  </section>
+</section>
+
+{# ══ Benachrichtigungen · Webhooks ════════════════════════════════════ #}
+<section class="st-section" data-section="webhooks" aria-labelledby="st-h-webhooks" data-st-keywords="{{ t('st.kw.webhooks') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-webhooks" tabindex="-1">{{ t('st.nav.webhooks') }}</h2><p class="st-sec-desc">{{ t('st.desc.webhooks') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-hooks">
+    {% call cardHead('st-c-hooks', t('st.nav.webhooks'), '', PRO) %}<button type="button" class="st-btn st-btn-primary" id="st-wh-add"{% if not has('webhooks') %} disabled{% endif %}>{{ t('st.wh.add') }}</button>{% endcall %}
+    {% if not has('webhooks') %}{{ lockNote('webhooks') }}<p class="st-note">{{ t('st.wh.unlicensed_note') }}</p>{% endif %}
+    <ul class="st-list" id="st-wh-list"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+  </section>
+</section>
+
+{# ══ Überwachung · Monitoring ═════════════════════════════════════════ #}
+<section class="st-section" data-section="monitoring" aria-labelledby="st-h-monitoring" data-st-keywords="{{ t('st.kw.monitoring') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-monitoring" tabindex="-1">{{ t('st.nav.monitoring') }}</h2><p class="st-sec-desc">{{ t('st.desc.monitoring') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-checksmon">
+    {% call cardHead('st-c-checksmon', t('st.mon.title'), t('st.mon.mail_note')) %}{% endcall %}
+    {{ numRow('st-mon-interval', 'mon-interval', t('st.mon.interval'), t('st.range', { min: 10, max: 3600 }), t('st.unit.seconds'), 10, 3600) }}
+    <div class="st-row" data-st-row="gw-down">
+      {{ rowText('st-gw-down', t('gateway_failover_settings.down_threshold_s'), t('gateway_failover_settings.down_threshold_help'), '', true) }}
+      <div class="st-row-ctl st-range-ctl">
+        <input type="range" class="st-range" id="st-gw-down" data-st-field="gw-down" min="30" max="600" step="10" value="90" aria-describedby="st-gw-down-hint st-gw-down-err">
+        <output class="st-range-out st-mono" for="st-gw-down" id="st-gw-down-out">90 s</output>
       </div>
-      <div class="op-au-grid">
-        <section class="op-pane" aria-label="{{ t('autoupdate.window_title') }}">
-          <p class="op-sub">{{ t('autoupdate.window_help') }}</p>
-          <div class="set-row op-set-row">
-            <span class="l" id="au-window-enabled-label">{{ t('autoupdate.window_enabled') }}<small id="au-window-mode-note" hidden>{{ t('autoupdate.window_manual_note') }}</small></span>
-            <div class="toggle" id="au-window-enabled" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="au-window-enabled-label"></div>
-          </div>
-          <div class="op-au-fields" id="au-window-fields">
-            <div class="form-group">
-              <label class="form-label" for="au-window-start">{{ t('autoupdate.window_from') }}</label>
-              <input type="time" class="form-input mono" id="au-window-start" step="60" value="03:00" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="au-window-end">{{ t('autoupdate.window_to') }}</label>
-              <input type="time" class="form-input mono" id="au-window-end" step="60" value="05:00" required>
-            </div>
-            <div class="form-group op-au-tz">
-              <label class="form-label" for="au-window-tz">{{ t('autoupdate.window_tz') }}</label>
-              <select class="form-select" id="au-window-tz"><option value="Europe/Berlin">Europe/Berlin</option></select>
-            </div>
-          </div>
-          <div class="op-au-meta">
-            <span class="tag tag-blue" id="au-window-overnight" hidden>{{ t('autoupdate.window_overnight') }}</span>
-            <span id="au-window-state" class="op-au-state" aria-live="polite"></span>
-            <span id="au-window-clock" class="op-au-clock"></span>
-          </div>
-          <div id="au-window-error" class="op-error" role="alert" hidden></div>
-          <div id="au-window-waiting" class="op-note op-note-warn op-au-waiting" hidden>
-            <span>{{ t('autoupdate.waiting_window_hint') }}</span>
-            <button type="button" class="btn btn-primary btn-sm" id="au-window-trigger" title="{{ t('autoupdate.trigger_now_window') }}">{{ t('autoupdate.trigger') }}</button>
-          </div>
-          <div id="au-window-status" class="autosave-status"></div>
-          {# update.sh on the host older than the one in the image
-             (docs/feature-next-package.md §S2.2). The dashboard belongs to
-             another strand, so the hint lives here next to the reinstall
-             commands it refers to. Filled by settings.js from
-             GET /system/auto-update update_sh. #}
-          <div id="au-updatesh" class="op-note op-note-warn op-updatesh" hidden>
-            <span id="au-updatesh-text"></span>
-            <button type="button" class="btn btn-ghost btn-sm" id="au-updatesh-show">{{ t('updatesh.show') }}</button>
-          </div>
-          <details class="op-reinstall" id="au-reinstall">
-            <summary>{{ t('autoupdate.reinstall_title') }}</summary>
-            <p class="op-note">{{ t('autoupdate.reinstall_hint') }}</p>
-            <pre class="op-cmd" id="au-reinstall-cmd">cd /opt/gatecontrol
+    </div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-prom">
+    {% call cardHead('st-c-prom', 'Prometheus', t('metrics.subtitle')) %}{% endcall %}
+    {{ switchRow('st-prom', 'prom', t('metrics.enable'), t('st.prom.hint'), chip=PRO, disabled=not has('prometheus_metrics')) }}
+    {% if not has('prometheus_metrics') %}{{ lockNote('prometheus_metrics') }}{% endif %}
+    {{ readRow('st-prom-url', t('st.prom.url'), mono=true, copyLabel=t('st.copy'), value=baseUrl + '/metrics') }}
+  </section>
+</section>
+
+{# ══ Integrationen · Pi-hole (only with the licence) ══════════════════ #}
+{% if piholeOn %}
+<section class="st-section" data-section="pihole" aria-labelledby="st-h-pihole" data-st-keywords="{{ t('st.kw.pihole') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-pihole" tabindex="-1">{{ t('st.nav.pihole') }}</h2><p class="st-sec-desc">{{ t('st.desc.pihole') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-ph">
+    {% call cardHead('st-c-ph', t('st.ph.title'), '', PRO) %}{% endcall %}
+    {{ switchRow('st-ph-on', 'ph-on', t('pihole.cfg.enabled')) }}
+    {{ switchRow('st-ph-chain', 'ph-chain', t('pihole.cfg.manage_chain'), t('pihole.cfg.manage_chain_hint')) }}
+    {{ numRow('st-ph-sync', 'ph-sync', t('pihole.cfg.sync_interval'), t('st.range', { min: 10, max: 3600 }), t('st.unit.seconds'), 10, 3600) }}
+    {{ numRow('st-ph-top', 'ph-top', t('pihole.cfg.top_clients_count'), t('pihole.cfg.top_clients_count_hint'), '', 1, 5000) }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-phinst">
+    {% call cardHead('st-c-phinst', t('pihole.cfg.instances_title')) %}{% endcall %}
+    <ul class="st-list" id="st-ph-list"></ul>
+    <div class="st-card-pad"><button type="button" class="st-btn st-btn-dashed" id="st-ph-add">+ {{ t('pihole.cfg.add_instance') }}</button></div>
+  </section>
+</section>
+{% endif %}
+
+{# ══ Integrationen · Geo-IP ═══════════════════════════════════════════ #}
+<section class="st-section" data-section="geoip" aria-labelledby="st-h-geoip" data-st-keywords="{{ t('st.kw.geoip') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-geoip" tabindex="-1">{{ t('st.nav.geoip') }}</h2><p class="st-sec-desc">{{ t('st.desc.geoip') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-geo">
+    {% call cardHead('st-c-geo', 'ip2location.io', t('st.geo.desc')) %}{% endcall %}
+    {{ textRow('st-geo-key', 'geo-key', t('ip2location.api_key'), t('st.secret_hint'), type='password', autocomplete='new-password', maxlength=200) }}
+    <div class="st-note" id="st-geo-state" role="status"></div>
+    <div class="st-card-foot">
+      <button type="button" class="st-btn st-btn-danger" id="st-geo-clear" hidden>{{ t('st.geo.clear') }}</button>
+      <button type="button" class="st-btn" id="st-geo-test">{{ t('st.test') }}</button>
+    </div>
+  </section>
+</section>
+
+{# ══ Integrationen · Portal ═══════════════════════════════════════════ #}
+<section class="st-section" data-section="portal" aria-labelledby="st-h-portal" data-st-keywords="{{ t('st.kw.portal') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-portal" tabindex="-1">{{ t('st.nav.portal') }}</h2><p class="st-sec-desc">{{ t('st.desc.portal') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-portal">
+    {% call cardHead('st-c-portal', t('st.nav.portal')) %}{% endcall %}
+    {{ switchRow('st-po-on', 'po-on', t('settings.portal.enabled')) }}
+    {{ switchRow('st-po-auto', 'po-auto', t('settings.portal.autoappear'), t('settings.portal.autoappear_help')) }}
+    {{ switchRow('st-po-trust', 'po-trust', t('settings.portal.trust_owner_mapping'), t('settings.portal.trust_owner_mapping_help')) }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-poaddr">
+    {% call cardHead('st-c-poaddr', t('settings.portal.address')) %}{% endcall %}
+    {{ selectRow('st-po-domain', 'po-domain', t('settings.portal.base_domain'), [['', t('settings.portal.internal_default')]]) }}
+    {{ textRow('st-po-prefix', 'po-prefix', t('settings.portal.prefix'), t('settings.portal.prefix_hint'), placeholder='home', mono=true, width='sm', maxlength=63) }}
+    <div class="st-note" id="st-po-preview" aria-live="polite"></div>
+    <div class="st-note" id="st-po-nodomains" hidden>{{ t('settings.portal.no_domains_hint') }} <a href="#domains" class="st-link">{{ t('st.nav.domains') }}</a></div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-widgets">
+    {% call cardHead('st-c-widgets', t('st.portal.widgets'), t('st.portal.widgets_desc')) %}{% endcall %}
+    {{ switchRow('st-w-device', 'w-device', t('settings.portal.widget_device')) }}
+    {{ switchRow('st-w-traffic', 'w-traffic', t('settings.portal.widget_traffic')) }}
+    {{ switchRow('st-w-services', 'w-services', t('settings.portal.widget_services')) }}
+    {{ switchRow('st-w-pihole', 'w-pihole', t('settings.portal.widget_pihole')) }}
+    {{ switchRow('st-w-midea', 'w-midea', t('settings.portal.widget_midea'), t('st.portal.needs_midea'), chip=PRO) }}
+    {{ switchRow('st-w-smarthome', 'w-smarthome', t('settings.portal.widget_smarthome'), '', chip=PRO) }}
+    {{ switchRow('st-w-skoda', 'w-skoda', t('settings.portal.widget_skoda'), '', chip=PRO) }}
+  </section>
+</section>
+
+{# ══ Wartung · Backups ════════════════════════════════════════════════ #}
+<section class="st-section" data-section="backup" aria-labelledby="st-h-backup" data-st-keywords="{{ t('st.kw.backup') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-backup" tabindex="-1">{{ t('st.nav.backup') }}</h2><p class="st-sec-desc">{{ t('st.desc.backup') }}</p></div>
+  {% set abOff = not has('scheduled_backups') %}
+  <section class="st-card" aria-label="{{ t('st.bk.status') }}">
+    <div class="st-tiles st-tiles-pad" id="st-bk-stats">
+      <div class="st-stat"><div class="st-stat-label">{{ t('st.bk.last') }}</div><div class="st-stat-value" id="st-bk-last">—</div><div class="st-stat-sub" id="st-bk-last-sub"></div></div>
+      <div class="st-stat"><div class="st-stat-label">{{ t('st.bk.next') }}</div><div class="st-stat-value" id="st-bk-next">—</div><div class="st-stat-sub" id="st-bk-next-sub"></div></div>
+      <div class="st-stat" id="st-bk-off-stat"><div class="st-stat-label">{{ t('st.bk.offsite') }}</div><div class="st-stat-value" id="st-bk-off">—</div><div class="st-stat-sub" id="st-bk-off-sub"></div></div>
+    </div>
+    <div class="st-card-pad st-btnrow">
+      <button type="button" class="st-btn st-btn-primary" id="st-bk-run"{% if abOff %} disabled{% endif %}>{{ t('st.bk.run') }}</button>
+      <button type="button" class="st-btn" id="st-bk-download">{{ t('st.bk.download') }}</button>
+      <span class="st-foot-msg" id="st-bk-msg" role="status"></span>
+    </div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-auto">
+    {% call cardHead('st-c-auto', t('autobackup.title'), '', PRO) %}{% endcall %}
+    {% if abOff %}{{ lockNote('scheduled_backups') }}{% endif %}
+    {{ switchRow('st-ab-on', 'ab-on', t('st.bk.auto'), disabled=abOff) }}
+    {{ selectRow('st-ab-schedule', 'ab-schedule', t('autobackup.schedule'), [['6h', t('autobackup.schedule_6h')], ['12h', t('autobackup.schedule_12h')], ['daily', t('autobackup.schedule_daily')], ['3d', t('autobackup.schedule_3d')], ['weekly', t('autobackup.schedule_weekly')]], disabled=abOff) }}
+    {{ numRow('st-ab-keep', 'ab-keep', t('st.bk.keep'), t('st.bk.keep_hint'), t('st.unit.backups'), 1, 100, disabled=abOff) }}
+    {{ readRow('st-ab-dir', t('autobackup.directory'), mono=true, value='/data/backups/') }}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-offsite" id="card-offsite">
+    {% call cardHead('st-c-offsite', t('st.bk.offsite_title'), t('st.bk.offsite_desc'), PRO) %}{% endcall %}
+    {% if abOff %}{{ lockNote('scheduled_backups') }}{% endif %}
+    <div class="st-src" id="offsite-plan-default" data-license-source="scheduled_backups"></div>
+    <div class="st-note st-note-warn" id="st-off-abhint" hidden>{{ t('offsite.autobackup_off') }}</div>
+    <div class="st-row" data-st-row="off-pass">
+      {{ rowText('st-off-pass', t('offsite.passphrase'), t('st.bk.pass_hint'), '', true) }}
+      <div class="st-row-ctl st-row-ctl-stack" data-st-field="off-pass" data-st-custom="1" id="st-off-passfield">
+        <input type="password" class="st-input" id="st-off-pass" maxlength="1024" autocomplete="new-password" spellcheck="false" aria-describedby="st-off-pass-hint st-off-strength st-off-pass-err"{% if abOff %} disabled{% endif %}>
+        <label class="st-sr" for="st-off-pass2">{{ t('offsite.passphrase_repeat') }}</label>
+        <input type="password" class="st-input" id="st-off-pass2" maxlength="1024" autocomplete="new-password" spellcheck="false" placeholder="{{ t('offsite.passphrase_repeat') }}"{% if abOff %} disabled{% endif %}>
+        <div class="st-strength" id="st-off-strength" data-level="empty" aria-live="polite"><span class="st-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="st-off-strength-text"></span></div>
+      </div>
+    </div>
+    {{ switchRow('st-off-key', 'off-key', t('offsite.include_key'), t('offsite.include_key_desc'), disabled=abOff) }}
+    <div class="st-note st-note-warn">{{ t('offsite.passphrase_loss') }}</div>
+    <ul class="st-list st-list-top" id="st-off-targets"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    <div class="st-card-pad"><button type="button" class="st-btn st-btn-dashed" id="st-off-add"{% if abOff %} disabled{% endif %}>{{ t('st.bk.add_target') }}</button></div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-files">
+    {% call cardHead('st-c-files', t('st.bk.files')) %}{% endcall %}
+    <ul class="st-list" id="st-bk-files"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-premig" id="card-premigration">
+    {% call cardHead('st-c-premig', t('premig.title'), t('st.bk.premig_desc')) %}{% endcall %}
+    <ul class="st-list" id="st-premig"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+  </section>
+  <section class="st-card st-card-danger" aria-labelledby="st-c-restore" id="card-restore">
+    {% call cardHead('st-c-restore', t('st.bk.restore'), t('st.bk.restore_desc')) %}{% endcall %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label" id="st-rs-label">{{ t('st.bk.restore_file') }}</span><span class="st-hint">{{ t('st.bk.restore_file_hint') }}</span></div>
+      <div class="st-row-ctl">
+        <input type="file" id="st-rs-file" accept=".json,.gcbk" class="st-sr" aria-labelledby="st-rs-label">
+        <button type="button" class="st-btn" id="st-rs-pick">{{ t('st.bk.restore_pick') }}</button>
+      </div>
+    </div>
+    <div class="st-restore" id="st-rs-box" hidden>
+      <div class="st-row" id="st-rs-passrow" hidden>
+        {{ rowText('st-rs-pass', t('offsite.restore_passphrase'), t('offsite.restore_passphrase_hint'), '', true) }}
+        <div class="st-row-ctl"><input type="password" class="st-input" id="st-rs-pass" maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="st-rs-pass-hint"><button type="button" class="st-btn" id="st-rs-check">{{ t('offsite.restore_check') }}</button></div>
+      </div>
+      <div class="st-note" id="st-rs-preview" role="status"></div>
+      <div class="st-card-foot"><button type="button" class="st-btn st-btn-danger" id="st-rs-go" hidden>{{ t('settings.restore_confirm') }}</button></div>
+    </div>
+  </section>
+</section>
+
+{# ══ Wartung · Updates ════════════════════════════════════════════════ #}
+<section class="st-section" data-section="updates" aria-labelledby="st-h-updates" data-st-keywords="{{ t('st.kw.updates') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-updates" tabindex="-1">{{ t('st.nav.updates') }}</h2><p class="st-sec-desc">{{ t('st.desc.updates') }}</p></div>
+  <section class="st-card" aria-labelledby="st-c-au" id="card-au-window">
+    {% call cardHead('st-c-au', t('st.au.title')) %}{% endcall %}
+    {{ segRow('st-au-mode', 'au-mode', t('st.au.mode'), [['auto', t('st.au.mode_auto')], ['manual', t('st.au.mode_manual')]], t('st.au.mode_hint')) }}
+    {{ switchRow('st-au-win', 'au-win', t('st.au.window'), t('autoupdate.window_help')) }}
+    <div data-st-show="au-win=true">
+      {{ textRow('st-au-from', 'au-from', t('autoupdate.window_from'), type='time', mono=true, width='xs') }}
+      {{ textRow('st-au-to', 'au-to', t('autoupdate.window_to'), type='time', mono=true, width='xs') }}
+      {{ selectRow('st-au-tz', 'au-tz', t('autoupdate.window_tz'), [['Europe/Berlin', 'Europe/Berlin']]) }}
+      <div class="st-timeline" id="st-au-timeline">
+        <div class="st-tl-caption" id="st-au-caption"></div>
+        <div class="st-tl-bar" aria-hidden="true"><div class="st-tl-win" id="st-au-win1"></div><div class="st-tl-win" id="st-au-win2" hidden></div><div class="st-tl-now" id="st-au-now"></div></div>
+        <div class="st-tl-axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      </div>
+    </div>
+    {{ switchRow('st-au-mail', 'au-mail', t('st.au.mail'), t('st.au.mail_hint')) }}
+    <div class="st-note st-note-warn st-note-row" id="st-au-waiting" hidden><span>{{ t('autoupdate.waiting_window_hint') }}</span><button type="button" class="st-btn st-btn-sm" id="st-au-trigger">{{ t('autoupdate.trigger') }}</button></div>
+  </section>
+  <section class="st-card" aria-labelledby="st-c-updatesh">
+    {% call cardHead('st-c-updatesh', t('st.ush.title')) %}<p class="st-card-desc st-card-desc-side" id="st-ush-state"></p>{% endcall %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label">{{ t('st.ush.script') }}</span><span class="st-hint">{{ t('st.ush.script_hint') }}</span></div>
+      <div class="st-row-ctl">
+        <button type="button" class="st-btn" id="st-ush-show" aria-expanded="false" aria-controls="st-ush-cmds">{{ t('updatesh.show') }}</button>
+        <a class="st-btn" href="/api/v1/system/update-sh" download>{{ t('st.ush.download') }}</a>
+      </div>
+    </div>
+    <div class="st-cmds" id="st-ush-cmds" hidden>
+      <p class="st-hint">{{ t('autoupdate.reinstall_hint') }}</p>
+      <pre class="st-pre" id="st-ush-cmd">cd /opt/gatecontrol
 curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
 chmod +x update.sh</pre>
-            <div class="op-actions">
-              <button type="button" class="btn btn-ghost btn-sm" id="au-reinstall-copy">{{ t('offsite.key_copy') }}</button>
-              <a class="btn btn-ghost btn-sm" href="/api/v1/system/update-sh" id="au-reinstall-download">{{ t('autoupdate.download') }}</a>
-            </div>
-            <p class="op-note">{{ t('autoupdate.reinstall_cron') }}</p>
-          </details>
-        </section>
-        <section class="op-pane" aria-label="{{ t('autoupdate.notify_email') }}">
-          <div class="set-row op-set-row">
-            <span class="l" id="au-notify-email-label">{{ t('autoupdate.notify_email') }}<small>{{ t('autoupdate.notify_email_desc') }}</small></span>
-            <div class="toggle" id="au-notify-email" data-managed="true" role="switch" tabindex="0" aria-checked="false" aria-labelledby="au-notify-email-label"></div>
-          </div>
-          <p class="op-note">{{ t('autoupdate.notify_email_recipient') }}</p>
-          <div id="au-notify-status" class="autosave-status"></div>
-        </section>
+      <div class="st-btnrow"><button type="button" class="st-btn st-btn-sm" id="st-ush-copy">{{ t('st.copy') }}</button></div>
+      <p class="st-hint">{{ t('autoupdate.reinstall_cron') }}</p>
+    </div>
+  </section>
+</section>
+
+{# ══ Wartung · Lizenz ═════════════════════════════════════════════════ #}
+<section class="st-section" data-section="lizenz" aria-labelledby="st-h-lizenz" data-st-keywords="{{ t('st.kw.lizenz') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-lizenz" tabindex="-1">{{ t('st.nav.lizenz') }}</h2><p class="st-sec-desc">{{ t('st.desc.lizenz') }}</p></div>
+  <section class="st-card" aria-label="{{ t('st.lic.plan') }}">
+    <div class="st-plan">
+      <div class="st-plan-mark" aria-hidden="true">{{ t('license.plan_' + license.plan) | first | upper }}</div>
+      <div class="st-plan-text">
+        <div class="st-plan-name">{{ t('license.plan_' + license.plan) }}</div>
+        <div class="st-plan-meta">
+          {%- set meta = [
+            t('st.lic.valid_until', { date: license.expires_at }) if license.expires_at else '',
+            t('st.lic.activations', { n: license.activations, max: license.max_activations }) if license.activations else '',
+            t('st.lic.key', { key: license.license_key_masked }) if license.license_key_masked else ''
+          ] | select | join(' · ') -%}
+          {{ meta if meta else (t('license.unlicensed_banner') if license.unlicensed else t('license.community_hint')) }}
+        </div>
       </div>
+      {%- if license.license_key_masked %}<button type="button" class="st-btn" id="st-lic-refresh">{{ t('st.lic.refresh') }}</button>{% endif %}
+    </div>
+    {%- if not license.license_key_masked %}
+    <form class="st-lic-form" id="st-lic-form" autocomplete="off" novalidate>
+      {{ textRow('st-lic-key', '', t('license.key_label'), placeholder=t('license.key_placeholder'), mono=true, maxlength=200) }}
+      {{ textRow('st-lic-sig', '', t('license.signing_key_label'), placeholder=t('license.signing_key_placeholder'), mono=true, maxlength=4000) }}
+      <div class="st-card-foot">
+        {%- if license.unlicensed %}<a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" rel="noopener" class="st-link st-foot-left">{{ t('license.get_free_license') }}</a>{% endif %}
+        <span class="st-foot-msg" id="st-lic-msg" role="status"></span>
+        <button type="submit" class="st-btn st-btn-primary">{{ t('license.activate') }}</button>
+      </div>
+    </form>
+    {%- endif %}
+  </section>
+  <section class="st-card" aria-labelledby="st-c-features">
+    {% call cardHead('st-c-features', t('st.lic.features')) %}{% endcall %}
+    <ul class="st-features">
+      {%- for key, value in license.features %}{% if value is number or value == true or value == false %}
+      {%- set on = (value == true) or (value is number and value != 0) %}
+      <li class="st-feature" data-on="{{ '1' if on else '0' }}">
+        <span class="st-feature-ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="{{ 'M5 12l5 5 9-10' if on else 'M7 7l10 10M17 7L7 17' }}"/></svg></span>
+        <span class="st-feature-name">{{ t('st.feature.' + key) if t('st.feature.' + key) != 'st.feature.' + key else (key | replace('_', ' ') | capitalize) }}</span>
+        <span class="st-feature-val">
+          {%- if value is number and value == -1 %}{{ t('license.unlimited') }}
+          {%- elif value is number and value == 0 %}{{ t('st.lic.not_included') }}
+          {%- elif value is number %}{{ value }}
+          {%- elif value %}{{ t('st.lic.included') }}
+          {%- else %}{{ t('st.lic.not_included') }}{% endif -%}
+        </span>
+      </li>
+      {%- endif %}{% endfor %}
+    </ul>
+  </section>
+  {%- if license.license_key_masked %}
+  <section class="st-card st-card-danger" aria-labelledby="st-c-licremove">
+    {% call cardHead('st-c-licremove', t('st.lic.remove_title'), t('st.lic.remove_desc')) %}{% endcall %}
+    <div class="st-card-foot"><button type="button" class="st-btn st-btn-danger" id="st-lic-remove">{{ t('st.lic.remove') }}</button></div>
+  </section>
+  {%- endif %}
+</section>
+
+{# ══ Wartung · Gefahrenzone ═══════════════════════════════════════════ #}
+<section class="st-section" data-section="gefahr" aria-labelledby="st-h-gefahr" data-st-keywords="{{ t('st.kw.gefahr') }}" hidden>
+  <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-gefahr" tabindex="-1">{{ t('st.nav.gefahr') }}</h2><p class="st-sec-desc">{{ t('st.desc.gefahr') }}</p></div>
+  <section class="st-card st-card-danger" aria-labelledby="st-c-dzwg">
+    {% call cardHead('st-c-dzwg', 'WireGuard') %}{% endcall %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label">{{ t('st.danger.wg_stop') }}</span><span class="st-hint">{{ t('st.danger.wg_stop_hint') }}</span></div>
+      <div class="st-row-ctl"><button type="button" class="st-btn st-btn-danger" id="st-wg-stop">{{ t('st.danger.wg_stop_btn') }}</button></div>
+    </div>
+  </section>
+  <section class="st-card st-card-danger" aria-labelledby="st-c-dzdata">
+    {% call cardHead('st-c-dzdata', t('st.danger.data')) %}{% endcall %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label">{{ t('st.cleanup.clear') }}</span><span class="st-hint">{{ t('st.danger.clear_hint') }}</span></div>
+      <div class="st-row-ctl"><button type="button" class="st-btn st-btn-danger" data-st-action="clear-logs">{{ t('st.danger.clear_btn') }}</button></div>
+    </div>
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label">{{ t('st.danger.reset') }}</span><span class="st-hint">{{ t('st.danger.reset_hint') }}</span></div>
+      <div class="st-row-ctl"><a class="st-btn" href="#card-restore">{{ t('st.danger.to_backups') }}</a></div>
+    </div>
+  </section>
+</section>
+
+      <div class="st-savebar" id="st-savebar" role="region" aria-label="{{ t('st.save.region') }}" hidden>
+        <span class="st-savebar-dot" aria-hidden="true"></span>
+        <span class="st-savebar-text" id="st-savebar-text" aria-live="polite"></span>
+        <span class="st-savebar-err" id="st-savebar-err" role="alert" hidden></span>
+        <button type="button" class="st-btn st-btn-ghost" id="st-discard">{{ t('st.save.discard') }}</button>
+        <button type="button" class="st-btn st-btn-primary" id="st-save">{{ t('st.save.save') }}</button>
+      </div>
+      <p class="st-saved" id="st-saved" aria-live="polite"></p>
     </div>
   </div>
 </div>
 
-{# ─── License Tab ─────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="license" style="display:none">
-  <div class="grid">
-    <div class="span6">
-      <div class="card">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
-          {{ t('license.status') }}
-          <span class="card-sub" style="padding:2px 8px;border-radius:var(--radius-xs);font-weight:600;{% if license.plan == 'pro' %}background:var(--green-lt);color:var(--green);border:1px solid var(--green-bd){% elif license.plan == 'lifetime' %}background:var(--accent-lt);color:var(--accent);border:1px solid var(--accent-bd){% else %}background:var(--surface-3);color:var(--text-2);border:1px solid var(--border){% endif %}">{{ t('license.plan_' + license.plan) }}</span>
-        </div>
-        <div style="margin-top:14px">
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('license.plan') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ t('license.plan_' + license.plan) }}</code>
-          </div>
-          {% if license.expires_at %}
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('license.valid_until') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px">{{ license.expires_at }}</code>
-          </div>
-          {% endif %}
-          {% if license.activations %}
-          <div class="set-row" style="border-bottom:1px solid var(--border)">
-            <span class="l">{{ t('license.activations') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px">{{ license.activations }} / {{ license.max_activations }}</code>
-          </div>
-          {% endif %}
-          {% if license.license_key_masked %}
-          <div class="set-row">
-            <span class="l">{{ t('license.key_label') }}</span>
-            <code style="font-family:var(--font-mono);font-size:12px">{{ license.license_key_masked }}</code>
-          </div>
-          {% endif %}
-          {% if license.unlicensed %}
-          <div style="margin-top:14px;padding:12px 14px;background:var(--accent-lt);border-radius:var(--radius-xs);border:1px solid var(--accent-bd);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <span style="font-size:12px;color:var(--text-1)">{{ t('license.unlicensed_banner') }}</span>
-            <a href="https://callmetechie.de/products/gatecontrol/pricing" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:12px;padding:6px 14px;white-space:nowrap">{{ t('license.get_free_license') }}</a>
-          </div>
-          {% elif license.plan == 'community' %}
-          <div style="margin-top:14px;padding:10px 14px;background:var(--surface-3);border-radius:var(--radius-xs);border:1px solid var(--border)">
-            <span style="font-size:12px;color:var(--text-2)">{{ t('license.community_hint') }}</span>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px">
-        <div class="card-title">
-          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-          {% if license.license_key_masked %}{{ t('license.manage') or 'Manage License' }}{% else %}{{ t('license.activate') }}{% endif %}
-        </div>
-        <div style="margin-top:14px">
-          <form id="license-form" autocomplete="off">
-            {% if not license.license_key_masked %}
-            <div class="form-group">
-              <label class="form-label" for="license-key-input">{{ t('license.key_label') }}</label>
-              <input type="text" id="license-key-input" name="license_key" placeholder="{{ t('license.key_placeholder') }}" autocomplete="off">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="license-signing-key-input">{{ t('license.signing_key_label') }}</label>
-              <input type="text" id="license-signing-key-input" name="signing_key" placeholder="{{ t('license.signing_key_placeholder') }}" autocomplete="off">
-            </div>
-            <div id="license-message" style="display:none"></div>
-            <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-              <button type="submit" class="btn btn-primary">{{ t('license.activate') }}</button>
-            </div>
-            {% else %}
-            <div id="license-message" style="display:none"></div>
-            <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-              <button type="button" class="btn btn-danger" id="license-remove-btn">{{ t('license.deactivate') or 'Deactivate' }}</button>
-              <button type="button" class="btn btn-primary" id="license-refresh-btn">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                {{ t('license.refresh') or 'Refresh' }}
-              </button>
-            </div>
-            {% endif %}
-          </form>
-        </div>
-      </div>
+{# ── Dialog: webhook (create / edit) ─────────────────────────────── #}
+<div class="modal-overlay st-modal" id="st-wh-modal" style="display:none">
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="st-wh-title">
+    <div class="modal-head">
+      <span class="modal-title" id="st-wh-title" data-add="{{ t('st.wh.dlg_add') }}" data-edit="{{ t('st.wh.dlg_edit') }}">{{ t('st.wh.dlg_add') }}</span>
+      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
     </div>
-
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-        {{ t('license.features') }}
-      </div>
-      <div style="padding:0;margin-top:14px">
-        <div class="feature-grid">
-        {% for key, value in license.features %}
-        {% if value is number or value == true or value == false %}
-        <div class="feature-cell">
-          <span style="font-size:13px;color:var(--text-1)">{{ key | replace("_", " ") | capitalize }}</span>
-          {% if value is number and value == -1 %}
-            <span style="font-size:12px;color:var(--green);font-weight:600">{{ t('license.unlimited') }}</span>
-          {% elif value is number and value == 0 %}
-            <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
-          {% elif value is number %}
-            <code style="font-family:var(--font-mono);font-size:12px;font-weight:600">{{ value }}</code>
-          {% elif value == true %}
-            <span style="font-size:12px;color:var(--green);font-weight:600">{{ t('license.feature_enabled') }}</span>
-          {% elif value == false %}
-            <span style="font-size:12px;color:var(--text-3)">{{ t('license.feature_disabled') }}</span>
-          {% endif %}
+    <form class="modal-body st-dlg" id="st-wh-form" novalidate>
+      <div class="st-fl"><label class="st-fl-label" for="st-wh-url">{{ t('st.wh.url') }}</label><input type="url" class="st-input st-mono" id="st-wh-url" maxlength="500" placeholder="https://hooks.example.com/…" autocomplete="off" spellcheck="false" aria-describedby="st-wh-url-hint st-wh-url-err"><span class="st-hint" id="st-wh-url-hint">{{ t('st.wh.url_hint') }}</span><span class="st-err" id="st-wh-url-err" role="alert" hidden></span></div>
+      <div class="st-fl"><label class="st-fl-label" for="st-wh-desc">{{ t('st.wh.desc') }}</label><input type="text" class="st-input" id="st-wh-desc" maxlength="255" placeholder="{{ t('st.wh.desc_ph') }}" autocomplete="off"></div>
+      <fieldset class="st-fieldset">
+        <legend class="st-fl-label">{{ t('st.wh.events') }}</legend>
+        <div class="st-radios">
+          <label class="st-radio"><input type="radio" name="st-wh-scope" value="all" id="st-wh-all"> <span>{{ t('st.wh.all') }}<small>{{ t('st.wh.all_hint') }}</small></span></label>
+          <label class="st-radio"><input type="radio" name="st-wh-scope" value="pick" id="st-wh-pick"> <span>{{ t('st.wh.pick') }}</span></label>
         </div>
-        {% endif %}
-        {% endfor %}
-        </div>
-      </div>
+        <div class="st-wh-groups" id="st-wh-groups"></div>
+        <span class="st-err" id="st-wh-events-err" role="alert" hidden></span>
+      </fieldset>
+      <label class="st-check"><input type="checkbox" id="st-wh-enabled"> <span>{{ t('st.wh.enabled') }}</span></label>
+      <div class="st-err st-err-block" id="st-wh-err" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <button type="button" class="st-btn st-btn-danger st-foot-left" id="st-wh-delete" hidden>{{ t('st.wh.delete') }}</button>
+      <button type="button" class="st-btn st-btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button type="button" class="st-btn st-btn-primary" id="st-wh-save">{{ t('common.save') }}</button>
     </div>
   </div>
 </div>
 
-{# ─── Split-Tunnel Tab ───────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="split-tunnel" style="display:none">
-  <div class="card">
-    <div class="card-title">
-      <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
-      {{ t('settings.split_tunnel_title') }}
+{# ── Dialog: off-site target. Type cards first, then the fields of that
+   type (data-for), the gateway L4 picker (SFTP/SMB), the SSH key (SFTP). ── #}
+<div class="modal-overlay st-modal" id="st-ot-modal" style="display:none">
+  <div class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="st-ot-title" aria-describedby="st-ot-sub">
+    <div class="modal-head">
+      <div><span class="modal-title" id="st-ot-title" data-add="{{ t('st.ot.add') }}" data-edit="{{ t('offsite.dlg_edit') }}">{{ t('st.ot.add') }}</span><small class="st-dlg-sub" id="st-ot-sub">{{ t('st.ot.sub') }}</small></div>
+      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
     </div>
-    <div style="margin-top:14px">
-      <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">{{ t('settings.split_tunnel_desc') }}</p>
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.split_tunnel_mode') }}</label>
-        <select id="st-mode">
-          <option value="off">{{ t('settings.split_tunnel_off') }}</option>
-          <option value="exclude">{{ t('settings.split_tunnel_exclude') }}</option>
-          <option value="include">{{ t('settings.split_tunnel_include') }}</option>
-        </select>
+    <form class="modal-body st-dlg" id="st-ot-form" novalidate autocomplete="off">
+      <fieldset class="st-fieldset">
+        <legend class="st-fl-label" id="st-ot-type-label">{{ t('st.ot.type') }}</legend>
+        <div class="st-typecards" role="group" aria-labelledby="st-ot-type-label">
+          {%- for ty in [['sftp', 'SFTP', t('st.ot.type_sftp')], ['smb', 'SMB', t('st.ot.type_smb')], ['s3', 'S3', t('st.ot.type_s3')], ['webdav', 'WebDAV', t('st.ot.type_webdav')]] %}
+          <button type="button" class="st-typecard" data-type="{{ ty[0] }}" aria-pressed="false"><b>{{ ty[1] }}</b><small>{{ ty[2] }}</small></button>
+          {%- endfor %}
+        </div>
+        <span class="st-hint" id="st-ot-type-hint">{{ t('st.ot.type_hint') }}</span>
+      </fieldset>
+      <div class="st-grid2">
+        <div class="st-fl st-span2"><label class="st-fl-label" for="st-ot-name">{{ t('offsite.f_name') }}</label><input type="text" class="st-input" id="st-ot-name" maxlength="64" placeholder="{{ t('offsite.f_name_ph') }}"></div>
+        <div class="st-fl st-span2" data-for="webdav"><label class="st-fl-label" for="st-ot-url">{{ t('offsite.field.url') }}</label><input type="url" class="st-input st-mono" id="st-ot-url" maxlength="2048" placeholder="https://cloud.example.com/remote.php/dav/files/alice/gatecontrol/" spellcheck="false"><span class="st-hint">{{ t('offsite.f_url_hint') }}</span></div>
+        <div class="st-fl st-span2" data-for="s3"><label class="st-fl-label" for="st-ot-endpoint">{{ t('offsite.f_endpoint') }}</label><input type="url" class="st-input st-mono" id="st-ot-endpoint" maxlength="2048" placeholder="https://s3.eu-central-1.wasabisys.com" spellcheck="false"><span class="st-hint">{{ t('offsite.f_endpoint_hint') }}</span></div>
+        <div class="st-fl" data-for="s3"><label class="st-fl-label" for="st-ot-bucket">{{ t('offsite.field.bucket') }}</label><input type="text" class="st-input st-mono" id="st-ot-bucket" maxlength="63" spellcheck="false"></div>
+        <div class="st-fl" data-for="s3"><label class="st-fl-label" for="st-ot-region">{{ t('offsite.field.region') }}</label><input type="text" class="st-input st-mono" id="st-ot-region" maxlength="32" placeholder="us-east-1" spellcheck="false"></div>
+        <div class="st-fl" data-for="s3"><label class="st-fl-label" for="st-ot-akid">{{ t('offsite.field.access_key_id') }}</label><input type="text" class="st-input st-mono" id="st-ot-akid" maxlength="128" spellcheck="false"></div>
+        <div class="st-fl" data-for="s3"><label class="st-fl-label" for="st-ot-secret">{{ t('offsite.field.secret_access_key') }}</label><input type="password" class="st-input st-mono" id="st-ot-secret" maxlength="1024" autocomplete="new-password" spellcheck="false"><span class="st-hint" id="st-ot-secret-hint" hidden>{{ t('offsite.secret_kept') }}</span></div>
+        <div class="st-fl st-span2" data-for="s3"><label class="st-fl-label" for="st-ot-prefix">{{ t('offsite.f_prefix') }}</label><input type="text" class="st-input st-mono" id="st-ot-prefix" maxlength="255" placeholder="gatecontrol" spellcheck="false"></div>
+        <label class="st-check st-span2" data-for="s3"><input type="checkbox" id="st-ot-pathstyle"> <span>{{ t('offsite.f_path_style') }}</span></label>
+        <div class="st-fl" data-for="sftp smb"><label class="st-fl-label" for="st-ot-host">{{ t('offsite.field.host') }}</label><input type="text" class="st-input st-mono" id="st-ot-host" maxlength="253" placeholder="nas.example.com" spellcheck="false"></div>
+        <div class="st-fl" data-for="sftp smb"><label class="st-fl-label" for="st-ot-port">{{ t('offsite.field.port') }}</label><input type="number" class="st-input st-mono" id="st-ot-port" min="1" max="65535"></div>
+        <div class="st-fl" data-for="smb"><label class="st-fl-label" for="st-ot-share">{{ t('offsite.field.share') }}</label><input type="text" class="st-input st-mono" id="st-ot-share" maxlength="80" placeholder="backup" spellcheck="false"></div>
+        <div class="st-fl" data-for="sftp smb"><label class="st-fl-label" for="st-ot-path">{{ t('offsite.f_path') }}</label><input type="text" class="st-input st-mono" id="st-ot-path" maxlength="255" placeholder="gatecontrol" spellcheck="false"></div>
+        <div class="st-fl" data-for="sftp smb webdav"><label class="st-fl-label" for="st-ot-user">{{ t('offsite.field.username') }}</label><input type="text" class="st-input st-mono" id="st-ot-user" maxlength="128" spellcheck="false"></div>
+        <div class="st-fl" data-for="smb webdav"><label class="st-fl-label" for="st-ot-pw">{{ t('offsite.field.password') }}</label><input type="password" class="st-input" id="st-ot-pw" maxlength="1024" autocomplete="new-password"><span class="st-hint" id="st-ot-pw-hint" hidden>{{ t('offsite.secret_kept') }}</span></div>
+        <label class="st-check st-span2" id="st-ot-clearpw-row" data-for="smb webdav" hidden><input type="checkbox" id="st-ot-clearpw"> <span>{{ t('offsite.f_clear_password') }}</span></label>
+        <div class="st-fl" data-for="smb"><label class="st-fl-label" for="st-ot-domain">{{ t('offsite.f_domain') }}</label><input type="text" class="st-input st-mono" id="st-ot-domain" maxlength="64" placeholder="WORKGROUP" spellcheck="false"></div>
       </div>
-      <div id="st-networks-section" style="display:none">
-        <div class="form-group">
-          <label class="form-label">{{ t('settings.split_tunnel_presets') }}</label>
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-private-nets" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_private') }} (172/192)</label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-link-local" style="accent-color:var(--accent)"> Link-Local (169.254.0.0/16)</label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('settings.split_tunnel_custom') }}</label>
-          <div id="st-custom-list"></div>
-          <button class="btn btn-ghost" style="margin-top:8px;font-size:12px" id="st-add-network">+ {{ t('settings.split_tunnel_add_network') }}</button>
-        </div>
-        <div class="form-group">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="st-locked" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_lock') }}</label>
-          <small class="form-hint">{{ t('settings.split_tunnel_lock_hint') }}</small>
-        </div>
+      <div class="st-panel" data-for="sftp smb">
+        <label class="st-label" for="st-ot-l4">{{ t('st.ot.l4_title') }}</label>
+        <span class="st-hint">{{ t('st.ot.l4_hint') }}</span>
+        <select class="st-select st-w-full" id="st-ot-l4"><option value="">{{ t('st.ot.l4_none') }}</option></select>
+        <span class="st-hint" id="st-ot-l4-note" aria-live="polite" hidden></span>
       </div>
-      <div id="st-status" class="autosave-status"></div>
-    </div>
-  </div>
-</div>
-
-{# ─── Client-Updates Tab ────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="client-updates" style="display:none">
-  <div class="grid">
-    <div class="card span6" id="card-client-updates">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-        {{ t('client_updates.title') }}
+      <div class="st-panel" data-for="sftp">
+        <span class="st-label" id="st-ot-key-label">{{ t('offsite.key_title') }}</span>
+        <span class="st-hint">{{ t('offsite.key_hint') }}</span>
+        <textarea class="st-textarea st-mono st-key" id="st-ot-pubkey" rows="2" readonly spellcheck="false" aria-labelledby="st-ot-key-label"></textarea>
+        <div class="st-btnrow"><button type="button" class="st-btn st-btn-sm" id="st-ot-keycopy">{{ t('st.copy') }}</button><button type="button" class="st-btn st-btn-sm st-btn-danger" id="st-ot-keyrotate">{{ t('st.ot.key_rotate') }}</button></div>
+        <span class="st-hint">{{ t('offsite.key_hostkey_note') }}</span>
       </div>
-      <div style="margin-top:14px">
-        <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">{{ t('client_updates.desc') }}</p>
-        <div class="form-group">
-          <label class="form-label" for="cu-default-channel">{{ t('client_updates.default_channel') }}</label>
-          <select id="cu-default-channel">
-            <option value="stable">{{ t('client_updates.channel_stable') }}</option>
-            <option value="beta">{{ t('client_updates.channel_beta') }}</option>
-          </select>
-          <small class="form-hint">{{ t('client_updates.default_channel_hint') }}</small>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cu-min-pro">{{ t('client_updates.min_version_pro') }}</label>
-          <input type="text" id="cu-min-pro" autocomplete="off" maxlength="20" placeholder="{{ t('client_updates.min_version_placeholder') }}" pattern="v?[0-9]+\.[0-9]+\.[0-9]+" style="font-family:var(--font-mono)">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cu-min-community">{{ t('client_updates.min_version_community') }}</label>
-          <input type="text" id="cu-min-community" autocomplete="off" maxlength="20" placeholder="{{ t('client_updates.min_version_placeholder') }}" pattern="v?[0-9]+\.[0-9]+\.[0-9]+" style="font-family:var(--font-mono)">
-          <small class="form-hint">{{ t('client_updates.min_version_hint') }}</small>
-        </div>
-        <div id="cu-status" class="autosave-status"></div>
+      <div class="st-formline st-formline-end">
+        <div class="st-fl"><label class="st-fl-label" for="st-ot-keep">{{ t('offsite.f_keep') }}</label><input type="number" class="st-input st-input-num" id="st-ot-keep" min="1" max="365" value="14" aria-describedby="st-ot-keep-hint"><span class="st-hint" id="st-ot-keep-hint">{{ t('offsite.f_keep_hint') }}</span></div>
+        <label class="st-check"><input type="checkbox" id="st-ot-enabled" checked> <span>{{ t('st.ot.enabled') }}</span></label>
       </div>
-    </div>
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg></span>
-        {{ t('client_updates.overview_title') }}
-      </div>
-      <div id="cu-overview" style="margin-top:14px;font-size:13px">{{ t('common.loading') }}</div>
+      <div class="st-err st-err-block" id="st-ot-err" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <span class="st-foot-msg st-foot-left">{{ t('st.ot.save_note') }}</span>
+      <button type="button" class="st-btn st-btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button type="button" class="st-btn st-btn-primary" id="st-ot-save">{{ t('st.ot.save') }}</button>
     </div>
   </div>
 </div>
 
-{# ─── Client-Richtlinien Tab ────────────────────────── #}
-<div class="settings-panel" data-settings-panel="client-policy" style="display:none">
-  <div class="grid">
-    <div class="card span6" id="card-client-policy">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-        {{ t('client_policy.global_title') }}
-      </div>
-      <div style="margin-top:14px">
-        <p style="font-size:13px;color:var(--text-3);margin:0 0 10px">{{ t('client_policy.desc') }}</p>
-        <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">{{ t('client_policy.security_note') }}</p>
-        <div id="cp-warning" class="tag tag-amber" style="display:none;white-space:normal;margin-bottom:12px"></div>
-        <div id="cp-global-form"></div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button class="btn btn-primary" id="cp-global-save" type="button">{{ t('client_policy.save') }}</button>
-          <span id="cp-global-status" style="font-size:12px"></span>
-        </div>
-      </div>
+{# ── Dialog: Pi-hole instance ─────────────────────────────────────── #}
+{% if piholeOn %}
+<div class="modal-overlay st-modal" id="st-ph-modal" style="display:none">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="st-ph-title">
+    <div class="modal-head">
+      <span class="modal-title" id="st-ph-title" data-add="{{ t('pihole.cfg.add_instance') }}" data-edit="{{ t('st.ph.edit') }}">{{ t('pihole.cfg.add_instance') }}</span>
+      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
     </div>
-    <div class="card span6" id="card-client-policy-groups">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></span>
-        {{ t('client_policy.groups_title') }}
+    <form class="modal-body st-dlg" id="st-ph-form" novalidate autocomplete="off">
+      <div class="st-fl"><label class="st-fl-label" for="st-ph-label">{{ t('pihole.cfg.label') }}</label><input type="text" class="st-input" id="st-ph-label" maxlength="100"></div>
+      <div class="st-fl"><label class="st-fl-label" for="st-ph-url">{{ t('pihole.cfg.url') }}</label><input type="url" class="st-input st-mono" id="st-ph-url" placeholder="http://10.8.0.5:8080" spellcheck="false" aria-describedby="st-ph-url-err"><span class="st-err" id="st-ph-url-err" role="alert" hidden></span></div>
+      <div class="st-grid2">
+        <div class="st-fl"><label class="st-fl-label" for="st-ph-dns">{{ t('pihole.cfg.dns_ip') }}</label><input type="text" class="st-input st-mono" id="st-ph-dns" placeholder="10.8.0.5" spellcheck="false"></div>
+        <div class="st-fl"><label class="st-fl-label" for="st-ph-dnsport">{{ t('pihole.cfg.dns_port') }}</label><input type="number" class="st-input st-mono" id="st-ph-dnsport" min="1" max="65535" value="53" aria-describedby="st-ph-dnsport-hint"><span class="st-hint" id="st-ph-dnsport-hint">{{ t('pihole.cfg.dns_port_hint') }}</span></div>
       </div>
-      <div style="margin-top:14px">
-        <p style="font-size:13px;color:var(--text-3);margin:0 0 16px">{{ t('client_policy.groups_desc') }}</p>
-        <div id="cp-groups-empty" style="font-size:13px;color:var(--text-3);display:none">{{ t('client_policy.groups_empty') }}</div>
-        <div id="cp-groups-body">
-          <div class="form-group">
-            <label class="form-label" for="cp-group-select">{{ t('client_policy.group_select') }}</label>
-            <select id="cp-group-select" style="width:100%"></select>
-          </div>
-          <div id="cp-group-form"></div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-primary" id="cp-group-save" type="button">{{ t('client_policy.save') }}</button>
-            <button class="btn" id="cp-group-reset" type="button">{{ t('client_policy.reset') }}</button>
-            <span id="cp-group-status" style="font-size:12px"></span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ─── Pi-hole Tab ───────────────────────────────────── #}
-{% if license.features.pihole_integration %}
-<div class="settings-panel" data-settings-panel="pihole" style="display:none">
-  <div class="grid">
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
-        {{ t('pihole.cfg.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div class="set-row">
-          <span class="l">{{ t('pihole.cfg.enabled') }}</span>
-          <div class="toggle" id="pihole-enabled" data-managed="true"></div>
-        </div>
-        <div>
-          <div class="set-row">
-            <span class="l">{{ t('pihole.cfg.manage_chain') }}</span>
-            <div class="toggle" id="pihole-manage-chain" data-managed="true"></div>
-          </div>
-          <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('pihole.cfg.manage_chain_hint') }}</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="pihole-sync-interval">{{ t('pihole.cfg.sync_interval') }}</label>
-          <input type="number" id="pihole-sync-interval" value="30" min="10" max="3600" style="width:100%">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" for="pihole-top-clients-count">{{ t('pihole.cfg.top_clients_count') }}</label>
-          <input type="number" id="pihole-top-clients-count" value="1000" min="1" max="5000" style="width:100%">
-          <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('pihole.cfg.top_clients_count_hint') }}</div>
-        </div>
-        <div id="pihole-status" class="autosave-status"></div>
-      </div>
-    </div>
-
-    <div class="card span6">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
-        {{ t('pihole.cfg.instances_title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
-        <div id="pihole-instances-list"></div>
-        <div style="padding-top:8px;border-top:1px solid var(--border)">
-          <button class="btn btn-primary" id="btn-pihole-add-instance" style="font-size:12px">{{ t('pihole.cfg.add_instance') }}</button>
-        </div>
-        <div id="pihole-instance-form" style="display:none;flex-direction:column;gap:8px;padding:12px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:4px">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="ph-inst-label">{{ t('pihole.cfg.label') }}</label>
-            <input type="text" id="ph-inst-label" style="width:100%" maxlength="100">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="ph-inst-url">{{ t('pihole.cfg.url') }}</label>
-            <input type="text" id="ph-inst-url" placeholder="http://10.8.0.5:8080" style="width:100%">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="ph-inst-dns">{{ t('pihole.cfg.dns_ip') }}</label>
-            <input type="text" id="ph-inst-dns" placeholder="10.8.0.5" style="width:100%">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="ph-inst-dns-port">{{ t('pihole.cfg.dns_port') }}</label>
-            <input type="number" id="ph-inst-dns-port" value="53" min="1" max="65535" style="width:100%">
-            <small class="form-hint">{{ t('pihole.cfg.dns_port_hint') }}</small>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label" for="ph-inst-password">{{ t('pihole.cfg.password') }}</label>
-            <input type="password" id="ph-inst-password" style="width:100%" autocomplete="new-password">
-            <small class="form-hint" id="ph-inst-password-hint" style="display:none">{{ t('pihole.cfg.password_keep_hint') }}</small>
-          </div>
-          <div class="set-row">
-            <span class="l">{{ t('pihole.cfg.tls') }}</span>
-            <div class="toggle on" id="ph-inst-tls" data-managed="true"></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-ghost" id="btn-pihole-test-instance" style="font-size:12px">{{ t('pihole.cfg.test_connection') }}</button>
-            <button class="btn btn-primary" id="btn-pihole-apply-instance" style="font-size:12px">{{ t('pihole.cfg.apply') }}</button>
-            <button class="btn btn-ghost" id="btn-pihole-cancel-instance" style="font-size:12px">{{ t('pihole.cfg.cancel') }}</button>
-          </div>
-        </div>
-      </div>
+      <div class="st-fl"><label class="st-fl-label" for="st-ph-pw">{{ t('pihole.cfg.password') }}</label><input type="password" class="st-input" id="st-ph-pw" autocomplete="new-password" aria-describedby="st-ph-pw-hint"><span class="st-hint" id="st-ph-pw-hint" hidden>{{ t('pihole.cfg.password_keep_hint') }}</span></div>
+      <label class="st-check"><input type="checkbox" id="st-ph-tls" checked> <span>{{ t('pihole.cfg.tls') }}</span></label>
+      <div class="st-note" id="st-ph-testmsg" role="status" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <button type="button" class="st-btn st-btn-danger st-foot-left" id="st-ph-delete" hidden>{{ t('st.ph.delete') }}</button>
+      <button type="button" class="st-btn" id="st-ph-test">{{ t('pihole.cfg.test_connection') }}</button>
+      <button type="button" class="st-btn st-btn-primary" id="st-ph-save">{{ t('common.save') }}</button>
     </div>
   </div>
 </div>
 {% endif %}
 
-{# ─── Portal Tab ────────────────────────────────────────── #}
-<div class="settings-panel" data-settings-panel="portal" style="display:none">
-  <div class="grid">
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></span>
-        {{ t('settings.portal.title') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.enabled') }}</span>
-          <div class="toggle" id="portal-enabled" data-managed="true"></div>
-        </div>
-        <div style="font-size:11px;color:var(--text-3);padding:0 4px;border-top:1px solid var(--border);padding-top:10px;margin-top:2px">{{ t('settings.portal.widgets_section') }}</div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_device') }}</span>
-          <div class="toggle" id="portal-widget-device" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_traffic') }}</span>
-          <div class="toggle" id="portal-widget-traffic" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_services') }}</span>
-          <div class="toggle" id="portal-widget-services" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_pihole') }}</span>
-          <div class="toggle" id="portal-widget-pihole" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_midea') }}</span>
-          <div class="toggle" id="portal-widget-midea" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_smarthome') }}</span>
-          <div class="toggle" id="portal-widget-smarthome" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.widget_skoda') }}</span>
-          <div class="toggle" id="portal-widget-skoda" data-managed="true"></div>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.trust_owner_mapping') }}</span>
-          <div class="toggle" id="portal-trust-owner-mapping" data-managed="true"></div>
-        </div>
-        <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.trust_owner_mapping_help') }}</div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.autoappear') }}</span>
-          <div class="toggle" id="portal-autoappear" data-managed="true"></div>
-        </div>
-        <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.autoappear_help') }}</div>
-        <div id="portal-message" style="display:none"></div>
-        <div id="portal-status" class="autosave-status"></div>
-      </div>
-    </div>
-    <div class="card span4">
-      <div class="card-title">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-        {{ t('settings.portal.address') }}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:11px;margin-top:14px">
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.base_domain') }}</span>
-          <select id="portal-base-domain" class="input" style="font-size:12px;padding:4px 6px;min-width:160px"></select>
-        </div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.prefix') }}</span>
-          <input type="text" id="portal-prefix" class="input" style="font-size:12px;padding:4px 6px;width:120px" placeholder="home">
-        </div>
-        <div style="font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.prefix_hint') }}</div>
-        <div class="set-row">
-          <span class="l">{{ t('settings.portal.effective_host') }}</span>
-          <span id="portal-effective-host" style="font-size:12px;font-family:monospace;color:var(--text-2)"></span>
-        </div>
-        <div id="portal-host-error" class="autosave-status" style="display:none"></div>
-        <div id="portal-switch-warning" style="display:none;font-size:11px;color:var(--text-warn,var(--warning,#e6a817));padding:0 4px">{{ t('settings.portal.switch_warning') }}</div>
-        <div id="portal-no-domains-hint" style="display:none;font-size:11px;color:var(--text-3);padding:0 4px">{{ t('settings.portal.no_domains_hint') }} <a href="/settings?tab=general">{{ t('settings.tab_general') }}</a></div>
-        <div style="font-size:11px;color:var(--text-3);padding:0 4px;border-top:1px solid var(--border);padding-top:8px;margin-top:2px">{{ t('settings.portal.host_note') }}</div>
-        <div style="display:flex;justify-content:flex-end;padding-top:4px">
-          <button class="btn btn-primary" id="portal-host-apply">{{ t('settings.portal.apply') }}</button>
-        </div>
-      </div>
-    </div>
+{# ── Dialog: stop WireGuard (admin password) ─────────────────────── #}
+<div class="modal-overlay st-modal" id="st-wgstop-modal" style="display:none">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="st-wgstop-title" aria-describedby="st-wgstop-text">
+    <div class="modal-head"><span class="modal-title" id="st-wgstop-title">{{ t('config.stop_confirm_title') }}</span><button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button></div>
+    <form class="modal-body st-dlg" id="st-wgstop-form" novalidate>
+      <p class="st-dlg-text" id="st-wgstop-text">{{ t('config.stop_confirm_text') }}</p>
+      <div class="st-fl"><label class="st-fl-label" for="st-wgstop-pw">{{ t('st.danger.password') }}</label><input type="password" class="st-input" id="st-wgstop-pw" autocomplete="current-password" aria-describedby="st-wgstop-err"><span class="st-err" id="st-wgstop-err" role="alert" hidden></span></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="st-btn st-btn-ghost" data-close-modal>{{ t('common.cancel') }}</button><button type="button" class="st-btn st-btn-danger" id="st-wgstop-go">{{ t('st.danger.wg_stop_confirm') }}</button></div>
   </div>
 </div>
 
+<script type="application/json" id="st-catalogue" nonce="{{ cspNonce }}">{{ notifyCatalogue | default('[]') | safe }}</script>
+{# All st.* strings plus the prefixes the helper scripts read (src/routes/index.js, stringsWithPrefix). #}
+<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}
-<script src="/js/settingsAutosaveCore.js?v={{ appVersion }}"></script>
-<script src="/js/settingsAutosave.js?v={{ appVersion }}"></script>
 <script src="/js/tls-ui.js?v={{ appVersion }}"></script>
 <script src="/js/ops-ui.js?v={{ appVersion }}"></script>
-<script src="/js/settings.js?v={{ appVersion }}"></script>
-<script src="/js/peer-groups-admin.js?v={{ appVersion }}"></script>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
-<script src="/js/client-policy-admin.js?v={{ appVersion }}"></script>
-<script src="/js/tags-admin.js?v={{ appVersion }}"></script>
+<script src="/js/settings-ui.js?v={{ appVersion }}"></script>
+<script src="/js/settings.js?v={{ appVersion }}"></script>
 {% endblock %}

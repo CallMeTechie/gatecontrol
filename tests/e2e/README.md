@@ -1,7 +1,7 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite, Passkeys, Dashboard. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard, Einstellungen. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
@@ -19,6 +19,10 @@ scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
 scenarios/05-dashboard.js /dashboard: Kacheln, Traffic-Diagramm (x-Achse,
                         Tooltip per Maus und Tastatur), Zeitraum übersteht
                         Poll und Neuladen, Tabelle, Aktivität + Filter, 390 px
+scenarios/06-settings.js /settings: Bereiche (#bereich, alte Tab-Namen, ?tab=),
+                        Suche, Speicherleiste (ändern, speichern, neu laden,
+                        verwerfen, 400 mit Feldfehler, Rückfrage beim Wechsel),
+                        Webhook-Dialog mit Ereignisauswahl, hell/dunkel, 390 px
 ```
 
 ## Ablauf
@@ -39,7 +43,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey dashboard
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

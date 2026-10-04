@@ -216,9 +216,17 @@ describe('command palette: pure core', () => {
     assert.equal(P.gatewayItems({ gateways: [{ peer_id: 1, name: 'x', status: 'unknown' }] }, (k) => k)[0].sub, '', 'untranslated status left out');
   });
 
-  it('settings sections match the settings page tabs', () => {
+  it('settings entries: every section of the settings page, labels + keywords whitelisted', () => {
     const njk = read('templates/aurora/pages/settings.njk');
-    for (const s of P.SETTINGS) assert.ok(njk.includes(`data-settings-tab="${s.tab}"`), s.tab);
+    const ui = require('../public/js/settings-ui.js');
+    assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 21 sections in nav order');
+    const layout = read('templates/aurora/layout.njk');
+    for (const s of P.SETTINGS) {
+      assert.ok(njk.includes(`<section class="st-section" data-section="${s.tab}"`), s.tab);
+      assert.ok(layout.includes(`'st.nav.${s.tab}':`) && layout.includes(`'st.kw.${s.tab}':`), 'whitelist ' + s.tab);
+      assert.equal(s.key, 'st.nav.' + s.tab);
+    }
+    assert.equal(P.SETTINGS.find((s) => s.tab === 'pihole').needsPath, '/pihole');
   });
 });
 

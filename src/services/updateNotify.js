@@ -2,8 +2,11 @@
 
 // Update / rollback e-mails (docs/feature-release-b.md §6).
 //
-// Recipient monitoring.alert_email, switch notify.update_email (default on),
-// sent through the existing SMTP transport (services/email.js).
+// Recipient and switch: services/notifications.js (the one notification
+// recipient; the "update" row of the notification events — event types
+// update_installed / update_rolled_back / update_failed), sent through the
+// existing SMTP transport (services/email.js). Webhooks subscribed to these
+// types get the same event, whether or not the mail is on.
 //
 //  1. New version: once per version, ~90 s after the start (an image that dies
 //     in its health check and gets rolled back never announces itself).
@@ -69,18 +72,20 @@ function lang() {
   } catch { return 'en'; }
 }
 
-/** Recipient or null when mails are off / not deliverable. */
-function recipient() {
-  if (settings.get('notify.update_email', 'true') === 'false') return null;
-  const to = String(settings.get('monitoring.alert_email', '') || '').trim();
+/** Recipient or null when the mail for `type` is off / not deliverable. */
+function recipient(type) {
+  const notifications = require('./notifications');
+  if (!notifications.wantsEmail(type)) return null;
+  const to = notifications.recipient();
   if (!to) return null;
   const email = require('./email');
   if (!email.isSmtpConfigured()) return null;
   return to;
 }
 
-async function deliver(subject, text) {
-  const to = recipient();
+async function deliver(type, subject, text, details) {
+  require('./webhook').notify(type, subject, details || null);
+  const to = recipient(type);
   if (!to) return false;
   const { sendMail } = require('./email');
   await sendMail({ to, subject, text });
@@ -138,7 +143,7 @@ async function checkVersion() {
   const body = [t.updatedIntro(prev, current)];
   if (lines.length) body.push('', t.whatsNew, ...lines);
   body.push('', t.footer);
-  const sent = await deliver(t.updatedSubject(current), body.join('\n'));
+  const sent = await deliver('update_installed', t.updatedSubject(current), body.join('\n'), { version: current, from: prev || null });
   if (sent) logger.info({ version: current, from: prev }, 'Update notification e-mail sent');
   return sent ? 'sent' : 'skipped';
 }
@@ -170,7 +175,8 @@ async function checkState() {
   else if (cur.bad_image) { subject = t.failedRbSubject; text = t.failedRbBody(ver); }
   else { subject = t.failedSubject; text = t.failedBody; }
   const body = [text, '', `${t.time}: ${cur.checked_at}`, '', t.footer].join('\n');
-  const sent = await deliver(subject, body);
+  const type = cur.action === 'rolled_back' ? 'update_rolled_back' : 'update_failed';
+  const sent = await deliver(type, subject, body, { action: cur.action, version: ver || null, bad_image: cur.bad_image || null });
   if (sent) logger.info({ action: cur.action }, 'Update failure e-mail sent');
   return sent ? 'sent' : 'skipped';
 }

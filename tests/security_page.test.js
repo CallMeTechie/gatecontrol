@@ -189,8 +189,6 @@ describe('security.js pure helpers', () => {
     assert.equal(S.safeFix({ type: 'copy', copy: '' }), null);
     assert.equal(S.safeFix({ type: 'shell', cmd: 'rm' }), null);
     assert.equal(S.safeFix(null), null);
-    assert.equal(S.settingsTab('/settings#backup'), 'backup');
-    assert.equal(S.settingsTab('/settings'), null);
   });
 
   it('fix labels and confirmations', () => {

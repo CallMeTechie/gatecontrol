@@ -42,14 +42,14 @@ function section(src, from, to) {
   assert.ok(b > a, 'section end ' + to);
   return src.slice(a, b);
 }
-const SETTINGS_OPS = section(SETTINGS_JS, '// ─── Auto-Update: maintenance window', '// ── Machine Binding Settings');
+const SETTINGS_OPS = section(SETTINGS_JS, '// ── Backups ──', '// ── Lizenz ──');
 const DASH_WN = section(DASH_JS, '// ─── "Was ist neu" strip', '// ─── Activity');
 
 describe('ops UI: stylesheet + scripts', () => {
-  it('live backup refresh (gc:backup) only re-renders the target list when the data changed', () => {
+  it('live backup refresh (gc:backup) reloads the targets of the open Backups section', () => {
     const js = read('public/js/settings.js');
-    assert.match(js, /addEventListener\('gc:backup'[\s\S]{0,200}loadTargets\(\{ ifChanged: true \}\)/);
-    assert.match(js, /if \(opts && opts\.ifChanged && JSON\.stringify\(\[state\.targets, state\.loadError\]\) === before\) return;/);
+    // Only while the Backups section is open, debounced.
+    assert.match(js, /addEventListener\('gc:backup', \(\) => \{ if \(current === 'backup'\) \{ clearTimeout\(bk\.sse\); bk\.sse = setTimeout\(loadTargets, 400\); \} \}\)/);
   });
   it('the layout links app.css exactly once and nothing else', () => {
     const links = Array.from(LAYOUT.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
@@ -65,8 +65,8 @@ describe('ops UI: stylesheet + scripts', () => {
   });
   it('ops-ui.js loads before settings.js and dashboard.js', () => {
     for (const [tpl, main] of [[SETTINGS_TPL, '/js/settings.js'], [DASH_TPL, '/js/dashboard.js']]) {
-      const o = tpl.indexOf('/js/ops-ui.js');
-      assert.ok(o > 0 && o < tpl.indexOf(main), main);
+      const o = tpl.indexOf('src="/js/ops-ui.js');
+      assert.ok(o > 0 && o < tpl.indexOf('src="' + main), main);
     }
   });
   it('no innerHTML in the new code', () => {
@@ -76,38 +76,39 @@ describe('ops UI: stylesheet + scripts', () => {
   });
 });
 
+// An element id written out in the template or passed to a row macro
+// (switchRow('st-off-key', …) renders id="st-off-key").
+const hasId = (id) => SETTINGS_TPL.includes('id="' + id + '"') || SETTINGS_TPL.includes("Row('" + id + "'");
+
 describe('ops UI: templates', () => {
-  it('settings backup tab: off-site card, pre-migration card, target dialog, .gcbk restore', () => {
-    for (const id of ['card-offsite', 'offsite-license', 'offsite-autobackup-off', 'offsite-passphrase', 'offsite-passphrase2', 'offsite-pass-strength',
-      'offsite-pass-save', 'offsite-include-key', 'offsite-include-key-note', 'offsite-add', 'offsite-targets', 'card-premigration', 'premig-list',
-      'offsite-target-modal', 'ot-type', 'ot-url', 'ot-host', 'ot-port', 'ot-l4', 'ot-pubkey', 'ot-key-copy', 'ot-key-rotate', 'ot-password',
-      'ot-secret', 'ot-clear-password', 'ot-keep', 'ot-enabled', 'offsite-target-error', 'restore-passphrase-row', 'restore-passphrase']) {
-      assert.ok(SETTINGS_TPL.includes('id="' + id + '"'), id);
+  it('Backups section: off-site card, pre-migration card, target dialog (type cards first), .gcbk restore', () => {
+    for (const id of ['card-offsite', 'st-off-abhint', 'st-off-pass', 'st-off-pass2', 'st-off-strength', 'st-off-key', 'st-off-add', 'st-off-targets',
+      'card-premigration', 'st-premig', 'st-ot-modal', 'st-ot-url', 'st-ot-host', 'st-ot-port', 'st-ot-l4', 'st-ot-pubkey', 'st-ot-keycopy',
+      'st-ot-keyrotate', 'st-ot-pw', 'st-ot-secret', 'st-ot-clearpw', 'st-ot-keep', 'st-ot-enabled', 'st-ot-err', 'st-rs-passrow', 'st-rs-pass']) {
+      assert.ok(hasId(id), id);
     }
-    assert.match(SETTINGS_TPL, /data-licensed="\{\{ '1' if license\.hasFeature\('scheduled_backups'\) else '0' \}\}"/);
-    assert.match(SETTINGS_TPL, /id="backup-file-input" accept="\.json,\.gcbk"/);
-    // the dialog sits outside the tab panels (fixed children of a hidden panel stay hidden)
-    const modalAt = SETTINGS_TPL.indexOf('id="offsite-target-modal"');
-    const backupPanel = SETTINGS_TPL.indexOf('data-settings-panel="backup"');
-    const nextPanel = SETTINGS_TPL.indexOf('data-settings-panel="email"');
-    assert.ok(modalAt > backupPanel && modalAt < nextPanel);
-    const between = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf('id="card-premigration"'), modalAt);
-    assert.equal((between.match(/<div\b/g) || []).length, (between.match(/<\/div>/g) || []).length - 2, 'card + grid + panel closed before the dialog');
-    for (const type of ['sftp', 'smb', 's3', 'webdav']) assert.ok(SETTINGS_TPL.includes('<option value="' + type + '">'), type);
+    assert.match(SETTINGS_TPL, /id="st-rs-file" accept="\.json,\.gcbk"/);
+    // the dialog sits outside the sections (fixed children of a hidden section stay hidden)
+    assert.ok(SETTINGS_TPL.indexOf('id="st-ot-modal"') > SETTINGS_TPL.indexOf('data-section="gefahr"'));
+    // type cards come before the fields
+    const dlg = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf('id="st-ot-modal"'));
+    for (const type of ['sftp', 'smb', 's3', 'webdav']) assert.ok(dlg.includes(type), type);
+    assert.ok(dlg.indexOf('class="st-typecards"') < dlg.indexOf('id="st-ot-name"'));
+    assert.ok(dlg.indexOf('id="st-ot-l4"') > 0 && /data-for="sftp smb">\s*<label class="st-label" for="st-ot-l4"/.test(dlg), 'gateway L4 picker for SFTP/SMB');
+    assert.match(dlg, /<div class="st-panel" data-for="sftp">/, 'SSH key only for SFTP');
   });
   it('secret inputs are never pre-filled by the template', () => {
-    for (const id of ['offsite-passphrase', 'offsite-passphrase2', 'ot-password', 'ot-secret', 'restore-passphrase']) {
+    for (const id of ['st-off-pass', 'st-off-pass2', 'st-ot-pw', 'st-ot-secret', 'st-rs-pass', 'st-smtp-pw']) {
       const tag = new RegExp('<input[^>]*id="' + id + '"[^>]*>').exec(SETTINGS_TPL)[0];
       assert.match(tag, /type="password"/, id);
       assert.doesNotMatch(tag, /\svalue=/, id);
     }
   });
-  it('advanced tab: maintenance window card after the mode card, reinstall command from INSTALL.md', () => {
-    for (const id of ['card-au-window', 'au-window-enabled', 'au-window-start', 'au-window-end', 'au-window-tz', 'au-window-state', 'au-window-waiting',
-      'au-window-trigger', 'au-reinstall', 'au-reinstall-cmd', 'au-notify-email', 'au-window-status', 'au-notify-status']) {
-      assert.ok(SETTINGS_TPL.includes('id="' + id + '"'), id);
+  it('Updates section: mode, maintenance window with timeline, update e-mail; reinstall command from INSTALL.md', () => {
+    for (const id of ['card-au-window', 'st-au-mode', 'st-au-win', 'st-au-from', 'st-au-to', 'st-au-tz', 'st-au-timeline', 'st-au-waiting',
+      'st-au-trigger', 'st-ush-cmds', 'st-ush-cmd', 'st-au-mail']) {
+      assert.ok(hasId(id), id);
     }
-    assert.ok(SETTINGS_TPL.indexOf('id="card-autoupdate"') < SETTINGS_TPL.indexOf('id="card-au-window"'));
     assert.match(SETTINGS_TPL, /curl -fsSLO https:\/\/raw\.githubusercontent\.com\/CallMeTechie\/gatecontrol\/master\/update\.sh/);
     assert.ok(read('INSTALL.md').includes('curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh'), 'same command as the install guide');
   });
@@ -142,9 +143,9 @@ describe('ops UI: templates', () => {
     for (const licensed of [true, false]) {
       const license = { plan: 'pro', features: { scheduled_backups: licensed, http_routes: -1, l4_routes: -1, pihole: { available: true } }, hasFeature: (k) => (k === 'scheduled_backups' ? licensed : true), isWithinLimit: () => true };
       const html = env.render('aurora/pages/settings.njk', Object.assign({}, base, { license, activeNav: 'settings', currentPath: '/settings' }));
-      assert.ok(html.includes('data-licensed="' + (licensed ? '1' : '0') + '"'));
-      assert.ok(html.includes(de['offsite.title']) && html.includes(de['premig.title']) && html.includes(de['autoupdate.window_title']));
-      assert.ok(html.includes("'offsite.err.transport_failed': \"Verbindung fehlgeschlagen.\""), 'client key rendered into GC.t');
+      assert.equal(/id="st-off-add"[^>]* disabled/.test(html), !licensed, 'add target only with the licence');
+      assert.equal(html.includes('data-license-hint="scheduled_backups"'), !licensed, 'licence hint without it');
+      assert.ok(html.includes(de['st.bk.offsite_title']) && html.includes(de['premig.title']) && html.includes(de['autoupdate.window_help']));
       assert.doesNotMatch(html, /\{\{\s*t\(|\{%/, 'no unrendered tags');
     }
     const license = { plan: 'pro', features: {}, hasFeature: () => true, isWithinLimit: () => true, unlicensed: false };
@@ -199,39 +200,38 @@ describe('ops UI: i18n', () => {
         assert.ok(de[m[1]] && en[m[1]], m[1]);
       }
     }
-    const scripts = OPS_JS + SETTINGS_OPS + DASH_WN + section(DASH_JS, 'function renderAutoUpdate', '// ─── "Was ist neu" strip')
-      + section(SETTINGS_JS, 'Encrypted off-site archives (.gcbk', "document.getElementById('btn-backup-restore')");
-    const used = new Set(Array.from(scripts.matchAll(/['"]((?:offsite|premig|whatsnew|autoupdate)\.[a-z0-9_.]+)['"]/g)).map((m) => m[1]));
-    assert.ok(used.size > 90, 'keys collected: ' + used.size);
+    // Dashboard + ops-ui: the GC.t whitelist; settings.js: the page island
+    // (offsite., premig., autoupdate. are island prefixes of settings.njk).
+    const global = OPS_JS + DASH_WN + section(DASH_JS, 'function renderAutoUpdate', '// ─── "Was ist neu" strip');
+    const used = new Set(Array.from(global.matchAll(/['"]((?:offsite|premig|whatsnew|autoupdate)\.[a-z0-9_.]+)['"]/g)).map((m) => m[1]));
+    assert.ok(used.size > 40, 'keys collected: ' + used.size);
     for (const k of used) {
       assert.ok(de[k] && en[k], 'i18n ' + k);
-      assert.ok(LAYOUT.includes("'" + k + "': {{ t('" + k + "') | dump | safe }}"), 'GC.t whitelist ' + k);
+      if (!/^(offsite|premig)\./.test(k) || DASH_WN.includes(k)) assert.ok(LAYOUT.includes("'" + k + "': {{ t('" + k + "') | dump | safe }}"), 'GC.t whitelist ' + k);
     }
+    const island = /id="st-i18n" data-prefixes="([^"]+)"/.exec(SETTINGS_TPL)[1].split(' ');
+    for (const p of ['offsite.', 'premig.', 'autoupdate.', 'updatesh.']) assert.ok(island.includes(p), 'island ' + p);
+    for (const m of SETTINGS_OPS.matchAll(/t\('((?:offsite|premig|autoupdate|updatesh)\.[a-z0-9_.]+)'/g)) assert.ok(de[m[1]] && en[m[1]], 'i18n ' + m[1]);
   });
 });
 
 describe('ops UI: behaviour wiring', () => {
-  it('settings.js: the off-site API paths, passphrase write-only, include_key, licence hint with fallback', () => {
+  it('settings.js: the off-site API paths, passphrase write-only through the save bar, include_key', () => {
     const s = stripComments(SETTINGS_OPS);
-    for (const p of ["BASE + '/offsite'", "BASE + '/targets'", "'/targets/' + t.id + '/test'", "'/targets/' + t.id + '/run'", "'/targets/' + t.id + '/files'",
-      "BASE + '/targets/l4-candidates'", "BASE + '/ssh-key'", "BASE + '/ssh-key/rotate'", "BASE + '/pre-migration'"]) assert.ok(s.includes(p), p);
-    assert.match(s, /var BASE = '\/api\/settings\/backup';/);
-    assert.match(s, /window\.api\.put\(BASE \+ '\/offsite', \{ passphrase: pass1\.value \}\)/);
-    assert.match(s, /window\.api\.put\(BASE \+ '\/offsite', \{ include_key: next \}\)/);
-    assert.doesNotMatch(s, /pass1\.value = (?!'')/, 'the passphrase field is only ever cleared');
-    assert.match(s, /window\.GCLicenseHint\.render\('scheduled_backups'\)/);
-    assert.match(s, /typeof window\.GCLicenseHint\.render === 'function'/, 'degrades without the component');
-    assert.match(s, /document\.addEventListener\('gc:backup'/);
+    for (const p of ["BK + '/offsite'", "BK + '/targets'", "'/targets/' + tg.id + '/test'", "'/targets/' + tg.id + '/run'", "'/targets/' + tg.id + '/verify'",
+      "'/targets/' + tg.id + '/files'", "BK + '/targets/l4-candidates'", "BK + '/ssh-key'", "BK + '/ssh-key/rotate'", "BK + '/pre-migration'"]) assert.ok(s.includes(p), p);
+    assert.match(s, /const BK = '\/api\/v1\/settings\/backup';/);
+    assert.match(s, /fields: \['off-pass'\], errorField: 'off-pass', save: \(\) => api\.put\(BK \+ '\/offsite', \{ passphrase: passEl\.value \}\)/);
+    assert.match(s, /fields: \['off-key'\], errorField: 'off-key', save: \(v\) => api\.put\(BK \+ '\/offsite', \{ include_key: v\['off-key'\] \}\)/);
+    assert.doesNotMatch(s, /passEl\.value = (?!''|s\[0\] \|\| '')/, 'the passphrase field is only ever cleared (or reset to its empty baseline)');
     assert.match(s, /c\.connect_host/);
   });
-  it('settings.js: maintenance window + update e-mail through SettingsAutosave', () => {
+  it('settings.js: maintenance window + update e-mail as save groups', () => {
     const s = stripComments(SETTINGS_OPS);
-    assert.match(s, /cluster: 'au-window'/);
-    assert.match(s, /cluster: 'au-notify'/);
-    assert.match(s, /window\.api\.put\('\/api\/system\/auto-update', \{ window: w \}\)/);
-    assert.match(s, /window\.api\.put\('\/api\/system\/auto-update', \{ notify_email: /);
-    assert.match(s, /saved\.last_action === 'waiting_window'/);
-    assert.match(s, /SettingsAutosave\.resync\('au-window'\)/);
+    assert.match(s, /api\.put\('\/api\/v1\/system\/auto-update', \{ window: \{ enabled: v\['au-win'\], start: v\['au-from'\], end: v\['au-to'\], tz: v\['au-tz'\] \} \}\)/);
+    assert.match(s, /api\.put\('\/api\/v1\/system\/auto-update', \{ notify_email: v\['au-mail'\] \}\)/);
+    assert.match(s, /auSaved\.last_action === 'waiting_window'/);
+    assert.match(s, /O\.windowProblem\(/);
   });
   it('dashboard.js: waiting_window pill, trigger in auto mode with a window, what\'s new calls', () => {
     const d = stripComments(DASH_JS);
@@ -241,14 +241,12 @@ describe('ops UI: behaviour wiring', () => {
     assert.match(d, /window\.api\.post\('\/api\/system\/whats-new\/seen', body\)/);
     assert.match(d, /if \(!all && !d\.unseen\) \{ strip\.hidden = true; return; \}/);
   });
-  it('settings.js: /settings#<tab> or #<element id> selects the tab, the hash follows tab switches', () => {
-    const tabs = stripComments(section(SETTINGS_JS, '// ─── Settings Tab Switching', '// Mobile hamburger toggle'))
-      + stripComments(section(SETTINGS_JS, '// Tab from the address first', '})();'));
-    assert.match(tabs, /history\.replaceState\(null, '', location\.pathname \+ location\.search \+ '#' \+ tabName\)/);
-    assert.match(tabs, /window\.addEventListener\('hashchange', fromHash\)/);
-    assert.match(tabs, /target\.closest\('\.settings-panel'\)/);
-    assert.match(tabs, /if \(!fromHash\(\)\) \{/, 'the hash wins over the remembered tab');
-    assert.ok(SETTINGS_TPL.includes('data-settings-panel="backup"') && SETTINGS_TPL.includes('data-settings-tab="backup"'));
+  it('settings.js: /settings#<section>, old tabs and element ids select the section; the hash follows', () => {
+    const js = stripComments(SETTINGS_JS);
+    assert.match(js, /history\.replaceState\(null, '', location\.pathname \+ hash\)/);
+    assert.match(js, /window\.addEventListener\('hashchange', \(\) => \{/);
+    assert.match(js, /U\.resolveLocation\(\{ hash: location\.hash, search: location\.search \}, \{ known, sectionOfElement \}\)/);
+    assert.ok(SETTINGS_TPL.includes('<section class="st-section" data-section="backup"'));
   });
   it('dashboard.js: #auto-update highlights the Server card\'s update block and opens the setup guide when not set up', () => {
     const d = stripComments(DASH_JS);

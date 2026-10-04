@@ -28,20 +28,13 @@
   const KIND_GROUP = { page: 'pages', action: 'actions', setting: 'settings', host: 'hosts', entry: 'entries', peer: 'peers', gateway: 'gateways' };
   const KIND_BOOST = { page: 6, setting: 3, action: 2, host: 4, gateway: 2, peer: 1, entry: 0 };
 
-  // Settings sections (tabs of settings.njk, data-settings-tab). `pihole`
-  // only when the sidebar shows Pi-hole (same licence flag).
+  // Settings sections (settings.njk data-section, /settings#<section>).
+  // `pihole` only when the sidebar shows Pi-hole (same licence flag).
   const SETTINGS = [
-    { tab: 'general', key: 'settings.tab_general' },
-    { tab: 'security', key: 'settings.tab_security' },
-    { tab: 'backup', key: 'settings.tab_backup' },
-    { tab: 'email', key: 'settings.tab_email' },
-    { tab: 'monitoring', key: 'settings.tab_monitoring' },
-    { tab: 'advanced', key: 'settings.tab_advanced' },
-    { tab: 'license', key: 'settings.tab_license' },
-    { tab: 'split-tunnel', key: 'settings.tab_split_tunnel' },
-    { tab: 'pihole', key: 'settings.tab_pihole', needsPath: '/pihole' },
-    { tab: 'portal', key: 'settings.portal.title' },
-  ];
+    'uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
+    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip', 'portal', 'backup',
+    'updates', 'lizenz', 'gefahr',
+  ].map((tab) => ({ tab, key: 'st.nav.' + tab, needsPath: tab === 'pihole' ? '/pihole' : undefined }));
 
   // ── Pure helpers ──────────────────────────────────────────────────────
   function str(v) { return v == null ? '' : String(v); }
@@ -291,7 +284,7 @@
     function settingItems(pages) {
       const hasPath = (p) => pages.some((x) => x.href === p);
       return SETTINGS.filter((s) => !s.needsPath || hasPath(s.needsPath)).map((s) => ({
-        key: 'setting:' + s.tab, kind: 'setting', label: t(s.key), sub: t('nav.settings'), keywords: [s.tab], tab: s.tab, href: '/settings#' + s.tab,
+        key: 'setting:' + s.tab, kind: 'setting', label: t(s.key), sub: t('nav.settings'), keywords: [s.tab, t('st.kw.' + s.tab)], tab: s.tab, href: '/settings#' + s.tab,
       }));
     }
     function actionItems() {
@@ -478,9 +471,7 @@
       const here = win.location.pathname;
       if (item.run) { item.run(); return; }
       if (item.kind === 'setting') {
-        lsSet('settings-active-tab', item.tab);
-        const tab = here === '/settings' ? doc.querySelector('.settings-tabs > .tab[data-settings-tab="' + item.tab + '"]') : null;
-        if (tab) tab.click(); else win.location.href = item.href;
+        if (here === '/settings') win.location.hash = item.tab; else win.location.href = item.href;
         return;
       }
       if (item.kind === 'host' || item.kind === 'entry') {

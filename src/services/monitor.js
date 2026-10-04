@@ -7,7 +7,6 @@ const { getDb } = require('../db/connection');
 const config = require('../../config/default');
 const settings = require('./settings');
 const activity = require('./activity');
-const webhook = require('./webhook');
 const circuitBreaker = require('./circuitBreaker');
 const logger = require('../utils/logger');
 const eventBus = require('./eventBus');
@@ -16,13 +15,16 @@ const { requestCaddySync } = require('./caddySync');
 let pollerInterval = null;
 
 /**
- * Get monitoring settings
+ * Get monitoring settings. The mail switch is the route_state row of the
+ * notification events, the recipient the one of all notification mails
+ * (services/notifications.js).
  */
 function getSettings() {
+  const notifications = require('./notifications');
   return {
     interval: parseInt(settings.get('monitoring.interval', '60'), 10) || 60,
-    emailAlerts: settings.get('monitoring.email_alerts', 'false') === 'true',
-    alertEmail: settings.get('monitoring.alert_email', ''),
+    emailAlerts: notifications.eventEmailOn('route_state'),
+    alertEmail: notifications.recipient(),
   };
 }
 
@@ -156,29 +158,25 @@ async function checkRoute(route) {
       ? `Route "${route.domain}" is DOWN (${result.responseTime}ms)`
       : `Route "${route.domain}" recovered (${result.responseTime}ms)`;
 
+    // activity.log fires the webhooks (and only those subscribed to this
+    // type); a second webhook.notify here delivered every change twice.
     activity.log(eventType, message, {
       source: 'monitor',
       severity,
-      details: { routeId: route.id, domain: route.domain, status: newStatus, responseTime: result.responseTime },
+      details: { routeId: route.id, domain: route.domain, status: newStatus, responseTime: result.responseTime, previousStatus: oldStatus },
     });
 
     eventBus.publish('monitor', { routeId: route.id, domain: route.domain, status: newStatus });
 
-    webhook.notify(eventType, message, {
-      routeId: route.id,
-      domain: route.domain,
-      status: newStatus,
-      responseTime: result.responseTime,
-      previousStatus: oldStatus,
-    });
-
-    // Email alert
-    const cfg = getSettings();
-    if (cfg.emailAlerts && cfg.alertEmail) {
+    // Email alert (own mail with target + response time; the generic activity
+    // mail skips route_down/route_up — services/notifications.js).
+    const notifications = require('./notifications');
+    const alertEmail = notifications.wantsEmail(eventType) ? notifications.recipient() : '';
+    if (alertEmail) {
       try {
         const { sendMonitoringAlert } = require('./email');
         await sendMonitoringAlert({
-          to: cfg.alertEmail,
+          to: alertEmail,
           domain: route.domain,
           status: newStatus,
           responseTime: result.responseTime,

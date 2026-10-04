@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const { requireFeature } = require('../../../middleware/license');
+const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 const piholeConfig = require('../../../services/piholeConfig');
 const pihole = require('../../../services/pihole');
 const logger = require('../../../utils/logger');
@@ -23,8 +24,10 @@ router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
   const body = req.body || {};
 
   if (!Array.isArray(body.instances)) {
-    return res.status(400).json({ ok: false, error: 'instances must be an array' });
+    return res.status(400).json({ ok: false, error: req.t('error.settings.pihole_instances_invalid') });
   }
+  const { values, fields } = checkRanges(req, body, { sync_interval_sec: [10, 3600], top_clients_count: [1, 5000] });
+  if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
 
   // Load existing config to preserve passwords where client sends password_set but no new app_password
   const existing = piholeConfig.load();
@@ -42,9 +45,9 @@ router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
 
   piholeConfig.save({
     enabled: !!body.enabled,
-    sync_interval_sec: Number(body.sync_interval_sec) || 30,
+    sync_interval_sec: values.sync_interval_sec || 30,
     manage_dns_chain: body.manage_dns_chain !== false,
-    top_clients_count: Math.max(1, Math.min(5000, parseInt(body.top_clients_count, 10) || 1000)),
+    top_clients_count: values.top_clients_count || 1000,
     instances,
   });
 
@@ -73,7 +76,7 @@ router.post('/pihole/test', requireFeature('pihole_integration'), async (req, re
 router.post('/pihole/test/:id', requireFeature('pihole_integration'), async (req, res) => {
   const cfg = piholeConfig.load();
   const inst = (cfg.instances || []).find(i => String(i.id) === String(req.params.id));
-  if (!inst) return res.status(404).json({ ok: false, error: 'instance not found' });
+  if (!inst) return res.status(404).json({ ok: false, error: req.t('error.settings.pihole_instance_not_found') });
   try {
     const result = await pihole.testConnection({ url: inst.url, app_password: inst.app_password, verify_tls: inst.verify_tls });
     const dnsResult = await pihole.testDns(inst.dns_ip, inst.dns_port);

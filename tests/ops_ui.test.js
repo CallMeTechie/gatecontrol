@@ -75,7 +75,11 @@ describe('ops-ui: gateway fingerprint', () => {
 
 describe('ops-ui: maintenance window', () => {
   const at = (iso) => new Date(iso);
-  it('inWindow mirrors autoUpdate.isInWindow (incl. over midnight, other zones)', () => {
+  // The settings timeline: open now ⇔ minutesToWindow(...) === 0 at the local
+  // time of the window's zone (timeIn) — the same rule as the server.
+  const U = require('../public/js/settings-ui.js');
+  const open = (w, d) => U.minutesToWindow(w.start, w.end, U.minutesOf(O.timeIn(w.tz, d))) === 0;
+  it('the timeline\'s "open now" mirrors autoUpdate.isInWindow (incl. over midnight, other zones)', () => {
     const windows = [
       { start: '03:00', end: '05:00', tz: 'Europe/Berlin' },
       { start: '23:00', end: '02:00', tz: 'Europe/Berlin' },
@@ -84,14 +88,12 @@ describe('ops-ui: maintenance window', () => {
     ];
     const times = ['2026-01-10T01:30:00Z', '2026-01-10T02:00:00Z', '2026-01-10T03:59:00Z', '2026-07-10T22:10:00Z',
       '2026-07-10T23:00:00Z', '2026-07-11T00:59:00Z', '2026-07-11T02:30:00Z', '2026-07-11T10:14:00Z', '2026-07-11T00:00:00Z'];
-    for (const w of windows) for (const t of times) assert.equal(O.inWindow(w, at(t)), autoUpdate.isInWindow(w, at(t)), JSON.stringify(w) + ' @ ' + t);
+    for (const w of windows) for (const t of times) assert.equal(open(w, at(t)), autoUpdate.isInWindow(w, at(t)), JSON.stringify(w) + ' @ ' + t);
   });
-  it('start == end is a problem only when enabled; over midnight detected', () => {
+  it('start == end is a problem only when enabled', () => {
     assert.equal(O.windowProblem({ enabled: true, start: '04:00', end: '04:00' }), 'same');
     assert.equal(O.windowProblem({ enabled: false, start: '04:00', end: '04:00' }), null);
     assert.equal(O.windowProblem({ enabled: true, start: '4:00', end: '05:00' }), 'format');
-    assert.equal(O.overMidnight('23:00', '02:00'), true);
-    assert.equal(O.overMidnight('03:00', '05:00'), false);
   });
   it('time zone list contains UTC, the kept value and is sorted; fallback without Intl', () => {
     const list = O.timeZones(Intl, 'Europe/Berlin');

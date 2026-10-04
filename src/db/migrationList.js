@@ -1779,6 +1779,49 @@ const migrations = [
       ALTER TABLE peers ADD COLUMN client_policy TEXT;`,
     detect: (db) => hasColumn(db, 'peer_groups', 'client_policy') && hasColumn(db, 'peers', 'client_policy'),
   },
+  {
+    version: 87,
+    name: 'notification_recipient',
+    // One recipient for every notification mail (services/notifications.js).
+    //   notifications.email   alerts.email + monitoring.alert_email, merged
+    //                         (both kept when they differ, comma separated)
+    //   alerts.email_events   the two switches that had their own key become
+    //                         rows of the event list: monitoring.email_alerts
+    //                         → route_down/route_up, notify.update_email
+    //                         (default on) → the update mails. The backup
+    //                         failure mail went to alerts.email unconditionally,
+    //                         so autobackup_failed is added when one was set.
+    // The old keys are dropped; recipient() reads them once more when a backup
+    // from before this migration is restored. Duplicates in the list are
+    // harmless (parseList deduplicates).
+    sql: `
+      INSERT INTO settings (key, value, updated_at)
+        SELECT 'notifications.email',
+          CASE
+            WHEN a <> '' AND m <> '' AND lower(a) <> lower(m) THEN a || ', ' || m
+            WHEN a <> '' THEN a
+            ELSE m
+          END,
+          datetime('now')
+        FROM (SELECT
+          TRIM(COALESCE((SELECT value FROM settings WHERE key = 'alerts.email'), '')) AS a,
+          TRIM(COALESCE((SELECT value FROM settings WHERE key = 'monitoring.alert_email'), '')) AS m)
+        WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'notifications.email');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('alerts.email_events', '');
+      UPDATE settings SET value = value || ',route_down,route_up'
+        WHERE key = 'alerts.email_events'
+          AND (SELECT value FROM settings WHERE key = 'monitoring.email_alerts') = 'true';
+      UPDATE settings SET value = value || ',update_installed,update_rolled_back,update_failed'
+        WHERE key = 'alerts.email_events'
+          AND COALESCE((SELECT value FROM settings WHERE key = 'notify.update_email'), 'true') <> 'false';
+      UPDATE settings SET value = value || ',autobackup_failed'
+        WHERE key = 'alerts.email_events'
+          AND TRIM(COALESCE((SELECT value FROM settings WHERE key = 'alerts.email'), '')) <> '';
+      UPDATE settings SET value = TRIM(value, ',') WHERE key = 'alerts.email_events';
+      DELETE FROM settings
+        WHERE key IN ('alerts.email', 'monitoring.alert_email', 'monitoring.email_alerts', 'notify.update_email');`,
+    detect: (db) => tableExists(db, 'settings') && !!db.prepare("SELECT 1 FROM settings WHERE key = 'notifications.email'").get(),
+  },
 ];
 
 module.exports = { migrations };

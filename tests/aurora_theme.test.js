@@ -998,126 +998,64 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
 });
 
 // ── Task P2-11: Settings page — Aurora mockup fidelity ───────────────────────
-describe('aurora theme — settings layout (Task P2-11)', () => {
-  it('renders /settings under aurora (200, aurora shell)', async () => {
+describe('aurora theme — settings layout (grouped sections, one save model)', () => {
+  const SECTIONS = ['uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
+    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'geoip', 'portal', 'backup', 'updates', 'lizenz', 'gefahr'];
+
+  it('renders /settings under aurora: shell, section nav, compact select, save bar', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
     assert.match(res.text, /\/css\/app\.css/, 'the single stylesheet is linked');
     assert.match(res.text, /<div class="app">[\s\S]*class="app-brand"/, 'aurora theme shell present');
-    assert.match(res.text, /settings-tabs/, 'settings-tabs present');
+    assert.match(res.text, /<nav class="st-nav" id="st-nav" aria-label="[^"]+"/, 'section nav with a label');
+    assert.match(res.text, /<select id="st-select"/, 'select for narrow screens');
+    assert.match(res.text, /id="st-savebar" role="region"/, 'save bar region');
+    assert.match(res.text, /<input type="search" id="st-search" aria-label="[^"]+"/, 'labelled search');
+    assert.doesNotMatch(res.text, /settings-tabs|data-settings-tab|data-settings-panel/, 'no old tab markup');
   });
 
-  it('renders Aurora signature classes on /settings', async () => {
+  it('renders every section with a nav button and a heading', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /class="[^"]*set-sec[^"]*"/, '.set-sec present');
-    assert.match(res.text, /class="[^"]*set-row[^"]*"/, '.set-row present');
-    assert.match(res.text, /class="[^"]*toggle[^"]*"/, '.toggle present');
-    assert.match(res.text, /class="[^"]*card-title[^"]*"/, '.card-title present');
-    assert.match(res.text, /class="[^"]*grid[^"]*"/, '.grid present');
-    assert.doesNotMatch(res.text, /class="card-head"/, 'no .card-head (removed in Aurora)');
-    assert.doesNotMatch(res.text, /class="two-col"/, 'no .two-col (replaced by .grid in Aurora)');
+    for (const s of SECTIONS) {
+      assert.match(res.text, new RegExp(`class="st-nav-item" data-section="${s}" aria-current="false"`), `nav ${s}`);
+      assert.match(res.text, new RegExp(`<section class="st-section" data-section="${s}" aria-labelledby="st-h-${s}"`), `section ${s}`);
+      assert.match(res.text, new RegExp(`<option value="${s}">`), `select option ${s}`);
+    }
   });
 
-  it('renders all tab navigation elements on /settings', async () => {
+  it('toggles are role=switch buttons with labels; numbers carry min/max', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /data-settings-tab="general"/, 'general tab button present');
-    assert.match(res.text, /data-settings-tab="security"/, 'security tab button present');
-    assert.match(res.text, /data-settings-tab="backup"/, 'backup tab button present');
-    assert.match(res.text, /data-settings-tab="email"/, 'email tab button present');
-    assert.match(res.text, /data-settings-tab="monitoring"/, 'monitoring tab button present');
-    assert.match(res.text, /data-settings-tab="advanced"/, 'advanced tab button present');
-    assert.match(res.text, /data-settings-tab="license"/, 'license tab button present');
-    assert.match(res.text, /data-settings-tab="split-tunnel"/, 'split-tunnel tab button present');
-    assert.match(res.text, /data-settings-panel="general"/, 'general panel present');
-    assert.match(res.text, /data-settings-panel="security"/, 'security panel present');
-    assert.match(res.text, /class="[^"]*settings-tab-toggle[^"]*"/, '.settings-tab-toggle present');
+    const switches = res.text.match(/<button type="button" class="st-switch" role="switch"[^>]*>/g) || [];
+    assert.ok(switches.length > 20, 'switches: ' + switches.length);
+    for (const sw of switches) {
+      const id = /id="([^"]+)"/.exec(sw)[1];
+      assert.match(res.text, new RegExp(`<label class="st-label" for="${id}"`), `label for ${id}`);
+    }
+    assert.match(res.text, /id="st-ret-traffic" data-st-field="ret-traffic" min="1" max="365"/);
+    assert.match(res.text, /id="st-al-disk" data-st-field="al-disk" min="0" max="100"/);
+    assert.doesNotMatch(res.text, /class="toggle[" ]/, 'no old div toggles');
   });
 
-  it('renders key form field IDs on /settings (general tab)', async () => {
+  it('renders the dialogs as modal-overlay pattern', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action always present');
-    assert.doesNotMatch(res.text, /id="btn-data-save"/, 'btn-data-save absent (autosave)'); // removed by autosave feature
-    assert.match(res.text, /id="data-traffic-days"/, 'data-traffic-days present');
-    assert.match(res.text, /id="data-activity-days"/, 'data-activity-days present');
-    assert.match(res.text, /id="data-peer-timeout"/, 'data-peer-timeout present');
-    assert.doesNotMatch(res.text, /id="btn-route-block-save"/, 'btn-route-block-save absent (autosave)'); // removed by autosave feature
-    assert.match(res.text, /id="settings-route-block-action"/, 'settings-route-block-action present');
-    assert.doesNotMatch(res.text, /id="default-theme-buttons"/, 'default-theme picker removed (Aurora only)');
-    assert.match(res.text, /id="btn-clear-logs"/, 'btn-clear-logs present');
-    assert.match(res.text, /id="btn-svc-wg-restart"/, 'btn-svc-wg-restart present');
-    assert.match(res.text, /id="btn-svc-wg-stop"/, 'btn-svc-wg-stop present');
-    assert.match(res.text, /id="btn-svc-caddy-reload"/, 'btn-svc-caddy-reload present');
-    assert.match(res.text, /id="svc-caddy-status"/, 'svc-caddy-status present');
+    for (const id of ['st-wh-modal', 'st-ot-modal', 'st-wgstop-modal']) {
+      assert.match(res.text, new RegExp(`<div class="modal-overlay st-modal" id="${id}" style="display:none">`), id);
+    }
+    assert.match(res.text, /id="st-wgstop-pw"[^>]*autocomplete="current-password"/);
   });
 
-  it('renders key form field IDs on /settings (security tab)', async () => {
-    selectAurora();
-    const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /id="security-lockout-enabled"/, 'security-lockout-enabled present');
-    assert.match(res.text, /id="security-lockout-attempts"/, 'security-lockout-attempts present');
-    assert.match(res.text, /id="security-lockout-duration"/, 'security-lockout-duration present');
-    assert.doesNotMatch(res.text, /id="btn-security-save"/, 'btn-security-save absent (autosave)'); // removed by autosave feature
-    assert.match(res.text, /id="security-password-enabled"/, 'security-password-enabled present');
-    assert.doesNotMatch(res.text, /id="btn-password-save"/, 'btn-password-save absent (autosave)'); // removed by autosave feature
-    assert.match(res.text, /id="mb-mode"/, 'mb-mode present');
-    assert.doesNotMatch(res.text, /id="mb-save"/, 'mb-save absent (autosave)'); // removed by autosave feature
-  });
-
-  it('renders key form field IDs on /settings (backup, advanced tabs)', async () => {
-    selectAurora();
-    const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /id="btn-backup-download"/, 'btn-backup-download present');
-    assert.match(res.text, /id="btn-backup-restore"/, 'btn-backup-restore present');
-    assert.match(res.text, /id="autobackup-enabled"/, 'autobackup-enabled present');
-    assert.match(res.text, /id="autobackup-schedule"/, 'autobackup-schedule present');
-    assert.match(res.text, /id="autobackup-retention"/, 'autobackup-retention present');
-    assert.doesNotMatch(res.text, /id="btn-autobackup-save"/, 'btn-autobackup-save absent (autosave)'); // removed by autosave feature
-    assert.doesNotMatch(res.text, /id="btn-monitoring-save"/, 'btn-monitoring-save absent (autosave)'); // removed by autosave feature
-    assert.match(res.text, /id="metrics-enabled"/, 'metrics-enabled present');
-    assert.match(res.text, /id="gw-down-threshold"/, 'gw-down-threshold present');
-    assert.match(res.text, /id="ip2location-key"/, 'ip2location-key present');
-    assert.match(res.text, /id="webhooks-list"/, 'webhooks-list present');
-    assert.match(res.text, /id="webhook-url"/, 'webhook-url present');
-    assert.match(res.text, /id="btn-add-webhook"/, 'btn-add-webhook present');
-    assert.match(res.text, /id="card-autoupdate"/, 'card-autoupdate present');
-    assert.match(res.text, /name="au-mode"/, 'au-mode radio inputs present');
-    assert.doesNotMatch(res.text, /id="au-mode-save"/, 'au-mode-save absent (autosave)'); // removed by autosave feature
-  });
-
-  it('renders wg-stop-modal as modal-overlay pattern on /settings', async () => {
-    selectAurora();
-    const res = await agent.get('/settings').expect(200);
-    assert.match(res.text, /id="wg-stop-modal"/, 'wg-stop-modal present');
-    assert.match(res.text, /id="wg-stop-password"/, 'wg-stop-password present');
-    assert.match(res.text, /id="wg-stop-cancel"/, 'wg-stop-cancel present');
-    assert.match(res.text, /id="wg-stop-confirm"/, 'wg-stop-confirm present');
-    assert.match(res.text, /id="wg-stop-error"/, 'wg-stop-error present');
-    // Modal must use modal-overlay pattern (not old inline fixed position)
-    assert.match(res.text, /class="modal-overlay"/, 'modal-overlay class on wg-stop-modal');
-    assert.match(res.text, /class="modal modal-sm"/, 'modal modal-sm inside wg-stop-modal');
-  });
-
-  it('inline <style nonce> block removed from aurora/pages/settings.njk', () => {
-    const njk = fs.readFileSync(
-      path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'),
-      'utf8'
-    );
-    assert.doesNotMatch(njk, /\.settings-tabs\s*\{/, 'no .settings-tabs rule in njk (moved to the stylesheet)');
-    assert.doesNotMatch(njk, /<style\s[^>]*nonce/, 'no <style nonce> block in aurora settings.njk');
-  });
-
-  it('app.css has settings-tabs rules (Task P2-11)', () => {
-    const css = fs.readFileSync(
-      path.join(__dirname, '..', 'public', 'css', 'app.css'),
-      'utf8'
-    );
-    assert.match(css, /\.settings-tabs\b/, '.settings-tabs rule in app.css');
-    assert.match(css, /\.settings-tab-toggle\b/, '.settings-tab-toggle rule in app.css');
-    assert.match(css, /\.settings-tab-dropdown\b/, '.settings-tab-dropdown rule in app.css');
-    assert.match(css, /\.settings-panel\b/, '.settings-panel rule in app.css');
+  it('no inline <style> block in settings.njk; the st- rules live in the Aurora section of app.css', () => {
+    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
+    assert.doesNotMatch(njk, /<style/, 'no <style> block');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    const aurora = css.slice(css.indexOf('\n * \u00a72 '), css.indexOf('\n * \u00a73 '));
+    for (const sel of ['.st-page', '.st-nav-item', '.st-switch', '.st-seg', '.st-savebar', '.st-matrix', '.st-typecard']) {
+      assert.ok(aurora.includes(sel), sel + ' in §2');
+    }
+    assert.match(aurora, /@media \(max-width:900px\)\{\s*\.st-layout/, 'the nav becomes a select at ≤ 900 px');
   });
 });
 
@@ -1344,14 +1282,6 @@ describe('aurora theme — settings + sidebar UX fixes (Issues 17/18/19)', () =>
     assert.doesNotMatch(res.text, /data-default-theme=/, 'no default-theme buttons rendered');
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
     assert.doesNotMatch(njk, /data-default-theme=|settings\.default_theme/, 'no default-theme card in settings.njk');
-  });
-
-  it('Issue 18: app.css scopes align-items:start to settings panels (no card stretching)', () => {
-    const css = fs.readFileSync(
-      path.join(__dirname, '..', 'public', 'css', 'app.css'),
-      'utf8'
-    );
-    assert.match(css, /\.settings-panel\s+\.grid\s*\{[^}]*align-items\s*:\s*start/, '.settings-panel .grid has align-items:start');
   });
 
   it('Issue 19: app.css .sidebar rule has position:static (sidebar stays in grid flow)', () => {

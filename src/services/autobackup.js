@@ -236,29 +236,12 @@ function startScheduler() {
       runBackup();
     } catch (err) {
       logger.error({ error: err.message }, 'Automatic backup failed');
+      // The mail (if the backup_problem row of the notification events is
+      // on) and the webhooks come from activity.log — services/notifications.js.
       activity.log('autobackup_failed', `Automatic backup failed: ${err.message}`, {
         source: 'system',
         severity: 'error',
       });
-
-      // Send email alert on failure
-      try {
-        const alertEmail = settings.get('alerts.email', '');
-        if (alertEmail) {
-          const { isSmtpConfigured, sendMail } = require('./email');
-          if (isSmtpConfigured()) {
-            sendMail({
-              to: alertEmail,
-              subject: '[GateControl] Automatic backup failed',
-              text: `Automatic backup failed at ${new Date().toISOString()}\n\nError: ${err.message}\n\n-- GateControl`,
-            }).catch(mailErr => {
-              logger.warn({ error: mailErr.message }, 'Failed to send backup failure email alert');
-            });
-          }
-        }
-      } catch (emailErr) {
-        logger.warn({ error: emailErr.message }, 'Failed to send backup failure email alert');
-      }
     }
   }, intervalMs);
 

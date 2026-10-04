@@ -112,11 +112,11 @@ describe('PUT /api/v1/system/auto-update { window }', () => {
     });
   }
 
-  it('notify_email toggles notify.update_email', async () => {
+  it('notify_email toggles the update row of the notification events', async () => {
     let res = await put({ notify_email: false });
     assert.equal(res.status, 200);
     assert.equal(res.body.notify_email, false);
-    assert.equal(settings.get('notify.update_email'), 'false');
+    assert.ok(!require('../src/services/notifications').emailTypes().includes('update_installed'));
     res = await put({ notify_email: true });
     assert.equal(res.body.notify_email, true);
     res = await put({ notify_email: 'no' });

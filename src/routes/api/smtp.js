@@ -30,18 +30,18 @@ router.put('/settings', (req, res) => {
     const { host, port, user, password, from, secure, clear_password } = req.body;
 
     if (!host) {
-      return res.status(400).json({ ok: false, error: req.t('smtp.error.host_required') });
+      return res.status(400).json({ ok: false, error: req.t('smtp.error.host_required'), fields: { host: req.t('smtp.error.host_required') } });
     }
     if (!port) {
-      return res.status(400).json({ ok: false, error: req.t('smtp.error.port_required') });
+      return res.status(400).json({ ok: false, error: req.t('smtp.error.port_required'), fields: { port: req.t('smtp.error.port_required') } });
     }
     if (!from) {
-      return res.status(400).json({ ok: false, error: req.t('smtp.error.from_required') });
+      return res.status(400).json({ ok: false, error: req.t('smtp.error.from_required'), fields: { from: req.t('smtp.error.from_required') } });
     }
 
     const portNum = parseInt(port, 10);
     if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
-      return res.status(400).json({ ok: false, error: req.t('smtp.error.port_invalid') });
+      return res.status(400).json({ ok: false, error: req.t('smtp.error.port_invalid'), fields: { port: req.t('smtp.error.port_invalid') } });
     }
 
     saveSmtpSettings({ host, port: portNum, user, password, from, secure, clear_password });

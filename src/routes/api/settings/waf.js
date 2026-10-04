@@ -15,7 +15,7 @@ const logger = require('../../../utils/logger');
 
 const router = Router();
 
-function sendError(res, err, label) {
+function sendError(req, res, err, label) {
   if (err && err.statusCode && err.code) {
     return res.status(err.statusCode).json({ ok: false, error: err.message, code: err.code });
   }
@@ -23,14 +23,14 @@ function sendError(res, err, label) {
     return res.status(502).json({ ok: false, error: err.message, code: 'CADDY_SYNC_FAILED' });
   }
   logger.warn({ err: err && err.message }, `${label} failed`);
-  return res.status(500).json({ ok: false, error: `${label} failed` });
+  return res.status(500).json({ ok: false, error: req.t('common.error') });
 }
 
 router.get('/waf', requireFeature('waf'), (req, res) => {
   try {
     res.json({ ok: true, ...wafBans.getSettings() });
   } catch (err) {
-    sendError(res, err, 'GET /settings/waf');
+    sendError(req, res, err, 'GET /settings/waf');
   }
 });
 
@@ -40,7 +40,7 @@ router.put('/waf', requireFeature('waf'), async (req, res) => {
     const { settings, synced } = await wafBans.updateSettings(req.body || {});
     res.json({ ok: true, ...settings, synced });
   } catch (err) {
-    sendError(res, err, 'PUT /settings/waf');
+    sendError(req, res, err, 'PUT /settings/waf');
   }
 });
 

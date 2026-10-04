@@ -227,6 +227,12 @@ function profileLocals(req, res) {
   };
 }
 
+// String prefixes the settings page hands to its scripts (settings.njk island
+// data-prefixes must list the same ones).
+const SETTINGS_I18N_PREFIXES = ['st.', 'settings.', 'offsite.', 'premig.', 'autoupdate.', 'autobackup.', 'updatesh.', 'client_policy.',
+  'client_updates.', 'pihole.cfg.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
+  'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.'];
+
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
@@ -263,7 +269,9 @@ pages.forEach(({ path, template, nav, titleKey }) => {
     // session without the admin role answers 403): a plain user gets the one
     // page that is theirs instead of a dashboard that never loads. The role
     // comes from injectLocals (res.locals.user) — no extra query here.
-    if (template === 'dashboard' && (!res.locals.user || res.locals.user.role !== 'admin')) {
+    // Same for /settings: every settings API answers 403 without the admin
+    // role, so the page would be a shell of failing requests.
+    if ((template === 'dashboard' || template === 'settings') && (!res.locals.user || res.locals.user.role !== 'admin')) {
       return res.redirect('/profile');
     }
 
@@ -309,26 +317,16 @@ pages.forEach(({ path, template, nav, titleKey }) => {
       } catch { extraLocals.pools = []; extraLocals.gatewayPeers = []; }
     }
 
-    // Settings page: gw-down-threshold is the only server-rendered settings
-    // value (template reads `settings.gateway_down_threshold_s`). The `settings`
-    // template var is otherwise never injected, so the slider always showed the
-    // hardcoded default 90. Inject just that one key (not getAll(), to avoid
-    // exposing secrets) so the slider reflects the persisted value.
+    // Settings page: every value comes from the settings APIs (no DB read
+    // here). Server-rendered: the notification event catalogue (static, for
+    // the event matrix and the webhook dialog) and the page's strings as one
+    // JSON island (st.* plus the prefixes its helper scripts read).
     if (template === 'settings') {
-      try {
-        extraLocals.settings = {
-          gateway_down_threshold_s: require('../services/settings').get('gateway_down_threshold_s'),
-        };
-        extraLocals.settingsAcmeEmail = String(require('../services/settings').get('caddy.acme_email', '') || '').trim();
-      } catch { extraLocals.settings = {}; extraLocals.settingsAcmeEmail = ''; }
-      // Ob eine Adresse aus der .env geerbt wird — als BOOLEAN, nicht als Wert.
-      // config.caddy.email steht heute in KEINER API-Antwort (GET /settings/app
-      // liefert settings.getAll() plus einen festen config-Ausschnitt ohne caddy,
-      // appearance.js:21-29), und /settings ist nur durch requireAuth geschützt.
-      // Den Klartext auszuliefern wäre also eine neue Preisgabe an jede Session
-      // inklusive role='user'; der Hinweis "Aus der .env übernommen" trägt
-      // dieselbe Information ohne den Wert.
-      extraLocals.acmeEmailInherited = Boolean(String((config.caddy || {}).email || '').trim());
+      extraLocals.notifyCatalogue = JSON.stringify(require('../services/notifications').CATALOGUE.map((g) => ({
+        id: g.id, events: g.events.map((e) => ({ id: e.id, types: e.types, free: !!e.free })),
+      }))).replace(/</g, '\\u003c');
+      extraLocals.settingsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SETTINGS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
     }
 
     // Dashboard-only: gateways that need re-pairing after master-key rotation

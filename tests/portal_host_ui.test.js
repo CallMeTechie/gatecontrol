@@ -3,6 +3,7 @@ const crypto = require('crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const { withoutScripts } = require('./helpers/html');
 const supertest = require('supertest');
 const fs = require('node:fs'); const path = require('node:path');
 const { setup, teardown, getAgent } = require('./helpers/setup');
@@ -12,16 +13,18 @@ afterEach(teardown);
 
 test('settings page renders the Portal address card, no raw i18n keys', async () => {
   const res = await getAgent().get('/settings').expect(200);
-  assert.match(res.text, /portal-base-domain/);
-  assert.match(res.text, /portal-prefix/);
-  assert.match(res.text, /portal-effective-host/);
-  assert.doesNotMatch(res.text, /settings\.portal\.(address|base_domain|prefix|host_note)\b/);
+  assert.match(res.text, /id="st-po-domain"/);
+  assert.match(res.text, /id="st-po-prefix"/);
+  assert.match(res.text, /id="st-po-preview"/);
+  // (the JSON string table in <script id="st-i18n"> carries the keys by design)
+  const visible = withoutScripts(res.text);
+  assert.doesNotMatch(visible, /settings\.portal\.(address|base_domain|prefix|host_note)\b/);
 });
 
-test('all three themes contain the portal-address ids incl. the Apply button', () => {
-  for (const theme of ['aurora']) {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'templates', theme, 'pages', 'settings.njk'), 'utf8');
-    ['portal-base-domain', 'portal-prefix', 'portal-effective-host', 'portal-host-error', 'portal-switch-warning', 'portal-host-apply', 'portal-no-domains-hint']
-      .forEach(id => assert.ok(html.includes(id), `${theme}: ${id}`));
-  }
+test('the portal address is part of the Portal section save (with a switch confirmation)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
+  for (const id of ["selectRow('st-po-domain'", "textRow('st-po-prefix'", 'id="st-po-preview"', 'id="st-po-nodomains"']) assert.ok(html.includes(id), id);
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings.js'), 'utf8');
+  assert.match(js, /fields: \['po-domain', 'po-prefix'\], errorField: 'po-prefix',\s*confirm:/);
+  assert.match(js, /api\.put\('\/api\/v1\/settings\/portal', \{ base_domain: v\['po-domain'\], prefix: v\['po-prefix'\]\.trim\(\) \}\)/);
 });

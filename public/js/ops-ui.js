@@ -1,9 +1,9 @@
 'use strict';
 
 // Operations UI kit (docs/feature-release-b.md §6, §7, §13b): pure helpers for
-// the off-site backup card and the maintenance window (settings.js), the
-// "What's new" card and the auto-update status (dashboard.js). Loaded before
-// those scripts on settings.njk and dashboard.njk. UMD like secopt-ui.js: the
+// the off-site backups and the maintenance window (settings.js, Backups and
+// Updates sections), the "What's new" card and the auto-update status
+// (dashboard.js). Loaded before those scripts on settings.njk and dashboard.njk. UMD like secopt-ui.js: the
 // helpers are testable in node:test (tests/ops_ui.test.js); DOM is only built
 // through el() / textContent — never innerHTML. Strings come from window.GC.t
 // (layout.njk whitelist) with English fallbacks.
@@ -67,7 +67,6 @@
     'Europe/Amsterdam', 'Europe/Madrid', 'Europe/Rome', 'Europe/Warsaw', 'Europe/Helsinki', 'America/New_York',
     'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Asia/Tokyo', 'Asia/Singapore', 'Australia/Sydney'];
   function isHHMM(v) { return HHMM_RE.test(str(v)); }
-  function overMidnight(start, end) { return isHHMM(start) && isHHMM(end) && end < start; }
   /** Client-side mirror of autoUpdate.validateWindow + the start ≠ end rule. */
   function windowProblem(w) {
     if (!w || !w.enabled) return null;
@@ -96,15 +95,6 @@
       return hh + ':' + parts.find((p) => p.type === 'minute').value;
     } catch (_) { return null; }
   }
-  /** Same rule as autoUpdate.isInWindow / update.sh: [start, end), over midnight when end < start. */
-  function inWindow(w, date) {
-    if (!w || !isHHMM(w.start) || !isHHMM(w.end)) return null;
-    const now = timeIn(w.tz, date);
-    if (!now) return null;
-    if (w.start === w.end) return true;
-    return w.start < w.end ? (now >= w.start && now < w.end) : (now >= w.start || now < w.end);
-  }
-
   // ─── API error codes → UI text keys ──────────────────────────────────────
   // The APIs answer in English with a machine code; the UI shows its own text.
   const ERROR_KEYS = {
@@ -343,46 +333,14 @@
     });
   }
 
-  /**
-   * Confirm dialog in the zones dialog look (.modal-overlay.zn-dialog, pro.css)
-   * → Promise<boolean>. o = {title, message, detail, okLabel, danger}.
-   */
-  function confirmDialog(doc, o) {
-    return new Promise((resolve) => {
-      const titleId = 'op-dlg-' + Math.random().toString(36).slice(2, 8);
-      let overlay = null;
-      const close = (v) => { doc.removeEventListener('keydown', onKey, true); if (overlay) overlay.remove(); resolve(v === true); };
-      function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(false); } }
-      const ok = el(doc, 'button', { type: 'button', class: 'btn ' + (o.danger ? 'btn-danger' : 'btn-primary'), text: o.okLabel || tr('offsite.ok', 'OK'), on: { click: () => close(true) } });
-      const box = el(doc, 'div', { class: 'modal zn-dialog-box op-dialog-box', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
-        el(doc, 'div', { class: 'modal-head' }, [
-          el(doc, 'span', { class: 'modal-title', id: titleId, text: o.title }),
-          el(doc, 'button', { type: 'button', class: 'modal-close', 'aria-label': tr('common.close', 'Close'), text: '×', on: { click: () => close(false) } }),
-        ]),
-        el(doc, 'div', { class: 'modal-body zn-dialog-body' }, [
-          el(doc, 'p', { class: 'zn-dialog-msg', text: o.message }),
-          o.detail ? el(doc, 'p', { class: 'zn-dialog-detail', text: o.detail }) : null,
-        ]),
-        el(doc, 'div', { class: 'modal-foot' }, [
-          el(doc, 'button', { type: 'button', class: 'btn btn-ghost', text: tr('offsite.cancel', 'Cancel'), on: { click: () => close(false) } }),
-          ok,
-        ]),
-      ]);
-      overlay = el(doc, 'div', { class: 'modal-overlay zn-dialog op-dialog', style: 'display:flex' }, [box]);
-      doc.addEventListener('keydown', onKey, true);
-      doc.body.appendChild(overlay);
-      ok.focus();
-    });
-  }
-
   return {
     fmt, tr, MIN_PASSPHRASE, MAX_PASSPHRASE, passphraseStrength,
     normalizeFingerprint, formatFingerprint,
-    DEFAULT_TZ, isHHMM, overMidnight, windowProblem, timeZones, browserTimeZone, timeIn, inWindow,
+    DEFAULT_TZ, isHHMM, windowProblem, timeZones, browserTimeZone, timeIn,
     ERROR_KEYS, FIELD_KEYS, errorCode, configField, errorKey, errorText, errorDetail,
     TYPES, TYPE_LABELS, DEFAULT_PORTS, targetSummary, targetStatus, sortCandidates, targetPayload,
     VERIFY_WARNINGS, verifyWarningText, verifyLines,
     fmtBytes, fmtDateTime, fmtDate, fmtAgo,
-    el, tokenNodes, whatsNewNodes, confirmDialog,
+    el, tokenNodes, whatsNewNodes,
   };
 });

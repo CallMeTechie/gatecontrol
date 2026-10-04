@@ -8,9 +8,49 @@ const { Router } = require('express');
 const settings = require('../../../services/settings');
 const activity = require('../../../services/activity');
 const logger = require('../../../utils/logger');
-const { requireFeature } = require('../../../middleware/license');
+const { hasFeature } = require('../../../services/license');
+const notifications = require('../../../services/notifications');
+const { validateEmail } = require('../../../utils/validate');
+const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 
 const router = Router();
+
+const MONITORING_RANGES = { interval: [10, 3600] };
+const DATA_RANGES = {
+  retention_traffic_days: [1, 365],
+  retention_activity_days: [1, 365],
+  retention_waf_days: [1, 365],
+  peer_online_timeout: [30, 600],
+};
+const ALERT_RANGES = {
+  backup_reminder_days: [0, 365],
+  resource_cpu_threshold: [0, 100],
+  resource_ram_threshold: [0, 100],
+  resource_disk_threshold: [0, 100],
+};
+const ALERT_KEYS = {
+  backup_reminder_days: 'alerts.backup_reminder_days',
+  resource_cpu_threshold: 'alerts.resource_cpu_threshold',
+  resource_ram_threshold: 'alerts.resource_ram_threshold',
+  resource_disk_threshold: 'alerts.resource_disk_threshold',
+};
+
+/** '' or one/several addresses, comma separated → message or null. */
+function recipientError(req, value) {
+  if (typeof value !== 'string') return req.t('error.settings.recipient_invalid');
+  const list = notifications.recipientList(value);
+  if (list.length > 10 || list.some((a) => validateEmail(a))) return req.t('error.settings.recipient_invalid');
+  return null;
+}
+
+function licenseError(req, res, feature) {
+  return res.status(403).json({
+    ok: false,
+    error: req.t('error.license.feature_not_available'),
+    feature,
+    upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+  });
+}
 
 /**
  * GET /api/settings/monitoring — Get monitoring settings
@@ -23,16 +63,22 @@ router.get('/monitoring', (req, res) => {
 
 /**
  * PUT /api/settings/monitoring — Update monitoring settings
+ * { interval: 10–3600, email_alerts: bool (the route_state row of the
+ * notification events), alert_email: the notification recipient }
  */
 router.put('/monitoring', (req, res) => {
   try {
-    const { interval, email_alerts, alert_email } = req.body;
-    if (interval !== undefined) {
-      const val = parseInt(interval, 10);
-      if (val >= 10 && val <= 3600) settings.set('monitoring.interval', String(val));
+    const body = req.body || {};
+    const { values, fields } = checkRanges(req, body, MONITORING_RANGES);
+    if (body.alert_email !== undefined) {
+      const err = recipientError(req, body.alert_email);
+      if (err) fields.alert_email = err;
     }
-    if (email_alerts !== undefined) settings.set('monitoring.email_alerts', String(email_alerts));
-    if (alert_email !== undefined) settings.set('monitoring.alert_email', String(alert_email));
+    if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
+
+    if (values.interval !== undefined) settings.set('monitoring.interval', String(values.interval));
+    if (body.email_alerts !== undefined) notifications.setEventEmail('route_state', body.email_alerts === true || body.email_alerts === 'true');
+    if (body.alert_email !== undefined) notifications.setRecipient(body.alert_email);
 
     activity.log('monitoring_settings_updated', 'Monitoring settings updated', {
       source: 'admin', ipAddress: req.ip, severity: 'info',
@@ -60,27 +106,14 @@ router.get('/data', (req, res) => {
 });
 
 /**
- * PUT /api/settings/data — Update data retention settings
+ * PUT /api/settings/data — Update data retention settings (400 with
+ * per-field messages when a value is out of range)
  */
 router.put('/data', (req, res) => {
   try {
-    const { retention_traffic_days, retention_activity_days, retention_waf_days, peer_online_timeout } = req.body;
-    if (retention_traffic_days !== undefined) {
-      const val = parseInt(retention_traffic_days, 10);
-      if (val >= 1 && val <= 365) settings.set('data.retention_traffic_days', String(val));
-    }
-    if (retention_activity_days !== undefined) {
-      const val = parseInt(retention_activity_days, 10);
-      if (val >= 1 && val <= 365) settings.set('data.retention_activity_days', String(val));
-    }
-    if (retention_waf_days !== undefined) {
-      const val = parseInt(retention_waf_days, 10);
-      if (val >= 1 && val <= 365) settings.set('data.retention_waf_days', String(val));
-    }
-    if (peer_online_timeout !== undefined) {
-      const val = parseInt(peer_online_timeout, 10);
-      if (val >= 30 && val <= 600) settings.set('data.peer_online_timeout', String(val));
-    }
+    const { values, fields } = checkRanges(req, req.body || {}, DATA_RANGES);
+    if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
+    for (const [k, v] of Object.entries(values)) settings.set('data.' + k, String(v));
     activity.log('data_settings_updated', 'Data retention settings updated', {
       source: 'admin', ipAddress: req.ip, severity: 'info',
     });
@@ -147,32 +180,72 @@ router.post('/ip2location/test', async (req, res) => {
 });
 
 /**
- * GET /api/settings/alerts — Get email alert settings
+ * GET /api/settings/alerts — notification settings: the one recipient, the
+ * mailed event types (CSV, as stored) and the catalogue rows they tick
+ * (`events`), the periodic checks and whether SMTP is set up.
  */
 router.get('/alerts', (req, res) => {
+  const email = require('../../../services/email');
+  const smtp = email.getSmtpSettings();
+  const types = notifications.emailTypes();
   res.json({
     ok: true,
     data: {
-      email: settings.get('alerts.email', ''),
-      email_events: settings.get('alerts.email_events', ''),
-      backup_reminder_days: parseInt(settings.get('alerts.backup_reminder_days', '0'), 10),
-      resource_cpu_threshold: parseInt(settings.get('alerts.resource_cpu_threshold', '0'), 10),
-      resource_ram_threshold: parseInt(settings.get('alerts.resource_ram_threshold', '0'), 10),
+      email: notifications.recipient(),
+      email_events: types.join(','),
+      events: notifications.eventsFromTypes(types),
+      backup_reminder_days: parseInt(settings.get('alerts.backup_reminder_days', '0'), 10) || 0,
+      resource_cpu_threshold: parseInt(settings.get('alerts.resource_cpu_threshold', '0'), 10) || 0,
+      resource_ram_threshold: parseInt(settings.get('alerts.resource_ram_threshold', '0'), 10) || 0,
+      resource_disk_threshold: parseInt(settings.get('alerts.resource_disk_threshold', '0'), 10) || 0,
+      smtp: { configured: email.isSmtpConfigured(), host: smtp.host || '' },
     },
   });
 });
 
 /**
- * PUT /api/settings/alerts — Update email alert settings
+ * PUT /api/settings/alerts — Update notification settings.
+ *   email                 recipient ('' = none; several comma separated)
+ *   events                catalogue row ids that are mailed (settings page) …
+ *   email_events          … or the event types themselves (CSV or array;
+ *                         older clients). Unknown names → 400.
+ *   backup_reminder_days  0–365, resource_{cpu,ram,disk}_threshold 0–100
+ * Licence email_alerts: needed for the periodic checks and for every event
+ * row except the two that had their own unlicensed switch before (route
+ * state, update mails). The recipient is free (update mails use it too).
  */
-router.put('/alerts', requireFeature('email_alerts'), (req, res) => {
+router.put('/alerts', (req, res) => {
   try {
-    const { email, email_events, backup_reminder_days, resource_cpu_threshold, resource_ram_threshold } = req.body;
-    if (email !== undefined) settings.set('alerts.email', String(email));
-    if (email_events !== undefined) settings.set('alerts.email_events', String(email_events));
-    if (backup_reminder_days !== undefined) settings.set('alerts.backup_reminder_days', String(parseInt(backup_reminder_days, 10) || 0));
-    if (resource_cpu_threshold !== undefined) settings.set('alerts.resource_cpu_threshold', String(parseInt(resource_cpu_threshold, 10) || 0));
-    if (resource_ram_threshold !== undefined) settings.set('alerts.resource_ram_threshold', String(parseInt(resource_ram_threshold, 10) || 0));
+    const body = req.body || {};
+    const { values, fields } = checkRanges(req, body, ALERT_RANGES);
+    if (body.email !== undefined) {
+      const err = recipientError(req, body.email);
+      if (err) fields.email = err;
+    }
+    let types = null;
+    if (body.events !== undefined) {
+      const ids = notifications.parseList(body.events);
+      const known = new Set(notifications.EVENTS.map((e) => e.id));
+      const bad = ids.filter((id) => !known.has(id));
+      if (bad.length) fields.events = req.t('error.settings.events_invalid', { names: bad.join(', ') });
+      else types = notifications.typesFromEvents(ids);
+    } else if (body.email_events !== undefined) {
+      const bad = notifications.unknownTypes(body.email_events);
+      if (bad.length) fields.email_events = req.t('error.settings.events_invalid', { names: bad.join(', ') });
+      else types = notifications.parseList(body.email_events);
+    }
+    if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
+
+    if (!hasFeature('email_alerts')) {
+      const checksChanged = Object.entries(values).some(([k, v]) => String(v) !== String(parseInt(settings.get(ALERT_KEYS[k], '0'), 10) || 0));
+      if (checksChanged || (types && notifications.licensedChanges(notifications.emailTypes(), types).length)) {
+        return licenseError(req, res, 'email_alerts');
+      }
+    }
+
+    if (body.email !== undefined) notifications.setRecipient(body.email);
+    if (types) notifications.setEmailTypes(types);
+    for (const [k, v] of Object.entries(values)) settings.set(ALERT_KEYS[k], String(v));
 
     activity.log('alert_settings_updated', 'Email alert settings updated', {
       source: 'admin', ipAddress: req.ip, severity: 'info',

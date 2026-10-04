@@ -382,7 +382,7 @@ describe('settings/observability — monitoring, metrics, alerts, ip2location, d
       .set('X-CSRF-Token', csrf)
       .send({
         email: 'alerts@example.test',
-        email_events: 'peer_offline',
+        email_events: 'peer_connected,peer_disconnected',
         backup_reminder_days: 14,
         resource_cpu_threshold: 80,
         resource_ram_threshold: 90,
