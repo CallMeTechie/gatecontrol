@@ -10,7 +10,11 @@
     <span class="cp-trigger-label">{{ t('nav.search') }}</span>
     <kbd class="cp-kbd" id="cp-kbd">{{ 'Strg K' if language == 'de' else 'Ctrl K' }}</kbd>
   </button>
-  <div class="topbar-status" id="wg-status"><span class="pulse-dot"></span><span>{{ t('status.wg_active') }}</span></div>
+  {# WireGuard state (app.js GC.setWgState): text and colour always change together.
+     Admin-only — the state comes from the admin API. #}
+  {% if user and user.role == 'admin' %}
+  <div class="topbar-status" id="wg-status" role="status" data-on="{{ t('status.wg_active') }}" data-off="{{ t('status.wg_inactive') }}"><span class="pulse-dot" aria-hidden="true"></span><span class="topbar-status-text">{{ t('status.wg_active') }}</span></div>
+  {% endif %}
   <div class="topbar-lang" id="lang-switcher">
     {% for lang in availableLanguages %}
     <button class="lang-btn {{ 'active' if lang == language }}" data-lang="{{ lang }}">{{ lang }}</button>
