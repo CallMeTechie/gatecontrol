@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.141.1] — 2026-10-05
+
+### Fixes
+- topbar WireGuard pill switches its text with its colour (#263)
+
+---
+
 ## [1.141.0] — 2026-10-04
 
 ### Features
