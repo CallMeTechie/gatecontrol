@@ -568,3 +568,32 @@ console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');
   var btn = document.getElementById('theme-btn');
   if (btn) btn.addEventListener('click', function () { set(get() === 'dark' ? 'light' : 'dark'); });
 })();
+
+// ─── WireGuard state pill (#wg-status in the topbar) ──────
+// Text and colour always change together. The dashboard pushes its own
+// readings through GC.setWgState; every other page asks /wg/status once a
+// minute while the tab is visible.
+(function () {
+  var el = document.getElementById('wg-status');
+  window.GC = window.GC || {};
+  window.GC.setWgState = function (running) {
+    if (!el) return;
+    var on = running !== false;
+    el.classList.toggle('inactive', !on);
+    var label = el.querySelector('.topbar-status-text');
+    var text = on ? el.dataset.on : el.dataset.off;
+    if (label && text) label.textContent = text;
+    el.title = text || '';
+  };
+  if (!el || document.getElementById('db-traffic-rate')) return; // dashboard reports itself
+  function refresh() {
+    if (document.hidden) return;
+    fetch('/api/v1/wg/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && typeof d.running === 'boolean') window.GC.setWgState(d.running); })
+      .catch(function () { /* keep the last known state */ });
+  }
+  refresh();
+  setInterval(refresh, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+})();

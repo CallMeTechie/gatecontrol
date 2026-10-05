@@ -230,7 +230,7 @@
     $('db-peers-all').textContent = t('dashboard.peers_all_n', { n: c.total });
     // Topbar WireGuard state and sidebar badges (shared layout).
     var wg = $('wg-status');
-    if (wg && d.wireguard) wg.classList.toggle('inactive', !d.wireguard.running);
+    if (wg && d.wireguard && window.GC && GC.setWgState) GC.setWgState(d.wireguard.running);
     var pb = $('peer-count-badge');
     if (pb && d.peers) pb.textContent = d.peers.total;
     var rb = $('route-count-badge');

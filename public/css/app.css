@@ -3201,6 +3201,8 @@ a{color:inherit}
   background:var(--chip); border-radius:999px; font-size:12.5px; color:var(--muted)}
 .pulse-dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(74,222,128,.55);animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}70%{box-shadow:0 0 0 7px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+.topbar-status.inactive{color:var(--red); background:var(--red-bg); border-color:var(--red-bd)}
+.topbar-status.inactive .pulse-dot{background:var(--red); animation:none; box-shadow:none}
 
 .icon-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--chip);color:var(--muted);
   display:grid;place-items:center;cursor:pointer;transition:.18s; flex:0 0 auto}
