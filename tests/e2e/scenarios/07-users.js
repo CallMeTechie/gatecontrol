@@ -110,6 +110,9 @@ module.exports = (ctx) => {
       step('after setting the password the login page follows', /\/login$/.test(page.url()), page.url());
       await ctx.login(page, { username: 'e2e_kids', password: 'Kids!Pass12345' });
       step('the member lands on /profile', /\/profile$/.test(page.url()), page.url());
+      // Let /profile finish its API reads before the cookies go: a read that
+      // runs into the cleared session gets the login page and logs an error.
+      await idle(page);
 
       // ── Member view ──
       await page.context().clearCookies();
@@ -126,6 +129,7 @@ module.exports = (ctx) => {
       ctx.allow((p) => p.kind === 'http' && p.status === 403 && p.url === '/api/v1/users');
       await shot(page, 'member-profile');
 
+      await idle(page);
       await page.context().clearCookies();
       await ctx.login(page);
     },

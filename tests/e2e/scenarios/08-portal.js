@@ -8,7 +8,8 @@
 // The portal lives on its own host (home.<GC_DNS_DOMAIN>) and identifies the
 // device by the X-GC-Portal-Peer-IP header Caddy sets. Without Caddy this
 // scenario uses an own browser that resolves the portal host to 127.0.0.1
-// and sends the header itself (the app only trusts it from loopback).
+// and adds the header to portal-host requests itself (the app only trusts it
+// from loopback).
 // bypassCSP: the portal's CSP says upgrade-insecure-requests, and this run is
 // plain http.
 //
@@ -27,7 +28,13 @@ module.exports = (ctx) => {
       const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1`] });
       const expected = [];
       async function open(ip, width = 1440) {
-        const context = await browser.newContext({ viewport: { width, height: 900 }, bypassCSP: true, extraHTTPHeaders: { 'X-GC-Portal-Peer-IP': ip } });
+        const context = await browser.newContext({ viewport: { width, height: 900 }, bypassCSP: true });
+        // The identity header only on requests to the portal host — as an
+        // extraHTTPHeaders entry it would also go to fonts.gstatic.com and
+        // fail the CORS preflight of the web fonts.
+        await context.route((url) => url.hostname === HOST, (route) => route.continue({
+          headers: Object.assign({}, route.request().headers(), { 'x-gc-portal-peer-ip': ip }),
+        }));
         const p = await context.newPage();
         p.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|Cross-Origin-Opener-Policy/.test(m.text())) problems.push({ kind: 'console', text: m.text().slice(0, 300) }); });
         p.on('pageerror', (e) => problems.push({ kind: 'pageerror', text: String(e).slice(0, 300) }));
