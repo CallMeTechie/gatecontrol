@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.144.0] — 2026-10-06
+
+### Features
+- redesigned users page with role clarity, member self-service area and per-device Pi-hole (#266)
+
+---
+
 ## [1.143.0] — 2026-10-06
 
 ### Features
