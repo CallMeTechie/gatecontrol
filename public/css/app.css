@@ -5281,6 +5281,10 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .st-feature[data-on="1"] .st-feature-ic{color:var(--pf-green-ink); background:var(--green-bg); border-color:var(--green-bd)}
 .st-feature-name{font-size:13px; font-weight:600; min-width:0; overflow-wrap:break-word; hyphens:auto}
 .st-feature-val{margin-left:auto; font-size:12px; color:var(--db-muted); white-space:nowrap}
+.st-feature[data-on="1"][data-src="plan_default"]{border-style:dashed}
+.st-feature[data-on="1"][data-src="plan_default"] .st-feature-ic{color:var(--amber); background:var(--amber-bg); border-color:var(--amber-bd)}
+.st-feature[data-on="1"][data-src="plan_default"] .st-feature-val{color:var(--amber)}
+.st-lic-derived-note{margin:14px 22px 0}
 
 /* save bar */
 /* .main is overflow:auto but grows with its content (the document scrolls), so
