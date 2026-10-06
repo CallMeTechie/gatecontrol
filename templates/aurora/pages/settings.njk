@@ -674,12 +674,14 @@ chmod +x update.sh</pre>
       <div class="st-plan-text">
         <div class="st-plan-name">{{ t('license.plan_' + license.plan) }}</div>
         <div class="st-plan-meta">
+          {%- set expParts = (license.expires_at | string).split('T')[0].split('-') if license.expires_at else [] %}
+          {%- set expDate = ((expParts[2] + '.' + expParts[1] + '.' + expParts[0]) if language == 'de' else expParts.join('-')) if expParts.length == 3 else '' %}
           {%- set meta = [
-            t('st.lic.valid_until', { date: license.expires_at }) if license.expires_at else '',
+            t('st.lic.valid_until', { date: expDate }) if expDate else '',
             t('st.lic.activations', { n: license.activations, max: license.max_activations }) if license.activations else '',
             t('st.lic.key', { key: license.license_key_masked }) if license.license_key_masked else ''
           ] | select | join(' · ') -%}
-          {{ meta if meta else (t('license.unlicensed_banner') if license.unlicensed else t('license.community_hint')) }}
+          {{ meta if meta else (t('license.unlicensed_banner') if license.unlicensed else (t('license.community_hint') if license.plan == 'community' else '')) }}
         </div>
       </div>
       {%- if license.license_key_masked %}<button type="button" class="st-btn" id="st-lic-refresh">{{ t('st.lic.refresh') }}</button>{% endif %}
@@ -698,16 +700,21 @@ chmod +x update.sh</pre>
   </section>
   <section class="st-card" aria-labelledby="st-c-features">
     {% call cardHead('st-c-features', t('st.lic.features')) %}{% endcall %}
+    {%- if license.derived_count > 0 %}
+    <p class="st-note st-lic-derived-note" id="st-lic-derived-note">{{ t('st.lic.derived_note', { n: license.derived_count }) }}</p>
+    {%- endif %}
     <ul class="st-features">
       {%- for key, value in license.features %}{% if value is number or value == true or value == false %}
       {%- set on = (value == true) or (value is number and value != 0) %}
-      <li class="st-feature" data-on="{{ '1' if on else '0' }}">
+      {%- set derived = on and value == true and license.sources and license.sources[key] == 'plan_default' %}
+      <li class="st-feature" data-on="{{ '1' if on else '0' }}" data-src="{{ (license.sources[key] if license.sources else '') or '' }}" data-key="{{ key }}"{% if derived %} title="{{ t('st.lic.derived_title') }}"{% endif %}>
         <span class="st-feature-ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="{{ 'M5 12l5 5 9-10' if on else 'M7 7l10 10M17 7L7 17' }}"/></svg></span>
         <span class="st-feature-name">{{ t('st.feature.' + key) if t('st.feature.' + key) != 'st.feature.' + key else (key | replace('_', ' ') | capitalize) }}</span>
         <span class="st-feature-val">
           {%- if value is number and value == -1 %}{{ t('license.unlimited') }}
           {%- elif value is number and value == 0 %}{{ t('st.lic.not_included') }}
           {%- elif value is number %}{{ value }}
+          {%- elif value and derived %}{{ t('st.lic.included_derived') }}
           {%- elif value %}{{ t('st.lic.included') }}
           {%- else %}{{ t('st.lic.not_included') }}{% endif -%}
         </span>
