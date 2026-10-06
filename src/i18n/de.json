@@ -3917,7 +3917,7 @@
   "st.mb.not_peer": "Nicht zu verwechseln mit der Peer-Bindung: Die verknüpft ein Token mit einem VPN-Peer und wird unter Benutzer beim Token festgelegt. Die Gerätebindung bindet das Token an die Hardware des Client-Geräts.",
   "st.mb.users_hint": "Status pro Token und Zurücksetzen einer Bindung (z. B. wenn jemand einen neuen PC bekommt):",
   "st.mb.users_link": "Benutzer → Benutzer bearbeiten → Tokens",
-  "st.mb.clients": "Den Fingerabdruck senden der Windows-Client und die Android-App ab Version 1.16. Ein älterer Client ohne Fingerabdruck wird abgewiesen, sobald die Bindung für sein Token aktiv ist.",
+  "st.mb.clients": "Den Fingerabdruck senden der Windows-Client und die Android-App. Ein Client ohne Fingerabdruck (z. B. ein eigenes Skript) wird abgewiesen, sobald die Bindung für sein Token aktiv ist.",
   "st.groups.name": "Name",
   "st.groups.name_ph": "z. B. Büro",
   "st.groups.desc": "Beschreibung",

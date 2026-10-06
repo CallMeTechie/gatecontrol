@@ -249,7 +249,7 @@ describe('templates', () => {
     assert.equal(de['users.mb.inactive'], 'Nicht aktiv');
     assert.equal(de['users.mb.global'], 'durch globale Einstellung aktiv');
     assert.equal(de['users.mb.reset'], 'Bindung zurücksetzen…');
-    assert.ok(de['st.mb.clients'].includes('Android-App ab Version 1.16'));
+    assert.ok(de['st.mb.clients'].includes('Android-App'));
   });
 
   for (const lang of ['de', 'en']) {
@@ -277,7 +277,7 @@ describe('templates', () => {
       assert.ok(a > 0, 'facts list');
       const facts = visible.slice(a, visible.indexOf('</ul>', a));
       assert.ok(facts.includes('href="/users"'), 'link to the Users page');
-      assert.ok(facts.includes('1.16'), 'Android version');
+      assert.ok(facts.includes('Android'), 'Android client mentioned');
     });
   }
 });

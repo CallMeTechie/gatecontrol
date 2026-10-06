@@ -3969,7 +3969,7 @@
   "st.mb.not_peer": "Not the same as the peer binding: that one links a token to a VPN peer and is set on the token under Users. Device binding ties the token to the hardware of the client device.",
   "st.mb.users_hint": "Status per token and resetting a binding (e.g. when someone gets a new PC):",
   "st.mb.users_link": "Users → Edit user → Tokens",
-  "st.mb.clients": "The Windows client and the Android app from version 1.16 send the fingerprint. An older client without a fingerprint is rejected as soon as binding is active for its token.",
+  "st.mb.clients": "The Windows client and the Android app send the fingerprint. A client without one (e.g. your own script) is rejected as soon as binding is active for its token.",
   "st.groups.name": "Name",
   "st.groups.name_ph": "e.g. Office",
   "st.groups.desc": "Description",
