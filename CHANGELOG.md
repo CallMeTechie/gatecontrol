@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.142.0] — 2026-10-06
+
+### Features
+- machine binding status, toggle and reset per token on the Users page (#264)
+
+---
+
 ## [1.141.1] — 2026-10-05
 
 ### Fixes
