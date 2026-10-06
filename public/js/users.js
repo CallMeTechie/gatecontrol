@@ -92,9 +92,11 @@
       else if (k === 'checked' || k === 'disabled' || k === 'value' || k === 'selected' || k === 'hidden' || k === 'type') n[k] = v;
       else setAttr(n, k, v);
     });
+    // Children: DOM nodes as they are, everything else only ever as text.
     [].concat(children == null ? [] : children).forEach((c) => {
       if (c == null || c === false) return;
-      n.appendChild(typeof c === 'string' || typeof c === 'number' ? doc.createTextNode(String(c)) : c);
+      // ParentNode.append() inserts a string as a Text node, never as markup.
+      n.append(c instanceof window.Node ? c : String(c));
     });
     return n;
   }
@@ -427,7 +429,7 @@
       renderList();
     } catch (err) {
       const tbody = clear($('us-tbody'));
-      tbody.appendChild(el('tr', null, el('td', { colspan: '6', class: 'us-muted us-center' }, T('error.users.list'))));
+      tbody.appendChild(el('tr', null, el('td', { colspan: '6', class: 'us-muted us-center', text: T('error.users.list') })));
     }
   }
 
@@ -808,7 +810,7 @@
   function renderSee(panel) {
     const v = state.vis;
     const u = state.detail.user;
-    if (!v) { panel.appendChild(el('div', { class: 'us-muted' }, T('error.users.get'))); return; }
+    if (!v) { panel.appendChild(el('div', { class: 'us-muted', text: T('error.users.get') })); return; }
     const isAdmin = u.role === 'admin';
     panel.appendChild(el('div', { class: 'us-intro' }, isAdmin ? T('us.see.intro_admin') : T('us.see.intro_member', { name: firstName(u) })));
     // Web UI
@@ -919,7 +921,7 @@
             : el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', on: { click: () => signOut(u, s) } }, T('us.sec.sign_out')),
         ]));
       });
-    } catch (err) { clear(list).appendChild(el('li', { class: 'us-error' }, errMsg(err))); }
+    } catch (err) { clear(list).appendChild(el('li', { class: 'us-error', text: errMsg(err) })); }
   }
 
   function renderMemberAccess(panel, d) {
@@ -1010,7 +1012,7 @@
           el('time', { class: 'us-hint', datetime: e.created_at, title: fmtDateTime(e.created_at) }, rel(e.created_at)),
         ]));
       });
-    } catch (err) { clear(list).appendChild(el('li', { class: 'us-error' }, errMsg(err))); }
+    } catch (err) { clear(list).appendChild(el('li', { class: 'us-error', text: errMsg(err) })); }
   }
 
   // ── Split-tunnel editor (wizard + edit dialog) ─────────────────────

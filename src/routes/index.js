@@ -1,7 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const { requireAuth, requireAdmin, guestOnly, homeFor } = require('../middleware/auth');
+const { requireAuth, requireAdmin, guestOnly } = require('../middleware/auth');
 const { csrfProtection } = require('../middleware/csrf');
 const { loginLimiter, passkeyLoginLimiter, apiLimiter } = require('../middleware/rateLimit');
 const config = require('../../config/default');
@@ -208,7 +208,7 @@ router.post('/invite/:token', loginLimiter, csrfProtection, invitePages.accept);
 router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 
 // ─── Protected page routes ─────────────────────────
-router.get('/', requireAuth, apiLimiter, (req, res) => res.redirect(homeFor(res.locals.user || req.sessionUser)));
+router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
 // Profile page locals: identity header (initials, e-mail) and security rail.
 // The session tile shows the CURRENT session — how and when it was

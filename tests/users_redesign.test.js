@@ -445,11 +445,13 @@ describe('role-aware navigation', () => {
   });
 
   it('every admin page redirects a member to /me', async () => {
-    for (const p of ['/dashboard', '/peers', '/routes', '/users', '/settings', '/logs', '/rdp', '/security', '/certificates', '/gateways', '/']) {
+    for (const p of ['/dashboard', '/peers', '/routes', '/users', '/settings', '/logs', '/rdp', '/security', '/certificates', '/gateways']) {
       const res = await m.get(p);
       assert.equal(res.status, 302, p);
       assert.equal(res.headers.location, '/me', p);
     }
+    // '/' keeps its constant redirect to /dashboard, which sends members on.
+    assert.equal((await m.get('/')).headers.location, '/dashboard');
     await m.get('/me').expect(200);
     await m.get('/profile').expect(200);
   });

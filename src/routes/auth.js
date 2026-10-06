@@ -432,18 +432,18 @@ const authRoutes = {
 
   // ─── Own password after an admin reset ("change on next login") ──────
 
+  // Read-only on purpose: the page never writes to the session (no flash, no
+  // token minting, no cleanup). The pending state and the CSRF token were
+  // stored on a fresh session id by enterPendingPwChange(); without a valid
+  // pending state the visitor simply goes back to the login form.
   changePasswordPage(req, res) {
-    const pending = getPendingPw(req);
-    if (!pending) {
-      setFlash(req, 'error', res.locals.t('two_fa.error_expired'));
-      return res.redirect('/login');
-    }
-    ensureCsrfToken(req, res);
-    const minLength = usersService.PASSWORD_MIN_LENGTH;
+    const p = req.session && req.session.pendingPwChange;
+    const valid = !!(p && p.userId && typeof p.at === 'number' && Date.now() - p.at <= PENDING_PW_TTL_MS);
+    if (!valid || !res.locals.csrfToken) return res.redirect('/login');
     return res.render(`${res.locals.theme}/pages/login-password.njk`, {
       title: res.locals.t('pwchange.title'),
       layout: false,
-      minLength,
+      minLength: usersService.PASSWORD_MIN_LENGTH,
     });
   },
 

@@ -77,7 +77,12 @@
       else if (k === 'on') Object.keys(v).forEach((ev) => n.addEventListener(ev, v[ev]));
       else setAttr(n, k, v);
     });
-    [].concat(children == null ? [] : children).forEach((c) => { if (c != null && c !== false) n.appendChild(typeof c === 'string' ? doc.createTextNode(c) : c); });
+    // Children: DOM nodes as they are, everything else only ever as text.
+    [].concat(children == null ? [] : children).forEach((c) => {
+      if (c == null || c === false) return;
+      // ParentNode.append() inserts a string as a Text node, never as markup.
+      n.append(c instanceof window.Node ? c : String(c));
+    });
     return n;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); return n; }
@@ -151,7 +156,7 @@
           lock,
         ]));
       });
-    } catch (err) { clear(list).appendChild(el('li', { class: 'me-error' }, err.message)); }
+    } catch (err) { clear(list).appendChild(el('li', { class: 'me-error', text: err.message })); }
   }
 
   async function lockDevice(d) {
@@ -181,7 +186,7 @@
           ? el('a', { class: 'me-svc-link', href: s.url, target: '_blank', rel: 'noopener noreferrer' }, inner)
           : el('div', { class: 'me-svc-link' }, inner)));
       });
-    } catch (err) { clear(list).appendChild(el('li', { class: 'me-error' }, err.message)); }
+    } catch (err) { clear(list).appendChild(el('li', { class: 'me-error', text: err.message })); }
   }
 
   // ── Own device setup ──
