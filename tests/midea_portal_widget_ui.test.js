@@ -2,26 +2,28 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const de = require('../src/i18n/de.json');
+const en = require('../src/i18n/en.json');
 
-test('portal.njk has the midea widget block, gated by widgets.midea', () => {
+test('portal.njk has the climate (Midea) list in "Zuhause", gated by tabs.midea', () => {
   const njk = fs.readFileSync('templates/portal/portal.njk', 'utf8');
-  assert.ok(njk.includes('{% if widgets.midea %}'), 'missing widgets.midea gate');
-  assert.ok(njk.includes('c-midea'), 'missing c-midea section');
-  assert.ok(njk.includes('id="midea-list"'), 'missing midea-list container');
+  assert.ok(njk.includes('{% if tabs.midea %}'), 'missing tabs.midea gate');
+  assert.ok(njk.includes('id="pt-midea"') && njk.includes('data-area="midea"'), 'missing midea container');
+  const route = fs.readFileSync('src/routes/portal.js', 'utf8');
+  assert.match(route, /w\.midea && license\.hasFeature\('midea_integration'\)/);
 });
-test('portal-i18n block carries the midea client keys', () => {
-  const njk = fs.readFileSync('templates/portal/portal.njk', 'utf8');
-  for (const k of ['mideaLoginToControl', 'mideaOffline', 'mideaModeAuto', 'mideaPower', 'mideaPowerOn', 'mideaPowerOff']) {
-    assert.ok(njk.includes(k), `portal-i18n missing ${k}`);
+test('the midea client keys exist in de and en', () => {
+  for (const k of ['portal.control.login_hint', 'portal.midea.offline', 'portal.midea.mode_auto', 'portal.midea.power_name', 'portal.midea.power_on', 'portal.midea.power_off', 'portal.midea.fan_auto_btn']) {
+    assert.ok(de[k] && en[k], k);
   }
 });
-test('portal.css defines .c-midea styles', () => {
+test('portal.css defines the climate card styles', () => {
   const css = fs.readFileSync('public/css/portal.css', 'utf8');
-  assert.ok(css.includes('.c-midea'), 'portal.css missing .c-midea');
+  for (const s of ['.pt-ac', '.pt-stepper', '.pt-fan', '.pt-ac-mini']) assert.ok(css.includes(s), s);
 });
-test('portal.js midea card renders fan slider + auto/turbo/eco chips + outdoor', () => {
+test('portal.js climate card renders fan slider + auto/turbo/eco chips + outdoor + modes', () => {
   const src = fs.readFileSync('public/js/portal.js', 'utf8');
-  for (const m of ['data-act="fan"', 'data-act="fan-auto"', 'data-act="turbo"', 'data-act="eco"', 'fan-slider', 'ac-outdoor']) {
+  for (const m of ["'data-act': 'fan'", "'data-act': 'fan-auto'", "'data-act': 'turbo'", "'data-act': 'eco'", "'portal.midea.outside'", "'data-mode': m"]) {
     assert.ok(src.includes(m), `portal.js missing marker ${m}`);
   }
 });

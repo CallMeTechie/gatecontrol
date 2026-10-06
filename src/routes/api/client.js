@@ -69,6 +69,8 @@ router.use(require('./client/rdp'));
 router.use(require('./client/splitTunnel'));
 router.use(require('./client/policy'));
 router.use(require('./client/supportBundle'));
+// One-time portal login link after connecting (routes/portal.js GET /auto).
+router.use(require('./client/portalLink'));
 
 module.exports = router;
 module.exports.updateRouter = require('./client/update');

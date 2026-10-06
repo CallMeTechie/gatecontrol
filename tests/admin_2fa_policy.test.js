@@ -178,14 +178,14 @@ test('non-admin sessions are not subject to require_2fa', async () => {
   await enable2fa(agent, csrf); // keep an admin with 2FA so the check below is about the role
   const argon2 = require('argon2');
   const hash = await argon2.hash('Plain!Pass1234', require('../src/utils/argon2Options'));
-  // A member signs in only with "Mein Bereich" (self_service_enabled).
+  // A member signs in only with portal sign-in (self_service_enabled).
   getDb().prepare("INSERT INTO users (username, password_hash, role, self_service_enabled) VALUES ('viewer', ?, 'user', 1)").run(hash);
   const { a, location } = await loginAs('viewer', 'Plain!Pass1234');
-  assert.equal(location, '/me');
+  assert.equal(location, '/profile');
   // Not sent to the 2FA setup: a member goes from the (admin-only)
-  // dashboard to "Mein Bereich", and both own pages open.
+  // dashboard to "Konto & Sicherheit", and /me leads to the portal.
   const dash = await a.get('/dashboard').expect(302);
-  assert.equal(dash.headers.location, '/me');
-  await a.get('/me').expect(200);
+  assert.equal(dash.headers.location, '/profile');
+  await a.get('/me').expect(302);
   await a.get('/profile').expect(200);
 });

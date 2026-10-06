@@ -35,7 +35,7 @@
       <a href="/profile" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.profile') }}</a>
       <a href="/settings" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}</a>
       {% else %}
-      <a href="/me" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11.5 12 4l9 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10v10h13V10" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>{{ t('nav.me') }}</a>
+      {% if portalUrl %}<a href="{{ portalUrl }}" class="topbar-dropdown-item" rel="noopener"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11.5 12 4l9 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10v10h13V10" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>{{ t('nav.portal') }}</a>{% endif %}
       <a href="/profile" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.account_security') }}</a>
       {% endif %}
       <div class="topbar-dropdown-divider"></div>

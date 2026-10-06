@@ -1,7 +1,7 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer und „Mein Bereich“. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer und Portal. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
@@ -26,8 +26,13 @@ scenarios/06-settings.js /settings: Bereiche (#bereich, alte Tab-Namen, ?tab=),
 scenarios/07-users.js   /users: Liste + Filter, Detail per ?user=&tab=, Tabs per
                         Tastatur, Zugangs-Assistent bis zum Code, Zugang
                         bearbeiten, Rückfrage beim Verwerfen, 390 px;
-                        Einladung → Passwort → Anmeldung; /me („Mein Bereich“),
-                        Mitglieds-Navigation und Weiterleitungen
+                        Einladung → Passwort → Anmeldung; Mitglied landet in
+                        „Konto & Sicherheit“, Mitglieds-Navigation, Weiterleitungen
+scenarios/08-portal.js  Portal: Einmal-Link der App → angemeldet, Tabs (URL,
+                        Tastatur), „Gerät sperren“ fragt nach, 390 px;
+                        gemeinsames Gerät: „Wer bist du?“ mit PIN, Person
+                        wechseln, anonym. Eigener Browser, der den Portal-Host
+                        auf 127.0.0.1 auflöst und den Identitäts-Header setzt
 ```
 
 ## Ablauf
@@ -48,7 +53,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

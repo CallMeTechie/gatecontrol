@@ -9,7 +9,8 @@ const en = require('../src/i18n/en.json');
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const BASE = ['title', 'none', 'timer', 'active', 'time', 'days', 'save', 'saved', 'save_failed', 'invalid', 'not_found', 'readonly'];
 const ADMIN_KEYS = BASE.map((k) => `skoda.timers.${k}`).concat(DAYS.map((d) => `skoda.timers.day.${d}`));
-const PORTAL_KEYS = BASE.map((k) => `portal.skoda.timers.${k}`).concat(DAYS.map((d) => `portal.skoda.timers.day.${d}`));
+const PORTAL_KEYS = ['timers_edit', 'timers_none', 'timer_n', 'timer_active', 'timer_time', 'timer_days', 'timer_save', 'timer_saved', 'timer_failed', 'timer_invalid', 'timer_not_found', 'timer_readonly']
+  .map((k) => `portal.car.${k}`).concat(DAYS.map((d) => `portal.car.day_${d}`));
 
 test('all timer keys exist in de and en', () => {
   for (const k of ADMIN_KEYS.concat(PORTAL_KEYS)) {
@@ -25,9 +26,11 @@ test('all three layouts carry the skoda.timers.* GC.t whitelist', () => {
   }
 });
 
-test('the portal PT block carries every timer key', () => {
+test('the portal string island carries every portal.* key (timer keys included)', () => {
   const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'portal', 'portal.njk'), 'utf8');
-  for (const k of PORTAL_KEYS) assert.ok(njk.includes(`t('${k}')`), `PT block ${k}`);
+  assert.match(njk, /id="portal-i18n"[^>]*>\{\{ portalI18n \| safe \}\}/);
+  const route = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'portal.js'), 'utf8');
+  assert.match(route, /stringsWithPrefix\(lang, \['portal\.'\]\)/);
 });
 
 test('skoda.js renders the timer block and wires timer_set', () => {
@@ -52,40 +55,23 @@ test('skoda.js guards every enrich lookup and never shows raw server messages', 
 
 test('portal.js renders the timer block and wires timer_set', () => {
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
-  assert.match(js, /skoda-timers/);
-  assert.match(js, /timer_set/);
-  assert.match(js, /data-dirty/);
+  assert.match(js, /function timerRow\(/);
+  assert.match(js, /action: 'timer_set'/);
+  assert.match(js, /type: 'time'/);
+  // unsaved timer edits win over the 120 s refresh
+  assert.match(js, /if \(dirtyTimers\) return;/);
 });
 
-test('portal.js escapes every value inside the timer renderer', () => {
+test('portal.js builds the timer block from DOM nodes only', () => {
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
-  const from = js.indexOf('function skodaTimerRow');
-  const to = js.indexOf('function renderSkodaCard');
+  const from = js.indexOf('function timerRow');
+  const to = js.indexOf('function renderCarCard');
   assert.ok(from > 0 && to > from, 'timer renderer block not found');
-  const body = js.slice(from, to);
-  // CodeQL js/xss-through-dom: PT stammt aus #portal-i18n.textContent, ist also
-  // eine DOM-Text-Quelle. Jeder PT-Zugriff im Renderer muss in escHtml( stehen.
-  for (const m of body.matchAll(/PT[.[]/g)) {
-    assert.ok(/escHtml\($/.test(body.slice(0, m.index)),
-      'unescaped PT value: …' + body.slice(Math.max(0, m.index - 60), m.index + 30));
-  }
-  assert.match(body, /data-timer="' \+ escHtml\(t\.id/);
-  assert.match(body, /value="' \+ escHtml\(t\.time/);
-  assert.equal((body.match(/innerHTML/g) || []).length, 0, 'renderer builds strings, never assigns innerHTML');
+  assert.doesNotMatch(js.slice(from, to), /innerHTML|insertAdjacentHTML/);
 });
 
-test('skodaTimersBlock bails out early without a login', () => {
+test('the timer editor only exists with a login (departure times are a presence profile)', () => {
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
-  const from = js.indexOf('function skodaTimersBlock');
-  const to = js.indexOf('function', from + 1);
-  assert.ok(from > 0 && to > from, 'skodaTimersBlock not found');
-  const body = js.slice(from, to);
-  assert.match(body, /if \(!loggedIn\) return '';/);
-});
-
-test('portal.js narrows the details selectors so the timer block is not mistaken for it', () => {
-  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
-  assert.doesNotMatch(js, /querySelector\('details'\)/);
-  assert.match(js, /querySelector\('details\.skoda-details'\)/);
-  assert.match(js, /querySelector\('details\.skoda-timers'\)/);
+  assert.match(js, /if \(carLoggedIn\) \{\n\s+var all = c\.cl\.timers/);
+  assert.match(js, /class: 'pt-details pt-timers'/);
 });

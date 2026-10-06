@@ -256,8 +256,6 @@ const pages = [
   { path: '/security', template: 'security', titleKey: 'security.page_title' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title', member: true },
-  // "Mein Bereich": the member self-service area (also reachable by admins).
-  { path: '/me', template: 'me', titleKey: 'me.title', member: true },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
@@ -271,17 +269,16 @@ const pages = [
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
-// Strings the users page and "Mein Bereich" hand to their scripts (JSON
-// islands, like the settings page).
+// Strings the users page hands to its script (JSON island, like the
+// settings page).
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found'];
-const ME_I18N_PREFIXES = ['me.', 'common.', 'error.me.', 'enrollment.', 'error.enrollment.'];
 
 /** The portal link of the member navigation (null when the portal is off). */
 function portalLink() {
   try {
-    const cfg = require('../services/portalConfig')();
-    if (!cfg.enabled) return null;
-    return `https://${cfg.effectivePortalHost().host}`;
+    const portalConfig = require('../services/portalConfig');
+    if (!portalConfig().enabled) return null;
+    return `https://${portalConfig.effectivePortalHost().host}`;
   } catch { return null; }
 }
 
@@ -292,11 +289,11 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     const isAdmin = !!(res.locals.user && res.locals.user.role === 'admin');
 
     // Every admin page is made of admin API reads only (each /api/v1 call of
-    // a session without the admin role answers 403): a member gets "Mein
-    // Bereich" instead of a shell of failing requests. The role comes from
-    // injectLocals (res.locals.user) — no extra query here.
+    // a session without the admin role answers 403): a member gets "Konto &
+    // Sicherheit" instead of a shell of failing requests (their own area is
+    // the portal). The role comes from injectLocals (res.locals.user).
     if (!member && !isAdmin) {
-      return res.redirect('/me');
+      return res.redirect('/profile');
     }
     if (!isAdmin) extraLocals.portalUrl = portalLink();
 
@@ -328,15 +325,14 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.usersI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
     }
-    if (template === 'me') {
-      extraLocals.meI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ME_I18N_PREFIXES))
-        .replace(/</g, '\\u003c');
-    }
 
     // Profile: `?setup2fa=1` is where the require_2fa policy sends admins
     // without a second factor — the 2FA card opens its setup right away.
     if (template === 'profile') {
       extraLocals.setup2fa = req.query && req.query.setup2fa === '1';
+      // Portal PIN section (profile-pin.js): its strings as one JSON island.
+      extraLocals.pfPinI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['profile.pin.', 'common.error']))
+        .replace(/</g, '\\u003c');
       Object.assign(extraLocals, profileLocals(req, res));
     }
 
@@ -387,6 +383,11 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
   });
 });
 
+// "Mein Bereich" moved into the portal (tab "Meine Geräte"): /me sends a
+// signed-in account there, or to "Konto & Sicherheit" when the portal is off.
+// The target is the configured portal host — never request data.
+router.get('/me', apiLimiter, requireAuth, (req, res) => res.redirect(portalLink() || '/profile'));
+
 // ─── Browser RDP session player page (admin-only, feature-gated) ──────────
 // apiLimiter: this page performs an explicit privileged role lookup (unlike the
 // declarative page routes which only gate on session presence), so rate-limit it
@@ -397,7 +398,7 @@ router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
   const { hasFeature } = require('../services/license');
   // Chain3-C1: admin-role gate (requireAuth only checks session presence).
   const actorUser = users.getById(req.session?.userId);
-  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/me');
+  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/profile');
   const id = parseInt(req.params.id, 10);
   const route = rdpService.getById(id, false, { credFlags: true });
   if (!route || !route.browser_enabled || !hasFeature('browser_sessions')) {
@@ -429,28 +430,19 @@ router.use('/api/v1/client/enroll', clientEnrollLimiter, require('./api/client/e
 router.use('/api/v1/gateway', require('./api/gateway'));
 
 // ─── Real-time event stream (SSE) — session-authed, bypasses apiLimiter ──
-// Admin event feed: same role gate as the admin API below.
-router.get('/api/v1/events', requireAuth, requireAdmin, require('./api/events'));
+// Admin event feed: same role gate as the admin API below. Own generous
+// budget for (re)connects only — one stream lives for minutes.
+const { eventStreamLimiter } = require('../middleware/rateLimit');
+router.get('/api/v1/events', eventStreamLimiter, requireAuth, requireAdmin, require('./api/events'));
 
-// ─── Portal API (source-IP identity, no session auth) ──────────
+// ─── Portal API (source-IP identity + portal/web session) ───────
 const portalIdentity = require('../middleware/portalIdentity');
 const portalOwner = require('../middleware/portalOwner');
-router.use('/api/v1/portal', apiLimiter, portalIdentity, portalOwner, require('./api/portal'));
+const { portalApiLimiter } = require('../middleware/rateLimit');
+router.use('/api/v1/portal', portalIdentity, portalApiLimiter, portalOwner, require('./api/portal'));
 
-// ─── Portal page (source-IP identity, no session auth) ─────────
-const portalConfig = require('../services/portalConfig');
-router.get('/portal', portalIdentity, (req, res) => {
-  const cfg = portalConfig();
-  if (!cfg.enabled) return res.sendStatus(404);
-  res.render('portal/portal.njk', {
-    widgets: cfg.widgets,
-    deviceName: req.portalPeerName,   // null → generic welcome
-    identified: req.portalPeerId != null,
-    // Reflect the (host-scoped) session so the header shows Login vs Logout.
-    // csrfToken for the logout form is already a res.local (injectCsrfToken).
-    loggedIn: !!(req.session && req.session.userId),
-  });
-});
+// ─── Portal pages: /portal, /auto (login link of the apps), "Wer bist du?" ──
+router.use(require('./portal'));
 
 // ─── API routes ────────────────────────────────────
 router.use('/api/v1', requireAuth, apiLimiter, require('./api'));

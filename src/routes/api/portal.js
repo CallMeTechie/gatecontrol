@@ -20,6 +20,9 @@ const skodaVehicles = require('../../services/skoda/skodaVehicles');
 const skodaPortal = require('../../services/skoda/skodaPortal');
 const skodaControl = require('../../services/skoda/skodaControl');
 const skodaDetails = require('../../services/skoda/skodaDetails');
+const { canAccessRoute } = require('../../services/rdpAcl');
+const { csrfProtection } = require('../../middleware/csrf');
+const { createMeRouter } = require('./me');
 
 const router = Router();
 
@@ -28,6 +31,19 @@ router.use((req, res, next) => {
   if (!portalConfig().enabled) return res.status(404).json({ ok: false });
   next();
 });
+
+// Every state-changing request of a signed-in viewer (web or portal session)
+// carries the CSRF token of its session (portal.njk hands it to portal.js).
+// Without a session nothing can be changed anyway — the handlers answer
+// login_required (device trust is read-only).
+router.use((req, res, next) => {
+  if (req.portalLoggedIn && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return csrfProtection(req, res, next);
+  next();
+});
+
+// "Meine Geräte": own devices, lock a device, set up a new one — only with a
+// portal or web session (never via device trust), always the session's user.
+router.use('/me', createMeRouter((req) => (req.portalLoggedIn ? req.portalOwnerId : null)));
 
 function unidentified(res) {
   return res.json({ ok: true, data: null, reason: 'unidentified' });
@@ -153,12 +169,30 @@ router.get('/traffic', (req, res) => {
   }
 });
 
+function parseIdList(json) {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) && v.length ? v : null;
+  } catch { return null; }
+}
+
+// Services the device reaches AND the viewer may see: an entry restricted
+// to users ("Sichtbar für Benutzer") only for those users; without a known
+// person (anonymous mode, shared device before the pick) only the entries
+// for everybody. Names and hosts only — never credentials or other users.
 router.get('/services', (req, res) => {
   try {
     if (!portalConfig().widgets.services) return res.status(404).json({ ok: false });
     if (req.portalPeerId == null) return unidentified(res);
+    const owner = req.portalOwnerId;
+    const userOk = (json) => {
+      const ids = parseIdList(json);
+      return !ids || (owner != null && ids.includes(owner));
+    };
     const all = routesSvc.getAll().filter(r => r.enabled && r.route_type === 'http');
     const visible = all.filter(r => {
+      if (!userOk(r.user_ids)) return false;
       if (!r.acl_enabled) return true; // open route — always reachable
       const aclPeers = caddyAcl.getAclPeers(r.id) || [];
       return aclPeers.some(p => p.peer_id === req.portalPeerId);
@@ -168,7 +202,17 @@ router.get('/services', (req, res) => {
       domain: r.domain,
       kind: 'http',
     }));
-    res.json({ ok: true, data: visible });
+    let rdp = [];
+    try {
+      const db = getDb();
+      const deviceTokens = db.prepare('SELECT id FROM api_tokens WHERE peer_id = ?').all(req.portalPeerId).map((t) => t.id);
+      rdp = db.prepare('SELECT id, name, host, port, user_ids, token_ids FROM rdp_routes WHERE enabled = 1 ORDER BY name').all()
+        .filter((r) => (parseIdList(r.user_ids)
+          ? canAccessRoute(r, null, owner)
+          : (parseIdList(r.token_ids) ? deviceTokens.some((tid) => canAccessRoute(r, tid, owner)) : true)))
+        .map((r) => ({ id: r.id, name: r.name, host: r.host + (r.port ? ':' + r.port : ''), kind: 'rdp' }));
+    } catch (err) { logger.debug({ err: err.message }, 'portal /services: rdp entries unavailable'); rdp = []; }
+    res.json({ ok: true, data: visible.concat(rdp) });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /services failed');
     return unidentified(res);
@@ -297,7 +341,7 @@ router.post('/midea/:id/state', async (req, res) => {
     if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
     if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
     const id = Number(req.params.id);
-    if (!mideaOwners.isOwner(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
+    if (!mideaOwners.isOwner(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
     const patch = validateMideaPatch(req.body && req.body.patch);
     if (!patch) return res.status(400).json({ ok: false, error: 'MIDEA_INVALID_PATCH' });
     const state = await midea.setState(id, patch);
@@ -372,7 +416,7 @@ router.post('/skoda/vehicles/:id/command', async (req, res) => {
     // Not logged in → 200 + reason (exakt wie POST /midea/:id/state), NICHT 401.
     if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
     const id = Number(req.params.id);
-    if (!skodaOwners.isOwner(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'SKODA_NOT_OWNER' });
+    if (!skodaOwners.isOwner(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'SKODA_NOT_OWNER' });
     await skodaControl.runCommand(id, req.body.action, req.body.args || {});
     res.json({ ok: true });
   } catch (err) {
@@ -429,7 +473,7 @@ router.post('/smarthome/:id/state', async (req, res) => {
     if (smarthomeUnavailable()) return res.json({ ok: true, data: null, reason: 'unavailable' });
     if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
     const id = Number(req.params.id);
-    if (!smarthomeOwners.canAccess(id, req.session.userId)) return res.status(403).json({ ok: false, error: 'SMARTHOME_NOT_OWNER' });
+    if (!smarthomeOwners.canAccess(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'SMARTHOME_NOT_OWNER' });
     const all = await smarthome.getResources();
     const resource = all.find((r) => r.id === id);
     if (!resource || !resource.enabled) return res.status(404).json({ ok: false, error: 'SMARTHOME_RESOURCE_NOT_FOUND' });

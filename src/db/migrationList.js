@@ -1866,6 +1866,55 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_user_invites_user ON user_invites(user_id);`,
     detect: (db) => hasColumn(db, 'users', 'self_service_enabled') && tableExists(db, 'user_invites'),
   },
+  {
+    version: 90,
+    name: 'portal_auto_login_shared_devices',
+    // Portal redesign: automatic login on connect + shared devices.
+    //   api_tokens.device_usage    'single' (default: the portal shows the
+    //                              owner right away) | 'multi' (the portal
+    //                              asks "Wer bist du?" and checks a PIN)
+    //   device_users               who may pick themselves on a 'multi'
+    //                              device (the token owner always may)
+    //   users.portal_pin_hash      argon2 hash of the 4–6 digit portal PIN
+    //   portal_tickets             one-time portal login links the apps
+    //                              fetch after connecting (SHA-256 at rest,
+    //                              60 s, single use)
+    //   portal_pin_failures        PIN lockout per user and device
+    //   portal.trust_owner_mapping now on by default ("Geräte-Besitzer
+    //                              automatisch erkennen"); a stored '0' (the
+    //                              admin switched it off) stays.
+    sql: `
+      ALTER TABLE api_tokens ADD COLUMN device_usage TEXT NOT NULL DEFAULT 'single';
+      ALTER TABLE users ADD COLUMN portal_pin_hash TEXT;
+      CREATE TABLE IF NOT EXISTS device_users (
+        token_id INTEGER NOT NULL REFERENCES api_tokens(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        PRIMARY KEY (token_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_users_user ON device_users(user_id);
+      CREATE TABLE IF NOT EXISTS portal_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_hash TEXT NOT NULL UNIQUE,
+        token_id INTEGER,
+        peer_id INTEGER NOT NULL,
+        user_id INTEGER,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_portal_tickets_expires ON portal_tickets(expires_at);
+      CREATE TABLE IF NOT EXISTS portal_pin_failures (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        peer_id INTEGER NOT NULL,
+        failures INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, peer_id)
+      );
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('portal.trust_owner_mapping', '1');`,
+    detect: (db) => hasColumn(db, 'api_tokens', 'device_usage') && hasColumn(db, 'users', 'portal_pin_hash')
+      && tableExists(db, 'device_users') && tableExists(db, 'portal_tickets') && tableExists(db, 'portal_pin_failures'),
+  },
 ];
 
 module.exports = { migrations };

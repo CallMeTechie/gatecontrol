@@ -299,7 +299,7 @@ describe('change password at login', () => {
 
 // ─── Invitation end to end ───────────────────────────────────────────
 
-describe('invitation to "Mein Bereich"', () => {
+describe('invitation to the portal sign-in', () => {
   let id;
   let link;
   before(async () => { id = await makeUser('invitee', 'user', { displayName: 'In Vitee' }); });
@@ -327,7 +327,7 @@ describe('invitation to "Mein Bereich"', () => {
     await supertest(app).get('/invite/short').expect(404);
   });
 
-  it('the policy applies, then the password is set, the link is spent and login lands on /me', async () => {
+  it('the policy applies, then the password is set, the link is spent and login lands on /profile', async () => {
     const path = link.replace(/^https?:\/\/[^/]+/, '');
     const a = supertest.agent(app);
     const page = await a.get(path).expect(200);
@@ -338,8 +338,8 @@ describe('invitation to "Mein Bereich"', () => {
     await a.post(path).type('form').send({ _csrf: c, password: 'Invite!Pass123', password_confirm: 'Invite!Pass123' }).expect(302);
     await a.get(path).expect(404);
     const { a: m, location } = await loginAs('invitee', 'Invite!Pass123');
-    assert.equal(location, '/me');
-    await m.get('/me').expect(200);
+    assert.equal(location, '/profile');
+    await m.get('/profile').expect(200);
   });
 
   it('switching self-service off invalidates the password and the sessions', async () => {
@@ -362,7 +362,7 @@ describe('invitation to "Mein Bereich"', () => {
 
 // ─── /me isolation and escalation ────────────────────────────────────
 
-describe('"Mein Bereich" API isolation', () => {
+describe('own devices API (/api/v1/me) isolation', () => {
   let alice, bob, a, aCsrf, aliceTok, bobTok, bobPeer;
   before(async () => {
     alice = await makeUser('me-alice', 'user', { selfService: true });
@@ -373,7 +373,7 @@ describe('"Mein Bereich" API isolation', () => {
     bobTok = tokens().create({ name: 'Bob phone', scopes: ['client'], userId: bob, peerId: bobPeer }, '127.0.0.1').token.id;
     db().prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled, user_ids) VALUES ('bob.only.test', '10.0.0.9', 80, 'http', 1, ?)").run(JSON.stringify([bob]));
     ({ a } = await loginAs('me-alice'));
-    aCsrf = await pageCsrf(a, '/me');
+    aCsrf = await pageCsrf(a, '/profile');
   });
 
   it('lists only the own devices', async () => {
@@ -444,22 +444,23 @@ describe('role-aware navigation', () => {
     ({ a: m } = await loginAs('nav-member'));
   });
 
-  it('every admin page redirects a member to /me', async () => {
+  it('every admin page redirects a member to /profile', async () => {
     for (const p of ['/dashboard', '/peers', '/routes', '/users', '/settings', '/logs', '/rdp', '/security', '/certificates', '/gateways']) {
       const res = await m.get(p);
       assert.equal(res.status, 302, p);
-      assert.equal(res.headers.location, '/me', p);
+      assert.equal(res.headers.location, '/profile', p);
     }
     // '/' keeps its constant redirect to /dashboard, which sends members on.
     assert.equal((await m.get('/')).headers.location, '/dashboard');
-    await m.get('/me').expect(200);
+    // "Mein Bereich" moved into the portal: /me leads there.
+    assert.match((await m.get('/me').expect(302)).headers.location, /^https:\/\/home\./);
     await m.get('/profile').expect(200);
   });
 
   it('member pages show only the member navigation', async () => {
-    const res = await m.get('/me').expect(200);
+    const res = await m.get('/profile').expect(200);
     const html = withoutScripts(res.text);
-    assert.ok(html.includes('href="/me"') && html.includes('href="/profile"'));
+    assert.ok(/href="https:\/\/home\.[^"]+"/.test(html) && html.includes('href="/profile"') && !html.includes('href="/me"'));
     for (const admin of ['href="/dashboard"', 'href="/peers"', 'href="/settings"', 'href="/users"', 'class="bottom-nav"', 'id="fab-btn"']) {
       assert.ok(!html.includes(admin), admin);
     }
@@ -479,9 +480,9 @@ describe('role-aware navigation', () => {
 describe('templates', () => {
   const RAW = /\b(?:us|me|invite|pwchange|nav|users)\.[a-z_]+(?:\.[a-z_]+)*\b/g;
   for (const lang of ['de', 'en']) {
-    it(`/users, /me, invite and password pages (${lang}) render without raw keys`, async () => {
+    it(`/users, /profile, invite and password pages (${lang}) render without raw keys`, async () => {
       await agent.post('/api/v1/settings/language').set('X-CSRF-Token', csrf).send({ language: lang }).expect(200);
-      for (const p of ['/users', '/me', '/profile']) {
+      for (const p of ['/users', '/profile']) {
         const res = await agent.get(p).expect(200);
         const raw = withoutScripts(res.text).match(RAW);
         assert.equal(raw, null, `${p}: ${raw}`);

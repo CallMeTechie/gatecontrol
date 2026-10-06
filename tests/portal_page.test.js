@@ -5,6 +5,7 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const supertest = require('supertest');
 const { setup, teardown } = require('./helpers/setup');
+const { withoutScripts } = require('./helpers/html');
 
 let app, getDb;
 beforeEach(async () => {
@@ -48,8 +49,9 @@ test('no untranslated portal key leaks in EN render', async () => {
     .set('Host', HOME_HOST)
     .expect(200);
   // portal.css and portal.js are expected; no other portal.* key should appear as-is
-  assert.doesNotMatch(res.text, /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in EN');
-  // Confirm a known EN string is rendered (device widget heading)
+  // (the JSON string island in <script> legitimately lists the keys)
+  assert.doesNotMatch(withoutScripts(res.text), /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in EN');
+  // Confirm a known EN string is rendered (status strip)
   assert.match(res.text, /Device/, 'expected EN translation "Device" in EN render');
 });
 
@@ -60,7 +62,7 @@ test('no untranslated portal key leaks in DE render', async () => {
     .set('X-GC-Portal-Peer-IP', '10.8.0.7')
     .set('Host', HOME_HOST)
     .expect(200);
-  assert.doesNotMatch(res.text, /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in DE');
+  assert.doesNotMatch(withoutScripts(res.text), /portal\.(?!css\b|js\b)[a-z_]+/i, 'untranslated portal key leaked in DE');
   // Confirm a translation-only string that cannot come from seeded peer data
-  assert.match(res.text, /Willkommen zu Hause/, 'expected DE translation "Willkommen zu Hause" (portal.greeting_home) in DE render');
+  assert.match(res.text, /Tunnel wird geprüft/, 'expected DE translation (portal.strip.checking) in DE render');
 });

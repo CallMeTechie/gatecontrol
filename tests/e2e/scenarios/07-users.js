@@ -1,6 +1,6 @@
 'use strict';
 
-// Users page (/users) and "Mein Bereich" (/me): list + filter, detail panel
+// Users page (/users) and the member side (/profile, /me → portal): list + filter, detail panel
 // deep link (?user=&tab=) and keyboard tabs, the access wizard up to the code
 // step, edit access (PATCH), a dirty dialog asks before Escape discards it,
 // invitation link → password → member sign-in, the member's navigation and
@@ -109,23 +109,27 @@ module.exports = (ctx) => {
       await Promise.all([page.waitForNavigation(), page.click('#invite-form button[type="submit"]')]);
       step('after setting the password the login page follows', /\/login$/.test(page.url()), page.url());
       await ctx.login(page, { username: 'e2e_kids', password: 'Kids!Pass12345' });
-      step('the member lands on /me', /\/me$/.test(page.url()), page.url());
+      step('the member lands on /profile', /\/profile$/.test(page.url()), page.url());
+      // Let /profile finish its API reads before the cookies go: a read that
+      // runs into the cleared session gets the login page and logs an error.
+      await idle(page);
 
       // ── Member view ──
       await page.context().clearCookies();
       await ctx.login(page, FIXTURES.member);
-      step('"Mein Bereich" lists the own devices', await visible(page, '#me-devices [data-device-id]'));
+      step('"Konto & Sicherheit" offers the portal PIN', await visible(page, '#pf-pin-open'));
       const nav = await page.$$eval('#sidebar a.nav-item', (as) => as.map((a) => a.getAttribute('href')));
-      step('the member navigation has no admin pages', nav.includes('/me') && nav.includes('/profile')
+      step('the member navigation is Portal + Konto & Sicherheit', nav.some((h) => /^https:\/\/home\./.test(h)) && nav.includes('/profile') && !nav.includes('/me')
         && !nav.some((h) => ['/dashboard', '/users', '/settings', '/peers'].includes(h)), nav.join(' '));
       step('no bottom navigation and no quick-add button', !(await page.$('.bottom-nav')) && !(await page.$('#fab-btn')));
       await page.goto(BASE + '/users');
-      step('admin pages send the member to /me', /\/me$/.test(page.url()), page.url());
+      step('admin pages send the member to /profile', /\/profile$/.test(page.url()), page.url());
       const forbidden = await api(page, 'GET', '/api/v1/users');
       step('the admin API answers 403', forbidden.status === 403);
       ctx.allow((p) => p.kind === 'http' && p.status === 403 && p.url === '/api/v1/users');
-      await shot(page, 'me');
+      await shot(page, 'member-profile');
 
+      await idle(page);
       await page.context().clearCookies();
       await ctx.login(page);
     },

@@ -8,7 +8,9 @@ let portalConfig, settings;
 beforeEach(async () => { await setup(); portalConfig = require('../src/services/portalConfig'); settings = require('../src/services/settings'); });
 afterEach(teardown);
 
-test('trustOwnerMapping defaults to false (key unwritten)', () => {
+test('trustOwnerMapping ("Geräte-Besitzer automatisch erkennen") is on by default (migration 90)', () => {
+  assert.equal(portalConfig().trustOwnerMapping, true);
+  settings.set('portal.trust_owner_mapping', '0');
   assert.equal(portalConfig().trustOwnerMapping, false);
 });
 test('PUT persists trust_owner_mapping=true and config reflects it', async () => {

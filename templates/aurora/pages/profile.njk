@@ -137,6 +137,43 @@
       <div class="pf-msg" id="password-message" role="status"></div>
     </div>
 
+    {# Portal PIN — confirms the person on a shared device ("Wer bist du?") #}
+    <span id="portal-pin" class="anchor-target" aria-hidden="true"></span>
+    <div class="pf-block" id="pf-pin">
+      <div class="pf-row pf-row-flat">
+        <div class="pf-row-label">
+          <div class="pf-label" id="pf-lbl-pin">{{ t('profile.pin.title') }} <span class="pf-pin-state" id="pf-pin-state" data-on="0"></span></div>
+          <div class="pf-hint">{{ t('profile.pin.hint') }}</div>
+        </div>
+        <div class="pf-row-actions">
+          <button type="button" class="btn pf-btn" id="pf-pin-open" aria-expanded="false" aria-controls="pf-pin-form">{{ t('profile.pin.set') }}</button>
+          <button type="button" class="btn btn-ghost pf-btn" id="pf-pin-remove" hidden>{{ t('profile.pin.remove') }}</button>
+        </div>
+      </div>
+      <div class="pf-expand" id="pf-pin-form" role="group" aria-labelledby="pf-lbl-pin" hidden>
+        <div class="pf-fields">
+          <div id="pf-pin-new-wrap">
+            <label class="pf-field-label" for="pf-pin-new">{{ t('profile.pin.new') }}</label>
+            <input class="form-input pf-input pf-pin-input" type="password" id="pf-pin-new" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off">
+          </div>
+          <div id="pf-pin-confirm-wrap">
+            <label class="pf-field-label" for="pf-pin-confirm">{{ t('profile.pin.confirm') }}</label>
+            <input class="form-input pf-input pf-pin-input" type="password" id="pf-pin-confirm" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off">
+          </div>
+          <div>
+            <label class="pf-field-label" for="pf-pin-password">{{ t('profile.pin.password') }}</label>
+            <input class="form-input pf-input" type="password" id="pf-pin-password" autocomplete="current-password">
+          </div>
+        </div>
+        <div class="pf-expand-actions">
+          <button type="button" class="btn btn-ghost pf-btn" id="pf-pin-cancel">{{ t('common.cancel') }}</button>
+          <button type="button" class="btn btn-primary pf-btn" id="pf-pin-save">{{ t('profile.pin.save') }}</button>
+        </div>
+      </div>
+      <div class="pf-msg" id="pf-pin-message" role="status"></div>
+    </div>
+    <script type="application/json" id="pf-pin-i18n" data-prefixes="profile.pin. common.error" nonce="{{ cspNonce }}">{{ pfPinI18n | default('{}') | safe }}</script>
+
     <span id="two-factor" class="anchor-target" aria-hidden="true"></span>
     {% include theme + "/partials/two-factor-card.njk" %}
 
@@ -224,6 +261,7 @@
 
 {% block scripts %}
 <script src="/js/profile.js?v={{ appVersion }}"></script>
+<script src="/js/profile-pin.js?v={{ appVersion }}"></script>
 <script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>
 <script src="/js/profile-2fa.js?v={{ appVersion }}"></script>
 <script src="/js/webauthn.js?v={{ appVersion }}"></script>

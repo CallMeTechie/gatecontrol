@@ -126,7 +126,8 @@
             <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_login') }}</th></tr>
             <tr><th scope="row">{{ t('us.mx.r_web') }}</th>{{ mxCell('yes', t('us.mx.c_web_admin')) }}{{ mxCell('no', t('us.mx.c_web_member')) }}{{ mxCell('some', t('us.mx.c_web_self')) }}</tr>
             <tr><th scope="row">{{ t('us.mx.r_app') }}</th>{{ mxCell('yes', t('us.mx.c_code')) }}{{ mxCell('yes', t('us.mx.c_code')) }}{{ mxCell('yes', t('us.mx.c_code')) }}</tr>
-            <tr><th scope="row">{{ t('us.mx.r_portal') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', t('us.mx.c_portal_member')) }}{{ mxCell('yes', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_portal') }}</th>{{ mxCell('yes', t('us.mx.c_portal_pw')) }}{{ mxCell('yes', t('us.mx.c_portal_auto')) }}{{ mxCell('yes', t('us.mx.c_portal_pw')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_pin') }}</th>{{ mxCell('yes', t('us.mx.c_pin_profile')) }}{{ mxCell('no', t('us.mx.c_pin_invite')) }}{{ mxCell('yes', t('us.mx.c_pin_both')) }}</tr>
             <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_apps') }}</th></tr>
             <tr><th scope="row">{{ t('us.mx.r_vpn') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}</tr>
             <tr><th scope="row">{{ t('us.mx.r_services') }}<div class="us-mx-note">{{ t('us.mx.r_services_note') }}</div></th>{{ mxCell('some', t('us.mx.c_shared')) }}{{ mxCell('some', t('us.mx.c_shared')) }}{{ mxCell('some', t('us.mx.c_like_member')) }}</tr>
@@ -135,9 +136,9 @@
             <tr><th scope="row">{{ t('us.mx.r_pihole') }}<div class="us-mx-note">{{ t('us.mx.r_pihole_note') }}</div></th>{{ mxCell('yes', t('us.mx.c_pihole_admin')) }}{{ mxCell('some', t('us.mx.c_pihole_member')) }}{{ mxCell('some', t('us.mx.c_pihole_member')) }}</tr>
             <tr><th scope="row">{{ t('us.mx.r_integrations') }}</th>{{ mxCell('yes', t('us.mx.c_all')) }}{{ mxCell('some', t('us.mx.c_owner')) }}{{ mxCell('some', t('us.mx.c_owner')) }}</tr>
             <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_own') }}</th></tr>
-            <tr><th scope="row">{{ t('us.mx.r_own_devices') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', t('us.mx.c_in_app')) }}{{ mxCell('yes', t('us.mx.c_list')) }}</tr>
-            <tr><th scope="row">{{ t('us.mx.r_own_setup') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', t('us.mx.c_admin_code')) }}{{ mxCell('some', t('us.mx.c_if_allowed')) }}</tr>
-            <tr><th scope="row">{{ t('us.mx.r_own_lock') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('yes', t('us.mx.c_lost')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_devices') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', t('us.mx.c_in_portal')) }}{{ mxCell('yes', t('us.mx.c_in_portal')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_setup') }}</th>{{ mxCell('yes', '') }}{{ mxCell('some', t('us.mx.c_if_allowed')) }}{{ mxCell('some', t('us.mx.c_if_allowed')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_lock') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', t('us.mx.c_lock_portal')) }}{{ mxCell('yes', t('us.mx.c_lock_portal')) }}</tr>
             <tr><th scope="row">{{ t('us.mx.r_own_account') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('yes', '') }}</tr>
             <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_admin') }}</th></tr>
             <tr><th scope="row">{{ t('us.mx.r_dashboard') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
@@ -309,6 +310,12 @@
         <label class="us-field"><span class="us-label">{{ t('us.wz.expiry') }}</span><select class="form-input" id="us-ed-expiry"></select></label>
         <label class="us-field" id="us-ed-date-wrap" hidden><span class="us-label">{{ t('us.wz.exp_date_label') }}</span><input type="date" class="form-input" id="us-ed-date"></label>
       </div>
+      {# Portal: who uses this device ("Nur der Besitzer" / "Mehrere Personen"), devices only #}
+      <fieldset class="us-usage" id="us-ed-usage" hidden>
+        <legend class="us-label">{{ t('us.usage.title') }}</legend>
+        <div class="us-usage-modes" id="us-ed-usage-modes"></div>
+        <div class="us-usage-detail" id="us-ed-usage-detail"></div>
+      </fieldset>
       <div>
         <div class="us-label" id="us-ed-rights-q"></div>
         <div class="us-rights" id="us-ed-rights"></div>

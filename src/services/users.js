@@ -50,8 +50,10 @@ function stripSensitive(row) {
   // 2FA secret and recovery-code hashes never leave the service; the
   // totp_enabled flag stays (users list badge / policy checks). Instead of
   // the hash only the fact that a real password exists is exposed.
-  const { password_hash, totp_secret_enc, recovery_codes, webauthn_user_id, ...rest } = row;
+  const { password_hash, totp_secret_enc, recovery_codes, webauthn_user_id, portal_pin_hash, ...rest } = row;
   if (password_hash !== undefined) rest.has_password = !!password_hash && password_hash !== NO_PASSWORD_SENTINEL;
+  // Portal PIN (shared devices): only whether one is set.
+  if (portal_pin_hash !== undefined) rest.has_portal_pin = !!portal_pin_hash;
   return rest;
 }
 

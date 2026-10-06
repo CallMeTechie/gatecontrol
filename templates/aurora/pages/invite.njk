@@ -42,6 +42,20 @@
           <small class="form-hint">{{ t('invite.username_hint') }}</small>
         </div>
 {% include theme + "/partials/auth-password-fields.njk" %}
+        <fieldset class="inv-pin" id="invite-pin">
+          <legend class="form-label">{{ t('invite.pin_title') }} <span class="inv-optional">{{ t('invite.pin_optional') }}</span></legend>
+          <p class="form-hint inv-pin-text">{{ t('invite.pin_text') }}</p>
+          <div class="inv-pin-row">
+            <div class="form-group">
+              <label class="form-label" for="pin">{{ t('profile.pin.new') }}</label>
+              <input class="form-input inv-pin-input" type="password" id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="pin_confirm">{{ t('profile.pin.confirm') }}</label>
+              <input class="form-input inv-pin-input" type="password" id="pin_confirm" name="pin_confirm" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off">
+            </div>
+          </div>
+        </fieldset>
         <button type="submit" class="btn btn-primary au-submit">{{ t('invite.submit') }}</button>
       </form>
       <p class="au-meta inv-what">{{ t('invite.what') }}</p>

@@ -49,11 +49,11 @@ function addPeer(name, type = 'regular', handshake = 0) {
 const NEW_ENDPOINTS = ['/api/v1/dashboard/top-peers', '/api/v1/dashboard/security-summary', '/api/v1/logs/recent?category=login', '/api/v1/gateways?peek=1'];
 
 describe('roles and rate limiting', () => {
-  it('a member is sent from /dashboard to /me and gets 403 on every dashboard API', async () => {
+  it('a member is sent from /dashboard to /profile and gets 403 on every dashboard API', async () => {
     const a = await loginAs('dash-plain-user', 'user');
     const page = await a.get('/dashboard');
     assert.equal(page.status, 302);
-    assert.equal(page.headers.location, '/me');
+    assert.equal(page.headers.location, '/profile');
     for (const url of NEW_ENDPOINTS.concat(['/api/v1/dashboard/stats', '/api/v1/dashboard/traffic?period=30d'])) {
       assert.equal((await a.get(url)).status, 403, url);
     }
