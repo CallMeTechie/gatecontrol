@@ -4368,6 +4368,14 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .au-code input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--glow1); }
 .au-code input.filled { border-color: var(--teal); }
 .ra-share-invitation .au-sub { margin-bottom: 0; }
+/* Invitation: optional portal PIN step (shared devices) */
+.inv-pin { margin: 4px 0 8px; padding: 12px 14px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); min-width: 0; }
+.inv-pin legend { padding: 0 6px; margin: 0 0 0 -6px; font-weight: 700; }
+.inv-optional { font-weight: 500; font-size: 12px; color: var(--muted); }
+.inv-pin-text { display: block; margin: 0 0 10px; }
+.inv-pin-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.au-card .form-input.inv-pin-input { font-family: var(--font-mono); letter-spacing: .3em; }
+@media (max-width: 420px) { .inv-pin-row { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
   body.au-page { justify-content: flex-start; padding-top: 40px; }
   .card.au-card { padding: 24px 18px 22px; }
@@ -5945,8 +5953,8 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .st-note.st-mb-facts { display: flex; flex-direction: column; gap: 6px; padding-left: 30px; line-height: 1.5; }
 
 /* ============================================================================
- * §9 Users page (us-): role cards, list + detail panel, dialogs, wizard.
- *    Member self-service area "Mein Bereich" (me-). Auth extras (au-ok).
+ * §9 Users page (us-): role cards, list + detail panel, dialogs, wizard,
+ *    "Wer nutzt dieses Gerät?". Profile portal PIN (pf-pin). Auth extras (au-ok).
  * ============================================================================ */
 [data-theme="dark"]{ --us-ink:var(--teal); --us-accent-bd:rgba(52,220,198,.30); --us-blue-ink:#9dbaff; }
 [data-theme="light"]{ --us-ink:var(--teal-dim); --us-accent-bd:rgba(14,155,138,.32); --us-blue-ink:#2f56b0; }
@@ -6316,51 +6324,38 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .topbar-role{align-self:center}
 @media (max-width: 767px){ .topbar-role{display:none} }
 
-/* ── "Mein Bereich" (me-) ───────────────────────────────────────── */
-.me-header{margin-bottom:22px}
-.me-grid{display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start}
-.me-card{flex:1 1 420px; min-width:0; border-radius:18px; background:var(--surface); border:1px solid var(--line); overflow:hidden; box-shadow:var(--shadow)}
-.me-card-head{display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--line)}
-.me-card-head-col{flex-direction:column; align-items:flex-start; gap:2px}
-.me-card-head .btn{margin-left:auto; min-height:40px}
-.me-card-head .btn[hidden]{display:none}
-.me-card-title{margin:0; font-family:var(--font-display); font-size:18px; font-weight:800}
-.me-sub{font-size:12.5px; color:var(--muted)}
-.me-list{list-style:none; margin:0; padding:0}
-.me-item{display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line)}
-.me-item-text{flex:1 1 200px; min-width:0; overflow-wrap:anywhere}
-.me-dot{width:10px; height:10px; border-radius:50%; flex:0 0 auto; background:var(--line-2)}
-.me-dot.is-on{background:var(--green)}
-.btn.me-btn-danger{min-height:38px; padding:0 12px; border-radius:10px; border:1px solid var(--red-bd); background:transparent; color:var(--red); font-size:12.5px}
-.me-empty{padding:16px 18px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--line)}
-.me-error{padding:16px 18px; color:var(--red); font-size:13px}
-.me-error[hidden]{display:none}
-.me-foot{margin:0; padding:12px 18px; font-size:12.5px; color:var(--muted)}
-.me-svc{padding:0}
-.me-svc-link{display:flex; align-items:center; gap:12px; width:100%; padding:12px 18px; text-decoration:none; color:var(--text)}
-a.me-svc-link:hover{background:var(--chip)}
-.me-letter{width:34px; height:34px; flex:0 0 auto; border-radius:10px; display:grid; place-items:center; background:var(--surface-3); font-weight:800; font-size:13px}
-.me-host{display:block; font:500 12px var(--font-mono); color:var(--muted)}
-.me-kind{font-size:12px; color:var(--muted); white-space:nowrap}
-.me-note{margin-top:20px; padding:14px 18px; border-radius:14px; background:var(--chip); border:1px solid var(--line); font-size:13px; color:var(--muted)}
-.me-check{display:flex; align-items:center; gap:10px; font-size:13.5px; margin-top:12px}
-.me-check[hidden]{display:none}
-.me-check input{width:18px; height:18px; accent-color:var(--teal)}
-.me-code{display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center}
-.me-code[hidden]{display:none}
-.me-code img{width:220px; height:220px; border-radius:16px; background:#fff; padding:8px; box-sizing:border-box}
-.me-code img.is-expired{opacity:.2}
-.me-code-value{font:600 20px var(--font-mono); letter-spacing:.06em; user-select:all}
+/* ── "Wer nutzt dieses Gerät?" (Zugang bearbeiten, portal device usage) ── */
+.us-usage{margin:0; padding:0; border:0; min-width:0; display:flex; flex-direction:column; gap:10px}
+.us-usage legend{padding:0; margin-bottom:8px}
+.us-usage-modes{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px}
+.us-usage-mode{display:flex; flex-direction:column; gap:4px; text-align:left; padding:12px 14px; border-radius:14px; border:2px solid var(--line); background:var(--chip); color:var(--text); font:inherit; cursor:pointer}
+.us-usage-mode b{font-size:14.5px}
+.us-usage-mode.is-on{border-color:var(--teal); background:var(--teal-soft)}
+.us-usage-note{padding:12px 14px; border-radius:14px; background:var(--teal-soft); border:1px solid var(--us-accent-bd); font-size:13px}
+.us-usage-box{padding:12px 14px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
+.us-usage-box-title{font-weight:700; margin-bottom:6px}
+.us-usage-people{display:flex; flex-direction:column}
+.us-usage-person{display:flex; align-items:center; gap:10px; min-height:40px; font-size:13.5px}
+.us-usage-person input{width:18px; height:18px; accent-color:var(--teal); flex:0 0 auto}
+.us-usage-pin{font-size:12px; text-align:right}
+.us-usage-pin.is-good{color:var(--muted)}
+.us-usage-pin.is-warn{color:var(--amber)}
+@media (max-width: 560px){ .us-usage-modes{grid-template-columns:1fr} .us-usage-person{flex-wrap:wrap} .us-usage-pin{flex-basis:100%; text-align:left; padding-left:28px} }
+
+/* ── Profile: portal PIN (pf-pin) ── */
+.pf-pin-state{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--muted)}
+.pf-pin-state[data-on="1"]{color:var(--green)}
+.pf-pin-input{font-family:var(--font-mono); letter-spacing:.3em}
 
 /* auth pages: success flash + invitation */
 .au-card .au-ok{display:flex; gap:9px; align-items:flex-start; margin-bottom:16px; padding:10px 12px; border:1px solid var(--green-bd); border-radius:10px; background:var(--green-bg); color:var(--green); font-size:13px; line-height:1.45}
 .au-card .au-ok svg{width:16px; height:16px; flex:0 0 auto; margin-top:1px}
 .au-card .form-input[readonly]{color:var(--muted)}
 .inv-what{text-align:center}
-.us-page [hidden], .us-dlg [hidden], .me-page [hidden], .me-dlg [hidden]{display:none !important}
+.us-page [hidden], .us-dlg [hidden]{display:none !important}
 .us-col-dev{white-space:nowrap}
 /* dialogs above the mobile bottom navigation and the quick-add button
    (GCDialog confirmations at 1100 stay on top of them) */
-.modal-overlay.us-dlg, .modal-overlay.me-dlg{z-index:1000}
+.modal-overlay.us-dlg{z-index:1000}
 @media (max-width: 767px){ .us-step.is-current{flex:2 1 0} .us-steps li:has(.is-current){flex:2 1 0} }
-@media (max-width: 767px){ .us-header-text{flex:1 1 auto} .me-card{flex:1 1 auto} }
+@media (max-width: 767px){ .us-header-text{flex:1 1 auto} }

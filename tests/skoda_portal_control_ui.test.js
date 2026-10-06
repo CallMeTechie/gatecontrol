@@ -5,17 +5,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
-const KEYS = ['portal.skoda.cmd_ac_on','portal.skoda.cmd_ac_off','portal.skoda.cmd_set_temp','portal.skoda.cmd_charge_on','portal.skoda.cmd_charge_off','portal.skoda.cmd_charge_limit','portal.skoda.cmd_window_heat','portal.skoda.cmd_window_heat_off','portal.skoda.cmd_lock','portal.skoda.cmd_unlock','portal.skoda.cmd_confirm_unlock','portal.skoda.cmd_running','portal.skoda.cmd_failed'];
-const PT = ['skodaCmdAcOn','skodaCmdAcOff','skodaCmdSetTemp','skodaCmdChargeOn','skodaCmdChargeOff','skodaCmdChargeLimit','skodaCmdWindowHeat','skodaCmdWindowHeatOff','skodaCmdLock','skodaCmdUnlock','skodaCmdConfirmUnlock','skodaCmdRunning','skodaCmdFailed'];
+const KEYS = ['portal.car.climatize', 'portal.car.climate_on', 'portal.car.climate_off', 'portal.car.target_temp', 'portal.car.apply', 'portal.car.charge_start',
+  'portal.car.charge_stop', 'portal.car.charge_limit', 'portal.car.window_heat', 'portal.car.lock', 'portal.car.unlock', 'portal.car.unlock_ok',
+  'portal.car.confirm_unlock', 'portal.car.confirm_unlock_title', 'portal.car.cmd_sent', 'portal.car.cmd_failed'];
 
-test('portal.skoda.cmd_* keys in de and en', () => {
+test('portal.car command keys in de and en', () => {
   for (const k of KEYS) { assert.ok(de[k] && de[k].trim(), `de ${k}`); assert.ok(en[k] && en[k].trim(), `en ${k}`); }
 });
-test('portal.njk PT block + portal.js command wiring, gated on loggedIn', () => {
-  const njk = fs.readFileSync(path.join(__dirname,'..','templates','portal','portal.njk'),'utf8');
-  for (const k of PT) assert.ok(njk.includes(k), `njk ${k}`);
-  const js = fs.readFileSync(path.join(__dirname,'..','public','js','portal.js'),'utf8');
-  assert.match(js, /skodaCommand/);
-  assert.match(js, /\/api\/v1\/portal\/skoda\/vehicles\//);
-  assert.match(js, /loggedIn/); // buttons only when logged in
+test('portal.js command wiring: gated on the login, unlock asks first', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  assert.match(js, /function carCommand\(/);
+  assert.match(js, /\/api\/v1\/portal\/skoda\/vehicles\/' \+ Number\(v\.id\) \+ '\/command'/);
+  assert.match(js, /if \(!carLoggedIn\) return Promise\.resolve\(\);/);
+  assert.match(js, /action === 'unlock'\s+\? portalConfirm\(\{[\s\S]{0,240}danger: true \}\)/);
 });

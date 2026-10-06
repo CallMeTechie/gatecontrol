@@ -3,7 +3,8 @@
 /**
  * /invite/:token — the public page of an invitation to "Mein Bereich".
  * GET shows the form (or "invalid or expired"), POST sets the password via
- * services/userInvites.accept and sends the person to the login page.
+ * services/userInvites.accept — plus, optionally, the portal PIN for shared
+ * devices — and sends the person to the login page.
  * Nothing about the account is shown before the token checks out; an
  * unknown, used or expired token gets one and the same answer.
  */
@@ -12,6 +13,7 @@ const { ensureCsrfToken } = require('../middleware/csrf');
 const { setFlash } = require('../middleware/locals');
 const invites = require('../services/userInvites');
 const users = require('../services/users');
+const portalPin = require('../services/portalPin');
 const logger = require('../utils/logger');
 
 function render(req, res, invite, extra = {}) {
@@ -39,8 +41,16 @@ async function accept(req, res) {
   const invite = invites.lookup(raw);
   if (!invite) return render(req, res, null);
   if (password !== confirm) return render(req, res, invite, { error: res.locals.t('pwchange.mismatch') });
+  // Optional second step: the portal PIN for shared devices ("Wer bist du?").
+  const pin = typeof req.body.pin === 'string' ? req.body.pin.trim() : '';
+  const pinConfirm = typeof req.body.pin_confirm === 'string' ? req.body.pin_confirm.trim() : '';
+  if (pin || pinConfirm) {
+    if (!portalPin.validPin(pin)) return render(req, res, invite, { error: res.locals.t('profile.pin.err_format') });
+    if (pin !== pinConfirm) return render(req, res, invite, { error: res.locals.t('profile.pin.err_mismatch') });
+  }
+  let accepted;
   try {
-    await invites.accept(raw, password, { ip: req.ip });
+    accepted = await invites.accept(raw, password, { ip: req.ip });
   } catch (err) {
     if (err.code === 'PASSWORD_POLICY') {
       const msg = err.policy.map((e) => {
@@ -53,6 +63,11 @@ async function accept(req, res) {
     if (err.code === 'INVALID') return render(req, res, null);
     logger.error({ err: err.message }, 'Accepting an invitation failed');
     return render(req, res, invite, { error: res.locals.t('auth.error_generic') });
+  }
+  if (pin) {
+    try { await portalPin.setPin(accepted.userId, pin, { ip: req.ip, source: 'user' }); } catch (err) {
+      logger.error({ err: err.message }, 'Setting the portal PIN with the invitation failed');
+    }
   }
   // A session of somebody else in this browser must not carry over.
   if (req.session && req.session.userId) {

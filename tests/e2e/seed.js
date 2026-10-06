@@ -132,8 +132,8 @@ async function main() {
   const confirmed = await twoFactor.confirmSetup(tfaUser.id, code, '127.0.0.1');
   if (!confirmed.ok) throw new Error('seed: could not enable 2FA for the fixture user');
 
-  // Users page + "Mein Bereich" (scenarios/07-users.js): a member with
-  // "Mein Bereich" and two devices, a disabled member, a second admin, route
+  // Users page + portal (scenarios/07-users.js, 08-portal.js): a member with
+  // portal sign-in and two devices, a disabled member, a second admin, route
   // shares naming users, and two accesses without an owner.
   const adminRow = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN.username);
   const tokens = require('../../src/services/tokens');
@@ -159,6 +159,15 @@ async function main() {
     return t.id;
   };
   const pixelToken = mkToken('Pixel 8', appScopes, memberId, annaPixel, { used: '-12 minutes' });
+  // Portal (scenarios/08-portal.js): the app's own token for the one-time
+  // login link, Anna's portal PIN and a shared living-room PC ("Wer bist du?").
+  // Created last: without a licence only the newest peers stay enabled.
+  await require('../../src/services/portalPin').setPin(memberId, '1234');
+  const livingPc = clientPeer('wohnzimmer-pc', '10.8.0.40', adminRow.id, true, 'windows', '2.4.1');
+  const livingTok = mkToken('Wohnzimmer-PC', appScopes, adminRow.id, livingPc, { used: '-5 minutes' });
+  require('../../src/services/portalDevices').setUsage(livingTok, { usage: 'multi', userIds: [memberId] });
+  const annaPhone = clientPeer('anna-phone', '10.8.0.16', memberId, true, 'android', '1.16.0');
+  const portalApp = tokens.create({ name: 'Phone (Portal)', scopes: appScopes, userId: memberId, peerId: annaPhone }, '127.0.0.1').rawToken;
   mkToken('Laptop', ['client', 'client:services'], memberId, annaLaptop, { used: '-3 days', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() });
   mkToken('iPad (alt)', ['client'], tomId, tomPad, { used: '-41 days' });
   mkToken('Galaxy Tab', ['client', 'client:services'], kidsId, kidsTab, { used: '-2 hours' });
@@ -190,6 +199,7 @@ async function main() {
     gateways: { home: gwHome, nas: gwNas },
     peers: { laptop },
     webhook: webhookId,
+    portal: { token: portalApp, ip: '10.8.0.16', sharedIp: '10.8.0.40', pin: '1234' },
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));

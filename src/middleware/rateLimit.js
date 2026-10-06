@@ -143,6 +143,21 @@ const gatewayApiLimiter = rateLimit({
   },
 });
 
+// In front of the gateway token check (requireGateway): only FAILED requests
+// count (skipSuccessfulRequests), so working gateways behind one NAT never
+// share a budget — it only slows down guessing gateway tokens per address.
+const gatewayAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `gw-auth:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'Too many failed gateway requests. Try again later.' });
+  },
+});
+
 // Public gateway-pairing redemption: 64-bit codes with 10-min TTL plus
 // one-shot semantics already make brute-force impractical, but a tight
 // per-IP limit (10 per 5 min) keeps log noise down and discourages
@@ -184,4 +199,83 @@ const shareRedeemLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
 });
 
-module.exports = { loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter };
+// Admin SSE stream (/api/v1/events): connects and reconnects only; a stream
+// stays open for minutes, so this never limits a working dashboard.
+const eventStreamLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `events:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
+// Portal API (/api/v1/portal/*). Mounted after portalIdentity: an identified
+// device gets its own bucket (a household behind one NAT does not share one),
+// everything else is keyed by IP. A portal page load makes about ten reads.
+const portalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 10,
+  standardHeaders: true,
+  legacyHeaders: true,
+  skipFailedRequests: true,
+  keyGenerator: (req) => (req.portalPeerId != null ? `portal:peer:${req.portalPeerId}` : `portal:ip:${req.ip}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.api') });
+  },
+});
+
+// Portal pages (/portal, /auto, the picker and its small POST forms).
+const portalPageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `portal-page:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send(req.t('error.rate_limit.api'));
+  },
+});
+
+// "Wer bist du?" PIN check. The per-person lockout (services/portalPin, 5
+// wrong PINs → 15 min) is the real brute-force guard; this caps the attempts
+// per address across all people of a device.
+const portalPinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `portal-pin:${req.ip}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send(req.t('error.rate_limit.login'));
+  },
+});
+
+// POST /api/v1/client/portal-link — one request per connect; per token.
+const portalLinkLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `portal-link:${req.tokenId}` : `portal-link:${req.ip}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
+// Own portal PIN (profile) and the admin reset: per signed-in account.
+const portalPinSetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `pin-set:${(req.session && req.session.userId) || req.ip}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
+  },
+});
+
+module.exports = { loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
+  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter };

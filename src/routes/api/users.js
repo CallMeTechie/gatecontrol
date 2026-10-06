@@ -491,6 +491,28 @@ router.delete('/:id/2fa', (req, res) => {
 });
 
 /**
+ * DELETE /api/v1/users/:id/portal-pin — "PIN zurücksetzen": removes the
+ * portal PIN (shared devices). The person sets a new one under "Konto &
+ * Sicherheit" or with a new invitation; until then the picker refuses them.
+ * Their open portal sessions end as well.
+ */
+router.delete('/:id/portal-pin', require('../../middleware/rateLimit').portalPinSetLimiter, (req, res) => {
+  try {
+    const id = parseId(req);
+    const user = id && users.getById(id);
+    if (!user) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    require('../../services/portalPin').clearPin(id, { actorId: req.session.userId, ip: req.ip });
+    if (req.sessionStore && typeof req.sessionStore.destroyPortalSessions === 'function') {
+      req.sessionStore.destroyPortalSessions(id);
+    }
+    res.json({ ok: true, user: users.getById(id) });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to reset the portal PIN');
+    res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
+/**
  * POST /api/v1/users/:id/tokens — Create token for this user ("Schlüssel
  * direkt anzeigen": the raw token is returned once)
  */

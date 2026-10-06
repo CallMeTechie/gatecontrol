@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { requireGateway } = require('../../middleware/gatewayAuth');
-const { gatewayApiLimiter, gatewayPairLimiter } = require('../../middleware/rateLimit');
+const { gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter } = require('../../middleware/rateLimit');
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
@@ -37,6 +37,7 @@ router.post('/pair', gatewayPairLimiter, express.json({ limit: '1kb' }), (req, r
   }
 });
 
+router.use(gatewayAuthLimiter);
 router.use(requireGateway);
 router.use(gatewayApiLimiter);
 

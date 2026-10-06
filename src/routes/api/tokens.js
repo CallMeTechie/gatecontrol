@@ -109,7 +109,8 @@ router.put('/:id/assign', (req, res) => {
 /**
  * PATCH /api/v1/tokens/:id — Edit a token ("Zugang bearbeiten")
  * Body (all optional): { name, expires_at (ISO | null = never), scopes,
- *   user_id (new owner | null), split_tunnel_override (preset | null) }
+ *   user_id (new owner | null), split_tunnel_override (preset | null),
+ *   device_usage ('single' | 'multi'), device_users (user ids, shared device) }
  * Scopes are capped by the role of the (new) owner; the answer lists the
  * requested scopes that were dropped (`dropped`).
  */
@@ -137,8 +138,38 @@ router.patch('/:id', (req, res) => {
       }
       data.splitTunnelOverride = body.split_tunnel_override || null;
     }
+    // "Wer nutzt dieses Gerät?" (portal): 'single' | 'multi' + allowed people.
+    const usageChange = body.device_usage !== undefined || body.device_users !== undefined;
+    if (usageChange) {
+      if (body.device_usage !== undefined && !['single', 'multi'].includes(body.device_usage)) {
+        return res.status(400).json({ ok: false, error: req.t('error.tokens.device_usage_invalid') });
+      }
+      if (body.device_users !== undefined && !Array.isArray(body.device_users)) {
+        return res.status(400).json({ ok: false, error: req.t('error.tokens.device_usage_invalid') });
+      }
+      const current = tokens.getById(id);
+      if (!current) return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
+      if (body.device_users !== undefined) {
+        // Validate before anything is written (no half-saved dialog).
+        const owner = data.userId !== undefined ? data.userId : current.user_id;
+        try { require('../../services/portalDevices').checkUsers(body.device_users, owner); } catch (err) {
+          if (err.code === 'USER_NOT_FOUND') return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+          return res.status(400).json({ ok: false, error: req.t('error.tokens.device_usage_invalid') });
+        }
+      }
+    }
     const result = tokens.update(id, data, { ip: req.ip, actorId: req.session && req.session.userId });
-    res.json({ ok: true, token: tokens.toAdminView(result.token), dropped: result.dropped });
+    if (usageChange) {
+      try {
+        require('../../services/portalDevices').setUsage(id, { usage: body.device_usage, userIds: body.device_users },
+          { ip: req.ip, actorId: req.session && req.session.userId });
+      } catch (err) {
+        if (err.code === 'USER_NOT_FOUND') return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+        if (err.code === 'INVALID_USAGE' || err.code === 'INVALID_USERS') return res.status(400).json({ ok: false, error: req.t('error.tokens.device_usage_invalid') });
+        throw err;
+      }
+    }
+    res.json({ ok: true, token: tokens.toAdminView(tokens.getById(id) || result.token), dropped: result.dropped });
   } catch (err) {
     if (err.message === 'Token not found') {
       return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });

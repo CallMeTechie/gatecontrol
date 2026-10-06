@@ -19,7 +19,8 @@ test('logged in → owner=session.userId, source session (device irrelevant)', (
   assert.equal(req.portalOwnerSource, 'session');
   assert.equal(req.portalLoggedIn, true);
 });
-test('zero-login + trust OFF → owner null', () => {
+test('zero-login + trust OFF (kill switch) → owner null', () => {
+  settings.set('portal.trust_owner_mapping','0');
   const u = seedUser('carol'); const dev = seedPeer('10.8.0.10', u);
   const req = run({ session:{}, portalPeerId: dev });
   assert.equal(req.portalOwnerId, null);

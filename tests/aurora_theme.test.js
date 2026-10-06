@@ -469,7 +469,7 @@ describe('aurora theme — users layout (Task P2-5)', () => {
 
   it('app.css carries the users-page section (us-) and the old duplicates are gone', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    for (const sel of ['.us-layout', '.us-detail', '.us-tab', '.us-steps', '.us-mx', '.me-card']) assert.ok(css.includes(sel + '{') || css.includes(sel + ' '), sel);
+    for (const sel of ['.us-layout', '.us-detail', '.us-tab', '.us-steps', '.us-mx', '.us-usage-mode']) assert.ok(css.includes(sel + '{') || css.includes(sel + ' '), sel);
     assert.doesNotMatch(css, /\.tw-step\b/, '.tw-step is gone');
     assert.doesNotMatch(css, /\.tw-preset-label\b/, '.tw-preset-label (defined twice) is gone');
     assert.doesNotMatch(css, /\.aurora-user-card\b/);

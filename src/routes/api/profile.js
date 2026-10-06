@@ -107,4 +107,47 @@ router.post('/2fa/disable', async (req, res) => {
   }
 });
 
+// ─── Portal PIN (shared devices, "Wer bist du?") ──────────────────────────
+// Own PIN only; setting or removing it needs the current password (it is a
+// credential of its own). 4–6 digits, argon2 at rest (services/portalPin).
+const { portalPinSetLimiter } = require('../../middleware/rateLimit');
+const portalPin = require('../../services/portalPin');
+
+/** GET /api/v1/profile/portal-pin → { has_pin } */
+router.get('/portal-pin', (req, res) => {
+  res.json({ ok: true, data: { has_pin: portalPin.hasPin(req.session.userId) } });
+});
+
+/** PUT /api/v1/profile/portal-pin { pin, password } */
+router.put('/portal-pin', portalPinSetLimiter, async (req, res) => {
+  try {
+    const pin = typeof req.body.pin === 'string' ? req.body.pin.trim() : '';
+    if (!portalPin.validPin(pin)) {
+      return res.status(400).json({ ok: false, error: req.t('profile.pin.err_format'), code: 'INVALID_PIN' });
+    }
+    if (!(await passwordMatches(req.session.userId, req.body.password))) {
+      return res.status(400).json({ ok: false, error: req.t('error.settings.password_incorrect'), code: 'PASSWORD_INVALID' });
+    }
+    await portalPin.setPin(req.session.userId, pin, { actorId: req.session.userId, ip: req.ip, source: 'user' });
+    res.json({ ok: true, data: { has_pin: true } });
+  } catch (err) {
+    logger.error({ err: err.message }, 'Setting the portal PIN failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/** POST /api/v1/profile/portal-pin/remove { password } */
+router.post('/portal-pin/remove', portalPinSetLimiter, async (req, res) => {
+  try {
+    if (!(await passwordMatches(req.session.userId, req.body && req.body.password))) {
+      return res.status(400).json({ ok: false, error: req.t('error.settings.password_incorrect'), code: 'PASSWORD_INVALID' });
+    }
+    portalPin.clearPin(req.session.userId, { actorId: req.session.userId, ip: req.ip, source: 'user' });
+    res.json({ ok: true, data: { has_pin: false } });
+  } catch (err) {
+    logger.error({ err: err.message }, 'Removing the portal PIN failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
 module.exports = router;

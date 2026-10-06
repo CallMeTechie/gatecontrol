@@ -146,9 +146,9 @@ function safeReturnTo(v) {
 }
 
 // Paths below /api/v1 that a session WITHOUT the admin role may still use:
-// its own profile, password, language and 2FA, the session probe and the
-// member self-service area "Mein Bereich" (/api/v1/me/*, always scoped to
-// the session's own account — routes/api/me.js).
+// its own profile, password, language, 2FA and portal PIN, the session probe
+// and the own devices (/api/v1/me/*, always scoped to the session's own
+// account — routes/api/me.js; the portal uses them as /api/v1/portal/me).
 // Everything else under /api/v1 is the admin API. Token requests are not
 // affected — they are governed by their scopes (services/tokens.checkScope).
 // The client API (/api/v1/client/*) is token-only and gateway/portal/public
@@ -211,9 +211,12 @@ function guestOnly(req, res, next) {
   return next();
 }
 
-/** Where a freshly signed-in account lands: admins the dashboard, members "Mein Bereich". */
+/**
+ * Where a freshly signed-in account lands: admins the dashboard, members
+ * "Konto & Sicherheit" (their own area is the portal, reached over the VPN).
+ */
 function homeFor(user) {
-  return user && user.role === 'admin' ? '/dashboard' : '/me';
+  return user && user.role === 'admin' ? '/dashboard' : '/profile';
 }
 
 module.exports = { requireAuth, requireAdmin, requireAdminSession, guestOnly, safeReturnTo, SELF_SERVICE_PATHS, extractToken, isAdminSession, sessionAllowed, homeFor };

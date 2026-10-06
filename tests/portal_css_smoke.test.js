@@ -23,22 +23,11 @@ test('portal.css contains dark and light theme token blocks', async () => {
   assert.ok(res.text.includes('[data-theme="light"]'), 'missing light theme block');
 });
 
-test('portal.css contains the TP2a per-device DNS-protection widget, with the enriched donut widget', async () => {
+test('portal.css styles the DNS-protection donut and the state rules', async () => {
   const res = await supertest(app).get('/css/portal.css').expect(200);
-  // TP2a re-adds the per-device Pi-hole widget (the "DNS-Schutz" card) deliberately.
-  assert.ok(res.text.includes('.c-pihole'), 'missing .c-pihole — TP2a per-device DNS widget styles');
-  // Task 2 replaces the bar with a block-rate donut.
-  assert.ok(res.text.includes('.donut'), 'missing .donut — enriched Pi-hole donut styling');
-});
-
-test('portal.css contains JS-state rules (moved from portal.js inline injector for CSP safety)', async () => {
-  const res = await supertest(app).get('/css/portal.css').expect(200);
-  // Core rules that were previously injected as a <style> element (blocked by CSP)
-  assert.ok(res.text.includes('.portal-fallback'), 'missing .portal-fallback rule');
-  assert.ok(res.text.includes('gc-shimmer'), 'missing gc-shimmer keyframe animation');
-  assert.ok(res.text.includes('.c-services.loading'), 'missing .c-services.loading min-height rule');
-  assert.ok(res.text.includes('.portal-error-state'), 'missing .portal-error-state rule');
-  assert.ok(res.text.includes('.portal-empty'), 'missing .portal-empty rule');
+  assert.ok(res.text.includes('.pt-donut'), 'missing .pt-donut');
+  assert.ok(res.text.includes('conic-gradient'), 'donut drawn with a conic gradient');
+  for (const sel of ['.pt-empty', '.pt-msg', '.pt-hint', '[hidden]']) assert.ok(res.text.includes(sel), sel);
 });
 
 test('portal.js does NOT inject a <style> element (CSP-clean)', async () => {

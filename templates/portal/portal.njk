@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ appName }} — {{ t('portal.title') }}</title>
-<!-- no-FOUC: set the theme BEFORE first paint (blocking, in <head>).
-     Reads from localStorage; falls back to prefers-color-scheme. -->
+<meta name="referrer" content="no-referrer">
+<title>{{ t('portal.brand') }} · {{ appName }}</title>
+{#- no-FOUC: set the theme BEFORE first paint (blocking, in <head>).
+    Reads from localStorage; falls back to prefers-color-scheme. -#}
 <script nonce="{{ cspNonce }}">
   (function(){
     try{
@@ -17,293 +18,322 @@
 </script>
 <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/bricolage-grotesque-latin.woff2">
 <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/jetbrains-mono-latin.woff2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
-{# confirmOk/confirmCancel: the in-app confirmation that replaced window.confirm
-   (docs/feature-wave2.md §W1.2). #}
-<script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ {
-  confirmOk: t('common.ok'),
-  confirmCancel: t('common.cancel'),
-  fallbackUnknown: t('portal.fallback.unknown'),
-  noServices: t('portal.services.none_shared'),
-  unavailable: t('portal.widget.unavailable'),
-  retry: t('portal.retry'),
-  online: t('portal.device.online'),
-  offline: t('portal.device.offline'),
-  piholeUnavailable:   t('portal.pihole.unavailable'),
-  piholeCollapsed:     t('portal.pihole.collapsed'),
-  piholeNoData:        t('portal.pihole.no_data'),
-  piholeUnidentified:  t('portal.pihole.unidentified'),
-  piholeZeroQueries:   t('portal.pihole.zero_queries'),
-  piholeNoOwner:          t('portal.pihole.no_owner'),
-  piholeLoginRequired:    t('portal.pihole.login_required'),
-  piholeLoginLink:        t('portal.pihole.login_link'),
-  piholeOwnerDevices:     t('portal.pihole.owner.devices_in_snapshot'),
-  piholeOwnerDevicesHint: t('portal.pihole.owner.devices_in_snapshot_hint'),
-  piholeActiveClients:    t('portal.pihole.household.active_clients'),
-  mideaLoginToControl:   t('portal.midea.login_to_control'),
-  mideaLoginLink:        t('portal.midea.login_link'),
-  mideaOffline:          t('portal.midea.offline'),
-  mideaCurrent:          t('portal.midea.current'),
-  mideaTarget:           t('portal.midea.target'),
-  mideaMode:             t('portal.midea.mode'),
-  mideaPower:            t('portal.midea.power'),
-  mideaError:            t('portal.midea.error'),
-  mideaModeAuto:         t('portal.midea.mode_auto'),
-  mideaModeCool:         t('portal.midea.mode_cool'),
-  mideaModeHeat:         t('portal.midea.mode_heat'),
-  mideaModeDry:          t('portal.midea.mode_dry'),
-  mideaModeFan:          t('portal.midea.mode_fan'),
-  mideaPowerOn:          t('portal.midea.power_on'),
-  mideaPowerOff:         t('portal.midea.power_off'),
-  mideaFan:              t('portal.midea.fan'),
-  mideaFanAuto:          t('portal.midea.fan_auto'),
-  mideaFanSilent:        t('portal.midea.fan_silent'),
-  mideaExtras:           t('portal.midea.extras'),
-  mideaTurbo:            t('portal.midea.turbo'),
-  mideaEco:              t('portal.midea.eco'),
-  mideaOutdoor:          t('portal.midea.outdoor'),
-  mideaWarmer:           t('portal.midea.warmer'),
-  mideaCooler:           t('portal.midea.cooler'),
-  skodaTitle: t('portal.skoda.title'),
-  skodaSoc: t('portal.skoda.soc'),
-  skodaRange: t('portal.skoda.range'),
-  skodaLocked: t('portal.skoda.locked'),
-  skodaUnlocked: t('portal.skoda.unlocked'),
-  skodaCharging: t('portal.skoda.charging'),
-  skodaClimate: t('portal.skoda.climate'),
-  skodaTargetTemp: t('portal.skoda.target_temp'),
-  skodaClimateRemaining: t('portal.skoda.climate_remaining'),
-  skodaWindowHeating: t('portal.skoda.window_heating'),
-  skodaMileage: t('portal.skoda.mileage'),
-  skodaInspection: t('portal.skoda.inspection'),
-  skodaPartner: t('portal.skoda.partner'),
-  skodaPosition: t('portal.skoda.position'),
-  skodaAsOf: t('portal.skoda.as_of'),
-  skodaDoors: t('portal.skoda.doors'),
-  skodaWindows: t('portal.skoda.windows'),
-  skodaCableConnected: t('portal.skoda.cable_connected'),
-  skodaWarnings: t('portal.skoda.warnings'),
-  skodaBonnet: t('portal.skoda.bonnet'),
-  skodaTrunk: t('portal.skoda.trunk'),
-  skodaSunroof: t('portal.skoda.sunroof'),
-  skodaLightsOn: t('portal.skoda.lights_on'),
-  skodaClimateOn: t('portal.skoda.climate_on'),
-  skodaClimateOff: t('portal.skoda.climate_off'),
-  skodaCmdAcOn: t('portal.skoda.cmd_ac_on'),
-  skodaCmdAcOff: t('portal.skoda.cmd_ac_off'),
-  skodaCmdSetTemp: t('portal.skoda.cmd_set_temp'),
-  skodaCmdChargeOn: t('portal.skoda.cmd_charge_on'),
-  skodaCmdChargeOff: t('portal.skoda.cmd_charge_off'),
-  skodaCmdChargeLimit: t('portal.skoda.cmd_charge_limit'),
-  skodaCmdWindowHeat: t('portal.skoda.cmd_window_heat'),
-  skodaCmdWindowHeatOff: t('portal.skoda.cmd_window_heat_off'),
-  skodaCmdLock: t('portal.skoda.cmd_lock'),
-  skodaCmdUnlock: t('portal.skoda.cmd_unlock'),
-  skodaCmdConfirmUnlock: t('portal.skoda.cmd_confirm_unlock'),
-  skodaCmdRunning: t('portal.skoda.cmd_running'),
-  skodaCmdFailed: t('portal.skoda.cmd_failed'),
-  skodaDetailsTitle: t('portal.skoda.details.title'),
-  skodaDetailsModel: t('portal.skoda.details.model'),
-  skodaDetailsYear: t('portal.skoda.details.year'),
-  skodaDetailsMade: t('portal.skoda.details.made'),
-  skodaDetailsBody: t('portal.skoda.details.body'),
-  skodaDetailsTrim: t('portal.skoda.details.trim'),
-  skodaDetailsPower: t('portal.skoda.details.power'),
-  skodaDetailsBattery: t('portal.skoda.details.battery'),
-  skodaDetailsMaxCharging: t('portal.skoda.details.max_charging'),
-  skodaDetailsEquipment: t('portal.skoda.details.equipment'),
-  skodaDetailsConnection: t('portal.skoda.details.connection'),
-  skodaDetailsOnline: t('portal.skoda.details.online'),
-  skodaDetailsOffline: t('portal.skoda.details.offline'),
-  skodaDetailsIgnitionOn: t('portal.skoda.details.ignition_on'),
-  skodaDetailsIgnitionOff: t('portal.skoda.details.ignition_off'),
-  skodaDetailsInMotion: t('portal.skoda.details.in_motion'),
-  skodaDetailsScore: t('portal.skoda.details.score'),
-  skodaDetailsScoreWeekly: t('portal.skoda.details.score_weekly'),
-  skodaDetailsScoreMonthly: t('portal.skoda.details.score_monthly'),
-  skodaDetailsScoreAsOf: t('portal.skoda.details.score_as_of'),
-  skodaDetailsLoadError: t('portal.skoda.details.load_error'),
-  skodaDetailsRateLimited: t('portal.skoda.details.rate_limited'),
-  skodaTimersTitle: t('portal.skoda.timers.title'),
-  skodaTimersNone: t('portal.skoda.timers.none'),
-  skodaTimersTimer: t('portal.skoda.timers.timer'),
-  skodaTimersActive: t('portal.skoda.timers.active'),
-  skodaTimersTime: t('portal.skoda.timers.time'),
-  skodaTimersDays: t('portal.skoda.timers.days'),
-  skodaTimersSave: t('portal.skoda.timers.save'),
-  skodaTimersSaved: t('portal.skoda.timers.saved'),
-  skodaTimersSaveFailed: t('portal.skoda.timers.save_failed'),
-  skodaTimersInvalid: t('portal.skoda.timers.invalid'),
-  skodaTimersNotFound: t('portal.skoda.timers.not_found'),
-  skodaTimersReadonly: t('portal.skoda.timers.readonly'),
-  skodaTimersDayMon: t('portal.skoda.timers.day.mon'),
-  skodaTimersDayTue: t('portal.skoda.timers.day.tue'),
-  skodaTimersDayWed: t('portal.skoda.timers.day.wed'),
-  skodaTimersDayThu: t('portal.skoda.timers.day.thu'),
-  skodaTimersDayFri: t('portal.skoda.timers.day.fri'),
-  skodaTimersDaySat: t('portal.skoda.timers.day.sat'),
-  skodaTimersDaySun: t('portal.skoda.timers.day.sun'),
-  smarthomePower:          t('portal.smarthome.power'),
-  smarthomeBrightness:     t('portal.smarthome.brightness'),
-  smarthomeActivate:       t('portal.smarthome.activate'),
-  smarthomeLoginToControl: t('portal.smarthome.login_to_control'),
-  smarthomeSensors:        t('portal.smarthome.sensors'),
-  smarthomeOpen:           t('portal.smarthome.open'),
-  smarthomeClosed:         t('portal.smarthome.closed'),
-  smarthomeMotion:         t('portal.smarthome.motion'),
-  smarthomeNoMotion:       t('portal.smarthome.no_motion'),
-  smarthomeWet:            t('portal.smarthome.wet'),
-  smarthomeDry:            t('portal.smarthome.dry'),
-  smarthomeOn:             t('portal.smarthome.on'),
-  smarthomeOff:            t('portal.smarthome.off')
-} | dump | safe }}</script>
+{#- Every portal.* string for portal.js (one JSON island, `<` escaped). -#}
+<script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ portalI18n | safe }}</script>
+<script type="application/json" id="portal-ctx" nonce="{{ cspNonce }}">{{ portalCtx | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 </head>
-<body>
-<div class="wrap">
+<body class="pt-body">
+<a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
 
-  <!-- top bar -->
-  <header class="topbar">
-    <div class="brand">
-      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      {{ appName }}
+{%- set ICONS = {
+  start: 'M3 11.5L12 4l9 7.5M5.5 10v10h13V10',
+  dienste: 'M4 6h16M4 12h16M4 18h10',
+  zuhause: 'M9 21V12h6v9M3 10l9-7 9 7v11H3z',
+  fahrzeug: 'M5 16l1.5-5h11L19 16M4 16h16v3H4zM7 19v2M17 19v2',
+  netzwerk: 'M3 17l5-5 4 4 8-8',
+  geraete: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2'
+} %}
+{%- set TABS = [
+  ['start', 'portal.tab.start', true],
+  ['dienste', 'portal.tab.services', tabs.services],
+  ['zuhause', 'portal.tab.home', tabs.home],
+  ['fahrzeug', 'portal.tab.car', tabs.car],
+  ['netzwerk', 'portal.tab.net', tabs.net],
+  ['geraete', 'portal.tab.devices', tabs.devices]
+] %}
+
+<header class="pt-header">
+  <div class="pt-brand">
+    <span class="pt-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg></span>
+    {{ t('portal.brand') }}
+  </div>
+
+  <nav class="pt-tabs" aria-label="{{ t('portal.tabs_label') }}">
+    <div class="pt-tablist" role="tablist" aria-label="{{ t('portal.tabs_label') }}">
+    {%- for tab in TABS %}{% if tab[2] %}
+      <a class="pt-tab" role="tab" id="tab-{{ tab[0] }}" href="#{{ tab[0] }}" data-tab="{{ tab[0] }}" aria-controls="panel-{{ tab[0] }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ '0' if loop.first else '-1' }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ ICONS[tab[0]] }}"/></svg><span>{{ t(tab[1]) }}</span></a>
+    {%- endif %}{% endfor %}
     </div>
-    <div class="spacer"></div>
-    <button class="icon-btn" id="themeBtn" title="{{ t('portal.theme_toggle') }}" aria-label="{{ t('portal.theme_toggle') }}">
-      <svg class="ic-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <svg class="ic-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+  </nav>
+
+  <div class="pt-head-end">
+    <button type="button" class="pt-iconbtn" id="themeBtn" title="{{ t('portal.theme_toggle') }}" aria-label="{{ t('portal.theme_toggle') }}">
+      <svg class="ic-sun" aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="ic-moon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
     </button>
-    {% if identified %}
-    <div class="devpill" id="devpill" title="{{ t('portal.devpill.title') }}">
-      <span class="dot" id="devDot"></span>
-      <span class="name" id="devName">{{ deviceName }}</span>
-      <span class="ip" id="devIp"></span>
+
+    {% if viewer.kind == 'person' %}
+    <div class="pt-user" data-viewer="person" data-via="{{ viewer.via }}">
+      <span class="pt-user-text">
+        <span class="pt-user-name">{{ viewer.name }}</span>
+        <span class="pt-user-sub">
+          {%- if viewer.via == 'link' or viewer.via == 'device' -%}
+            {{ t('portal.viewer.auto_via', { device: viewer.deviceName }) if viewer.deviceName else t('portal.viewer.auto') }}
+          {%- elif viewer.via == 'pin' -%}
+            {{ t('portal.viewer.picked_on', { device: viewer.deviceName }) if viewer.deviceName else t('portal.viewer.picked') }}
+          {%- else -%}
+            {{ t('portal.viewer.signed_in') }}
+          {%- endif -%}
+        </span>
+      </span>
+      <span class="pt-avatar" aria-hidden="true">{{ viewer.initials }}</span>
     </div>
+    {% elif viewer.kind == 'anonymous' %}
+    <div class="pt-user is-anon" data-viewer="anonymous">
+      <span class="pt-user-text">
+        <span class="pt-user-name">{{ t('portal.viewer.anonymous') }}</span>
+        <span class="pt-user-sub">{{ t('portal.viewer.anonymous_sub') }}</span>
+      </span>
+      <span class="pt-avatar" aria-hidden="true">?</span>
+    </div>
+    {% endif %}
+
+    {% if sharedDevice and (portalSession or viewer.kind == 'anonymous') %}
+    <form class="pt-inline" method="POST" action="/portal/switch">
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      <button type="submit" class="pt-btn pt-btn-sm" id="pt-switch">{{ t('portal.viewer.switch') if portalSession else t('portal.viewer.pick') }}</button>
+    </form>
+    {% elif viewer.kind == 'anonymous' %}
+    <form class="pt-inline" method="POST" action="/portal/identify">
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      <button type="submit" class="pt-btn pt-btn-sm" id="pt-identify">{{ t('portal.viewer.leave_anonymous') }}</button>
+    </form>
+    {% endif %}
+
+    {% if accountUrl %}
+    <a class="pt-iconbtn" id="pt-account" href="{{ accountUrl }}" rel="noopener" title="{{ t('portal.account') }}" aria-label="{{ t('portal.account') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></a>
     {% endif %}
     {% if loggedIn %}
-    <form action="/logout" method="POST" style="margin:0;padding:0;display:inline-flex">
+    <form class="pt-inline" action="/logout" method="POST">
       <input type="hidden" name="_csrf" value="{{ csrfToken }}">
-      <button type="submit" class="icon-btn is-logout" title="{{ t('portal.logout') }}" aria-label="{{ t('portal.logout') }}">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button type="submit" class="pt-iconbtn" title="{{ t('portal.logout') }}" aria-label="{{ t('portal.logout') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </form>
-    {% else %}
-    <a href="/login?returnTo=/portal" class="icon-btn is-login" title="{{ t('portal.login') }}" aria-label="{{ t('portal.login') }}">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </a>
+    {% elif viewer.kind != 'person' or viewer.via == 'device' %}
+    <a href="/login?returnTo=/portal" class="pt-iconbtn" id="pt-login" title="{{ t('portal.login') }}" aria-label="{{ t('portal.login') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
     {% endif %}
-  </header>
-
-  <!-- hero -->
-  <section class="hero">
-    <h1>{% if identified %}{{ t('portal.greeting_home') }}{% else %}{{ t('portal.welcome') }}{% endif %}</h1>
-    <p>{{ t('portal.greeting_sub') }}</p>
-  </section>
-
-  {% if widgets.device %}
-  <!-- device status strip -->
-  <div class="strip c-device">
-    <span id="deviceStatus"></span>
-    <span class="s"><span class="lbl">{{ t('portal.device.vpn_address') }}</span><span class="ip" id="deviceAddress"></span></span>
-    <span class="s"><span class="lbl">{{ t('portal.device.dns') }}</span><span class="ip" id="deviceDns"></span></span>
-    <span class="s"><span class="lbl">{{ t('portal.device.last_handshake') }}</span><span id="deviceHandshake"></span></span>
-    <span id="deviceKv"></span>
   </div>
+</header>
+
+<main class="pt-main" id="pt-main">
+  {% if note == 'link_invalid' %}
+  <div class="pt-note" role="status" id="pt-note">{{ t('portal.note.link_invalid') }}</div>
   {% endif %}
 
-  <!-- widget grid -->
-  <main class="grid">
-
-    {% if widgets.midea %}
-    <!-- Klimaanlage — eigene Geräte -->
-    <section class="card c-midea midea-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>{{ t('portal.midea.title') }}</h2>
-      <div id="midea-list" class="midea-list"></div>
-      <div class="midea-msg" id="mideaMsg" style="display:none"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.smarthome %}
-    <!-- Smart Home — eigene Geräte -->
-    <section class="card c-smarthome">
-      <div class="card-head"><h2>{{ t('portal.smarthome.title') }}</h2></div>
-      <div id="smarthome-list" class="sh-tiles"></div>
-      <div id="smarthome-sensors" class="sh-sensors" style="display:none"></div>
-      <div id="smarthomeMsg" class="c-sh-msg" style="display:none"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.skoda %}
-    <!-- Fahrzeuge — eigene Skoda-Connect-Fahrzeuge -->
-    <section class="card c-skoda skoda-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z"/><circle cx="7.5" cy="17.5" r="1"/><circle cx="16.5" cy="17.5" r="1"/></svg></span>{{ t('portal.skoda.title') }}</h2>
-      <div id="skoda-list" class="skoda-list"></div>
-      <div class="skoda-msg" id="skodaMsg" style="display:none"></div>
-    </section>
-    {% endif %}
-
-    {% if widgets.pihole %}
-    <!-- pi-hole / DNS protection -->
-    <section class="card c-pihole pihole-widget">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>{{ t('portal.pihole.title') }}
-        <span class="seg pihole-seg" id="piholeSeg">
-          <button data-scope="device" class="on">{{ t('portal.pihole.scope_device') }}</button>
-          <button data-scope="owner">{{ t('portal.pihole.scope_owner') }}</button>
-          <button data-scope="household">{{ t('portal.pihole.scope_household') }}</button>
-        </span>
-      </h2>
-      <div class="pihole-body">
-        <div class="donut">
-          <svg viewBox="0 0 120 120" width="132" height="132"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--track)" stroke-width="13"/><circle id="piDonut" cx="60" cy="60" r="50" fill="none" stroke="var(--coral)" stroke-width="13" stroke-linecap="round"/></svg>
-          <div class="dc"><div><b id="piPct">–</b><span>%</span></div></div>
-        </div>
-        <div class="pihole-nums">
-          <div><b id="piTotal">–</b><span>{{ t('portal.pihole.total') }}</span></div>
-          <div><b id="piBlocked">–</b><span>{{ t('portal.pihole.blocked') }}</span></div>
-          <div id="piAllowedWrap"><b id="piAllowed">–</b><span>{{ t('portal.pihole.allowed') }}</span></div>
-        </div>
-        <div id="piOwnerExtra" style="display:none"><b id="piOwnerDevices"></b> <span class="pihole-hint" id="piOwnerDevicesHint"></span></div>
-        <div id="piHouseholdExtra" style="display:none"><b id="piActiveClients">–</b></div>
-        <div class="pihole-foot">{{ t('portal.pihole.foot') }}</div>
+  {# ═══ Start ═══════════════════════════════════════════════════════════ #}
+  <section class="pt-panel" id="panel-start" role="tabpanel" aria-labelledby="tab-start" tabindex="0" data-panel="start">
+    <div class="pt-hero">
+      <div class="pt-hero-text">
+        <h1 class="pt-h1" id="pt-greeting">
+          {%- if viewer.kind == 'person' %}{{ t('portal.greet.hello', { name: viewer.first }) }}{% else %}{{ t('portal.greet.guest') }}{% endif -%}
+        </h1>
+        <p class="pt-lead">{{ t('portal.lead') if viewer.kind == 'person' else (t('portal.lead_anonymous') if viewer.kind == 'anonymous' else t('portal.lead_guest')) }}</p>
       </div>
-      <div class="pihole-msg" id="piMsg" style="display:none"></div>
-    </section>
+      <label class="pt-search">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="pt-search" aria-label="{{ t('portal.search') }}" placeholder="{{ t('portal.search') }}" autocomplete="off">
+      </label>
+    </div>
+    <div class="pt-results" id="pt-results" hidden aria-live="polite"></div>
+
+    {% if tabs.device %}
+    <div class="pt-strip" id="pt-strip" data-area="device">
+      <span class="pt-strip-state" id="pt-strip-state"><span class="pt-dot" aria-hidden="true"></span><span id="pt-strip-state-text">{{ t('portal.strip.checking') }}</span></span>
+      <span><span class="pt-muted">{{ t('portal.strip.device') }}</span> <b id="pt-strip-device">{{ deviceName }}</b></span>
+      <span><span class="pt-muted">{{ t('portal.device.vpn_address') }}</span> <b class="pt-mono" id="pt-strip-ip">–</b></span>
+      <span><span class="pt-muted">{{ t('portal.device.last_handshake') }}</span> <b id="pt-strip-hs">–</b></span>
+      {% if tabs.traffic %}<span id="pt-strip-today-wrap" hidden><span class="pt-muted">{{ t('portal.strip.today') }}</span> <b id="pt-strip-today">–</b></span>{% endif %}
+      {% if tabs.pihole %}<span id="pt-strip-pi-wrap" hidden><span class="pt-muted">{{ t('portal.strip.adblock') }}</span> <b id="pt-strip-pi">–</b></span>{% endif %}
+    </div>
     {% endif %}
 
-    {% if widgets.traffic %}
-    <!-- traffic -->
-    <section class="card c-traffic">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 16l3-5 3 3 4-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{{ t('portal.traffic.title') }}
-        <span class="legend"><i style="background:var(--teal)"></i>{{ t('portal.traffic.legend_rx') }}<i style="background:var(--coral);margin-left:8px"></i>{{ t('portal.traffic.legend_tx') }}</span>
-        <span class="seg" id="seg">
-          <button data-r="24h" class="on">{{ t('portal.traffic.range_24h') }}</button>
-          <button data-r="7d">{{ t('portal.traffic.range_7d') }}</button>
-          <button data-r="30d">{{ t('portal.traffic.range_30d') }}</button>
-        </span>
-      </h2>
-      <div class="chart" id="chart"></div>
-      <div class="traffic-foot">
-        <span class="t">{{ t('portal.traffic.total') }}: <b id="tTotal"></b></span>
-        <span class="t">{{ t('portal.traffic.avg_day') }}: <b id="tAvg"></b></span>
-        <span class="t" style="margin-left:auto">{{ t('portal.traffic.peak') }}: <b id="tPeak"></b></span>
+    <div class="pt-grid">
+      {% if tabs.services %}
+      <section class="pt-card pt-span" data-area="services" aria-labelledby="pt-c-services">
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-services">{{ t('portal.tab.services') }}</h2><span class="pt-sub" id="pt-services-sub" hidden>{{ t('portal.services.recent') }}</span><a class="pt-link" href="#dienste" data-goto="dienste" id="pt-services-all">{{ t('portal.services.all_plain') }}</a></div>
+        <div class="pt-tiles" id="pt-start-services"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+      </section>
+      {% endif %}
+
+      {% if tabs.home %}
+      <section class="pt-card" data-area="home" aria-labelledby="pt-c-home">
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-home">{{ t('portal.tab.home') }}</h2><a class="pt-link" href="#zuhause" data-goto="zuhause">{{ t('portal.open') }}</a></div>
+        <div class="pt-card-body" id="pt-start-home"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+      </section>
+      {% endif %}
+
+      {% if tabs.car %}
+      <section class="pt-card" data-area="car" aria-labelledby="pt-c-car">
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-car">{{ t('portal.tab.car') }}</h2><a class="pt-link" href="#fahrzeug" data-goto="fahrzeug">{{ t('portal.open') }}</a></div>
+        <div class="pt-card-body" id="pt-start-car"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+      </section>
+      {% endif %}
+
+      {% if tabs.net %}
+      <section class="pt-card" data-area="net" aria-labelledby="pt-c-net">
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-net">{{ t('portal.net.title') }}</h2><a class="pt-link" href="#netzwerk" data-goto="netzwerk">{{ t('portal.open') }}</a></div>
+        <div class="pt-card-body pt-net-mini" id="pt-start-net">
+          {% if tabs.traffic %}
+          <div class="pt-net-bars">
+            <div class="pt-mini-label">{{ t('portal.net.week') }}</div>
+            <div class="pt-bars" id="pt-start-bars" aria-hidden="true"></div>
+            <div class="pt-bars-axis" id="pt-start-bars-axis" aria-hidden="true"></div>
+            <div class="pt-sr" id="pt-start-bars-sr"></div>
+          </div>
+          {% endif %}
+          {% if tabs.pihole %}
+          <div class="pt-net-donut" id="pt-start-pi" hidden>
+            <div class="pt-donut" id="pt-start-donut" aria-hidden="true"><span id="pt-start-donut-v">–</span></div>
+            <div class="pt-mini-label">{{ t('portal.net.blocked') }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if tabs.devices %}
+      <section class="pt-card" data-area="devices" aria-labelledby="pt-c-devices">
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-devices">{{ t('portal.tab.devices') }}</h2><a class="pt-link" href="#geraete" data-goto="geraete">{{ t('portal.devices.manage') }}</a></div>
+        <ul class="pt-devlist pt-devlist-mini" id="pt-start-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
+      </section>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ═══ Dienste ═════════════════════════════════════════════════════════ #}
+  {% if tabs.services %}
+  <section class="pt-panel" id="panel-dienste" role="tabpanel" aria-labelledby="tab-dienste" tabindex="0" data-panel="dienste" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.services') }}</h1>
+    <p class="pt-lead">{{ t('portal.services.lead') if viewer.kind == 'person' else t('portal.services.lead_all') }}</p>
+    <div class="pt-svc-grid" id="pt-services"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+    <div id="pt-rdp-wrap" hidden>
+      <h2 class="pt-h2 pt-h2-gap">{{ t('portal.services.rdp') }}</h2>
+      <div class="pt-rdp-list" id="pt-rdp"></div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ═══ Zuhause ═════════════════════════════════════════════════════════ #}
+  {% if tabs.home %}
+  <section class="pt-panel" id="panel-zuhause" role="tabpanel" aria-labelledby="tab-zuhause" tabindex="0" data-panel="zuhause" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.home') }}</h1>
+    <p class="pt-lead">{{ t('portal.home.lead') }}</p>
+    <div class="pt-hint" id="pt-home-hint" hidden></div>
+    <div class="pt-grid pt-grid-wide">
+      {% if tabs.midea %}<div class="pt-ac-list" id="pt-midea" data-area="midea"></div>{% endif %}
+      {% if tabs.smarthome %}
+      <section class="pt-card pt-pad" id="pt-sh-card" data-area="smarthome" aria-labelledby="pt-c-sh">
+        <h2 class="pt-h2 pt-h2-gap" id="pt-c-sh">{{ t('portal.smarthome.title') }}</h2>
+        <div class="pt-sh-tiles" id="pt-sh-tiles"></div>
+        <div class="pt-sh-sensors" id="pt-sh-sensors" hidden>
+          <div class="pt-overline">{{ t('portal.smarthome.sensors') }}</div>
+          <ul class="pt-sensor-list" id="pt-sh-sensor-list"></ul>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+    <div class="pt-msg" id="pt-home-msg" role="status" hidden></div>
+  </section>
+  {% endif %}
+
+  {# ═══ Fahrzeug ════════════════════════════════════════════════════════ #}
+  {% if tabs.car %}
+  <section class="pt-panel" id="panel-fahrzeug" role="tabpanel" aria-labelledby="tab-fahrzeug" tabindex="0" data-panel="fahrzeug" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.car') }}</h1>
+    <div class="pt-hint" id="pt-car-hint" hidden></div>
+    <div class="pt-car-list" id="pt-skoda"></div>
+    <div class="pt-msg" id="pt-car-msg" role="status" hidden></div>
+  </section>
+  {% endif %}
+
+  {# ═══ Netzwerk ════════════════════════════════════════════════════════ #}
+  {% if tabs.net %}
+  <section class="pt-panel" id="panel-netzwerk" role="tabpanel" aria-labelledby="tab-netzwerk" tabindex="0" data-panel="netzwerk" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.net.title') }}</h1>
+    <div class="pt-grid pt-grid-wide">
+      {% if tabs.traffic %}
+      <section class="pt-card pt-pad pt-span" data-area="traffic" aria-labelledby="pt-c-traffic">
+        <div class="pt-card-row">
+          <h2 class="pt-h2" id="pt-c-traffic">{{ t('portal.traffic.title') }}</h2>
+          <span class="pt-legend"><i class="is-rx" aria-hidden="true"></i>{{ t('portal.traffic.legend_rx') }}<i class="is-tx" aria-hidden="true"></i>{{ t('portal.traffic.legend_tx') }}</span>
+          <div class="pt-seg" role="group" aria-label="{{ t('portal.traffic.range') }}" id="pt-traffic-seg">
+            <button type="button" data-range="24h" aria-pressed="false">{{ t('portal.traffic.range_24h') }}</button>
+            <button type="button" data-range="7d" aria-pressed="true">{{ t('portal.traffic.range_7d') }}</button>
+            <button type="button" data-range="30d" aria-pressed="false">{{ t('portal.traffic.range_30d') }}</button>
+          </div>
+        </div>
+        <div class="pt-chart" id="pt-chart" aria-hidden="true"></div>
+        <div class="pt-sr" id="pt-chart-sr" aria-live="polite"></div>
+        <div class="pt-kv-row">
+          <span><span class="pt-muted">{{ t('portal.traffic.total') }}</span> <b id="pt-t-total">–</b></span>
+          <span><span class="pt-muted">{{ t('portal.traffic.avg_day') }}</span> <b id="pt-t-avg">–</b></span>
+          <span><span class="pt-muted">{{ t('portal.traffic.peak') }}</span> <b id="pt-t-peak">–</b></span>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if tabs.device %}
+      <section class="pt-card pt-pad" data-area="device" aria-labelledby="pt-c-device">
+        <h2 class="pt-h2 pt-h2-gap" id="pt-c-device">{{ t('portal.device.this') }}</h2>
+        <dl class="pt-dl" id="pt-device">
+          <dt>{{ t('portal.device.status') }}</dt><dd id="pt-d-status">–</dd>
+          <dt>{{ t('portal.device.vpn_address') }}</dt><dd class="pt-mono" id="pt-d-ip">–</dd>
+          <dt>{{ t('portal.device.dns') }}</dt><dd class="pt-mono" id="pt-d-dns">–</dd>
+          <dt>{{ t('portal.device.last_handshake') }}</dt><dd id="pt-d-hs">–</dd>
+          <dt>{{ t('portal.device.transfer') }}</dt><dd id="pt-d-xfer">–</dd>
+        </dl>
+      </section>
+      {% endif %}
+
+      {% if tabs.pihole %}
+      <section class="pt-card pt-pad" data-area="pihole" id="pt-pi-card" aria-labelledby="pt-c-pi">
+        <div class="pt-card-row">
+          <h2 class="pt-h2" id="pt-c-pi">{{ t('portal.pihole.title') }}</h2>
+          <div class="pt-seg" role="group" aria-label="{{ t('portal.pihole.scope') }}" id="pt-pi-seg">
+            <button type="button" data-scope="device" aria-pressed="true">{{ t('portal.pihole.scope_device') }}</button>
+            <button type="button" data-scope="owner" aria-pressed="false">{{ t('portal.pihole.scope_owner') }}</button>
+            <button type="button" data-scope="household" aria-pressed="false">{{ t('portal.pihole.scope_household') }}</button>
+          </div>
+        </div>
+        <div class="pt-pi-body" id="pt-pi-body">
+          <div class="pt-donut pt-donut-lg" id="pt-pi-donut" aria-hidden="true"><span id="pt-pi-pct">–</span></div>
+          <dl class="pt-dl pt-dl-auto">
+            <dt>{{ t('portal.pihole.total') }}</dt><dd id="pt-pi-total">–</dd>
+            <dt>{{ t('portal.pihole.blocked') }}</dt><dd id="pt-pi-blocked">–</dd>
+            <dt id="pt-pi-allowed-l">{{ t('portal.pihole.allowed') }}</dt><dd id="pt-pi-allowed">–</dd>
+            <dt id="pt-pi-extra-l" hidden></dt><dd id="pt-pi-extra" hidden></dd>
+          </dl>
+        </div>
+        <p class="pt-foot" id="pt-pi-foot">{{ t('portal.pihole.foot') }}</p>
+        <div class="pt-msg" id="pt-pi-msg" role="status" hidden></div>
+      </section>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ═══ Meine Geräte ════════════════════════════════════════════════════ #}
+  {% if tabs.devices %}
+  <section class="pt-panel" id="panel-geraete" role="tabpanel" aria-labelledby="tab-geraete" tabindex="0" data-panel="geraete" hidden>
+    <div class="pt-hero">
+      <div class="pt-hero-text">
+        <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.devices') }}</h1>
+        <p class="pt-lead">{{ t('portal.devices.lead') }}</p>
       </div>
+      <button type="button" class="pt-btn pt-btn-primary" id="pt-enroll" hidden>{{ t('portal.devices.new') }}</button>
+    </div>
+    <section class="pt-card pt-narrow" aria-label="{{ t('portal.tab.devices') }}">
+      <ul class="pt-devlist" id="pt-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
     </section>
-    {% endif %}
+    <p class="pt-foot" id="pt-devices-foot"></p>
+  </section>
+  {% endif %}
+</main>
 
-    {% if widgets.services %}
-    <!-- services -->
-    <section class="card c-services">
-      <h2><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="13" width="18" height="7" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 7.5h.01M7 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>{{ t('portal.services.title') }}<span class="sub">{{ t('portal.services.sub') }}</span></h2>
-      <div class="svc-strip" id="servicesTiles"></div>
-    </section>
-    {% endif %}
-
-  </main>
-
-  <footer class="foot">
-    <span>{{ appName }}</span>
-  </footer>
-
-</div>
+<footer class="pt-footer"><span>{{ appName }}</span></footer>
 </body>
 </html>

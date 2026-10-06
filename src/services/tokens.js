@@ -511,6 +511,8 @@ function formatToken(row) {
     last_used_at: row.last_used_at,
     split_tunnel_override: row.split_tunnel_override || null,
     enrolled: row.enrolled === 1,
+    // Portal: 'single' (owner only) | 'multi' (shared device, "Wer bist du?")
+    device_usage: row.device_usage === 'multi' ? 'multi' : 'single',
   };
 }
 
@@ -526,6 +528,10 @@ const FINGERPRINT_DISPLAY_LEN = 8;
  *   machine_binding_active  binding enforced for this token right now
  * `state` (machineBindingState()) can be passed in for a whole list.
  */
+function deviceUsersOf(tokenId) {
+  try { return require('./portalDevices').listForToken(tokenId); } catch { return []; }
+}
+
 function toAdminView(token, state) {
   if (!token) return token;
   const st = state || machineBindingState();
@@ -535,6 +541,8 @@ function toAdminView(token, state) {
     machine_fingerprint: fp ? String(fp).substring(0, FINGERPRINT_DISPLAY_LEN) : null,
     machine_binding_mode: st.mode,
     machine_binding_active: isMachineBindingActive(token, st),
+    // People who may pick themselves on a shared device (owner excluded).
+    device_users: deviceUsersOf(token.id),
   };
 }
 

@@ -63,20 +63,31 @@ class SQLiteStore extends session.Store {
 
   // Delete every session belonging to a user, optionally keeping one sid
   // alive (the caller's current session). Used to force-logout other devices
-  // after a password change or when an account is disabled. Returns the
+  // after a password change or when an account is disabled — portal sessions
+  // (portalUserId: login link of the app, picker + PIN) included. Returns the
   // number of sessions removed. The userId lives inside the JSON `data` blob
   // (there is no dedicated column), so we match it with json_extract.
+  // Portal sessions of a user only (login link / picker + PIN) — after an
+  // admin reset of the portal PIN. Web sessions stay.
+  destroyPortalSessions(userId) {
+    try {
+      return getDb().prepare("DELETE FROM sessions WHERE json_extract(data, '$.portalUserId') = ?").run(userId).changes;
+    } catch {
+      return 0;
+    }
+  }
+
   destroyByUserId(userId, exceptSid = null) {
     try {
       const db = getDb();
       if (exceptSid) {
         return db.prepare(
-          "DELETE FROM sessions WHERE sid != ? AND json_extract(data, '$.userId') = ?"
-        ).run(exceptSid, userId).changes;
+          "DELETE FROM sessions WHERE sid != ? AND (json_extract(data, '$.userId') = ? OR json_extract(data, '$.portalUserId') = ?)"
+        ).run(exceptSid, userId, userId).changes;
       }
       return db.prepare(
-        "DELETE FROM sessions WHERE json_extract(data, '$.userId') = ?"
-      ).run(userId).changes;
+        "DELETE FROM sessions WHERE json_extract(data, '$.userId') = ? OR json_extract(data, '$.portalUserId') = ?"
+      ).run(userId, userId).changes;
     } catch (err) {
       const logger = require('../utils/logger');
       logger.error({ err: err.message, userId }, 'Failed to destroy sessions by userId');

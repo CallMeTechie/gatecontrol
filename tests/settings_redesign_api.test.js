@@ -202,7 +202,7 @@ describe('lockout: account_locked', () => {
 });
 
 describe('GET /settings', () => {
-  it('a non-admin session is sent to /me', async () => {
+  it('a non-admin session is sent to /profile', async () => {
     const hash = await argon2.hash('Plain!Pass1234');
     db.prepare('INSERT INTO users (username, password_hash, role, self_service_enabled) VALUES (?, ?, ?, 1)').run('settings-plain', hash, 'user');
     const a = supertest.agent(app);
@@ -210,7 +210,7 @@ describe('GET /settings', () => {
     const token = /name="_csrf" value="([^"]+)"/.exec(page.text)[1];
     await a.post('/login').type('form').send({ username: 'settings-plain', password: 'Plain!Pass1234', _csrf: token }).expect(302);
     const res = await a.get('/settings').expect(302);
-    assert.equal(res.headers.location, '/me');
+    assert.equal(res.headers.location, '/profile');
   });
   it('the admin page carries the catalogue and the string table', async () => {
     const res = await agent.get('/settings').expect(200);

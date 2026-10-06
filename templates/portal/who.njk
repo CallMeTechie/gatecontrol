@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="{{ language | default('de') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{ t('portal.who.title') }} · {{ appName }}</title>
+<script nonce="{{ cspNonce }}">
+  (function(){
+    try{
+      var s = localStorage.getItem('gc-portal-theme');
+      var t = s || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+  })();
+</script>
+<link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/bricolage-grotesque-latin.woff2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
+<script src="/js/portal-who.js?v={{ appVersion }}" defer></script>
+</head>
+<body class="pt-body pt-who-body">
+<main class="pt-who-wrap">
+  <div class="pt-who-card" id="pt-who">
+    <div class="pt-overline pt-accent">{{ t('portal.who.eyebrow', { device: deviceName }) if deviceName else t('portal.who.eyebrow_plain') }}</div>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.who.title') }}</h1>
+    <p class="pt-lead">{{ t('portal.who.lead') }}</p>
+
+    {% if error %}
+    <div class="pt-who-error" role="alert" id="pt-who-error">{{ error }}</div>
+    {% endif %}
+
+    {% if people.length %}
+    <form method="POST" action="/portal/who" id="pt-who-form" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      <fieldset class="pt-who-people">
+        <legend class="pt-sr">{{ t('portal.who.people') }}</legend>
+        {% for p in people %}
+        <label class="pt-person">
+          <input type="radio" name="user" value="{{ p.id }}" data-name="{{ p.name }}"{% if p.id == selected or (not selected and people.length == 1) %} checked{% endif %}>
+          <span class="pt-person-avatar" aria-hidden="true">{{ p.initials }}</span>
+          <b class="pt-person-name">{{ p.name }}</b>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <div class="pt-who-pin">
+        <label class="pt-field-label" for="pt-who-pin-input" id="pt-who-pin-label" data-generic="{{ t('portal.who.pin') }}" data-named="{{ t('portal.who.pin_of', { name: '__NAME__' }) }}">{{ t('portal.who.pin') }}</label>
+        <input class="pt-pin-input" type="password" id="pt-who-pin-input" name="pin" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="6" autocomplete="off" required>
+      </div>
+      <label class="pt-check"><input type="checkbox" name="remember" value="1">{{ t('portal.who.remember') }}</label>
+      <button type="submit" class="pt-btn pt-btn-primary pt-btn-block" id="pt-who-submit" data-generic="{{ t('portal.who.continue') }}" data-named="{{ t('portal.who.continue_as', { name: '__NAME__' }) }}">{{ t('portal.who.continue') }}</button>
+    </form>
+    {% else %}
+    <p class="pt-who-empty" id="pt-who-empty">{{ t('portal.who.nobody') }}</p>
+    {% endif %}
+
+    <div class="pt-who-anon">
+      <form method="POST" action="/portal/anonymous" class="pt-inline">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <span>{{ t('portal.who.without') }}</span>
+        <button type="submit" class="pt-linkbtn" id="pt-who-anon">{{ t('portal.who.anonymous') }}</button>
+      </form>
+    </div>
+  </div>
+  <div class="pt-who-foot">{{ appName }}</div>
+</main>
+</body>
+</html>

@@ -866,6 +866,14 @@
     const u = d.user;
     const webLogin = u.role === 'admin' || u.self_service_enabled;
     if (u.role !== 'admin') renderMemberAccess(panel, d);
+
+    // Portal PIN (shared devices, "Wer bist du?"): set by the person
+    // (invitation or Konto & Sicherheit), the admin can only remove it.
+    const pinOn = !!u.has_portal_pin;
+    const pinBtn = el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', id: 'us-pin-reset', disabled: !pinOn, on: { click: () => resetPin(u) } }, T('us.sec.pin_reset'));
+    panel.appendChild(secRow(T('us.sec.pin'), pinOn ? T('us.sec.pin_on') : T('us.sec.pin_off'), pinOn ? 'good' : 'off',
+      pinOn ? T('us.sec.pin_hint_on') : (u.role === 'admin' || u.self_service_enabled ? T('us.sec.pin_hint_off') : T('us.sec.pin_hint_invite')), [pinBtn]));
+
     if (!webLogin) return;
 
     // Password
@@ -971,6 +979,11 @@
     const ok = await D.confirm({ title: T('us.sec.reset_title'), message: T('us.sec.reset_text', { name: nameOf(u) }), okLabel: T('us.sec.reset_ok'), danger: true });
     if (!ok) return;
     try { await call('DELETE', '/api/v1/users/' + u.id + '/2fa'); toast(T('us.sec.reset_done')); await afterChange(); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
+  }
+  async function resetPin(u) {
+    const ok = await D.confirm({ title: T('us.sec.pin_reset_title', { name: nameOf(u) }), message: T('us.sec.pin_reset_text', { name: firstName(u) }), okLabel: T('us.sec.pin_reset_ok'), danger: true });
+    if (!ok) return;
+    try { await call('DELETE', '/api/v1/users/' + u.id + '/portal-pin'); toast(T('us.sec.pin_reset_done')); await afterChange(); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
   }
   async function removePasskey(u, k) {
     const ok = await D.confirm({ title: T('us.sec.passkey_remove_title'), message: T('us.sec.passkey_remove_text', { name: k.name, user: nameOf(u) }), okLabel: T('us.sec.passkey_remove_ok'), danger: true });
@@ -1436,7 +1449,7 @@
   });
 
   // ── Edit access ────────────────────────────────────────────────────
-  const ed = { token: null, owner: null, ownerId: null, st: null, stChanged: false, stEditor: null };
+  const ed = { token: null, owner: null, ownerId: null, st: null, stChanged: false, stEditor: null, usage: 'single', usageUsers: [] };
 
   function openEdit(t, owner) {
     ed.token = t;
@@ -1464,8 +1477,65 @@
     show($('us-ed-date-wrap'), false);
     renderEditRights();
     renderEditFacts();
+    ed.usage = t.device_usage === 'multi' ? 'multi' : 'single';
+    ed.usageUsers = (t.device_users || []).slice();
+    renderEditUsage();
     setError('us-ed-error', '');
     openDlg('us-dlg-edit');
+  }
+
+  // ── "Wer nutzt dieses Gerät?" (portal; AdminGeraet.dc.html) ──────────
+  // single: the portal shows the owner right away when the device connects.
+  // multi:  shared device — "Wer bist du?" + portal PIN; the owner is always
+  //         allowed, the admin ticks who else may pick themselves.
+  function pinState(u) {
+    if (u.has_portal_pin) return { text: T('us.usage.pin_set'), tone: 'good' };
+    return { text: u.role === 'admin' ? T('us.usage.pin_missing_admin') : T('us.usage.pin_missing'), tone: 'warn' };
+  }
+  function renderEditUsage() {
+    const t = ed.token;
+    const box = $('us-ed-usage');
+    show(box, isDevice(t));
+    if (!isDevice(t)) return;
+    const owner = ownerOf(ed.ownerId);
+    const modes = clear($('us-ed-usage-modes'));
+    [['single', 'us.usage.single', 'us.usage.single_text'], ['multi', 'us.usage.multi', 'us.usage.multi_text']].forEach((m) => {
+      const on = ed.usage === m[0];
+      modes.appendChild(el('button', { type: 'button', class: 'us-usage-mode' + (on ? ' is-on' : ''), 'aria-pressed': on ? 'true' : 'false', 'data-scope': m[0],
+        on: { click: () => { if (ed.usage === m[0]) return; ed.usage = m[0]; $('us-dlg-edit')._dirtyForce = true; renderEditUsage(); } } },
+      [el('b', null, T(m[1])), el('span', { class: 'us-hint' }, T(m[2]))]));
+    });
+    const detail = clear($('us-ed-usage-detail'));
+    if (ed.usage === 'single') {
+      detail.appendChild(el('div', { class: 'us-usage-note' }, owner
+        ? [T('us.usage.single_note_pre'), el('b', null, nameOf(owner)), T('us.usage.single_note_post')]
+        : T('us.usage.single_no_owner')));
+      return;
+    }
+    const list = el('div', { class: 'us-usage-people' });
+    if (owner) {
+      const p = pinState(owner);
+      list.appendChild(el('label', { class: 'us-usage-person' }, [
+        el('input', { type: 'checkbox', checked: true, disabled: true }),
+        el('span', { class: 'us-grow' }, T('us.usage.owner', { name: nameOf(owner) })),
+        el('span', { class: 'us-usage-pin is-' + p.tone }, p.text),
+      ]));
+    }
+    state.users.filter((u) => u.enabled === 1 && u.id !== ed.ownerId).forEach((u) => {
+      const p = pinState(u);
+      const cb = el('input', { type: 'checkbox', checked: ed.usageUsers.indexOf(u.id) >= 0, 'data-user-id': String(u.id) });
+      cb.addEventListener('change', () => {
+        ed.usageUsers = ed.usageUsers.filter((x) => x !== u.id);
+        if (cb.checked) ed.usageUsers.push(u.id);
+        $('us-dlg-edit')._dirtyForce = true;
+      });
+      list.appendChild(el('label', { class: 'us-usage-person' }, [cb, el('span', { class: 'us-grow' }, nameOf(u)), el('span', { class: 'us-usage-pin is-' + p.tone }, p.text)]));
+    });
+    detail.appendChild(el('div', { class: 'us-usage-box' }, [
+      el('div', { class: 'us-usage-box-title' }, T('us.usage.people')),
+      list,
+      el('div', { class: 'us-hint' }, T('us.usage.pin_hint')),
+    ]));
   }
   $('us-ed-expiry').addEventListener('change', () => show($('us-ed-date-wrap'), $('us-ed-expiry').value === 'date'));
 
@@ -1545,6 +1615,7 @@
       renderEditRights();
       $('us-ed-rights').querySelectorAll('input[data-scope]').forEach((cb) => { if (!cb.disabled) cb.checked = keep.indexOf(cb.value) >= 0; });
       $('us-dlg-edit')._dirtyForce = true;
+      renderEditUsage();
     });
     host.appendChild(el('div', { class: 'us-fact us-fact-col' }, [
       el('div', { class: 'us-fact-row' }, [el('div', { class: 'us-fact-text' }, [el('div', { class: 'us-fact-title' }, T('us.ed.owner')), ownerVal]), ownerBtn]),
@@ -1568,6 +1639,11 @@
     if (!sameSet(scopes, t.scopes || [])) body.scopes = scopes;
     if (ed.ownerId !== t.user_id) body.user_id = ed.ownerId;
     if (ed.stChanged) body.split_tunnel_override = ed.stEditor ? ed.stEditor.value() : null;
+    if (isDevice(t)) {
+      if (ed.usage !== (t.device_usage === 'multi' ? 'multi' : 'single')) body.device_usage = ed.usage;
+      const users = ed.usage === 'multi' ? ed.usageUsers.filter((id) => id !== ed.ownerId) : (t.device_users || []);
+      if (!sameSet(users, t.device_users || [])) body.device_users = users;
+    }
     const btn = $('us-ed-save');
     if (!Object.keys(body).length) { closeDlg('us-dlg-edit'); return; }
     window.btnLoading(btn);

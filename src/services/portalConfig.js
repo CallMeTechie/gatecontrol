@@ -5,7 +5,8 @@ const settings = require('./settings');
 /**
  * Returns the current VPN landing portal configuration derived from settings.
  * All values default to enabled ('1') unless explicitly set to '0'.
- * Note: trustOwnerMapping defaults to disabled ('0') — unlike the widgets.
+ * trustOwnerMapping ("Geräte-Besitzer automatisch erkennen") defaults to on too
+ * since the portal redesign (migration 90).
  *
  * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean, midea: boolean, smarthome: boolean, skoda: boolean }, trustOwnerMapping: boolean }}
  */
@@ -23,7 +24,7 @@ function portalConfig() {
       smarthome: on('portal.widget.smarthome'),
       skoda:    on('portal.widget.skoda'),
     },
-    trustOwnerMapping: settings.get('portal.trust_owner_mapping', '0') !== '0',
+    trustOwnerMapping: settings.get('portal.trust_owner_mapping', '1') !== '0',
   };
 }
 

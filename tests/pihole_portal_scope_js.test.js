@@ -2,18 +2,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'); const path = require('node:path');
-test('portal.js wires scope switching to the 3 endpoints + login affordance, DOM-safe, PT, no raw fields', () => {
-  const js = fs.readFileSync(path.join(__dirname,'..','public','js','portal.js'),'utf8');
-  assert.ok(/hydratePiholeScope/.test(js), 'no hydratePiholeScope');
-  assert.ok(/data-scope|dataset\.scope/.test(js), 'no scope wiring');
-  assert.ok(/\/api\/v1\/portal\/pihole\/owner/.test(js) && /\/api\/v1\/portal\/pihole\/household/.test(js), 'missing endpoints');
-  assert.ok(/no_owner|login_required/.test(js) && /\/login/.test(js), 'no login affordance');
-  assert.ok(/\bPT\[/.test(js) && !/\bI18N\b/.test(js), 'must use PT i18n object');
-  // client-side leak guard (spec §7): scope render must not touch raw cache fields
+test('portal.js wires the Pi-hole scope switch to the 3 endpoints + login affordance, DOM-safe, no raw fields', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+  assert.ok(/function loadPihole\(/.test(js), 'no loadPihole');
+  assert.ok(/getAttribute\('data-scope'\)/.test(js), 'no scope wiring');
+  for (const u of ['/api/v1/portal/pihole', '/api/v1/portal/pihole/owner', '/api/v1/portal/pihole/household']) assert.ok(js.includes(`'${u}'`), u);
+  assert.ok(/no_owner/.test(js) && /login_required/.test(js) && js.includes("'/login?returnTo=/portal'"), 'no login affordance');
+  // Strings only from the island (T()), never concatenated into markup.
+  assert.ok(!/\.innerHTML|outerHTML|insertAdjacentHTML/.test(js), 'no HTML injection APIs');
+  // client-side leak guard (spec §7): never touches raw cache fields
   assert.ok(!/\.topClients\b|\.clients\b|data\.ip\b/.test(js), 'raw field referenced');
-  // DOM-safety: the login affordance must NOT be built by concatenating i18n text into innerHTML
-  assert.ok(!/innerHTML\s*[+=][^;]*PT\.pihole(NoOwner|LoginRequired)/.test(js), 'innerHTML + PT i18n (XSS risk)');
-  assert.ok(!/innerHTML\s*[+=][^;]*['"]\/login['"]/.test(js), 'login href via innerHTML');
-  // card-hide on unavailable must be gated to device scope only (owner/household must keep card+switcher visible)
-  assert.ok(/reason\s*===\s*['"]unavailable['"]\s*&&\s*scope\s*===\s*['"]device['"]/.test(js), 'unavailable card-hide must be gated to device scope');
+  // hiding on "unavailable" only for the first (device) load — owner/household keep the card
+  assert.ok(/first && scope === 'device' && body\.reason === 'unavailable'/.test(js), 'unavailable hide must be gated to the device scope');
 });
