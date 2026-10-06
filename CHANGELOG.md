@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.145.0] — 2026-10-06
+
+### Features
+- redesigned portal with automatic login on connect, shared-device PIN and own devices (#267)
+
+---
+
 ## [1.144.0] — 2026-10-06
 
 ### Features
