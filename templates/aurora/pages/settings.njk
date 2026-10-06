@@ -309,7 +309,12 @@
     {% call cardHead('st-c-mb', t('st.mb.title'), '', PRO) %}{% endcall %}
     {% if not has('machine_binding') %}{{ lockNote('machine_binding') }}{% endif %}
     {{ segRow('st-mb-mode', 'mb-mode', t('security.machine_binding.mode'), [['off', t('security.machine_binding.mode_off')], ['global', t('security.machine_binding.mode_global')], ['individual', t('security.machine_binding.mode_individual')]], t('st.mb.mode_hint'), disabled=not has('machine_binding')) }}
-    <div class="st-note">{{ t('st.mb.note') }}</div>
+    <ul class="st-note st-mb-facts" id="st-mb-facts">
+      <li>{{ t('st.mb.note') }}</li>
+      <li>{{ t('st.mb.not_peer') }}</li>
+      <li>{{ t('st.mb.users_hint') }} <a class="st-link" href="/users" id="st-mb-users-link">{{ t('st.mb.users_link') }}</a></li>
+      <li>{{ t('st.mb.clients') }}</li>
+    </ul>
   </section>
 </section>
 

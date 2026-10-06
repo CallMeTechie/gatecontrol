@@ -1822,6 +1822,16 @@ const migrations = [
         WHERE key IN ('alerts.email', 'monitoring.alert_email', 'monitoring.email_alerts', 'notify.update_email');`,
     detect: (db) => tableExists(db, 'settings') && !!db.prepare("SELECT 1 FROM settings WHERE key = 'notifications.email'").get(),
   },
+  {
+    version: 88,
+    name: 'add_machine_bound_at',
+    // When a token was bound to its device (machine binding): set with the
+    // fingerprint in tokens.bindMachineFingerprint (client request or setup
+    // code), cleared by the admin reset. Tokens bound before this migration
+    // keep NULL (the Users page then shows no "since").
+    sql: 'ALTER TABLE api_tokens ADD COLUMN machine_bound_at TEXT;',
+    detect: (db) => hasColumn(db, 'api_tokens', 'machine_bound_at'),
+  },
 ];
 
 module.exports = { migrations };

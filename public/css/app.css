@@ -5962,3 +5962,35 @@ td .tf-badge { margin-left: 6px; }
 .pk-item-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .pk-item-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
 .pk-empty { font-size: 12px; color: var(--text-3); }
+/* Device binding per token on the Users page (mb-): status, per-token switch,
+   reset. Binds a token to the client device's hardware fingerprint — not the
+   token→peer binding. The switch reuses .st-switch (settings). */
+.mb-explain { margin: 0 0 8px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+.mb-explain[hidden] { display: none; }
+.mb-token { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.mb-area { display: flex; flex-direction: column; gap: 6px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-base); font-size: 12px; }
+.mb-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.mb-title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2, var(--muted)); }
+.mb-pro { display: inline-flex; align-items: center; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1.6; color: var(--db-warn-ink, var(--amber)); background: var(--amber-bg); border: 1px solid var(--amber-bd); white-space: nowrap; }
+.mb-eff { margin-left: auto; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; line-height: 1.6; color: var(--pf-green-ink, var(--green)); background: var(--green-lt); border: 1px solid var(--green-bd, var(--green)); }
+.mb-eff-global { color: var(--pf-teal-ink, var(--teal)); background: var(--teal-soft); border-color: var(--pf-teal-bd, var(--teal)); }
+.mb-status { display: flex; align-items: baseline; gap: 7px; line-height: 1.45; color: var(--text-1, var(--text)); }
+.mb-status-text { min-width: 0; overflow-wrap: anywhere; }
+.mb-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); transform: translateY(-1px); }
+.mb-status-bound .mb-dot { background: var(--green); }
+.mb-status-pending .mb-dot { background: var(--amber); }
+.mb-status-off { color: var(--text-3); }
+.mb-fp { font-family: var(--font-mono); font-size: 11.5px; padding: 0 4px; border-radius: 4px; background: var(--chip, var(--bg-card)); border: 1px solid var(--border); }
+.mb-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.mb-ctl .st-switch { width: 40px; height: 24px; }
+.mb-ctl .st-switch .st-knob { width: 16px; height: 16px; }
+.mb-ctl .st-switch[aria-checked="true"] .st-knob { transform: translateX(16px); }
+.mb-switch-label { font-size: 12px; cursor: pointer; }
+.mb-switch:disabled + .mb-switch-label { color: var(--text-3); cursor: not-allowed; }
+.mb-ctl .btn.mb-reset { margin-left: auto; padding: 5px 10px; font-size: 11.5px; border-radius: 8px; }
+.mb-hint { font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+.mb-hint-lock { display: flex; align-items: center; gap: 6px; color: var(--db-warn-ink, var(--amber)); }
+.mb-link { color: var(--pf-teal-ink, var(--teal)); font-weight: 600; }
+.mb-locked .mb-status, .mb-locked .mb-ctl { opacity: .6; }
+/* Settings → Gerätebindung: the facts list (one .st-note, bullets) */
+.st-note.st-mb-facts { display: flex; flex-direction: column; gap: 6px; padding-left: 30px; line-height: 1.5; }
