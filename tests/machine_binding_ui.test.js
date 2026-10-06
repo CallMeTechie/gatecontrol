@@ -256,12 +256,16 @@ describe('templates', () => {
     it(`/users (${lang}): area hooks present, no raw keys, every island string translated`, async () => {
       const res = await agent.get(`/users?lang=${lang}`).expect(200);
       const html = res.text;
-      assert.ok(html.includes('id="mb-explain"'));
-      assert.ok(html.includes('id="mb-users-i18n"'));
+      // The binding block lives in the "Zugang bearbeiten" dialog; its strings
+      // come with the page island (#us-i18n, prefix users.mb.).
+      assert.ok(html.includes('id="us-dlg-edit"'));
+      assert.ok(html.includes('id="us-i18n"'));
       const visible = withoutScripts(html);
       assert.ok(!/users\.mb\.|st\.mb\./.test(visible), 'raw key in the page');
-      const start = html.indexOf('id="mb-users-i18n">') + 'id="mb-users-i18n">'.length;
-      const island = JSON.parse(html.slice(start, html.indexOf('</script>', start)));
+      const start = html.indexOf('>', html.indexOf('id="us-i18n"')) + 1;
+      const all = JSON.parse(html.slice(start, html.indexOf('</script>', start)));
+      const island = {};
+      Object.keys(all).filter((k) => k.startsWith('users.mb.')).forEach((k) => { island[k.slice('users.mb.'.length)] = all[k]; });
       const used = fs.readFileSync(path.join(ROOT, 'public/js/users.js'), 'utf8').match(/mbT\('([a-z_]+)'/g)
         .map((m) => m.slice(5, -1));
       for (const k of new Set(used)) {

@@ -1832,6 +1832,40 @@ const migrations = [
     sql: 'ALTER TABLE api_tokens ADD COLUMN machine_bound_at TEXT;',
     detect: (db) => hasColumn(db, 'api_tokens', 'machine_bound_at'),
   },
+  {
+    version: 89,
+    name: 'users_self_service',
+    // Users page redesign + "Mein Bereich" (member self-service area).
+    //   users.self_service_enabled  a member ('user' role) may log in to the
+    //                               web UI and sees only /me and /profile.
+    //                               Opt-in per member (invitation link).
+    //                               Members with a real password from before
+    //                               (e.g. a demoted admin) keep their login.
+    //   users.self_enroll_enabled   the member may create a setup code for
+    //                               an own new device on /me (default off)
+    //   users.must_change_password  the next login asks for a new password
+    //                               before the session is established
+    //   users.password_changed_at   shown on the Users page
+    //   user_invites                one-time invitation links (SHA-256 of the
+    //                               token at rest, 72 h, single use)
+    sql: `
+      ALTER TABLE users ADD COLUMN self_service_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN self_enroll_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN password_changed_at TEXT;
+      UPDATE users SET self_service_enabled = 1 WHERE role = 'user' AND password_hash <> '!';
+      CREATE TABLE IF NOT EXISTS user_invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_by INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_invites_user ON user_invites(user_id);`,
+    detect: (db) => hasColumn(db, 'users', 'self_service_enabled') && tableExists(db, 'user_invites'),
+  },
 ];
 
 module.exports = { migrations };

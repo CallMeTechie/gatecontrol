@@ -317,7 +317,8 @@ describe('layout wiring and stylesheet', () => {
     const layout = read('templates/aurora/layout.njk');
     assert.equal(layout.split('<link rel="stylesheet"').length - 1, 1, 'exactly one stylesheet link');
     assert.match(layout, /<link rel="stylesheet" href="\/css\/app\.css\?v=\{\{ appVersion \}\}">/);
-    assert.match(layout, /<script src="\/js\/events\.js\?v=\{\{ appVersion \}\}"><\/script>\n<script src="\/js\/license-hint\.js\?v=\{\{ appVersion \}\}"><\/script>/);
+    // events.js (the admin SSE feed) only for admin sessions; license-hint.js right after it.
+    assert.match(layout, /<script src="\/js\/events\.js\?v=\{\{ appVersion \}\}"><\/script>\{% endif %\}\n<script src="\/js\/license-hint\.js\?v=\{\{ appVersion \}\}"><\/script>/);
     assert.equal(layout.split('/js/license-hint.js').length, 2);
   });
 

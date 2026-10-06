@@ -48,9 +48,19 @@ const ENROLLABLE_SCOPES = [
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
   'pihole', 'pihole:control',
 ];
+// Default rights of a new device when the caller names none: the app
+// scopes. Pi-hole statistics are opt-in per device for members (wizard /
+// "Zugang bearbeiten"); administrators' devices keep getting them by
+// default, as before. Both lists stay inside the role cap
+// (services/users.js ROLE_SCOPES).
 const DEFAULT_SCOPES = [
-  'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp', 'pihole',
+  'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
 ];
+const ADMIN_DEFAULT_SCOPES = [...DEFAULT_SCOPES, 'pihole'];
+
+function defaultScopesFor(role) {
+  return role === 'admin' ? ADMIN_DEFAULT_SCOPES : DEFAULT_SCOPES;
+}
 const TOKEN_NAME_PREFIX = 'App: ';
 
 function _generateCode() {
@@ -84,11 +94,11 @@ function _error(code, message) {
  * present (register/config/ping need it), capped by the owner's role.
  */
 function resolveScopes(requested, userId) {
-  const base = Array.isArray(requested) && requested.length ? requested : DEFAULT_SCOPES;
+  const user = userId != null ? users.getById(userId) : null;
+  if (userId != null && !user) throw _error('user_not_found');
+  const base = Array.isArray(requested) && requested.length ? requested : defaultScopesFor(user ? user.role : 'admin');
   let scopes = [...new Set(['client', ...base])].filter((s) => ENROLLABLE_SCOPES.includes(s));
-  if (userId != null) {
-    const user = users.getById(userId);
-    if (!user) throw _error('user_not_found');
+  if (user) {
     scopes = users.filterScopesForRole(scopes, user.role);
   }
   if (!scopes.includes('client')) throw _error('no_valid_scopes');
@@ -109,7 +119,8 @@ function _bindingActive(tokenRow) {
  *                   (effective when machine binding is licensed + enabled)
  * Returns { code, expiresAt, scopes, peerId, userId } — cleartext code once.
  */
-function createCode({ peerId = null, userId, scopes, machineBinding = false } = {}) {
+function createCode({ peerId = null, userId, scopes, machineBinding = false,
+  name = null, expiresAt = null, splitTunnelOverride = null } = {}) {
   const db = getDb();
   let peer = null;
   if (peerId != null) {
@@ -122,6 +133,19 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false } = 
     ? Number(userId)
     : (peer && peer.user_id != null ? Number(peer.user_id) : null);
   if (peer == null && ownerId == null) throw _error('target_required');
+  // An existing peer that belongs to someone else is never handed to another
+  // owner's device.
+  if (peer && ownerId != null && peer.user_id != null && Number(peer.user_id) !== ownerId) throw _error('peer_owner_mismatch');
+  if (ownerId != null) {
+    const owner = users.getById(ownerId);
+    if (owner && owner.enabled !== 1) throw _error('user_disabled');
+  }
+  const tokenName = name != null && String(name).trim() ? String(name).trim() : null;
+  if (tokenName && tokenName.length > 100) throw _error('name_too_long');
+  if (expiresAt) {
+    const d = new Date(expiresAt);
+    if (isNaN(d.getTime()) || d <= new Date()) throw _error('expiry_in_past');
+  }
 
   const resolvedScopes = resolveScopes(scopes, ownerId);
 
@@ -132,20 +156,22 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false } = 
   }
 
   const code = _generateCode();
-  const expiresAt = Date.now() + CODE_TTL_MS;
+  const codeExpiresAt = Date.now() + CODE_TTL_MS;
   db.prepare(`
-    INSERT INTO client_enrollment_codes (code_hash, peer_id, user_id, scopes, machine_binding, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO client_enrollment_codes (code_hash, peer_id, user_id, scopes, machine_binding, expires_at,
+      token_name, token_expires_at, split_tunnel_override)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(_hashCode(code), peer ? peer.id : null, ownerId, JSON.stringify(resolvedScopes),
-    machineBinding ? 1 : 0, expiresAt);
+    machineBinding ? 1 : 0, codeExpiresAt, tokenName, expiresAt || null,
+    splitTunnelOverride ? JSON.stringify(splitTunnelOverride) : null);
 
   try {
     activity.log('client_enrollment_created',
       peer ? `App setup code created for peer "${peer.name}"` : 'App setup code created for a new device',
-      { source: 'admin', severity: 'info', details: { peerId: peer ? peer.id : null, userId: ownerId, scopes: resolvedScopes, expiresAt } });
+      { source: 'admin', severity: 'info', details: { peerId: peer ? peer.id : null, userId: ownerId, scopes: resolvedScopes, expiresAt: codeExpiresAt } });
   } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_created)'); }
 
-  return { code, expiresAt, scopes: resolvedScopes, peerId: peer ? peer.id : null, userId: ownerId };
+  return { code, expiresAt: codeExpiresAt, scopes: resolvedScopes, peerId: peer ? peer.id : null, userId: ownerId };
 }
 
 /**
@@ -162,7 +188,12 @@ function createTokenCode({ name, scopes, userId = null, peerId = null, expiresAt
   if (name.trim().length > 100) throw _error('name_too_long');
   const ownerId = userId != null ? Number(userId) : null;
   const resolvedScopes = resolveTokenScopes(scopes, ownerId);
-  if (peerId != null && !peers.getById(Number(peerId))) throw _error('peer_not_found');
+  if (ownerId != null && users.getById(ownerId).enabled !== 1) throw _error('user_disabled');
+  if (peerId != null) {
+    const peer = peers.getById(Number(peerId));
+    if (!peer) throw _error('peer_not_found');
+    if (ownerId != null && peer.user_id != null && Number(peer.user_id) !== ownerId) throw _error('peer_owner_mismatch');
+  }
   if (expiresAt) {
     const d = new Date(expiresAt);
     if (isNaN(d.getTime()) || d <= new Date()) throw _error('expiry_in_past');
@@ -337,11 +368,15 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     }
 
     const created = tokens.create({
-      name: `${TOKEN_NAME_PREFIX}${peer.name}`.substring(0, 100),
+      name: (row.token_name || `${TOKEN_NAME_PREFIX}${peer.name}`).substring(0, 100),
       scopes,
+      // An expiry chosen in the wizard that has passed while the code waited
+      // is dropped rather than failing the redeem (the code itself is 10 min).
+      expiresAt: row.token_expires_at && new Date(row.token_expires_at) > new Date() ? row.token_expires_at : null,
       machineBindingEnabled: row.machine_binding === 1,
       userId: row.user_id,
       peerId: peer.id,
+      splitTunnelOverride: row.split_tunnel_override || null,
     }, sourceIp);
     createdTokenId = created.token.id;
     db.prepare('UPDATE api_tokens SET enrolled = 1 WHERE id = ?').run(created.token.id);
@@ -407,7 +442,9 @@ module.exports = {
   redeemCode,
   normalizeCode,
   resolveScopes,
+  defaultScopesFor,
   ENROLLABLE_SCOPES,
   DEFAULT_SCOPES,
+  ADMIN_DEFAULT_SCOPES,
   CODE_TTL_MS,
 };

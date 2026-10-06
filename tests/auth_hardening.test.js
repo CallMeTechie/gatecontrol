@@ -22,10 +22,11 @@ after(() => teardown());
 
 function db() { return require('../src/db/connection').getDb(); }
 
+// A member ('user') signs in only with "Mein Bereich" (self_service_enabled).
 async function createLoginUser(username, role = 'user', password = 'Plain!Pass1234') {
   const hash = await argon2.hash(password, require('../src/utils/argon2Options'));
-  const id = db().prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-    .run(username, hash, role).lastInsertRowid;
+  const id = db().prepare('INSERT INTO users (username, password_hash, role, self_service_enabled) VALUES (?, ?, ?, ?)')
+    .run(username, hash, role, role === 'user' ? 1 : 0).lastInsertRowid;
   return Number(id);
 }
 

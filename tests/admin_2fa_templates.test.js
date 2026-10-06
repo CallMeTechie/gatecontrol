@@ -25,7 +25,7 @@ test('two_fa.* keys exist in de and en with identical key sets, inserted as one 
   const enKeys = Object.keys(en).filter((k) => k.startsWith('two_fa.'));
   assert.ok(deKeys.length >= 40);
   assert.deepEqual(deKeys, enKeys);
-  for (const k of ['two_fa.login_title', 'two_fa.use_recovery', 'two_fa.error_expired', 'two_fa.settings_require', 'two_fa.users_reset']) {
+  for (const k of ['two_fa.login_title', 'two_fa.use_recovery', 'two_fa.error_expired', 'two_fa.settings_require', 'two_fa.disable']) {
     assert.ok(de[k] && en[k], k);
   }
   // contiguous block
@@ -89,9 +89,10 @@ test('profile card, users modal row and settings toggle render', async () => {
     assert.match(setup.text, /id="tf-card"[^>]*data-setup="1"/, theme);
 
     const users = await agent.get('/users').expect(200);
-    assert.match(users.text, /id="user-2fa-section"/, theme);
-    assert.match(users.text, /id="btn-user-2fa-reset"/, theme);
-    assert.match(users.text, /id="tf-users-i18n"/, theme);
+    // Users page: 2FA state + reset live in the tab "Anmeldung & Sicherheit"
+    // (rendered by users.js from the us-i18n island).
+    assert.match(users.text, /id="us-panel-security"/, theme);
+    assert.match(users.text, /id="us-i18n"[^>]*>[^<]*"us\.sec\.reset"/, theme);
 
     const settingsPage = await agent.get('/settings').expect(200);
     assert.match(settingsPage.text, /id="st-page"[^>]*data-user-2fa="0"/, theme);

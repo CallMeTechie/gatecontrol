@@ -42,6 +42,8 @@ const ERROR_STATUS = {
   name_required: 400,
   name_too_long: 400,
   expiry_in_past: 400,
+  peer_owner_mismatch: 400,
+  user_disabled: 400,
 };
 
 /**
@@ -62,7 +64,8 @@ function createTokenCodeFromBody(body) {
 
 /**
  * POST /api/v1/enrollment
- * Body (device, default): { peerId?, userId?, scopes?, machineBinding? }
+ * Body (device, default): { peerId?, userId?, scopes?, machineBinding?, name?,
+ *   expires_at?, split_tunnel_override? }
  *   peerId  → the app takes over this peer (IP + config stay)
  *   userId only → a new peer owned by that user is created on redeem
  * Body (kind 'token', the token wizard): { kind:'token', name, scopes, userId,
@@ -81,11 +84,18 @@ router.post('/', async (req, res) => {
       result = createTokenCodeFromBody(body);
     } else {
       const { peerId, userId, scopes, machineBinding } = body;
+      if (body.split_tunnel_override) {
+        const stErr = validateSplitTunnelPreset(body.split_tunnel_override);
+        if (stErr) return res.status(400).json({ ok: false, error: stErr });
+      }
       result = enrollment.createCode({
         peerId: peerId != null && peerId !== '' ? Number(peerId) : null,
         userId: userId != null && userId !== '' ? Number(userId) : undefined,
         scopes: Array.isArray(scopes) ? scopes : undefined,
         machineBinding: !!machineBinding,
+        name: typeof body.name === 'string' ? body.name : null,
+        expiresAt: body.expires_at || null,
+        splitTunnelOverride: body.split_tunnel_override || null,
       });
     }
     const url = publicServerUrl(req);

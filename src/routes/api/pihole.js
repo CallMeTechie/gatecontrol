@@ -11,7 +11,19 @@ const router = Router();
 
 router.use(requireFeature('pihole_integration'));
 
+// A member's device (token owned by a non-admin account) only ever sees its
+// own row in the per-client list — the counts of other people's devices are
+// not theirs to see. Admins' tokens keep the opt-in ?scope=self.
+function isMemberToken(req) {
+  if (!req.tokenAuth || !req.tokenUserId) return false;
+  const owner = require('../../services/users').getById(req.tokenUserId);
+  return !owner || owner.role !== 'admin';
+}
+
 function scopeFilter(req, items) {
+  if (isMemberToken(req)) {
+    return req.tokenPeerId ? (items || []).filter(c => c.peerId === req.tokenPeerId) : [];
+  }
   if (req.query.scope === 'self' && req.tokenPeerId) {
     return (items || []).filter(c => c.peerId === req.tokenPeerId);
   }

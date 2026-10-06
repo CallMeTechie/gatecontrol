@@ -1,0 +1,66 @@
+{% extends theme + "/layout.njk" %}
+
+{#- "Mein Bereich" (member self-service): own devices, what the account
+    reaches, lock a lost device, set up a new one (when allowed). Data from
+    /api/v1/me/* only — always the signed-in account (routes/api/me.js).
+    Strings: #me-i18n (routes/index.js ME_I18N_PREFIXES). -#}
+
+{% block content %}
+<div class="me-page" id="me-page">
+  <div class="page-header me-header">
+    <div>
+      <div class="page-eyebrow">{{ t('me.title') }}</div>
+      <h1 class="page-title" id="me-hello">{{ t('me.hello', { name: (user.display_name or user.username).split(' ')[0] if user else '' }) }}</h1>
+      <p class="page-sub" id="me-intro">{{ t('me.intro_plain') }}</p>
+    </div>
+  </div>
+
+  <div class="me-grid">
+    <section class="me-card" aria-labelledby="me-dev-title">
+      <div class="me-card-head">
+        <h2 class="me-card-title" id="me-dev-title">{{ t('me.devices') }}</h2>
+        <button type="button" class="btn btn-sm btn-primary" id="me-enroll" hidden>{{ t('me.new_device') }}</button>
+      </div>
+      <ul class="me-list" id="me-devices"><li class="me-empty">{{ t('common.loading') }}</li></ul>
+      <p class="me-foot" id="me-lost">{{ t('me.lost') }}</p>
+    </section>
+    <section class="me-card" aria-labelledby="me-svc-title">
+      <div class="me-card-head me-card-head-col">
+        <h2 class="me-card-title" id="me-svc-title">{{ t('me.services') }}</h2>
+        <div class="me-sub">{{ t('me.services_sub') }}</div>
+      </div>
+      <ul class="me-list" id="me-services"><li class="me-empty">{{ t('common.loading') }}</li></ul>
+    </section>
+  </div>
+  <div class="me-note" id="me-note">{{ t('me.footer_plain') }}</div>
+</div>
+
+<div class="modal-overlay me-dlg" id="me-dlg-enroll" style="display:none">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="me-enroll-title">
+    <div class="modal-head"><h2 class="modal-title" id="me-enroll-title">{{ t('me.enroll_title') }}</h2><button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body">
+      <div id="me-enroll-ask">
+        <p class="me-sub">{{ t('me.enroll_text') }}</p>
+        <label class="me-check" id="me-enroll-pihole-wrap"{% if not license.features.pihole_integration %} hidden{% endif %}><input type="checkbox" id="me-enroll-pihole">{{ t('me.enroll_pihole') }}</label>
+      </div>
+      <div class="me-code" id="me-enroll-code" hidden>
+        <img id="me-enroll-qr" alt="{{ t('me.qr') }}" width="220" height="220">
+        <div class="me-code-value" id="me-enroll-value"></div>
+        <div class="me-sub" id="me-enroll-countdown" aria-live="polite"></div>
+        <p class="me-sub">{{ t('me.enroll_help') }}</p>
+      </div>
+      <div class="me-error" id="me-enroll-error" role="alert" hidden></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.close') }}</button>
+      <button type="button" class="btn btn-primary" id="me-enroll-create">{{ t('me.enroll_create') }}</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="me-i18n" data-prefixes="me. common. error.me. enrollment. error.enrollment." nonce="{{ cspNonce }}">{{ meI18n | default('{}') | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/me.js?v={{ appVersion }}"></script>
+{% endblock %}

@@ -60,6 +60,8 @@ router.use('/webhooks', require('./webhooks'));
 router.use('/users', require('./users'));
 router.use('/enrollment', require('./enrollment'));
 router.use('/profile', require('./profile'));
+// "Mein Bereich" (member self-service, session only, own account only)
+router.use('/me', require('./me'));
 router.use('/tokens', require('./tokens'));
 router.use('/license', require('./license'));
 router.use('/client', require('./client'));

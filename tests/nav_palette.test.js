@@ -26,7 +26,7 @@ function renderLayout(activeNav, features) {
     theme: 'aurora', language: 'de', t, availableLanguages: ['de', 'en'],
     license: { features: features || {}, hasFeature: () => false },
     cspNonce: 'N', csrfToken: 'c', appVersion: '9.9.9', appName: 'GateControl', baseUrl: 'https://gc.example.com',
-    user: { username: 'admin', display_name: 'Admin' }, title: 'T', activeNav, flash: {}, peerCount: 2, routeCount: 7,
+    user: { username: 'admin', display_name: 'Admin', role: 'admin' }, title: 'T', activeNav, flash: {}, peerCount: 2, routeCount: 7,
   });
 }
 const ALL = { gateway_pools: true, internal_dns: true, pihole_integration: true, waf: true, midea_integration: true, skoda_integration: true, smarthome: true };

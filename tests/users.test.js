@@ -146,7 +146,7 @@ describe('users.update()', () => {
       role: 'admin',
       password: 'Pass123!',
     });
-    const updated = users.update(created.id, { displayName: 'New Name' });
+    const updated = await users.update(created.id, { displayName: 'New Name' });
     assert.equal(updated.display_name, 'New Name');
   });
 
@@ -163,7 +163,7 @@ describe('users.update()', () => {
     const remaining = users.list().filter((u) => u.role === 'admin');
     assert.equal(remaining.length, 1, 'Should have exactly 1 admin');
 
-    assert.throws(
+    await assert.rejects(
       () => users.update(remaining[0].id, { role: 'user' }),
       { message: 'Cannot change role of last admin' },
     );
@@ -244,9 +244,10 @@ describe('users.remove()', () => {
 // ─── getAllowedScopes() ──────────────────────────────────────
 
 describe('users.getAllowedScopes()', () => {
-  it('should return only client* scopes for user role', () => {
+  it('should return the client* scopes plus read-only Pi-hole for user role', () => {
     const scopes = users.getAllowedScopes('user');
-    assert.deepEqual(scopes, ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp']);
+    assert.deepEqual(scopes, ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp', 'pihole']);
+    assert.ok(!scopes.includes('pihole:control'), 'members never control Pi-hole');
   });
 
   it('should return all VALID_SCOPES for admin role', () => {

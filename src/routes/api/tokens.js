@@ -107,6 +107,55 @@ router.put('/:id/assign', (req, res) => {
 });
 
 /**
+ * PATCH /api/v1/tokens/:id — Edit a token ("Zugang bearbeiten")
+ * Body (all optional): { name, expires_at (ISO | null = never), scopes,
+ *   user_id (new owner | null), split_tunnel_override (preset | null) }
+ * Scopes are capped by the role of the (new) owner; the answer lists the
+ * requested scopes that were dropped (`dropped`).
+ */
+router.patch('/:id', (req, res) => {
+  if (req.tokenAuth) {
+    return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
+  }
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    const body = req.body || {};
+    const data = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.expires_at !== undefined) data.expiresAt = body.expires_at || null;
+    if (body.scopes !== undefined) {
+      if (!Array.isArray(body.scopes) || !body.scopes.length) {
+        return res.status(400).json({ ok: false, error: req.t('error.tokens.scopes_required') });
+      }
+      data.scopes = body.scopes;
+    }
+    if (body.user_id !== undefined) data.userId = body.user_id === null || body.user_id === '' ? null : Number(body.user_id);
+    if (body.split_tunnel_override !== undefined) {
+      if (body.split_tunnel_override) {
+        const stErr = validateSplitTunnelPreset(body.split_tunnel_override);
+        if (stErr) return res.status(400).json({ ok: false, error: stErr });
+      }
+      data.splitTunnelOverride = body.split_tunnel_override || null;
+    }
+    const result = tokens.update(id, data, { ip: req.ip, actorId: req.session && req.session.userId });
+    res.json({ ok: true, token: tokens.toAdminView(result.token), dropped: result.dropped });
+  } catch (err) {
+    if (err.message === 'Token not found') {
+      return res.status(404).json({ ok: false, error: req.t('error.tokens.not_found') });
+    }
+    if (err.code === 'USER_NOT_FOUND') return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    if (err.code === 'OWNER_DISABLED') return res.status(400).json({ ok: false, error: req.t('error.users.disabled') });
+    if (err.code === 'NO_VALID_SCOPES') return res.status(400).json({ ok: false, error: req.t('error.users.no_valid_scopes') });
+    if (err.message.includes('required')) return res.status(400).json({ ok: false, error: req.t('error.tokens.name_required') });
+    if (err.message.includes('too long')) return res.status(400).json({ ok: false, error: req.t('error.enrollment.name_too_long') });
+    if (err.message.includes('future')) return res.status(400).json({ ok: false, error: req.t('error.enrollment.expiry_in_past') });
+    if (err.message.startsWith('Invalid scope')) return res.status(400).json({ ok: false, error: err.message });
+    logger.error({ error: err.message }, 'Failed to update token');
+    res.status(500).json({ ok: false, error: req.t('error.tokens.update') });
+  }
+});
+
+/**
  * DELETE /api/v1/tokens/:id — Revoke a token
  */
 router.delete('/:id', (req, res) => {
