@@ -36,6 +36,50 @@
 
   // ── DOM helpers ────────────────────────────────────────────────────
   const SVGNS = 'http://www.w3.org/2000/svg';
+  // Attributes the DOM helper may set: a fixed list of literal names, so no
+  // text (server or exception text) can ever become an event handler, a
+  // script URL or markup. href only for same-origin paths or https URLs.
+  function safeHref(v) {
+    const s = String(v == null ? '' : v);
+    if (/^\/(?![/\\])/.test(s) && s.indexOf('\\') < 0) return s;
+    if (/^#[\w-]*$/.test(s)) return s;
+    try {
+      const u = new URL(s);
+      if (u.protocol === 'https:') return u.href;
+    } catch (_) { /* not a URL */ }
+    return '#';
+  }
+  function setAttr(n, k, v) {
+    const s = v === true ? '' : String(v);
+    switch (k) {
+      case 'id': n.id = s; break;
+      case 'title': n.title = s; break;
+      case 'role': n.setAttribute('role', s); break;
+      case 'for': n.htmlFor = s; break;
+      case 'href': n.setAttribute('href', safeHref(v)); break;
+      case 'target': if (s === '_blank') n.target = '_blank'; break;
+      case 'rel': n.rel = s; break;
+      case 'colspan': n.setAttribute('colspan', String(Number(v) || 1)); break;
+      case 'rows': n.setAttribute('rows', String(Number(v) || 1)); break;
+      case 'maxlength': n.setAttribute('maxlength', String(Number(v) || 0)); break;
+      case 'placeholder': n.placeholder = s; break;
+      case 'spellcheck': n.spellcheck = s !== 'false'; break;
+      case 'novalidate': n.noValidate = true; break;
+      case 'datetime': n.setAttribute('datetime', s); break;
+      case 'aria-hidden': n.setAttribute('aria-hidden', s); break;
+      case 'aria-label': n.setAttribute('aria-label', s); break;
+      case 'aria-checked': n.setAttribute('aria-checked', s); break;
+      case 'aria-pressed': n.setAttribute('aria-pressed', s); break;
+      case 'aria-current': n.setAttribute('aria-current', s); break;
+      case 'data-user-id': n.dataset.userId = s; break;
+      case 'data-token-id': n.dataset.tokenId = s; break;
+      case 'data-device-id': n.dataset.deviceId = s; break;
+      case 'data-scope': n.dataset.scope = s; break;
+      case 'data-mb-state': n.dataset.mbState = s; break;
+      case 'data-mb-mode': n.dataset.mbMode = s; break;
+      default: break; // anything else is dropped on purpose
+    }
+  }
   function el(tag, props, children) {
     const n = doc.createElement(tag);
     const p = props || {};
@@ -46,7 +90,7 @@
       else if (k === 'text') n.textContent = v;
       else if (k === 'on') Object.keys(v).forEach((ev) => n.addEventListener(ev, v[ev]));
       else if (k === 'checked' || k === 'disabled' || k === 'value' || k === 'selected' || k === 'hidden' || k === 'type') n[k] = v;
-      else n.setAttribute(k, v === true ? '' : String(v));
+      else setAttr(n, k, v);
     });
     [].concat(children == null ? [] : children).forEach((c) => {
       if (c == null || c === false) return;

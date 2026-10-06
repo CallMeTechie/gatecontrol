@@ -196,7 +196,7 @@ router.post('/login/passkey', guestOnly, passkeyLoginLimiter, csrfProtection, au
 router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
 // Own password after an administrator set one with "change on next login":
 // only reachable with req.session.pendingPwChange (set by the login steps).
-router.get('/login/change-password', guestOnly, authRoutes.changePasswordPage);
+router.get('/login/change-password', guestOnly, apiLimiter, authRoutes.changePasswordPage);
 router.post('/login/change-password', guestOnly, loginLimiter, csrfProtection, authRoutes.changePassword);
 
 // ─── Invitation to "Mein Bereich" (public, one-time link) ──
@@ -208,7 +208,7 @@ router.post('/invite/:token', loginLimiter, csrfProtection, invitePages.accept);
 router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 
 // ─── Protected page routes ─────────────────────────
-router.get('/', requireAuth, (req, res) => res.redirect(homeFor(res.locals.user || req.sessionUser)));
+router.get('/', requireAuth, apiLimiter, (req, res) => res.redirect(homeFor(res.locals.user || req.sessionUser)));
 
 // Profile page locals: identity header (initials, e-mail) and security rail.
 // The session tile shows the CURRENT session — how and when it was

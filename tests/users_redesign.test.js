@@ -275,8 +275,16 @@ describe('change password at login', () => {
   it('asks for an own password before the session exists', async () => {
     const id = await makeUser('must-change', 'admin');
     db().prepare('UPDATE users SET must_change_password = 1 WHERE id = ?').run(id);
-    const { a, location } = await loginAs('must-change');
+    // The pending state is stored on a fresh session id (fixation).
+    const a = supertest.agent(app);
+    const loginPage = await a.get('/login').expect(200);
+    const sidOf = (r) => ((r.headers['set-cookie'] || []).join(';').match(/connect\.sid=([^;]+)|gc\.sid=([^;]+)|(\w*sid\w*)=([^;]+)/) || [])[0];
+    const before = sidOf(loginPage);
+    const lc = loginPage.text.match(/name="_csrf"\s+value="([^"]+)"/)[1];
+    const post = await a.post('/login').type('form').send({ username: 'must-change', password: PW, _csrf: lc }).expect(302);
+    const location = post.headers.location;
     assert.equal(location, '/login/change-password');
+    assert.ok(sidOf(post) && sidOf(post) !== before, 'session id rotated before the pending state is stored');
     await a.get('/api/v1/ping').expect(401);
     const page = await a.get('/login/change-password').expect(200);
     const c = page.text.match(/name="_csrf"\s+value="([^"]+)"/)[1];

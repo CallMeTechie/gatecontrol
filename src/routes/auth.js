@@ -94,20 +94,60 @@ function establishSession(req, user, { method, passkeyName } = {}, done) {
   });
 }
 
+/**
+ * A verified login that still needs an own password: the pending state is
+ * stored on a FRESH session id (fixation — a planted id never carries it).
+ * The anonymous CSRF token is carried over so the form keeps working; the
+ * final establishSession() regenerates once more.
+ */
+function enterPendingPwChange(req, res, pending, done) {
+  const csrfToken = req.session.csrfToken;
+  req.session.regenerate((err) => {
+    if (err) {
+      logger.error({ err }, 'Session regeneration failed (pending password change)');
+      return done(err);
+    }
+    if (csrfToken) req.session.csrfToken = csrfToken;
+    req.session.pendingPwChange = { ...pending, at: Date.now() };
+    return done(null);
+  });
+}
+
+/**
+ * Where a completed login goes. Only the portal is an allowed returnTo
+ * (safeReturnTo: /portal, /portal/…, /portal?…, /portal#…, no //, no
+ * backslash, no control characters). The redirect is built as the constant
+ * same-origin prefix '/portal' plus the remainder of that validated path, so
+ * request text can never choose the origin; anything else → the account's
+ * home page (a constant).
+ */
+const PORTAL_PREFIX = '/portal';
+function postLoginTarget(returnTo, user) {
+  const safe = safeReturnTo(returnTo);
+  if (!safe || !safe.startsWith(PORTAL_PREFIX)) return homeFor(user);
+  const rest = safe.slice(PORTAL_PREFIX.length);
+  if (rest && !/^[/?#]/.test(rest)) return homeFor(user);
+  return PORTAL_PREFIX + rest;
+}
+
 function completeLogin(req, res, user, returnTo, method) {
   // An own password first (set by an administrator with "change on next
   // login"): the session stays anonymous until /login/change-password.
   if (user.must_change_password === 1) {
-    delete req.session.userId;
-    req.session.pendingPwChange = { userId: user.id, at: Date.now(), method: method || 'password', returnTo: returnTo || '' };
-    return res.redirect('/login/change-password');
+    return enterPendingPwChange(req, res, { userId: user.id, method: method || 'password', returnTo: returnTo || '' }, (err) => {
+      if (err) {
+        setFlash(req, 'error', res.locals.t('auth.error_generic'));
+        return res.redirect('/login');
+      }
+      return res.redirect('/login/change-password');
+    });
   }
   establishSession(req, user, { method: method || 'password' }, (err) => {
     if (err) {
       setFlash(req, 'error', res.locals.t('auth.error_generic'));
       return res.redirect('/login');
     }
-    return res.redirect(returnTo || homeFor(user));
+    return res.redirect(postLoginTarget(returnTo, user));
   });
 }
 
@@ -379,12 +419,14 @@ const authRoutes = {
       return fail(400, 'passkey.error_login_failed', 'LOGIN_FAILED');
     }
     if (result.user.must_change_password === 1) {
-      req.session.pendingPwChange = { userId: result.user.id, at: Date.now(), method: 'passkey', returnTo: returnTo || '', passkeyName: result.passkey.name };
-      return res.json({ ok: true, redirect: '/login/change-password' });
+      return enterPendingPwChange(req, res, { userId: result.user.id, method: 'passkey', returnTo: returnTo || '', passkeyName: result.passkey.name }, (err) => {
+        if (err) return fail(500, 'auth.error_generic', 'ERROR');
+        return res.json({ ok: true, redirect: '/login/change-password' });
+      });
     }
     return establishSession(req, result.user, { method: 'passkey', passkeyName: result.passkey.name }, (err) => {
       if (err) return fail(500, 'auth.error_generic', 'ERROR');
-      return res.json({ ok: true, redirect: returnTo || homeFor(result.user) });
+      return res.json({ ok: true, redirect: postLoginTarget(returnTo, result.user) });
     });
   },
 
@@ -443,14 +485,22 @@ const authRoutes = {
       activity.log('password_changed', `User ${user.username} set a new password at login`, {
         source: 'user', ipAddress: req.ip, severity: 'info', details: { userId: user.id },
       });
-      delete req.session.pendingPwChange;
       const returnTo = safeReturnTo(pending.returnTo);
-      return establishSession(req, user, { method: pending.method, passkeyName: pending.passkeyName }, (err) => {
-        if (err) {
+      // Abandon the pre-login session before the account is signed in
+      // (establishSession regenerates once more and sets userId).
+      return req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          logger.error({ err: regenErr }, 'Session regeneration failed (password change)');
           setFlash(req, 'error', res.locals.t('auth.error_generic'));
           return res.redirect('/login');
         }
-        return res.redirect(returnTo || homeFor(user));
+        return establishSession(req, user, { method: pending.method, passkeyName: pending.passkeyName }, (err) => {
+          if (err) {
+            setFlash(req, 'error', res.locals.t('auth.error_generic'));
+            return res.redirect('/login');
+          }
+          return res.redirect(postLoginTarget(returnTo, user));
+        });
       });
     } catch (err) {
       logger.error({ err }, 'Password change at login failed');
