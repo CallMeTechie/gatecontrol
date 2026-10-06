@@ -307,19 +307,64 @@ function bindPeer(tokenId, peerId) {
 }
 
 /**
+ * Machine binding state as the server applies it (licence + setting
+ * machine_binding.mode). `mode` is the stored setting ('off' | 'global' |
+ * 'individual'), `licensed` whether the licence carries machine_binding.
+ */
+function machineBindingState() {
+  const license = require('./license');
+  const settings = require('./settings');
+  const raw = settings.get('machine_binding.mode', 'off');
+  const mode = ['off', 'global', 'individual'].includes(raw) ? raw : 'off';
+  return { licensed: !!license.hasFeature('machine_binding'), mode };
+}
+
+/**
+ * Whether a token is machine-bound right now: licensed and either the global
+ * mode, or the individual mode with the token's own flag set.
+ * `token` is a row or a formatted token (machine_binding_enabled 1/true).
+ */
+function isMachineBindingActive(token, state) {
+  const st = state || machineBindingState();
+  if (!st.licensed) return false;
+  if (st.mode === 'global') return true;
+  if (st.mode === 'individual') {
+    return !!(token && (token.machine_binding_enabled === true || token.machine_binding_enabled === 1));
+  }
+  return false;
+}
+
+/**
  * Store a machine fingerprint on a token (one-time binding)
- * Returns true if bound, false if already bound to a different machine
+ * Returns true if bound, false if already bound to a different machine.
+ * The first binding (NULL → fingerprint) also stamps machine_bound_at and
+ * logs `machine_binding_bound` — exactly once per binding: the UPDATE only
+ * matches while the column is still empty, so two concurrent first requests
+ * cannot both log.
  */
 function bindMachineFingerprint(tokenId, fingerprint) {
   const db = getDb();
-  const row = db.prepare('SELECT machine_fingerprint FROM api_tokens WHERE id = ?').get(tokenId);
+  const row = db.prepare('SELECT machine_fingerprint, name FROM api_tokens WHERE id = ?').get(tokenId);
   if (!row) return false;
 
   if (row.machine_fingerprint === fingerprint) return true;
   if (row.machine_fingerprint != null) return false;
 
-  db.prepare('UPDATE api_tokens SET machine_fingerprint = ? WHERE id = ?').run(fingerprint, tokenId);
+  const res = db.prepare(`UPDATE api_tokens SET machine_fingerprint = ?, machine_bound_at = datetime('now')
+    WHERE id = ? AND machine_fingerprint IS NULL`).run(fingerprint, tokenId);
+  if (res.changes === 0) {
+    // Lost a race against a concurrent first request: accept only the same device.
+    const now = db.prepare('SELECT machine_fingerprint FROM api_tokens WHERE id = ?').get(tokenId);
+    return !!now && now.machine_fingerprint === fingerprint;
+  }
   logger.info({ tokenId, fingerprint: fingerprint.substring(0, 8) }, 'Token bound to machine');
+  try {
+    activity.log('machine_binding_bound', `Token "${row.name}" bound to device ${fingerprint.substring(0, 8)}…`, {
+      details: { tokenId, fingerprint: fingerprint.substring(0, 8) },
+      source: 'api',
+      severity: 'info',
+    });
+  } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (machine_binding_bound)'); }
   return true;
 }
 
@@ -336,13 +381,14 @@ function setMachineBindingEnabled(tokenId, enabled) {
 }
 
 /**
- * Clear machine fingerprint (admin reset)
+ * Clear machine fingerprint and its timestamp (admin reset): the next client
+ * request binds the token again, to whichever device sends it.
  */
 function resetMachineBinding(tokenId) {
   const db = getDb();
   const row = db.prepare('SELECT machine_fingerprint, name FROM api_tokens WHERE id = ?').get(tokenId);
   if (!row) throw new Error('Token not found');
-  db.prepare('UPDATE api_tokens SET machine_fingerprint = NULL WHERE id = ?').run(tokenId);
+  db.prepare('UPDATE api_tokens SET machine_fingerprint = NULL, machine_bound_at = NULL WHERE id = ?').run(tokenId);
   logger.info({ tokenId }, 'Machine binding reset');
   return true;
 }
@@ -381,11 +427,41 @@ function formatToken(row) {
     machine_fingerprint: row.machine_fingerprint || null,
     user_id: row.user_id || null,
     machine_binding_enabled: row.machine_binding_enabled === 1,
+    machine_bound_at: row.machine_bound_at || null,
     created_at: row.created_at,
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
     split_tunnel_override: row.split_tunnel_override || null,
   };
+}
+
+// Hex characters of the fingerprint the admin API shows — enough to tell two
+// devices apart on the Users page, never the full hash.
+const FINGERPRINT_DISPLAY_LEN = 8;
+
+/**
+ * A formatted token for the admin API (token lists on the Users page):
+ * the fingerprint shortened to FINGERPRINT_DISPLAY_LEN, plus the machine
+ * binding as the server applies it:
+ *   machine_binding_mode    the global setting ('off'|'global'|'individual')
+ *   machine_binding_active  binding enforced for this token right now
+ * `state` (machineBindingState()) can be passed in for a whole list.
+ */
+function toAdminView(token, state) {
+  if (!token) return token;
+  const st = state || machineBindingState();
+  const fp = token.machine_fingerprint;
+  return {
+    ...token,
+    machine_fingerprint: fp ? String(fp).substring(0, FINGERPRINT_DISPLAY_LEN) : null,
+    machine_binding_mode: st.mode,
+    machine_binding_active: isMachineBindingActive(token, st),
+  };
+}
+
+function toAdminList(list) {
+  const st = machineBindingState();
+  return list.map((t) => toAdminView(t, st));
 }
 
 /**
@@ -424,9 +500,15 @@ module.exports = {
   getById,
   authenticate,
   revoke,
-  bindPeer,  bindMachineFingerprint,
+  bindPeer,
+  bindMachineFingerprint,
   resetMachineBinding,
   setMachineBindingEnabled,
+  machineBindingState,
+  isMachineBindingActive,
+  toAdminView,
+  toAdminList,
+  FINGERPRINT_DISPLAY_LEN,
   validateFingerprint,
   checkScope,
   validateScopes,

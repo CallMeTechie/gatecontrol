@@ -299,7 +299,7 @@
       document.getElementById('user-password').value = '';
       updatePasswordVisibility();
       userTokensSection.style.display = '';
-      renderUserTokens(data.tokens || []);
+      renderUserTokens(data.tokens || [], data.machine_binding);
       openUserModal();
     } catch (err) {
       D.alert({ message: DT('error.users.get') + ': ' + err.message, danger: true });
@@ -368,8 +368,10 @@
   // ─── Token list in edit modal ─────────────────────────────
   var tokensList = document.getElementById('user-tokens-list');
 
-  function renderUserTokens(tokens) {
+  function renderUserTokens(tokens, mbState) {
+    if (mbState) mbGlobal = mbState;
     tokensList.textContent = '';
+    if (mbExplain) mbExplain.hidden = !tokens.some(mbApplies);
     if (!tokens.length) {
       var empty = document.createElement('div');
       empty.style.cssText = 'font-size:12px;color:var(--text-3);text-align:center;padding:8px 0';
@@ -378,8 +380,11 @@
       return;
     }
     tokens.forEach(function (tk) {
+      var item = document.createElement('div');
+      item.className = 'mb-token';
+      item.dataset.tokenId = tk.id;
       var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)';
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0';
 
       var info = document.createElement('div');
       info.style.cssText = 'flex:1;min-width:0';
@@ -419,15 +424,203 @@
       revokeBtn.addEventListener('click', function () { revokeToken(tk.id); });
       row.appendChild(revokeBtn);
 
-      tokensList.appendChild(row);
+      item.appendChild(row);
+      if (mbApplies(tk)) item.appendChild(renderMachineBinding(tk));
+      tokensList.appendChild(item);
     });
+  }
+
+  // ─── Device binding per token (licence feature machine_binding) ──
+  // Binds a token to the hardware fingerprint of the client device that
+  // first connects with it — NOT the token→peer binding. State from
+  // GET /api/v1/users/:id: per token machine_fingerprint (first 8 hex),
+  // machine_bound_at, machine_binding_enabled, machine_binding_active;
+  // globally machine_binding { licensed, mode }.
+  var mbGlobal = { licensed: false, mode: 'off' };
+  var mbExplain = document.getElementById('mb-explain');
+  var mbI18n = {};
+  try { mbI18n = JSON.parse(document.getElementById('mb-users-i18n').textContent); } catch (e) { mbI18n = {}; }
+  function mbT(k, params) {
+    var s = mbI18n[k] != null ? String(mbI18n[k]) : k;
+    if (params) Object.keys(params).forEach(function (p) { s = s.split('{{' + p + '}}').join(String(params[p])); });
+    return s;
+  }
+
+  // Client tokens: binding is checked on /api/v1/client/* (client and
+  // client:* scopes, or full-access). A token with a stored fingerprint
+  // always shows its binding.
+  function mbApplies(tk) {
+    if (tk.machine_fingerprint) return true;
+    return (tk.scopes || []).some(function (s) { return s === 'full-access' || s === 'client' || s.indexOf('client:') === 0; });
+  }
+
+  // SQLite datetime('now') is UTC without zone: "2026-10-06 12:34:56".
+  function mbDate(v) {
+    if (!v) return '';
+    var d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : String(v).replace(' ', 'T') + 'Z');
+    if (isNaN(d.getTime())) return '';
+    var lang = document.documentElement.lang || undefined;
+    try { return d.toLocaleDateString(lang, { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return d.toISOString().slice(0, 10); }
+  }
+
+  function mbEl(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function renderMachineBinding(tk) {
+    var st = mbGlobal || { licensed: false, mode: 'off' };
+    var licensed = !!st.licensed;
+    var mode = st.mode || 'off';
+    var active = licensed && !!tk.machine_binding_active;
+    var fp = tk.machine_fingerprint || '';
+
+    var box = mbEl('div', 'mb-area' + (licensed ? '' : ' mb-locked'));
+    box.dataset.mbState = !licensed ? 'locked' : (active ? (fp ? 'bound' : 'pending') : 'inactive');
+    box.dataset.mbMode = mode;
+
+    // Head: title (+ Pro chip and lock without the licence), effective state
+    var head = mbEl('div', 'mb-head');
+    var title = mbEl('span', 'mb-title', mbT('title'));
+    head.appendChild(title);
+    if (!licensed) {
+      var chip = mbEl('span', 'mb-pro', mbT('pro'));
+      chip.title = mbT('locked');
+      head.appendChild(chip);
+    }
+    if (licensed && mode === 'global') head.appendChild(mbEl('span', 'mb-eff mb-eff-global', mbT('global')));
+    else if (licensed && mode === 'individual' && active) head.appendChild(mbEl('span', 'mb-eff', mbT('active')));
+    box.appendChild(head);
+
+    // Status line
+    var status = mbEl('div', 'mb-status');
+    var dot = mbEl('span', 'mb-dot');
+    dot.setAttribute('aria-hidden', 'true');
+    status.appendChild(dot);
+    var text = mbEl('span', 'mb-status-text');
+    if (active && fp) {
+      status.classList.add('mb-status-bound');
+      text.appendChild(document.createTextNode(mbT('bound') + ' '));
+      text.appendChild(mbEl('code', 'mb-fp', fp + '\u2026'));
+      var since = mbDate(tk.machine_bound_at);
+      if (since) text.appendChild(document.createTextNode(' ' + mbT('since', { date: since })));
+    } else if (active) {
+      status.classList.add('mb-status-pending');
+      text.textContent = mbT('pending');
+    } else {
+      status.classList.add('mb-status-off');
+      text.textContent = mbT('inactive');
+      if (fp) {
+        text.appendChild(document.createTextNode(' \u00b7 ' + mbT('stored') + ' '));
+        text.appendChild(mbEl('code', 'mb-fp', fp + '\u2026'));
+      }
+    }
+    status.appendChild(text);
+    box.appendChild(status);
+
+    // Controls: per-token switch (individual mode only) + reset
+    var ctl = mbEl('div', 'mb-ctl');
+    var label = mbEl('label', 'mb-switch-label');
+    var sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'st-switch mb-switch';
+    sw.setAttribute('role', 'switch');
+    var on = mode === 'global' ? true : !!tk.machine_binding_enabled;
+    sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    sw.id = 'mb-switch-' + tk.id;
+    sw.appendChild(mbEl('span', 'st-knob'));
+    sw.firstChild.setAttribute('aria-hidden', 'true');
+    var editable = licensed && mode === 'individual';
+    sw.disabled = !editable;
+    label.setAttribute('for', sw.id);
+    label.textContent = mbT('toggle');
+    if (editable) {
+      sw.addEventListener('click', function () { toggleMachineBinding(tk, sw); });
+    }
+    ctl.appendChild(sw);
+    ctl.appendChild(label);
+
+    if (licensed && fp) {
+      var reset = mbEl('button', 'btn btn-ghost tf-btn-sm mb-reset', mbT('reset'));
+      reset.type = 'button';
+      reset.addEventListener('click', function () { resetMachineBinding(tk, reset); });
+      ctl.appendChild(reset);
+    }
+    box.appendChild(ctl);
+
+    // Hint below the switch: why it is disabled
+    var hint = null;
+    if (!licensed) {
+      hint = mbEl('div', 'mb-hint mb-hint-lock');
+      hint.appendChild(mbLockIcon());
+      hint.appendChild(document.createTextNode(mbT('locked')));
+    } else if (mode === 'global') {
+      hint = mbEl('div', 'mb-hint', mbT('hint_global'));
+    } else if (mode === 'off') {
+      hint = mbEl('div', 'mb-hint', mbT('hint_off') + ' ');
+      var link = mbEl('a', 'mb-link', mbT('settings_link'));
+      link.href = '/settings#geraete';
+      hint.appendChild(link);
+    }
+    if (hint) { hint.id = 'mb-hint-' + tk.id; sw.setAttribute('aria-describedby', hint.id); box.appendChild(hint); }
+    return box;
+  }
+
+  function mbLockIcon() {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    [['viewBox', '0 0 24 24'], ['width', '12'], ['height', '12'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
+      ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach(function (a) { svg.setAttribute(a[0], a[1]); });
+    var r = document.createElementNS(NS, 'rect');
+    [['x', '3'], ['y', '11'], ['width', '18'], ['height', '11'], ['rx', '2']].forEach(function (a) { r.setAttribute(a[0], a[1]); });
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', 'M7 11V7a5 5 0 0110 0v4');
+    svg.appendChild(r);
+    svg.appendChild(p);
+    return svg;
+  }
+
+  async function toggleMachineBinding(tk, sw) {
+    var next = sw.getAttribute('aria-checked') !== 'true';
+    sw.disabled = true;
+    try {
+      var res = await api.put('/api/v1/tokens/' + tk.id + '/binding', { enabled: next });
+      if (!res || res.ok === false) throw new Error((res && res.error) || 'Error');
+      if (window.showToast) showToast(mbT(next ? 'saved_on' : 'saved_off'), 'success');
+      await reloadEditTokens();
+    } catch (err) {
+      sw.disabled = false;
+      D.alert({ message: mbT('failed') + ': ' + err.message, danger: true });
+    }
+  }
+
+  async function resetMachineBinding(tk, btn) {
+    var ok = await D.confirm({
+      title: mbT('reset_title'),
+      message: mbT('reset_confirm', { name: tk.name, fp: tk.machine_fingerprint || '' }),
+      okLabel: mbT('reset_ok'),
+      danger: true,
+    });
+    if (!ok) return;
+    btnLoading(btn);
+    try {
+      var res = await api.del('/api/v1/tokens/' + tk.id + '/binding');
+      if (!res || res.ok === false) throw new Error((res && res.error) || 'Error');
+      if (window.showToast) showToast(mbT('reset_done'), 'success');
+      await reloadEditTokens();
+    } catch (err) {
+      btnReset(btn);
+      D.alert({ message: mbT('failed') + ': ' + err.message, danger: true });
+    }
   }
 
   async function reloadEditTokens() {
     if (!editId) return;
     try {
       var data = await api.get('/api/v1/users/' + editId);
-      renderUserTokens(data.tokens || []);
+      renderUserTokens(data.tokens || [], data.machine_binding);
     } catch (err) { console.warn('[users] loading user tokens failed', err); }
   }
 

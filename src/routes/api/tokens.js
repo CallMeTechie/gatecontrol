@@ -19,8 +19,8 @@ router.get('/', (req, res) => {
     return res.status(403).json({ ok: false, error: req.t('error.tokens.no_escalation') });
   }
   try {
-    const list = tokens.list();
-    res.json({ ok: true, tokens: list });
+    const list = tokens.toAdminList(tokens.list());
+    res.json({ ok: true, tokens: list, machine_binding: tokens.machineBindingState() });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list tokens');
     res.status(500).json({ ok: false, error: req.t('error.tokens.list') });
@@ -71,7 +71,7 @@ router.post('/', requireFeature('api_tokens'), (req, res) => {
     res.status(201).json({
       ok: true,
       token: result.rawToken,
-      details: result.token,
+      details: tokens.toAdminView(result.token),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create token');
@@ -93,7 +93,7 @@ router.put('/:id/assign', (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ ok: false, error: 'userId is required' });
     const token = tokens.assignToUser(parseInt(req.params.id, 10), parseInt(userId, 10));
-    res.json({ ok: true, token });
+    res.json({ ok: true, token: tokens.toAdminView(token) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to assign token');
     if (err.message === 'Token not found') {
@@ -129,6 +129,11 @@ router.delete('/:id', (req, res) => {
 
 /**
  * PUT /api/v1/tokens/:id/binding — Toggle machine_binding_enabled
+ * The per-token flag only means something in the 'individual' mode: in
+ * 'global' every token is bound anyway, in 'off' none is. Outside
+ * 'individual' the request is refused (409 binding_mode) instead of storing
+ * a flag that silently does nothing. Works for any user's token — the
+ * /tokens router is admin-session only (requireAdmin + no token auth).
  */
 router.put('/:id/binding', requireFeature('machine_binding'), (req, res) => {
   if (req.tokenAuth) {
@@ -147,26 +152,36 @@ router.put('/:id/binding', requireFeature('machine_binding'), (req, res) => {
       return res.status(400).json({ ok: false, error: 'enabled must be a boolean' });
     }
 
+    const state = tokens.machineBindingState();
+    if (state.mode !== 'individual') {
+      return res.status(409).json({
+        ok: false,
+        code: 'binding_mode',
+        mode: state.mode,
+        error: req.t(state.mode === 'global' ? 'error.tokens.binding_mode_global' : 'error.tokens.binding_mode_off'),
+      });
+    }
+
     tokens.setMachineBindingEnabled(id, enabled);
 
     activity.log('machine_binding_toggled', `Machine binding for token "${token.name}" ${enabled ? 'enabled' : 'disabled'}`, {
-      tokenId: id,
-      enabled,
-    }, {
-      source: 'user',
+      details: { tokenId: id, enabled },
+      source: 'admin',
       ipAddress: req.ip,
       severity: 'info',
     });
 
-    res.json({ ok: true });
+    res.json({ ok: true, token: tokens.toAdminView(tokens.getById(id), state) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to toggle machine binding');
-    res.status(500).json({ ok: false, error: req.t('error.tokens.binding_toggle_failed') || 'Failed to toggle machine binding' });
+    res.status(500).json({ ok: false, error: req.t('error.tokens.binding_toggle_failed') });
   }
 });
 
 /**
  * DELETE /api/v1/tokens/:id/binding — Reset machine binding
+ * Clears fingerprint + machine_bound_at; the next client request (in a mode
+ * where the token is bound) binds it to the device that sends it.
  */
 router.delete('/:id/binding', requireFeature('machine_binding'), (req, res) => {
   if (req.tokenAuth) {
@@ -183,14 +198,16 @@ router.delete('/:id/binding', requireFeature('machine_binding'), (req, res) => {
     tokens.resetMachineBinding(id);
 
     activity.log('machine_binding_reset', `Machine binding for token "${token.name}" reset`, {
-      tokenId: id,
-    }, {
-      source: 'user',
+      details: {
+        tokenId: id,
+        fingerprint: token.machine_fingerprint ? token.machine_fingerprint.substring(0, tokens.FINGERPRINT_DISPLAY_LEN) : null,
+      },
+      source: 'admin',
       ipAddress: req.ip,
       severity: 'warning',
     });
 
-    res.json({ ok: true });
+    res.json({ ok: true, token: tokens.toAdminView(tokens.getById(id)) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to reset machine binding');
     res.status(500).json({ ok: false, error: req.t('error.tokens.binding_reset_failed') });

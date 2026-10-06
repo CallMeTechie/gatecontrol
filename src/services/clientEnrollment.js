@@ -34,7 +34,6 @@ const { getDb } = require('../db/connection');
 const peers = require('./peers');
 const tokens = require('./tokens');
 const users = require('./users');
-const settings = require('./settings');
 const activity = require('./activity');
 const license = require('./license');
 const logger = require('../utils/logger');
@@ -97,11 +96,7 @@ function resolveScopes(requested, userId) {
 }
 
 function _bindingActive(tokenRow) {
-  if (!license.hasFeature('machine_binding')) return false;
-  const mode = settings.get('machine_binding.mode', 'off');
-  if (mode === 'global') return true;
-  if (mode === 'individual') return !!(tokenRow && tokenRow.machine_binding_enabled);
-  return false;
+  return tokens.isMachineBindingActive(tokenRow);
 }
 
 /**

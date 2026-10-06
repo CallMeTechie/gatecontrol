@@ -1,8 +1,6 @@
 'use strict';
 
 const tokens = require('../../../services/tokens');
-const settings = require('../../../services/settings');
-const { hasFeature } = require('../../../services/license');
 const logger = require('../../../utils/logger');
 const crypto = require('node:crypto');
 
@@ -47,16 +45,11 @@ const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
 
 function isBindingActive(req) {
   if (!req.tokenAuth) return false;
-  if (!hasFeature('machine_binding')) return false;
-
-  const mode = settings.get('machine_binding.mode', 'off');
-  if (mode === 'off') return false;
-  if (mode === 'global') return true;
-  if (mode === 'individual') {
-    const token = tokens.getById(req.tokenId);
-    return token && token.machine_binding_enabled;
-  }
-  return false;
+  // Licence + mode first: in 'off'/'global' no token lookup is needed.
+  const state = tokens.machineBindingState();
+  if (!state.licensed || state.mode === 'off') return false;
+  if (state.mode === 'global') return true;
+  return tokens.isMachineBindingActive(tokens.getById(req.tokenId), state);
 }
 
 // Verify machine fingerprint for bound tokens.

@@ -72,8 +72,8 @@ router.post('/', async (req, res) => {
  */
 router.get('/unassigned-tokens', (req, res) => {
   try {
-    const list = tokens.listUnassigned();
-    res.json({ ok: true, tokens: list });
+    const list = tokens.toAdminList(tokens.listUnassigned());
+    res.json({ ok: true, tokens: list, machine_binding: tokens.machineBindingState() });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list unassigned tokens');
     res.status(500).json({ ok: false, error: req.t('error.users.unassigned_tokens') });
@@ -90,8 +90,10 @@ router.get('/:id', (req, res) => {
     if (!user) {
       return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
     }
-    const userTokens = tokens.listByUserId(id);
-    res.json({ ok: true, user, tokens: userTokens });
+    // Token list incl. machine binding per token (shortened fingerprint,
+    // bound-at, effective state) + the global state for the Users page.
+    const userTokens = tokens.toAdminList(tokens.listByUserId(id));
+    res.json({ ok: true, user, tokens: userTokens, machine_binding: tokens.machineBindingState() });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get user');
     res.status(500).json({ ok: false, error: req.t('error.users.get') });
@@ -253,7 +255,7 @@ router.post('/:id/tokens', (req, res) => {
     res.status(201).json({
       ok: true,
       token: result.rawToken,
-      details: result.token,
+      details: tokens.toAdminView(result.token),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create token for user');
