@@ -4760,7 +4760,7 @@
   "me.kind_http": "Web service",
   "me.kind_rdp": "Remote desktop",
   "me.footer_plain": "Something missing? Only an administrator can share services with you. This view shows nothing of other users and no server settings.",
-  "me.footer": "Something missing? Only {{admins}} can share services with you. This view shows nothing of other users and no server settings.",
+  "me.footer": "Something missing? Only these administrators can share services with you: {{admins}}. This view shows nothing of other users and no server settings.",
   "me.lock_title": "Lock “{{name}}”?",
   "me.lock_text": "This device’s access stops working at once. The app has to be set up again afterwards.",
   "me.lock_ok": "Lock",

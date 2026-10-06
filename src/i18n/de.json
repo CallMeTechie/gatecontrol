@@ -4708,7 +4708,7 @@
   "me.kind_http": "Webdienst",
   "me.kind_rdp": "Remote Desktop",
   "me.footer_plain": "Etwas fehlt? Nur ein Administrator kann Dienste für dich freigeben. Diese Ansicht zeigt nichts von anderen Benutzern und keine Einstellungen des Servers.",
-  "me.footer": "Etwas fehlt? Nur {{admins}} kann Dienste für dich freigeben. Diese Ansicht zeigt nichts von anderen Benutzern und keine Einstellungen des Servers.",
+  "me.footer": "Etwas fehlt? Dienste für dich freigeben können nur: {{admins}}. Diese Ansicht zeigt nichts von anderen Benutzern und keine Einstellungen des Servers.",
   "me.lock_title": "„{{name}}“ sperren?",
   "me.lock_text": "Der Zugang dieses Geräts ist sofort ungültig. Die App muss danach neu eingerichtet werden.",
   "me.lock_ok": "Sperren",
