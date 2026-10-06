@@ -1,279 +1,425 @@
 {% extends theme + "/layout.njk" %}
 
+{#- Users page (redesign): list + detail panel with five tabs, role
+    comparison, create / access wizard / edit access / password / role /
+    delete dialogs. Rendering lives in public/js/users.js; its strings come
+    from the #us-i18n island (routes/index.js USERS_I18N_PREFIXES). -#}
+
+{% macro closeBtn(label) %}<button type="button" class="modal-close" data-us-close aria-label="{{ label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>{% endmacro %}
+
+{% macro mxCell(kind, text) %}<td><span class="us-mx-cell"><span class="us-mx-ic us-mx-{{ kind }}" aria-hidden="true">{{ '✓' if kind == 'yes' else ('◐' if kind == 'some' else '–') }}</span><span class="us-sr">{{ t('us.mx.legend_' + kind) }}</span><span class="us-mx-text">{{ text }}</span></span></td>{% endmacro %}
+
 {% block content %}
-<div class="page-header">
-  <div>
-    <div class="page-eyebrow">{{ t('nav.access_control') }}</div>
-    <div class="page-title">{{ t('users.title') }}</div>
-    <div class="page-sub">{{ t('users.subtitle') }}</div>
-  </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-ghost" id="btn-create-token-standalone">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      {{ t('users.create_token') }}
-    </button>
-    <button class="btn btn-primary" id="btn-add-user">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      {{ t('users.add_user') }}
-    </button>
-  </div>
-</div>
+<div class="us-page" id="us-page">
 
-{# -- Unassigned tokens banner -- #}
-<div id="unassigned-banner" class="banner-amber" style="display:none">
-  <div style="display:flex;align-items:center;gap:8px">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <span><strong id="unassigned-count">0</strong> {{ t('users.unassigned_tokens') }}</span>
-  </div>
-  <div id="unassigned-list"></div>
-</div>
-
-{# -- Users table -- #}
-<div class="card">
-  <div class="card-head">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-    <span class="card-title">{{ t('users.title') }}</span>
-  </div>
-  <table class="data-table" id="users-table">
-    <thead>
-      <tr>
-        <th>{{ t('users.col_name') }}</th>
-        <th>{{ t('users.col_role') }}</th>
-        <th>{{ t('users.col_mfa') }}</th>
-        <th>{{ t('users.col_last_login') }}</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="users-tbody">
-      <tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:20px 0">{{ t('common.loading') }}</td></tr>
-    </tbody>
-  </table>
-</div>
-
-{# -- Create/Edit User Modal -- #}
-<div class="modal-overlay" id="user-modal-overlay" style="display:none">
-  <div class="modal" style="width:540px">
-    <div class="modal-head">
-      <span class="mi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>
-      <span class="modal-title" id="user-modal-title">{{ t('users.add_user') }}</span>
-      <button class="modal-close" id="user-modal-close">&times;</button>
+  <div class="page-header us-header">
+    <div class="us-header-text">
+      <div class="page-eyebrow">{{ t('nav.access_control') }}</div>
+      <h1 class="page-title">{{ t('us.title') }}</h1>
+      <p class="page-sub">{{ t('us.subtitle') }}</p>
     </div>
-    <div class="modal-body">
-      <form id="user-form" autocomplete="off">
-        <input type="hidden" id="user-edit-id">
+    <div class="us-header-actions">
+      <button type="button" class="btn btn-ghost" id="us-btn-roles">{{ t('us.compare_roles') }}</button>
+      <button type="button" class="btn btn-primary" id="us-btn-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        {{ t('us.add_user') }}
+      </button>
+    </div>
+  </div>
 
-        <div class="form-group">
-          <label class="form-label" for="user-username">{{ t('users.username') }}</label>
-          <input type="text" id="user-username" required maxlength="100">
+  <div class="us-rolecards">
+    <div class="us-rolecard">
+      <span class="us-rolecard-ic us-tone-admin" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+      <div><div class="us-rolecard-title">{{ t('us.role.admin') }}</div><div class="us-rolecard-text">{{ t('us.role.admin_card') }}</div></div>
+    </div>
+    <div class="us-rolecard">
+      <span class="us-rolecard-ic us-tone-member" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+      <div><div class="us-rolecard-title">{{ t('us.role.member') }}</div><div class="us-rolecard-text">{{ t('us.role.member_card') }}</div></div>
+    </div>
+  </div>
+
+  <div class="us-orphans" id="us-orphans" role="status" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <div class="us-orphans-text"><b id="us-orphans-title"></b> <span id="us-orphans-names"></span></div>
+    <button type="button" class="btn btn-sm us-btn-chip" id="us-orphans-assign">{{ t('us.orphans.assign') }}</button>
+  </div>
+
+  <div class="us-layout" id="us-layout">
+    <section class="us-list" aria-label="{{ t('us.list_label') }}">
+      <div class="us-toolbar">
+        <label class="us-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input type="search" id="us-search" aria-label="{{ t('us.search_label') }}" placeholder="{{ t('us.search_ph') }}" autocomplete="off">
+        </label>
+        <div class="us-filters" role="group" aria-label="{{ t('us.filter.label') }}" id="us-filters">
+          {% for f in ['all', 'admin', 'member', 'off'] %}
+          <button type="button" class="us-filter" data-filter="{{ f }}" aria-pressed="{{ 'true' if f == 'all' else 'false' }}">{{ t('us.filter.' + f) }} <span class="us-filter-count" data-count="{{ f }}"></span></button>
+          {% endfor %}
         </div>
-
-        <div class="form-group">
-          <label class="form-label" for="user-display-name">{{ t('users.display_name') }}</label>
-          <input type="text" id="user-display-name" maxlength="200">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="user-email">{{ t('users.email') }}</label>
-          <input type="email" id="user-email" maxlength="200">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="user-role">{{ t('users.role') }}</label>
-          <select id="user-role">
-            <option value="user">{{ t('users.role_user') }}</option>
-            <option value="admin">{{ t('users.role_admin') }}</option>
-          </select>
-        </div>
-
-        <div class="form-group" id="user-password-group" style="display:none">
-          <label class="form-label" for="user-password">{{ t('users.password') }}</label>
-          <input type="password" id="user-password" maxlength="200" autocomplete="new-password">
-          <small class="form-hint">{{ t('users.password_hint') }}</small>
-        </div>
-
-        <div id="user-form-error" class="form-error" style="display:none"></div>
-      </form>
-
-      {# Token section (edit mode only) #}
-      {# 2FA status + admin reset (docs/feature-admin-2fa.md) #}
-      <div id="user-2fa-section" class="tf-user-row" style="display:none" data-current-user="{{ user.id }}">
-        <span class="tf-user-label">{{ t('two_fa.title') }}</span>
-        <span class="tf-badge" id="user-2fa-status"></span>
-        <button type="button" class="btn btn-ghost tf-btn-sm" id="btn-user-2fa-reset" style="margin-left:auto">{{ t('two_fa.users_reset') }}</button>
       </div>
-      <script type="application/json" id="tf-users-i18n">{
-        "users_active": {{ t('two_fa.users_active') | dump | safe }},
-        "users_inactive": {{ t('two_fa.users_inactive') | dump | safe }},
-        "users_badge": {{ t('two_fa.users_badge') | dump | safe }},
-        "users_reset_confirm": {{ t('two_fa.users_reset_confirm') | dump | safe }},
-        "users_reset_done": {{ t('two_fa.users_reset_done') | dump | safe }}
-      }</script>
+      <div class="us-table-wrap">
+        <table class="us-table" id="us-table">
+          <thead>
+            <tr>
+              <th scope="col">{{ t('us.col.user') }}</th>
+              <th scope="col">{{ t('us.col.role') }}</th>
+              <th scope="col">{{ t('us.col.auth') }}</th>
+              <th scope="col">{{ t('us.col.devices') }}</th>
+              <th scope="col">{{ t('us.col.last') }}</th>
+              <th scope="col"><span class="us-sr">{{ t('us.col.actions') }}</span></th>
+            </tr>
+          </thead>
+          <tbody id="us-tbody">
+            <tr><td colspan="6" class="us-muted us-center">{{ t('common.loading') }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="us-cards" id="us-cards" aria-label="{{ t('us.list_label') }}"></ul>
+    </section>
 
-      <div id="user-tokens-section" style="display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:13px;font-weight:600;color:var(--text-1)">{{ t('users.tokens') }}</span>
-          <button type="button" class="btn btn-ghost" style="font-size:12px;padding:4px 10px" id="btn-add-token">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            {{ t('users.add_token') }}
+    <aside class="us-detail" id="us-detail" aria-label="{{ t('us.detail.label') }}" hidden>
+      <div class="us-detail-head">
+        <span class="us-avatar us-avatar-lg" id="us-d-avatar" aria-hidden="true"></span>
+        <div class="us-detail-id">
+          <div class="us-detail-name"><h2 id="us-d-name"></h2><span class="us-chip" id="us-d-role"></span><span class="us-chip us-chip-crit" id="us-d-off" hidden>{{ t('us.disabled') }}</span></div>
+          <div class="us-detail-sub" id="us-d-sub"></div>
+        </div>
+        <button type="button" class="us-icon-btn" id="us-d-close" aria-label="{{ t('us.detail.close') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="us-tabs" role="tablist" aria-label="{{ t('us.tabs.label') }}" id="us-tabs">
+        {% for tab in ['overview', 'access', 'see', 'security', 'activity'] %}
+        <button type="button" role="tab" class="us-tab" id="us-tab-{{ tab }}" data-tab="{{ tab }}" aria-controls="us-panel-{{ tab }}" aria-selected="false" tabindex="-1">{{ t('us.tab.see_generic') if tab == 'see' else t('us.tab.' + tab) }}</button>
+        {% endfor %}
+      </div>
+      {% for tab in ['overview', 'access', 'see', 'security', 'activity'] %}
+      <div class="us-panel" role="tabpanel" id="us-panel-{{ tab }}" aria-labelledby="us-tab-{{ tab }}" tabindex="0" hidden></div>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+
+{# ── Roles compared (Rollen.dc.html) ─────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-roles" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-xl" role="dialog" aria-modal="true" aria-labelledby="us-roles-title">
+    <div class="modal-head">
+      <div class="us-modal-headtext"><div class="page-eyebrow">{{ t('us.compare_roles') }}</div><h2 class="modal-title" id="us-roles-title">{{ t('us.mx.title') }}</h2></div>
+      {{ closeBtn(t('common.close')) }}
+    </div>
+    <div class="modal-body us-modal-body">
+      <p class="us-muted us-mx-intro">{{ t('us.mx.intro') }}</p>
+      <div class="us-mx-legend">
+        <span><span class="us-mx-ic us-mx-yes" aria-hidden="true">✓</span>{{ t('us.mx.legend_yes') }}</span>
+        <span><span class="us-mx-ic us-mx-some" aria-hidden="true">◐</span>{{ t('us.mx.legend_some') }}</span>
+        <span><span class="us-mx-ic us-mx-no" aria-hidden="true">–</span>{{ t('us.mx.legend_no') }}</span>
+      </div>
+      <div class="us-mx-wrap">
+        <table class="us-mx">
+          <thead>
+            <tr>
+              <th scope="col">{{ t('us.mx.area') }}</th>
+              <th scope="col"><span class="us-chip us-chip-admin">{{ t('us.role.admin') }}</span><div class="us-mx-sub">{{ t('us.mx.admin_sub') }}</div></th>
+              <th scope="col"><span class="us-chip us-chip-member">{{ t('us.role.member') }}</span><div class="us-mx-sub">{{ t('us.mx.member_sub') }}</div></th>
+              <th scope="col"><span class="us-chip us-chip-dashed">{{ t('us.mx.self') }}</span><div class="us-mx-sub">{{ t('us.mx.self_sub') }}</div></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_login') }}</th></tr>
+            <tr><th scope="row">{{ t('us.mx.r_web') }}</th>{{ mxCell('yes', t('us.mx.c_web_admin')) }}{{ mxCell('no', t('us.mx.c_web_member')) }}{{ mxCell('some', t('us.mx.c_web_self')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_app') }}</th>{{ mxCell('yes', t('us.mx.c_code')) }}{{ mxCell('yes', t('us.mx.c_code')) }}{{ mxCell('yes', t('us.mx.c_code')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_portal') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', t('us.mx.c_portal_member')) }}{{ mxCell('yes', '') }}</tr>
+            <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_apps') }}</th></tr>
+            <tr><th scope="row">{{ t('us.mx.r_vpn') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_services') }}<div class="us-mx-note">{{ t('us.mx.r_services_note') }}</div></th>{{ mxCell('some', t('us.mx.c_shared')) }}{{ mxCell('some', t('us.mx.c_shared')) }}{{ mxCell('some', t('us.mx.c_like_member')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_rdp') }}</th>{{ mxCell('some', t('us.mx.c_shared_short')) }}{{ mxCell('some', t('us.mx.c_shared_short')) }}{{ mxCell('some', t('us.mx.c_shared_short')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_traffic') }}</th>{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}{{ mxCell('yes', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_pihole') }}<div class="us-mx-note">{{ t('us.mx.r_pihole_note') }}</div></th>{{ mxCell('yes', t('us.mx.c_pihole_admin')) }}{{ mxCell('some', t('us.mx.c_pihole_member')) }}{{ mxCell('some', t('us.mx.c_pihole_member')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_integrations') }}</th>{{ mxCell('yes', t('us.mx.c_all')) }}{{ mxCell('some', t('us.mx.c_owner')) }}{{ mxCell('some', t('us.mx.c_owner')) }}</tr>
+            <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_own') }}</th></tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_devices') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', t('us.mx.c_in_app')) }}{{ mxCell('yes', t('us.mx.c_list')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_setup') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', t('us.mx.c_admin_code')) }}{{ mxCell('some', t('us.mx.c_if_allowed')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_lock') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('yes', t('us.mx.c_lost')) }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_own_account') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('yes', '') }}</tr>
+            <tr><th colspan="4" scope="colgroup" class="us-mx-group">{{ t('us.mx.g_admin') }}</th></tr>
+            <tr><th scope="row">{{ t('us.mx.r_dashboard') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_network') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_shares') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_users') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_settings') }}</th>{{ mxCell('yes', '') }}{{ mxCell('no', '') }}{{ mxCell('no', '') }}</tr>
+            <tr><th scope="row">{{ t('us.mx.r_admin_tokens') }}<div class="us-mx-note">{{ t('us.mx.r_admin_tokens_note') }}</div></th>{{ mxCell('yes', t('us.mx.c_any_rights')) }}{{ mxCell('no', t('us.mx.c_app_rights')) }}{{ mxCell('no', t('us.mx.c_app_rights')) }}</tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close>{{ t('common.close') }}</button></div>
+  </div>
+</div>
+
+{# ── Create user (BenutzerAnlegen.dc.html) ───────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-create" style="display:none" data-us-dialog data-us-dirty>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="us-create-title">
+    <div class="modal-head"><h2 class="modal-title" id="us-create-title">{{ t('us.create.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="us-create-form" autocomplete="off" novalidate>
+      <fieldset class="us-fieldset">
+        <legend class="us-label">{{ t('us.create.question') }}</legend>
+        <div class="us-choice-grid">
+          <button type="button" class="us-choice" data-role-pick="user" aria-pressed="true">
+            <span class="us-choice-title"><span class="us-radio" aria-hidden="true"></span>{{ t('us.role.member') }}</span>
+            <span class="us-choice-text">{{ t('us.create.member_text') }}</span>
+            <span class="us-point"><span class="us-pt-yes" aria-hidden="true">✓</span>{{ t('us.create.m1') }}</span>
+            <span class="us-point"><span class="us-pt-yes" aria-hidden="true">✓</span>{{ t('us.create.m2') }}</span>
+            <span class="us-point"><span class="us-pt-no" aria-hidden="true">–</span>{{ t('us.create.m3') }}</span>
+          </button>
+          <button type="button" class="us-choice" data-role-pick="admin" aria-pressed="false">
+            <span class="us-choice-title"><span class="us-radio" aria-hidden="true"></span>{{ t('us.role.admin') }}</span>
+            <span class="us-choice-text">{{ t('us.create.admin_text') }}</span>
+            <span class="us-point"><span class="us-pt-yes" aria-hidden="true">✓</span>{{ t('us.create.a1') }}</span>
+            <span class="us-point"><span class="us-pt-yes" aria-hidden="true">✓</span>{{ t('us.create.a2') }}</span>
+            <span class="us-point"><span class="us-pt-warn" aria-hidden="true">!</span>{{ t('us.create.a3') }}</span>
           </button>
         </div>
-        <p class="mb-explain" id="mb-explain" hidden>{{ t('users.mb.explain') }}</p>
-        <div id="user-tokens-list" style="display:flex;flex-direction:column;gap:6px"></div>
-        {# Device binding per token (licence feature machine_binding): status,
-           per-token switch (mode "individual"), reset. users.js renders it into
-           every client token row from GET /api/v1/users/:id (tokens[] +
-           machine_binding). Not the token→peer binding. #}
-        <script type="application/json" id="mb-users-i18n">{
-          {%- set mbKeys = ['title', 'bound', 'since', 'pending', 'inactive', 'stored', 'global', 'active', 'toggle',
-            'hint_global', 'hint_off', 'settings_link', 'reset', 'reset_title', 'reset_confirm', 'reset_ok',
-            'reset_done', 'saved_on', 'saved_off', 'failed', 'locked', 'pro'] %}
-          {%- for k in mbKeys %}
-          {{ k | dump | safe }}: {{ t('users.mb.' + k) | dump | safe }}{% if not loop.last %},{% endif %}
-          {%- endfor %}
-        }</script>
-        <button type="button" class="btn btn-secondary" style="margin-top:10px;width:100%" id="btn-user-enroll-device">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          {{ t('enrollment.new_device') }}
-        </button>
+      </fieldset>
+      <div class="us-grid2">
+        <label class="us-field"><span class="us-label">{{ t('us.username') }}</span><input type="text" class="form-input" id="us-c-username" maxlength="100" autocomplete="off" required><span class="us-hint">{{ t('us.username_hint') }}</span></label>
+        <label class="us-field"><span class="us-label">{{ t('us.display_name') }}</span><input type="text" class="form-input" id="us-c-display" maxlength="100"></label>
+        <label class="us-field us-span2"><span class="us-label">{{ t('us.email') }}</span><input type="email" class="form-input" id="us-c-email" maxlength="255" placeholder="{{ t('us.email_ph') }}"></label>
       </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="user-modal-cancel">{{ t('config.cancel') }}</button>
-      <button class="btn btn-primary" id="user-modal-save">{{ t('data.save') or 'Save' }}</button>
-    </div>
+      <div class="us-box" id="us-c-admin" hidden>
+        <div class="us-box-head"><b>{{ t('us.create.pw_title') }}</b><span class="us-muted">{{ t('us.create.pw_required') }}</span></div>
+        <div class="us-pwrow">
+          <input type="text" class="form-input us-mono" id="us-c-password" aria-label="{{ t('us.pw.label') }}" maxlength="200" autocomplete="new-password" spellcheck="false">
+          <button type="button" class="btn btn-sm us-btn-chip" id="us-c-pw-regen">{{ t('us.pw.regen') }}</button>
+          <button type="button" class="btn btn-sm us-btn-chip" data-copy="#us-c-password">{{ t('common.copy') }}</button>
+        </div>
+        <label class="us-check"><input type="checkbox" id="us-c-mustchange" checked>{{ t('us.create.must_change') }}</label>
+      </div>
+      <div class="us-box" id="us-c-member">
+        <label class="us-check us-check-top"><input type="checkbox" id="us-c-setup" checked><span><b>{{ t('us.create.setup_now') }}</b><span class="us-hint">{{ t('us.create.setup_now_text') }}</span></span></label>
+        <label class="us-check us-check-top"><input type="checkbox" id="us-c-self"><span><b>{{ t('us.create.allow_self') }}</b> <span class="us-new">{{ t('us.new') }}</span><span class="us-hint">{{ t('us.create.allow_self_text') }}</span></span></label>
+      </div>
+      <div class="us-error" id="us-c-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close>{{ t('common.cancel') }}</button><button type="submit" form="us-create-form" class="btn btn-primary" id="us-c-save">{{ t('us.create.save_setup') }}</button></div>
   </div>
 </div>
 
-{# -- Token Wizard Modal (4 steps) -- #}
-<div class="modal-overlay" id="token-modal-overlay" style="display:none;z-index:201">
-  <div class="modal" style="width:500px;max-width:95vw">
-    <div class="modal-head">
-      <span class="mi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span>
-      <span class="modal-title" id="token-wizard-title">{{ t('users.create_token') }}</span>
-      <span style="font-size:11px;color:var(--text-3);margin-left:auto" id="token-wizard-step">1/4</span>
-      <button class="modal-close" id="token-modal-close">&times;</button>
+{# ── Access wizard (ZugangAssistent.dc.html) ─────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-wizard" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-lg" role="dialog" aria-modal="true" aria-labelledby="us-wz-title">
+    <div class="modal-head us-wz-head">
+      <div class="us-modal-headtext"><h2 class="modal-title" id="us-wz-title">{{ t('us.wz.title') }}</h2><div class="us-muted" id="us-wz-for"></div></div>
+      {{ closeBtn(t('common.close')) }}
     </div>
-    <div class="modal-body">
-      {# Step 1: Name & User #}
-      <div id="tw-step-1" class="tw-step">
-        <div class="form-group">
-          <label class="form-label" for="tw-name">{{ t('users.token_name') }}</label>
-          <input type="text" id="tw-name" required maxlength="100" placeholder="z.B. Familien PC, Pixel Fold">
+    <ol class="us-steps" aria-label="{{ t('us.wz.steps') }}" id="us-wz-steps">
+      {% for n in [1, 2, 3, 4] %}
+      <li><button type="button" class="us-step" data-step="{{ n }}"><span class="us-step-num" aria-hidden="true">{{ n }}</span><span class="us-step-label">{{ t('us.wz.step' + n) }}</span></button></li>
+      {% endfor %}
+    </ol>
+    <div class="modal-body us-modal-body us-wz-body">
+      <div class="us-wz-page" data-page="1">
+        <div class="us-label">{{ t('us.wz.kind_q') }}</div>
+        <div class="us-choice-grid">
+          <button type="button" class="us-choice" data-kind="device" aria-pressed="true">
+            <span class="us-choice-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2"/></svg>{{ t('us.wz.kind_device') }}</span>
+            <span class="us-choice-text">{{ t('us.wz.kind_device_text') }}</span>
+          </button>
+          <button type="button" class="us-choice" data-kind="token" aria-pressed="false">
+            <span class="us-choice-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M14 5l-4 14"/></svg>{{ t('us.wz.kind_api') }}</span>
+            <span class="us-choice-text">{{ t('us.wz.kind_api_text') }}</span>
+          </button>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="tw-user">{{ t('users.assign_to') or 'Zuweisen an' }}</label>
-          <select id="tw-user"></select>
-        </div>
-      </div>
-
-      {# Step 2: Scopes #}
-      <div id="tw-step-2" class="tw-step" style="display:none">
-        <div class="form-group">
-          <label class="form-label">{{ t('users.token_scopes') }}</label>
-          <div id="tw-presets" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="client" checked> <strong>{{ t('users.preset_client') or 'Client-Zugriff' }}</strong> <span style="color:var(--text-3);font-size:11px">VPN + RDP + Services</span></label>
-            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="full-access"> <strong>{{ t('users.preset_full') or 'Vollzugriff' }}</strong> <span style="color:var(--text-3);font-size:11px">{{ t('users.preset_full_desc') or 'Alle Admin-Funktionen' }}</span></label>
-            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="read-only"> <strong>{{ t('users.preset_readonly') or 'Nur Lesen' }}</strong> <span style="color:var(--text-3);font-size:11px">Dashboard + Status</span></label>
-            <label class="tw-preset-label"><input type="radio" name="tw-preset" value="custom"> <strong>{{ t('users.preset_custom') or 'Benutzerdefiniert' }}</strong></label>
-          </div>
-          <div id="tw-custom-scopes" style="display:none;flex-wrap:wrap;gap:6px"></div>
+        <div class="us-grid2">
+          <label class="us-field"><span class="us-label">{{ t('us.wz.name') }}</span><input type="text" class="form-input" id="us-wz-name" maxlength="100"><span class="us-hint" id="us-wz-name-hint"></span></label>
+          <label class="us-field"><span class="us-label">{{ t('us.wz.owner') }}</span><select class="form-input" id="us-wz-owner"></select><span class="us-hint">{{ t('us.wz.owner_hint') }}</span></label>
         </div>
       </div>
-
-      {# Step 3: Peer & Expiry #}
-      <div id="tw-step-3" class="tw-step" style="display:none">
-        <div class="form-group">
-          <label class="form-label" for="tw-peer">{{ t('users.bind_peer') or 'An Peer binden' }}</label>
-          <select id="tw-peer"></select>
-          <small class="form-hint">{{ t('users.bind_peer_hint') or 'Token wird beim ersten Connect automatisch gebunden' }}</small>
-        </div>
-        <div class="form-group">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="tw-st-override" style="accent-color:var(--accent)">
-            {{ t('users.split_tunnel_override') }}
-          </label>
-        </div>
-        <div id="tw-st-section" style="display:none;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:12px">
-          <div class="form-group" style="margin-bottom:8px">
-            <label class="form-label" style="font-size:11px">{{ t('settings.split_tunnel_mode') }}</label>
-            <select id="tw-st-mode" style="font-size:12px">
-              <option value="exclude">{{ t('settings.split_tunnel_exclude') }}</option>
-              <option value="include">{{ t('settings.split_tunnel_include') }}</option>
+      <div class="us-wz-page" data-page="2" hidden>
+        <div class="us-label">{{ t('us.wz.rights_q') }}</div>
+        <div class="us-presets" id="us-wz-presets"></div>
+        <div class="us-scopes" id="us-wz-scopes" hidden></div>
+      </div>
+      <div class="us-wz-page" data-page="3" hidden>
+        <div class="us-grid2">
+          <label class="us-field"><span class="us-label">{{ t('us.wz.expiry') }}</span>
+            <select class="form-input" id="us-wz-expiry">
+              <option value="">{{ t('us.wz.exp_never') }}</option>
+              <option value="30">{{ t('us.wz.exp_30') }}</option>
+              <option value="90">{{ t('us.wz.exp_90') }}</option>
+              <option value="365">{{ t('us.wz.exp_365') }}</option>
+              <option value="date">{{ t('us.wz.exp_date') }}</option>
             </select>
-          </div>
-          <div class="form-group" style="margin-bottom:8px">
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-private" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_private') }}</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-linklocal" style="accent-color:var(--accent)"> Link-Local</label>
-          </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="tw-st-locked" style="accent-color:var(--accent)"> {{ t('settings.split_tunnel_lock') }}</label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('users.token_expiry') }}</label>
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <label><input type="radio" name="tw-expiry" value="" checked> {{ t('users.no_expiry') }}</label>
-            <label><input type="radio" name="tw-expiry" value="30"> 30 {{ t('users.days') }}</label>
-            <label><input type="radio" name="tw-expiry" value="90"> 90 {{ t('users.days') }}</label>
-            <label><input type="radio" name="tw-expiry" value="365"> 1 {{ t('users.year') or 'Jahr' }}</label>
-          </div>
-        </div>
-        <details class="form-group" id="tw-advanced">
-          <summary style="cursor:pointer;font-size:12px;color:var(--text-2)">{{ t('users.token_advanced') }}</summary>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:8px">
-            <input type="checkbox" id="tw-classic" style="accent-color:var(--accent)"> {{ t('users.token_classic') }}
           </label>
-          <div style="font-size:11px;color:var(--text-3);margin-top:4px">{{ t('users.token_classic_hint') }}</div>
+          <label class="us-field"><span class="us-label">{{ t('us.wz.peer') }}</span><select class="form-input" id="us-wz-peer"></select><span class="us-hint" id="us-wz-peer-hint"></span></label>
+          <label class="us-field" id="us-wz-date-wrap" hidden><span class="us-label">{{ t('us.wz.exp_date_label') }}</span><input type="date" class="form-input" id="us-wz-date"></label>
+        </div>
+        <div class="us-box us-switchrow" id="us-wz-binding">
+          <div class="us-switchrow-text"><b>{{ t('us.wz.binding') }}</b><div class="us-hint" id="us-wz-binding-text"></div></div>
+          <button type="button" class="st-switch us-switch" role="switch" aria-checked="false" id="us-wz-binding-sw" aria-label="{{ t('us.wz.binding') }}"><span class="st-knob" aria-hidden="true"></span></button>
+        </div>
+        <details class="us-details" id="us-wz-st">
+          <summary>{{ t('us.wz.st') }}</summary>
+          <div class="us-hint">{{ t('us.wz.st_text') }}</div>
+          <div class="us-st" data-st-editor="wz"></div>
         </details>
+        <label class="us-check" id="us-wz-classic-wrap" hidden><input type="checkbox" id="us-wz-classic">{{ t('us.wz.classic') }}</label>
       </div>
-
-      {# Step 4: setup code (default) or classic token (Erweitert) #}
-      <div id="tw-step-4" class="tw-step" style="display:none">
-        <div id="tw-code-result" style="text-align:center">
-          <p style="font-size:13px;color:var(--text-2);margin:0 0 12px">{{ t('users.token_code_intro') }}</p>
-          <img id="tw-code-qr" src="" alt="QR Code" style="max-width:220px;margin:0 auto 10px;display:block">
-          <div id="tw-code-value" style="font-family:var(--font-mono, monospace);font-size:20px;font-weight:600;letter-spacing:1px;user-select:all"></div>
-          <div id="tw-code-expiry" style="font-size:12px;color:var(--text-2);margin:4px 0 12px">{{ t('enrollment.expires_in') }} <span id="tw-code-countdown"></span></div>
-          <div id="tw-code-expired" style="display:none;font-size:13px;color:var(--red);margin-bottom:12px">{{ t('enrollment.expired') }}</div>
-          <div style="text-align:left;font-size:12px;color:var(--text-2)">
-            <div style="margin-bottom:6px">{{ t('users.token_code_clients') }}</div>
-            <div style="margin-bottom:4px">{{ t('users.token_code_script') }}</div>
-            <div style="position:relative">
-              <code id="tw-code-curl" style="font-size:11px;word-break:break-all;display:block;padding:10px;padding-right:80px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);user-select:all"></code>
-              <button class="btn btn-secondary" id="tw-code-curl-copy" type="button" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 12px">{{ t('common.copy') or 'Kopieren' }}</button>
-            </div>
+      <div class="us-wz-page" data-page="4" hidden>
+        <div class="us-code" id="us-wz-code">
+          <div class="us-code-qr">
+            <img id="us-wz-qr" alt="{{ t('us.wz.qr') }}" width="200" height="200">
+            <div class="us-code-value" id="us-wz-code-value"></div>
+            <div class="us-hint us-center" id="us-wz-countdown" aria-live="polite"></div>
+            <button type="button" class="btn btn-sm us-btn-chip" id="us-wz-regen">{{ t('enrollment.regenerate') }}</button>
           </div>
-          <p style="font-size:11px;color:var(--text-3);margin:10px 0 0">{{ t('users.token_code_once') }}</p>
+          <div class="us-code-side">
+            <div class="us-sum-title">{{ t('us.wz.summary') }}</div>
+            <dl class="us-sum" id="us-wz-summary"></dl>
+            <div class="us-muted us-small" id="us-wz-help"></div>
+            <pre class="us-curl" id="us-wz-curl" hidden></pre>
+            <button type="button" class="btn btn-sm us-btn-chip" id="us-wz-curl-copy" data-copy="#us-wz-curl" hidden>{{ t('common.copy') }}</button>
+          </div>
         </div>
-        <div id="tw-classic-result" style="display:none">
-        <div style="padding:12px;background:var(--amber-lt);border:1px solid var(--amber-bd);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px">
-          ⚠️ {{ t('users.token_warning') or 'Diesen Token jetzt kopieren — er wird nur einmal angezeigt!' }}
-        </div>
-        <div style="position:relative">
-          <code id="tw-token-value" style="font-size:12px;word-break:break-all;display:block;padding:12px;padding-right:80px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);user-select:all"></code>
-          <button class="btn btn-primary" id="tw-copy-btn" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 12px">{{ t('common.copy') or 'Kopieren' }}</button>
-        </div>
-        <div id="tw-copy-confirm" style="display:none;color:var(--green);font-size:12px;margin-top:6px;font-weight:500">✓ {{ t('users.token_copied') or 'Kopiert!' }}</div>
+        <div class="us-keybox" id="us-wz-key" hidden>
+          <div class="us-warnbox">{{ t('us.wz.key_warning') }}</div>
+          <div class="us-pwrow"><code class="us-key" id="us-wz-key-value"></code><button type="button" class="btn btn-sm btn-primary" data-copy="#us-wz-key-value">{{ t('common.copy') }}</button></div>
+          <dl class="us-sum" id="us-wz-summary-key"></dl>
         </div>
       </div>
-
-      <div id="token-form-error" class="form-error" style="display:none"></div>
+      <div class="us-error" id="us-wz-error" role="alert" hidden></div>
     </div>
-    <div class="modal-foot" id="tw-footer">
-      <button class="btn btn-ghost" id="tw-cancel">{{ t('config.cancel') }}</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" id="tw-back" style="display:none">← {{ t('common.back') or 'Zurück' }}</button>
-        <button class="btn btn-primary" id="tw-next">{{ t('common.next') or 'Weiter' }} →</button>
-      </div>
+    <div class="modal-foot us-wz-foot">
+      <button type="button" class="btn btn-ghost" id="us-wz-back">{{ t('us.back') }}</button>
+      <span class="us-grow"></span>
+      <button type="button" class="btn btn-ghost" data-us-close id="us-wz-cancel">{{ t('common.cancel') }}</button>
+      <button type="button" class="btn btn-primary" id="us-wz-next">{{ t('common.next') }}</button>
     </div>
   </div>
 </div>
 
-{% include theme + "/partials/modals/client-enrollment.njk" %}
+{# ── Edit access (ZugangBearbeiten.dc.html) ──────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-edit" style="display:none" data-us-dialog data-us-dirty>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="us-ed-title">
+    <div class="modal-head">
+      <span class="us-ed-ic" id="us-ed-ic" aria-hidden="true"></span>
+      <div class="us-modal-headtext"><h2 class="modal-title" id="us-ed-title"></h2><div class="us-muted" id="us-ed-sub"></div></div>
+      {{ closeBtn(t('common.close')) }}
+    </div>
+    <form class="modal-body us-modal-body us-form" id="us-ed-form" novalidate>
+      <div class="us-grid2">
+        <label class="us-field"><span class="us-label">{{ t('us.wz.name') }}</span><input type="text" class="form-input" id="us-ed-name" maxlength="100" required></label>
+        <label class="us-field"><span class="us-label">{{ t('us.wz.expiry') }}</span><select class="form-input" id="us-ed-expiry"></select></label>
+        <label class="us-field" id="us-ed-date-wrap" hidden><span class="us-label">{{ t('us.wz.exp_date_label') }}</span><input type="date" class="form-input" id="us-ed-date"></label>
+      </div>
+      <div>
+        <div class="us-label" id="us-ed-rights-q"></div>
+        <div class="us-rights" id="us-ed-rights"></div>
+        <div class="us-hint" id="us-ed-rights-hint">{{ t('us.ed.rights_hint') }}</div>
+      </div>
+      <div class="us-facts" id="us-ed-facts"></div>
+      <div class="us-error" id="us-ed-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-danger" id="us-ed-revoke">{{ t('us.ed.revoke') }}</button>
+      <span class="us-grow"></span>
+      <button type="button" class="btn btn-ghost" data-us-close>{{ t('common.cancel') }}</button>
+      <button type="submit" form="us-ed-form" class="btn btn-primary" id="us-ed-save">{{ t('common.save') }}</button>
+    </div>
+  </div>
+</div>
 
+{# ── New password (Sicherheitsdialoge.dc.html) ───────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-password" style="display:none" data-us-dialog data-us-dirty>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="us-pw-title">
+    <div class="modal-head"><h2 class="modal-title" id="us-pw-title"></h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="us-pw-form" novalidate>
+      <p class="us-muted" id="us-pw-text"></p>
+      <div class="us-radios">
+        <label class="us-check"><input type="radio" name="us-pw-mode" value="generate" checked>{{ t('us.pw.generate') }}</label>
+        <label class="us-check"><input type="radio" name="us-pw-mode" value="manual">{{ t('us.pw.manual') }}</label>
+      </div>
+      <div class="us-pwrow">
+        <input type="text" class="form-input us-mono" id="us-pw-value" aria-label="{{ t('us.pw.label') }}" maxlength="200" autocomplete="new-password" spellcheck="false">
+        <button type="button" class="btn btn-sm us-btn-chip" data-copy="#us-pw-value">{{ t('common.copy') }}</button>
+      </div>
+      <label class="us-check"><input type="checkbox" id="us-pw-must" checked>{{ t('us.pw.must_change') }}</label>
+      <div class="us-error" id="us-pw-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close>{{ t('common.cancel') }}</button><button type="submit" form="us-pw-form" class="btn btn-primary" id="us-pw-save">{{ t('us.pw.save') }}</button></div>
+  </div>
+</div>
+
+{# ── Change role ─────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-role" style="display:none" data-us-dialog data-us-dirty>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="us-ro-title">
+    <div class="modal-head"><h2 class="modal-title" id="us-ro-title"></h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="us-ro-form" novalidate>
+      <div class="us-grid2 us-ro-compare">
+        <div class="us-ro-card"><div class="us-hint">{{ t('us.ro.before') }}</div><b id="us-ro-from"></b><div class="us-hint" id="us-ro-from-text"></div></div>
+        <div class="us-ro-card us-ro-new"><div class="us-hint">{{ t('us.ro.after') }}</div><b id="us-ro-to"></b><div class="us-hint" id="us-ro-to-text"></div></div>
+      </div>
+      <ul class="us-ro-list" id="us-ro-list"></ul>
+      <div id="us-ro-pw" hidden>
+        <div class="us-pwrow">
+          <input type="text" class="form-input us-mono" id="us-ro-password" aria-label="{{ t('us.pw.label') }}" maxlength="200" autocomplete="new-password" spellcheck="false">
+          <button type="button" class="btn btn-sm us-btn-chip" data-copy="#us-ro-password">{{ t('common.copy') }}</button>
+        </div>
+        <label class="us-check"><input type="checkbox" id="us-ro-must" checked>{{ t('us.pw.must_change') }}</label>
+      </div>
+      <div class="us-error" id="us-ro-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close>{{ t('common.cancel') }}</button><button type="submit" form="us-ro-form" class="btn btn-primary" id="us-ro-save">{{ t('us.ro.save') }}</button></div>
+  </div>
+</div>
+
+{# ── Delete user ─────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-delete" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="us-del-title">
+    <div class="modal-head"><span class="mi danger" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></span><h2 class="modal-title" id="us-del-title"></h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="us-del-form" novalidate>
+      <p class="us-del-intro">{{ t('us.del.intro') }}</p>
+      <ul class="us-effects" id="us-del-effects"></ul>
+      <div class="us-warnbox">{{ t('us.del.instead') }}</div>
+      <label class="us-field"><span class="us-label" id="us-del-confirm-label"></span><input type="text" class="form-input" id="us-del-confirm" autocomplete="off" spellcheck="false"></label>
+      <div class="us-error" id="us-del-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" id="us-del-disable">{{ t('us.del.disable_instead') }}</button><button type="submit" form="us-del-form" class="btn btn-danger solid" id="us-del-ok" disabled>{{ t('us.del.ok') }}</button></div>
+  </div>
+</div>
+
+{# ── Invitation to "Mein Bereich" ────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-invite" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="us-inv-title">
+    <div class="modal-head"><h2 class="modal-title" id="us-inv-title"></h2>{{ closeBtn(t('common.close')) }}</div>
+    <div class="modal-body us-modal-body us-form">
+      <p class="us-muted" id="us-inv-text"></p>
+      <div id="us-inv-result" hidden>
+        <label class="us-field"><span class="us-label">{{ t('us.inv.link') }}</span>
+          <span class="us-pwrow"><input type="text" class="form-input us-mono" id="us-inv-link" readonly><button type="button" class="btn btn-sm btn-primary" data-copy="#us-inv-link">{{ t('common.copy') }}</button></span>
+        </label>
+        <p class="us-hint" id="us-inv-valid"></p>
+        <p class="us-muted" id="us-inv-mail"></p>
+      </div>
+      <div class="us-error" id="us-inv-error" role="alert" hidden></div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close id="us-inv-close">{{ t('common.cancel') }}</button><button type="button" class="btn btn-primary" id="us-inv-create">{{ t('us.inv.create') }}</button></div>
+  </div>
+</div>
+
+{# ── Owner-less accesses ─────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-orphans" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="us-orph-title">
+    <div class="modal-head"><h2 class="modal-title" id="us-orph-title">{{ t('us.assign.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <div class="modal-body us-modal-body">
+      <p class="us-muted">{{ t('us.assign.intro') }}</p>
+      <ul class="us-orph-list" id="us-orph-list"></ul>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close>{{ t('common.close') }}</button></div>
+  </div>
+</div>
+
+<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found" nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
+<script type="application/json" id="us-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}, "pihole": {{ ('true' if license.features.pihole_integration else 'false') | safe }}, "rdp": {{ ('true' if license.features.remote_desktop else 'false') | safe }}}</script>
 {% endblock %}
 
 {% block scripts %}
-<script src="/js/client-enrollment.js?v={{ appVersion }}"></script>
 <script src="/js/users.js?v={{ appVersion }}"></script>
 {% endblock %}

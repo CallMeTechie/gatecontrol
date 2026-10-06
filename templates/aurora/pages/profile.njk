@@ -19,7 +19,7 @@
     <div class="pf-id-text">
       <div class="pf-id-name-row">
         <span class="pf-id-name" id="pf-id-name">{{ pfName }}</span>
-        <span class="pf-chip">{{ t('users.role_admin') if user and user.role == 'admin' else t('users.role_user') }}</span>
+        <span class="pf-chip">{{ t('us.role.admin') if user and user.role == 'admin' else t('us.role.member') }}</span>
       </div>
       <div class="pf-id-meta">
         <span class="pf-mono">{{ user.username if user }}</span><span id="pf-id-email-wrap" hidden> · <span id="pf-id-email"></span></span>

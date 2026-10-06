@@ -8,13 +8,29 @@ const config = require('../../config/default');
 const logger = require('../utils/logger');
 const lockout = require('../services/lockout');
 const activity = require('../services/activity');
-const { safeReturnTo } = require('../middleware/auth');
+const { safeReturnTo, homeFor } = require('../middleware/auth');
+const usersService = require('../services/users');
+const argon2Options = require('../utils/argon2Options');
 const twoFactor = require('../services/adminTwoFactor');
 const passkeys = require('../services/adminPasskeys');
 
 // A password-verified login that still awaits the second factor lives in
 // req.session.pending2fa = { userId, at, returnTo } for at most this long.
 const PENDING_2FA_TTL_MS = 5 * 60 * 1000;
+// A verified login whose account must set an own password first
+// (users.must_change_password) waits in req.session.pendingPwChange =
+// { userId, at, method, returnTo, passkeyName } — no session userId yet.
+const PENDING_PW_TTL_MS = 10 * 60 * 1000;
+
+function getPendingPw(req) {
+  const p = req.session && req.session.pendingPwChange;
+  if (!p || !p.userId || typeof p.at !== 'number') return null;
+  if (Date.now() - p.at > PENDING_PW_TTL_MS) {
+    delete req.session.pendingPwChange;
+    return null;
+  }
+  return p;
+}
 
 function getPending2fa(req) {
   const p = req.session && req.session.pending2fa;
@@ -69,19 +85,69 @@ function establishSession(req, user, { method, passkeyName } = {}, done) {
     req.session.language = language;
     req.session.authMethod = method || 'password';
     req.session.authAt = Date.now();
+    // Shown in the session list of the Users page (browser + address).
+    req.session.ua = String((req.headers && req.headers['user-agent']) || '').slice(0, 300);
+    req.session.ip = req.ip || null;
 
     logger.info({ username: user.username, ip: req.ip, twoFactor: user.totp_enabled === 1, method: method || 'password' }, 'Successful login');
     return done(null);
   });
 }
 
+/**
+ * A verified login that still needs an own password: the pending state is
+ * stored on a FRESH session id (fixation — a planted id never carries it).
+ * The anonymous CSRF token is carried over so the form keeps working; the
+ * final establishSession() regenerates once more.
+ */
+function enterPendingPwChange(req, res, pending, done) {
+  const csrfToken = req.session.csrfToken;
+  req.session.regenerate((err) => {
+    if (err) {
+      logger.error({ err }, 'Session regeneration failed (pending password change)');
+      return done(err);
+    }
+    if (csrfToken) req.session.csrfToken = csrfToken;
+    req.session.pendingPwChange = { ...pending, at: Date.now() };
+    return done(null);
+  });
+}
+
+/**
+ * Where a completed login goes. Only the portal is an allowed returnTo
+ * (safeReturnTo: /portal, /portal/…, /portal?…, /portal#…, no //, no
+ * backslash, no control characters). The redirect is built as the constant
+ * same-origin prefix '/portal' plus the remainder of that validated path, so
+ * request text can never choose the origin; anything else → the account's
+ * home page (a constant).
+ */
+const PORTAL_PREFIX = '/portal';
+function postLoginTarget(returnTo, user) {
+  const safe = safeReturnTo(returnTo);
+  if (!safe || !safe.startsWith(PORTAL_PREFIX)) return homeFor(user);
+  const rest = safe.slice(PORTAL_PREFIX.length);
+  if (rest && !/^[/?#]/.test(rest)) return homeFor(user);
+  return PORTAL_PREFIX + rest;
+}
+
 function completeLogin(req, res, user, returnTo, method) {
+  // An own password first (set by an administrator with "change on next
+  // login"): the session stays anonymous until /login/change-password.
+  if (user.must_change_password === 1) {
+    return enterPendingPwChange(req, res, { userId: user.id, method: method || 'password', returnTo: returnTo || '' }, (err) => {
+      if (err) {
+        setFlash(req, 'error', res.locals.t('auth.error_generic'));
+        return res.redirect('/login');
+      }
+      return res.redirect('/login/change-password');
+    });
+  }
   establishSession(req, user, { method: method || 'password' }, (err) => {
     if (err) {
       setFlash(req, 'error', res.locals.t('auth.error_generic'));
       return res.redirect('/login');
     }
-    return res.redirect(returnTo || '/dashboard');
+    return res.redirect(postLoginTarget(returnTo, user));
   });
 }
 
@@ -156,7 +222,9 @@ const authRoutes = {
       // A disabled account is refused exactly like a wrong password (same
       // flash, same lockout accounting, argon2 already ran) so the response
       // does not reveal whether the account exists or is disabled.
-      if (!user || !passwordOk || user.enabled !== 1) {
+      // A member without "Mein Bereich" has no web login at all (its
+      // password is the '!' sentinel anyway) — refused the same way.
+      if (!user || !passwordOk || user.enabled !== 1 || !usersService.canWebLogin(user)) {
         logger.warn({ username, ip: req.ip }, 'Failed login attempt');
 
         // Record failed attempt for lockout
@@ -231,7 +299,7 @@ const authRoutes = {
 
       const db = getDb();
       const user = db.prepare('SELECT * FROM users WHERE id = ? AND enabled = 1').get(userId);
-      if (!user || user.totp_enabled !== 1) {
+      if (!user || user.totp_enabled !== 1 || !usersService.canWebLogin(user)) {
         // 2FA was reset/disabled meanwhile (or the account vanished): back
         // to the password form, nothing to verify against.
         delete req.session.pending2fa;
@@ -346,10 +414,99 @@ const authRoutes = {
     }
 
     delete req.session.pending2fa;
+    if (!usersService.canWebLogin(result.user)) {
+      logger.warn({ ip: req.ip, userId: result.user.id }, 'Passkey login of an account without web login');
+      return fail(400, 'passkey.error_login_failed', 'LOGIN_FAILED');
+    }
+    if (result.user.must_change_password === 1) {
+      return enterPendingPwChange(req, res, { userId: result.user.id, method: 'passkey', returnTo: returnTo || '', passkeyName: result.passkey.name }, (err) => {
+        if (err) return fail(500, 'auth.error_generic', 'ERROR');
+        return res.json({ ok: true, redirect: '/login/change-password' });
+      });
+    }
     return establishSession(req, result.user, { method: 'passkey', passkeyName: result.passkey.name }, (err) => {
       if (err) return fail(500, 'auth.error_generic', 'ERROR');
-      return res.json({ ok: true, redirect: returnTo || '/dashboard' });
+      return res.json({ ok: true, redirect: postLoginTarget(returnTo, result.user) });
     });
+  },
+
+  // ─── Own password after an admin reset ("change on next login") ──────
+
+  // Read-only on purpose: the page never writes to the session (no flash, no
+  // token minting, no cleanup). The pending state and the CSRF token were
+  // stored on a fresh session id by enterPendingPwChange(); without a valid
+  // pending state the visitor simply goes back to the login form.
+  changePasswordPage(req, res) {
+    const p = req.session && req.session.pendingPwChange;
+    const valid = !!(p && p.userId && typeof p.at === 'number' && Date.now() - p.at <= PENDING_PW_TTL_MS);
+    if (!valid || !res.locals.csrfToken) return res.redirect('/login');
+    return res.render(`${res.locals.theme}/pages/login-password.njk`, {
+      title: res.locals.t('pwchange.title'),
+      layout: false,
+      minLength: usersService.PASSWORD_MIN_LENGTH,
+    });
+  },
+
+  async changePassword(req, res) {
+    const pending = getPendingPw(req);
+    if (!pending) {
+      setFlash(req, 'error', res.locals.t('two_fa.error_expired'));
+      return res.redirect('/login');
+    }
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const confirm = typeof req.body.password_confirm === 'string' ? req.body.password_confirm : '';
+    const back = (key, text) => {
+      setFlash(req, 'error', text || res.locals.t(key));
+      return res.redirect('/login/change-password');
+    };
+    try {
+      const db = getDb();
+      const user = db.prepare('SELECT * FROM users WHERE id = ? AND enabled = 1').get(pending.userId);
+      if (!user || !usersService.canWebLogin(user) || user.must_change_password !== 1) {
+        delete req.session.pendingPwChange;
+        setFlash(req, 'error', res.locals.t('two_fa.error_expired'));
+        return res.redirect('/login');
+      }
+      if (password !== confirm) return back('pwchange.mismatch');
+      const policy = usersService.passwordPolicyErrors(password);
+      if (policy.length) {
+        return back(null, policy.map((e) => {
+          let m = res.locals.t(e.key);
+          for (const [k, v] of Object.entries(e.params || {})) m = m.split(`{{${k}}}`).join(String(v));
+          return m;
+        }).join(' · '));
+      }
+      let same = false;
+      try { same = await argon2.verify(user.password_hash, password); } catch { same = false; }
+      if (same) return back('pwchange.same');
+      const hash = await argon2.hash(password, argon2Options);
+      db.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0, password_changed_at = datetime('now'),
+          updated_at = datetime('now') WHERE id = ?`).run(hash, user.id);
+      activity.log('password_changed', `User ${user.username} set a new password at login`, {
+        source: 'user', ipAddress: req.ip, severity: 'info', details: { userId: user.id },
+      });
+      const returnTo = safeReturnTo(pending.returnTo);
+      // Abandon the pre-login session before the account is signed in
+      // (establishSession regenerates once more and sets userId).
+      return req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          logger.error({ err: regenErr }, 'Session regeneration failed (password change)');
+          setFlash(req, 'error', res.locals.t('auth.error_generic'));
+          return res.redirect('/login');
+        }
+        return establishSession(req, user, { method: pending.method, passkeyName: pending.passkeyName }, (err) => {
+          if (err) {
+            setFlash(req, 'error', res.locals.t('auth.error_generic'));
+            return res.redirect('/login');
+          }
+          return res.redirect(postLoginTarget(returnTo, user));
+        });
+      });
+    } catch (err) {
+      logger.error({ err }, 'Password change at login failed');
+      setFlash(req, 'error', res.locals.t('auth.error_generic'));
+      return res.redirect('/login');
+    }
   },
 
   logout(req, res) {
@@ -366,3 +523,4 @@ const authRoutes = {
 
 module.exports = authRoutes;
 module.exports.PENDING_2FA_TTL_MS = PENDING_2FA_TTL_MS;
+module.exports.PENDING_PW_TTL_MS = PENDING_PW_TTL_MS;

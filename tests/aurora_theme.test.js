@@ -431,114 +431,48 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
-  it('renders Aurora data-table and card-title on /users', async () => {
+  it('renders the redesigned users page contract (list, detail panel, dialogs)', async () => {
     selectAurora();
     const res = await agent.get('/users').expect(200);
-    assert.match(res.text, /class="data-table"/, '.data-table present (Aurora table class)');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
-    // Aurora template must NOT use the old peer-table class for the users table
-    assert.doesNotMatch(res.text, /class="peer-table" id="users-table"/, 'old peer-table class absent in Aurora users');
-  });
-
-  it('renders all phase0 static contract IDs on /users under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/users').expect(200);
-    // Table / page elements
-    assert.match(res.text, /id="users-tbody"/, '#users-tbody present');
-    assert.match(res.text, /id="users-table"/, '#users-table present');
-    assert.match(res.text, /id="unassigned-banner"/, '#unassigned-banner present');
-    assert.match(res.text, /id="unassigned-list"/, '#unassigned-list present');
-    assert.match(res.text, /id="unassigned-count"/, '#unassigned-count present');
-    assert.match(res.text, /id="btn-add-user"/, '#btn-add-user present');
-    assert.match(res.text, /id="btn-create-token-standalone"/, '#btn-create-token-standalone present');
-    // User modal elements
-    assert.match(res.text, /id="user-modal-overlay"/, '#user-modal-overlay present');
-    assert.match(res.text, /id="user-form"/, '#user-form present');
-    assert.match(res.text, /id="user-modal-title"/, '#user-modal-title present');
-    assert.match(res.text, /id="user-edit-id"/, '#user-edit-id present');
-    assert.match(res.text, /id="user-password-group"/, '#user-password-group present');
-    assert.match(res.text, /id="user-tokens-section"/, '#user-tokens-section present');
-    assert.match(res.text, /id="user-role"/, '#user-role present');
-    assert.match(res.text, /id="user-form-error"/, '#user-form-error present');
-    assert.match(res.text, /id="user-username"/, '#user-username present');
-    assert.match(res.text, /id="user-display-name"/, '#user-display-name present');
-    assert.match(res.text, /id="user-email"/, '#user-email present');
-    assert.match(res.text, /id="user-password"/, '#user-password present');
-    assert.match(res.text, /id="user-modal-save"/, '#user-modal-save present');
-    assert.match(res.text, /id="user-tokens-list"/, '#user-tokens-list present');
-    assert.match(res.text, /id="btn-add-token"/, '#btn-add-token present');
-    assert.match(res.text, /id="user-modal-close"/, '#user-modal-close present');
-    assert.match(res.text, /id="user-modal-cancel"/, '#user-modal-cancel present');
-    // Token wizard modal elements
-    assert.match(res.text, /id="token-modal-overlay"/, '#token-modal-overlay present');
-    assert.match(res.text, /id="token-form-error"/, '#token-form-error present');
-    assert.match(res.text, /id="tw-step-1"/, '#tw-step-1 present');
-    assert.match(res.text, /id="tw-step-2"/, '#tw-step-2 present');
-    assert.match(res.text, /id="tw-step-3"/, '#tw-step-3 present');
-    assert.match(res.text, /id="tw-step-4"/, '#tw-step-4 present');
-    assert.match(res.text, /id="token-wizard-step"/, '#token-wizard-step present');
-    assert.match(res.text, /id="tw-back"/, '#tw-back present');
-    assert.match(res.text, /id="tw-next"/, '#tw-next present');
-    assert.match(res.text, /id="tw-cancel"/, '#tw-cancel present');
-    assert.match(res.text, /id="tw-name"/, '#tw-name present');
-    assert.match(res.text, /id="tw-copy-confirm"/, '#tw-copy-confirm present');
-    assert.match(res.text, /id="tw-token-value"/, '#tw-token-value present');
-    assert.match(res.text, /id="tw-st-override"/, '#tw-st-override present');
-    assert.match(res.text, /id="tw-st-section"/, '#tw-st-section present');
-    assert.match(res.text, /id="tw-st-private"/, '#tw-st-private present');
-    assert.match(res.text, /id="tw-st-linklocal"/, '#tw-st-linklocal present');
-    assert.match(res.text, /id="tw-st-locked"/, '#tw-st-locked present');
-    assert.match(res.text, /id="tw-user"/, '#tw-user present');
-    assert.match(res.text, /id="tw-peer"/, '#tw-peer present');
-    assert.match(res.text, /id="tw-custom-scopes"/, '#tw-custom-scopes present');
-    assert.match(res.text, /id="tw-presets"/, '#tw-presets present');
-    assert.match(res.text, /id="tw-st-mode"/, '#tw-st-mode present');
-    assert.match(res.text, /id="tw-copy-btn"/, '#tw-copy-btn present');
-    assert.match(res.text, /id="token-modal-close"/, '#token-modal-close present');
-  });
-
-  it('Aurora users table uses 5-column thead (MFA + Last Login cols present, old 7-col keys absent)', async () => {
-    selectAurora();
-    const res = await agent.get('/users').expect(200);
-    // Aurora 5-column loading placeholder
-    assert.match(res.text, /colspan="5"/, 'loading row uses colspan="5" (5-column table)');
-    // Aurora template file references the new column keys
-    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'users.njk'), 'utf8');
-    assert.match(njk, /users\.col_mfa/, 'Aurora users.njk references users.col_mfa key');
-    assert.match(njk, /users\.col_last_login/, 'Aurora users.njk references users.col_last_login key');
-    // Aurora must NOT expose the 7-col keys users.col_tokens / users.col_peers / users.col_status
-    assert.doesNotMatch(njk, /users\.col_tokens/, 'users.col_tokens absent in Aurora thead (7-col key removed)');
-    assert.doesNotMatch(njk, /users\.col_peers/, 'users.col_peers absent in Aurora thead (7-col key removed)');
-  });
-
-  it('Aurora modal-head has <span class="mi"> icon wrapper in user modal', async () => {
-    selectAurora();
-    const res = await agent.get('/users').expect(200);
-    assert.match(res.text, /class="mi"/, '<span class="mi"> icon wrapper present in modal-head');
+    const ids = [
+      // page, role cards, owner-less banner, list
+      'us-page', 'us-btn-roles', 'us-btn-add', 'us-orphans', 'us-orphans-assign', 'us-search', 'us-filters', 'us-table', 'us-tbody', 'us-cards',
+      // detail panel with five tabs
+      'us-detail', 'us-tabs', 'us-tab-overview', 'us-tab-access', 'us-tab-see', 'us-tab-security', 'us-tab-activity',
+      'us-panel-overview', 'us-panel-access', 'us-panel-see', 'us-panel-security', 'us-panel-activity',
+      // dialogs
+      'us-dlg-roles', 'us-dlg-create', 'us-dlg-wizard', 'us-dlg-edit', 'us-dlg-password', 'us-dlg-role', 'us-dlg-delete', 'us-dlg-invite', 'us-dlg-orphans',
+      'us-wz-steps', 'us-wz-next', 'us-wz-back', 'us-wz-presets', 'us-wz-scopes', 'us-wz-peer', 'us-wz-binding-sw', 'us-wz-classic', 'us-wz-code-value',
+      'us-ed-rights', 'us-ed-facts', 'us-del-confirm', 'us-del-ok', 'us-i18n', 'us-ctx',
+    ];
+    for (const id of ids) assert.match(res.text, new RegExp(`id="${id}"`), `#${id} present`);
+    // the old modal/wizard is gone
+    for (const gone of ['user-modal-overlay', 'token-modal-overlay', 'tw-step-1', 'unassigned-banner']) {
+      assert.doesNotMatch(res.text, new RegExp(`id="${gone}"`), `#${gone} absent`);
+    }
+    assert.match(res.text, /role="tablist"/);
+    assert.match(res.text, /class="mi danger"/, 'delete dialog keeps the modal-head icon wrapper');
   });
 
   it('inline <style> block has been removed from aurora/pages/users.njk (styles moved to the stylesheet)', () => {
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'users.njk'), 'utf8');
-    assert.doesNotMatch(njk, /\.tw-step\s*\{/, '.tw-step inline style block absent (moved to the stylesheet)');
-    assert.doesNotMatch(njk, /\.tw-preset-label\s*\{/, '.tw-preset-label inline style block absent (moved to the stylesheet)');
     assert.doesNotMatch(njk, /<style>/, 'no <style> block in aurora users.njk (moved to the stylesheet)');
+    assert.doesNotMatch(njk, /style="(?!display:none")/, 'no inline styles except the overlay display toggle');
   });
 
-  it('users.js renders the Aurora table and cards without a theme branch', () => {
+  it('users.js renders table and cards without a theme branch', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'users.js'), 'utf8');
     assert.doesNotMatch(js, /isAurora/, 'no theme branch left in users.js (Aurora is the only theme)');
-    assert.match(js, /function renderUsersDesktop\(/, 'renderUsersDesktop() present');
-    assert.match(js, /function renderUsersCards\(/, 'renderUsersCards() present');
-    assert.match(js, /function userActionBtns\(/, 'userActionBtns() present');
-    assert.match(js, /function mfaTag\(/, 'mfaTag() present');
+    assert.match(js, /function renderList\(/, 'renderList() present');
+    assert.match(js, /function renderDetail\(/, 'renderDetail() present');
   });
 
-  it('app.css carries the users-page additions', () => {
+  it('app.css carries the users-page section (us-) and the old duplicates are gone', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    assert.match(css, /\.banner-amber\b/, '.banner-amber rule present in app.css');
-    assert.match(css, /\.aurora-user-card\b/, '.aurora-user-card rule present in app.css');
-    assert.match(css, /\.tw-step\b/, '.tw-step animation rule present in app.css');
-    assert.match(css, /\.tw-preset-label\b/, '.tw-preset-label rule present in app.css');
+    for (const sel of ['.us-layout', '.us-detail', '.us-tab', '.us-steps', '.us-mx', '.me-card']) assert.ok(css.includes(sel + '{') || css.includes(sel + ' '), sel);
+    assert.doesNotMatch(css, /\.tw-step\b/, '.tw-step is gone');
+    assert.doesNotMatch(css, /\.tw-preset-label\b/, '.tw-preset-label (defined twice) is gone');
+    assert.doesNotMatch(css, /\.aurora-user-card\b/);
   });
 });
 
@@ -1322,13 +1256,8 @@ describe('users modals — Aurora-safe overlay open (regression)', () => {
     assert.match(css, /\.modal-overlay\s*\{[^}]*display\s*:\s*none/, 'aurora .modal-overlay base is display:none');
   });
 
-  it('user modal overlay is opened with display:flex, not an empty string', () => {
-    assert.match(js, /userOverlay\.style\.display\s*=\s*'flex'/, "openUserModal must set userOverlay display to 'flex'");
-    assert.doesNotMatch(js, /userOverlay\.style\.display\s*=\s*''/, "userOverlay must not be opened with '' (app.css → none)");
-  });
-
-  it('token modal overlay is opened with display:flex, not an empty string', () => {
-    assert.match(js, /tokenOverlay\.style\.display\s*=\s*'flex'/, "token modal must set tokenOverlay display to 'flex'");
-    assert.doesNotMatch(js, /tokenOverlay\.style\.display\s*=\s*''/, "tokenOverlay must not be opened with '' (app.css → none)");
+  it('every users dialog is opened with display:flex, not an empty string', () => {
+    assert.match(js, /ov\.style\.display\s*=\s*'flex'/, "openDlg must set the overlay display to 'flex'");
+    assert.doesNotMatch(js, /style\.display\s*=\s*''/, "no overlay is opened with '' (app.css → none)");
   });
 });

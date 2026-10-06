@@ -35,12 +35,17 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+{# Bottom navigation and quick-add button are admin tools; a member's
+   navigation is the sidebar drawer (Mein Bereich, Konto, Portal). #}
+{% if user and user.role == 'admin' %}
 {% include theme + "/partials/bottomnav.njk" %}
 {% include theme + "/partials/fab.njk" %}
+{% endif %}
 
 <script nonce="{{ cspNonce }}">
   window.GC = {
     csrfToken: '{{ csrfToken }}',
+    role: {{ (user.role if user else 'guest') | dump | safe }},
     language: '{{ language }}',
     baseUrl: '{{ baseUrl }}',
     features: {
@@ -211,8 +216,7 @@
         'common.save', 'config.caddy_running', 'config.caddy_stopped', 'config.restart',
         'dashboard.chart_no_data',
         'dns.disabled', 'dns.enabled', 'dns.no_peers', 'egress.loading_routes',
-        'error.peer_groups.name_required', 'error.users.delete', 'error.users.get', 'error.users.list',
-        'error.users.toggle', 'error.wireguard.password_required', 'gateway_info.hostname',
+        'error.peer_groups.name_required', 'error.wireguard.password_required', 'gateway_info.hostname',
         'gateway_info.last_seen', 'gateway_info.no_data', 'gateway_info.section_lan',
         'gateway_info.section_resources', 'gateway_info.section_status', 'gateway_info.section_version',
         'gateway_info.uptime', 'gateway_info.wg_handshake', 'gateway_pools.load_failed',
@@ -252,13 +256,7 @@
         'settings.svc.wg_restart_failed', 'settings.webhook_test_failed',
         'settings.webhook_test_ok', 'settings.webhooks_empty',
         'skoda.cmd.spin_required', 'tags.confirm_delete', 'tags.deleted',
-        'tags.error_name_required', 'tags.no_tags', 'tags.unused', 'users.add_user', 'users.assign',
-        'users.confirm_delete', 'users.confirm_disable', 'users.create_token', 'users.disable',
-        'users.edit_user', 'users.enable', 'users.mfa_off', 'users.mfa_totp', 'users.no_peer_binding',
-        'users.no_tokens', 'users.no_users', 'users.role_admin', 'users.role_user',
-        'users.token_assign_failed', 'users.token_last_used', 'users.token_name_required',
-        'users.token_revoke', 'users.token_revoke_confirm', 'users.token_revoke_failed',
-        'users.token_scopes_required'
+        'tags.error_name_required', 'tags.no_tags', 'tags.unused', 'users.no_users'
       ] %}
       {{ k | dump | safe }}: {{ t(k) | dump | safe }},
       {%- endfor %}
@@ -868,7 +866,7 @@
 <script src="/js/gc-dialog.js?v={{ appVersion }}"></script>
 <script src="/js/app.js?v={{ appVersion }}"></script>
 <script src="/js/command-palette.js?v={{ appVersion }}"></script>
-<script src="/js/events.js?v={{ appVersion }}"></script>
+{% if user and user.role == 'admin' %}<script src="/js/events.js?v={{ appVersion }}"></script>{% endif %}
 <script src="/js/license-hint.js?v={{ appVersion }}"></script>
 {% block scripts %}{% endblock %}
 </body>

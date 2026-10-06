@@ -194,6 +194,15 @@ router.post('/login/2fa', guestOnly, loginLimiter, csrfProtection, authRoutes.tw
 router.post('/login/passkey/options', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyOptions);
 router.post('/login/passkey', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyLogin);
 router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
+// Own password after an administrator set one with "change on next login":
+// only reachable with req.session.pendingPwChange (set by the login steps).
+router.get('/login/change-password', guestOnly, apiLimiter, authRoutes.changePasswordPage);
+router.post('/login/change-password', guestOnly, loginLimiter, csrfProtection, authRoutes.changePassword);
+
+// ─── Invitation to "Mein Bereich" (public, one-time link) ──
+const invitePages = require('./invite');
+router.get('/invite/:token', apiLimiter, invitePages.page);
+router.post('/invite/:token', loginLimiter, csrfProtection, invitePages.accept);
 
 // security.require_2fa: admins without 2FA are confined to the profile setup.
 router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
@@ -246,7 +255,9 @@ const pages = [
   // no licence gate; the sidebar item (activeNav 'security') comes from strand B4.
   { path: '/security', template: 'security', titleKey: 'security.page_title' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
-  { path: '/profile', template: 'profile', titleKey: 'profile.title' },
+  { path: '/profile', template: 'profile', titleKey: 'profile.title', member: true },
+  // "Mein Bereich": the member self-service area (also reachable by admins).
+  { path: '/me', template: 'me', titleKey: 'me.title', member: true },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
@@ -260,20 +271,34 @@ const pages = [
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
-pages.forEach(({ path, template, nav, titleKey }) => {
+// Strings the users page and "Mein Bereich" hand to their scripts (JSON
+// islands, like the settings page).
+const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found'];
+const ME_I18N_PREFIXES = ['me.', 'common.', 'error.me.', 'enrollment.', 'error.enrollment.'];
+
+/** The portal link of the member navigation (null when the portal is off). */
+function portalLink() {
+  try {
+    const cfg = require('../services/portalConfig')();
+    if (!cfg.enabled) return null;
+    return `https://${cfg.effectivePortalHost().host}`;
+  } catch { return null; }
+}
+
+pages.forEach(({ path, template, nav, titleKey, member }) => {
   router.get(path, requireAuth, (req, res) => {
     const activeNav = nav || template;
     const extraLocals = {};
+    const isAdmin = !!(res.locals.user && res.locals.user.role === 'admin');
 
-    // The dashboard is made of admin API reads only (every /api/v1 call of a
-    // session without the admin role answers 403): a plain user gets the one
-    // page that is theirs instead of a dashboard that never loads. The role
-    // comes from injectLocals (res.locals.user) — no extra query here.
-    // Same for /settings: every settings API answers 403 without the admin
-    // role, so the page would be a shell of failing requests.
-    if ((template === 'dashboard' || template === 'settings') && (!res.locals.user || res.locals.user.role !== 'admin')) {
-      return res.redirect('/profile');
+    // Every admin page is made of admin API reads only (each /api/v1 call of
+    // a session without the admin role answers 403): a member gets "Mein
+    // Bereich" instead of a shell of failing requests. The role comes from
+    // injectLocals (res.locals.user) — no extra query here.
+    if (!member && !isAdmin) {
+      return res.redirect('/me');
     }
+    if (!isAdmin) extraLocals.portalUrl = portalLink();
 
     // Inject RDP route count for sidebar badge (all pages)
     try {
@@ -297,6 +322,15 @@ pages.forEach(({ path, template, nav, titleKey }) => {
       try {
         extraLocals.l4BlockedPorts = require('../../config/default').l4.blockedPorts;
       } catch { extraLocals.l4BlockedPorts = []; }
+    }
+
+    if (template === 'users') {
+      extraLocals.usersI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+    }
+    if (template === 'me') {
+      extraLocals.meI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ME_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
     }
 
     // Profile: `?setup2fa=1` is where the require_2fa policy sends admins
@@ -363,7 +397,7 @@ router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
   const { hasFeature } = require('../services/license');
   // Chain3-C1: admin-role gate (requireAuth only checks session presence).
   const actorUser = users.getById(req.session?.userId);
-  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/dashboard');
+  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/me');
   const id = parseInt(req.params.id, 10);
   const route = rdpService.getById(id, false, { credFlags: true });
   if (!route || !route.browser_enabled || !hasFeature('browser_sessions')) {

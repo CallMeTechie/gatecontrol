@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f0eb">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <script nonce="{{ cspNonce }}">
+(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+  <title>{{ t('invite.title') }} — {{ appName }}</title>
+</head>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="nm">{{ appName }}</span>
+    </div>
+
+    {% if invite %}
+    <div class="card au-card" data-invite="valid">
+      <div class="page-eyebrow">{{ t('invite.eyebrow') }}</div>
+      <h1 class="au-title">{{ t('invite.hello', { name: invite.name }) }}</h1>
+      <p class="au-sub">{{ t('invite.intro') }}</p>
+      {% if error %}
+      <div class="login-error" role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+      <form method="POST" action="/invite/{{ token }}" id="invite-form">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <div class="form-group">
+          <label class="form-label" for="invite-username">{{ t('auth.username') }}</label>
+          <input class="form-input" type="text" id="invite-username" value="{{ invite.username }}" autocomplete="username" readonly>
+          <small class="form-hint">{{ t('invite.username_hint') }}</small>
+        </div>
+{% include theme + "/partials/auth-password-fields.njk" %}
+        <button type="submit" class="btn btn-primary au-submit">{{ t('invite.submit') }}</button>
+      </form>
+      <p class="au-meta inv-what">{{ t('invite.what') }}</p>
+    </div>
+    {% else %}
+    <div class="card au-card au-center" data-invite="invalid">
+      <div class="au-icon au-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h1 class="au-title">{{ t('invite.invalid_title') }}</h1>
+      <p class="au-sub">{{ t('invite.invalid_text') }}</p>
+      <a class="btn btn-ghost au-submit" href="/login">{{ t('two_fa.back_to_login') }}</a>
+    </div>
+    {% endif %}
+    <div class="au-foot">{{ appName }}</div>
+  </main>
+  <script nonce="{{ cspNonce }}">
+    (function () {
+      document.querySelectorAll('[data-pw-toggle]').forEach(function (btn) {
+        var pw = document.getElementById(btn.getAttribute('data-pw-toggle'));
+        if (!pw) return;
+        btn.addEventListener('click', function () {
+          var show = pw.type === 'password';
+          pw.type = show ? 'text' : 'password';
+          btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+          pw.focus();
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

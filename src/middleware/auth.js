@@ -40,14 +40,20 @@ let _userStmtDb = null;
 function loadSessionUser(userId) {
   const db = require('../db/connection').getDb();
   if (!_userStmt || _userStmtDb !== db) {
-    _userStmt = db.prepare('SELECT id, role, enabled FROM users WHERE id = ?');
+    _userStmt = db.prepare('SELECT id, role, enabled, self_service_enabled FROM users WHERE id = ?');
     _userStmtDb = db;
   }
   return _userStmt.get(userId) || null;
 }
 
-// Session belongs to a user that no longer exists or was disabled: drop it
-// and answer like an expired session.
+// A session is only valid for an account that may use the web UI: enabled,
+// and an administrator or a member with "Mein Bereich" (self-service).
+function sessionAllowed(u) {
+  return !!(u && u.enabled === 1 && (u.role === 'admin' || (u.role === 'user' && u.self_service_enabled === 1)));
+}
+
+// Session belongs to a user that no longer exists, was disabled or lost
+// the web login: drop it and answer like an expired session.
 function rejectSession(req, res) {
   const fullUrl = req.originalUrl || (req.baseUrl + req.path);
   const respond = () => {
@@ -74,7 +80,7 @@ function requireAuth(req, res, next) {
   // not keep working with a session that was issued before the change.
   if (req.session && req.session.userId) {
     const sessionUser = loadSessionUser(req.session.userId);
-    if (sessionUser && sessionUser.enabled === 1) {
+    if (sessionAllowed(sessionUser)) {
       req.sessionUser = sessionUser;
       return next();
     }
@@ -140,13 +146,16 @@ function safeReturnTo(v) {
 }
 
 // Paths below /api/v1 that a session WITHOUT the admin role may still use:
-// its own profile, password, language and 2FA, plus the session probe.
+// its own profile, password, language and 2FA, the session probe and the
+// member self-service area "Mein Bereich" (/api/v1/me/*, always scoped to
+// the session's own account — routes/api/me.js).
 // Everything else under /api/v1 is the admin API. Token requests are not
 // affected — they are governed by their scopes (services/tokens.checkScope).
 // The client API (/api/v1/client/*) is token-only and gateway/portal/public
 // endpoints are mounted outside this router.
 const SELF_SERVICE_PATHS = [
   /^\/ping$/,
+  /^\/me(?:\/|$)/,
   /^\/profile(?:\/|$)/,
   /^\/settings\/(?:profile|password|language)$/,
 ];
@@ -202,4 +211,9 @@ function guestOnly(req, res, next) {
   return next();
 }
 
-module.exports = { requireAuth, requireAdmin, requireAdminSession, guestOnly, safeReturnTo, SELF_SERVICE_PATHS, extractToken };
+/** Where a freshly signed-in account lands: admins the dashboard, members "Mein Bereich". */
+function homeFor(user) {
+  return user && user.role === 'admin' ? '/dashboard' : '/me';
+}
+
+module.exports = { requireAuth, requireAdmin, requireAdminSession, guestOnly, safeReturnTo, SELF_SERVICE_PATHS, extractToken, isAdminSession, sessionAllowed, homeFor };

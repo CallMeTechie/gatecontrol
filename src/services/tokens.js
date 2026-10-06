@@ -215,13 +215,10 @@ function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(result.lastInsertRowid);
 
   activity.log('token_created', `API token "${name.trim()}" created`, {
-    tokenId: token.id,
-    scopes,
-    expiresAt: expiresAt || null,
-  }, {
-    source: 'user',
+    source: 'admin',
     ipAddress,
     severity: 'info',
+    details: { tokenId: token.id, userId: userId || null, peerId: peerId || null, scopes, expiresAt: expiresAt || null },
   });
 
   logger.info({ tokenId: token.id, name: name.trim() }, 'API token created');
@@ -394,9 +391,91 @@ function resetMachineBinding(tokenId) {
 }
 
 /**
+ * Edit an existing token (Users page, "Zugang bearbeiten"):
+ *   name, expiresAt (ISO in the future, or null = never), scopes, userId
+ *   (new owner; must exist and be enabled, null = no owner) and
+ *   splitTunnelOverride (validated preset object, or null = server default).
+ * Scopes are always capped by the role of the (new) owner — a token can
+ * never do more than its owner. Returns { token, dropped } where `dropped`
+ * lists requested scopes the owner's role does not allow.
+ */
+function update(id, data, { ip = null, actorId = null } = {}) {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(id);
+  if (!row) throw new Error('Token not found');
+  const users = require('./users');
+  const fields = [];
+  const values = [];
+  const changes = [];
+
+  let ownerId = row.user_id;
+  if (data.userId !== undefined) {
+    if (data.userId === null) {
+      ownerId = null;
+    } else {
+      const owner = users.getById(Number(data.userId));
+      if (!owner) throw Object.assign(new Error('User not found'), { code: 'USER_NOT_FOUND' });
+      if (owner.enabled !== 1) throw Object.assign(new Error('Owner is disabled'), { code: 'OWNER_DISABLED' });
+      ownerId = owner.id;
+    }
+    if (ownerId !== row.user_id) {
+      fields.push('user_id = ?'); values.push(ownerId); changes.push('owner');
+    }
+  }
+
+  if (data.name !== undefined) {
+    if (typeof data.name !== 'string' || !data.name.trim()) throw new Error('Token name is required');
+    if (data.name.trim().length > 100) throw new Error('Token name too long (max 100 chars)');
+    fields.push('name = ?'); values.push(data.name.trim()); changes.push('name');
+  }
+
+  if (data.expiresAt !== undefined) {
+    if (data.expiresAt) {
+      const d = new Date(data.expiresAt);
+      if (isNaN(d.getTime()) || d <= new Date()) throw new Error('Expiry date must be in the future');
+      fields.push('expires_at = ?'); values.push(d.toISOString());
+    } else {
+      fields.push('expires_at = NULL');
+    }
+    changes.push('expiry');
+  }
+
+  let requested = data.scopes !== undefined ? data.scopes : (typeof row.scopes === 'string' ? JSON.parse(row.scopes) : row.scopes);
+  let dropped = [];
+  if (data.scopes !== undefined || changes.includes('owner')) {
+    const scopeErr = validateScopes(requested);
+    if (scopeErr) throw new Error(scopeErr);
+    let capped = [...new Set(requested)];
+    if (ownerId != null) {
+      const owner = users.getById(ownerId);
+      capped = users.filterScopesForRole(capped, owner.role);
+    }
+    dropped = requested.filter((s) => !capped.includes(s));
+    if (!capped.length) throw Object.assign(new Error('No valid scopes for the owner role'), { code: 'NO_VALID_SCOPES' });
+    fields.push('scopes = ?'); values.push(JSON.stringify(capped)); changes.push('scopes');
+  }
+
+  if (data.splitTunnelOverride !== undefined) {
+    fields.push('split_tunnel_override = ?');
+    values.push(data.splitTunnelOverride ? JSON.stringify(data.splitTunnelOverride) : null);
+    changes.push('split_tunnel');
+  }
+
+  if (!fields.length) return { token: formatToken(row), dropped };
+  values.push(id);
+  db.prepare(`UPDATE api_tokens SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+  activity.log('token_updated', `API token "${row.name}" updated (${changes.join(', ')})`, {
+    source: 'admin', ipAddress: ip, severity: changes.includes('owner') || changes.includes('scopes') ? 'warning' : 'info',
+    details: { tokenId: id, userId: ownerId, previousUserId: row.user_id, actorId, changes },
+  });
+  return { token: formatToken(db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(id)), dropped };
+}
+
+/**
  * Delete/revoke a token
  */
-function revoke(id, ipAddress) {
+function revoke(id, ipAddress, { source = 'admin' } = {}) {
   const db = getDb();
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(id);
   if (!token) throw new Error('Token not found');
@@ -404,11 +483,10 @@ function revoke(id, ipAddress) {
   db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
 
   activity.log('token_deleted', `API token "${token.name}" revoked`, {
-    tokenId: id,
-  }, {
-    source: 'user',
+    source,
     ipAddress,
     severity: 'warning',
+    details: { tokenId: id, userId: token.user_id || null, peerId: token.peer_id || null },
   });
 
   logger.info({ tokenId: id, name: token.name }, 'API token revoked');
@@ -432,6 +510,7 @@ function formatToken(row) {
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
     split_tunnel_override: row.split_tunnel_override || null,
+    enrolled: row.enrolled === 1,
   };
 }
 
@@ -499,6 +578,7 @@ module.exports = {
   list,
   getById,
   authenticate,
+  update,
   revoke,
   bindPeer,
   bindMachineFingerprint,

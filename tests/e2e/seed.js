@@ -24,6 +24,7 @@ process.env.NODE_ENV = 'test';
 
 const ADMIN = { username: process.env.GC_ADMIN_USER || 'e2e_admin', password: process.env.GC_ADMIN_PASSWORD || 'E2eTest!Pass123' };
 const TFA = { username: 'e2e_tfa', password: 'E2eTest!Pass123' };
+const MEMBER = { username: 'e2e_member', password: 'E2eTest!Pass123' };
 const ZONE = 'e2e.example.com';
 
 async function main() {
@@ -131,8 +132,58 @@ async function main() {
   const confirmed = await twoFactor.confirmSetup(tfaUser.id, code, '127.0.0.1');
   if (!confirmed.ok) throw new Error('seed: could not enable 2FA for the fixture user');
 
+  // Users page + "Mein Bereich" (scenarios/07-users.js): a member with
+  // "Mein Bereich" and two devices, a disabled member, a second admin, route
+  // shares naming users, and two accesses without an owner.
+  const adminRow = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN.username);
+  const tokens = require('../../src/services/tokens');
+  const memberId = users.createClientUser({ username: MEMBER.username, displayName: 'Anna Schmidt', email: 'anna@example.com' }).id;
+  const argon2 = require('argon2');
+  db.prepare("UPDATE users SET password_hash = ?, self_service_enabled = 1, self_enroll_enabled = 1, language = ?, password_changed_at = datetime('now', '-20 days') WHERE id = ?")
+    .run(await argon2.hash(MEMBER.password, require('../../src/utils/argon2Options')), process.env.GC_DEFAULT_LANGUAGE || 'en', memberId);
+  const tomId = users.createClientUser({ username: 'e2e_tom', displayName: 'Tom Weber' }).id;
+  const kidsId = users.createClientUser({ username: 'e2e_kids', displayName: 'Kinder-Tablet' }).id;
+  await users.create({ username: 'e2e_lisa', displayName: 'Lisa Krüger', email: 'lisa@example.com', role: 'admin', password: 'E2eTest!Pass123' });
+  const clientPeer = (name, ip, owner, online, platform, version) => db.prepare(`INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type, user_id,
+      latest_handshake, client_platform, client_version) VALUES (?, ?, ?, 1, 'regular', ?, ?, ?, ?)`)
+    .run(name, crypto.randomBytes(16).toString('base64'), ip + '/32', owner,
+      online ? Math.floor(Date.now() / 1000) - 30 : Math.floor(Date.now() / 1000) - 3 * 86400, platform, version).lastInsertRowid;
+  const appScopes = ['client', 'client:services', 'client:rdp', 'client:traffic', 'client:dns'];
+  const annaPixel = clientPeer('anna-pixel', '10.8.0.14', memberId, true, 'android', '1.16.0');
+  const annaLaptop = clientPeer('anna-laptop', '10.8.0.15', memberId, false, 'windows', '2.4.1');
+  const tomPad = clientPeer('tom-ipad', '10.8.0.21', tomId, false, 'android', '1.12.0');
+  const kidsTab = clientPeer('tablet', '10.8.0.30', kidsId, true, 'android', '1.15.0');
+  const mkToken = (name, scopes, userId, peerId, extra) => {
+    const t = tokens.create({ name, scopes, userId, peerId, expiresAt: extra && extra.expiresAt, machineBindingEnabled: true }, '127.0.0.1').token;
+    db.prepare('UPDATE api_tokens SET enrolled = ?, last_used_at = datetime(\'now\', ?) WHERE id = ?').run(peerId ? 1 : 0, (extra && extra.used) || '-12 minutes', t.id);
+    return t.id;
+  };
+  const pixelToken = mkToken('Pixel 8', appScopes, memberId, annaPixel, { used: '-12 minutes' });
+  mkToken('Laptop', ['client', 'client:services'], memberId, annaLaptop, { used: '-3 days', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() });
+  mkToken('iPad (alt)', ['client'], tomId, tomPad, { used: '-41 days' });
+  mkToken('Galaxy Tab', ['client', 'client:services'], kidsId, kidsTab, { used: '-2 hours' });
+  mkToken('Home Assistant', ['read-only'], adminRow.id, null, { used: '-4 hours' });
+  mkToken('Monitoring-Skript', ['read-only'], null, null, { used: '-1 days' });
+  mkToken('Altes Tablet', ['client', 'client:services'], null, null, { used: '-60 days' });
+  db.prepare("UPDATE api_tokens SET machine_fingerprint = ?, machine_bound_at = datetime('now', '-18 days') WHERE id = ?")
+    .run('9f3e7a01' + 'c'.repeat(56), pixelToken);
+  db.prepare("UPDATE users SET enabled = 0 WHERE id = ?").run(tomId);
+  db.prepare("UPDATE users SET last_login_at = datetime('now', '-1 minutes') WHERE id = ?").run(adminRow.id);
+  // Shares: wiki only for Anna + the admin, nas only for Tom.
+  const httpRoute = (hostId) => db.prepare("SELECT id FROM routes WHERE bundle_id = ? AND (route_type = 'http' OR route_type IS NULL)").get(hostId);
+  const wikiRoute = httpRoute(wiki.id);
+  const nasRoute = httpRoute(nas.id);
+  if (wikiRoute) db.prepare('UPDATE routes SET user_ids = ?, enabled = 1 WHERE id = ?').run(JSON.stringify([memberId, adminRow.id]), wikiRoute.id);
+  if (nasRoute) db.prepare('UPDATE routes SET user_ids = ?, enabled = 1 WHERE id = ?').run(JSON.stringify([tomId]), nasRoute.id);
+  const userAct = db.prepare(`INSERT INTO activity_log (event_type, message, details, source, severity, created_at)
+    VALUES (?, ?, ?, 'admin', 'info', datetime('now', ?))`);
+  userAct.run('user_created', 'User "e2e_member" created', JSON.stringify({ userId: memberId }), '-30 days');
+  userAct.run('client_enrollment_redeemed', 'App set up for peer "anna-laptop"', JSON.stringify({ userId: memberId, peerId: annaLaptop }), '-3 days');
+
   const fixtures = {
     admin: ADMIN,
+    member: { ...MEMBER, id: memberId },
+    users: { member: memberId, tom: tomId, kids: kidsId },
     tfa: { ...TFA, secret, recovery_codes: confirmed.recovery_codes },
     zone: { domain: ZONE, id: zoneId },
     hosts: { nas: nas.id, wiki: wiki.id, apex: apex.id },

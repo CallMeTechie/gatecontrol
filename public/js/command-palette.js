@@ -281,13 +281,22 @@
       });
       return out;
     }
+    // Members (no admin role) only get the pages of their sidebar and the
+    // theme switch: settings sections, admin actions and the admin API
+    // sources (zones, peers, gateways) would only answer 403.
+    const isAdmin = !win.GC || !win.GC.role || win.GC.role === 'admin';
     function settingItems(pages) {
+      if (!isAdmin) return [];
       const hasPath = (p) => pages.some((x) => x.href === p);
       return SETTINGS.filter((s) => !s.needsPath || hasPath(s.needsPath)).map((s) => ({
         key: 'setting:' + s.tab, kind: 'setting', label: t(s.key), sub: t('nav.settings'), keywords: [s.tab, t('st.kw.' + s.tab)], tab: s.tab, href: '/settings#' + s.tab,
       }));
     }
     function actionItems() {
+      if (!isAdmin) {
+        return [{ key: 'action:theme', kind: 'action', label: t('palette.action_theme'), sub: t('palette.group_actions'), keywords: ['dark', 'light', 'hell', 'dunkel', 'theme'],
+          run: () => { const b = doc.getElementById('theme-btn'); if (b) b.click(); } }];
+      }
       return [
         { key: 'action:add-domain', kind: 'action', label: t('palette.action_add_domain'), sub: t('palette.group_actions'), href: '/routes?action=add', showEmpty: true,
           run: () => { const b = doc.getElementById('zn-add-domain'); if (b && win.location.pathname === '/routes') b.click(); else win.location.href = '/routes?action=add'; } },
@@ -306,7 +315,7 @@
       if (data.loading) return data.loading;
       if (data.loadedAt && Date.now() - data.loadedAt < DATA_TTL_MS) return Promise.resolve();
       const api = win.api;
-      if (!api) return Promise.resolve();
+      if (!api || !isAdmin) return Promise.resolve();
       const zp = win.GCZonesPage && win.GCZonesPage.getData && win.GCZonesPage.getData();
       const parts = { hosts: [], peers: [], gateways: [] };
       let failed = false;

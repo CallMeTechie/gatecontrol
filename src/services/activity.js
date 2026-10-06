@@ -127,6 +127,38 @@ function getRecent(limit = 20, offset = 0, { category = null } = {}) {
 }
 
 /**
+ * Latest entries that concern one account (Users page, tab "Aktivität"):
+ * entries whose details name the user (userId), one of the user's current
+ * tokens or owned peers, and the login entries that carry the username in
+ * their message. Malformed details never break the query (json_valid).
+ */
+function getForUser(userId, username, limit = 30) {
+  const db = getDb();
+  const tokenIds = db.prepare('SELECT id FROM api_tokens WHERE user_id = ?').all(userId).map((r) => r.id);
+  const peerIds = db.prepare('SELECT id FROM peers WHERE user_id = ?').all(userId).map((r) => r.id);
+  const inList = (ids) => (ids.length ? ids.map(() => '?').join(',') : 'NULL');
+  const name = String(username || '');
+  const rows = db.prepare(`
+    SELECT * FROM activity_log
+    WHERE (json_valid(details) AND (
+            json_extract(details, '$.userId') = ?
+         OR json_extract(details, '$.tokenId') IN (${inList(tokenIds)})
+         OR json_extract(details, '$.peerId') IN (${inList(peerIds)})))
+       OR message = ? OR message = ? OR message LIKE ? ESCAPE '\\' OR message = ?
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(userId, ...tokenIds, ...peerIds,
+    `User ${name} logged in`, `Failed login for user: ${name}`,
+    `User ${name.replace(/[\\%_]/g, (c) => '\\' + c)} logged in with passkey %`,
+    `Failed second-factor attempt for user: ${name}`, limit);
+  return rows.map((row) => ({
+    ...row,
+    details: row.details ? (() => { try { return JSON.parse(row.details); } catch { return null; } })() : null,
+    color: SEVERITY_COLORS[row.severity] || 'blue',
+  }));
+}
+
+/**
  * Get activity log count
  */
 function getCount() {
@@ -185,6 +217,7 @@ function getAll() {
 module.exports = {
   log,
   getRecent,
+  getForUser,
   getCount,
   getPaginated,
   getAll,
