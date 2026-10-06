@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.143.0] — 2026-10-06
+
+### Features
+- licence card shows which features are only enabled automatically (#265)
+
+---
+
 ## [1.142.0] — 2026-10-06
 
 ### Features
