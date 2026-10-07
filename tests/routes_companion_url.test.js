@@ -37,3 +37,16 @@ test('resolveCompanionUrl derives baseUrl from peer WireGuard IP', () => {
   assert.equal(result.baseUrl, 'http://10.8.0.8:8080');
   assert.equal(result.domain, 'phoscon.example.test');
 });
+
+test('resolveCompanionUrl uses the gateway proxy_port when set', () => {
+  const db = getDb();
+  const peerId = Number(db.prepare(
+    "INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('dsmgw', 'FAKEPUB==dsmgw', '10.8.0.9/32', 1)"
+  ).run().lastInsertRowid);
+  db.prepare('INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at) VALUES (?, 9876, 18080, ?, ?, ?)')
+    .run(peerId, 'x', 'x', new Date().toISOString());
+  const routeId = Number(db.prepare(
+    "INSERT INTO routes (domain, target_ip, target_port, target_peer_id) VALUES ('phoscon2.example.test', '127.0.0.1', 80, ?)"
+  ).run(peerId).lastInsertRowid);
+  assert.equal(routes.resolveCompanionUrl(routeId).baseUrl, 'http://10.8.0.9:18080');
+});
