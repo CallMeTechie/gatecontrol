@@ -9,11 +9,12 @@ const path = require('node:path');
 // plugin "Verifiziert" and first-party (licensed through the GateControl
 // licence server's plugin entitlements).
 //
-// >>> EMPTY ON PURPOSE. The CallMeTechie key is added here in Stage 2, once
-// >>> the gatecontrol-plugins repository's CI signing key exists. Until then
-// >>> trusted keys come only from the environment (GC_PLUGIN_PUBKEYS, a JSON
-// >>> array of base64 raw keys) — that is also how the tests sign.
-const BUILTIN_PUBLIC_KEYS = Object.freeze([]);
+// The CallMeTechie key used by the gatecontrol-plugins release CI (its
+// signing-key.pub). Additional keys can be trusted via GC_PLUGIN_PUBKEYS
+// (a JSON array of base64 raw keys) — that is also how the tests sign.
+const BUILTIN_PUBLIC_KEYS = Object.freeze([
+  '6h2kcathsMmJCuo/XUmvSYGMsTUfYdLWBDYHnct+4GE=',
+]);
 
 const LIMITS = Object.freeze({
   packageBytes: 20 * 1024 * 1024,      // uploaded .gcplugin (compressed)
