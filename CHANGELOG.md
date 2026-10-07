@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.146.0] — 2026-10-07
+
+### Features
+- verify licences via license server v2 (Ed25519-signed tokens) (#268)
+
+---
+
 ## [1.145.0] — 2026-10-06
 
 ### Features
