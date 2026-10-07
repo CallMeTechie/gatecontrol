@@ -11,6 +11,10 @@
 # guarantees the fix. The old hard pin to v1.43.0 blocked newer otel that
 # grpc >= v1.83 needs (semconv/v1.41.0 missing → build failure).
 # Security minimums for transitive Go deps live in caddy-plugins/mirror/go.mod.
+# Exception: coraza/v3 is not in the mirror plugin's module graph (`go mod
+# tidy` there would drop it), so its minimum is pinned via --with below.
+# coraza-caddy v2.6.1 (latest) still requires v3.7.0 — CVE-2026-41510
+# (ArgumentLimit silently drops args → ARGS rule bypass) is fixed in v3.8.1.
 FROM caddy:2-builder AS caddy-builder
 COPY caddy-plugins/mirror /tmp/caddy-mirror
 RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
@@ -22,6 +26,7 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
     --with github.com/ueffel/caddy-brotli \
     --with github.com/greenpau/caddy-trace \
     --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
+    --with github.com/corazawaf/coraza/v3@v3.8.1 \
     --with github.com/custom/caddy-mirror=/tmp/caddy-mirror
 
 # Stage 2: Node dependencies

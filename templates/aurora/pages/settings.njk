@@ -670,19 +670,26 @@ chmod +x update.sh</pre>
   <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-lizenz" tabindex="-1">{{ t('st.nav.lizenz') }}</h2><p class="st-sec-desc">{{ t('st.desc.lizenz') }}</p></div>
   <section class="st-card" aria-label="{{ t('st.lic.plan') }}">
     <div class="st-plan">
-      <div class="st-plan-mark" aria-hidden="true">{{ t('license.plan_' + license.plan) | first | upper }}</div>
+      {%- set planLabel = t('license.plan_' + license.plan) if t('license.plan_' + license.plan) != 'license.plan_' + license.plan else (license.plan | replace('-', ' ') | title) %}
+      <div class="st-plan-mark" aria-hidden="true">{{ planLabel | first | upper }}</div>
       <div class="st-plan-text">
-        <div class="st-plan-name">{{ t('license.plan_' + license.plan) }}</div>
+        <div class="st-plan-name">{{ planLabel }}</div>
         <div class="st-plan-meta">
           {%- set expParts = (license.expires_at | string).split('T')[0].split('-') if license.expires_at else [] %}
           {%- set expDate = ((expParts[2] + '.' + expParts[1] + '.' + expParts[0]) if language == 'de' else expParts.join('-')) if expParts.length == 3 else '' %}
+          {%- set updParts = (license.updates_until | string).split('T')[0].split('-') if license.updates_until else [] %}
+          {%- set updDate = ((updParts[2] + '.' + updParts[1] + '.' + updParts[0]) if language == 'de' else updParts.join('-')) if updParts.length == 3 else '' %}
           {%- set meta = [
             t('st.lic.valid_until', { date: expDate }) if expDate else '',
+            t('st.lic.updates_until', { date: updDate }) if updDate else '',
             t('st.lic.activations', { n: license.activations, max: license.max_activations }) if license.activations else '',
             t('st.lic.key', { key: license.license_key_masked }) if license.license_key_masked else ''
           ] | select | join(' · ') -%}
           {{ meta if meta else (t('license.unlicensed_banner') if license.unlicensed else (t('license.community_hint') if license.plan == 'community' else '')) }}
         </div>
+        {%- if license.verification %}
+        <div class="st-plan-meta st-lic-verify" id="st-lic-verify" data-verification="{{ license.verification }}">{{ t('st.lic.verify_' + license.verification) }}</div>
+        {%- endif %}
       </div>
       {%- if license.license_key_masked %}<button type="button" class="st-btn" id="st-lic-refresh">{{ t('st.lic.refresh') }}</button>{% endif %}
     </div>
