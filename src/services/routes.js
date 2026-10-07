@@ -1446,8 +1446,13 @@ function resolveCompanionUrl(routeId) {
   const route = getById(routeId);
   if (!route || !route.target_peer_ip) return null;
   const peerIp = String(route.target_peer_ip).split('/')[0];
-  // ponytail: companion proxy port default 8080; per-peer override via gm.proxy_port wenn nötig
-  return { baseUrl: 'http://' + peerIp + ':8080', domain: route.domain };
+  // Same port Caddy uses for this gateway: the per-gateway proxy_port
+  // (DSM hosts often can't bind 8080), falling back to the 8080 default.
+  const meta = route.target_peer_id != null
+    ? getDb().prepare('SELECT proxy_port FROM gateway_meta WHERE peer_id = ?').get(route.target_peer_id)
+    : null;
+  const port = (meta && Number.isInteger(meta.proxy_port) && meta.proxy_port > 0) ? meta.proxy_port : 8080;
+  return { baseUrl: 'http://' + peerIp + ':' + port, domain: route.domain };
 }
 
 /**

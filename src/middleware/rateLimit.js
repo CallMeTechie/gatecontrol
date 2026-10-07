@@ -277,5 +277,36 @@ const portalPinSetLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
+// Plugins (docs/plugins.md): the management API plus every request forwarded
+// to a plugin (/api/v1/plugins/…, /api/v1/portal/plugins/…), per signed-in
+// account (portal: per device), like the admin API budget.
+const pluginApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipFailedRequests: true,
+  keyGenerator: (req) => {
+    if (req.session && req.session.userId) return `plugins:u:${req.session.userId}`;
+    if (req.portalPeerId != null) return `plugins:peer:${req.portalPeerId}`;
+    return `plugins:ip:${req.ip}`;
+  },
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+
+// Plugin pages and their sandboxed frames (/plugins/<id>…, /portal/plugins/<id>/frame).
+const pluginPageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-page:${(req.session && req.session.userId) || req.ip}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send(req.t ? req.t('error.rate_limit.api') : 'rate_limited');
+  },
+});
+
+module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
   eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter };

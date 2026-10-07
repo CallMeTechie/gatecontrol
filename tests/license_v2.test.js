@@ -232,7 +232,7 @@ describe('v2 validation flow', () => {
     assert.equal(by['gatecontrol-bar'].valid, false);
     assert.equal(by['gatecontrol-bar'].error, 'token_invalid');
     for (const e of ents) assert.equal('token' in e, false, 'tokens never leave the service');
-    assert.deepEqual(Object.keys(by['gatecontrol-skoda']).sort(), ['error', 'expires_at', 'name', 'slug', 'source', 'updates_until', 'valid']);
+    assert.deepEqual(Object.keys(by['gatecontrol-skoda']).sort(), ['error', 'expires_at', 'key_masked', 'name', 'slug', 'source', 'updates_until', 'valid']);
   });
 
   it('a 403 license_invalid drops the cached licence immediately', async () => {

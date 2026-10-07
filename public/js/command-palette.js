@@ -32,7 +32,7 @@
   // `pihole` only when the sidebar shows Pi-hole (same licence flag).
   const SETTINGS = [
     'uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
-    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip', 'portal', 'backup',
+    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip', 'portal', 'plugins', 'backup',
     'updates', 'lizenz', 'gefahr',
   ].map((tab) => ({ tab, key: 'st.nav.' + tab, needsPath: tab === 'pihole' ? '/pihole' : undefined }));
 

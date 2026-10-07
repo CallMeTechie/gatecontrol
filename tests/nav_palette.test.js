@@ -219,7 +219,7 @@ describe('command palette: pure core', () => {
   it('settings entries: every section of the settings page, labels + keywords whitelisted', () => {
     const njk = read('templates/aurora/pages/settings.njk');
     const ui = require('../public/js/settings-ui.js');
-    assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 21 sections in nav order');
+    assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 22 sections in nav order');
     const layout = read('templates/aurora/layout.njk');
     for (const s of P.SETTINGS) {
       assert.ok(njk.includes(`<section class="st-section" data-section="${s.tab}"`), s.tab);

@@ -8,7 +8,12 @@ const { validatePeerName, validateDomain, validatePort, validateIp } = require('
 const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
 
-const BACKUP_VERSION = 4;
+// 5: + data.plugins (docs/plugins.md "Backup"); 2–4 still restore (no plugin data).
+const BACKUP_VERSION = 5;
+const SUPPORTED_VERSIONS = [2, 3, 4, 5];
+// Settings never taken from a backup: the "unsigned plugins" switch needs a
+// typed confirmation on this server (a restore must not turn it on).
+const RESTORE_SKIP_SETTINGS = new Set(['plugins.allow_unsigned']);
 
 // Tables intentionally skipped in backup: they are ephemeral (sessions,
 // activity_log, login_attempts, traffic_snapshots, peer_traffic_snapshots,
@@ -209,8 +214,16 @@ function createBackup() {
       settings,
       webhooks,
       route_auth: routeAuth,
+      plugins: exportPlugins(),
     },
   };
+}
+
+function exportPlugins() {
+  try { return require('./plugins/backup').exportAll(); } catch (err) {
+    logger.warn({ err: err.message }, 'backup export: plugins skipped');
+    return [];
+  }
 }
 
 /**
@@ -222,8 +235,8 @@ function validateBackup(backup) {
   if (!backup || typeof backup !== 'object') {
     return ['Invalid backup: not a JSON object'];
   }
-  if (![2, 3, 4].includes(backup.version)) {
-    errors.push(`Unsupported backup version: ${backup.version} (expected 2, 3, or ${BACKUP_VERSION})`);
+  if (!SUPPORTED_VERSIONS.includes(backup.version)) {
+    errors.push(`Unsupported backup version: ${backup.version} (expected ${SUPPORTED_VERSIONS.join(', ')})`);
   }
   if (!backup.data || typeof backup.data !== 'object') {
     errors.push('Invalid backup: missing data section');
@@ -268,6 +281,8 @@ function validateBackup(backup) {
     }
   }
 
+  errors.push(...require('./plugins/backup').validate(backup.data.plugins));
+
   if (webhooks) {
     for (let i = 0; i < webhooks.length; i++) {
       const w = webhooks[i];
@@ -302,6 +317,9 @@ function getBackupSummary(backup) {
     settings: (d.settings || []).length,
     webhooks: (d.webhooks || []).length,
     route_auth: (d.route_auth || []).length,
+    plugins: Array.isArray(d.plugins) ? d.plugins.length : 0,
+    // format 5 restores the complete plugin state (plugins not in it are removed)
+    plugin_aware: backup.version >= 5 && Array.isArray(d.plugins),
   };
 }
 
@@ -327,6 +345,15 @@ function validateEncryptedFields(data) {
     if (!ra[i].totp_secret_encrypted) continue;
     try { decrypt(ra[i].totp_secret_encrypted); }
     catch { errors.push(`route_auth #${i + 1}: cannot decrypt totp secret`); }
+  }
+  const pl = Array.isArray(data.plugins) ? data.plugins : [];
+  for (const p of pl) {
+    const enc = [];
+    if (p && p.license && p.license.key_encrypted) enc.push(['licence key', p.license.key_encrypted]);
+    if (p && p.secret_settings && typeof p.secret_settings === 'object') for (const [k, v] of Object.entries(p.secret_settings)) enc.push([`setting ${k}`, v]);
+    for (const [what, v] of enc) {
+      try { decrypt(String(v)); } catch { errors.push(`plugin "${p.id}" ${what}: cannot decrypt`); }
+    }
   }
   const rdp = data.rdp_routes || [];
   for (let i = 0; i < rdp.length; i++) {
@@ -539,6 +566,7 @@ async function restoreBackup(backup) {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
     `);
     for (const s of settings) {
+      if (RESTORE_SKIP_SETTINGS.has(s.key)) continue;
       if (!s.key || !SAFE_KEY_RE.test(s.key)) {
         logger.warn({ key: s.key }, 'Skipping invalid settings key during restore');
         continue;
@@ -615,6 +643,16 @@ async function restoreBackup(backup) {
     logger.warn({ error: err.message }, 'Could not sync routes to Caddy after restore (will retry on next change)');
   }
 
+  // Plugins (backup v5): after peers/routes so access targets re-map to the
+  // restored ids. A v5 backup is the complete plugin state (plugins not in it
+  // are removed); older backups have no plugin data — installed plugins stay.
+  let pluginResult = { restored: 0, skipped: [], removed: [] };
+  if (backup.version >= 5 && Array.isArray(backup.data.plugins)) {
+    try { pluginResult = await require('./plugins/backup').restoreAll(backup.data.plugins, { removeOthers: true }); } catch (err) {
+      logger.warn({ error: err.message }, 'plugin restore failed');
+    }
+  }
+
   return {
     peer_groups: (peerGroups || []).length,
     peers: peers.length,
@@ -627,6 +665,9 @@ async function restoreBackup(backup) {
     gateway_meta: gatewayMeta.length,
     settings: settings.length,
     webhooks: webhooks.length,
+    plugins: pluginResult.restored,
+    plugins_skipped: pluginResult.skipped,
+    plugins_removed: pluginResult.removed,
   };
 }
 

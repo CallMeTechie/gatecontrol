@@ -1,0 +1,36 @@
+{# ══ Erweiterungen · Plugins (docs/plugins.md) ═══════════════════════════
+   Content of the section (the <section> itself is in settings.njk). Static frame only; cards, detail, dialogs: public/js/settings-plugins.js
+   (data from GET /api/v1/plugins). #}
+  <div class="st-sec-head pg-sec-head">
+    <div><h2 class="st-sec-title" id="st-h-plugins" tabindex="-1">{{ t('st.nav.plugins') }}</h2><p class="st-sec-desc">{{ t('st.desc.plugins') }}</p></div>
+    <button type="button" class="st-btn st-btn-primary" id="pg-upload-btn">{{ t('plugins.upload') }}</button>
+  </div>
+
+  <div id="pg-root" class="pg-root">
+    <label class="pg-drop" id="pg-drop" for="pg-file">
+      <span class="pg-drop-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg></span>
+      <span class="pg-drop-text"><b>{{ t('plugins.drop.title') }}</b><span class="pg-sub">{{ t('plugins.drop.hint') }}</span></span>
+      <input type="file" id="pg-file" class="st-sr" accept=".gcplugin,application/octet-stream" aria-label="{{ t('plugins.drop.choose') }}">
+    </label>
+
+    <p class="st-err-block" id="pg-load-err" role="alert" hidden></p>
+    <div class="pg-grid" id="pg-grid" aria-live="polite"></div>
+    <p class="pg-empty" id="pg-empty" hidden>{{ t('plugins.empty') }}</p>
+
+    <article class="pg-detail st-card" id="pg-detail" aria-labelledby="pg-dtitle" hidden></article>
+
+    <section class="st-card" id="pg-security" aria-labelledby="st-c-pgsec">
+      <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgsec">{{ t('plugins.sec.title') }}</h3></div></div>
+      <div class="st-row">
+        <div class="st-row-text">
+          <label class="st-label" for="pg-unsigned">{{ t('plugins.sec.unsigned') }}</label>
+          <span class="st-hint" id="pg-unsigned-hint">{{ t('plugins.sec.unsigned_hint') }}</span>
+        </div>
+        <div class="st-row-ctl">
+          <button type="button" class="st-switch" role="switch" aria-checked="false" id="pg-unsigned" aria-describedby="pg-unsigned-hint"><span class="st-knob" aria-hidden="true"></span></button>
+        </div>
+      </div>
+      <p class="st-note st-note-warn" id="pg-unsigned-on" hidden><b>{{ t('plugins.sec.on_title') }}</b> {{ t('plugins.sec.on_text') }}</p>
+      <p class="st-note" id="pg-unsigned-off">{{ t('plugins.sec.off_note') }}</p>
+    </section>
+  </div>

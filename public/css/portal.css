@@ -490,3 +490,6 @@ button, input, select { font: inherit; color: inherit; }
   .pt-bars.is-anim .pt-bar, .pt-chart.is-anim .pt-bar { animation: none; }
   .pt-toast { transition: none; }
 }
+
+/* Plugin portal tabs (docs/plugins.md): the plugin's sandboxed frame */
+.pt-plugin-frame { display: block; width: 100%; min-height: 320px; border: 0; border-radius: 16px; background: transparent; }

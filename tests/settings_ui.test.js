@@ -14,10 +14,10 @@ const N = require('../src/services/notifications');
 const TPL = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
 
 describe('sections and the address', () => {
-  it('the 21 sections are the ones the template renders, in nav order', () => {
+  it('the 22 sections are the ones the template renders, in nav order', () => {
     const inTpl = [...TPL.matchAll(/<section class="st-section" data-section="([a-z]+)"/g)].map((m) => m[1]);
     assert.deepEqual(inTpl, U.SECTIONS);
-    assert.equal(U.SECTIONS.length, 21);
+    assert.equal(U.SECTIONS.length, 22);
   });
   it('#<section> and ?tab=<section>', () => {
     assert.deepEqual(U.resolveLocation({ hash: '#daten' }), { section: 'daten', anchor: null });

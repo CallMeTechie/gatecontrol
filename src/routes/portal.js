@@ -110,6 +110,12 @@ function tabsFor(req) {
   };
 }
 
+/** Portal tabs of running plugins (docs/plugins.md) — only for an identified viewer. */
+function pluginTabsFor(req, lang) {
+  if (req.portalOwnerId == null) return [];
+  try { return require('../services/plugins').portalTabs(lang === 'en' ? 'en' : 'de'); } catch { return []; }
+}
+
 /** Who the header shows. */
 function viewerFor(req) {
   const deviceName = req.portalPeerName || '';
@@ -163,6 +169,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (
     }),
     widgets: portalConfig().widgets,
     tabs,
+    pluginTabs: pluginTabsFor(req, lang),
     viewer,
     note,
     deviceName: req.portalPeerName,   // null → generic welcome

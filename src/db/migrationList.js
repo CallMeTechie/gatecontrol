@@ -1915,6 +1915,57 @@ const migrations = [
     detect: (db) => hasColumn(db, 'api_tokens', 'device_usage') && hasColumn(db, 'users', 'portal_pin_hash')
       && tableExists(db, 'device_users') && tableExists(db, 'portal_tickets') && tableExists(db, 'portal_pin_failures'),
   },
+  {
+    version: 91,
+    name: 'plugin_registry',
+    // Plugin platform (docs/plugins.md). Code lives in <data>/plugins/<id>/<version>/,
+    // each plugin's own data (SQLite file + files) in <data>/plugin-data/<id>/.
+    //   plugins          the registry: manifest, signature state, whether the
+    //                    administrator switched it on (enabled) and why it is
+    //                    not running (status_reason, maintained by the runtime)
+    //   plugin_licenses  third-party licence key (encrypted) + last check;
+    //                    survives "Deinstallieren – Daten behalten"
+    //   plugin_logs      the plugin's log (Protokoll tab), capped per plugin
+    //   plugin_targets   home-network targets the administrator assigned to a
+    //                    plugin (route, VPN peer or host) + the discovery grant
+    //                    (target_id '@discovery'); kept with "Daten behalten"
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugins (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        publisher TEXT NOT NULL,
+        manifest TEXT NOT NULL,
+        signature TEXT NOT NULL DEFAULT 'none',
+        signer_key TEXT,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        status_reason TEXT,
+        installed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS plugin_licenses (
+        plugin_id TEXT PRIMARY KEY,
+        key_encrypted TEXT,
+        state TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS plugin_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plugin_id TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_logs_plugin ON plugin_logs(plugin_id, id);
+      CREATE TABLE IF NOT EXISTS plugin_targets (
+        plugin_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        assignment TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (plugin_id, target_id, idx)
+      );`,
+  },
 ];
 
 module.exports = { migrations };

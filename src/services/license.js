@@ -780,11 +780,11 @@ async function deactivateLicense(key) {
 
 /**
  * Plugin entitlements of the last v2 validation, without tokens.
- * @returns {{slug:string,name:string,source:'license'|'lifetime',valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
+ * @returns {{slug:string,name:string,source:'license'|'lifetime',key_masked:string|null,valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
  */
 function getPluginEntitlements() {
-  return pluginEntitlements.map(({ slug, name, source, valid, error, expires_at, updates_until }) => (
-    { slug, name, source, valid, error, expires_at, updates_until }
+  return pluginEntitlements.map(({ slug, name, source, key_masked, valid, error, expires_at, updates_until }) => (
+    { slug, name, source, key_masked: key_masked || null, valid, error, expires_at, updates_until }
   ));
 }
 
@@ -845,6 +845,8 @@ module.exports = {
   _overrideForTest,
   _applyLicenseForTest,
   _resetV2ForTest: () => { v2._resetForTest(); pluginEntitlements = []; },
+  // Test seam: plugin entitlements as a verified v2 validation would leave them.
+  _setPluginEntitlementsForTest: (list) => { if (process.env.NODE_ENV === 'test') pluginEntitlements = Array.isArray(list) ? list : []; },
   deactivateLicense,
   getPluginEntitlements,
   setPluginKeys: v2.setPluginKeys,

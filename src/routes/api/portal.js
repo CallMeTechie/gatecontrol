@@ -45,6 +45,9 @@ router.use((req, res, next) => {
 // portal or web session (never via device trust), always the session's user.
 router.use('/me', createMeRouter((req) => (req.portalLoggedIn ? req.portalOwnerId : null)));
 
+// Plugin portal tabs (docs/plugins.md): requests forwarded to the plugin.
+router.use('/plugins', require('./pluginsPortal'));
+
 function unidentified(res) {
   return res.json({ ok: true, data: null, reason: 'unidentified' });
 }

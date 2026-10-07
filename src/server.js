@@ -166,7 +166,11 @@ async function start() {
     try { require('./services/updateNotify').start(); }
     catch (err) { logger.warn({ err: err.message }, 'update notifications not started'); }
     startLicenseRefresh();
-    startRdpMonitor();     // RDP health check monitor
+    startRdpMonitor();
+
+    // Plugins (docs/plugins.md): start every plugin that may run. Best-effort.
+    try { require('./services/plugins').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }     // RDP health check monitor
 
     // Pi-hole sync — best-effort; a missing dnsmasq.conf or misconfigured
     // instance must never block server boot.
@@ -344,6 +348,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/waf').stop(),
     () => require('./services/l4ConnGuard').stop(),
     () => require('./services/updateNotify').stop(),
+    () => { require('./services/plugins').stop().catch(() => {}); },
   ],
   closeDb: () => { require('./db/connection').closeDb(); },
   timeoutMs: config.intervals.shutdownTimeout,

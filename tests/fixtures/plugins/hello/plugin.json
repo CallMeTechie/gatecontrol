@@ -1,0 +1,135 @@
+{
+  "id": "hello",
+  "name": {
+    "de": "Hallo Welt",
+    "en": "Hello World"
+  },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": {
+    "de": "Beispiel-Plugin der Tests.",
+    "en": "Example plugin used by the tests."
+  },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "api.example.com:443",
+        "*.cloud.example"
+      ],
+      "homeTargets": [
+        {
+          "id": "gateway",
+          "label": {
+            "de": "Gateway",
+            "en": "Gateway"
+          },
+          "protocols": [
+            "http"
+          ]
+        },
+        {
+          "id": "device",
+          "label": {
+            "de": "Gerät",
+            "en": "Device"
+          },
+          "protocols": [
+            "tcp:6444",
+            "udp:6445"
+          ],
+          "multiple": true
+        }
+      ],
+      "localDiscovery": {
+        "udp": [
+          6445,
+          20086
+        ]
+      }
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Hallo",
+        "en": "Hello"
+      },
+      "icon": "M4 12h16M12 4v16"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Hallo",
+          "en": "Hello"
+        }
+      },
+      {
+        "id": "about",
+        "title": {
+          "de": "Über",
+          "en": "About"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "greeting",
+        "type": "text",
+        "label": {
+          "de": "Begrüßung",
+          "en": "Greeting"
+        },
+        "default": "Hallo"
+      },
+      {
+        "key": "loud",
+        "type": "boolean",
+        "label": {
+          "de": "Laut",
+          "en": "Loud"
+        },
+        "default": false
+      },
+      {
+        "key": "repeat",
+        "type": "number",
+        "label": {
+          "de": "Wiederholungen",
+          "en": "Repeats"
+        },
+        "min": 1,
+        "max": 5,
+        "default": 1
+      },
+      {
+        "key": "token",
+        "type": "secret",
+        "label": {
+          "de": "API-Token",
+          "en": "API token"
+        }
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Hallo",
+        "en": "Hello"
+      },
+      "icon": "M4 12h16"
+    }
+  },
+  "license": {
+    "required": false
+  },
+  "migrations": "migrations"
+}

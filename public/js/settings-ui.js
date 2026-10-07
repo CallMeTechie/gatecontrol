@@ -19,7 +19,7 @@
 
   const SECTIONS = ['uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien',
     'splittunnel', 'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip',
-    'portal', 'backup', 'updates', 'lizenz', 'gefahr'];
+    'portal', 'plugins', 'backup', 'updates', 'lizenz', 'gefahr'];
 
   // The twelve tabs of the old page (links: /settings#backup from the
   // security check and the dashboard, ?tab=general, the quick search).
