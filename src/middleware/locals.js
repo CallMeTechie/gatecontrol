@@ -45,12 +45,20 @@ function injectLocals(req, res, next) {
 
       const groupRow = db.prepare('SELECT COUNT(*) as c FROM peer_groups').get();
       res.locals.peerGroupCount = groupRow ? groupRow.c : 0;
+      // Sidebar section "Plugins" (docs/plugins.md): installed plugins with a
+      // nav entry, switched-off ones greyed. Pages only, never for API calls.
+      res.locals.pluginNav = [];
+      if (user && user.role === 'admin' && !req.path.startsWith('/api/')) {
+        const lang = req.session.language || user.language;
+        res.locals.pluginNav = require('../services/plugins').navEntries(lang === 'en' ? 'en' : 'de');
+      }
     } catch {
       res.locals.peerCount = 0;
       res.locals.routeCount = 0;
       res.locals.httpRouteCount = 0;
       res.locals.l4RouteCount = 0;
       res.locals.peerGroupCount = 0;
+      res.locals.pluginNav = [];
     }
   }
 

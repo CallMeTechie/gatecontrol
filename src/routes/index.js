@@ -210,6 +210,9 @@ router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
+// Plugin pages, their sandboxed frames and the portal tab frames (docs/plugins.md).
+router.use(require('./plugins'));
+
 // Profile page locals: identity header (initials, e-mail) and security rail.
 // The session tile shows the CURRENT session — how and when it was
 // established (establishSession in routes/auth.js) — not a "last login".
@@ -240,7 +243,7 @@ function profileLocals(req, res) {
 // data-prefixes must list the same ones).
 const SETTINGS_I18N_PREFIXES = ['st.', 'settings.', 'offsite.', 'premig.', 'autoupdate.', 'autobackup.', 'updatesh.', 'client_policy.',
   'client_updates.', 'pihole.cfg.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
-  'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.'];
+  'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.', 'plugins.'];
 
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },

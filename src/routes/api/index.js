@@ -70,5 +70,7 @@ router.use('/pihole', require('./pihole'));
 router.use('/midea', require('./midea'));
 router.use('/skoda', require('./skoda'));
 router.use('/smarthome', require('./smarthome'));
+// Plugin platform (docs/plugins.md): management + each plugin's own admin API
+router.use('/plugins', require('./plugins'));
 
 module.exports = router;
