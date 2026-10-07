@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.147.0] — 2026-10-07
+
+### Features
+- plugin system with signed packages, isolation and plugin backups (#269)
+
+---
+
 ## [1.146.0] — 2026-10-07
 
 ### Features
