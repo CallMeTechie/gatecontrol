@@ -192,6 +192,11 @@ const config = {
     key: env('GC_LICENSE_KEY', ''),
     signingKey: env('GC_LICENSE_SIGNING_KEY', ''),
     server: env('GC_LICENSE_SERVER', 'https://callmetechie.de/api/licenses/validate'),
+    // v2: Ed25519-signed tokens. Base URL of /validate and /deactivate.
+    serverV2: env('GC_LICENSE_SERVER_V2', 'https://callmetechie.de/api/v2/licenses'),
+    jwksUrl: env('GC_LICENSE_JWKS_URL', 'https://callmetechie.de/api/licenses/keys'),
+    // Optional pinned JWKS (JSON). When set, these are the only accepted keys.
+    pubkeys: env('GC_LICENSE_PUBKEYS', ''),
     tokenPath: path.join(env('GC_DATA_PATH', '/data'), '.license-token'),
   },
 };

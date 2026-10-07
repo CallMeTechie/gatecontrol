@@ -6,6 +6,7 @@ const os = require('os');
 const jwt = require('jsonwebtoken');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const v2 = require('./licenseV2');
 
 const PRODUCT_SLUG = 'gatecontrol';
 
@@ -80,6 +81,13 @@ let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 // applied: community fallback). Lets getLicenseInfo() tell a feature the plan
 // switches off from one the licence server does not deliver yet (release B §11).
 let tokenFeatureKeys = null;
+// Plugin entitlements of the last applied v2 validation (empty without v2).
+let pluginEntitlements = [];
+
+// Offline grace for v2: when the licence server cannot be reached, the last
+// verified token keeps working until its own `exp` or until GRACE_MS after the
+// last successful validation, whichever is later.
+const GRACE_MS = 14 * 24 * 60 * 60 * 1000;
 
 // ─── Hardware Fingerprint ────────────────────────
 
@@ -209,6 +217,145 @@ async function validateOnline(fingerprint) {
   };
 }
 
+// ─── v2 (Ed25519) ───────────────────────────────
+
+function isoFromUnix(sec) {
+  return typeof sec === 'number' && sec > 0 ? new Date(sec * 1000).toISOString() : null;
+}
+
+/**
+ * Plugin entries of a validation response, each plugin token verified. An
+ * entry only counts as valid when the server says so AND its token verifies
+ * for this install. Tokens stay in the stored copy (for offline restarts) but
+ * never leave this module.
+ */
+async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
+  const out = [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const p of Array.isArray(plugins) ? plugins : []) {
+    if (!p || typeof p !== 'object' || typeof p.slug !== 'string') continue;
+    const entry = {
+      slug: p.slug,
+      name: typeof p.name === 'string' ? p.name : p.slug,
+      source: p.source === 'lifetime' ? 'lifetime' : 'license',
+      key_masked: typeof p.key_masked === 'string' ? p.key_masked : null,
+      valid: false,
+      error: typeof p.error === 'string' ? p.error : null,
+      expires_at: p.expires_at || null,
+      updates_until: p.updates_until || null,
+    };
+    if (p.valid === true) {
+      const r = await v2.verifyToken(p.token, { fingerprint, kind: 'plugin', allowExpired });
+      if (!r.ok) {
+        entry.error = 'token_invalid';
+      } else if (r.payload.lat > 0 && r.payload.lat < nowSec) {
+        entry.error = 'expired';
+      } else {
+        entry.valid = true;
+        entry.error = null;
+        entry.expires_at = isoFromUnix(r.payload.lat);
+        entry.updates_until = isoFromUnix(r.payload.upd);
+      }
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
+function applyV2(payload, rec, plugins, { offline = false } = {}) {
+  applyLicense({
+    plan: payload.plan,
+    features: payload.features,
+    expires_at: isoFromUnix(payload.lat),
+    updates_until: isoFromUnix(payload.upd),
+    activations: rec.activations,
+    max_activations: rec.max_activations,
+  }, offline ? 'signed_offline' : 'signed');
+  pluginEntitlements = plugins;
+}
+
+/**
+ * The stored v2 token, verified. `grace` additionally accepts a passed `exp`
+ * while the 14-day grace since the last successful validation runs.
+ * @returns {Promise<{payload, rec}|null>}
+ */
+async function loadV2Token(fingerprint, { grace = false } = {}) {
+  const rec = v2.loadState(config.license.key);
+  if (!rec) return null;
+  const r = await v2.verifyToken(rec.token, { fingerprint, kind: 'app', allowExpired: grace });
+  if (!r.ok) return null;
+  const now = Date.now();
+  if (r.payload.lat > 0 && r.payload.lat * 1000 < now) return null;              // licence itself expired
+  if (grace && r.payload.exp * 1000 <= now && now - Number(rec.last_ok_at || 0) > GRACE_MS) return null;
+  return { payload: r.payload, rec };
+}
+
+function dropV2License(reason) {
+  v2.clearState();
+  deleteToken(); // the v1 token of a revoked licence must not resurrect it
+  pluginEntitlements = [];
+  logger.warn(`License rejected by license server (${reason}) — running in Community mode`);
+}
+
+/**
+ * One v2 round. Returns what the caller has to do:
+ *   'applied'    a verified v2 licence is in force
+ *   'community'  fall back to the community plan (revoked, or grace over)
+ *   'v1'         v2 is not available and never succeeded here → legacy path
+ */
+async function validateV2(fingerprint, { useCache }) {
+  if (useCache) {
+    const cached = await loadV2Token(fingerprint);
+    if (cached) {
+      const plugins = await verifyPlugins(cached.rec.plugins, fingerprint, { allowExpired: false });
+      applyV2(cached.payload, cached.rec, plugins);
+      logger.info(`License valid (cached, signed) — Plan: ${cached.payload.plan}`);
+      refreshLicenseInBackground(fingerprint);
+      return 'applied';
+    }
+  }
+
+  const res = await v2.validate({
+    licenseKey: config.license.key,
+    fingerprint,
+    pluginKeys: v2.getPluginKeys(),
+    productSlug: PRODUCT_SLUG,
+  });
+
+  if (res.status === 'ok') {
+    const r = await v2.verifyToken(res.data.token, { fingerprint, kind: 'app' });
+    if (r.ok) {
+      const now = Date.now();
+      const lic = res.data.license;
+      const rec = { activations: lic.active_activations ?? null, max_activations: lic.max_activations ?? null };
+      v2.saveState(config.license.key, { token: res.data.token, plugins: res.data.plugins, now, ...rec });
+      v2.markActive();
+      const plugins = await verifyPlugins(res.data.plugins, fingerprint, { allowExpired: false });
+      applyV2(r.payload, rec, plugins);
+      logger.info(`License valid (online, signed) — Plan: ${r.payload.plan}`);
+      return 'applied';
+    }
+    logger.warn(`License server returned a token that does not verify (${r.reason}) — ignored`);
+  } else if (res.status === 'invalid') {
+    dropV2License(res.message);
+    return 'community';
+  }
+
+  // unavailable / transient / unverifiable token
+  if (!v2.isActive()) return 'v1';
+
+  const grace = await loadV2Token(fingerprint, { grace: true });
+  if (grace) {
+    const plugins = await verifyPlugins(grace.rec.plugins, fingerprint, { allowExpired: true });
+    applyV2(grace.payload, grace.rec, plugins, { offline: true });
+    logger.warn(`License server unreachable (${res.reason || res.status}), using cached signed token — Plan: ${grace.payload.plan}`);
+    return 'applied';
+  }
+  pluginEntitlements = [];
+  logger.warn(`License server unreachable (${res.reason || res.status}) and offline grace exhausted — running in Community mode`);
+  return 'community';
+}
+
 // ─── Main Validation ────────────────────────────
 
 async function validateLicense() {
@@ -244,7 +391,23 @@ async function validateLicense() {
   // From here on, a license key is present
   unlicensed = false;
 
-  // 2. No signing key → Licensed but can't validate
+  const fingerprint = getHardwareFingerprint();
+
+  // 2. v2 (signed) — authoritative once it has succeeded on this install
+  const outcome = await validateV2(fingerprint, { useCache: true });
+  if (outcome === 'applied') return getLicenseInfo();
+  if (outcome === 'community') {
+    setCommunityMode();
+    await enforceLimitsInternal();
+    return getLicenseInfo();
+  }
+
+  return validateLicenseV1(fingerprint);
+}
+
+// Legacy v1 path (HS256), used only while v2 is not deployed.
+async function validateLicenseV1(fingerprint) {
+  // No signing key → Licensed but can't validate
   if (!config.license.signingKey) {
     setCommunityMode();
     logger.warn('GC_LICENSE_SIGNING_KEY not set — running in Community mode');
@@ -252,9 +415,7 @@ async function validateLicense() {
     return getLicenseInfo();
   }
 
-  const fingerprint = getHardwareFingerprint();
-
-  // 3. Try cached token
+  // Try cached token
   const cached = loadCachedToken(fingerprint);
   if (cached) {
     applyLicense(cached);
@@ -263,14 +424,14 @@ async function validateLicense() {
     return getLicenseInfo();
   }
 
-  // 4. Online validation
+  // Online validation
   try {
     const result = await validateOnline(fingerprint);
     applyLicense(result);
     logger.info(`License valid (online) — Plan: ${result.plan}`);
     return getLicenseInfo();
   } catch (err) {
-    // 5. Fallback to expired token
+    // Fallback to expired token
     const fallback = loadCachedToken(fingerprint, true);
     if (fallback) {
       applyLicense(fallback);
@@ -278,7 +439,7 @@ async function validateLicense() {
       return getLicenseInfo();
     }
 
-    // 6. All failed → Community mode
+    // All failed → Community mode
     setCommunityMode();
     logger.warn(`License validation failed: ${err.message} — running in Community mode`);
     await enforceLimitsInternal();
@@ -292,6 +453,7 @@ function setCommunityMode() {
   cachedFeatures = { ...COMMUNITY_FALLBACK };
   cachedLicenseInfo = null;
   tokenFeatureKeys = null;
+  pluginEntitlements = [];
   // Note: unlicensed flag is NOT set here — caller decides
 }
 
@@ -320,7 +482,7 @@ function planDefaults(plan, tokenFeatures) {
   return out;
 }
 
-function applyLicense(data) {
+function applyLicense(data, verification = 'legacy') {
   previousPlan = cachedPlan;
   unlicensed = false;
   cachedPlan = data.plan;
@@ -332,8 +494,10 @@ function applyLicense(data) {
   tokenFeatureKeys = new Set(Object.keys(data.features || {}));
   cachedLicenseInfo = {
     expires_at: data.expires_at || null,
+    updates_until: data.updates_until || null,
     activations: data.activations || null,
     max_activations: data.max_activations || null,
+    verification,
   };
 }
 
@@ -341,9 +505,15 @@ function applyLicense(data) {
 
 async function refreshLicenseInBackground(fingerprint) {
   try {
+    if (!config.license.key) return;
     const fp = fingerprint || getHardwareFingerprint();
-    const result = await validateOnline(fp);
-    applyLicense(result);
+    const outcome = await validateV2(fp, { useCache: false });
+    if (outcome === 'community') {
+      setCommunityMode();
+    } else if (outcome === 'v1') {
+      const result = await validateOnline(fp);
+      applyLicense(result);
+    }
     if (previousPlan && previousPlan !== cachedPlan) {
       await enforceLimitsInternal();
     }
@@ -352,11 +522,14 @@ async function refreshLicenseInBackground(fingerprint) {
   }
 }
 
-const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+// Daily: a revoked licence is noticed within a day, and the offline grace
+// is re-evaluated even while the licence server stays unreachable.
+const ONE_DAY = 24 * 60 * 60 * 1000;
 
 function startLicenseRefresh() {
-  if (!config.license.key) return;
-  refreshInterval = setInterval(() => refreshLicenseInBackground(), SEVEN_DAYS);
+  if (!config.license.key || refreshInterval) return;
+  refreshInterval = setInterval(() => refreshLicenseInBackground(), ONE_DAY);
+  if (typeof refreshInterval.unref === 'function') refreshInterval.unref();
 }
 
 function stopLicenseRefresh() {
@@ -575,6 +748,10 @@ function getLicenseInfo() {
     valid: cachedPlan !== 'community' || !config.license.key,
     unlicensed,
     expires_at: cachedLicenseInfo?.expires_at || null,
+    updates_until: cachedLicenseInfo?.updates_until || null,
+    // 'signed' (v2, Ed25519), 'signed_offline' (v2 token in offline grace),
+    // 'legacy' (v1, HS256) or null (no licence applied)
+    verification: cachedLicenseInfo?.verification || null,
     activations: cachedLicenseInfo?.activations || null,
     max_activations: cachedLicenseInfo?.max_activations || null,
     license_key_masked: masked,
@@ -589,7 +766,32 @@ function isUnlicensedMode() {
 
 // ─── Remove License ─────────────────────────────
 
+/**
+ * Free this install's activation slot on the licence server (v2). Best effort:
+ * never throws, a network error just leaves the slot taken.
+ * @returns {Promise<boolean>} true when the server confirmed
+ */
+async function deactivateLicense(key) {
+  if (!key || typeof key !== 'string') return false;
+  const r = await v2.deactivate({ licenseKey: key, fingerprint: getHardwareFingerprint() });
+  if (!r.ok) logger.warn(`License deactivation not confirmed by license server (${r.status ?? 'network error'})`);
+  return r.ok;
+}
+
+/**
+ * Plugin entitlements of the last v2 validation, without tokens.
+ * @returns {{slug:string,name:string,source:'license'|'lifetime',valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
+ */
+function getPluginEntitlements() {
+  return pluginEntitlements.map(({ slug, name, source, valid, error, expires_at, updates_until }) => (
+    { slug, name, source, valid, error, expires_at, updates_until }
+  ));
+}
+
 async function removeLicense() {
+  const oldKey = config.license.key;
+  if (oldKey) await deactivateLicense(oldKey);
+  v2.clearState();
   deleteToken();
   stopLicenseRefresh();
   setCommunityMode();
@@ -619,7 +821,7 @@ function _overrideForTest(features) {
 // ({ plan, features }); `null` restores the unlicensed community mode.
 function _applyLicenseForTest(data) {
   if (process.env.NODE_ENV !== 'test') return;
-  if (data) { applyLicense(data); return; }
+  if (data) { applyLicense(data, data.verification || 'legacy'); return; }
   setCommunityMode();
   unlicensed = true;
 }
@@ -642,6 +844,12 @@ module.exports = {
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
   _applyLicenseForTest,
+  _resetV2ForTest: () => { v2._resetForTest(); pluginEntitlements = []; },
+  deactivateLicense,
+  getPluginEntitlements,
+  setPluginKeys: v2.setPluginKeys,
+  getPluginKeys: v2.getPluginKeys,
+  GRACE_MS,
   lockedFeatures,
   featureSources,
   planDefaults,

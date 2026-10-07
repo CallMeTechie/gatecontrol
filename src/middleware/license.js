@@ -26,6 +26,8 @@ function injectLicense(req, res, next) {
     unlicensed: isUnlicensedMode(),
     license_key_masked: info.license_key_masked || null,
     expires_at: info.expires_at || null,
+    updates_until: info.updates_until || null,
+    verification: info.verification || null,
     activations: info.activations || null,
     max_activations: info.max_activations || null,
     hasFeature,

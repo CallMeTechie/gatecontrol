@@ -37,15 +37,24 @@ router.post('/activate', async (req, res) => {
   if (!license_key || typeof license_key !== 'string' || license_key.length > 4096) {
     return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.key_required') : 'License key is required' });
   }
-  if (!signing_key || typeof signing_key !== 'string' || signing_key.length > 4096) {
+  // The signing key only serves the legacy v1 licence server (HS256). v2
+  // tokens are verified with the server's public keys, so it is optional;
+  // when omitted, a previously stored one is kept for the v1 fallback.
+  if (signing_key !== undefined && signing_key !== null && signing_key !== ''
+    && (typeof signing_key !== 'string' || signing_key.length > 4096)) {
     return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.signing_key_required') : 'Signing key is required' });
   }
 
-  settings.set('license_key', license_key);
-  settings.set('license_signing_key_encrypted', encrypt(signing_key));
+  // Replacing a key: free the old activation slot (best effort, never blocks).
+  const previousKey = config.license.key;
+  if (previousKey && previousKey !== license_key) await license.deactivateLicense(previousKey);
 
+  settings.set('license_key', license_key);
   config.license.key = license_key;
-  config.license.signingKey = signing_key;
+  if (signing_key) {
+    settings.set('license_signing_key_encrypted', encrypt(signing_key));
+    config.license.signingKey = signing_key;
+  }
 
   try {
     await license.validateLicense();
