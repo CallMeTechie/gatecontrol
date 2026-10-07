@@ -214,7 +214,7 @@ describe('targets CRUD + validation', () => {
       const up = dav.files.get(`/dav/gc/${res.body.file}`);
       assert.ok(up && up.subarray(0, 5).toString() === 'GCBK1');
       const { payload } = await require('../src/services/offsite/gcbk').decryptBackup(up, PASS);
-      assert.equal(payload.backup.version, 4);
+      assert.equal(payload.backup.version, 5);
       assert.equal(payload.encryption_key, process.env.GC_ENCRYPTION_KEY, 'include_key');
       const t = (await getAgent().get(`${API}/targets`)).body.targets.find((x) => x.id === davId);
       assert.equal(t.last_status, 'ok');

@@ -198,7 +198,7 @@ module.exports = {
 
 | | |
 |---|---|
-| `gc.plugin` | `{ id, version }` |
+| `gc.plugin` | `{ id, version, filesDir }` — `filesDir` is the only folder the plugin may write |
 | `gc.log.debug/info/warn/error(...)` | the plugin's log (*Protokoll* tab); `console.*` goes there too |
 | `gc.http.fetch(url, opts)` | internet hosts |
 | `gc.net.targets()` | the assigned home targets |
@@ -314,6 +314,28 @@ aktiv · nicht für dieses Plugin · 14 Tage nicht geprüft. A plugin that needs
 licence only runs while it is licensed; without one it is installed but stays
 off, its data is kept.
 
+## Backup
+
+GateControl backups (format 5; manual, scheduled and off-site) contain every
+installed plugin: the package files including `signature` (a restore on a
+fresh server brings the plugin back without a new upload), a consistent
+snapshot of its database (SQLite serialize on a read-only connection, never a
+copy of the live file), its `files/` folder, whether it was switched on, the
+third-party licence entry and the access targets (routes by domain, peers by
+name — ids change on restore). `secret` settings are additionally stored as
+plain encrypted backup fields, so restoring an off-site archive with its key
+re-encrypts them like every other secret. All plugins together are capped at
+48 MB per backup; data that does not fit is left out and logged (the restore
+upload accepts up to 96 MB).
+
+Restore: plugin processes are stopped, every package's signature is verified
+again — a changed package is not restored, an unsigned one is restored but
+stays off while "Unsignierte Plugins erlauben" is off (that switch itself is
+never taken from a backup) — code and data are replaced, then plugins start
+as usual. Older backups (format 2–4) contain no plugins and leave the
+installed ones untouched; plugins installed here but missing in a backup are
+left alone too.
+
 ## Lifecycle and activity log
 
 install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
@@ -332,5 +354,4 @@ removes everything.
 * the CallMeTechie signing key (`BUILTIN_PUBLIC_KEYS`) and the
   gatecontrol-plugins repository (Stage 2), "Nach Updates suchen" against its
   catalogue, moving Smart Home / Klimaanlage / Fahrzeuge out of the server;
-* releasing a licence ("Lizenz freigeben") from the plugin card;
-* plugin data in GateControl backups.
+* releasing a licence ("Lizenz freigeben") from the plugin card.

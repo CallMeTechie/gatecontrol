@@ -162,7 +162,7 @@ function extract(files, dir) {
   const root = path.resolve(dir);
   fs.mkdirSync(root, { recursive: true, mode: 0o755 });
   for (const [rel, data] of files) {
-    if (rel === signature.SIGNATURE_FILE) continue;
+    // the signature file is kept: backups carry it and a restore verifies it again
     pkg.checkPath(rel);
     const target = path.resolve(root, ...rel.split('/'));
     if (!target.startsWith(root + path.sep)) throw new PluginError('package_bad_path', 'path outside the plugin folder');
@@ -480,6 +480,6 @@ async function stop() {
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, uninstall, setAllowUnsigned, allowUnsigned,
   setLicenseKey, checkLicense, list, view, get, navEntries, portalTabs, request, render, settingsChanged, storageBytes,
-  serverVersion, start, stop, extract,
+  serverVersion, start, stop, extract, readManifest,
   _staging: staging,
 };

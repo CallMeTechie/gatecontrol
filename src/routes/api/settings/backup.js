@@ -14,7 +14,9 @@ const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/sett
 const { uploadLimiter } = require('../../../middleware/rateLimit');
 const gcbk = require('../../../services/offsite/gcbk');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Backups carry plugin code and data since format 5 (≤ 48 MB raw, see
+// services/plugins/backup.js) — base64 in JSON needs room above that.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 96 * 1024 * 1024 } });
 
 const router = Router();
 

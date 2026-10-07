@@ -76,6 +76,13 @@ module.exports = {
       case '/kv':
         if (req.method === 'POST') { await gc.storage.set(String(req.body.key), req.body.value); return { json: { ok: true } }; }
         return { json: { ok: true, value: await gc.storage.get(String(req.query.key)) } };
+      case '/file': {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const f = path.join(gc.plugin.filesDir, 'notes', 'a.txt');
+        if (req.method === 'POST') { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, String(req.body.text)); return { json: { ok: true } }; }
+        return { json: { ok: true, text: fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null } };
+      }
       case '/ticks':
         return { json: { ok: true, ticks: (await gc.storage.get('ticks')) || 0 } };
       case '/settings':

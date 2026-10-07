@@ -79,7 +79,7 @@ describe('install a signed plugin', () => {
     assert.equal(body.plugin.id, 'hello');
     assert.equal(await runtime.waitRunning('hello'), true);
     assert.ok(fs.existsSync(path.join(constants.codeDir('hello', '1.0.0'), 'server', 'index.js')));
-    assert.equal(fs.existsSync(path.join(constants.codeDir('hello', '1.0.0'), 'signature')), false);
+    assert.equal(fs.existsSync(path.join(constants.codeDir('hello', '1.0.0'), 'signature')), true, 'kept for backups (re-verified on restore)');
     const g = await call('hello', '/greetings').expect(200);
     assert.deepEqual(g.body.rows.map((x) => x.text), ['first']);
     await call('hello', '/greetings', 'post', { text: 'second' }).expect(201);

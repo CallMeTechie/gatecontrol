@@ -127,7 +127,7 @@ class PluginProcess {
     }, TIMEOUTS.start);
     readyTimer.unref();
     this.readyTimer = readyTimer;
-    child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry } });
+    child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files } });
   }
 
   onMessage(m) {

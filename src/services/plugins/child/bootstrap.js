@@ -160,7 +160,7 @@ function onSocketEvent(m) {
 function makeGc(info) {
   const log = (level) => (...a) => send({ t: 'log', level, message: fmt(a) });
   return Object.freeze({
-    plugin: Object.freeze({ id: info.id, version: info.version }),
+    plugin: Object.freeze({ id: info.id, version: info.version, filesDir: info.filesDir }), // filesDir: the one writable folder
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
     http: Object.freeze({
       /**
