@@ -129,6 +129,7 @@ function cleanStaging() {
  * Step 1 of an install: read and check an uploaded package. Nothing is written.
  */
 function inspect(buf, lang) {
+  if (!Buffer.isBuffer(buf)) throw new PluginError('package_not_a_package', 'not a .gcplugin file');
   let files;
   try { files = pkg.decode(buf); } catch (e) {
     throw new PluginError(e.code ? 'package_' + e.code : 'package_corrupt', e.message);
@@ -142,7 +143,7 @@ function inspect(buf, lang) {
     token: m && !a.blockers.length ? token : null,
     canInstall: !!m && !a.blockers.length,
     checks: a.checks,
-    size: buf.length,
+    size: buf.byteLength,
     plugin: m ? {
       id: m.id, name: loc(m.name, lang), version: m.version, publisher: m.publisher, description: loc(m.description, lang),
       verified: a.sig.status === 'trusted', signature: a.sig.status,

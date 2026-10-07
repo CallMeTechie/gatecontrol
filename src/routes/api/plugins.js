@@ -95,7 +95,7 @@ router.post('/inspect', uploadLimiter, (req, res, next) => {
     next();
   });
 }, (req, res) => {
-  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ ok: false, code: 'package_not_a_package', error: tr(req, 'plugins.err.package_not_a_package', 'Not a plugin package') });
+  if (!Buffer.isBuffer(req.body) || !req.body.byteLength) return res.status(400).json({ ok: false, code: 'package_not_a_package', error: tr(req, 'plugins.err.package_not_a_package', 'Not a plugin package') });
   try {
     res.json({ ok: true, ...plugins.inspect(req.body, lang(req)) });
   } catch (e) { fail(req, res, e); }
@@ -242,15 +242,19 @@ router.put('/:id/discovery', (req, res) => {
 const FORWARD_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Query string as a small plain object of strings. */
+const QUERY_KEY_RE = /^[A-Za-z0-9_.-]{1,100}$/;
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function plainQuery(q) {
-  const out = {};
+  const out = new Map();
   let n = 0;
   for (const [k, v] of Object.entries(q || {})) {
-    if (typeof v !== 'string' || k.length > 100 || v.length > 2000) continue;
-    out[k] = v;
+    if (typeof k !== 'string' || !QUERY_KEY_RE.test(k) || FORBIDDEN_KEYS.has(k)) continue;
+    if (typeof v !== 'string' || v.length > 2000) continue;
+    out.set(k, v);
     if (++n >= 50) break;
   }
-  return out;
+  return Object.fromEntries(out);
 }
 
 function forwardPath(raw) {

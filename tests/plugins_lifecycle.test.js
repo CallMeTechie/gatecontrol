@@ -108,7 +108,9 @@ describe('isolation of the plugin process', () => {
       if (k === 'env') continue;
       assert.match(v, /^denied:/, `${k}: ${v}`);
     }
-    assert.equal(r.body.results.env, 'GC_PLUGIN_ID,NODE_ENV,TZ', 'no server secrets in the environment');
+    // NODE_V8_COVERAGE: Node passes it to every child on its own when the test run collects coverage (c8)
+    const env = r.body.results.env.split(',').filter((k) => k !== 'NODE_V8_COVERAGE').join(',');
+    assert.equal(env, 'GC_PLUGIN_ID,NODE_ENV,TZ', 'no server secrets in the environment');
   });
   it('runs with the permission model and only its own folders', () => {
     const args = runtime.execArgvFor({ id: 'hello', version: '1.0.0' });

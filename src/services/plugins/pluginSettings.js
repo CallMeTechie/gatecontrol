@@ -10,6 +10,12 @@ const storage = require('./storage');
 const { encrypt, decrypt } = require('../../utils/crypto');
 
 const KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** A settings key: strict pattern, never a prototype name. */
+function safeKey(k) {
+  return typeof k === 'string' && KEY_RE.test(k) && !FORBIDDEN_KEYS.has(k);
+}
 const MAX_JSON = 64 * 1024;
 
 function defsOf(plugin) {
@@ -77,23 +83,25 @@ function coerce(def, value) {
 async function save(plugin, values, { fromPlugin = false } = {}) {
   if (!values || typeof values !== 'object' || Array.isArray(values)) return { ok: false, fields: { _: 'invalid' } };
   const defs = new Map(defsOf(plugin).map((d) => [d.key, d]));
-  const out = {};
-  const fields = {};
+  // Maps, not objects: keys come from the request (no prototype keys possible)
+  const out = new Map();
+  const fields = new Map();
   for (const [k, v] of Object.entries(values)) {
+    if (!safeKey(k)) { fields.set(String(k).slice(0, 64), 'unknown'); continue; }
     const def = defs.get(k);
     if (def) {
       const c = coerce(def, v);
-      if (!c.ok) fields[k] = 'invalid';
-      else out[k] = c.value;
-    } else if (fromPlugin && KEY_RE.test(k)) {
+      if (!c.ok) fields.set(k, 'invalid');
+      else out.set(k, c.value);
+    } else if (fromPlugin) {
       let s;
       try { s = JSON.stringify(v === undefined ? null : v); } catch { s = null; }
-      if (s == null || s.length > MAX_JSON) fields[k] = 'invalid';
-      else out[k] = v === undefined ? null : v;
-    } else fields[k] = 'unknown';
+      if (s == null || s.length > MAX_JSON) fields.set(k, 'invalid');
+      else out.set(k, v === undefined ? null : v);
+    } else fields.set(k, 'unknown');
   }
-  if (Object.keys(fields).length) return { ok: false, fields };
-  await storage.forPlugin(plugin.id).call('settings.set', { values: out });
+  if (fields.size) return { ok: false, fields: Object.fromEntries(fields) };
+  await storage.forPlugin(plugin.id).call('settings.set', { values: Object.fromEntries(out) });
   return { ok: true };
 }
 

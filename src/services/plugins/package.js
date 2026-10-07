@@ -68,8 +68,10 @@ function encode(files) {
  * @returns {Map<string, Buffer>}
  */
 function decode(buf) {
-  if (!Buffer.isBuffer(buf) || buf.length < 20) throw new PackageError('not_a_package', 'not a .gcplugin file');
-  if (buf.length > LIMITS.packageBytes) throw new PackageError('too_large', 'package too large');
+  if (!Buffer.isBuffer(buf)) throw new PackageError('not_a_package', 'not a .gcplugin file');
+  const size = buf.byteLength;
+  if (size < 20) throw new PackageError('not_a_package', 'not a .gcplugin file');
+  if (size > LIMITS.packageBytes) throw new PackageError('too_large', 'package too large');
   if (buf[0] !== 0x1f || buf[1] !== 0x8b) throw new PackageError('not_a_package', 'not a .gcplugin file');
   let raw;
   try {
