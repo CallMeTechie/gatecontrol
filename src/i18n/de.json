@@ -5159,6 +5159,7 @@
   "plugins.err.target_blocked_address": "Diese Adresse ist für Plugins nie erreichbar.",
   "plugins.err.target_too_many_targets": "Für dieses Ziel ist nur eine Zuweisung möglich.",
   "plugins.err.target_unknown_target": "Dieses Zugriffsziel kennt das Plugin nicht.",
+  "settings.restore_warning_plugins": "Plugins, die nicht im Backup sind, werden entfernt – mit ihren Daten.",
   "nav.waf": "Web Application Firewall",
   "waf.page_sub": "Treffer des OWASP Core Rule Set pro Route – erkannte und blockierte Anfragen",
   "waf.summary": "{{events}} Ereignisse in 24 h · {{blocked}} blockiert · {{routes}} Routen mit WAF",

@@ -298,6 +298,14 @@ async function uninstall(id, { mode, confirm, ip } = {}) {
   if (!p) throw new PluginError('not_found', 'plugin not installed');
   if (mode !== 'keep' && mode !== 'wipe') throw new PluginError('invalid_mode', 'mode must be keep or wipe');
   if (mode === 'wipe' && !nameMatches(p, confirm)) throw new PluginError('confirm_mismatch', 'type the plugin name to confirm');
+  await removeInstalled(p, mode);
+  activity().log('plugin_uninstalled', `Plugin "${p.name}" uninstalled (${mode === 'wipe' ? 'data deleted' : 'data kept'})`, {
+    source: 'admin', ipAddress: ip, severity: 'warning', details: { plugin: id, mode },
+  });
+}
+
+async function removeInstalled(p, mode) {
+  const id = p.id;
   await runtime.ensureStopped(id);
   await storage.close(id);
   rmrf(path.join(pluginsRoot(), id));
@@ -307,9 +315,25 @@ async function uninstall(id, { mode, confirm, ip } = {}) {
     registry.removeLicense(id);
     require('./targets').removeAll(id);
   }
-  activity().log('plugin_uninstalled', `Plugin "${p.name}" uninstalled (${mode === 'wipe' ? 'data deleted' : 'data kept'})`, {
-    source: 'admin', ipAddress: ip, severity: 'warning', details: { plugin: id, mode },
-  });
+}
+
+/**
+ * Restore of a plugin-aware backup (format 5): plugins installed here but
+ * not in the backup are removed completely, like "Alles löschen".
+ * @param {Set<string>} keepIds  plugin ids contained in the backup
+ * @returns {Promise<string[]>} removed ids
+ */
+async function removeNotIn(keepIds) {
+  const removed = [];
+  for (const p of registry.list()) {
+    if (keepIds.has(p.id)) continue;
+    await removeInstalled(p, 'wipe');
+    activity().log('plugin_uninstalled', `Plugin "${p.name}" removed by a backup restore (not in the backup, data deleted)`, {
+      source: 'system', severity: 'warning', details: { plugin: p.id, mode: 'wipe', reason: 'restore' },
+    });
+    removed.push(p.id);
+  }
+  return removed;
 }
 
 async function setAllowUnsigned(on, { confirm, ip } = {}) {
@@ -480,6 +504,6 @@ async function stop() {
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, uninstall, setAllowUnsigned, allowUnsigned,
   setLicenseKey, checkLicense, list, view, get, navEntries, portalTabs, request, render, settingsChanged, storageBytes,
-  serverVersion, start, stop, extract, readManifest,
+  serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

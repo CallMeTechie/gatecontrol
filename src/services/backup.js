@@ -318,6 +318,8 @@ function getBackupSummary(backup) {
     webhooks: (d.webhooks || []).length,
     route_auth: (d.route_auth || []).length,
     plugins: Array.isArray(d.plugins) ? d.plugins.length : 0,
+    // format 5 restores the complete plugin state (plugins not in it are removed)
+    plugin_aware: backup.version >= 5 && Array.isArray(d.plugins),
   };
 }
 
@@ -642,10 +644,11 @@ async function restoreBackup(backup) {
   }
 
   // Plugins (backup v5): after peers/routes so access targets re-map to the
-  // restored ids. Older backups have no plugin data — installed plugins stay.
-  let pluginResult = { restored: 0, skipped: [] };
-  if (Array.isArray(backup.data.plugins)) {
-    try { pluginResult = await require('./plugins/backup').restoreAll(backup.data.plugins); } catch (err) {
+  // restored ids. A v5 backup is the complete plugin state (plugins not in it
+  // are removed); older backups have no plugin data — installed plugins stay.
+  let pluginResult = { restored: 0, skipped: [], removed: [] };
+  if (backup.version >= 5 && Array.isArray(backup.data.plugins)) {
+    try { pluginResult = await require('./plugins/backup').restoreAll(backup.data.plugins, { removeOthers: true }); } catch (err) {
       logger.warn({ error: err.message }, 'plugin restore failed');
     }
   }
@@ -664,6 +667,7 @@ async function restoreBackup(backup) {
     webhooks: webhooks.length,
     plugins: pluginResult.restored,
     plugins_skipped: pluginResult.skipped,
+    plugins_removed: pluginResult.removed,
   };
 }
 

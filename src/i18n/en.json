@@ -5159,6 +5159,7 @@
   "plugins.err.target_blocked_address": "This address is never reachable for plugins.",
   "plugins.err.target_too_many_targets": "Only one assignment is possible for this target.",
   "plugins.err.target_unknown_target": "The plugin does not know this access target.",
+  "settings.restore_warning_plugins": "Plugins that are not in the backup are removed – with their data.",
   "nav.waf": "WAF",
   "waf.page_sub": "OWASP Core Rule Set hits per route – detected and blocked requests",
   "waf.summary": "{{events}} events in 24 h · {{blocked}} blocked · {{routes}} routes with WAF",

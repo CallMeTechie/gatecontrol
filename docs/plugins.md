@@ -332,9 +332,11 @@ Restore: plugin processes are stopped, every package's signature is verified
 again — a changed package is not restored, an unsigned one is restored but
 stays off while "Unsignierte Plugins erlauben" is off (that switch itself is
 never taken from a backup) — code and data are replaced, then plugins start
-as usual. Older backups (format 2–4) contain no plugins and leave the
-installed ones untouched; plugins installed here but missing in a backup are
-left alone too.
+as usual. A format-5 backup is the complete plugin state: plugins installed
+here but not in it are removed like "Alles löschen" (process, code, data,
+licence, targets; each removal in the activity log) — the restore dialog says
+so. Older backups (format 2–4) contain no plugins and leave the installed ones
+untouched.
 
 ## Lifecycle and activity log
 

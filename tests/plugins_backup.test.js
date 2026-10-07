@@ -150,10 +150,10 @@ describe('restore', () => {
     ];
     for (const c of cases) {
       const b = JSON.parse(JSON.stringify(snapshot));
-      b.data.plugins = [c];
+      b.data.plugins = [c, ...snapshot.data.plugins.filter((x) => x.id !== 'hello')];
       const res = await backup.restoreBackup(b);
       await relogin();
-      assert.equal(res.plugins, 0, JSON.stringify(res.plugins_skipped));
+      assert.equal(res.plugins, 2, JSON.stringify(res.plugins_skipped));
       assert.equal(res.plugins_skipped.length, 1);
     }
     await agent.get(API + '/hello').expect(404);
@@ -166,5 +166,32 @@ describe('restore', () => {
     const res = await backup.restoreBackup(old);
     assert.equal(res.plugins, 0);
     assert.ok(plugins.get('hello-off') && plugins.get('hello-u'));
+  });
+  it('format 5 is the complete plugin state: an extra plugin is removed with its data and logged', async () => {
+    await relogin();
+    await install(helloPackage({ overrides: { id: 'hello-extra', name: 'Hallo Extra' } }));
+    assert.equal(await runtime.waitRunning('hello-extra'), true);
+    // format 4 knows nothing about plugins: the extra plugin stays
+    const old = JSON.parse(JSON.stringify(snapshot));
+    old.version = 4;
+    delete old.data.plugins;
+    let res = await backup.restoreBackup(old);
+    await relogin();
+    assert.deepEqual(res.plugins_removed, []);
+    assert.ok(plugins.get('hello-extra'), 'kept by a format-4 restore');
+    assert.equal(backup.getBackupSummary(old).plugin_aware, false);
+    // format 5: removed like "Alles löschen"
+    assert.equal(backup.getBackupSummary(snapshot).plugin_aware, true);
+    res = await backup.restoreBackup(JSON.parse(JSON.stringify(snapshot)));
+    await relogin();
+    assert.deepEqual(res.plugins_removed, ['hello-extra']);
+    assert.equal(plugins.get('hello-extra'), null);
+    assert.equal(runtime.info('hello-extra').state, 'stopped');
+    assert.equal(fs.existsSync(constants.dataDir('hello-extra')), false);
+    assert.equal(fs.existsSync(require('node:path').join(constants.pluginsRoot(), 'hello-extra')), false);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM plugin_targets WHERE plugin_id = 'hello-extra'").get().n, 0);
+    const ev = db.prepare("SELECT details FROM activity_log WHERE event_type = 'plugin_uninstalled' ORDER BY id DESC").get();
+    assert.match(ev.details, /"plugin":"hello-extra".*"reason":"restore"/);
+    assert.ok(plugins.get('hello') && plugins.get('hello-off') && plugins.get('hello-u'), 'plugins of the backup are there');
   });
 });

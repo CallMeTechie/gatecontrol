@@ -21,7 +21,9 @@
 // unsigned one is restored but stays off while unsigned plugins are not
 // allowed — the toggle itself is never taken from a backup), code and data
 // are replaced, targets re-mapped, then the normal reconcile starts what may
-// run. Plugins installed here but missing in the backup are left alone.
+// run. Plugins installed here but missing in a format-5 backup are removed
+// completely (logged); older backups know nothing about plugins and leave
+// them alone.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -193,10 +195,16 @@ function remapAssignment(a) {
 /**
  * Restore the plugins of a backup. Returns { restored, skipped: [{ id, reason }] }.
  */
-async function restoreAll(list) {
-  const result = { restored: 0, skipped: [] };
-  if (!Array.isArray(list) || !list.length) return result;
+async function restoreAll(list, { removeOthers = false } = {}) {
+  const result = { restored: 0, skipped: [], removed: [] };
+  if (!Array.isArray(list)) return result;
   const plugins = require('./index');
+  // A plugin-aware backup (format 5) is the complete plugin state: plugins
+  // installed here but not in it are removed ("Alles löschen").
+  if (removeOthers) {
+    const keep = new Set(list.map((e) => (e && typeof e.id === 'string' && ID_RE.test(e.id) ? e.id : null)).filter(Boolean));
+    result.removed = await plugins.removeNotIn(keep);
+  }
   const runtime = require('./runtime');
   const storage = require('./storage');
   const targets = require('./targets');

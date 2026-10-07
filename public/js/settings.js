@@ -1853,6 +1853,7 @@
   // Restore
   let rsFile = null;
   let rsReady = false;
+  let rsPluginAware = false;
   $('st-rs-pick').addEventListener('click', () => $('st-rs-file').click());
   $('st-rs-file').addEventListener('change', (e) => {
     rsFile = e.target.files[0] || null;
@@ -1884,6 +1885,7 @@
     const prev = $('st-rs-preview');
     prev.textContent = t('common.loading');
     rsReady = false;
+    rsPluginAware = false;
     $('st-rs-go').hidden = true;
     const r = await restoreCall('/api/v1/settings/restore/preview');
     if (!r.ok) { prev.textContent = restoreError(r); prev.dataset.state = 'crit'; return; }
@@ -1892,12 +1894,14 @@
     if (r.encrypted) line += ' · ' + t('offsite.restore_encrypted') + ' · ' + t(r.include_key ? 'offsite.restore_with_key' : 'offsite.restore_without_key') + (r.gc_version ? ' · v' + r.gc_version : '');
     prev.textContent = line;
     prev.dataset.state = '';
+    rsPluginAware = !!s.plugin_aware;
     rsReady = true;
     $('st-rs-go').hidden = false;
   }
   $('st-rs-go').addEventListener('click', async (e) => {
     if (!rsReady) return;
-    if (!(await D.confirm({ title: t('settings.restore_confirm'), message: t('settings.restore_warning'), detail: t('settings.restore_warning_detail'), okLabel: t('settings.restore_confirm_ok'), danger: true }))) return;
+    const detail = t('settings.restore_warning_detail') + (rsPluginAware ? ' ' + t('settings.restore_warning_plugins') : '');
+    if (!(await D.confirm({ title: t('settings.restore_confirm'), message: t('settings.restore_warning'), detail, okLabel: t('settings.restore_confirm_ok'), danger: true }))) return;
     busy(e.currentTarget, true);
     const r = await restoreCall('/api/v1/settings/restore');
     busy(e.currentTarget, false);
