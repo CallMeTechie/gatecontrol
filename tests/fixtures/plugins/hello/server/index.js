@@ -94,6 +94,14 @@ module.exports = {
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };
+      case '/secret':
+        if (req.method === 'POST') {
+          try { await gc.settings.setSecret(String(req.body.key), req.body.value); } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
+          return { json: { ok: true } };
+        }
+        return { json: { ok: true, value: await gc.settings.get(String(req.query.key)) } };
+      case '/legacy':
+        return { json: { ok: true, snapshot: await gc.storage.get('legacy') } };
       case '/crash':
         setTimeout(() => process.exit(3), 20);
         return { json: { ok: true } };
@@ -121,6 +129,21 @@ module.exports = {
   async render(view, gc) {
     const s = await gc.settings.all();
     return { html: `<main><h1 id="hello">${esc(s.greeting)} ${esc(view.user && view.user.name)}</h1><p id="view">${esc(view.view)}:${esc(view.page)}</p><script>window.GC && GC.call('GET', 'ping');</script></main>` };
+  },
+
+  // portal tab only for viewers listed in the kv key "portal-viewers" (when set)
+  async portalVisible(payload, gc) {
+    const ids = await gc.storage.get('portal-viewers');
+    return !Array.isArray(ids) || ids.includes(payload.user.id);
+  },
+
+  // built-in data handed over by the host (tests/plugins_legacy.test.js)
+  async legacyImport(snapshot, gc) {
+    if (await gc.storage.get('legacy-refuse')) return { ok: false };
+    await gc.storage.set('legacy', snapshot);
+    const runs = ((await gc.storage.get('legacy-runs')) || 0) + 1;
+    await gc.storage.set('legacy-runs', runs);
+    return { ok: true, runs };
   },
 
   async tick(gc) {

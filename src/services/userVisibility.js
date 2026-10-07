@@ -99,8 +99,13 @@ function portalEntries(userId) {
   };
   add(`SELECT d.id, d.name FROM midea_device_owners o JOIN midea_devices d ON d.id = o.midea_device_id
     WHERE o.user_id = ? ORDER BY d.name`, 'midea');
-  add(`SELECT r.id, COALESCE(r.name, r.deconz_id) AS name FROM smarthome_resource_owners o JOIN smarthome_resources r ON r.id = o.resource_id
-    WHERE o.user_id = ? ORDER BY r.name`, 'smarthome');
+  // the built-in Smart Home is off while the gatecontrol-smarthome plugin replaces it
+  let smarthomeReplaced = false;
+  try { smarthomeReplaced = require('./plugins/legacy').replaced('smarthome'); } catch { smarthomeReplaced = false; }
+  if (!smarthomeReplaced) {
+    add(`SELECT r.id, COALESCE(r.name, r.deconz_id) AS name FROM smarthome_resource_owners o JOIN smarthome_resources r ON r.id = o.resource_id
+      WHERE o.user_id = ? ORDER BY r.name`, 'smarthome');
+  }
   add(`SELECT v.id, COALESCE(v.name, v.model, v.vin) AS name FROM skoda_vehicle_owners o JOIN skoda_vehicles v ON v.id = o.skoda_vehicle_id
     WHERE o.user_id = ? ORDER BY v.name`, 'skoda');
   return out;

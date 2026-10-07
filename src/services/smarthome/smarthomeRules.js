@@ -172,6 +172,8 @@ async function gatewayRuleCount(gatewayId) {
 }
 
 async function resyncPending() {
+  // replaced by the gatecontrol-smarthome plugin → the plugin owns the deCONZ rules now
+  try { if (require('../plugins/legacy').replaced('smarthome')) return 0; } catch { /* platform not ready */ }
   const rows = getDb().prepare('SELECT id FROM smarthome_rules WHERE enabled = 1 AND deconz_rule_id IS NULL').all();
   for (const { id } of rows) {
     const row = get(id);

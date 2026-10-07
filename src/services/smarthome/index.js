@@ -168,8 +168,14 @@ async function testGateway(gatewayId) {
   }
 }
 
+// While the gatecontrol-smarthome plugin replaces the built-in Smart Home
+// (src/services/plugins/legacy.js) nothing here talks to the gateways.
+function replacedByPlugin() {
+  try { return require('../plugins/legacy').replaced(FEATURE); } catch { return false; }
+}
+
 async function pollTick() {
-  if (pollRunning) return;
+  if (pollRunning || replacedByPlugin()) return;
   pollRunning = true;
   try {
     for (const gw of dev.listGateways()) {
@@ -191,7 +197,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 
 module.exports = {
   connectGateway, syncGateway, getResources, setResourceState, testGateway,
-  startPolling, stopPolling, pollTick, capsFromLight, sensorReading, lightKind, sensorKind,
+  startPolling, stopPolling, pollTick, replacedByPlugin, capsFromLight, sensorReading, lightKind, sensorKind,
   listGateways: dev.listGateways, getGateway: dev.getGateway,
   updateGateway: dev.updateGateway, removeGateway: dev.removeGateway,
 };

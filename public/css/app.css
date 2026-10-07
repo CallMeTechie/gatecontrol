@@ -6404,6 +6404,7 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pg-toggle{display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600}
 .pg-banner{display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 20px; border-bottom:1px solid var(--red-bd); background:var(--red-bg); font-size:13px}
 .pg-banner[data-state="warn"]{border-color:var(--amber-bd); background:var(--amber-bg)}
+.pg-banner[data-state="good"]{border-color:var(--green-bd); background:var(--green-bg)}
 .pg-banner .st-btn{margin-left:auto}
 .pg-tabs{display:flex; gap:4px; padding:8px 14px 0; border-bottom:1px solid var(--line); overflow-x:auto}
 .pg-tab{flex:0 0 auto; min-height:42px; padding:0 12px; border:0; border-bottom:2px solid transparent; background:transparent; cursor:pointer;

@@ -272,6 +272,13 @@ const pages = [
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
+// Built-in pages that a first-party plugin replaces while it runs
+// (docs/plugins.md "Übernahme eingebauter Daten").
+const REPLACED_PAGES = new Map([
+  ['smarthome', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome' }],
+  ['smarthome-rules', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome/rules' }],
+]);
+
 // Strings the users page hands to its script (JSON island, like the
 // settings page).
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found'];
@@ -297,6 +304,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     // the portal). The role comes from injectLocals (res.locals.user).
     if (!member && !isAdmin) {
       return res.redirect('/profile');
+    }
+    // A built-in page whose feature a plugin replaces (src/services/plugins/
+    // legacy.js) leads to the plugin's page (fixed path, never request data).
+    if (REPLACED_PAGES.has(template)) {
+      const rp = REPLACED_PAGES.get(template);
+      if (require('../services/plugins/legacy').replaced(rp.feature)) return res.redirect(rp.href);
     }
     if (!isAdmin) extraLocals.portalUrl = portalLink();
 

@@ -48,9 +48,12 @@ function injectLocals(req, res, next) {
       // Sidebar section "Plugins" (docs/plugins.md): installed plugins with a
       // nav entry, switched-off ones greyed. Pages only, never for API calls.
       res.locals.pluginNav = [];
+      res.locals.builtinReplaced = {};
       if (user && user.role === 'admin' && !req.path.startsWith('/api/')) {
         const lang = req.session.language || user.language;
         res.locals.pluginNav = require('../services/plugins').navEntries(lang === 'en' ? 'en' : 'de');
+        // built-in features a running plugin replaces (their sidebar entries are hidden)
+        res.locals.builtinReplaced = require('../services/plugins/legacy').replacedMap();
       }
     } catch {
       res.locals.peerCount = 0;
@@ -59,6 +62,7 @@ function injectLocals(req, res, next) {
       res.locals.l4RouteCount = 0;
       res.locals.peerGroupCount = 0;
       res.locals.pluginNav = [];
+      res.locals.builtinReplaced = {};
     }
   }
 

@@ -191,6 +191,12 @@ module.exports = {
   },
   async tick(gc) {},                        // background run (permissions.background)
   async settingsChanged(values, gc) {},
+  async portalVisible({ user, lang }, gc) {  // optional: false hides the portal tab for this viewer
+    return true;                            // (no hook, an error or no answer within 1.5 s → shown)
+  },
+  async legacyImport(snapshot, gc) {        // optional, first-party only: built-in data handed over once
+    return { ok: true };                    // (see "Built-in data import" below)
+  },
 };
 ```
 
@@ -207,7 +213,8 @@ module.exports = {
 | `gc.net.udpTarget(id, data, opts)` / `gc.net.discover(data, { ports })` | UDP |
 | `gc.storage.get/set/delete/list` | key/value (`storage`) |
 | `gc.db.query/get/run/exec(sql, params)` | the plugin's own SQLite database (`storage`) |
-| `gc.settings.get/all/set` | the plugin's settings (secrets decrypted) |
+| `gc.settings.get/all/set` | the plugin's settings (secrets decrypted); `set` also keeps undeclared keys of the plugin's own (JSON) |
+| `gc.settings.setSecret(key, value)` | a secret of the plugin's own (e.g. a device API key per gateway): any key `[a-z][a-z0-9_.-]{0,63}` that is not a declared non-secret setting, stored encrypted with the server key like a `secret` setting, read back with `get`/`all`, never sent to the browser, re-keyed by backups; `null` deletes it |
 | `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
 | `gc.notify(message, { severity })` | activity log + webhooks (`notify`, ≤ 30/h) |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
@@ -290,6 +297,11 @@ disable/uninstall and when the server shuts down.
   for the existing Smart Home / Klimaanlage / Fahrzeuge pages.
 * **Settings**: declared `ui.settings` are rendered by GateControl
   (Einstellungen tab) — no plugin HTML in the settings page.
+* **Portal tab visibility**: a running plugin with `ui.portal` gets a tab for
+  every identified viewer; its optional `portalVisible({ user })` hook can
+  hide it for viewers with nothing to see (e.g. no devices assigned).
+* Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
+  plugins draw their own dialogs.
 
 ## Licences
 
@@ -338,10 +350,58 @@ licence, targets; each removal in the activity log) — the restore dialog says
 so. Older backups (format 2–4) contain no plugins and leave the installed ones
 untouched.
 
+## Built-in data import (built-in → plugin)
+
+GateControl features that move out of the server into a first-party plugin
+(Smart Home → `gatecontrol-smarthome` in Stage 3; Klimaanlage, Fahrzeuge
+later) bring their data along once. Code: `src/services/plugins/legacy.js`.
+
+* **Fixed mapping** (`DATASETS`): plugin id → built-in dataset, the built-in
+  feature it replaces and the home target that the dataset's GateControl
+  routes become. Today: `gatecontrol-smarthome` → `smarthome`
+  (`smarthome_gateways`, `_resources`, `_resource_owners`, `_rules`), target
+  `gateway`.
+* **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
+  or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
+  the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
+  runs with *Unsignierte Plugins erlauben*).
+* **When**: offered on the plugin's detail page (Settings → Plugins) as soon
+  as the plugin runs and built-in data exists — right after the install,
+  too; the administrator confirms; it can be run again while the built-in
+  data exists ("Erneut übernehmen" replaces the plugin's data).
+* **How**: the host reads exactly the mapped tables into a JSON snapshot
+  `{ schema: 1, dataset, exportedAt, gateways, resources, owners, rules }`
+  (secrets such as the deCONZ API key are decrypted for this hand-over only
+  and never logged), turns every referenced GateControl route into an
+  assignment of the plugin's home target (existing assignments are kept, a
+  route already assigned is reused; `gateways[].target = { id, index, label }`,
+  route ids stay in the host), and calls the plugin's
+  `legacyImport(snapshot, gc)` hook, which writes the data into its own
+  storage (ids kept, so owners and rule references stay valid) and answers
+  `{ ok: true }`. User ids are the same on this server, so owners keep their
+  mappings.
+* **Record**: `plugin_legacy_imports` (when, row counts, number of runs),
+  plugin log and activity log (`plugin_legacy_imported`). "Alles löschen"
+  removes the record, so a fresh install is offered the import again.
+* **API**: `GET /api/v1/plugins/<id>/legacy` (status: eligible, available,
+  counts, imported, running; `null` for plugins without a dataset),
+  `POST /api/v1/plugins/<id>/legacy/import` `{ confirm: true }`.
+
+**Coexistence until the built-in code is removed (Stage 6).** While the
+mapped plugin *may run* (installed, switched on, licensed, signature and
+compatibility ok — `legacy.replaced(feature)`), the built-in feature is off
+so nothing runs twice: its sidebar entry is hidden, its pages redirect to the
+plugin's page (`/smarthome` → `/plugins/gatecontrol-smarthome`,
+`/smarthome/rules` → `…/rules`), its API answers `409 replaced_by_plugin`,
+its portal part and its entries in "Was sieht dieser Nutzer?" are hidden and
+its background jobs (deCONZ polling, rule re-sync) stand still. Switch the
+plugin off or uninstall it and the built-in feature is back, with its data:
+built-in data is never deleted by the import.
+
 ## Lifecycle and activity log
 
 install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
-(`plugin_enabled`/`plugin_disabled`) · stopped by licence/signature/version
+(`plugin_enabled`/`plugin_disabled`) · built-in data imported (`plugin_legacy_imported`) · stopped by licence/signature/version
 (`plugin_suspended`) · uninstall (`plugin_uninstalled`, mode keep/wipe) ·
 "Unsignierte Plugins erlauben" (`plugin_unsigned_allowed`/`plugin_unsigned_blocked`)
 · access targets (`plugin_target_changed`) · plugin notifications
@@ -353,7 +413,10 @@ removes everything.
 
 ## Not yet (later stages)
 
-* the CallMeTechie signing key (`BUILTIN_PUBLIC_KEYS`) and the
-  gatecontrol-plugins repository (Stage 2), "Nach Updates suchen" against its
-  catalogue, moving Smart Home / Klimaanlage / Fahrzeuge out of the server;
+* the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
+  release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
+* "Nach Updates suchen" against the gatecontrol-plugins catalogue; moving
+  Klimaanlage / Fahrzeuge out of the server; removing the built-in Smart Home
+  code and data (Stage 6) — until then the built-in data import and
+  coexistence above apply;
 * releasing a licence ("Lizenz freigeben") from the plugin card.

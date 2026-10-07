@@ -105,4 +105,20 @@ async function save(plugin, values, { fromPlugin = false } = {}) {
   return { ok: true };
 }
 
-module.exports = { forPlugin, forUi, save, defsOf };
+/**
+ * A secret value of the plugin's own (gc.settings.setSecret): any key the
+ * plugin chooses that is not a declared non-secret setting, stored like a
+ * `secret` setting ({ enc }, server key) — so backups carry it as a re-keyable
+ * field — and never sent to the browser (forUi only lists declared keys).
+ * @param {string|null} value  null deletes it
+ */
+async function saveSecret(plugin, key, value) {
+  if (!safeKey(key)) return { ok: false };
+  const def = defsOf(plugin).find((d) => d.key === key);
+  if (def && def.type !== 'secret') return { ok: false };
+  if (value !== null && (typeof value !== 'string' || value.length > 4000)) return { ok: false };
+  await storage.forPlugin(plugin.id).call('settings.set', { values: { [key]: value === null ? null : { enc: encrypt(value) } } });
+  return { ok: true };
+}
+
+module.exports = { forPlugin, forUi, save, saveSecret, defsOf };

@@ -1966,6 +1966,23 @@ const migrations = [
         PRIMARY KEY (plugin_id, target_id, idx)
       );`,
   },
+  {
+    version: 92,
+    name: 'plugin_legacy_imports',
+    // Built-in → plugin migration (docs/plugins.md, src/services/plugins/legacy.js):
+    // when a first-party plugin imported the data of the built-in feature it
+    // replaces (one row per plugin; runs counts re-imports). Removed with
+    // "Alles löschen", so a fresh install is offered the import again.
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_legacy_imports (
+        plugin_id TEXT PRIMARY KEY,
+        dataset TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        counts TEXT,
+        runs INTEGER NOT NULL DEFAULT 1
+      );`,
+    detect: (db) => tableExists(db, 'plugin_legacy_imports'),
+  },
 ];
 
 module.exports = { migrations };

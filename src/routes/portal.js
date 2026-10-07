@@ -92,6 +92,7 @@ function tabsFor(req) {
   const midea = owner != null && w.midea && license.hasFeature('midea_integration')
     && countSafe(() => require('../services/midea/mideaOwners').devicesOwnedBy(owner).length) > 0;
   const smarthome = owner != null && w.smarthome && license.hasFeature('smarthome')
+    && !require('../services/plugins/legacy').replaced('smarthome')
     && countSafe(() => require('../services/smarthome/smarthomeOwners').resourcesOwnedBy(owner).length) > 0;
   const skoda = owner != null && w.skoda && license.hasFeature('skoda_integration')
     && countSafe(() => require('../services/skoda/skodaOwners').vehiclesOwnedBy(owner).length) > 0;
@@ -110,10 +111,19 @@ function tabsFor(req) {
   };
 }
 
-/** Portal tabs of running plugins (docs/plugins.md) — only for an identified viewer. */
-function pluginTabsFor(req, lang) {
+/**
+ * Portal tabs of running plugins (docs/plugins.md) — only for an identified
+ * viewer, and only those whose plugin has something for this person
+ * (optional portalVisible hook).
+ */
+async function pluginTabsFor(req, lang) {
   if (req.portalOwnerId == null) return [];
-  try { return require('../services/plugins').portalTabs(lang === 'en' ? 'en' : 'de'); } catch { return []; }
+  try {
+    const u = users.getById(req.portalOwnerId);
+    if (!u || u.enabled !== 1) return [];
+    const user = { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
+    return await require('../services/plugins').portalTabsFor(user, lang === 'en' ? 'en' : 'de');
+  } catch { return []; }
 }
 
 /** Who the header shows. */
@@ -138,7 +148,7 @@ function viewerFor(req) {
 }
 
 // ─── GET /portal ───────────────────────────────────────────────────────────
-router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (req, res) => {
+router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, async (req, res, next) => {
   // A shared device asks first — never IP trust there.
   if (req.portalSharedDevice && req.portalOwnerId == null && !req.portalAnonymous) {
     return res.redirect('/portal/who');
@@ -155,6 +165,8 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (
   const tabs = tabsFor(req);
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
+  let pluginTabs;
+  try { pluginTabs = await pluginTabsFor(req, lang); } catch (e) { return next(e); }
   res.render('portal/portal.njk', {
     portalI18n: island(stringsWithPrefix(lang, ['portal.'])),
     portalCtx: island({
@@ -169,7 +181,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (
     }),
     widgets: portalConfig().widgets,
     tabs,
-    pluginTabs: pluginTabsFor(req, lang),
+    pluginTabs,
     viewer,
     note,
     deviceName: req.portalPeerName,   // null → generic welcome

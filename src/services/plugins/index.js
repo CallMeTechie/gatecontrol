@@ -314,6 +314,7 @@ async function removeInstalled(p, mode) {
     rmrf(dataDir(id));
     registry.removeLicense(id);
     require('./targets').removeAll(id);
+    require('./legacy').forget(id);
   }
 }
 
@@ -438,6 +439,24 @@ function portalTabs(lang) {
     .map((p) => ({ id: p.id, key: 'plg-' + p.id, label: loc(p.manifest.ui.portal.label, lang), icon: p.manifest.ui.portal.icon }));
 }
 
+/**
+ * Portal tabs for one viewer: like portalTabs(), without the tabs whose
+ * plugin answers portalVisible(user) with false (nothing to show for this
+ * person). A plugin without the hook, an error or no answer within 1.5 s
+ * keeps its tab.
+ * @param {{id, name, role, portal: true}} user
+ */
+async function portalTabsFor(user, lang) {
+  const tabs = portalTabs(lang);
+  const shown = await Promise.all(tabs.map(async (t) => {
+    try {
+      const out = await runtime.call(t.id, 'portalVisible', { user, lang }, 1500);
+      return !(out && out.visible === false);
+    } catch { return true; }
+  }));
+  return tabs.filter((_, i) => shown[i]);
+}
+
 function boundJson(v) {
   let s;
   try { s = JSON.stringify(v === undefined ? null : v); } catch { return { ok: false }; }
@@ -503,7 +522,7 @@ async function stop() {
 
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, checkLicense, list, view, get, navEntries, portalTabs, request, render, settingsChanged, storageBytes,
+  setLicenseKey, checkLicense, list, view, get, navEntries, portalTabs, portalTabsFor, request, render, settingsChanged, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

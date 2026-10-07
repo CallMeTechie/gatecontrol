@@ -19,6 +19,8 @@
 //   PUT    /:id/targets/:target    { assigned: [{ kind: route|peer|host, … }] }
 //   PUT    /:id/discovery          { granted } (localDiscovery)
 //   POST   /:id/license/check
+//   GET    /:id/legacy             built-in data this plugin may import (null if none)
+//   POST   /:id/legacy/import      { confirm: true } hand the built-in data over to the plugin
 //   *      /:id/api/<path>         forwarded to the plugin (its own admin API)
 
 const express = require('express');
@@ -235,6 +237,34 @@ router.put('/:id/discovery', (req, res) => {
     source: 'admin', ipAddress: req.ip, severity: on ? 'warning' : 'info', details: { plugin: p.id, discovery: on },
   });
   res.json({ ok: true, granted: on });
+});
+
+// ─── Built-in data import (first-party plugins replacing a built-in feature) ─
+
+const legacy = require('../../services/plugins/legacy');
+
+router.get('/:id/legacy', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  try {
+    res.json({ ok: true, legacy: legacy.status(p) });
+  } catch (e) { fail(req, res, e); }
+});
+
+router.post('/:id/legacy/import', async (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  if (!req.body || req.body.confirm !== true) return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  try {
+    const out = await legacy.runImport(p.id, { ip: req.ip });
+    res.json({ ok: true, counts: out.counts, targetsAdded: out.targetsAdded, legacy: legacy.status(plugins.get(p.id)) });
+  } catch (e) {
+    if (e instanceof legacy.LegacyError) {
+      const status = e.code === 'not_found' ? 404 : (e.code === 'legacy_failed' ? 502 : 409);
+      return res.status(status).json({ ok: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, tr(req, 'plugins.err.generic', 'Plugin action failed')) });
+    }
+    fail(req, res, e);
+  }
 });
 
 // ─── Forwarded to the plugin ────────────────────
