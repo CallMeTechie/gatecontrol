@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.148.0] — 2026-10-07
+
+### Features
+- trust the CallMeTechie plugin signing key (#270)
+
+---
+
 ## [1.147.0] — 2026-10-07
 
 ### Features
