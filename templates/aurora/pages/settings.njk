@@ -1,6 +1,6 @@
 {% extends theme + "/layout.njk" %}
 
-{#- Settings (docs: PR "redesigned settings"). One page, 21 sections in seven
+{#- Settings (docs: PR "redesigned settings"). One page, 22 sections in eight
     groups, left section nav (a select at ≤ 900 px), one save model: every
     field with data-st-field belongs to its section; changes collect in the
     sticky save bar and are saved per section (public/js/settings.js).
@@ -123,6 +123,8 @@
     ['pihole', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v8M8 12h8', 'pihole_integration'],
     ['geoip', 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 10v.5', ''],
     ['portal', 'M3 9l9-6 9 6v11H3zM9 20v-6h6v6', ''] ] },
+  { id: 'extensions', items: [
+    ['plugins', 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14', ''] ] },
   { id: 'maintenance', items: [
     ['backup', 'M12 3v12M7 10l5 5 5-5M4 21h16', ''],
     ['updates', 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5', ''],
@@ -554,6 +556,11 @@
   </section>
 </section>
 
+{# ══ Erweiterungen · Plugins ══════════════════════════════════════════ #}
+<section class="st-section" data-section="plugins" aria-labelledby="st-h-plugins" data-st-keywords="{{ t('st.kw.plugins') }}" hidden>
+{% include "aurora/partials/settings-plugins.njk" %}
+</section>
+
 {# ══ Wartung · Backups ════════════════════════════════════════════════ #}
 <section class="st-section" data-section="backup" aria-labelledby="st-h-backup" data-st-keywords="{{ t('st.kw.backup') }}" hidden>
   <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-backup" tabindex="-1">{{ t('st.nav.backup') }}</h2><p class="st-sec-desc">{{ t('st.desc.backup') }}</p></div>
@@ -908,7 +915,7 @@ chmod +x update.sh</pre>
 
 <script type="application/json" id="st-catalogue" nonce="{{ cspNonce }}">{{ notifyCatalogue | default('[]') | safe }}</script>
 {# All st.* strings plus the prefixes the helper scripts read (src/routes/index.js, stringsWithPrefix). #}
-<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
+<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard. plugins." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}
@@ -916,5 +923,7 @@ chmod +x update.sh</pre>
 <script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
 <script src="/js/settings-ui.js?v={{ appVersion }}"></script>
+<script src="/js/plugins-ui.js?v={{ appVersion }}"></script>
+<script src="/js/settings-plugins.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 {% endblock %}

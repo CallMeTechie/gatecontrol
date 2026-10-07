@@ -1,0 +1,48 @@
+{% extends theme + "/layout.njk" %}
+
+{#- A plugin's page (docs/plugins.md "Oberfläche"): GateControl's header and
+    navigation, the plugin's content in a sandboxed iframe (opaque origin,
+    no access to this page or the session; public/js/plugin-bridge.js
+    forwards its requests to the plugin's own API). A plugin that is
+    installed but not running shows why instead (old bookmarks). -#}
+
+{% block content %}
+<div class="pg-plugin-page" id="pg-plugin-page" data-plugin="{{ plugin.id }}">
+  <header class="pg-ph">
+    <div class="pg-ph-main">
+      <div class="pg-ph-eyebrow"><span class="pg-ph-kicker">{{ t('plugins.page.eyebrow') }}</span><span class="pg-chip">{{ plugin.name }} v{{ plugin.version }}</span>
+        {%- if plugin.verified %}<span class="pg-badge" data-state="good">{{ t('plugins.badge.verified') }}</span>{% else %}<span class="pg-badge" data-state="warn">{{ t('plugins.badge.unverified') }}</span>{% endif %}</div>
+      <h1 class="pg-ph-title">{{ page.title if page else plugin.name }}</h1>
+    </div>
+    <a class="st-btn" href="/settings?plugin={{ plugin.id }}#plugins">{{ t('plugins.page.settings_link') }}</a>
+  </header>
+
+  {% if running %}
+    {%- if plugin.pages.length > 1 %}
+    <nav class="pg-ptabs" aria-label="{{ t('plugins.page.pages') }}">
+      {%- for pg in plugin.pages %}
+      <a class="pg-ptab" href="/plugins/{{ plugin.id }}/{{ pg.id }}" aria-current="{{ 'page' if pg.id == page.id else 'false' }}">{{ pg.title }}</a>
+      {%- endfor %}
+    </nav>
+    {%- endif %}
+    <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}"
+      sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"
+      data-plugin-frame data-plugin-id="{{ plugin.id }}" data-plugin-api="/api/v1/plugins/{{ plugin.id }}/api/" data-plugin-pages="{{ pagesJson }}"></iframe>
+  {% else %}
+    <section class="pg-off" id="pg-off" data-reason="{{ reason }}" aria-labelledby="pg-off-title">
+      <span class="pg-off-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.4 6.6a9 9 0 1 1-12.8 0M12 2v10"/></svg></span>
+      <div>
+        <h2 class="pg-off-title" id="pg-off-title">{{ t('plugins.page.off_title', { name: plugin.name }) }}</h2>
+        <p class="pg-off-text">{{ t('plugins.page.off_reason.' + reason) }} {{ t('plugins.page.off_data') }}</p>
+        {%- if user and user.role == 'admin' %}
+        <a class="st-btn st-btn-primary" href="/settings?plugin={{ plugin.id }}#plugins">{{ t('plugins.page.to_settings') }}</a>
+        {%- endif %}
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if running %}<script src="/js/plugin-bridge.js?v={{ appVersion }}"></script>{% endif %}
+{% endblock %}

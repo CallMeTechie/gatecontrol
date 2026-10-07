@@ -2,7 +2,7 @@
 
 // Settings page (templates/aurora/pages/settings.njk).
 //
-// Structure: 21 sections (<section data-section>), one visible at a time,
+// Structure: 22 sections (<section data-section>), one visible at a time,
 // chosen in the grouped nav (a select at ≤ 900 px) and kept in the address:
 // /settings#<section>; old tab names, old element ids and ?tab= still work
 // (GCSettingsUI.resolveLocation).
@@ -331,6 +331,9 @@
 
   // ══ Navigation ════════════════════════════════════════════════════════
   const SECTIONS = {};
+  // Sections with their own script (loaded before this one), e.g. Plugins
+  // (settings-plugins.js): { load() }.
+  Object.assign(SECTIONS, window.GCSettingsExt || {});
   const navItems = Array.from(document.querySelectorAll('.st-nav-item'));
   const select = $('st-select');
   const known = navItems.map((b) => b.dataset.section);

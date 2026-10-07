@@ -26,6 +26,7 @@
 <script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ portalI18n | safe }}</script>
 <script type="application/json" id="portal-ctx" nonce="{{ cspNonce }}">{{ portalCtx | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
+{% if pluginTabs and pluginTabs.length %}<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
 <body class="pt-body">
 <a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
@@ -58,6 +59,10 @@
     {%- for tab in TABS %}{% if tab[2] %}
       <a class="pt-tab" role="tab" id="tab-{{ tab[0] }}" href="#{{ tab[0] }}" data-tab="{{ tab[0] }}" aria-controls="panel-{{ tab[0] }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ '0' if loop.first else '-1' }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ ICONS[tab[0]] }}"/></svg><span>{{ t(tab[1]) }}</span></a>
     {%- endif %}{% endfor %}
+    {#- Plugin tabs (docs/plugins.md): running plugins with the portal permission. #}
+    {%- for pt in pluginTabs %}
+      <a class="pt-tab" role="tab" id="tab-{{ pt.key }}" href="#{{ pt.key }}" data-tab="{{ pt.key }}" aria-controls="panel-{{ pt.key }}" aria-selected="false" tabindex="-1"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pt.icon }}"/></svg><span>{{ pt.label }}</span></a>
+    {%- endfor %}
     </div>
   </nav>
 
@@ -332,6 +337,15 @@
     <p class="pt-foot" id="pt-devices-foot"></p>
   </section>
   {% endif %}
+  {#- Plugin tab panels: the plugin's content in a sandboxed frame (opaque
+      origin; public/js/plugin-bridge.js forwards its API calls). #}
+  {%- for pt in pluginTabs %}
+  <section class="pt-panel" id="panel-{{ pt.key }}" role="tabpanel" aria-labelledby="tab-{{ pt.key }}" tabindex="0" data-panel="{{ pt.key }}" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ pt.label }}</h1>
+    <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy"
+      data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"></iframe>
+  </section>
+  {%- endfor %}
 </main>
 
 <footer class="pt-footer"><span>{{ appName }}</span></footer>
