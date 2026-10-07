@@ -161,15 +161,17 @@ function fromB64Map(obj) {
   return m;
 }
 
-function writeTree(root, files) {
-  const base = path.resolve(root);
-  fs.mkdirSync(base, { recursive: true, mode: 0o700 });
-  for (const [rel, buf] of files) {
-    const target = path.resolve(base, ...rel.split('/'));
-    if (!target.startsWith(base + path.sep)) throw new Error('path outside the folder');
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, buf, { flag: 'wx', mode: 0o644 });
-  }
+/** The database snapshot of a backup, opened in memory and checked — or an error. */
+function openSnapshot(b64) {
+  const buf = Buffer.from(b64, 'base64');
+  if (!buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
+  const conn = new Database(buf);
+  try {
+    conn.pragma('trusted_schema = OFF');
+    const ok = conn.pragma('quick_check', { simple: true });
+    if (ok !== 'ok') throw new Error('database snapshot is damaged');
+    return conn;
+  } catch (err) { conn.close(); throw err; }
 }
 
 function remapAssignment(a) {
@@ -202,28 +204,30 @@ async function restoreAll(list) {
     const id = e && typeof e.id === 'string' && ID_RE.test(e.id) ? e.id : null;
     if (!id) { result.skipped.push({ id: String(e && e.id), reason: 'invalid' }); continue; }
     try {
-      if (!e.files) { result.skipped.push({ id, reason: 'no_code' }); continue; }
+      // Everything from the archive is untrusted: decode with the package
+      // path checks, ALWAYS verify the signature, then decide.
       const files = fromB64Map(e.files);
       const sig = signature.verify(files);
-      if (sig.status === 'invalid') { result.skipped.push({ id, reason: 'tampered' }); continue; }
       const mres = plugins.readManifest(files);
-      if (!mres.ok || mres.manifest.id !== id) { result.skipped.push({ id, reason: 'manifest' }); continue; }
+      if (sig.status === 'invalid') { result.skipped.push({ id, reason: 'tampered' }); continue; }
+      if (!mres.ok || mres.manifest.id !== id) { result.skipped.push({ id, reason: files.size ? 'manifest' : 'no_code' }); continue; }
       const m = mres.manifest;
       if (sig.status === 'trusted') m.license.server = null;
+      const dataFiles = fromB64Map(e.data_files);
+      const snapshot = typeof e.db === 'string' ? openSnapshot(e.db) : null;
 
       await runtime.ensureStopped(id);
       await storage.close(id);
       fs.rmSync(path.join(pluginsRoot(), id), { recursive: true, force: true });
       plugins.extract(files, codeDir(id, m.version));
 
-      if (e.db || e.data_files) fs.rmSync(dataDir(id), { recursive: true, force: true });
-      if (typeof e.db === 'string') {
-        const buf = Buffer.from(e.db, 'base64');
-        if (!buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
+      if (snapshot || dataFiles.size) fs.rmSync(dataDir(id), { recursive: true, force: true });
+      if (snapshot) {
+        // written by SQLite itself (backup API) from the validated in-memory copy
         fs.mkdirSync(dbDir(id), { recursive: true, mode: 0o700 });
-        fs.writeFileSync(path.join(dbDir(id), 'plugin.db'), buf, { mode: 0o600 });
+        try { await snapshot.backup(path.join(dbDir(id), 'plugin.db')); } finally { snapshot.close(); }
       }
-      if (e.data_files) writeTree(filesDir(id), fromB64Map(e.data_files));
+      if (dataFiles.size) plugins.extract(dataFiles, filesDir(id));
 
       registry.upsert({
         manifest: m,
@@ -246,7 +250,7 @@ async function restoreAll(list) {
       const secrets = e.secret_settings && typeof e.secret_settings === 'object' ? e.secret_settings : {};
       const values = new Map();
       for (const [k, v] of Object.entries(secrets)) if (typeof v === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(k)) values.set(k, { enc: v });
-      if (values.size && typeof e.db === 'string') await storage.forPlugin(id).call('settings.set', { values: Object.fromEntries(values) });
+      if (values.size && snapshot) await storage.forPlugin(id).call('settings.set', { values: Object.fromEntries(values) });
       registry.addLog(id, 'info', `restored from a backup (v${m.version}, signature: ${sig.status})`);
       result.restored++;
     } catch (err) {

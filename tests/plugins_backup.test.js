@@ -140,6 +140,25 @@ describe('restore', () => {
     assert.deepEqual(res.plugins_skipped, [{ id: 'hello', reason: 'tampered' }]);
     await agent.get(API + '/hello').expect(404);
   });
+  it('archive contents are untrusted: traversal paths, a non-SQLite database or a wrong id are refused before anything is written', async () => {
+    const base = snapshot.data.plugins.find((x) => x.id === 'hello');
+    const cases = [
+      { ...base, data_files: { '../../escape.txt': Buffer.from('x').toString('base64') } },
+      { ...base, db: Buffer.from('not a database at all, definitely not').toString('base64') },
+      { ...base, id: 'other-id' },
+      { ...base, files: { ...base.files, '../evil.js': Buffer.from('x').toString('base64') } },
+    ];
+    for (const c of cases) {
+      const b = JSON.parse(JSON.stringify(snapshot));
+      b.data.plugins = [c];
+      const res = await backup.restoreBackup(b);
+      await relogin();
+      assert.equal(res.plugins, 0, JSON.stringify(res.plugins_skipped));
+      assert.equal(res.plugins_skipped.length, 1);
+    }
+    await agent.get(API + '/hello').expect(404);
+    assert.equal(fs.existsSync(require('node:path').join(constants.pluginDataRoot(), '..', 'escape.txt')), false);
+  });
   it('an older backup (format 4, no plugins) restores and leaves installed plugins alone', async () => {
     const old = JSON.parse(JSON.stringify(snapshot));
     old.version = 4;
