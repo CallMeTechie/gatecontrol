@@ -79,6 +79,7 @@
     const ui = [];
     if (perm.pages && perm.pages.length) ui.push(t('plugins.perm.ui_pages', { pages: perm.pages.join(', ') }));
     if (perm.portalTab) ui.push(t('plugins.perm.ui_portal', { tab: perm.portalTab }));
+    (perm.portalSections || []).forEach((s) => ui.push(t('plugins.perm.ui_portal_section', { title: s.title, tab: t('plugins.portal_tab.' + s.tab) })));
     if (perm.settings) ui.push(t('plugins.perm.ui_settings', { n: perm.settings }));
     rows.push({ label: t('plugins.perm.ui'), value: ui.length ? ui.join(' · ') : t('plugins.perm.none') });
     rows.push({ label: t('plugins.perm.users'), value: t(perm.users ? 'plugins.perm.users_on' : 'plugins.perm.none') });
@@ -91,7 +92,8 @@
   function addsOf(p, t) {
     const out = [];
     if (p.nav) out.push({ title: t('plugins.adds.page', { name: p.nav.label }), text: t('plugins.adds.page_d') });
-    if (p.portal) out.push({ title: t('plugins.adds.portal', { name: p.portal.label }), text: t('plugins.adds.portal_d') });
+    if (p.portal && p.portal.label) out.push({ title: t('plugins.adds.portal', { name: p.portal.label }), text: t('plugins.adds.portal_d') });
+    if (p.portal) (p.portal.sections || []).forEach((s) => out.push({ title: t('plugins.adds.portal_section', { title: s.title, tab: t('plugins.portal_tab.' + s.tab) }), text: t('plugins.adds.portal_section_d') }));
     if (p.permissions && p.permissions.background) out.push({ title: t('plugins.adds.background'), text: t('plugins.perm.background_v', { s: p.permissions.background }) });
     if (p.settingsCount) out.push({ title: t('plugins.adds.settings'), text: t('plugins.perm.ui_settings', { n: p.settingsCount }) });
     return out;

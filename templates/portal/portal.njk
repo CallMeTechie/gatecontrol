@@ -26,7 +26,7 @@
 <script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ portalI18n | safe }}</script>
 <script type="application/json" id="portal-ctx" nonce="{{ cspNonce }}">{{ portalCtx | safe }}</script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
-{% if pluginTabs and pluginTabs.length %}<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
+{% if tabs.plugins %}<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
 <body class="pt-body">
 <a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
@@ -39,6 +39,13 @@
   netzwerk: 'M3 17l5-5 4 4 8-8',
   geraete: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2'
 } %}
+{#- A plugin's section in a GateControl tab (docs/plugins.md "Portal"): its own sandboxed frame. -#}
+{%- macro pluginSection(sec) %}
+      <section class="pt-plugin-section" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" aria-label="{{ sec.title }}">
+        <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy"
+          data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"></iframe>
+      </section>
+{%- endmacro %}
 {%- set TABS = [
   ['start', 'portal.tab.start', true],
   ['dienste', 'portal.tab.services', tabs.services],
@@ -168,6 +175,7 @@
       <section class="pt-card" data-area="home" aria-labelledby="pt-c-home">
         <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-home">{{ t('portal.tab.home') }}</h2><a class="pt-link" href="#zuhause" data-goto="zuhause">{{ t('portal.open') }}</a></div>
         <div class="pt-card-body" id="pt-start-home"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+        <div class="pt-plg-tiles" id="pt-start-tiles-zuhause" hidden></div>
       </section>
       {% endif %}
 
@@ -175,6 +183,7 @@
       <section class="pt-card" data-area="car" aria-labelledby="pt-c-car">
         <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-car">{{ t('portal.tab.car') }}</h2><a class="pt-link" href="#fahrzeug" data-goto="fahrzeug">{{ t('portal.open') }}</a></div>
         <div class="pt-card-body" id="pt-start-car"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+        <div class="pt-plg-tiles" id="pt-start-tiles-fahrzeug" hidden></div>
       </section>
       {% endif %}
 
@@ -199,6 +208,14 @@
         </div>
       </section>
       {% endif %}
+
+      {#- Start cards of plugin tabs: shown once the plugin sends tiles. #}
+      {%- for pt in pluginTabs %}
+      <section class="pt-card" data-area="start-{{ pt.key }}" id="pt-start-card-{{ pt.key }}" aria-labelledby="pt-c-{{ pt.key }}" hidden>
+        <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-{{ pt.key }}">{{ pt.label }}</h2><a class="pt-link" href="#{{ pt.key }}" data-goto="{{ pt.key }}">{{ t('portal.open') }}</a></div>
+        <div class="pt-plg-tiles" id="pt-start-tiles-{{ pt.key }}"></div>
+      </section>
+      {%- endfor %}
 
       {% if tabs.devices %}
       <section class="pt-card" data-area="devices" aria-labelledby="pt-c-devices">
@@ -240,6 +257,7 @@
         </div>
       </section>
       {% endif %}
+      {%- for sec in pluginSections.home %}{{ pluginSection(sec) }}{% endfor %}
     </div>
     <div class="pt-msg" id="pt-home-msg" role="status" hidden></div>
   </section>
@@ -250,7 +268,8 @@
   <section class="pt-panel" id="panel-fahrzeug" role="tabpanel" aria-labelledby="tab-fahrzeug" tabindex="0" data-panel="fahrzeug" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.car') }}</h1>
     <div class="pt-hint" id="pt-car-hint" hidden></div>
-    <div class="pt-car-list" id="pt-skoda"></div>
+    {% if tabs.skoda %}<div class="pt-car-list" id="pt-skoda" data-area="skoda"></div>{% endif %}
+    {%- for sec in pluginSections.car %}{{ pluginSection(sec) }}{% endfor %}
     <div class="pt-msg" id="pt-car-msg" role="status" hidden></div>
   </section>
   {% endif %}

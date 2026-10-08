@@ -85,7 +85,8 @@ function countSafe(fn) {
 }
 
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
-function tabsFor(req) {
+function tabsFor(req, plg) {
+  const sections = (plg && plg.sections) || { home: [], car: [] };
   const w = portalConfig().widgets;
   const owner = req.portalOwnerId;
   const identified = req.portalPeerId != null;
@@ -99,10 +100,14 @@ function tabsFor(req) {
   return {
     start: true,
     services: identified && w.services,
-    home: midea || smarthome,
+    home: midea || smarthome || sections.home.length > 0,
+    homeSections: sections.home.length,
+    carSections: sections.car.length,
+    plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length > 0,
     midea,
     smarthome,
-    car: skoda,
+    car: skoda || sections.car.length > 0,
+    skoda,
     net: identified && (w.device || w.traffic || w.pihole),
     device: identified && w.device,
     traffic: identified && w.traffic,
@@ -111,19 +116,24 @@ function tabsFor(req) {
   };
 }
 
+/** The portal viewer as plugins see it ({ id, name, role, portal: true }) or null. */
+function portalViewer(req) {
+  if (req.portalOwnerId == null) return null;
+  const u = users.getById(req.portalOwnerId);
+  if (!u || u.enabled !== 1) return null;
+  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
+}
+
 /**
- * Portal tabs of running plugins (docs/plugins.md) — only for an identified
- * viewer, and only those whose plugin has something for this person
- * (optional portalVisible hook).
+ * What running plugins add for this viewer (docs/plugins.md "Portal"): own
+ * tabs and sections in "Zuhause"/"Fahrzeug" — only for an identified viewer,
+ * only those whose plugin has something for this person (portalVisible).
  */
-async function pluginTabsFor(req, lang) {
-  if (req.portalOwnerId == null) return [];
-  try {
-    const u = users.getById(req.portalOwnerId);
-    if (!u || u.enabled !== 1) return [];
-    const user = { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
-    return await require('../services/plugins').portalTabsFor(user, lang === 'en' ? 'en' : 'de');
-  } catch { return []; }
+async function pluginContributions(req, lang) {
+  const none = { tabs: [], sections: { home: [], car: [] } };
+  const user = portalViewer(req);
+  if (!user) return none;
+  try { return await require('../services/plugins/portal').contributions(user, lang === 'en' ? 'en' : 'de'); } catch { return none; }
 }
 
 /** Who the header shows. */
@@ -162,11 +172,12 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
   // State-changing portal requests need the session's CSRF token.
   if (req.portalLoggedIn || req.portalAnonymous || req.portalSharedDevice) ensureCsrfToken(req, res);
   const viewer = viewerFor(req);
-  const tabs = tabsFor(req);
+  const lang0 = req.language || res.locals.language;
+  let plg;
+  try { plg = await pluginContributions(req, lang0); } catch (e) { return next(e); }
+  const tabs = tabsFor(req, plg);
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
-  let pluginTabs;
-  try { pluginTabs = await pluginTabsFor(req, lang); } catch (e) { return next(e); }
   res.render('portal/portal.njk', {
     portalI18n: island(stringsWithPrefix(lang, ['portal.'])),
     portalCtx: island({
@@ -181,7 +192,9 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
     }),
     widgets: portalConfig().widgets,
     tabs,
-    pluginTabs,
+    pluginTabs: plg.tabs,
+    pluginSections: plg.sections,
+    // Start tiles / search of plugins (public/js/portal.js asks /api/v1/portal/plugins/start|search)
     viewer,
     note,
     deviceName: req.portalPeerName,   // null → generic welcome

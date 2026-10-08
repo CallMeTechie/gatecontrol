@@ -109,7 +109,10 @@ unsigned build of the same id.
       { "key": "interval", "type": "number", "label": "Abfrageintervall", "min": 10, "max": 3600, "default": 30 },
       { "key": "token", "type": "secret", "label": "API-Schlüssel" }
     ],
-    "portal": { "label": { "de": "Zuhause", "en": "Home" }, "icon": "<svg path d>" }
+    "portal": {
+      "label": { "de": "Klima", "en": "Climate" }, "icon": "<svg path d>",
+      "sections": [{ "id": "smarthome", "tab": "home", "title": { "de": "Smart Home", "en": "Smart Home" }, "order": 20 }]
+    }
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
   "migrations": "migrations"
@@ -191,9 +194,11 @@ module.exports = {
   },
   async tick(gc) {},                        // background run (permissions.background)
   async settingsChanged(values, gc) {},
-  async portalVisible({ user, lang }, gc) {  // optional: false hides the portal tab for this viewer
+  async portalVisible({ user, lang, section }, gc) {  // optional: false hides the portal tab/section for this viewer
     return true;                            // (no hook, an error or no answer within 1.5 s → shown)
   },
+  async portalTiles({ user, lang }, gc) { return []; },     // optional: Start tiles (see "Portal")
+  async portalSearch({ user, lang, q }, gc) { return []; }, // optional: portal search results
   async legacyImport(snapshot, gc) {        // optional, first-party only: built-in data handed over once
     return { ok: true };                    // (see "Built-in data import" below)
   },
@@ -297,9 +302,36 @@ disable/uninstall and when the server shuts down.
   for the existing Smart Home / Klimaanlage / Fahrzeuge pages.
 * **Settings**: declared `ui.settings` are rendered by GateControl
   (Einstellungen tab) — no plugin HTML in the settings page.
-* **Portal tab visibility**: a running plugin with `ui.portal` gets a tab for
-  every identified viewer; its optional `portalVisible({ user })` hook can
-  hide it for viewers with nothing to see (e.g. no devices assigned).
+* **Portal** (`src/services/plugins/portal.js`), for identified viewers only:
+  * **own tab**: `ui.portal.label`/`icon` → a tab `plg-<id>` with the plugin's
+    frame (`/portal/plugins/<id>/frame`).
+  * **sections in GateControl tabs**: `ui.portal.sections: [{ id, tab, title,
+    order }]` (≤ 8; `tab` = `home` ("Zuhause") or `car` ("Fahrzeug"); `order`
+    0–1000, default 100) → each section is its own sandboxed frame
+    (`/portal/plugins/<id>/frame?section=<id>`, `render` gets
+    `view.section`) inside that tab, after the built-in parts (Klimaanlage,
+    Fahrzeuge until they move into plugins), ordered by `order`. Several
+    plugins share one "Zuhause" tab; the tab is hidden when neither a built-in
+    part nor any section has something for the viewer. `ui.portal` needs a
+    label, sections or both.
+  * **visibility**: the optional hook `portalVisible({ user, lang, section })`
+    (`section` = null for the own tab) hides a tab/section for viewers with
+    nothing to see. Asked per viewer when the portal is opened.
+  * **Start tiles**: optional hook `portalTiles({ user, lang })` →
+    `[{ section?, title, value?, unit?, state?, icon? }]` (≤ 8; `state` one of
+    `on`, `off`, `good`, `warn`, `crit`; `icon` an SVG path like
+    `ui.nav.icon`). GateControl renders them on the Start tab — in the
+    "Zuhause"/"Fahrzeug" card for sections, in a card of its own for the
+    plugin's tab — and links them to the section (`#zuhause` + scroll). Never
+    plugin HTML on Start. `GET /api/v1/portal/plugins/start`.
+  * **search**: optional hook `portalSearch({ user, lang, q })` (`q` 2–100
+    characters) → `[{ title, subtitle?, section? }]` (≤ 10), shown after the
+    built-in results, linked like the tiles. `GET /api/v1/portal/plugins/search?q=`.
+  * Every hook has **1.5 s** per plugin (all plugins in parallel); a slow,
+    failing or garbage-answering plugin only loses its own part. Texts are
+    capped and control characters removed; a tile/result naming a section
+    the viewer cannot see is dropped. The hooks get the viewer and must only
+    answer with what that person may see (the host passes nobody else).
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs.
 
@@ -307,7 +339,14 @@ disable/uninstall and when the server shuts down.
 
 * **first-party** (signed by a trusted key): the entitlement of the GateControl
   licence server (`license.getPluginEntitlements()`, slug = plugin id, valid
-  and not expired). A key entered for the plugin is added to the plugin keys
+  and not expired). Its `source` says where it comes from: `license` (a key
+  of its own), `lifetime`, or `plan` — the plugin is included because the
+  customer's GateControl plan contains the former built-in feature (e.g.
+  `smarthome` → `gatecontrol-smarthome`; token `sub` = `plan:<id>`); the UI
+  shows "Im Plan enthalten". A key entered although the plugin is already
+  covered comes back with the error `covered_by_plan` / `covered_by_lifetime`:
+  it never decides the state (the covering entitlement does) and the UI says
+  that the key is not needed. A key entered for the plugin is added to the plugin keys
   of the GateControl licence (`setPluginKeys`) and a licence refresh runs. The
   14-day offline grace of the GateControl licence applies.
 * **third-party**: the plugin's own licence server (`license.server`, HTTPS

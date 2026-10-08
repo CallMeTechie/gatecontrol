@@ -115,7 +115,9 @@ function permissionSummary(m, lang) {
     network: require('./netPolicy').describe(p, lang),
     storage: p.storage, portal: p.portal, users: p.users, notify: p.notify,
     background: p.background ? p.background.intervalSeconds : null,
-    pages: m.ui.pages.map((x) => loc(x.title, lang)), settings: m.ui.settings.length, portalTab: m.ui.portal ? loc(m.ui.portal.label, lang) : null,
+    pages: m.ui.pages.map((x) => loc(x.title, lang)), settings: m.ui.settings.length,
+    portalTab: m.ui.portal && m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
+    portalSections: m.ui.portal && m.ui.portal.sections ? m.ui.portal.sections.map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) : [],
   };
 }
 
@@ -405,7 +407,8 @@ function view(p, lang) {
     permissions: m.permissions ? permissionSummary(m, lang) : null,
     nav: m.ui && m.ui.nav ? { label: loc(m.ui.nav.label, lang), icon: m.ui.nav.icon } : null,
     pages: (m.ui && m.ui.pages ? m.ui.pages : []).map((x) => ({ id: x.id, title: loc(x.title, lang) })),
-    portal: m.ui && m.ui.portal ? { label: loc(m.ui.portal.label, lang) } : null,
+    portal: m.ui && m.ui.portal ? { label: m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
+      sections: (m.ui.portal.sections || []).map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) } : null,
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,
     updatedAt: p.updatedAt,
@@ -434,27 +437,19 @@ function navEntries(lang) {
 function portalTabs(lang) {
   let rows;
   try { rows = registry.list(); } catch { return []; }
-  return rows.filter((p) => p.manifest && p.manifest.permissions && p.manifest.permissions.portal && p.manifest.ui && p.manifest.ui.portal)
+  return rows.filter((p) => p.manifest && p.manifest.permissions && p.manifest.permissions.portal && p.manifest.ui && p.manifest.ui.portal && p.manifest.ui.portal.label)
     .filter((p) => evaluate(p).run && runtime.info(p.id).state === 'running')
     .map((p) => ({ id: p.id, key: 'plg-' + p.id, label: loc(p.manifest.ui.portal.label, lang), icon: p.manifest.ui.portal.icon }));
 }
 
 /**
  * Portal tabs for one viewer: like portalTabs(), without the tabs whose
- * plugin answers portalVisible(user) with false (nothing to show for this
- * person). A plugin without the hook, an error or no answer within 1.5 s
- * keeps its tab.
+ * plugin answers portalVisible with false (src/services/plugins/portal.js
+ * has the sections, Start tiles and search as well).
  * @param {{id, name, role, portal: true}} user
  */
 async function portalTabsFor(user, lang) {
-  const tabs = portalTabs(lang);
-  const shown = await Promise.all(tabs.map(async (t) => {
-    try {
-      const out = await runtime.call(t.id, 'portalVisible', { user, lang }, 1500);
-      return !(out && out.visible === false);
-    } catch { return true; }
-  }));
-  return tabs.filter((_, i) => shown[i]);
+  return (await require('./portal').contributions(user, lang)).tabs;
 }
 
 function boundJson(v) {

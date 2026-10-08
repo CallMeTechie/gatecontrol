@@ -56,7 +56,7 @@
     'aria-label', 'aria-hidden', 'aria-pressed', 'aria-checked', 'aria-expanded', 'aria-controls', 'aria-live', 'aria-modal',
     'aria-labelledby', 'aria-describedby', 'aria-valuenow', 'aria-valuemin', 'aria-valuemax', 'aria-valuetext', 'aria-busy', 'tabindex',
     'data-id', 'data-act', 'data-mode', 'data-step', 'data-cmd', 'data-day', 'data-veh', 'data-timer', 'data-scope', 'data-range',
-    'data-goto', 'data-tone', 'data-on', 'alt', 'loading', 'maxlength', 'for', 'datetime', 'width', 'height'];
+    'data-goto', 'data-section', 'data-tone', 'data-on', 'alt', 'loading', 'maxlength', 'for', 'datetime', 'width', 'height'];
   function setAttr(n, k, v) {
     var s = v === true ? '' : String(v);
     if (k === 'href') { n.setAttribute('href', safeUrl(v, false)); return; }
@@ -298,6 +298,9 @@
     activate(id, { push: true, scroll: true });
     var panel = $('panel-' + id);
     if (panel && !panel.hidden) panel.focus({ preventScroll: true });
+    // a plugin section inside the tab (Start tiles, search results)
+    var sec = a.getAttribute('data-section') ? $(a.getAttribute('data-section')) : null;
+    if (sec && sec.scrollIntoView && panel && !panel.hidden) { try { sec.scrollIntoView({ block: 'start', behavior: noMotion ? 'auto' : 'smooth' }); } catch (_) { /* old browsers */ } }
   });
   window.addEventListener('popstate', function () { activate(location.hash.slice(1)); });
   window.addEventListener('hashchange', function () { activate(location.hash.slice(1)); });
@@ -587,7 +590,8 @@
   var MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
   var FAN_STEPS = [1, 20, 40, 60, 80, 100]; // percent steps like the Midea app; Auto = 102
   var mideaTimers = {};
-  var homeState = { midea: TABS.midea ? 'pending' : 'off', smarthome: TABS.smarthome ? 'pending' : 'off' };
+  // plugin sections (docs/plugins.md "Portal") were checked by the server: present = something to show
+  var homeState = { midea: TABS.midea ? 'pending' : 'off', smarthome: TABS.smarthome ? 'pending' : 'off', plugins: TABS.homeSections ? 'ok' : 'off' };
   var shDevices = [];
   var shSensors = [];
   function homeSettled(part, ok) {
@@ -1150,16 +1154,22 @@
     var start = clear($('pt-start-car'));
     if (start) vehicles.slice(0, 1).forEach(function (v) { start.appendChild(renderCarMini(v)); });
   }
+  // No vehicle of the built-in part: hide it — the whole area only when no plugin has a section there.
+  function noSkoda() {
+    if (!TABS.carSections) { hideArea('car', 'fahrzeug'); return; }
+    hideArea('skoda');
+    clear($('pt-start-car'));
+  }
   function loadSkoda(refresh) {
-    if (!TABS.car) return;
+    if (!TABS.skoda) { if (TABS.car) noSkoda(); return; }
     getJson('/api/v1/portal/skoda').then(function (res) {
-      if (!okData(res) || !(res.body.data.vehicles || []).length) { if (!refresh) hideArea('car', 'fahrzeug'); return; }
+      if (!okData(res) || !(res.body.data.vehicles || []).length) { if (!refresh) noSkoda(); return; }
       vehicles = res.body.data.vehicles;
       carLoggedIn = !!res.body.data.loggedIn && !!CTX.loggedIn;
       renderSkoda();
       if (!carLoggedIn) { var h = clear($('pt-car-hint')); if (h) { h.appendChild(loginHint()); h.hidden = false; } }
       if (!refresh) startSkodaPoll();
-    }).catch(function () { if (!refresh) hideArea('car', 'fahrzeug'); });
+    }).catch(function () { if (!refresh) noSkoda(); });
   }
   var skodaPoll = null;
   function startSkodaPoll() {
@@ -1297,6 +1307,40 @@
     });
   })();
 
+  // ═══ Plugins: Start tiles (declarative data, rendered here) ═════════════
+  // GET /api/v1/portal/plugins/start → [{ title, value, unit, state, icon, goto, anchor }]
+  // goto = the portal tab (zuhause, fahrzeug, plg-<id>), anchor = the plugin's section in it.
+  var TILE_STATES = ['on', 'off', 'good', 'warn', 'crit'];
+  function pluginTile(t) {
+    var tone = TILE_STATES.indexOf(t.state) >= 0 ? t.state : null;
+    var value = t.value == null ? '' : String(t.value) + (t.unit ? ' ' + t.unit : '');
+    return el('a', { class: 'pt-plg-tile', href: '#' + t.goto, 'data-goto': t.goto, 'data-section': t.anchor || null, 'data-tone': tone }, [
+      t.icon ? icon(t.icon, 16) : null,
+      el('span', { class: 'pt-plg-tile-t' }, t.title),
+      value ? el('b', null, value) : null,
+    ]);
+  }
+  function loadPluginStart() {
+    if (!TABS.plugins) return;
+    getJson('/api/v1/portal/plugins/start').then(function (res) {
+      var list = res && res.status === 200 && res.body && Array.isArray(res.body.tiles) ? res.body.tiles : [];
+      var by = {};
+      list.forEach(function (t) {
+        if (!t || typeof t.goto !== 'string' || !/^[a-z0-9-]{1,80}$/.test(t.goto)) return;
+        (by[t.goto] = by[t.goto] || []).push(t);
+      });
+      Object.keys(by).forEach(function (goto) {
+        var box = $('pt-start-tiles-' + goto);
+        if (!box) return;
+        clear(box);
+        by[goto].forEach(function (t) { box.appendChild(pluginTile(t)); });
+        box.hidden = false;
+        var card = $('pt-start-card-' + goto);
+        if (card) card.hidden = false;
+      });
+    }).catch(function () { /* tiles are optional */ });
+  }
+
   // ═══ Search (start) ═════════════════════════════════════════════════════
   (function wireSearch() {
     var input = $('pt-search');
@@ -1306,10 +1350,35 @@
       return el('a', { class: 'pt-result', href: href, 'data-goto': goto || null, target: goto ? null : '_blank', rel: goto ? null : 'noopener noreferrer',
         on: extra ? { click: extra } : null }, [el('b', null, label), el('span', { class: 'pt-small pt-muted' }, sub)]);
     }
+    // Plugins answer through the server (each with a timeout); results come after the local ones.
+    var pluginTimer = null;
+    var pluginSeq = 0;
+    function pluginSearch(raw, hits) {
+      clearTimeout(pluginTimer);
+      var seq = ++pluginSeq;
+      if (!TABS.plugins || raw.length < 2) return;
+      pluginTimer = setTimeout(function () {
+        getJson('/api/v1/portal/plugins/search?q=' + encodeURIComponent(raw)).then(function (res) {
+          if (seq !== pluginSeq) return; // the query changed meanwhile
+          var list = res && res.status === 200 && res.body && Array.isArray(res.body.results) ? res.body.results : [];
+          var add = [];
+          list.forEach(function (r) {
+            if (!r || typeof r.goto !== 'string' || !/^[a-z0-9-]{1,80}$/.test(r.goto)) return;
+            add.push(el('a', { class: 'pt-result', href: '#' + r.goto, 'data-goto': r.goto, 'data-section': r.anchor || null },
+              [el('b', null, r.title), el('span', { class: 'pt-small pt-muted' }, r.subtitle || '')]));
+          });
+          if (!add.length) return;
+          if (!hits) clear(box);
+          add.slice(0, 12).forEach(function (h) { box.appendChild(h); });
+          box.hidden = false;
+        }).catch(function () { /* search of plugins is optional */ });
+      }, 250);
+    }
     function run() {
-      var q = input.value.trim().toLowerCase();
+      var raw = input.value.trim();
+      var q = raw.toLowerCase();
       clear(box);
-      if (!q) { box.hidden = true; return; }
+      if (!q) { box.hidden = true; pluginSearch(''); return; }
       var hits = [];
       var match = function (s) { return String(s || '').toLowerCase().indexOf(q) >= 0; };
       services.forEach(function (s) {
@@ -1320,9 +1389,11 @@
       devices.forEach(function (d) { if (match(d.name)) hits.push(hit(d.name, T('portal.tab.devices'), '#geraete', 'geraete')); });
       midea.concat(shDevices).forEach(function (d) { if (match(d.name)) hits.push(hit(d.name, T('portal.tab.home'), '#zuhause', 'zuhause')); });
       vehicles.forEach(function (v) { var n = v.name || v.model || ''; if (match(n)) hits.push(hit(n, T('portal.tab.car'), '#fahrzeug', 'fahrzeug')); });
+      var found = hits.length;
       if (!hits.length) hits.push(empty(T('portal.search_none')));
       hits.slice(0, 12).forEach(function (h) { box.appendChild(h); });
       box.hidden = false;
+      pluginSearch(raw, found);
     }
     input.addEventListener('input', run);
     input.addEventListener('keydown', function (e) { if (e.key === 'Escape') { input.value = ''; run(); } });
@@ -1338,4 +1409,7 @@
   loadSmarthome();
   loadSkoda(false);
   loadDevices();
+  loadPluginStart();
+  // "Zuhause" with plugin sections only: no built-in part settles the start card
+  if (TABS.home && !TABS.midea && !TABS.smarthome) renderStartHome();
 })();

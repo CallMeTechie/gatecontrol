@@ -87,6 +87,26 @@ function validateNetwork(n, err) {
   return out;
 }
 
+// GateControl portal tabs a plugin may add sections to (docs/plugins.md
+// "Portal"): "home" = Zuhause, "car" = Fahrzeug.
+const PORTAL_SECTION_TABS = new Set(['home', 'car']);
+
+/** ui.portal.sections → [{ id, tab, title, order }] (null when invalid). */
+function portalSections(raw, err) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > 8) { err('ui.portal.sections: invalid'); return null; }
+  const out = [];
+  for (const s of raw) {
+    const title = locText(s && s.title, 60);
+    const order = s && s.order != null ? Number(s.order) : 100;
+    if (!s || typeof s.id !== 'string' || !SLUG_RE.test(s.id) || s.id.length > 40 || !PORTAL_SECTION_TABS.has(s.tab) || !title
+      || !Number.isInteger(order) || order < 0 || order > 1000) { err('ui.portal.sections: invalid'); return null; }
+    if (out.some((x) => x.id === s.id)) { err('ui.portal.sections: duplicate'); return null; }
+    out.push({ id: s.id, tab: s.tab, title, order });
+  }
+  return out;
+}
+
 function isFile(p) {
   return typeof p === 'string' && p.length <= 200 && FILE_RE.test(p) && !p.split('/').some((s) => s === '..' || s === '.');
 }
@@ -192,11 +212,14 @@ function validate(raw, opts = {}) {
       }
     }
     if (u.portal != null) {
-      const label = locText(u.portal && u.portal.label, 40);
-      const icon = u.portal && u.portal.icon != null ? String(u.portal.icon) : 'M4 4h16v16H4z';
-      if (!label || !ICON_RE.test(icon)) err('ui.portal: invalid');
+      // own tab (label, icon) and/or sections in GateControl's portal tabs
+      const po = u.portal && typeof u.portal === 'object' && !Array.isArray(u.portal) ? u.portal : null;
+      const label = po && po.label != null ? locText(po.label, 40) : null;
+      const icon = po && po.icon != null ? String(po.icon) : 'M4 4h16v16H4z';
+      const sections = po ? portalSections(po.sections, err) : null;
+      if (!po || (po.label != null && !label) || !ICON_RE.test(icon) || !sections || (!label && !sections.length)) err('ui.portal: invalid');
       else if (!perms.portal) err('ui.portal: needs permissions.portal');
-      else ui.portal = { label, icon };
+      else ui.portal = { label: label || null, icon, sections };
     }
   }
   m.ui = ui;
@@ -240,4 +263,4 @@ function migrationsOf(manifest, files) {
   return out;
 }
 
-module.exports = { validate, loc, locText, migrationsOf, isFile };
+module.exports = { validate, loc, locText, migrationsOf, isFile, PORTAL_SECTION_TABS };

@@ -199,6 +199,8 @@ describe('v2 validation flow', () => {
         { slug: 'gatecontrol-midea', name: 'Klima', source: 'lifetime', key_masked: null, valid: true, expires_at: null, updates_until: null, token: signEd(pluginClaims({ sub: 'lifetime:4' })) },
         { slug: 'gatecontrol-foo', name: 'Foo', source: 'license', key_masked: 'GCMD-****-****-ZZZZ', valid: false, error: 'wrong_product', expires_at: null, updates_until: null, token: null },
         { slug: 'gatecontrol-bar', name: 'Bar', source: 'license', key_masked: null, valid: true, expires_at: null, updates_until: null, token: signEd(pluginClaims({ fp: 'x' })) },
+        { slug: 'gatecontrol-smarthome', name: 'Smart Home', source: 'plan', key_masked: null, valid: true, expires_at: null, updates_until: null, token: signEd(pluginClaims({ sub: 'plan:7' })) },
+        { slug: 'gatecontrol-odd', name: 'Odd', source: 'gift', key_masked: null, valid: false, error: 'covered_by_plan', expires_at: null, updates_until: null, token: null },
       ],
     });
 
@@ -218,7 +220,11 @@ describe('v2 validation flow', () => {
     assert.equal(sent.license_key, 'GATE-AAAA-BBBB-CCCC');
 
     const ents = license.getPluginEntitlements();
-    assert.equal(ents.length, 4);
+    assert.equal(ents.length, 6);
+    assert.equal(ents.find((e) => e.slug === 'gatecontrol-smarthome').source, 'plan', 'plan stays plan');
+    assert.equal(ents.find((e) => e.slug === 'gatecontrol-smarthome').valid, true);
+    assert.equal(ents.find((e) => e.slug === 'gatecontrol-odd').source, 'license', 'unknown sources fall back to license');
+    assert.equal(ents.find((e) => e.slug === 'gatecontrol-odd').error, 'covered_by_plan');
     const by = Object.fromEntries(ents.map((e) => [e.slug, e]));
     assert.equal(by['gatecontrol-skoda'].valid, true);
     assert.equal(by['gatecontrol-skoda'].source, 'license');

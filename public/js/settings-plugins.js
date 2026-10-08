@@ -67,6 +67,11 @@
 
   function chip(text, tone) { return el('span', { class: 'pg-badge', 'data-state': tone, text }); }
   function verifiedChip(p) { return p.verified ? chip(t('plugins.badge.verified'), 'good') : chip(t('plugins.badge.unverified'), 'warn'); }
+  /** "Im Plan enthalten" / "Lifetime" for plugins licensed without an own key. */
+  function sourceChip(p) {
+    const s = p.license && p.license.licensed && p.license.source;
+    return s === 'plan' || s === 'lifetime' ? chip(t('plugins.lic.source_' + s), 'good') : null;
+  }
 
   // ── Cards ──
   function renderCards() {
@@ -82,7 +87,7 @@
           el('span', { class: 'pg-ic' }, [icon(p.nav ? p.nav.icon : DEFAULT_ICON)]),
           el('span', { class: 'pg-card-name' }, [el('b', { text: p.name }), el('span', { class: 'pg-sub', text: p.publisher + ' · v' + p.version })]),
         ]),
-        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p)]),
+        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p), sourceChip(p)]),
         el('span', { class: 'pg-card-note', text: noteOf(p) }),
       ]);
       grid.appendChild(card);
@@ -337,7 +342,8 @@
     const dl = el('dl', { class: 'pg-dl' });
     const row = (k, v, tone) => { dl.appendChild(el('dt', { text: k })); dl.appendChild(el('dd', { 'data-state': tone || null, text: v || '—' })); };
     row(t('plugins.lic.status'), t('plugins.lic.state.' + L.state), P.licenseTone(L.state));
-    row(t('plugins.lic.key'), L.keyMasked || '');
+    if (L.source === 'plan' || L.source === 'lifetime') row(t('plugins.lic.kind'), t('plugins.lic.source_' + L.source), 'good');
+    row(t('plugins.lic.key'), L.keyMasked || (L.source === 'plan' ? t('plugins.lic.no_key_needed') : ''));
     row(t('plugins.lic.valid_until'), L.expiresAt ? P.fmtDate(L.expiresAt, lang) : (L.state === 'valid' ? t('plugins.lic.unlimited') : ''));
     if (L.updatesUntil) row(t('plugins.lic.updates_until'), P.fmtDate(L.updatesUntil, lang));
     row(t('plugins.lic.source'), L.kind === 'first_party' ? t('plugins.lic.source_gc') : (L.server || ''));
@@ -346,7 +352,8 @@
     const save = el('button', { type: 'button', class: 'st-btn st-btn-primary st-btn-sm', id: 'pg-lic-save', text: t('plugins.lic.save'), on: { click: async () => {
       const r = await req('PUT', API + '/' + encodeURIComponent(p.id) + '/license', { key: input.value });
       if (!r.ok) { msg.textContent = r.error; return; }
-      toast(t('plugins.lic.state.' + r.license.state));
+      if (r.license.coveredBy) toast(t('plugins.lic.covered_' + r.license.coveredBy));
+      else toast(t('plugins.lic.state.' + r.license.state));
       await load();
     } } });
     const check = el('button', { type: 'button', class: 'st-btn st-btn-sm', id: 'pg-lic-check', text: t('plugins.lic.check'), on: { click: async () => {
@@ -358,7 +365,8 @@
     panel.appendChild(el('div', { class: 'pg-lic' }, [dl, el('div', { class: 'pg-lic-form' }, [
       el('label', { class: 'st-label', for: 'pg-lic-key', text: t('plugins.lic.enter') }), input,
       el('div', { class: 'st-btnrow pg-mt' }, [save, check]),
-      el('p', { class: 'pg-sub', text: L.kind === 'first_party' ? t('plugins.lic.hint_gc') : t('plugins.lic.hint_third', { server: L.server || '' }) }),
+      el('p', { class: 'pg-sub', text: L.kind === 'first_party' ? t(L.source === 'plan' ? 'plugins.lic.hint_plan' : 'plugins.lic.hint_gc') : t('plugins.lic.hint_third', { server: L.server || '' }) }),
+      L.coveredBy ? el('p', { class: 'pg-sub', id: 'pg-lic-covered', role: 'note', text: t('plugins.lic.covered_' + L.coveredBy) }) : null,
       msg,
     ])]));
   }
