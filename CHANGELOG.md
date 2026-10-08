@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.151.0] — 2026-10-08
+
+### Features
+- built-in Fahrzeuge (Škoda) data import and coexistence for gatecontrol-skoda (#273)
+
+---
+
 ## [1.150.0] — 2026-10-08
 
 ### Features
