@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.152.0] — 2026-10-08
 
 ### Features
 - Smart Home (deCONZ/Phoscon), Klimaanlage (Midea) und Fahrzeuge (Škoda) sind nicht mehr eingebaut, sondern nur noch als signierte Plugins verfügbar (`gatecontrol-smarthome`, `gatecontrol-midea`, `gatecontrol-skoda`, Einstellungen → Plugins). Ohne Plugin bleibt von ihnen nichts in GateControl: keine Seiten, keine API, kein Portal-Teil, keine Hintergrundabfragen, keine Portal-Widgets in den Einstellungen.
